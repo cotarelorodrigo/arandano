@@ -31,6 +31,16 @@ check_eq() {
   fi
 }
 
+# check_ne "descripción" prohibido obtenido → pasa si NO son iguales
+check_ne() {
+  local desc="$1" forbidden="$2" actual="$3"
+  if [[ "$forbidden" != "$actual" ]]; then
+    ok "$desc"
+  else
+    bad "$desc (ambos valen: $actual)"
+  fi
+}
+
 # check_ge "descripción" mínimo obtenido
 check_ge() {
   local desc="$1" minimum="$2" actual="$3"
@@ -67,16 +77,29 @@ suite_host() {
 suite_app() {
   suite_header "App: healthcheck con contenido real"
 
-  local code body
+  # Borrar antes de pedir: si curl no puede conectar, no escribe el archivo y
+  # los greps de abajo leerían el JSON de una corrida anterior. El exit code
+  # global igual saldría mal por el chequeo del 200, pero la salida mostraría
+  # tres pass espurios al lado del fail — y lo que alguien lee a las 11 de la
+  # noche es la salida, no el exit code.
+  rm -f /tmp/ngf-health.json
+
+  local code
   code=$(curl -s -o /tmp/ngf-health.json -w '%{http_code}' \
     "http://$TS_IP:3000/api/health" 2>/dev/null || echo 000)
   check_eq "healthcheck de dev devuelve 200" "200" "$code"
 
-  body=$(cat /tmp/ngf-health.json 2>/dev/null || echo '{}')
-  check_cmd "reporta el check de app" grep -q '"name":"app"' /tmp/ngf-health.json
   check_cmd "reporta el check de postgres" \
     grep -q '"name":"postgres"' /tmp/ngf-health.json
-  check_cmd "el check de app expone el SHA" grep -q 'sha=' /tmp/ngf-health.json
+  # El SHA ahora viaja en `info`, no como un check verde: no puede fallar, así
+  # que no vota el veredicto.
+  check_cmd "expone el SHA como info, no como check" \
+    grep -q '"info":{"sha":' /tmp/ngf-health.json
+  check_cmd "el SHA/uptime ya no se reporta como un check" \
+    bash -c '! grep -q "\"name\":\"app\"" /tmp/ngf-health.json'
+  # El check de postgres confirma identidad de base, no sólo alcanzabilidad.
+  check_cmd "el check de postgres confirma contra qué base habla" \
+    grep -q '"detail":"db=ngf_dev"' /tmp/ngf-health.json
 }
 
 suite_network() {
@@ -126,6 +149,83 @@ suite_limits() {
   prod_app_cpu=$(docker inspect ngf-prod-app-1 \
     --format '{{.HostConfig.NanoCpus}}' 2>/dev/null || echo -1)
   check_eq "prod app sin cap de CPU" "0" "$prod_app_cpu"
+
+  # Los cuatro límites de memoria que faltaban. Se declaran trece en los
+  # compose; chequear cinco y suponer los otros ocho es justo la forma en que
+  # un límite aflojado pasa desapercibido.
+  local prod_app_mem caddy_mem dev_pg_mem dev_pg_cpu
+  prod_app_mem=$(docker inspect ngf-prod-app-1 \
+    --format '{{.HostConfig.Memory}}' 2>/dev/null || echo 0)
+  check_eq "prod app con 1536m de límite" "1610612736" "$prod_app_mem"
+
+  caddy_mem=$(docker inspect ngf-prod-caddy-1 \
+    --format '{{.HostConfig.Memory}}' 2>/dev/null || echo 0)
+  check_eq "prod caddy con 128m de límite" "134217728" "$caddy_mem"
+
+  dev_pg_mem=$(docker inspect ngf-dev-postgres-1 \
+    --format '{{.HostConfig.Memory}}' 2>/dev/null || echo 0)
+  check_eq "dev postgres con 768m de límite" "805306368" "$dev_pg_mem"
+
+  dev_pg_cpu=$(docker inspect ngf-dev-postgres-1 \
+    --format '{{.HostConfig.NanoCpus}}' 2>/dev/null || echo 0)
+  check_eq "dev postgres capado a 0.25 cores" "250000000" "$dev_pg_cpu"
+
+  # cpu_shares, que no tenía NINGUNA cobertura. Es el chequeo que más
+  # importa de este suite: prod corre a propósito SIN cap de CPU, así que el
+  # peso relativo es el mecanismo entero por el que prod le gana a dev bajo
+  # contención. Si alguien empareja los shares, prod deja de tener prioridad
+  # y nada más en el sistema lo nota.
+  local shares
+  for par in \
+    "ngf-prod-app-1:1024" "ngf-prod-postgres-1:1024" "ngf-prod-caddy-1:1024" \
+    "ngf-dev-app-1:256" "ngf-dev-postgres-1:256"; do
+    shares=$(docker inspect "${par%%:*}" \
+      --format '{{.HostConfig.CpuShares}}' 2>/dev/null || echo NA)
+    check_eq "${par%%:*} con cpu_shares ${par##*:}" "${par##*:}" "$shares"
+  done
+}
+
+suite_env() {
+  suite_header "Separación de entornos: prod no es un directorio que se edita"
+
+  local prod_dir=/srv/negociofacil/prod
+
+  # "Producción no es un directorio donde se edita: es una imagen que se
+  # corre" (CLAUDE.md). Si aparece código fuente ahí, alguien ya empezó a
+  # tratarlo como un workspace y el siguiente paso es un `next dev` sobre lo
+  # que un cliente está usando.
+  local fuente
+  fuente=$(find "$prod_dir" -maxdepth 2 \
+    \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' \
+       -o -name 'package.json' -o -name 'node_modules' \) 2>/dev/null | wc -l)
+  check_eq "no hay código fuente en $prod_dir" "0" "$fuente"
+
+  local modo
+  modo=$(stat -c '%a' "$prod_dir/.env" 2>/dev/null || echo NA)
+  check_eq "el .env de prod es 600" "600" "$modo"
+
+  # La copia a /srv es MANUAL, así que el drift es cuestión de tiempo, no de
+  # descuido. Que el repo y lo que realmente corre digan lo mismo es lo único
+  # que hace que leer el repo sirva para saber qué está pasando en prod.
+  check_cmd "el compose de prod no derivó respecto del repo" \
+    diff -q docker/compose.prod.yml "$prod_dir/docker-compose.yml"
+  check_cmd "el Caddyfile de prod no derivó respecto del repo" \
+    diff -q docker/Caddyfile "$prod_dir/Caddyfile"
+
+  # Credenciales distintas entre entornos, empezando por las de la base
+  # (CLAUDE.md). Si coinciden, prod y dev están a un typo de compartir datos.
+  local dev_url prod_url
+  dev_url=$(docker exec ngf-dev-app-1 printenv DATABASE_URL 2>/dev/null || echo NA-dev)
+  prod_url=$(docker exec ngf-prod-app-1 printenv DATABASE_URL 2>/dev/null || echo NA-prod)
+  check_ne "dev y prod no comparten DATABASE_URL" "$dev_url" "$prod_url"
+
+  # Y que cada app sepa contra qué base debe estar hablando: es lo que
+  # convierte el check de postgres en una prueba de identidad y no sólo de
+  # alcanzabilidad.
+  check_eq "dev espera su propia base" "ngf_dev" \
+    "$(docker exec ngf-dev-app-1 printenv NGF_DB_ESPERADA 2>/dev/null || echo NA)"
+  check_eq "prod espera su propia base" "ngf_prod" \
+    "$(docker exec ngf-prod-app-1 printenv NGF_DB_ESPERADA 2>/dev/null || echo NA)"
 }
 
 suite_build() {
@@ -226,14 +326,21 @@ suite_logs() {
   # rotación está puesta como default del daemon, y ahí sale vacío. Que el
   # default exista ya lo chequea suite_host; acá se mide el comportamiento
   # real, que es lo único que prueba que funciona.
-  docker rm -f ngf-logspam >/dev/null 2>&1 || true
-  docker run -d --name ngf-logspam alpine sh -c \
+  # Nombre único por corrida más trap de limpieza. Con un nombre fijo, la
+  # colisión realista no es un humano contra otro: es `deploy.sh` corriendo
+  # este script mientras alguien lo corre a mano. Las dos corridas se pisan el
+  # contenedor y una reporta "rotación NO activa" — un falso negativo sobre
+  # justo el mecanismo que evita que dev llene el disco.
+  local logspam="ngf-logspam-$$"
+  trap 'docker rm -f "$logspam" >/dev/null 2>&1' RETURN
+
+  docker run -d --name "$logspam" alpine sh -c \
     'i=0; while [ $i -lt 60000 ]; do head -c 1000 /dev/zero | tr "\0" "x"; echo; i=$((i+1)); done' \
     >/dev/null 2>&1
-  docker wait ngf-logspam >/dev/null 2>&1
+  docker wait "$logspam" >/dev/null 2>&1
 
   local logpath total
-  logpath=$(docker inspect ngf-logspam --format '{{.LogPath}}' 2>/dev/null)
+  logpath=$(docker inspect "$logspam" --format '{{.LogPath}}' 2>/dev/null)
   if [[ -n "$logpath" && -f "$logpath" ]]; then
     # 3 archivos de 10m = 31 MB de techo, con margen de redondeo.
     total=$(du -cm "$logpath"* 2>/dev/null | tail -1 | awk '{print $1}')
@@ -245,7 +352,6 @@ suite_logs() {
   else
     bad "no se pudo leer el LogPath del contenedor de prueba"
   fi
-  docker rm -f ngf-logspam >/dev/null 2>&1 || true
 }
 
 suite_stress() {
@@ -274,7 +380,8 @@ suite_stress() {
     dmesg_before=$(dmesg 2>/dev/null | grep -c 'Out of memory' || true)
   fi
 
-  docker run --rm --memory=64m --name ngf-memhog alpine \
+  # Nombres únicos, por el mismo motivo que en suite_logs.
+  docker run --rm --memory=64m --name "ngf-memhog-$$" alpine \
     sh -c 'tail /dev/zero' >/dev/null 2>&1
   exit_code=$?
   check_eq "contenedor excedido muere por el cgroup (137)" "137" "$exit_code"
@@ -287,7 +394,8 @@ suite_stress() {
   fi
 
   # Chequeo 1 de la spec: p95 de /api/health bajo 500ms con dev saturada.
-  docker run --rm -d --name ngf-cpuhog --cpus=1 --cpu-shares=256 \
+  local cpuhog="ngf-cpuhog-$$"
+  docker run --rm -d --name "$cpuhog" --cpus=1 --cpu-shares=256 \
     alpine sh -c 'while true; do :; done' >/dev/null 2>&1
 
   # Fix Round 1 (Finding 2): antes sólo se medía time_total. Una conexión
@@ -304,7 +412,7 @@ suite_stress() {
     [[ "$code" == "200" ]] || non200=$((non200 + 1))
     times+=("$(printf '%.0f' "$(echo "$t * 1000" | bc -l)")")
   done
-  docker rm -f ngf-cpuhog >/dev/null 2>&1
+  docker rm -f "$cpuhog" >/dev/null 2>&1
 
   check_eq "las 20 requests bajo carga devuelven 200" "0" "$non200"
 
@@ -332,6 +440,10 @@ suite_stress() {
   trap 'exit 143' TERM
   docker compose -p ngf-prod stop postgres >/dev/null 2>&1
   sleep 3
+  # Mismo motivo que en suite_app: sin borrarlo antes, un curl que no conecta
+  # deja el grep de abajo leyendo el JSON de la corrida anterior y aprobando
+  # sobre evidencia vieja.
+  rm -f /tmp/ngf-degraded.json
   # --max-time: un /api/health colgado no puede estirar la ventana en la
   # que Postgres de prod está parado de forma indefinida.
   code=$(curl -sk -o /tmp/ngf-degraded.json -w '%{http_code}' --max-time 10 \
@@ -361,9 +473,10 @@ main() {
     limits) suite_limits ;;
     build) suite_build ;;
     isolation) suite_isolation ;;
+    env) suite_env ;;
     logs) suite_logs ;;
     stress) suite_stress ;;
-    all)  suite_host; suite_app; suite_network; suite_limits; suite_build; suite_isolation; suite_logs; suite_stress ;;
+    all)  suite_host; suite_app; suite_network; suite_limits; suite_build; suite_isolation; suite_env; suite_logs; suite_stress ;;
     *) echo "suite desconocida: $target" >&2; exit 2 ;;
   esac
 
