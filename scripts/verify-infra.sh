@@ -262,7 +262,7 @@ suite_build() {
   ctx=$(mktemp -d)
   cat > "$ctx/Dockerfile" <<'DOCKERFILE'
 FROM alpine:latest
-RUN echo "NGF_MEM_MAX=$(cat /sys/fs/cgroup/memory.max)" && \
+RUN sleep 1 && echo "NGF_MEM_MAX=$(cat /sys/fs/cgroup/memory.max)" && \
     echo "NGF_CPU_MAX=$(cat /sys/fs/cgroup/cpu.max)"
 DOCKERFILE
 
@@ -276,11 +276,51 @@ DOCKERFILE
   local tag="ngf-verify-build-$$:tmp"
   trap 'docker rmi -f "$tag" >/dev/null 2>&1; trap - RETURN' RETURN
 
-  salida=$(docker build --no-cache --progress=plain \
+  # OJO — no borrar este bloque pensando que es redundante con los dos
+  # `check_eq` de memory.max/cpu.max de más abajo: esos sólo prueban el
+  # número que `--resource` le pidió a BuildKit, no DÓNDE vive el proceso.
+  # Si alguien borra `--cgroup-parent=ngfbuild.slice` del comando documentado
+  # pero deja los `--resource`, BuildKit arranca el RUN igual, con esos
+  # mismos límites... colgado de otro cgroup. El techo AGREGADO del slice
+  # (el que capea la suma de builds concurrentes, no cada uno por separado)
+  # desaparece en silencio y los dos checks de abajo seguirían en verde.
+  # Por eso hace falta mirar dónde cuelga el proceso, no sólo qué límite
+  # reporta: se lanza el build en background y, mientras el RUN sigue vivo,
+  # se comprueba que `/sys/fs/cgroup/ngfbuild.slice/buildkit/` tenga un
+  # subdirectorio propio del build (algo como .../buildkit/<id>/) — ahí es
+  # donde BuildKit cuelga el proceso del RUN cuando `--cgroup-parent` sí se
+  # aplicó. Tiene que ser `-type d`: el propio `buildkit/` ya existe siempre
+  # como cgroup vacío (con sus archivos de control de kernel, que `find`
+  # sin filtro por tipo cuenta igual que un subdirectorio real), así que sin
+  # el filtro este chequeo daría siempre verde, con o sin `--cgroup-parent`
+  # — se verificó ese falso positivo a mano antes de dejar el filtro puesto.
+  # El `sleep 1` del Dockerfile de arriba sólo le da a este polling una
+  # ventana real para observarlo antes de que el build termine.
+  local salida_file build_pid intentos=0 en_slice=0
+  salida_file=$(mktemp)
+  docker build --no-cache --progress=plain \
     --cgroup-parent=ngfbuild.slice \
     --resource memory=2g --resource cpu-quota=100000 \
-    -t "$tag" -f "$ctx/Dockerfile" "$ctx" 2>&1)
+    -t "$tag" -f "$ctx/Dockerfile" "$ctx" >"$salida_file" 2>&1 &
+  build_pid=$!
+
+  while kill -0 "$build_pid" 2>/dev/null && [[ "$intentos" -lt 150 ]]; do
+    if find /sys/fs/cgroup/ngfbuild.slice/buildkit -mindepth 1 -maxdepth 1 \
+         -type d 2>/dev/null | grep -q .; then
+      en_slice=1
+      break
+    fi
+    sleep 0.1
+    intentos=$((intentos + 1))
+  done
+
+  wait "$build_pid"
+  salida=$(cat "$salida_file")
+  rm -f "$salida_file"
   rm -rf "$ctx"
+
+  check_eq "el proceso del build cuelga de ngfbuild.slice (no sólo --resource)" \
+    "1" "$en_slice"
 
   # Sólo las líneas de SALIDA del paso, no el eco del comando. Con
   # --progress=plain BuildKit imprime primero el Dockerfile del RUN (que
