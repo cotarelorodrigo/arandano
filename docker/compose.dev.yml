@@ -1,0 +1,48 @@
+# Stack de desarrollo. Escucha SOLO en la IP de Tailscale: Docker escribe
+# reglas de iptables que se saltean ufw, así que el bind explícito es la
+# defensa real, no el firewall.
+name: ngf-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    env_file: ../.env.dev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "100.64.81.63:5433:5432"
+    cpus: 0.25
+    cpu_shares: 256
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    image: node:24-alpine
+    working_dir: /app
+    # Instala sólo si falta: npm ci en cada `up` costaría medio minuto.
+    command: sh -c "[ -d node_modules/next ] || npm ci; npm run dev"
+    env_file: ../.env.dev
+    environment:
+      NGF_STACK: dev
+      HOSTNAME: 0.0.0.0
+    volumes:
+      - ../:/app
+      - node_modules:/app/node_modules
+    ports:
+      - "100.64.81.63:3000:3000"
+    cpus: 0.75
+    cpu_shares: 256
+    mem_limit: 1536m
+    # Sin restart a propósito: en dev un crash tiene que verse, no
+    # esconderse detrás de un reinicio automático.
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  node_modules:

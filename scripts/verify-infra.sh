@@ -64,11 +64,48 @@ suite_host() {
   check_eq "live-restore activado" "true" "$live_restore"
 }
 
+suite_app() {
+  suite_header "App: healthcheck con contenido real"
+
+  local code body
+  code=$(curl -s -o /tmp/ngf-health.json -w '%{http_code}' \
+    "http://$TS_IP:3000/api/health" 2>/dev/null || echo 000)
+  check_eq "healthcheck de dev devuelve 200" "200" "$code"
+
+  body=$(cat /tmp/ngf-health.json 2>/dev/null || echo '{}')
+  check_cmd "reporta el check de app" grep -q '"name":"app"' /tmp/ngf-health.json
+  check_cmd "reporta el check de postgres" \
+    grep -q '"name":"postgres"' /tmp/ngf-health.json
+  check_cmd "el check de app expone el SHA" grep -q 'sha=' /tmp/ngf-health.json
+}
+
+suite_network() {
+  suite_header "Red: dev y stage sólo por Tailscale"
+
+  # Chequeo 4 de la spec: el bind, no el firewall, es lo que protege.
+  local bad_binds
+  bad_binds=$(ss -ltn 2>/dev/null | awk '{print $4}' \
+    | grep -E '^(0\.0\.0\.0|\*):(3000|3001|5433)$' | wc -l)
+  check_eq "puertos de dev/stage no escuchan en 0.0.0.0" "0" "$bad_binds"
+
+  check_cmd "puerto 3000 escucha en la IP de Tailscale" \
+    bash -c "ss -ltn | grep -q '$TS_IP:3000'"
+
+  # Desde la IP pública debe rechazar la conexión.
+  if timeout 3 bash -c "</dev/tcp/$PUBLIC_IP/3000" 2>/dev/null; then
+    bad "puerto 3000 alcanzable desde la IP pública"
+  else
+    ok "puerto 3000 no alcanzable desde la IP pública"
+  fi
+}
+
 main() {
   local target="${1:-all}"
   case "$target" in
     host) suite_host ;;
-    all)  suite_host ;;
+    app) suite_app ;;
+    network) suite_network ;;
+    all)  suite_host; suite_app; suite_network ;;
     *) echo "suite desconocida: $target" >&2; exit 2 ;;
   esac
 
