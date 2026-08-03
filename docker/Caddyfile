@@ -23,6 +23,30 @@ localhost:443 {
 	reverse_proxy app:3000
 }
 
+# ATENCIÓN, este bloque es el que hay que tocar en el cutover de DNS.
+#
+# Tal como está es un catch-all en texto plano: sin host, sin redirección a
+# HTTPS, atendiendo cualquier nombre que llegue al puerto 80 desde internet.
+# Hoy eso significa que `curl http://178.156.251.41/api/health` responde 200
+# desde afuera, sin autenticación y sin cifrar — cada request cuesta un ida y
+# vuelta contra Postgres a través de un pool de `max: 5`, y no hay rate
+# limiting en ninguna capa.
+#
+# Mientras no haya tenants es una molestia. Cuando *.negociofacil.com apunte
+# acá deja de serlo: los clientes entran por subdominio, la sesión viaja en
+# cookie, y un proxy en texto plano sirve esa cookie en claro a cualquiera que
+# esté en el camino. Un `http://flor.negociofacil.com` tipeado sin la "s"
+# alcanza para filtrarla.
+#
+# Antes del cutover, dos cosas (anotadas también como requisitos heredados en
+# el ledger del ciclo):
+#   1. Este bloque pasa a ser SÓLO redirección: `redir https://{host}{uri}`,
+#      nunca `reverse_proxy`. El :80 queda para que ACME resuelva el desafío
+#      HTTP y para empujar a todo el mundo a TLS, no para servir la app.
+#   2. Decidir si /api/health se autentica o se restringe por origen. Es el
+#      endpoint más caro que hay expuesto y el único que un uptime check
+#      externo necesita alcanzar, así que la decisión no es obvia — pero
+#      tomarla después del cutover es tomarla con clientes adentro.
 :80 {
 	reverse_proxy app:3000
 }
