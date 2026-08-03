@@ -8,7 +8,13 @@ function crearPool(): Pool {
   const p = new Pool({
     connectionString: process.env.DATABASE_URL,
     max: 5,
-    connectionTimeoutMillis: 2000,
+    // Deliberadamente por debajo del timeoutMs del check de postgres (2000).
+    // Con los dos en el mismo número, cuál gana lo decide el scheduler: si
+    // gana el timeout del check, el detail queda en el genérico
+    // "timeout tras 2000ms" y se pierde el error real de pg — que es
+    // justamente lo que `detailFromError` existe para conservar. Con margen,
+    // pg siempre falla primero y el reporte dice por qué.
+    connectionTimeoutMillis: 1500,
   })
 
   // pg-pool reemite los errores de red de un cliente IDLE (p. ej. la

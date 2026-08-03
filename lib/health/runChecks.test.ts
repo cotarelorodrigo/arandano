@@ -54,6 +54,17 @@ describe('runChecks', () => {
     expect(report.checks[1].ok).toBe(true)
   })
 
+  it('con la lista vacía reporta degraded, no un ok vacuo', async () => {
+    // `[].every()` es true: sin el caso especial esto daría 'ok' y un HTTP
+    // 200 permanente sin haber verificado nada.
+    const report = await runChecks([])
+
+    expect(report.status).toBe('degraded')
+    expect(report.checks).toHaveLength(1)
+    expect(report.checks[0].ok).toBe(false)
+    expect(report.checks[0].detail).toMatch(/vacía/)
+  })
+
   it('aplana un AggregateError en sus submensajes en vez de dejar el detail vacío', async () => {
     const report = await runChecks([
       check('postgres', async () => {

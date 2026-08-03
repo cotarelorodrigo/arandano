@@ -18,3 +18,13 @@ export type HealthReport = {
   status: 'ok' | 'degraded'
   checks: CheckResult[]
 }
+
+/** Contexto del proceso: qué código sirve y desde cuándo. No es un check —
+ *  no puede fallar, así que no participa del veredicto. */
+export type HealthInfo = {
+  sha: string | null
+  uptimeS: number
+}
+
+/** Lo que devuelve el endpoint: el veredicto de los checks más el contexto. */
+export type HealthResponse = HealthReport & { info: HealthInfo }
