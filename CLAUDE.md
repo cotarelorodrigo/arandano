@@ -104,7 +104,9 @@ El desarrollo ocurre sobre el mismo VPS que sirve a los clientes, y así va a qu
 - Rotación de logs de Docker (`max-size` / `max-file`) en ambos stacks, para que dev no pueda llenar el disco.
 - Los builds corren con `nice` y CPU limitada: un build nunca compite de igual a igual con un cliente.
 
-**Staging es la promoción del artefacto, no otra máquina.** El deploy buildea la imagen una sola vez, la corre primero contra la base de dev, le pasa healthcheck y smoke tests, y recién entonces promueve **esa misma imagen** a producción. Nunca se rebuildea para prod: lo que se probó es exactamente lo que se sirve.
+**Staging es la promoción del artefacto, no otra máquina.** El deploy buildea la imagen una sola vez, la corre en un tercer stack (`ngf-stage`) contra un Postgres **efímero en tmpfs** —no contra la base de dev, que suele tener trabajo en curso—, le pasa healthcheck y smoke tests, y recién entonces promueve **esa misma imagen** a producción. Nunca se rebuildea para prod: lo que se probó es exactamente lo que se sirve.
+
+Dev y stage no corren a la vez: sus límites de CPU sumados pasarían de un core, así que el deploy frena `ngf-dev` antes de levantar `ngf-stage` y lo vuelve a arrancar al terminar.
 
 **Migraciones.** Es el riesgo mayor del esquema, por encima de los bugs de código: un bug se arregla en minutos, una migración destructiva se lleva datos de un cliente que no vuelven.
 
@@ -112,7 +114,7 @@ El desarrollo ocurre sobre el mismo VPS que sirve a los clientes, y así va a qu
 - **Expand/contract**: ninguna columna se borra ni se renombra en el mismo deploy que deja de usarla. Primero se deploya el código que no la usa, y el drop viene en un deploy posterior. Es lo que mantiene el rollback siempre posible.
 - `pg_dump` inmediatamente antes de cada migración, además del backup nocturno.
 
-**El deploy es un comando con gate.** `deploy.sh` encadena: tests → typecheck → build tageado → backup → `migrate deploy` → smoke test contra dev → promoción de la imagen → healthcheck → tag de git → rollback automático a la imagen anterior si algo falla. Sin pasos manuales que se puedan saltear un martes a las 11 de la noche.
+**El deploy es un comando con gate.** `deploy.sh` encadena: tests → typecheck → build tageado → backup → `migrate deploy` → smoke test contra `ngf-stage` → promoción de la imagen → healthcheck → tag de git → rollback automático a la imagen anterior si algo falla. Sin pasos manuales que se puedan saltear un martes a las 11 de la noche.
 
 **Cada deploy exitoso deja un tag de git.** La imagen ya va tageada con el SHA, pero el SHA no se lee ni se ordena: el tag es el índice humano de qué estuvo en producción y cuándo.
 
@@ -235,3 +237,11 @@ Y del producto:
 - Configurar `pg-boss` para las tareas en background (seguimientos automáticos, pedido de reseñas, webhooks del bot).
 - Aislar la integración con la Cloud API de Meta (WhatsApp/Instagram) en su propio módulo.
 - Aislar la emisión de facturas ARCA (`afip.js`) detrás de una interfaz propia.
+
+### Bloqueantes antes del primer tenant real
+
+1. **Completar el healthcheck** con los checks de query filtrada por tenant y de pg-boss (`lib/health/checks.ts` tiene el pendiente anotado). Sin ellos el rollback automático se dispara con criterio incompleto.
+2. **Backups** con `pg_dump` y restore verificado contra base descartable.
+3. **`deploy.sh`** con su gate completo.
+4. **`deploy.sh` tiene que negarse a buildear con el working tree sucio** (`git diff --quiet`). La imagen se tagea con el SHA de git, así que buildear con cambios sin commitear produce una imagen cuya etiqueta apunta a un código que no contiene — y esa etiqueta es lo que alguien lee para saber qué está corriendo.
+5. **`deploy.sh` tiene que pasar `GIT_SHA` explícito** en cada build. El Dockerfile ya falla sin él, a propósito.
