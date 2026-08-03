@@ -53,4 +53,23 @@ describe('runChecks', () => {
     expect(report.checks).toHaveLength(2)
     expect(report.checks[1].ok).toBe(true)
   })
+
+  it('aplana un AggregateError en sus submensajes en vez de dejar el detail vacío', async () => {
+    const report = await runChecks([
+      check('postgres', async () => {
+        throw new AggregateError(
+          [
+            new Error('connect ECONNREFUSED ::1:5432'),
+            new Error('connect ECONNREFUSED 127.0.0.1:5432'),
+          ],
+          '',
+        )
+      }),
+    ])
+
+    expect(report.status).toBe('degraded')
+    expect(report.checks[0].ok).toBe(false)
+    expect(report.checks[0].detail).toMatch(/ECONNREFUSED/)
+    expect(report.checks[0].detail).not.toBe('')
+  })
 })

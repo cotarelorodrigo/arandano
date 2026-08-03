@@ -1,5 +1,19 @@
 import type { HealthCheck, CheckResult, HealthReport } from './types'
 
+// Node emite AggregateError cuando falla una conexión con varias vías
+// posibles (p. ej. pg intentando ::1 y 127.0.0.1 en paralelo). Su
+// `.message` de nivel superior queda vacío — la razón real vive en
+// `.errors[]` — así que sin este caso especial el detail del reporte
+// queda en blanco justo en el motivo de falla más probable.
+function detailFromError(err: unknown): string {
+  if (err instanceof AggregateError) {
+    return err.errors
+      .map((e) => (e instanceof Error ? e.message : String(e)))
+      .join('; ')
+  }
+  return err instanceof Error ? err.message : String(err)
+}
+
 async function withTimeout(
   promise: Promise<string | void>,
   ms: number,
@@ -30,7 +44,7 @@ async function runOne(check: HealthCheck): Promise<CheckResult> {
       name: check.name,
       ok: false,
       durationMs: Math.round(performance.now() - started),
-      detail: err instanceof Error ? err.message : String(err),
+      detail: detailFromError(err),
     }
   }
 }
