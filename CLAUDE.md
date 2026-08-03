@@ -94,19 +94,20 @@ El desarrollo ocurre sobre el mismo VPS que sirve a los clientes, y así va a qu
 - `/srv/negociofacil/prod/` contiene sólo `docker-compose.yml`, `.env` y los volúmenes. **Sin código fuente.** Corre una imagen Docker tageada con el SHA de git.
 - El único camino para cambiar producción es un deploy. Nunca un editor ni un `next dev` sobre lo que un cliente está usando.
 
-**Aislamiento de los dos stacks.** Dos proyectos Compose con nombres distintos (`ngf-prod`, `ngf-dev`), cada uno con su red, sus volúmenes y su base de datos. Un `docker compose down -v` en dev es incapaz de tocar los datos de producción. Dev escucha únicamente en la IP de Tailscale del servidor (`100.64.81.63`), así que no existe desde internet; prod escucha en 80/443 detrás de Caddy.
+**Aislamiento de los tres stacks.** Tres proyectos Compose con nombres distintos (`ngf-prod`, `ngf-dev`, `ngf-stage`), cada uno con su red, sus volúmenes y su base de datos. Un `docker compose down -v` en dev es incapaz de tocar los datos de producción. Dev y stage escuchan únicamente en la IP de Tailscale del servidor (`100.64.81.63`), así que no existen desde internet; prod escucha en 80/443 detrás de Caddy.
 
 **Convivencia sobre 2 vCPU.** Los límites de recursos son la única defensa que hay, así que no son opcionales:
 
-- Límites de CPU y memoria por contenedor en ambos stacks: dev y los builds capados a un core, prod con el suyo reservado.
+- Límites de CPU y memoria por contenedor en los tres stacks: dev y stage capados a un core, prod con el suyo reservado.
 - Swap configurada — el servidor viene sin ella. Sin swap, un OOM durante un build deja que el kernel elija víctima, y puede ser Postgres.
 - `oom_score_adj` negativo en el contenedor de Postgres de producción, para que sea el último candidato del OOM killer.
-- Rotación de logs de Docker (`max-size` / `max-file`) en ambos stacks, para que dev no pueda llenar el disco.
-- Los builds corren con `nice` y CPU limitada: un build nunca compite de igual a igual con un cliente.
+- Rotación de logs de Docker (`max-size` / `max-file`) en los tres stacks, para que dev no pueda llenar el disco.
+- **Los builds corren dentro del slice de systemd `ngfbuild.slice` (2 GiB, un core), más `--resource` por contenedor de `RUN`**, y ese comando concreto importa: `nice` y `docker build --cpuset-cpus=… --memory=…` **no hacen absolutamente nada** sobre esta máquina y no avisan que no lo hacen. El detalle y la prueba están en `docs/runbook-stacks.md`; `scripts/verify-infra.sh build` lo comprueba contra un build real.
+- **`ngf-dev` se frena antes de que arranque el build**, no antes de stage. Es lo único que hace cerrar la aritmética: prod (3200 MiB) + dev (2304) + el build (2048) + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6 GB. Con dev abajo desde el primer paso del deploy, el pico queda en ~7.5 GB — y de paso queda cubierta la regla de que dev y stage no corren juntos, porque stage viene después del build.
 
 **Staging es la promoción del artefacto, no otra máquina.** El deploy buildea la imagen una sola vez, la corre en un tercer stack (`ngf-stage`) contra un Postgres **efímero en tmpfs** —no contra la base de dev, que suele tener trabajo en curso—, le pasa healthcheck y smoke tests, y recién entonces promueve **esa misma imagen** a producción. Nunca se rebuildea para prod: lo que se probó es exactamente lo que se sirve.
 
-Dev y stage no corren a la vez: sus límites de CPU sumados pasarían de un core, así que el deploy frena `ngf-dev` antes de levantar `ngf-stage` y lo vuelve a arrancar al terminar.
+El deploy frena `ngf-dev` desde el arranque —antes del build, no antes de stage— y lo vuelve a levantar al terminar. Eso resuelve dos cosas de una: el pico de memoria del build (ver *Convivencia sobre 2 vCPU*) y el hecho de que dev y stage no pueden correr a la vez, porque sus límites de CPU sumados pasarían de un core.
 
 **Migraciones.** Es el riesgo mayor del esquema, por encima de los bugs de código: un bug se arregla en minutos, una migración destructiva se lleva datos de un cliente que no vuelven.
 
@@ -208,7 +209,7 @@ Los presets de rubro nuevos (veterinaria, peluquería, dietética, etc.) no son 
 
 ## Roadmap de infraestructura
 
-0. **Preparar la máquina**: swap, Docker, los dos stacks Compose (`ngf-dev` y `ngf-prod`) con sus límites de recursos, dev detrás de Tailscale, backups automáticos con restore verificado y `deploy.sh` funcionando. Todo esto antes del primer tenant real.
+0. **Preparar la máquina**: swap, Docker, los tres stacks Compose (`ngf-dev`, `ngf-stage` y `ngf-prod`) con sus límites de recursos, el presupuesto de los builds, dev y stage detrás de Tailscale, y el healthcheck con contenido real. Los backups con restore verificado y `deploy.sh` son sus propios ciclos (ver *Bloqueantes antes del primer tenant real*), y van igual antes del primer tenant.
 1. **MVP**: 1 servidor Hetzner, Docker Compose (Next.js + Postgres + Caddy), tenants compartidos con RLS. Requiere apuntar el DNS de `negociofacil.com` y el wildcard `*.negociofacil.com` al servidor (hoy resuelve a IPs de parking de AWS).
 2. **Upsell Premium**: provisioning automatizado (Terraform) de VPC dedicada + instancia propia del repo, disparado solo cuando un cliente lo contrata.
 3. **Escalar horizontal**: recién cuando el servidor único se quede corto de CPU/RAM, se necesite alta disponibilidad real, o el volumen de background jobs justifique sumar Redis — no antes.
@@ -218,10 +219,10 @@ Los presets de rubro nuevos (veterinaria, peluquería, dietética, etc.) no son 
 Los primeros cuatro son de entorno y van antes que cualquier línea de producto, porque definen dónde y cómo se escribe todo lo demás:
 
 - Configurar swap e instalar Docker (el servidor hoy no lo tiene).
-- Armar los dos stacks Compose (`ngf-dev` y `ngf-prod`) con redes, volúmenes y bases separadas, límites de CPU y memoria, y rotación de logs.
+- Armar los tres stacks Compose (`ngf-dev`, `ngf-stage` y `ngf-prod`) con redes, volúmenes y bases separadas, límites de CPU y memoria, y rotación de logs.
 - Escribir `deploy.sh` con su gate completo (tests, build tageado, backup, `migrate deploy`, smoke test, promoción, healthcheck, tag de git pusheado a `origin`, rollback).
 - Montar los backups con `pg_dump` y el restore verificado contra una base descartable.
-- Escribir el endpoint de healthcheck con contenido real (app, Postgres, query filtrada por tenant, pg-boss) — es lo que le da criterio al rollback automático.
+- Completar el healthcheck — ver *Bloqueantes antes del primer tenant real*, que es donde vive la lista con el detalle.
 - Conectar Sentry y un uptime check externo contra el healthcheck.
 - Apuntar el DNS de `negociofacil.com` y el wildcard `*.negociofacil.com` al servidor, y configurar el certificado wildcard por DNS-01 en Caddy.
 

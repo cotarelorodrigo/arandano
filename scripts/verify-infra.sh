@@ -128,6 +128,69 @@ suite_limits() {
   check_eq "prod app sin cap de CPU" "0" "$prod_app_cpu"
 }
 
+suite_build() {
+  suite_header "Builds: el presupuesto se aplica de verdad"
+
+  # El build es el consumidor más grande del presupuesto (2 GiB y un core),
+  # corre en CADA deploy y compite con clientes reales sobre 2 vCPU. Durante
+  # toda la rama estuvo documentado como
+  # `nice -n 15 docker build --cpuset-cpus=0 --memory=2g`, y las tres piezas
+  # son inertes: `nice` afecta al cliente de la CLI y no a BuildKit (que vive
+  # dentro de dockerd), y `docker build` es `docker buildx build`, cuya lista
+  # de banderas no tiene ni --cpuset-cpus ni --memory — las traga sin warning
+  # y sale con 0. Este suite existe para que eso no pueda repetirse: no
+  # comprueba que el comando esté escrito, comprueba el límite EFECTIVO.
+
+  # Primera mitad: el slice de systemd, que es el techo agregado del build.
+  # Sin guiones en el nombre a propósito (ver setup-host.sh): con guion,
+  # systemd lo colgaría de ngf.slice y la ruta dejaría de coincidir con la que
+  # resuelve --cgroup-parent.
+  local slice_mem slice_cpu
+  slice_mem=$(cat /sys/fs/cgroup/ngfbuild.slice/memory.max 2>/dev/null || echo NA)
+  check_eq "el slice de build capea la memoria en 2 GiB" "2147483648" "$slice_mem"
+
+  slice_cpu=$(cat /sys/fs/cgroup/ngfbuild.slice/cpu.max 2>/dev/null || echo NA)
+  check_eq "el slice de build capea la CPU en un core" "100000 100000" "$slice_cpu"
+
+  check_cmd "el slice de build sobrevive un reboot (enabled)" \
+    systemctl is-enabled ngfbuild.slice
+
+  # Segunda mitad, la que realmente prueba algo: leer el límite DESDE ADENTRO
+  # de un build de verdad. Que el slice tenga el número correcto no dice nada
+  # si el build no termina adentro del slice.
+  local ctx salida mem cpu
+  ctx=$(mktemp -d)
+  cat > "$ctx/Dockerfile" <<'DOCKERFILE'
+FROM alpine:latest
+RUN echo "NGF_MEM_MAX=$(cat /sys/fs/cgroup/memory.max)" && \
+    echo "NGF_CPU_MAX=$(cat /sys/fs/cgroup/cpu.max)"
+DOCKERFILE
+
+  # Sin -t: buildx no materializa imagen en el store, así que este chequeo no
+  # deja una imagen colgada. --no-cache es obligatorio: un RUN cacheado
+  # reimprimiría el resultado de la corrida anterior en vez de medir esta.
+  salida=$(docker build --no-cache --progress=plain \
+    --cgroup-parent=ngfbuild.slice \
+    --resource memory=2g --resource cpu-quota=100000 \
+    -f "$ctx/Dockerfile" "$ctx" 2>&1)
+  rm -rf "$ctx"
+
+  # Sólo las líneas de SALIDA del paso, no el eco del comando. Con
+  # --progress=plain BuildKit imprime primero el Dockerfile del RUN (que
+  # contiene literalmente "NGF_MEM_MAX=$(cat ...)") y después el resultado;
+  # las líneas de resultado son las que llevan el prefijo "#<n> <segundos> ".
+  # Sin este filtro el eco matchea primero y el chequeo lee basura.
+  local lineas
+  lineas=$(printf '%s\n' "$salida" | grep -E '^#[0-9]+ [0-9]+\.[0-9]+ NGF_')
+  mem=$(printf '%s\n' "$lineas" | sed -n 's/.*NGF_MEM_MAX=\(.*\)$/\1/p' | head -1)
+  cpu=$(printf '%s\n' "$lineas" | sed -n 's/.*NGF_CPU_MAX=\(.*\)$/\1/p' | head -1)
+
+  check_eq "el build ve 2 GiB de memory.max desde adentro" \
+    "2147483648" "${mem:-NA}"
+  check_eq "el build ve un core de cpu.max desde adentro" \
+    "100000 100000" "${cpu:-NA}"
+}
+
 suite_isolation() {
   suite_header "Aislamiento entre stacks"
 
@@ -296,10 +359,11 @@ main() {
     app) suite_app ;;
     network) suite_network ;;
     limits) suite_limits ;;
+    build) suite_build ;;
     isolation) suite_isolation ;;
     logs) suite_logs ;;
     stress) suite_stress ;;
-    all)  suite_host; suite_app; suite_network; suite_limits; suite_isolation; suite_logs; suite_stress ;;
+    all)  suite_host; suite_app; suite_network; suite_limits; suite_build; suite_isolation; suite_logs; suite_stress ;;
     *) echo "suite desconocida: $target" >&2; exit 2 ;;
   esac
 

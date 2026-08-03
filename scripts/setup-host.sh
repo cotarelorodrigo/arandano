@@ -9,6 +9,17 @@ set -euo pipefail
 readonly SWAPFILE=/swapfile
 readonly SWAP_SIZE=4G
 
+# El presupuesto de recursos de los builds, en un slice de systemd. El nombre
+# NO lleva guiones a propósito: systemd interpreta el guion como jerarquía
+# ("ngf-build.slice" cuelga de "ngf.slice" y su cgroup real queda en
+# /sys/fs/cgroup/ngf.slice/ngf-build.slice). Sin guion el cgroup queda en el
+# tope, /sys/fs/cgroup/ngfbuild.slice, que es exactamente la ruta que resuelve
+# `docker build --cgroup-parent=ngfbuild.slice`. Con guion las dos rutas NO
+# coinciden: Docker crea un cgroup crudo homónimo en el tope, sin límite
+# ninguno, y el build queda sin capar mientras aparenta estar en el slice.
+readonly BUILD_SLICE=ngfbuild.slice
+readonly BUILD_SLICE_UNIT=/etc/systemd/system/ngfbuild.slice
+
 setup_swap() {
   if swapon --show --noheadings | grep -q "$SWAPFILE"; then
     echo "swap ya activa, salteando"
@@ -60,6 +71,14 @@ setup_docker() {
   # Rotación a nivel daemon, no sólo en cada compose: un contenedor
   # levantado a mano tampoco puede llenar el disco.
   # live-restore: reiniciar el daemon no tira los contenedores de prod.
+  #
+  # DUEÑO ÚNICO: este script se considera el único dueño de
+  # /etc/docker/daemon.json y lo sobrescribe entero, no lo mergea. Cualquier
+  # clave agregada a mano (registry-mirrors, insecure-registries, dns…) se
+  # pierde en la próxima corrida, y además el bloque de abajo detecta la
+  # diferencia y REINICIA el daemon para aplicar "su" versión. Si hace falta
+  # una clave nueva, va acá adentro y se commitea — no se edita el archivo
+  # del host.
   local daemon_json_nuevo
   daemon_json_nuevo=$(mktemp)
   cat > "$daemon_json_nuevo" <<'JSON'
@@ -91,6 +110,61 @@ JSON
   fi
 }
 
+# El presupuesto de los builds: 2 GiB y un core, sobre una caja de 2 vCPU
+# donde producción está atendiendo clientes al mismo tiempo.
+#
+# Por qué un slice de systemd y no las banderas que uno esperaría:
+#
+# - `nice -n 15 docker build` NO hace nada. `nice` baja la prioridad del
+#   CLIENTE de la CLI; el trabajo real lo ejecuta BuildKit embebido dentro de
+#   dockerd (driver "docker"), así que los procesos del build heredan la
+#   prioridad de dockerd, no la del comando que uno tipeó.
+# - `docker build --cpuset-cpus=… --memory=…` NO hace nada. `docker build` es
+#   hoy `docker buildx build`, y su lista de banderas no incluye ninguna de las
+#   dos. Peor: no las rechaza. `docker build --cpuset-cpus=999 --memory=1` sale
+#   con 0 sobre esta máquina de 2 cores, sin un solo warning.
+#
+# Lo que sí se verificó que ata, leyendo el límite DESDE ADENTRO del build:
+#
+# - `--resource memory=…,cpu-quota=…` fija el límite de cada contenedor de RUN.
+# - `--cgroup-parent=ngfbuild.slice` mete todo el árbol del build dentro de este
+#   slice, que es el techo agregado — un multi-stage puede correr etapas en
+#   paralelo, y sin el slice cada una se llevaría su propio `--resource` entero.
+#
+# `scripts/verify-infra.sh build` comprueba las dos cosas contra un build real.
+setup_build_slice() {
+  local unit_nueva
+  unit_nueva=$(mktemp)
+  cat > "$unit_nueva" <<'UNIT'
+[Unit]
+Description=Presupuesto de recursos de los builds de NegocioFacil
+
+[Slice]
+MemoryMax=2G
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+  if [[ -f "$BUILD_SLICE_UNIT" ]] && cmp -s "$unit_nueva" "$BUILD_SLICE_UNIT"; then
+    echo "$BUILD_SLICE ya tiene la configuración correcta"
+    rm -f "$unit_nueva"
+  else
+    install -m 0644 "$unit_nueva" "$BUILD_SLICE_UNIT"
+    rm -f "$unit_nueva"
+    systemctl daemon-reload
+  fi
+
+  # `enable` (no sólo `start`) porque el modo de falla es silencioso: si el
+  # slice no está activo cuando arranca un build, Docker crea el cgroup crudo
+  # igual y el build corre SIN límite, sin avisar. Un reboot no puede dejar la
+  # máquina en ese estado.
+  systemctl enable --now "$BUILD_SLICE" >/dev/null 2>&1 \
+    || systemctl start "$BUILD_SLICE"
+}
+
 setup_swap
 setup_docker
+setup_build_slice
 echo "listo"

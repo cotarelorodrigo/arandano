@@ -8,11 +8,18 @@
 
 ## Reglas
 
-- **Nunca** `docker compose down -v` sin `-p` explícito. El nombre del proyecto (`ngf-dev`, `ngf-stage`, `ngf-prod`) es lo que evita que un `down -v` corrido desde el directorio equivocado se lleve puesto un volumen que no es el que se pensaba tocar.
-- Dev y stage no corren juntos: sus límites de CPU sumados pasan de un core (dev usa 0.75 + 0.25 del Postgres, stage usa 0.5 + 0.25). Frenar `ngf-dev` antes de levantar `ngf-stage`, y volver a levantar `ngf-dev` al terminar. `deploy.sh` todavía no existe (ver bloqueantes en `CLAUDE.md`); hasta que esté escrito, esta secuencia es manual.
+- **Cuidado con `down -v` desde el workspace.** Los tres compose declaran `name:`, así que `-f` solo ya resuelve el proyecto correcto y `-p` es redundante. El riesgo real es otro: `docker compose -f docker/compose.prod.yml down -v`, tipeado desde `/root/negociofacil`, apunta a **los volúmenes de producción** — `ngf-prod_pgdata` incluido. Es un archivo de dev que borra datos de clientes. Antes de cualquier `down -v`, mirar **qué compose** dice el `-f`, no desde qué directorio se está corriendo.
+- **`ngf-dev` se frena antes de que arranque el BUILD**, no antes de stage. La memoria no cierra de otra forma: prod (3200 MiB) + dev (2304) + el build (2048) + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6 GB. Con dev abajo el pico queda en ~7.5 GB, que es el número que documenta el presupuesto. Como el build es el primer paso del deploy y stage viene después, frenar dev al principio también cubre la regla vieja de que dev y stage no corren juntos (sus límites de CPU sumados pasan de un core: dev 0.75 + 0.25, stage 0.5 + 0.25). Se vuelve a levantar `ngf-dev` recién al terminar el deploy. `deploy.sh` todavía no existe (ver bloqueantes en `CLAUDE.md`); hasta que esté escrito, esta secuencia es manual.
 - Producción no se edita: se corre una imagen. Nada de editores en `/srv/negociofacil/prod/` — ese directorio sólo tiene `docker-compose.yml`, `.env`, el `Caddyfile` y los volúmenes, sin código fuente.
-- Buildear siempre con CPU limitada:
-  `nice -n 15 docker build --cpuset-cpus=0 --memory=2g ...`
+- Buildear siempre con el presupuesto de recursos puesto (ver la sección de abajo — el comando importa, las banderas "obvias" no hacen nada):
+
+  ```bash
+  docker build \
+    --cgroup-parent=ngfbuild.slice \
+    --resource memory=2g --resource cpu-quota=100000 \
+    --build-arg GIT_SHA=$(git rev-parse --short HEAD) \
+    -t ngf-app:$(git rev-parse --short HEAD) .
+  ```
 
 ## `ngf-stage`: el Postgres es efímero por diseño
 
@@ -35,19 +42,47 @@ docker compose -f docker/compose.stage.yml -p ngf-stage down -v
 
 Como el `tmpfs` vive en RAM, `down -v` no deja nada residual en disco; el estado desaparece apenas el contenedor se detiene.
 
+## El presupuesto de recursos del build: qué anda y qué no
+
+El build es el consumidor más grande del presupuesto (2 GiB y un core entero), corre en **cada deploy**, y compite con clientes reales sobre 2 vCPU. Las banderas que uno esperaría usar para capearlo **no hacen nada sobre esta máquina**, y lo peor es que fallan en silencio:
+
+| Mecanismo | Qué pasa en realidad |
+|---|---|
+| `nice -n 15 docker build …` | Inerte. `nice` baja la prioridad del **cliente** de la CLI. El trabajo real lo corre BuildKit embebido dentro de `dockerd` (driver `docker`), así que los procesos del build heredan la prioridad de `dockerd`. |
+| `docker build --cpuset-cpus=0 --memory=2g …` | Inerte. `docker build` hoy es `docker buildx build`, y su lista de banderas **no tiene** ni `--cpuset-cpus` ni `--memory`. Tampoco las rechaza: `docker build --cpuset-cpus=999 --memory=1 <ctx>` — 999 cores sobre una caja de 2, 1 byte de RAM — sale con **0** y sin un solo warning. |
+
+Lo que sí ata, verificado leyendo el límite **desde adentro** de un build:
+
+- `--resource memory=2g --resource cpu-quota=100000` fija el límite de cada contenedor de `RUN`.
+- `--cgroup-parent=ngfbuild.slice` mete el árbol entero del build dentro del slice de systemd que crea `scripts/setup-host.sh`, que es el **techo agregado**: un multi-stage puede correr etapas en paralelo y, sin el slice, cada una se llevaría su propio `--resource` completo.
+
+```
+#5 [2/2] RUN echo "memory.max = $(cat /sys/fs/cgroup/memory.max)" && ...
+#5 0.264 memory.max = 2147483648
+#5 0.265 cpu.max    = 100000 100000
+```
+
+**El nombre del slice no lleva guiones a propósito.** systemd lee el guion como jerarquía: `ngf-build.slice` colgaría de `ngf.slice` y su cgroup real viviría en `/sys/fs/cgroup/ngf.slice/ngf-build.slice`, que **no** es la ruta que resuelve `--cgroup-parent=ngf-build.slice`. En ese caso Docker crea un cgroup crudo homónimo en el tope, sin ningún límite, y el build corre libre aparentando estar en el slice. Sin guion las dos rutas son la misma (`/sys/fs/cgroup/ngfbuild.slice`) y no hay ambigüedad posible.
+
+Y por eso el slice va `enable`ado, no sólo `start`ado: si no está activo cuando arranca un build, Docker crea el cgroup igual y el build queda sin capar, sin avisar. `scripts/verify-infra.sh build` comprueba las dos mitades contra un build real, así que un slice caído se detecta en vez de suponerse.
+
 ## Buildear la imagen: `GIT_SHA` es obligatorio
 
 La imagen se tagea con el SHA corto de git, y el Dockerfile falla el build si no se lo pasa — a propósito, no es un bug:
 
 ```bash
-docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t ngf-app:$(git rev-parse --short HEAD) .
+docker build \
+  --cgroup-parent=ngfbuild.slice \
+  --resource memory=2g --resource cpu-quota=100000 \
+  --build-arg GIT_SHA=$(git rev-parse --short HEAD) \
+  -t ngf-app:$(git rev-parse --short HEAD) .
 ```
 
 Sin este argumento no hay forma de que `/api/health` reporte qué código está corriendo, y ese dato es el que distingue "la app respondió" de "la app que se esperaba respondió". `deploy.sh` también debe negarse a arrancar el build si el working tree está sucio (`git diff --quiet`): buildear con cambios sin commitear tagea la imagen con un SHA que no describe lo que realmente contiene.
 
 ## `scripts/setup-host.sh`: la receta de reproducción de la máquina
 
-Es el script que deja el VPS en el estado que estos stacks asumen: swap, Docker instalado desde el repo oficial, rotación de logs a nivel del daemon y `live-restore`. Es **idempotente** — correrlo dos veces no rompe nada, cada paso chequea su propio estado antes de actuar — porque su razón de ser es poder reconstruir el servidor si se pierde, no sólo documentar cómo se armó una vez.
+Es el script que deja el VPS en el estado que estos stacks asumen: swap, Docker instalado desde el repo oficial, rotación de logs a nivel del daemon, `live-restore` y el slice `ngfbuild.slice` que capea los builds. Es **idempotente** — correrlo dos veces no rompe nada, cada paso chequea su propio estado antes de actuar — porque su razón de ser es poder reconstruir el servidor si se pierde, no sólo documentar cómo se armó una vez.
 
 ```bash
 sudo scripts/setup-host.sh
@@ -63,7 +98,7 @@ Corre 32 checks en siete suites (host, app, network, limits, isolation, logs, st
 
 **Atención**: la suite de estrés **frena el Postgres de producción brevemente** para simular una caída y confirmar que dev no lo tumba por contención de recursos. Lo reinicia solo al terminar, y un `trap` cubre una interrupción a mitad de camino (Ctrl+C o `TERM`) para que Postgres no quede parado de forma indefinida. Aun así, quien lo corra tiene que saber que el script toca producción — no es sólo un chequeo de lectura, y no debería sorprender que `ngf-prod-postgres-1` aparezca detenido por unos segundos mientras corre.
 
-**No correr dos instancias a la vez.** La suite de logs usa un contenedor de prueba con nombre fijo (`ngf-logspam`), sin sufijo aleatorio. Dos corridas simultáneas del script pisan ese contenedor entre sí y la suite de logs puede fallar con "no se pudo leer el LogPath del contenedor de prueba" — no es una falla de la infra, es una corrida concurrente del propio script.
+**No correr dos instancias a la vez.** Los contenedores de prueba ya llevan nombre único por corrida (`ngf-logspam-$$`, `ngf-memhog-$$`, `ngf-cpuhog-$$`), así que dos corridas simultáneas ya no se pisan entre sí. Lo que sigue sin poder solaparse es la suite de estrés: **frena el Postgres de producción**, y dos corridas encimadas pueden dejar una parando la base justo cuando la otra da por sentado que está arriba.
 
 ## Certificado de producción, hoy
 
