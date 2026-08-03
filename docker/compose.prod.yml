@@ -1,0 +1,55 @@
+# Stack de producción. Corre desde /srv/negociofacil/prod/, sin código
+# fuente: sólo este archivo, el .env, el Caddyfile y los volúmenes.
+name: ngf-prod
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    env_file: .env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    cpu_shares: 1024
+    mem_limit: 1536m
+    # Último candidato del OOM killer: si la máquina se queda sin
+    # memoria, que muera cualquier otra cosa antes que la base.
+    oom_score_adj: -500
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  app:
+    image: "ngf-app:${IMAGE_TAG:?IMAGE_TAG es obligatorio}"
+    env_file: .env
+    environment:
+      NGF_STACK: prod
+    # Sin cap de CPU: con cpu_shares alto gana bajo contención y aprovecha
+    # los dos cores cuando dev está quieto.
+    cpu_shares: 1024
+    mem_limit: 1536m
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    cpu_shares: 1024
+    mem_limit: 128m
+    restart: unless-stopped
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  caddydata:
+  caddyconfig:

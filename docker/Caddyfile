@@ -1,0 +1,16 @@
+# Certificado interno mientras negociofacil.com siga apuntando al parking
+# de AWS. El wildcard por DNS-01 entra cuando se apunte el DNS.
+#
+# El host se declara explícito ("localhost", no ":443" a secas): sin un
+# nombre en la dirección del site, Caddy no sabe para qué hostname
+# aprovisionar el certificado interno al arrancar, y sin "on_demand" (que
+# no corresponde acá, es para ACME público) rechaza cualquier SNI que no
+# matchee un site explícito con "no certificate available".
+localhost:443 {
+	tls internal
+	reverse_proxy app:3000
+}
+
+:80 {
+	reverse_proxy app:3000
+}

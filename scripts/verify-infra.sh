@@ -99,13 +99,70 @@ suite_network() {
   fi
 }
 
+suite_limits() {
+  suite_header "Límites: prod por peso, dev por cap duro"
+
+  # mem_limit se lee en bytes desde la API de Docker.
+  local dev_app_mem prod_pg_mem prod_pg_oom dev_app_cpu
+  dev_app_mem=$(docker inspect ngf-dev-app-1 \
+    --format '{{.HostConfig.Memory}}' 2>/dev/null || echo 0)
+  check_eq "dev app con 1536m de límite" "1610612736" "$dev_app_mem"
+
+  prod_pg_mem=$(docker inspect ngf-prod-postgres-1 \
+    --format '{{.HostConfig.Memory}}' 2>/dev/null || echo 0)
+  check_eq "prod postgres con 1536m de límite" "1610612736" "$prod_pg_mem"
+
+  prod_pg_oom=$(docker inspect ngf-prod-postgres-1 \
+    --format '{{.HostConfig.OomScoreAdj}}' 2>/dev/null || echo 0)
+  check_eq "prod postgres con oom_score_adj -500" "-500" "$prod_pg_oom"
+
+  # NanoCpus: 0.75 core = 750000000
+  dev_app_cpu=$(docker inspect ngf-dev-app-1 \
+    --format '{{.HostConfig.NanoCpus}}' 2>/dev/null || echo 0)
+  check_eq "dev app capada a 0.75 cores" "750000000" "$dev_app_cpu"
+
+  # Prod NO debe tener cap: gana por peso, no por reserva.
+  local prod_app_cpu
+  prod_app_cpu=$(docker inspect ngf-prod-app-1 \
+    --format '{{.HostConfig.NanoCpus}}' 2>/dev/null || echo -1)
+  check_eq "prod app sin cap de CPU" "0" "$prod_app_cpu"
+}
+
+suite_isolation() {
+  suite_header "Aislamiento entre stacks"
+
+  check_cmd "volumen de prod existe" docker volume inspect ngf-prod_pgdata
+  check_cmd "volumen de dev existe" docker volume inspect ngf-dev_pgdata
+
+  # Redes separadas: dev no puede resolver el Postgres de prod.
+  local dev_net prod_net
+  dev_net=$(docker network ls --format '{{.Name}}' | grep -c '^ngf-dev_default$')
+  prod_net=$(docker network ls --format '{{.Name}}' | grep -c '^ngf-prod_default$')
+  check_eq "dev tiene su propia red" "1" "$dev_net"
+  check_eq "prod tiene su propia red" "1" "$prod_net"
+
+  if docker exec ngf-dev-app-1 getent hosts postgres 2>/dev/null \
+     | grep -q .; then
+    # Resuelve, pero debe ser el postgres de dev, no el de prod.
+    local resolved dev_pg_ip
+    resolved=$(docker exec ngf-dev-app-1 getent hosts postgres | awk '{print $1}')
+    dev_pg_ip=$(docker inspect ngf-dev-postgres-1 \
+      --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
+    check_eq "dev resuelve su propio postgres" "$dev_pg_ip" "$resolved"
+  else
+    bad "dev no resuelve ningún postgres"
+  fi
+}
+
 main() {
   local target="${1:-all}"
   case "$target" in
     host) suite_host ;;
     app) suite_app ;;
     network) suite_network ;;
-    all)  suite_host; suite_app; suite_network ;;
+    limits) suite_limits ;;
+    isolation) suite_isolation ;;
+    all)  suite_host; suite_app; suite_network; suite_limits; suite_isolation ;;
     *) echo "suite desconocida: $target" >&2; exit 2 ;;
   esac
 
