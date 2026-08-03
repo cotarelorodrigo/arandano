@@ -3,9 +3,21 @@
 #
 # El host se declara explícito ("localhost", no ":443" a secas): sin un
 # nombre en la dirección del site, Caddy no sabe para qué hostname
-# aprovisionar el certificado interno al arrancar, y sin "on_demand" (que
-# no corresponde acá, es para ACME público) rechaza cualquier SNI que no
-# matchee un site explícito con "no certificate available".
+# aprovisionar el certificado interno al arrancar, y rechaza cualquier SNI
+# que no matchee un site explícito con "no certificate available". Usar
+# "on_demand" en su lugar no es la solución: funciona con "tls internal"
+# igual que con ACME público, pero en un puerto expuesto a internet, sin
+# una política "ask" que limite qué hostnames se aceptan, es una vía para
+# que cualquiera fuerce a Caddy a emitir certificados sin límite.
+#
+# ATENCIÓN, futuro cutover de DNS: este bloque sirve ÚNICAMENTE el host
+# "localhost" (matchea por SNI). Cuando *.negociofacil.com apunte a este
+# servidor, NO reemplazar "tls internal" acá por la config de DNS-01: eso
+# deja este site sirviendo sólo "localhost" y todo el tráfico real
+# rechazado con el mismo "no certificate available" que motivó este
+# comentario, indistinguible del lado del cliente de un TLS roto. Agregar
+# un site block NUEVO para el dominio real, dejando este intacto para
+# diagnóstico local.
 localhost:443 {
 	tls internal
 	reverse_proxy app:3000
