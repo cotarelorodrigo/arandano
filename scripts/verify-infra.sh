@@ -191,25 +191,59 @@ suite_stress() {
   # Chequeo 2 de la spec: el cgroup mata al contenedor, no el OOM del kernel.
   # `tail /dev/zero` aloca memoria sin techo — a diferencia de escribir en
   # /dev/shm, que se topa con su límite de 64m y falla por otra razón.
-  local exit_code dmesg_before dmesg_after
-  dmesg_before=$(dmesg 2>/dev/null | grep -c 'Out of memory' || true)
+  #
+  # Antes de confiar en dmesg hay que confirmar que el buffer del kernel
+  # sea legible: con `kernel.dmesg_restrict=1` y sin privilegio, `dmesg`
+  # no imprime nada y sale con error — si eso no se detecta, "antes" y
+  # "después" quedan los dos en 0 y el chequeo aprueba sin haber medido
+  # nada. Fix Round 1 (Finding 3): se verifica el buffer por adelantado y,
+  # si no es legible, el chequeo se reporta fallado (no silenciosamente
+  # verde) en vez de compararlo igual.
+  local exit_code dmesg_before dmesg_after dmesg_readable=1
+  dmesg >/dev/null 2>&1 || dmesg_readable=0
+  if [[ "$dmesg_readable" -eq 1 ]]; then
+    # Mayúscula deliberada: distingue el OOM global del kernel
+    # ("Out of memory: Killed process") del OOM de memcg
+    # ("Memory cgroup out of memory: Killed process", con minúscula en
+    # "out"). Sólo el primero indica que el kernel eligió víctima fuera
+    # del cgroup; "corregir" el case rompería justo lo que este chequeo
+    # mide.
+    dmesg_before=$(dmesg 2>/dev/null | grep -c 'Out of memory' || true)
+  fi
+
   docker run --rm --memory=64m --name ngf-memhog alpine \
     sh -c 'tail /dev/zero' >/dev/null 2>&1
   exit_code=$?
   check_eq "contenedor excedido muere por el cgroup (137)" "137" "$exit_code"
-  dmesg_after=$(dmesg 2>/dev/null | grep -c 'Out of memory' || true)
-  check_eq "el OOM del kernel no eligió víctima" "$dmesg_before" "$dmesg_after"
+
+  if [[ "$dmesg_readable" -eq 1 ]]; then
+    dmesg_after=$(dmesg 2>/dev/null | grep -c 'Out of memory' || true)
+    check_eq "el OOM del kernel no eligió víctima" "$dmesg_before" "$dmesg_after"
+  else
+    bad "no se puede leer el buffer del kernel (dmesg restringido) — chequeo de OOM sin datos, no cuenta como aprobado"
+  fi
 
   # Chequeo 1 de la spec: p95 de /api/health bajo 500ms con dev saturada.
   docker run --rm -d --name ngf-cpuhog --cpus=1 --cpu-shares=256 \
     alpine sh -c 'while true; do :; done' >/dev/null 2>&1
 
-  local times=() t p95 idx
+  # Fix Round 1 (Finding 2): antes sólo se medía time_total. Una conexión
+  # rechazada o un 500 rápido registran una latencia BAJA y mejorarían el
+  # p95 reportado justo durante la caída que este chequeo debería detectar.
+  # Ahora se captura el código de estado junto con el tiempo, y cualquier
+  # respuesta que no sea 200 cuenta como falla de un chequeo aparte, para
+  # que "lento" y "roto" no se confundan en un solo veredicto.
+  local times=() sample code t p95 idx non200=0
   for _ in $(seq 1 20); do
-    t=$(curl -sk -o /dev/null -w '%{time_total}' https://localhost/api/health)
+    sample=$(curl -sk -o /dev/null -w '%{http_code} %{time_total}' https://localhost/api/health)
+    code=${sample%% *}
+    t=${sample##* }
+    [[ "$code" == "200" ]] || non200=$((non200 + 1))
     times+=("$(printf '%.0f' "$(echo "$t * 1000" | bc -l)")")
   done
   docker rm -f ngf-cpuhog >/dev/null 2>&1
+
+  check_eq "las 20 requests bajo carga devuelven 200" "0" "$non200"
 
   idx=$(printf '%s\n' "${times[@]}" | sort -n | tail -2 | head -1)
   p95=$idx
@@ -220,19 +254,43 @@ suite_stress() {
   fi
 
   # Chequeo 6 de la spec — el más importante: el healthcheck no miente.
+  #
+  # Fix Round 1 (Finding 1): esto para el Postgres REAL de producción. Sin
+  # un trap, un Ctrl+C en esta ventana o un /api/health que se cuelga en
+  # vez de responder dejan la línea de `start postgres` sin ejecutarse, y
+  # prod queda caída sin red de recuperación — exactamente la caída que
+  # este script existe para prevenir. El trap de EXIT arranca Postgres sin
+  # condiciones pase lo que pase; INT y TERM sólo convierten la señal en
+  # un `exit` prolijo, que a su vez dispara el trap de EXIT. Se arma justo
+  # antes de parar Postgres y se desarma después del restart normal, para
+  # que una corrida sana no le pegue un segundo restart de más.
+  trap 'docker compose -p ngf-prod start postgres >/dev/null 2>&1' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   docker compose -p ngf-prod stop postgres >/dev/null 2>&1
   sleep 3
-  local code
-  code=$(curl -sk -o /tmp/ngf-degraded.json -w '%{http_code}' \
+  # --max-time: un /api/health colgado no puede estirar la ventana en la
+  # que Postgres de prod está parado de forma indefinida.
+  code=$(curl -sk -o /tmp/ngf-degraded.json -w '%{http_code}' --max-time 10 \
     https://localhost/api/health)
   check_eq "con Postgres caído el healthcheck da 503" "503" "$code"
   check_cmd "identifica que el check roto es postgres" \
     grep -q '"name":"postgres","ok":false' /tmp/ngf-degraded.json
   docker compose -p ngf-prod start postgres >/dev/null 2>&1
+  trap - EXIT INT TERM
 }
 
 main() {
   local target="${1:-all}"
+
+  # Fix Round 1 (Finding 4): suite_logs y suite_stress usan alpine:latest
+  # para sus contenedores descartables. Si el operador ya la tenía en el
+  # host, no es nuestra y no se toca; si la trajo esta corrida, se borra
+  # al final para no dejar imágenes de prueba tiradas. Se mide antes de
+  # correr cualquier suite, sea cual sea el target.
+  local alpine_pre_existing=1
+  docker image inspect alpine:latest >/dev/null 2>&1 || alpine_pre_existing=0
+
   case "$target" in
     host) suite_host ;;
     app) suite_app ;;
@@ -244,6 +302,10 @@ main() {
     all)  suite_host; suite_app; suite_network; suite_limits; suite_isolation; suite_logs; suite_stress ;;
     *) echo "suite desconocida: $target" >&2; exit 2 ;;
   esac
+
+  if [[ "$alpine_pre_existing" -eq 0 ]]; then
+    docker rmi alpine:latest >/dev/null 2>&1 || true
+  fi
 
   printf '\n%s: \033[32m%d ok\033[0m, \033[31m%d fallan\033[0m\n' "$target" "$PASS" "$FAIL"
   [[ "$FAIL" -eq 0 ]]
