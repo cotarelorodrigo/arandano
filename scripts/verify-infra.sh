@@ -154,6 +154,83 @@ suite_isolation() {
   fi
 }
 
+suite_logs() {
+  suite_header "Logs: rotación efectiva"
+
+  # Chequeo 5 de la spec: que dev no pueda llenar el disco.
+  #
+  # OJO: no sirve mirar .HostConfig.LogConfig.Config del contenedor — la
+  # rotación está puesta como default del daemon, y ahí sale vacío. Que el
+  # default exista ya lo chequea suite_host; acá se mide el comportamiento
+  # real, que es lo único que prueba que funciona.
+  docker rm -f ngf-logspam >/dev/null 2>&1 || true
+  docker run -d --name ngf-logspam alpine sh -c \
+    'i=0; while [ $i -lt 60000 ]; do head -c 1000 /dev/zero | tr "\0" "x"; echo; i=$((i+1)); done' \
+    >/dev/null 2>&1
+  docker wait ngf-logspam >/dev/null 2>&1
+
+  local logpath total
+  logpath=$(docker inspect ngf-logspam --format '{{.LogPath}}' 2>/dev/null)
+  if [[ -n "$logpath" && -f "$logpath" ]]; then
+    # 3 archivos de 10m = 31 MB de techo, con margen de redondeo.
+    total=$(du -cm "$logpath"* 2>/dev/null | tail -1 | awk '{print $1}')
+    if [[ "${total:-9999}" -le 33 ]]; then
+      ok "60 MB de logs quedaron en ${total} MB en disco (rotación activa)"
+    else
+      bad "60 MB de logs dejaron ${total} MB en disco (rotación NO activa)"
+    fi
+  else
+    bad "no se pudo leer el LogPath del contenedor de prueba"
+  fi
+  docker rm -f ngf-logspam >/dev/null 2>&1 || true
+}
+
+suite_stress() {
+  suite_header "Estrés: prod aguanta con dev saturada"
+
+  # Chequeo 2 de la spec: el cgroup mata al contenedor, no el OOM del kernel.
+  # `tail /dev/zero` aloca memoria sin techo — a diferencia de escribir en
+  # /dev/shm, que se topa con su límite de 64m y falla por otra razón.
+  local exit_code dmesg_before dmesg_after
+  dmesg_before=$(dmesg 2>/dev/null | grep -c 'Out of memory' || true)
+  docker run --rm --memory=64m --name ngf-memhog alpine \
+    sh -c 'tail /dev/zero' >/dev/null 2>&1
+  exit_code=$?
+  check_eq "contenedor excedido muere por el cgroup (137)" "137" "$exit_code"
+  dmesg_after=$(dmesg 2>/dev/null | grep -c 'Out of memory' || true)
+  check_eq "el OOM del kernel no eligió víctima" "$dmesg_before" "$dmesg_after"
+
+  # Chequeo 1 de la spec: p95 de /api/health bajo 500ms con dev saturada.
+  docker run --rm -d --name ngf-cpuhog --cpus=1 --cpu-shares=256 \
+    alpine sh -c 'while true; do :; done' >/dev/null 2>&1
+
+  local times=() t p95 idx
+  for _ in $(seq 1 20); do
+    t=$(curl -sk -o /dev/null -w '%{time_total}' https://localhost/api/health)
+    times+=("$(printf '%.0f' "$(echo "$t * 1000" | bc -l)")")
+  done
+  docker rm -f ngf-cpuhog >/dev/null 2>&1
+
+  idx=$(printf '%s\n' "${times[@]}" | sort -n | tail -2 | head -1)
+  p95=$idx
+  if [[ "$p95" -lt 500 ]]; then
+    ok "p95 de prod bajo carga: ${p95}ms (< 500ms)"
+  else
+    bad "p95 de prod bajo carga: ${p95}ms (>= 500ms)"
+  fi
+
+  # Chequeo 6 de la spec — el más importante: el healthcheck no miente.
+  docker compose -p ngf-prod stop postgres >/dev/null 2>&1
+  sleep 3
+  local code
+  code=$(curl -sk -o /tmp/ngf-degraded.json -w '%{http_code}' \
+    https://localhost/api/health)
+  check_eq "con Postgres caído el healthcheck da 503" "503" "$code"
+  check_cmd "identifica que el check roto es postgres" \
+    grep -q '"name":"postgres","ok":false' /tmp/ngf-degraded.json
+  docker compose -p ngf-prod start postgres >/dev/null 2>&1
+}
+
 main() {
   local target="${1:-all}"
   case "$target" in
@@ -162,7 +239,9 @@ main() {
     network) suite_network ;;
     limits) suite_limits ;;
     isolation) suite_isolation ;;
-    all)  suite_host; suite_app; suite_network; suite_limits; suite_isolation ;;
+    logs) suite_logs ;;
+    stress) suite_stress ;;
+    all)  suite_host; suite_app; suite_network; suite_limits; suite_isolation; suite_logs; suite_stress ;;
     *) echo "suite desconocida: $target" >&2; exit 2 ;;
   esac
 
