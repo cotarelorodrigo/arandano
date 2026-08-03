@@ -266,13 +266,20 @@ RUN echo "NGF_MEM_MAX=$(cat /sys/fs/cgroup/memory.max)" && \
     echo "NGF_CPU_MAX=$(cat /sys/fs/cgroup/cpu.max)"
 DOCKERFILE
 
-  # Sin -t: buildx no materializa imagen en el store, así que este chequeo no
-  # deja una imagen colgada. --no-cache es obligatorio: un RUN cacheado
-  # reimprimiría el resultado de la corrida anterior en vez de medir esta.
+  # Se tagea a propósito, aunque la imagen no se use: con el driver `docker`,
+  # buildx exporta igual al image store, así que un build sin -t no deja
+  # "nada" — deja una imagen colgada (<none>) por cada corrida. Con un tag
+  # propio se puede borrar sin ambigüedad y sin tocar imágenes ajenas.
+  # --no-cache es obligatorio: un RUN cacheado reimprimiría el resultado de la
+  # corrida anterior en vez de medir esta, que es como este chequeo dejaría de
+  # medir el presente sin dejar de estar verde.
+  local tag="ngf-verify-build-$$:tmp"
+  trap 'docker rmi -f "$tag" >/dev/null 2>&1; trap - RETURN' RETURN
+
   salida=$(docker build --no-cache --progress=plain \
     --cgroup-parent=ngfbuild.slice \
     --resource memory=2g --resource cpu-quota=100000 \
-    -f "$ctx/Dockerfile" "$ctx" 2>&1)
+    -t "$tag" -f "$ctx/Dockerfile" "$ctx" 2>&1)
   rm -rf "$ctx"
 
   # Sólo las líneas de SALIDA del paso, no el eco del comando. Con
