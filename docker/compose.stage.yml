@@ -1,0 +1,40 @@
+# Stack de staging: corre la imagen ya buildeada contra un Postgres
+# efímero. Empezar siempre de un estado conocido es justamente lo que
+# valida una migración — por eso no comparte la base de dev.
+name: ngf-stage
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ngf_stage
+      POSTGRES_PASSWORD: efimero-no-persiste
+      POSTGRES_DB: ngf_stage
+      # PGDATA en un subdirectorio del tmpfs: el entrypoint lo crea y le
+      # pone el owner correcto. Montar el tmpfs directamente en el
+      # directorio de datos lo deja como root y initdb falla.
+      PGDATA: /var/lib/postgresql/data/pgdata
+    tmpfs:
+      - /var/lib/postgresql/data:size=512m,mode=1777
+    cpus: 0.25
+    cpu_shares: 128
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ngf_stage -d ngf_stage"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    image: "ngf-app:${IMAGE_TAG:?IMAGE_TAG es obligatorio}"
+    environment:
+      NGF_STACK: stage
+      DATABASE_URL: postgres://ngf_stage:efimero-no-persiste@postgres:5432/ngf_stage
+    ports:
+      - "100.64.81.63:3001:3000"
+    cpus: 0.5
+    cpu_shares: 128
+    mem_limit: 768m
+    depends_on:
+      postgres:
+        condition: service_healthy
