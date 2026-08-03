@@ -1,0 +1,237 @@
+# NegocioFácil — contexto del proyecto
+
+Este documento resume las decisiones de producto y arquitectura ya tomadas para NegocioFácil, de forma que cualquier trabajo futuro (incluido Claude Code) parta de este contexto en vez de re-discutir decisiones ya cerradas.
+
+## Qué es NegocioFácil
+
+Plataforma de gestión para cualquier tipo de negocio del mercado argentino. Conecta en un solo lugar: ventas, stock/inventario, caja en pesos y dólares, clientes, facturación ARCA, catálogo público y un bot de WhatsApp/Instagram conectado a los datos reales del negocio (stock, precios, seguimiento de ventas frías, pedido de reseñas).
+
+Sobre esa base, cada rubro suma lo suyo: órdenes de trabajo para servicio técnico y oficios, agenda para servicios con turno, mesas y comandas para gastronomía. El primer vertical que se implementa es locales de celulares, tecnología y servicio técnico — es el mercado que ya está validado —, pero el sistema se diseña desde el inicio para el resto.
+
+Planes comerciales: Básico, Negocio, Profesional (más elegido, incluye bot) y Premium (a medida, infraestructura dedicada).
+
+## Arquitectura de producto: núcleo, módulos y presets de rubro
+
+La plataforma sirve a cualquier rubro sin convertirse en un genérico configurable. Se apoya en tres piezas.
+
+**Núcleo.** Lo que todo negocio necesita y no cambia de rubro a rubro: tenant, usuarios y roles, clientes, catálogo de artículos (productos con stock y servicios sin stock), inventario, ventas, caja en pesos y dólares, facturación ARCA, catálogo público, bot y jobs en background. El núcleo solo, sin activar ningún módulo, ya cubre un comercio de retail completo (kiosco, ropa, ferretería, dietética, pet shop).
+
+**Módulos.** Código que agrega comportamiento nuevo, activable por tenant. Son pocos, y eso es deliberado:
+
+| Módulo | Qué agrega | Rubros que habilita |
+|---|---|---|
+| **Órdenes de trabajo** | Ciclo ingreso → diagnóstico → presupuesto → aprobación del cliente → ejecución con repuestos → cierre y cobro | Servicio técnico, celulares, electricista, plomero, refrigeración, obra chica |
+| **Turnos** | Agenda, disponibilidad, recursos y profesionales asignados, reserva y recordatorio automático | Peluquería, estética, consultorio, taller mecánico, veterinaria |
+| **Gastronomía** | Mesas, comandas, pantalla de cocina, recetas que descuentan insumos | Bar, cafetería, restó, delivery |
+
+**Presets de rubro.** Un rubro no es código: es un archivo de configuración que declara qué módulos vienen activados, qué datos demo se cargan y cómo se nombran las cosas en la UI. Agregar "veterinaria" (núcleo + turnos) o "dietética" (sólo núcleo) no requiere desarrollo. Por eso la promesa de "cualquier tipo de negocio" es sostenible: los rubros son ilimitados, los módulos son tres.
+
+```mermaid
+flowchart TD
+    P[Preset de rubro<br/>veterinaria, kiosco, peluqueria] --> M[Modulos activados<br/>fila en TenantModule]
+    P --> D[Datos demo + nomenclatura de la UI]
+    M --> OT[Ordenes de trabajo]
+    M --> TU[Turnos]
+    M --> GA[Gastronomia]
+    OT --> N[Nucleo<br/>clientes, articulos, stock, ventas,<br/>caja ARS/USD, ARCA, catalogo, bot]
+    TU --> N
+    GA --> N
+```
+
+Decisiones asociadas, ya cerradas:
+
+- **Un tenant activa varios módulos, no uno.** El propio local de celulares es núcleo + órdenes de trabajo; una veterinaria es núcleo + turnos. El modelo nunca asume un único rubro por tenant.
+- **Reparaciones y oficios son el mismo módulo.** Un service de celulares y un electricista comparten el mismo ciclo de trabajo; la diferencia (mostrador vs. domicilio, equipo con IMEI o sin él) son campos y estados del preset, no un módulo aparte.
+- **Los módulos no se cobran aparte ni se atan al plan.** Cualquier tenant activa lo que necesite; el plan limita capacidad y features transversales (usuarios, sucursales, bot, ARCA, reportes). Un consultorio chico no debe subir de plan sólo para tener agenda.
+- **Mecanismo: monolito modular con registry.** Cada módulo vive en `modules/<nombre>/` con su schema de Prisma, rutas, UI y jobs, más un `module.ts` que declara qué aporta. La activación es una fila en `TenantModule`. Un solo repo y un solo deploy, coherente con el VPS único y el Docker Compose ya elegidos.
+
+El núcleo expone puntos de extensión explícitos, y los módulos sólo pueden engancharse ahí: navegación, tipos de artículo, generación de ventas (`crearVentaDesde`), movimientos de stock, intents del bot, jobs de pg-boss, vistas del catálogo público y datos demo de onboarding. Un módulo que necesite algo fuera de esa lista es señal de que falta un punto de extensión en el núcleo — no de que haya que saltearlo.
+
+## Modelo SaaS y multi-tenancy
+
+- Cada cliente (el negocio, sea del rubro que sea) es un **tenant**, identificado por subdominio: `flor.negociofacil.com`.
+- La mayoría de los planes (trial, Básico, Negocio, Profesional) **comparten una única aplicación y una única base de datos Postgres**, aislados lógicamente por columna `tenant_id` + Row Level Security. El registro de un cliente nuevo es instantáneo: crear fila de tenant + datos demo, sin tocar infraestructura.
+- El plan **Premium** es la excepción: dispara un flujo de *provisioning* automatizado (Terraform) que levanta una instancia con **VPC dedicada** para ese cliente. Este es un upsell consciente, no el default.
+- Un tenant que crece y necesita aislarse más adelante se migra de "fila en Postgres compartido" a "VPC dedicada" — tenerlo en cuenta en el diseño del modelo de datos para que exportar/migrar un tenant sea limpio (ya prometemos 30 días de exportación de datos al cliente).
+
+```mermaid
+flowchart TD
+    A[Cliente se registra<br/>flor.negociofacil.com] --> B[DNS wildcard + proxy<br/>subdominio to tenant_id]
+    B --> C[App compartida multi-tenant<br/>Next.js + bot WhatsApp/IG]
+    B --> D[Provisioning automatico<br/>Terraform crea VPC]
+    C --> E[Postgres compartido<br/>RLS aisla cada tenant]
+    D --> F[VPC dedicada<br/>instancia propia del repo]
+```
+
+## Stack tecnológico elegido
+
+| Pieza | Elección | Motivo |
+|---|---|---|
+| Framework full-stack | **Next.js (App Router) + TypeScript** | Un solo lenguaje front/back, ecosistema React rico para dashboards, corre como servidor Node propio (no serverless) para sostener websockets |
+| Base de datos | **PostgreSQL** | Estándar, soporta RLS nativo para el aislamiento por tenant |
+| ORM | **Prisma** | Mejor DX y documentación del ecosistema Node; Prisma Studio sirve como ventana rápida de debug |
+| Autenticación | **Auth.js** (NextAuth) | Nativo de Next.js, sesiones/JWT sin reinventar nada |
+| Multi-tenancy (app) | **Middleware propio** (`middleware.ts`) resuelve subdominio → tenant; extensión de Prisma fuerza filtro por `tenant_id` | Capa de aplicación explícita, sin depender de "magia" de un paquete |
+| Multi-tenancy (datos) | **Row Level Security de Postgres** como segunda capa de defensa | Si algún query se olvida el filtro, la base igual protege el dato |
+| Modularidad por rubro | **Monolito modular**: `modules/<nombre>/` con schema, rutas, UI y jobs propios, más un registry; activación por fila en `TenantModule` | Un rubro nuevo no toca infraestructura ni suma un deploy; las tablas de cada módulo viven en el mismo Postgres y heredan el mismo RLS |
+| Colas / background jobs | **pg-boss** (cola sobre el mismo Postgres) | Evita sumar Redis desde el día uno; cubre seguimientos automáticos y pedido de reseñas |
+| Tiempo real (bandeja del bot) | **Socket.io / ws** sobre el servidor Node custom | Posible porque el deploy es un VPS propio, no serverless |
+| Integración WhatsApp / Instagram | **Meta Cloud API oficial** (Tech Provider), llamada HTTP directa | Vía oficial, evita riesgo de baneo de número |
+| Facturación ARCA | **afip.js**, aislado detrás de una interfaz propia (`billing/emitirFactura()`) | Es la opción disponible en Node pero menos madura que el equivalente Python (pyafipws); aislarla permite reemplazarla por un microservicio si falla en producción |
+| Reverse proxy / TLS | **Caddy** con certificado wildcard `*.negociofacil.com` vía DNS-01 | TLS automático sin gestionar certificados a mano |
+| Servidor | **1 VPS en Hetzner** — `ngfacil-ubuntu-8gb-ash-1`, 2 vCPU / 8 GB, Ubuntu 26.04, Ashburn (`178.156.251.41`) | Suficiente para cientos de tenants con este volumen de uso; no se justifica multi-servidor todavía. Con sólo 2 vCPU, los límites de recursos entre dev y prod son obligatorios (ver *Entorno de trabajo*) |
+| Acceso a entornos internos | **Tailscale** (ya instalado y en uso) | Permite exponer el stack de desarrollo sin abrirlo a internet: dev escucha únicamente en la IP de Tailscale del servidor |
+| Orquestación | **Docker Compose** (Next.js + Postgres + Caddy) | Simplicidad operativa para un solo servidor |
+| Backups | **pg_dump nocturno** a Hetzner Object Storage / Backblaze B2 | Barato y cubre la promesa de exportación de datos a 30 días |
+
+## Entorno de trabajo: dev y producción en el mismo servidor
+
+El desarrollo ocurre sobre el mismo VPS que sirve a los clientes, y así va a quedar — no hay una segunda máquina prevista. Como no existe nada que absorba un error, la separación entre entornos tiene que ser **estructural**, no depender del cuidado de quien escribe.
+
+**Producción no es un directorio donde se edita: es una imagen que se corre.**
+
+- `/root/negociofacil` es el workspace de desarrollo. Es el repo, y ahí se rompe lo que haga falta.
+- `/srv/negociofacil/prod/` contiene sólo `docker-compose.yml`, `.env` y los volúmenes. **Sin código fuente.** Corre una imagen Docker tageada con el SHA de git.
+- El único camino para cambiar producción es un deploy. Nunca un editor ni un `next dev` sobre lo que un cliente está usando.
+
+**Aislamiento de los dos stacks.** Dos proyectos Compose con nombres distintos (`ngf-prod`, `ngf-dev`), cada uno con su red, sus volúmenes y su base de datos. Un `docker compose down -v` en dev es incapaz de tocar los datos de producción. Dev escucha únicamente en la IP de Tailscale del servidor (`100.64.81.63`), así que no existe desde internet; prod escucha en 80/443 detrás de Caddy.
+
+**Convivencia sobre 2 vCPU.** Los límites de recursos son la única defensa que hay, así que no son opcionales:
+
+- Límites de CPU y memoria por contenedor en ambos stacks: dev y los builds capados a un core, prod con el suyo reservado.
+- Swap configurada — el servidor viene sin ella. Sin swap, un OOM durante un build deja que el kernel elija víctima, y puede ser Postgres.
+- `oom_score_adj` negativo en el contenedor de Postgres de producción, para que sea el último candidato del OOM killer.
+- Rotación de logs de Docker (`max-size` / `max-file`) en ambos stacks, para que dev no pueda llenar el disco.
+- Los builds corren con `nice` y CPU limitada: un build nunca compite de igual a igual con un cliente.
+
+**Staging es la promoción del artefacto, no otra máquina.** El deploy buildea la imagen una sola vez, la corre primero contra la base de dev, le pasa healthcheck y smoke tests, y recién entonces promueve **esa misma imagen** a producción. Nunca se rebuildea para prod: lo que se probó es exactamente lo que se sirve.
+
+**Migraciones.** Es el riesgo mayor del esquema, por encima de los bugs de código: un bug se arregla en minutos, una migración destructiva se lleva datos de un cliente que no vuelven.
+
+- Dev usa `prisma migrate dev` libremente. Producción usa **sólo `prisma migrate deploy`**; `migrate reset` y `db push` quedan bloqueados por el script de deploy.
+- **Expand/contract**: ninguna columna se borra ni se renombra en el mismo deploy que deja de usarla. Primero se deploya el código que no la usa, y el drop viene en un deploy posterior. Es lo que mantiene el rollback siempre posible.
+- `pg_dump` inmediatamente antes de cada migración, además del backup nocturno.
+
+**El deploy es un comando con gate.** `deploy.sh` encadena: tests → typecheck → build tageado → backup → `migrate deploy` → smoke test contra dev → promoción de la imagen → healthcheck → tag de git → rollback automático a la imagen anterior si algo falla. Sin pasos manuales que se puedan saltear un martes a las 11 de la noche.
+
+**Cada deploy exitoso deja un tag de git.** La imagen ya va tageada con el SHA, pero el SHA no se lee ni se ordena: el tag es el índice humano de qué estuvo en producción y cuándo.
+
+- **Se crea al final, después del healthcheck**, nunca antes. Un tag significa "esto estuvo vivo y sano en producción", no "esto se intentó". Si el healthcheck falla y dispara el rollback, no hay tag — el historial de tags queda siendo la lista de lo que realmente sirvió a clientes.
+- **Formato `v1.MINOR.PATCH`**, arrancando en `v1.0.0` con el primer deploy que sirva a un tenant real. **MINOR** sube cuando el deploy agrega algo que el cliente ve (pantalla nueva, módulo, feature). **PATCH** sube para todo lo demás: fixes, refactors, migraciones aditivas y limpiezas de contract. **MAJOR se queda en 1**: esto es un SaaS sin API pública, nadie consume estas versiones desde afuera, así que un major no le rompería nada a nadie y no vale la discusión de cuándo subirlo.
+- **La numeración la deriva `deploy.sh` del último tag**, no se mantiene a mano ni se duplica en el `version` de `package.json` — un número en dos lugares es un número que se desincroniza. El tag es la fuente de verdad.
+- **Con expand/contract, una feature ocupa varias versiones**, y está bien: la migración aditiva es un patch, el código que la usa es el minor, y el drop posterior es otro patch. La versión describe el deploy, no la feature.
+- **Un deploy que rollbackea no consume número.** Como el tag se crea recién después del healthcheck, el siguiente intento se lleva la misma versión que iba a llevar el que falló. La secuencia de versiones no tiene huecos, y eso es justamente lo que la hace confiable como historial.
+- **Anotado (`git tag -a`), no liviano**, y el mensaje carga lo que el SHA no dice: tag de la imagen promovida y qué migraciones corrieron en ese deploy. Es lo primero que se quiere leer a las 11 de la noche.
+- **Se pushea a `origin`.** Un tag que sólo existe en el VPS desaparece con el VPS, justamente el escenario donde más se necesita.
+- **La imagen se sigue tageando con el SHA, no con la versión.** No es una inconsistencia: al momento del build la versión todavía no existe, porque recién se asigna si el healthcheck pasa. El SHA está disponible siempre y es inequívoco; la versión es la etiqueta legible que se le cuelga después.
+- **No es el mecanismo de rollback.** El rollback sigue apuntando a la imagen anterior, porque la imagen es lo que se promueve y lo que corre. El tag es para saber qué mirar y para `git diff v<anterior>..HEAD` antes de deployar — que sin feature flags es literalmente el radio de daño del próximo deploy.
+
+**Terceros y datos.**
+
+- ARCA en dev va siempre contra **homologación**. Una factura de prueba emitida contra producción de ARCA no es un bug, es un problema fiscal.
+- La Cloud API de Meta en dev usa número de test, nunca el del cliente.
+- Credenciales distintas entre `.env.dev` y `.env.prod`, empezando por las de la base.
+- Dev nunca corre con datos reales de clientes: seed sintético. El restore de backup se verifica semanalmente contra una base descartable — un backup que nunca se restauró no es un backup.
+
+RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` ni de una migración mal hecha: son problemas distintos y necesitan defensas distintas.
+
+## Cómo se manejan los cambios una vez en producción
+
+**Cada deploy libera para todos.** No hay feature flags: la red de seguridad es el gate del deploy, el healthcheck y el rollback automático a la imagen anterior. Es la opción simple — sin flags que mantener ni ramas muertas en el código — y trae tres consecuencias que dejan de ser opcionales.
+
+**1. Expand/contract pasa de buena práctica a requisito.** El rollback automático revierte la imagen, no la base de datos. Si el schema nuevo no soporta la versión anterior del código, el rollback no funciona y no queda ninguna red. Por eso ninguna migración destructiva viaja junto al código que la motiva: primero la migración aditiva, después el código que la usa, y la limpieza varios deploys más tarde.
+
+**2. El healthcheck es la única barrera automática, así que tiene que valer algo.** Un endpoint que devuelve 200 fijo no detecta nada. Chequea que la app responda, que Postgres responda, que una query real filtrada por tenant devuelva datos y que pg-boss esté vivo. Si algo de eso falla, rollback.
+
+**3. Los smoke tests son la última verificación antes de que llegue a todos.** Corren contra `ngf-dev` con la imagen ya buildeada, sobre los caminos que más duelen: login, alta de venta, emisión de factura contra homologación, apertura y cierre de orden de trabajo, y catálogo público.
+
+**Deploys chicos y frecuentes.** Sin flags, el tamaño del deploy es literalmente el radio de daño. Diez deploys chicos por semana son más seguros que uno grande por mes: cuando algo se rompe, se sabe exactamente qué lo rompió y el rollback es obvio. Los deploys grandes y espaciados son los que producen las noches largas.
+
+**Ventana de deploy.** Los clientes son comercios argentinos (UTC-3) y trabajan de 9 a 20; el servidor está en Ashburn. Los deploys van temprano a la mañana o de noche, hora Argentina. No es ceremonia: sin flags, un deploy malo alcanza a todos los que estén usando el sistema en ese momento.
+
+**No todas las features tienen el mismo riesgo.** Una pantalla nueva en una ruta nueva es casi inerte — nadie la conoce hasta que se la muestra. Las peligrosas son las que modifican código que ya está en uso. Cuando se pueda, conviene construir lo nuevo al lado en vez de encima y cambiar el punto de entrada al final: es la forma barata de conseguir el efecto de un flag sin mantener flags.
+
+**El ciclo de una feature.**
+
+1. Branch en un worktree aparte, no sobre el workspace principal — así una urgencia de producción no obliga a dejar trabajo a medias en el stash.
+2. Test primero, corriendo contra `ngf-dev`.
+3. Si toca el schema, migración aditiva probada con `migrate dev`.
+4. Review antes del merge: con un solo desarrollador es la única segunda mirada que existe.
+5. `deploy.sh` corre el gate completo y promueve la imagen.
+6. Verificación manual en el tenant canario, inmediatamente después.
+7. La limpieza (contract) va en un deploy posterior.
+
+**El tenant canario.** Un tenant real en producción que sea propio: un demo que se use en serio, o el local de alguien de confianza. Sin flags no sirve para liberar de a poco, pero sí es el primer lugar donde se mira después de cada deploy — antes de que lo mire un cliente.
+
+**Cuando algo se rompe: rollback primero, diagnóstico después.** El healthcheck lo dispara solo, pero también tiene que ser un comando de una línea para lo que el healthcheck no ve. La tentación de "lo arreglo en dos minutos" es lo que convierte una caída de cinco minutos en una de dos horas. Y nunca editar en caliente en `/srv/negociofacil/prod/`: un fix urgente sigue siendo un deploy y pasa el mismo gate, porque es justo cuando hay apuro que más falta hace.
+
+**Observabilidad, fuera del VPS.** Con 2 vCPU no entra un stack propio, y tampoco hace falta: Sentry para errores de aplicación, un uptime check externo contra el healthcheck, y los logs estructurados con rotación ya previstos. Sin esto, el detector de bugs en producción es un cliente escribiendo por WhatsApp.
+
+## Opciones evaluadas y descartadas
+
+- **Laravel (PHP)**: descartado, se prefirió un stack Python o Node.
+- **Django (Python) monolito**: fuerte candidato por `pyafipws` maduro y Django admin gratis, pero se priorizó el ecosistema de UI de React y el tiempo real nativo de Node.
+- **Django + DRF (backend) / Next.js (frontend), híbrido**: técnicamente válido y usado en producción en otros proyectos, pero implica dos codebases, dos deploys y un contrato de API a mantener. Se descartó en favor de un único framework full-stack.
+- **Redis + BullMQ**: se evita al inicio en favor de `pg-boss`, para no sumar una pieza operativa extra mientras el volumen es bajo. Se reconsidera si el volumen de jobs lo exige.
+- **Schema-per-tenant o VPC por cliente en cada registro**: descartado como default — demasiado lento y caro para un trial de 5 días con muchos registros que no convierten. Reservado exclusivamente para el plan Premium.
+- **Plataforma no-code de entidades configurables** (el usuario define sus propias entidades, campos y flujos): descartada como forma de servir a cualquier rubro. Da flexibilidad ilimitada pero rompe la alta instantánea, deja al bot y a la facturación sin semántica sobre qué es un artículo, y vuelve muy difícil convertir un trial de 5 días. Se prefirió núcleo + módulos + presets.
+- **Vertical puro, sólo cambiando el lenguaje de la UI**: descartado — alcanzaba para retail pero dejaba afuera gastronomía, turnos y servicios recurrentes, que son parte del mercado objetivo.
+- **Módulos como paquetes npm con carga dinámica**: descartado por ahora. Habilitaría módulos de terceros y sets distintos por tenant, pero trae versionado por módulo, migraciones por paquete y un contrato de tipos que mantener. El monolito modular se puede partir más adelante si aparece la necesidad real.
+- **Oficios y servicios a domicilio como módulo separado de reparaciones**: descartado — comparten el mismo ciclo de trabajo. Se resuelven como dos presets del módulo de órdenes de trabajo.
+- **Módulos como add-ons pagos o atados al plan**: descartado. Complica el precio y el trial, y castiga rubros enteros que necesitan un módulo específico para que el producto les sirva de algo.
+- **Feature flags por tenant para rollout gradual**: descartado por ahora. `TenantModule` los haría baratos de implementar, pero suman flags que mantener y ramas muertas en el código. Se eligió deploy directo con rollback automático; el costo aceptado es que no hay liberación gradual y que el gate del deploy queda como única red. Reconsiderable cuando la base de clientes crezca lo suficiente como para que una hora de servicio degradado cueste más que mantener los flags.
+- **Segundo VPS para desarrollo o staging**: descartado. Dev y producción conviven en la misma máquina de forma permanente; staging es la promoción del mismo artefacto, no otro servidor.
+
+## Riesgos conocidos
+
+- `afip.js` es menos probado que su equivalente en Python. Testear a fondo temprano; mantenerlo aislado detrás de una interfaz propia para poder reemplazarlo sin tocar el resto de la app.
+- Al no correr Redis, cualquier feature futura que lo necesite (rate limiting distribuido, cache compartido entre instancias) es una decisión consciente de sumar una pieza nueva, no un default.
+- El servidor único es punto único de falla. Aceptable mientras se valida el producto; pasar a alta disponibilidad quedará motivado por necesidad real, no por adelantado.
+- **El núcleo puede quedar con forma de servicio técnico.** Se implementa un solo módulo primero (órdenes de trabajo), así que existe el riesgo de que el núcleo absorba supuestos de ese rubro y después no aguante turnos ni gastronomía. Mitigación: los puntos de extensión se diseñan mirando los tres módulos desde el inicio, aunque dos todavía no se escriban. Cuando se implemente Turnos, cualquier cosa que obligue a modificar el núcleo es una señal de que la abstracción falló ahí.
+- **Gastronomía es el módulo con más competencia instalada** (Fudo, Maxirest) y el más pesado de construir. Conviene tratarlo como el último de los tres y sólo si hay demanda concreta, no por completar la grilla.
+- **Los presets se multiplican.** Cada rubro nuevo agrega datos demo y nomenclatura que hay que mantener. Si crecen sin control, se vuelven una carga silenciosa: conviene que un preset sea chico por definición y que ningún preset pueda introducir lógica.
+- **Dev y producción comparten kernel, disco y CPU de forma permanente.** Es una decisión tomada, no un estado transitorio: no hay una segunda máquina prevista. Los límites de recursos, la rotación de logs y la swap son la única defensa entre un build y un cliente caído. Que sigan puestos es parte del checklist de deploy, no algo que se configura una vez y se olvida. El día que el ruido de desarrollo se note en el servicio, la salida es mover dev a un VPS chico — no aflojar los límites.
+- **Sin feature flags, cada deploy alcanza a todos los clientes a la vez.** El healthcheck, los smoke tests y el rollback automático son la única red, así que su calidad no es negociable: un healthcheck superficial deja el rollback automático sin criterio para dispararse. Vale revisar esta decisión cuando la base de clientes crezca lo bastante como para que una hora de servicio degradado cueste más que mantener flags.
+- **La ventana de montar todo esto se cierra con el primer cliente.** Hoy la máquina está vacía: sin Docker, sin contenedores, y el dominio todavía apunta a otro lado. Toda la separación de entornos, los backups y el script de deploy tienen que existir antes del primer tenant real, porque después cada cambio se hace con datos de alguien encima.
+
+## Roadmap de producto
+
+Cada etapa es su propio ciclo de spec → plan → implementación. No se arranca la siguiente sin la anterior cerrada.
+
+1. **Núcleo + módulo de Órdenes de trabajo**: el motor multi-tenant, el núcleo completo (clientes, artículos, stock, ventas, caja, ARCA, catálogo, bot) y el primer módulo. Presets de arranque: servicio técnico de celulares y retail. Es el MVP.
+2. **Módulo de Turnos**: agenda, disponibilidad, recursos y recordatorios por bot. Es el módulo más transversal y el que mejor explota el bot, así que es el que más amplía el mercado por unidad de esfuerzo. También es la prueba real de si el núcleo quedó bien abstraído.
+3. **Módulo de Gastronomía**: sólo si hay demanda concreta. Ver riesgos.
+
+Los presets de rubro nuevos (veterinaria, peluquería, dietética, etc.) no son etapas: se agregan cuando aparece el cliente, sin desarrollo.
+
+## Roadmap de infraestructura
+
+0. **Preparar la máquina**: swap, Docker, los dos stacks Compose (`ngf-dev` y `ngf-prod`) con sus límites de recursos, dev detrás de Tailscale, backups automáticos con restore verificado y `deploy.sh` funcionando. Todo esto antes del primer tenant real.
+1. **MVP**: 1 servidor Hetzner, Docker Compose (Next.js + Postgres + Caddy), tenants compartidos con RLS. Requiere apuntar el DNS de `negociofacil.com` y el wildcard `*.negociofacil.com` al servidor (hoy resuelve a IPs de parking de AWS).
+2. **Upsell Premium**: provisioning automatizado (Terraform) de VPC dedicada + instancia propia del repo, disparado solo cuando un cliente lo contrata.
+3. **Escalar horizontal**: recién cuando el servidor único se quede corto de CPU/RAM, se necesite alta disponibilidad real, o el volumen de background jobs justifique sumar Redis — no antes.
+
+## Próximos pasos técnicos
+
+Los primeros cuatro son de entorno y van antes que cualquier línea de producto, porque definen dónde y cómo se escribe todo lo demás:
+
+- Configurar swap e instalar Docker (el servidor hoy no lo tiene).
+- Armar los dos stacks Compose (`ngf-dev` y `ngf-prod`) con redes, volúmenes y bases separadas, límites de CPU y memoria, y rotación de logs.
+- Escribir `deploy.sh` con su gate completo (tests, build tageado, backup, `migrate deploy`, smoke test, promoción, healthcheck, tag de git pusheado a `origin`, rollback).
+- Montar los backups con `pg_dump` y el restore verificado contra una base descartable.
+- Escribir el endpoint de healthcheck con contenido real (app, Postgres, query filtrada por tenant, pg-boss) — es lo que le da criterio al rollback automático.
+- Conectar Sentry y un uptime check externo contra el healthcheck.
+- Apuntar el DNS de `negociofacil.com` y el wildcard `*.negociofacil.com` al servidor, y configurar el certificado wildcard por DNS-01 en Caddy.
+
+Y del producto:
+
+- Definir el schema de Prisma del núcleo: `Tenant`, `TenantModule`, `User`, `Cliente`, `Articulo` (producto con stock o servicio sin stock), `MovimientoStock`, `Venta`, `Pago`, `Factura`, todos con `tenant_id`.
+- Definir el schema del módulo de órdenes de trabajo (`OrdenDeTrabajo` y sus estados), en `modules/ordenes-de-trabajo/`, con el mismo `tenant_id` y las mismas policies de RLS.
+- Definir el registry de módulos y los puntos de extensión del núcleo: navegación, tipos de artículo, `crearVentaDesde`, movimientos de stock, intents del bot, jobs de pg-boss, vistas del catálogo público y datos demo.
+- Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
+- Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
+- Implementar el middleware de resolución de tenant por subdominio.
+- Configurar Auth.js.
+- Configurar `pg-boss` para las tareas en background (seguimientos automáticos, pedido de reseñas, webhooks del bot).
+- Aislar la integración con la Cloud API de Meta (WhatsApp/Instagram) en su propio módulo.
+- Aislar la emisión de facturas ARCA (`afip.js`) detrás de una interfaz propia.
