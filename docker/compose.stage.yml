@@ -14,8 +14,17 @@ services:
       # pone el owner correcto. Montar el tmpfs directamente en el
       # directorio de datos lo deja como root y initdb falla.
       PGDATA: /var/lib/postgresql/data/pgdata
+    # El tmpfs queda deliberadamente por debajo de mem_limit (320m vs
+    # 512m): las páginas de tmpfs se cargan contra la memoria del cgroup y
+    # no son "page cache" descartable, así que cuentan 1:1 contra el
+    # límite. Encima, Postgres necesita memoria propia además del dato en
+    # sí — shared_buffers (respaldado por /dev/shm, otro tmpfs del mismo
+    # cgroup), work_mem por conexión y el overhead de cada backend. Sin
+    # ese margen, el cgroup mata al contenedor por OOM antes de llenar el
+    # tmpfs, y ese gate fallaría por falta de memoria, no porque la
+    # migración sea insegura. No igualar este valor a mem_limit.
     tmpfs:
-      - /var/lib/postgresql/data:size=512m,mode=1777
+      - /var/lib/postgresql/data:size=320m,mode=1777
     cpus: 0.25
     cpu_shares: 128
     mem_limit: 512m
