@@ -6,6 +6,14 @@ name: ngf-stage
 services:
   postgres:
     image: postgres:17-alpine
+    # Credenciales en claro en un archivo versionado, a propósito y sólo acá:
+    # esta base vive en tmpfs, se crea vacía en cada corrida y desaparece al
+    # parar el contenedor, nunca ve datos de clientes, y el stack sólo escucha
+    # en la IP de Tailscale. No hay secreto que proteger.
+    # OJO SI SE COPIA ESTE ARCHIVO COMO PLANTILLA: en dev y en prod las
+    # credenciales van por env_file (.env.dev y /srv/negociofacil/prod/.env),
+    # nunca inline. Lo que hace esto aceptable es que la base sea efímera, no
+    # que sea cómodo.
     environment:
       POSTGRES_USER: ngf_stage
       POSTGRES_PASSWORD: efimero-no-persiste
@@ -29,7 +37,10 @@ services:
     cpu_shares: 128
     mem_limit: 512m
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ngf_stage -d ngf_stage"]
+      # Mismas variables que dev y prod: si alguien cambia POSTGRES_USER o
+      # POSTGRES_DB arriba, el healthcheck lo sigue en vez de quedar probando
+      # un usuario que ya no existe.
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -39,11 +50,25 @@ services:
     environment:
       NGF_STACK: stage
       DATABASE_URL: postgres://ngf_stage:efimero-no-persiste@postgres:5432/ngf_stage
+      # Ver compose.prod.yml: el healthcheck comprueba contra qué base está
+      # hablando la app, no sólo que alguna responda.
+      NGF_DB_ESPERADA: ngf_stage
     ports:
       - "100.64.81.63:3001:3000"
     cpus: 0.5
     cpu_shares: 128
     mem_limit: 768m
+    # Sin esto, `docker compose up --wait` vuelve cuando el contenedor está
+    # CORRIENDO, no cuando la app atiende — y el smoke test de deploy.sh
+    # correría contra un Next que todavía está arrancando, produciendo fallas
+    # intermitentes del gate que parecen bugs del código. Con healthcheck,
+    # `--wait` espera a que /api/health conteste 200.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy

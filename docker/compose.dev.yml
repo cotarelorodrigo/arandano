@@ -43,6 +43,9 @@ services:
     environment:
       NGF_STACK: dev
       HOSTNAME: 0.0.0.0
+      # Ver compose.prod.yml: el healthcheck comprueba contra qué base está
+      # hablando la app, no sólo que alguna responda.
+      NGF_DB_ESPERADA: ngf_dev
     volumes:
       - ../:/app
       - node_modules:/app/node_modules

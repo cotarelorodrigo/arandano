@@ -25,11 +25,30 @@ services:
     env_file: .env
     environment:
       NGF_STACK: prod
+      # Contra qué base tiene que estar hablando esta app. El healthcheck
+      # compara current_database() contra esto, así que una DATABASE_URL que
+      # apunte al Postgres de dev se reporta como caída en vez de como sana.
+      # Va acá y no derivado de DATABASE_URL: derivarlo de la variable que
+      # puede estar mal no comprueba nada.
+      NGF_DB_ESPERADA: ngf_prod
     # Sin cap de CPU: con cpu_shares alto gana bajo contención y aprovecha
     # los dos cores cuando dev está quieto.
     cpu_shares: 1024
     mem_limit: 1536m
     restart: unless-stopped
+    # Sin esto `docker ps` dice "Up" para una app dura y degradada, y nada a
+    # nivel contenedor puede reaccionar. `wget` viene en el busybox de
+    # node:24-alpine y no necesita root — se verificó que devuelve != 0 con
+    # cualquier status que no sea 2xx, así que un 503 del healthcheck marca
+    # el contenedor unhealthy en vez de pasar desapercibido.
+    # start_period holgado: Next tarda en levantar y un fallo durante el
+    # arranque no debe contar como caída.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     depends_on:
       postgres:
         condition: service_healthy
