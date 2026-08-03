@@ -1,5 +1,7 @@
 # Infra paso 0 — máquina base y stacks Compose
 
+> **Nota (renombre posterior):** el proyecto se renombró de NegocioFácil a Arándano después de escrito este documento. Los identificadores que aparecen acá (`negociofacil`, `ngf-*`, `NGF_*`, `negociofacil.com`, etc.) reflejan los nombres en uso al momento de escribirlo y se conservan sin cambios como registro histórico.
+
 **Fecha:** 2026-08-03
 **Estado:** aprobado, pendiente de plan de implementación
 

@@ -1,8 +1,8 @@
-# NegocioFácil — contexto del proyecto
+# Arándano — contexto del proyecto
 
-Este documento resume las decisiones de producto y arquitectura ya tomadas para NegocioFácil, de forma que cualquier trabajo futuro (incluido Claude Code) parta de este contexto en vez de re-discutir decisiones ya cerradas.
+Este documento resume las decisiones de producto y arquitectura ya tomadas para Arándano, de forma que cualquier trabajo futuro (incluido Claude Code) parta de este contexto en vez de re-discutir decisiones ya cerradas.
 
-## Qué es NegocioFácil
+## Qué es Arándano
 
 Plataforma de gestión para cualquier tipo de negocio del mercado argentino. Conecta en un solo lugar: ventas, stock/inventario, caja en pesos y dólares, clientes, facturación ARCA, catálogo público y un bot de WhatsApp/Instagram conectado a los datos reales del negocio (stock, precios, seguimiento de ventas frías, pedido de reseñas).
 
@@ -49,14 +49,14 @@ El núcleo expone puntos de extensión explícitos, y los módulos sólo pueden 
 
 ## Modelo SaaS y multi-tenancy
 
-- Cada cliente (el negocio, sea del rubro que sea) es un **tenant**, identificado por subdominio: `flor.negociofacil.com`.
+- Cada cliente (el negocio, sea del rubro que sea) es un **tenant**, identificado por subdominio: `flor.arandano.app`.
 - La mayoría de los planes (trial, Básico, Negocio, Profesional) **comparten una única aplicación y una única base de datos Postgres**, aislados lógicamente por columna `tenant_id` + Row Level Security. El registro de un cliente nuevo es instantáneo: crear fila de tenant + datos demo, sin tocar infraestructura.
 - El plan **Premium** es la excepción: dispara un flujo de *provisioning* automatizado (Terraform) que levanta una instancia con **VPC dedicada** para ese cliente. Este es un upsell consciente, no el default.
 - Un tenant que crece y necesita aislarse más adelante se migra de "fila en Postgres compartido" a "VPC dedicada" — tenerlo en cuenta en el diseño del modelo de datos para que exportar/migrar un tenant sea limpio (ya prometemos 30 días de exportación de datos al cliente).
 
 ```mermaid
 flowchart TD
-    A[Cliente se registra<br/>flor.negociofacil.com] --> B[DNS wildcard + proxy<br/>subdominio to tenant_id]
+    A[Cliente se registra<br/>flor.arandano.app] --> B[DNS wildcard + proxy<br/>subdominio to tenant_id]
     B --> C[App compartida multi-tenant<br/>Next.js + bot WhatsApp/IG]
     B --> D[Provisioning automatico<br/>Terraform crea VPC]
     C --> E[Postgres compartido<br/>RLS aisla cada tenant]
@@ -78,7 +78,7 @@ flowchart TD
 | Tiempo real (bandeja del bot) | **Socket.io / ws** sobre el servidor Node custom | Posible porque el deploy es un VPS propio, no serverless |
 | Integración WhatsApp / Instagram | **Meta Cloud API oficial** (Tech Provider), llamada HTTP directa | Vía oficial, evita riesgo de baneo de número |
 | Facturación ARCA | **afip.js**, aislado detrás de una interfaz propia (`billing/emitirFactura()`) | Es la opción disponible en Node pero menos madura que el equivalente Python (pyafipws); aislarla permite reemplazarla por un microservicio si falla en producción |
-| Reverse proxy / TLS | **Caddy** con certificado wildcard `*.negociofacil.com` vía DNS-01 | TLS automático sin gestionar certificados a mano |
+| Reverse proxy / TLS | **Caddy** con certificado wildcard `*.arandano.app` vía DNS-01 | TLS automático sin gestionar certificados a mano |
 | Servidor | **1 VPS en Hetzner** — `ngfacil-ubuntu-8gb-ash-1`, 2 vCPU / 8 GB, Ubuntu 26.04, Ashburn (`178.156.251.41`) | Suficiente para cientos de tenants con este volumen de uso; no se justifica multi-servidor todavía. Con sólo 2 vCPU, los límites de recursos entre dev y prod son obligatorios (ver *Entorno de trabajo*) |
 | Acceso a entornos internos | **Tailscale** (ya instalado y en uso) | Permite exponer el stack de desarrollo sin abrirlo a internet: dev escucha únicamente en la IP de Tailscale del servidor |
 | Orquestación | **Docker Compose** (Next.js + Postgres + Caddy) | Simplicidad operativa para un solo servidor |
@@ -90,11 +90,11 @@ El desarrollo ocurre sobre el mismo VPS que sirve a los clientes, y así va a qu
 
 **Producción no es un directorio donde se edita: es una imagen que se corre.**
 
-- `/root/negociofacil` es el workspace de desarrollo. Es el repo, y ahí se rompe lo que haga falta.
-- `/srv/negociofacil/prod/` contiene sólo `docker-compose.yml`, `.env` y los volúmenes. **Sin código fuente.** Corre una imagen Docker tageada con el SHA de git.
+- `/root/arandano` es el workspace de desarrollo. Es el repo, y ahí se rompe lo que haga falta.
+- `/srv/arandano/prod/` contiene sólo `docker-compose.yml`, `.env` y los volúmenes. **Sin código fuente.** Corre una imagen Docker tageada con el SHA de git.
 - El único camino para cambiar producción es un deploy. Nunca un editor ni un `next dev` sobre lo que un cliente está usando.
 
-**Aislamiento de los tres stacks.** Tres proyectos Compose con nombres distintos (`ngf-prod`, `ngf-dev`, `ngf-stage`), cada uno con su red, sus volúmenes y su base de datos. Un `docker compose down -v` en dev es incapaz de tocar los datos de producción. Dev y stage escuchan únicamente en la IP de Tailscale del servidor (`100.64.81.63`), así que no existen desde internet; prod escucha en 80/443 detrás de Caddy.
+**Aislamiento de los tres stacks.** Tres proyectos Compose con nombres distintos (`arandano-prod`, `arandano-dev`, `arandano-stage`), cada uno con su red, sus volúmenes y su base de datos. Un `docker compose down -v` en dev es incapaz de tocar los datos de producción. Dev y stage escuchan únicamente en la IP de Tailscale del servidor (`100.64.81.63`), así que no existen desde internet; prod escucha en 80/443 detrás de Caddy.
 
 **Convivencia sobre 2 vCPU.** Los límites de recursos son la única defensa que hay, así que no son opcionales:
 
@@ -102,12 +102,12 @@ El desarrollo ocurre sobre el mismo VPS que sirve a los clientes, y así va a qu
 - Swap configurada — el servidor viene sin ella. Sin swap, un OOM durante un build deja que el kernel elija víctima, y puede ser Postgres.
 - `oom_score_adj` negativo en el contenedor de Postgres de producción, para que sea el último candidato del OOM killer.
 - Rotación de logs de Docker (`max-size` / `max-file`) en los tres stacks, para que dev no pueda llenar el disco.
-- **Los builds corren dentro del slice de systemd `ngfbuild.slice` (2 GiB, un core), más `--resource` por contenedor de `RUN`**, y ese comando concreto importa: `nice` y `docker build --cpuset-cpus=… --memory=…` **no hacen absolutamente nada** sobre esta máquina y no avisan que no lo hacen. El detalle y la prueba están en `docs/runbook-stacks.md`; `scripts/verify-infra.sh build` lo comprueba contra un build real.
-- **`ngf-dev` se frena antes de que arranque el build**, no antes de stage. Es lo único que hace cerrar la aritmética: prod (3200 MiB) + dev (2304) + el build (2048) + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6 GB. Con dev abajo desde el primer paso del deploy, el pico queda en ~7.5 GB — y de paso queda cubierta la regla de que dev y stage no corren juntos, porque stage viene después del build.
+- **Los builds corren dentro del slice de systemd `arandanobuild.slice` (2 GiB, un core), más `--resource` por contenedor de `RUN`**, y ese comando concreto importa: `nice` y `docker build --cpuset-cpus=… --memory=…` **no hacen absolutamente nada** sobre esta máquina y no avisan que no lo hacen. El detalle y la prueba están en `docs/runbook-stacks.md`; `scripts/verify-infra.sh build` lo comprueba contra un build real.
+- **`arandano-dev` se frena antes de que arranque el build**, no antes de stage. Es lo único que hace cerrar la aritmética: prod (3200 MiB) + dev (2304) + el build (2048) + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6 GB. Con dev abajo desde el primer paso del deploy, el pico queda en ~7.5 GB — y de paso queda cubierta la regla de que dev y stage no corren juntos, porque stage viene después del build.
 
-**Staging es la promoción del artefacto, no otra máquina.** El deploy buildea la imagen una sola vez, la corre en un tercer stack (`ngf-stage`) contra un Postgres **efímero en tmpfs** —no contra la base de dev, que suele tener trabajo en curso—, le pasa healthcheck y smoke tests, y recién entonces promueve **esa misma imagen** a producción. Nunca se rebuildea para prod: lo que se probó es exactamente lo que se sirve.
+**Staging es la promoción del artefacto, no otra máquina.** El deploy buildea la imagen una sola vez, la corre en un tercer stack (`arandano-stage`) contra un Postgres **efímero en tmpfs** —no contra la base de dev, que suele tener trabajo en curso—, le pasa healthcheck y smoke tests, y recién entonces promueve **esa misma imagen** a producción. Nunca se rebuildea para prod: lo que se probó es exactamente lo que se sirve.
 
-El deploy frena `ngf-dev` desde el arranque —antes del build, no antes de stage— y lo vuelve a levantar al terminar. Eso resuelve dos cosas de una: el pico de memoria del build (ver *Convivencia sobre 2 vCPU*) y el hecho de que dev y stage no pueden correr a la vez, porque sus límites de CPU sumados pasarían de un core.
+El deploy frena `arandano-dev` desde el arranque —antes del build, no antes de stage— y lo vuelve a levantar al terminar. Eso resuelve dos cosas de una: el pico de memoria del build (ver *Convivencia sobre 2 vCPU*) y el hecho de que dev y stage no pueden correr a la vez, porque sus límites de CPU sumados pasarían de un core.
 
 **Migraciones.** Es el riesgo mayor del esquema, por encima de los bugs de código: un bug se arregla en minutos, una migración destructiva se lleva datos de un cliente que no vuelven.
 
@@ -115,7 +115,7 @@ El deploy frena `ngf-dev` desde el arranque —antes del build, no antes de stag
 - **Expand/contract**: ninguna columna se borra ni se renombra en el mismo deploy que deja de usarla. Primero se deploya el código que no la usa, y el drop viene en un deploy posterior. Es lo que mantiene el rollback siempre posible.
 - `pg_dump` inmediatamente antes de cada migración, además del backup nocturno.
 
-**El deploy es un comando con gate.** `deploy.sh` encadena: tests → typecheck → build tageado → backup → `migrate deploy` → smoke test contra `ngf-stage` → promoción de la imagen → healthcheck → tag de git → rollback automático a la imagen anterior si algo falla. Sin pasos manuales que se puedan saltear un martes a las 11 de la noche.
+**El deploy es un comando con gate.** `deploy.sh` encadena: tests → typecheck → build tageado → backup → `migrate deploy` → smoke test contra `arandano-stage` → promoción de la imagen → healthcheck → tag de git → rollback automático a la imagen anterior si algo falla. Sin pasos manuales que se puedan saltear un martes a las 11 de la noche.
 
 **Cada deploy exitoso deja un tag de git.** La imagen ya va tageada con el SHA, pero el SHA no se lee ni se ordena: el tag es el índice humano de qué estuvo en producción y cuándo.
 
@@ -146,7 +146,7 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 
 **2. El healthcheck es la única barrera automática, así que tiene que valer algo.** Un endpoint que devuelve 200 fijo no detecta nada. Chequea que la app responda, que Postgres responda, que una query real filtrada por tenant devuelva datos y que pg-boss esté vivo. Si algo de eso falla, rollback.
 
-**3. Los smoke tests son la última verificación antes de que llegue a todos.** Corren contra `ngf-dev` con la imagen ya buildeada, sobre los caminos que más duelen: login, alta de venta, emisión de factura contra homologación, apertura y cierre de orden de trabajo, y catálogo público.
+**3. Los smoke tests son la última verificación antes de que llegue a todos.** Corren contra `arandano-dev` con la imagen ya buildeada, sobre los caminos que más duelen: login, alta de venta, emisión de factura contra homologación, apertura y cierre de orden de trabajo, y catálogo público.
 
 **Deploys chicos y frecuentes.** Sin flags, el tamaño del deploy es literalmente el radio de daño. Diez deploys chicos por semana son más seguros que uno grande por mes: cuando algo se rompe, se sabe exactamente qué lo rompió y el rollback es obvio. Los deploys grandes y espaciados son los que producen las noches largas.
 
@@ -157,7 +157,7 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 **El ciclo de una feature.**
 
 1. Branch en un worktree aparte, no sobre el workspace principal — así una urgencia de producción no obliga a dejar trabajo a medias en el stash.
-2. Test primero, corriendo contra `ngf-dev`.
+2. Test primero, corriendo contra `arandano-dev`.
 3. Si toca el schema, migración aditiva probada con `migrate dev`.
 4. Review antes del merge: con un solo desarrollador es la única segunda mirada que existe.
 5. `deploy.sh` corre el gate completo y promueve la imagen.
@@ -166,7 +166,7 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 
 **El tenant canario.** Un tenant real en producción que sea propio: un demo que se use en serio, o el local de alguien de confianza. Sin flags no sirve para liberar de a poco, pero sí es el primer lugar donde se mira después de cada deploy — antes de que lo mire un cliente.
 
-**Cuando algo se rompe: rollback primero, diagnóstico después.** El healthcheck lo dispara solo, pero también tiene que ser un comando de una línea para lo que el healthcheck no ve. La tentación de "lo arreglo en dos minutos" es lo que convierte una caída de cinco minutos en una de dos horas. Y nunca editar en caliente en `/srv/negociofacil/prod/`: un fix urgente sigue siendo un deploy y pasa el mismo gate, porque es justo cuando hay apuro que más falta hace.
+**Cuando algo se rompe: rollback primero, diagnóstico después.** El healthcheck lo dispara solo, pero también tiene que ser un comando de una línea para lo que el healthcheck no ve. La tentación de "lo arreglo en dos minutos" es lo que convierte una caída de cinco minutos en una de dos horas. Y nunca editar en caliente en `/srv/arandano/prod/`: un fix urgente sigue siendo un deploy y pasa el mismo gate, porque es justo cuando hay apuro que más falta hace.
 
 **Observabilidad, fuera del VPS.** Con 2 vCPU no entra un stack propio, y tampoco hace falta: Sentry para errores de aplicación, un uptime check externo contra el healthcheck, y los logs estructurados con rotación ya previstos. Sin esto, el detector de bugs en producción es un cliente escribiendo por WhatsApp.
 
@@ -209,8 +209,8 @@ Los presets de rubro nuevos (veterinaria, peluquería, dietética, etc.) no son 
 
 ## Roadmap de infraestructura
 
-0. **Preparar la máquina**: swap, Docker, los tres stacks Compose (`ngf-dev`, `ngf-stage` y `ngf-prod`) con sus límites de recursos, el presupuesto de los builds, dev y stage detrás de Tailscale, y el healthcheck con contenido real. Los backups con restore verificado y `deploy.sh` son sus propios ciclos (ver *Bloqueantes antes del primer tenant real*), y van igual antes del primer tenant.
-1. **MVP**: 1 servidor Hetzner, Docker Compose (Next.js + Postgres + Caddy), tenants compartidos con RLS. Requiere apuntar el DNS de `negociofacil.com` y el wildcard `*.negociofacil.com` al servidor (hoy resuelve a IPs de parking de AWS).
+0. **Preparar la máquina**: swap, Docker, los tres stacks Compose (`arandano-dev`, `arandano-stage` y `arandano-prod`) con sus límites de recursos, el presupuesto de los builds, dev y stage detrás de Tailscale, y el healthcheck con contenido real. Los backups con restore verificado y `deploy.sh` son sus propios ciclos (ver *Bloqueantes antes del primer tenant real*), y van igual antes del primer tenant.
+1. **MVP**: 1 servidor Hetzner, Docker Compose (Next.js + Postgres + Caddy), tenants compartidos con RLS. Requiere apuntar el DNS de `arandano.app` y el wildcard `*.arandano.app` al servidor (hoy resuelve a IPs de parking de AWS).
 2. **Upsell Premium**: provisioning automatizado (Terraform) de VPC dedicada + instancia propia del repo, disparado solo cuando un cliente lo contrata.
 3. **Escalar horizontal**: recién cuando el servidor único se quede corto de CPU/RAM, se necesite alta disponibilidad real, o el volumen de background jobs justifique sumar Redis — no antes.
 
@@ -219,12 +219,12 @@ Los presets de rubro nuevos (veterinaria, peluquería, dietética, etc.) no son 
 Los primeros cuatro son de entorno y van antes que cualquier línea de producto, porque definen dónde y cómo se escribe todo lo demás:
 
 - Configurar swap e instalar Docker (el servidor hoy no lo tiene).
-- Armar los tres stacks Compose (`ngf-dev`, `ngf-stage` y `ngf-prod`) con redes, volúmenes y bases separadas, límites de CPU y memoria, y rotación de logs.
+- Armar los tres stacks Compose (`arandano-dev`, `arandano-stage` y `arandano-prod`) con redes, volúmenes y bases separadas, límites de CPU y memoria, y rotación de logs.
 - Escribir `deploy.sh` con su gate completo (tests, build tageado, backup, `migrate deploy`, smoke test, promoción, healthcheck, tag de git pusheado a `origin`, rollback).
 - Montar los backups con `pg_dump` y el restore verificado contra una base descartable.
 - Completar el healthcheck — ver *Bloqueantes antes del primer tenant real*, que es donde vive la lista con el detalle.
 - Conectar Sentry y un uptime check externo contra el healthcheck.
-- Apuntar el DNS de `negociofacil.com` y el wildcard `*.negociofacil.com` al servidor, y configurar el certificado wildcard por DNS-01 en Caddy.
+- Apuntar el DNS de `arandano.app` y el wildcard `*.arandano.app` al servidor, y configurar el certificado wildcard por DNS-01 en Caddy.
 
 Y del producto:
 
@@ -246,13 +246,13 @@ Y del producto:
 3. **`deploy.sh`** con su gate completo.
 4. **`deploy.sh` tiene que negarse a buildear con el working tree sucio** (`git diff --quiet`). La imagen se tagea con el SHA de git, así que buildear con cambios sin commitear produce una imagen cuya etiqueta apunta a un código que no contiene — y esa etiqueta es lo que alguien lee para saber qué está corriendo.
 5. **`deploy.sh` tiene que pasar `GIT_SHA` explícito** en cada build. El Dockerfile ya falla sin él, a propósito.
-6. **`deploy.sh` tiene que frenar `ngf-dev` antes del build, no antes del smoke test contra stage.** La aritmética de memoria no cierra de otra forma: prod 3200 MiB + dev 2304 MiB + build 2048 MiB + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6 GB. La regla vieja ("dev y stage no corren juntos") dejaba dev arriba durante el build, porque el orden documentado es build → backup → migrate → smoke test contra stage. Con dev abajo desde el primer paso el pico queda en ~7.5 GB — el número que efectivamente documenta el presupuesto — y de paso la regla de dev/stage también queda cubierta.
-7. **`deploy.sh` tiene que buildear con `--cgroup-parent=ngfbuild.slice --resource memory=2g --resource cpu-quota=100000`.** Las banderas que uno esperaría (`nice`, `--cpuset-cpus`, `--memory`) son inertes en este host y no avisan que lo son: `nice` afecta al cliente que lanza el comando, no a BuildKit (que corre dentro de `dockerd`), y `docker build` es en realidad `docker buildx build`, cuya lista de flags no tiene `--cpuset-cpus` ni `--memory` — las traga sin warning y sale con 0. `scripts/verify-infra.sh build` verifica el límite efectivo leyéndolo desde adentro de un build real, no el comando documentado.
+6. **`deploy.sh` tiene que frenar `arandano-dev` antes del build, no antes del smoke test contra stage.** La aritmética de memoria no cierra de otra forma: prod 3200 MiB + dev 2304 MiB + build 2048 MiB + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6 GB. La regla vieja ("dev y stage no corren juntos") dejaba dev arriba durante el build, porque el orden documentado es build → backup → migrate → smoke test contra stage. Con dev abajo desde el primer paso el pico queda en ~7.5 GB — el número que efectivamente documenta el presupuesto — y de paso la regla de dev/stage también queda cubierta.
+7. **`deploy.sh` tiene que buildear con `--cgroup-parent=arandanobuild.slice --resource memory=2g --resource cpu-quota=100000`.** Las banderas que uno esperaría (`nice`, `--cpuset-cpus`, `--memory`) son inertes en este host y no avisan que lo son: `nice` afecta al cliente que lanza el comando, no a BuildKit (que corre dentro de `dockerd`), y `docker build` es en realidad `docker buildx build`, cuya lista de flags no tiene `--cpuset-cpus` ni `--memory` — las traga sin warning y sale con 0. `scripts/verify-infra.sh build` verifica el límite efectivo leyéndolo desde adentro de un build real, no el comando documentado.
 8. **`deploy.sh` tiene que comparar el `info.sha` que reporta el healthcheck contra el tag de la imagen que promovió.** Hoy nada lo verifica: el healthcheck puede dar 200 desde el contenedor VIEJO si la promoción no reemplazó nada, y el deploy se declararía exitoso igual aunque lo que respondió nunca haya sido lo que pasó el smoke test.
 
 ### Bloqueantes antes del cutover de DNS
 
-Plazo distinto y más temprano que la lista anterior: hay que cerrar esto antes de apuntar `negociofacil.com` al servidor, no antes del primer tenant.
+Plazo distinto y más temprano que la lista anterior: hay que cerrar esto antes de apuntar `arandano.app` al servidor, no antes del primer tenant.
 
 1. **El bloque `:80` del Caddyfile tiene que pasar a ser sólo redirección** (`redir https://{host}{uri}`), nunca `reverse_proxy`. Hoy es un catch-all en texto plano sin host: `curl http://178.156.251.41/api/health` responde 200 desde internet. Con tenants adentro, eso serviría cookies de sesión en claro.
 2. **Decidir si `/api/health` se autentica o se restringe por origen.** Es el endpoint más caro expuesto (un ida y vuelta a Postgres por request, pool de máximo 5, sin rate limiting en ninguna capa) y a la vez el único que un uptime check externo necesita alcanzar.
