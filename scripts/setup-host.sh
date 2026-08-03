@@ -30,9 +30,12 @@ setup_swap() {
 }
 
 setup_docker() {
+  local recien_instalado=false
+
   if command -v docker >/dev/null 2>&1; then
     echo "docker ya instalado, salteando instalación"
   else
+    recien_instalado=true
     echo "instalando docker desde el repositorio oficial"
     apt-get update -qq
     apt-get install -y -qq ca-certificates curl
@@ -47,10 +50,19 @@ setup_docker() {
       docker-buildx-plugin docker-compose-plugin
   fi
 
+  # enable --now sólo tiene sentido en la instalación original: si docker ya
+  # está instalado, el servicio ya está habilitado y corriendo (o el restart
+  # de más abajo se encarga si hace falta).
+  if [[ "$recien_instalado" == true ]]; then
+    systemctl enable --now docker
+  fi
+
   # Rotación a nivel daemon, no sólo en cada compose: un contenedor
   # levantado a mano tampoco puede llenar el disco.
   # live-restore: reiniciar el daemon no tira los contenedores de prod.
-  cat > /etc/docker/daemon.json <<'JSON'
+  local daemon_json_nuevo
+  daemon_json_nuevo=$(mktemp)
+  cat > "$daemon_json_nuevo" <<'JSON'
 {
   "log-driver": "json-file",
   "log-opts": {
@@ -61,8 +73,22 @@ setup_docker() {
 }
 JSON
 
-  systemctl enable --now docker
-  systemctl restart docker
+  # El restart es condicional a propósito, no una optimización cosmética:
+  # la protección de live-restore la determina la configuración que el
+  # daemon ya tenía cargada al momento de morir, no la que el próximo arranque
+  # va a leer. Por eso el restart que hace la transición de "sin live-restore"
+  # a "con live-restore" no está protegido por live-restore y tira abajo los
+  # contenedores corriendo. En estado estable (el archivo ya es el correcto)
+  # no hay que reiniciar nada — sólo reinstalar y reiniciar cuando el
+  # contenido realmente cambia.
+  if [[ -f /etc/docker/daemon.json ]] && cmp -s "$daemon_json_nuevo" /etc/docker/daemon.json; then
+    echo "daemon.json ya tiene la configuración correcta, se saltea el restart"
+    rm -f "$daemon_json_nuevo"
+  else
+    install -m 0644 "$daemon_json_nuevo" /etc/docker/daemon.json
+    rm -f "$daemon_json_nuevo"
+    systemctl restart docker
+  fi
 }
 
 setup_swap
