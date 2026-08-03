@@ -20,12 +20,12 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0
 
 # Usuario no-root: si alguien escapa del proceso, no arranca como root.
-RUN addgroup -g 1001 -S ngf && adduser -u 1001 -S ngf -G ngf
+RUN addgroup -g 1001 -S arandano && adduser -u 1001 -S arandano -G arandano
 
 # Sólo el output standalone: sin código fuente ni devDependencies.
-COPY --from=build --chown=ngf:ngf /app/.next/standalone ./
-COPY --from=build --chown=ngf:ngf /app/.next/static ./.next/static
-COPY --from=build --chown=ngf:ngf /app/public ./public
+COPY --from=build --chown=arandano:arandano /app/.next/standalone ./
+COPY --from=build --chown=arandano:arandano /app/.next/static ./.next/static
+COPY --from=build --chown=arandano:arandano /app/public ./public
 
 # GIT_SHA es obligatorio: sin default. Una imagen que no sabe qué código
 # lleva y lo disimula con un valor tipo "dev" es peor que un build que falla
@@ -39,6 +39,6 @@ RUN test -n "$GIT_SHA" || { \
     }
 ENV GIT_SHA=$GIT_SHA
 
-USER ngf
+USER arandano
 EXPOSE 3000
 CMD ["node", "server.js"]

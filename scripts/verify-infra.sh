@@ -82,24 +82,24 @@ suite_app() {
   # global igual saldría mal por el chequeo del 200, pero la salida mostraría
   # tres pass espurios al lado del fail — y lo que alguien lee a las 11 de la
   # noche es la salida, no el exit code.
-  rm -f /tmp/ngf-health.json
+  rm -f /tmp/arandano-health.json
 
   local code
-  code=$(curl -s -o /tmp/ngf-health.json -w '%{http_code}' \
+  code=$(curl -s -o /tmp/arandano-health.json -w '%{http_code}' \
     "http://$TS_IP:3000/api/health" 2>/dev/null || echo 000)
   check_eq "healthcheck de dev devuelve 200" "200" "$code"
 
   check_cmd "reporta el check de postgres" \
-    grep -q '"name":"postgres"' /tmp/ngf-health.json
+    grep -q '"name":"postgres"' /tmp/arandano-health.json
   # El SHA ahora viaja en `info`, no como un check verde: no puede fallar, así
   # que no vota el veredicto.
   check_cmd "expone el SHA como info, no como check" \
-    grep -q '"info":{"sha":' /tmp/ngf-health.json
+    grep -q '"info":{"sha":' /tmp/arandano-health.json
   check_cmd "el SHA/uptime ya no se reporta como un check" \
-    bash -c '! grep -q "\"name\":\"app\"" /tmp/ngf-health.json'
+    bash -c '! grep -q "\"name\":\"app\"" /tmp/arandano-health.json'
   # El check de postgres confirma identidad de base, no sólo alcanzabilidad.
   check_cmd "el check de postgres confirma contra qué base habla" \
-    grep -q '"detail":"db=ngf_dev"' /tmp/ngf-health.json
+    grep -q '"detail":"db=arandano_dev"' /tmp/arandano-health.json
 }
 
 suite_network() {
@@ -127,26 +127,26 @@ suite_limits() {
 
   # mem_limit se lee en bytes desde la API de Docker.
   local dev_app_mem prod_pg_mem prod_pg_oom dev_app_cpu
-  dev_app_mem=$(docker inspect ngf-dev-app-1 \
+  dev_app_mem=$(docker inspect arandano-dev-app-1 \
     --format '{{.HostConfig.Memory}}' 2>/dev/null || echo 0)
   check_eq "dev app con 1536m de límite" "1610612736" "$dev_app_mem"
 
-  prod_pg_mem=$(docker inspect ngf-prod-postgres-1 \
+  prod_pg_mem=$(docker inspect arandano-prod-postgres-1 \
     --format '{{.HostConfig.Memory}}' 2>/dev/null || echo 0)
   check_eq "prod postgres con 1536m de límite" "1610612736" "$prod_pg_mem"
 
-  prod_pg_oom=$(docker inspect ngf-prod-postgres-1 \
+  prod_pg_oom=$(docker inspect arandano-prod-postgres-1 \
     --format '{{.HostConfig.OomScoreAdj}}' 2>/dev/null || echo 0)
   check_eq "prod postgres con oom_score_adj -500" "-500" "$prod_pg_oom"
 
   # NanoCpus: 0.75 core = 750000000
-  dev_app_cpu=$(docker inspect ngf-dev-app-1 \
+  dev_app_cpu=$(docker inspect arandano-dev-app-1 \
     --format '{{.HostConfig.NanoCpus}}' 2>/dev/null || echo 0)
   check_eq "dev app capada a 0.75 cores" "750000000" "$dev_app_cpu"
 
   # Prod NO debe tener cap: gana por peso, no por reserva.
   local prod_app_cpu
-  prod_app_cpu=$(docker inspect ngf-prod-app-1 \
+  prod_app_cpu=$(docker inspect arandano-prod-app-1 \
     --format '{{.HostConfig.NanoCpus}}' 2>/dev/null || echo -1)
   check_eq "prod app sin cap de CPU" "0" "$prod_app_cpu"
 
@@ -154,19 +154,19 @@ suite_limits() {
   # compose; chequear cinco y suponer los otros ocho es justo la forma en que
   # un límite aflojado pasa desapercibido.
   local prod_app_mem caddy_mem dev_pg_mem dev_pg_cpu
-  prod_app_mem=$(docker inspect ngf-prod-app-1 \
+  prod_app_mem=$(docker inspect arandano-prod-app-1 \
     --format '{{.HostConfig.Memory}}' 2>/dev/null || echo 0)
   check_eq "prod app con 1536m de límite" "1610612736" "$prod_app_mem"
 
-  caddy_mem=$(docker inspect ngf-prod-caddy-1 \
+  caddy_mem=$(docker inspect arandano-prod-caddy-1 \
     --format '{{.HostConfig.Memory}}' 2>/dev/null || echo 0)
   check_eq "prod caddy con 128m de límite" "134217728" "$caddy_mem"
 
-  dev_pg_mem=$(docker inspect ngf-dev-postgres-1 \
+  dev_pg_mem=$(docker inspect arandano-dev-postgres-1 \
     --format '{{.HostConfig.Memory}}' 2>/dev/null || echo 0)
   check_eq "dev postgres con 768m de límite" "805306368" "$dev_pg_mem"
 
-  dev_pg_cpu=$(docker inspect ngf-dev-postgres-1 \
+  dev_pg_cpu=$(docker inspect arandano-dev-postgres-1 \
     --format '{{.HostConfig.NanoCpus}}' 2>/dev/null || echo 0)
   check_eq "dev postgres capado a 0.25 cores" "250000000" "$dev_pg_cpu"
 
@@ -177,8 +177,8 @@ suite_limits() {
   # y nada más en el sistema lo nota.
   local shares
   for par in \
-    "ngf-prod-app-1:1024" "ngf-prod-postgres-1:1024" "ngf-prod-caddy-1:1024" \
-    "ngf-dev-app-1:256" "ngf-dev-postgres-1:256"; do
+    "arandano-prod-app-1:1024" "arandano-prod-postgres-1:1024" "arandano-prod-caddy-1:1024" \
+    "arandano-dev-app-1:256" "arandano-dev-postgres-1:256"; do
     shares=$(docker inspect "${par%%:*}" \
       --format '{{.HostConfig.CpuShares}}' 2>/dev/null || echo NA)
     check_eq "${par%%:*} con cpu_shares ${par##*:}" "${par##*:}" "$shares"
@@ -188,7 +188,7 @@ suite_limits() {
 suite_env() {
   suite_header "Separación de entornos: prod no es un directorio que se edita"
 
-  local prod_dir=/srv/negociofacil/prod
+  local prod_dir=/srv/arandano/prod
 
   # "Producción no es un directorio donde se edita: es una imagen que se
   # corre" (CLAUDE.md). Si aparece código fuente ahí, alguien ya empezó a
@@ -215,17 +215,17 @@ suite_env() {
   # Credenciales distintas entre entornos, empezando por las de la base
   # (CLAUDE.md). Si coinciden, prod y dev están a un typo de compartir datos.
   local dev_url prod_url
-  dev_url=$(docker exec ngf-dev-app-1 printenv DATABASE_URL 2>/dev/null || echo NA-dev)
-  prod_url=$(docker exec ngf-prod-app-1 printenv DATABASE_URL 2>/dev/null || echo NA-prod)
+  dev_url=$(docker exec arandano-dev-app-1 printenv DATABASE_URL 2>/dev/null || echo NA-dev)
+  prod_url=$(docker exec arandano-prod-app-1 printenv DATABASE_URL 2>/dev/null || echo NA-prod)
   check_ne "dev y prod no comparten DATABASE_URL" "$dev_url" "$prod_url"
 
   # Y que cada app sepa contra qué base debe estar hablando: es lo que
   # convierte el check de postgres en una prueba de identidad y no sólo de
   # alcanzabilidad.
-  check_eq "dev espera su propia base" "ngf_dev" \
-    "$(docker exec ngf-dev-app-1 printenv NGF_DB_ESPERADA 2>/dev/null || echo NA)"
-  check_eq "prod espera su propia base" "ngf_prod" \
-    "$(docker exec ngf-prod-app-1 printenv NGF_DB_ESPERADA 2>/dev/null || echo NA)"
+  check_eq "dev espera su propia base" "arandano_dev" \
+    "$(docker exec arandano-dev-app-1 printenv ARANDANO_DB_ESPERADA 2>/dev/null || echo NA)"
+  check_eq "prod espera su propia base" "arandano_prod" \
+    "$(docker exec arandano-prod-app-1 printenv ARANDANO_DB_ESPERADA 2>/dev/null || echo NA)"
 }
 
 suite_build() {
@@ -243,17 +243,17 @@ suite_build() {
 
   # Primera mitad: el slice de systemd, que es el techo agregado del build.
   # Sin guiones en el nombre a propósito (ver setup-host.sh): con guion,
-  # systemd lo colgaría de ngf.slice y la ruta dejaría de coincidir con la que
+  # systemd lo colgaría de arandano.slice y la ruta dejaría de coincidir con la que
   # resuelve --cgroup-parent.
   local slice_mem slice_cpu
-  slice_mem=$(cat /sys/fs/cgroup/ngfbuild.slice/memory.max 2>/dev/null || echo NA)
+  slice_mem=$(cat /sys/fs/cgroup/arandanobuild.slice/memory.max 2>/dev/null || echo NA)
   check_eq "el slice de build capea la memoria en 2 GiB" "2147483648" "$slice_mem"
 
-  slice_cpu=$(cat /sys/fs/cgroup/ngfbuild.slice/cpu.max 2>/dev/null || echo NA)
+  slice_cpu=$(cat /sys/fs/cgroup/arandanobuild.slice/cpu.max 2>/dev/null || echo NA)
   check_eq "el slice de build capea la CPU en un core" "100000 100000" "$slice_cpu"
 
   check_cmd "el slice de build sobrevive un reboot (enabled)" \
-    systemctl is-enabled ngfbuild.slice
+    systemctl is-enabled arandanobuild.slice
 
   # Segunda mitad, la que realmente prueba algo: leer el límite DESDE ADENTRO
   # de un build de verdad. Que el slice tenga el número correcto no dice nada
@@ -262,8 +262,8 @@ suite_build() {
   ctx=$(mktemp -d)
   cat > "$ctx/Dockerfile" <<'DOCKERFILE'
 FROM alpine:latest
-RUN sleep 1 && echo "NGF_MEM_MAX=$(cat /sys/fs/cgroup/memory.max)" && \
-    echo "NGF_CPU_MAX=$(cat /sys/fs/cgroup/cpu.max)"
+RUN sleep 1 && echo "ARANDANO_MEM_MAX=$(cat /sys/fs/cgroup/memory.max)" && \
+    echo "ARANDANO_CPU_MAX=$(cat /sys/fs/cgroup/cpu.max)"
 DOCKERFILE
 
   # Se tagea a propósito, aunque la imagen no se use: con el driver `docker`,
@@ -273,20 +273,20 @@ DOCKERFILE
   # --no-cache es obligatorio: un RUN cacheado reimprimiría el resultado de la
   # corrida anterior en vez de medir esta, que es como este chequeo dejaría de
   # medir el presente sin dejar de estar verde.
-  local tag="ngf-verify-build-$$:tmp"
+  local tag="arandano-verify-build-$$:tmp"
   trap 'docker rmi -f "$tag" >/dev/null 2>&1; trap - RETURN' RETURN
 
   # OJO — no borrar este bloque pensando que es redundante con los dos
   # `check_eq` de memory.max/cpu.max de más abajo: esos sólo prueban el
   # número que `--resource` le pidió a BuildKit, no DÓNDE vive el proceso.
-  # Si alguien borra `--cgroup-parent=ngfbuild.slice` del comando documentado
+  # Si alguien borra `--cgroup-parent=arandanobuild.slice` del comando documentado
   # pero deja los `--resource`, BuildKit arranca el RUN igual, con esos
   # mismos límites... colgado de otro cgroup. El techo AGREGADO del slice
   # (el que capea la suma de builds concurrentes, no cada uno por separado)
   # desaparece en silencio y los dos checks de abajo seguirían en verde.
   # Por eso hace falta mirar dónde cuelga el proceso, no sólo qué límite
   # reporta: se lanza el build en background y, mientras el RUN sigue vivo,
-  # se comprueba que `/sys/fs/cgroup/ngfbuild.slice/buildkit/` tenga un
+  # se comprueba que `/sys/fs/cgroup/arandanobuild.slice/buildkit/` tenga un
   # subdirectorio propio del build (algo como .../buildkit/<id>/) — ahí es
   # donde BuildKit cuelga el proceso del RUN cuando `--cgroup-parent` sí se
   # aplicó. Tiene que ser `-type d`: el propio `buildkit/` ya existe siempre
@@ -299,13 +299,13 @@ DOCKERFILE
   local salida_file build_pid intentos=0 en_slice=0
   salida_file=$(mktemp)
   docker build --no-cache --progress=plain \
-    --cgroup-parent=ngfbuild.slice \
+    --cgroup-parent=arandanobuild.slice \
     --resource memory=2g --resource cpu-quota=100000 \
     -t "$tag" -f "$ctx/Dockerfile" "$ctx" >"$salida_file" 2>&1 &
   build_pid=$!
 
   while kill -0 "$build_pid" 2>/dev/null && [[ "$intentos" -lt 150 ]]; do
-    if find /sys/fs/cgroup/ngfbuild.slice/buildkit -mindepth 1 -maxdepth 1 \
+    if find /sys/fs/cgroup/arandanobuild.slice/buildkit -mindepth 1 -maxdepth 1 \
          -type d 2>/dev/null | grep -q .; then
       en_slice=1
       break
@@ -319,18 +319,18 @@ DOCKERFILE
   rm -f "$salida_file"
   rm -rf "$ctx"
 
-  check_eq "el proceso del build cuelga de ngfbuild.slice (no sólo --resource)" \
+  check_eq "el proceso del build cuelga de arandanobuild.slice (no sólo --resource)" \
     "1" "$en_slice"
 
   # Sólo las líneas de SALIDA del paso, no el eco del comando. Con
   # --progress=plain BuildKit imprime primero el Dockerfile del RUN (que
-  # contiene literalmente "NGF_MEM_MAX=$(cat ...)") y después el resultado;
+  # contiene literalmente "ARANDANO_MEM_MAX=$(cat ...)") y después el resultado;
   # las líneas de resultado son las que llevan el prefijo "#<n> <segundos> ".
   # Sin este filtro el eco matchea primero y el chequeo lee basura.
   local lineas
-  lineas=$(printf '%s\n' "$salida" | grep -E '^#[0-9]+ [0-9]+\.[0-9]+ NGF_')
-  mem=$(printf '%s\n' "$lineas" | sed -n 's/.*NGF_MEM_MAX=\(.*\)$/\1/p' | head -1)
-  cpu=$(printf '%s\n' "$lineas" | sed -n 's/.*NGF_CPU_MAX=\(.*\)$/\1/p' | head -1)
+  lineas=$(printf '%s\n' "$salida" | grep -E '^#[0-9]+ [0-9]+\.[0-9]+ ARANDANO_')
+  mem=$(printf '%s\n' "$lineas" | sed -n 's/.*ARANDANO_MEM_MAX=\(.*\)$/\1/p' | head -1)
+  cpu=$(printf '%s\n' "$lineas" | sed -n 's/.*ARANDANO_CPU_MAX=\(.*\)$/\1/p' | head -1)
 
   check_eq "el build ve 2 GiB de memory.max desde adentro" \
     "2147483648" "${mem:-NA}"
@@ -341,22 +341,22 @@ DOCKERFILE
 suite_isolation() {
   suite_header "Aislamiento entre stacks"
 
-  check_cmd "volumen de prod existe" docker volume inspect ngf-prod_pgdata
-  check_cmd "volumen de dev existe" docker volume inspect ngf-dev_pgdata
+  check_cmd "volumen de prod existe" docker volume inspect arandano-prod_pgdata
+  check_cmd "volumen de dev existe" docker volume inspect arandano-dev_pgdata
 
   # Redes separadas: dev no puede resolver el Postgres de prod.
   local dev_net prod_net
-  dev_net=$(docker network ls --format '{{.Name}}' | grep -c '^ngf-dev_default$')
-  prod_net=$(docker network ls --format '{{.Name}}' | grep -c '^ngf-prod_default$')
+  dev_net=$(docker network ls --format '{{.Name}}' | grep -c '^arandano-dev_default$')
+  prod_net=$(docker network ls --format '{{.Name}}' | grep -c '^arandano-prod_default$')
   check_eq "dev tiene su propia red" "1" "$dev_net"
   check_eq "prod tiene su propia red" "1" "$prod_net"
 
-  if docker exec ngf-dev-app-1 getent hosts postgres 2>/dev/null \
+  if docker exec arandano-dev-app-1 getent hosts postgres 2>/dev/null \
      | grep -q .; then
     # Resuelve, pero debe ser el postgres de dev, no el de prod.
     local resolved dev_pg_ip
-    resolved=$(docker exec ngf-dev-app-1 getent hosts postgres | awk '{print $1}')
-    dev_pg_ip=$(docker inspect ngf-dev-postgres-1 \
+    resolved=$(docker exec arandano-dev-app-1 getent hosts postgres | awk '{print $1}')
+    dev_pg_ip=$(docker inspect arandano-dev-postgres-1 \
       --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
     check_eq "dev resuelve su propio postgres" "$dev_pg_ip" "$resolved"
   else
@@ -378,7 +378,7 @@ suite_logs() {
   # este script mientras alguien lo corre a mano. Las dos corridas se pisan el
   # contenedor y una reporta "rotación NO activa" — un falso negativo sobre
   # justo el mecanismo que evita que dev llene el disco.
-  local logspam="ngf-logspam-$$"
+  local logspam="arandano-logspam-$$"
   # El `trap - RETURN` dentro del propio handler no es adorno: un trap de
   # RETURN queda registrado a nivel shell, no de la funcion que lo puso, asi
   # que sin desarmarlo vuelve a dispararse cuando retorna la SIGUIENTE funcion
@@ -434,7 +434,7 @@ suite_stress() {
   fi
 
   # Nombres únicos, por el mismo motivo que en suite_logs.
-  docker run --rm --memory=64m --name "ngf-memhog-$$" alpine \
+  docker run --rm --memory=64m --name "arandano-memhog-$$" alpine \
     sh -c 'tail /dev/zero' >/dev/null 2>&1
   exit_code=$?
   check_eq "contenedor excedido muere por el cgroup (137)" "137" "$exit_code"
@@ -447,7 +447,7 @@ suite_stress() {
   fi
 
   # Chequeo 1 de la spec: p95 de /api/health bajo 500ms con dev saturada.
-  local cpuhog="ngf-cpuhog-$$"
+  local cpuhog="arandano-cpuhog-$$"
   docker run --rm -d --name "$cpuhog" --cpus=1 --cpu-shares=256 \
     alpine sh -c 'while true; do :; done' >/dev/null 2>&1
 
@@ -488,23 +488,23 @@ suite_stress() {
   # un `exit` prolijo, que a su vez dispara el trap de EXIT. Se arma justo
   # antes de parar Postgres y se desarma después del restart normal, para
   # que una corrida sana no le pegue un segundo restart de más.
-  trap 'docker compose -p ngf-prod start postgres >/dev/null 2>&1' EXIT
+  trap 'docker compose -p arandano-prod start postgres >/dev/null 2>&1' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  docker compose -p ngf-prod stop postgres >/dev/null 2>&1
+  docker compose -p arandano-prod stop postgres >/dev/null 2>&1
   sleep 3
   # Mismo motivo que en suite_app: sin borrarlo antes, un curl que no conecta
   # deja el grep de abajo leyendo el JSON de la corrida anterior y aprobando
   # sobre evidencia vieja.
-  rm -f /tmp/ngf-degraded.json
+  rm -f /tmp/arandano-degraded.json
   # --max-time: un /api/health colgado no puede estirar la ventana en la
   # que Postgres de prod está parado de forma indefinida.
-  code=$(curl -sk -o /tmp/ngf-degraded.json -w '%{http_code}' --max-time 10 \
+  code=$(curl -sk -o /tmp/arandano-degraded.json -w '%{http_code}' --max-time 10 \
     https://localhost/api/health)
   check_eq "con Postgres caído el healthcheck da 503" "503" "$code"
   check_cmd "identifica que el check roto es postgres" \
-    grep -q '"name":"postgres","ok":false' /tmp/ngf-degraded.json
-  docker compose -p ngf-prod start postgres >/dev/null 2>&1
+    grep -q '"name":"postgres","ok":false' /tmp/arandano-degraded.json
+  docker compose -p arandano-prod start postgres >/dev/null 2>&1
   trap - EXIT INT TERM
 }
 

@@ -11,14 +11,14 @@ readonly SWAP_SIZE=4G
 
 # El presupuesto de recursos de los builds, en un slice de systemd. El nombre
 # NO lleva guiones a propósito: systemd interpreta el guion como jerarquía
-# ("ngf-build.slice" cuelga de "ngf.slice" y su cgroup real queda en
-# /sys/fs/cgroup/ngf.slice/ngf-build.slice). Sin guion el cgroup queda en el
-# tope, /sys/fs/cgroup/ngfbuild.slice, que es exactamente la ruta que resuelve
-# `docker build --cgroup-parent=ngfbuild.slice`. Con guion las dos rutas NO
+# ("arandano-build.slice" cuelga de "arandano.slice" y su cgroup real queda en
+# /sys/fs/cgroup/arandano.slice/arandano-build.slice). Sin guion el cgroup queda en el
+# tope, /sys/fs/cgroup/arandanobuild.slice, que es exactamente la ruta que resuelve
+# `docker build --cgroup-parent=arandanobuild.slice`. Con guion las dos rutas NO
 # coinciden: Docker crea un cgroup crudo homónimo en el tope, sin límite
 # ninguno, y el build queda sin capar mientras aparenta estar en el slice.
-readonly BUILD_SLICE=ngfbuild.slice
-readonly BUILD_SLICE_UNIT=/etc/systemd/system/ngfbuild.slice
+readonly BUILD_SLICE=arandanobuild.slice
+readonly BUILD_SLICE_UNIT=/etc/systemd/system/arandanobuild.slice
 
 setup_swap() {
   if swapon --show --noheadings | grep -q "$SWAPFILE"; then
@@ -36,7 +36,7 @@ setup_swap() {
 
   # swappiness bajo a propósito: la swap está para absorber el pico de un
   # build, no para que el kernel pagine Postgres de forma proactiva.
-  echo 'vm.swappiness=10' > /etc/sysctl.d/99-ngf-swappiness.conf
+  echo 'vm.swappiness=10' > /etc/sysctl.d/99-arandano-swappiness.conf
   sysctl -q -w vm.swappiness=10
 }
 
@@ -127,7 +127,7 @@ JSON
 # Lo que sí se verificó que ata, leyendo el límite DESDE ADENTRO del build:
 #
 # - `--resource memory=…,cpu-quota=…` fija el límite de cada contenedor de RUN.
-# - `--cgroup-parent=ngfbuild.slice` mete todo el árbol del build dentro de este
+# - `--cgroup-parent=arandanobuild.slice` mete todo el árbol del build dentro de este
 #   slice, que es el techo agregado — un multi-stage puede correr etapas en
 #   paralelo, y sin el slice cada una se llevaría su propio `--resource` entero.
 #
@@ -137,7 +137,7 @@ setup_build_slice() {
   unit_nueva=$(mktemp)
   cat > "$unit_nueva" <<'UNIT'
 [Unit]
-Description=Presupuesto de recursos de los builds de NegocioFacil
+Description=Presupuesto de recursos de los builds de Arándano
 
 [Slice]
 MemoryMax=2G

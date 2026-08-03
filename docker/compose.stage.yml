@@ -1,7 +1,7 @@
 # Stack de staging: corre la imagen ya buildeada contra un Postgres
 # efímero. Empezar siempre de un estado conocido es justamente lo que
 # valida una migración — por eso no comparte la base de dev.
-name: ngf-stage
+name: arandano-stage
 
 services:
   postgres:
@@ -11,13 +11,13 @@ services:
     # parar el contenedor, nunca ve datos de clientes, y el stack sólo escucha
     # en la IP de Tailscale. No hay secreto que proteger.
     # OJO SI SE COPIA ESTE ARCHIVO COMO PLANTILLA: en dev y en prod las
-    # credenciales van por env_file (.env.dev y /srv/negociofacil/prod/.env),
+    # credenciales van por env_file (.env.dev y /srv/arandano/prod/.env),
     # nunca inline. Lo que hace esto aceptable es que la base sea efímera, no
     # que sea cómodo.
     environment:
-      POSTGRES_USER: ngf_stage
+      POSTGRES_USER: arandano_stage
       POSTGRES_PASSWORD: efimero-no-persiste
-      POSTGRES_DB: ngf_stage
+      POSTGRES_DB: arandano_stage
       # PGDATA en un subdirectorio del tmpfs: el entrypoint lo crea y le
       # pone el owner correcto. Montar el tmpfs directamente en el
       # directorio de datos lo deja como root y initdb falla.
@@ -46,13 +46,13 @@ services:
       retries: 10
 
   app:
-    image: "ngf-app:${IMAGE_TAG:?IMAGE_TAG es obligatorio}"
+    image: "arandano-app:${IMAGE_TAG:?IMAGE_TAG es obligatorio}"
     environment:
-      NGF_STACK: stage
-      DATABASE_URL: postgres://ngf_stage:efimero-no-persiste@postgres:5432/ngf_stage
+      ARANDANO_STACK: stage
+      DATABASE_URL: postgres://arandano_stage:efimero-no-persiste@postgres:5432/arandano_stage
       # Ver compose.prod.yml: el healthcheck comprueba contra qué base está
       # hablando la app, no sólo que alguna responda.
-      NGF_DB_ESPERADA: ngf_stage
+      ARANDANO_DB_ESPERADA: arandano_stage
     ports:
       - "100.64.81.63:3001:3000"
     cpus: 0.5

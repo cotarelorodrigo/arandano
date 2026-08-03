@@ -1,7 +1,7 @@
 # Stack de desarrollo. Escucha SOLO en la IP de Tailscale: Docker escribe
 # reglas de iptables que se saltean ufw, así que el bind explícito es la
 # defensa real, no el firewall.
-name: ngf-dev
+name: arandano-dev
 
 services:
   postgres:
@@ -33,19 +33,19 @@ services:
     command: |
       sh -c '
         hash=$$(sha256sum package-lock.json | cut -d" " -f1)
-        stored=$$(cat node_modules/.ngf-lock-hash 2>/dev/null)
+        stored=$$(cat node_modules/.arandano-lock-hash 2>/dev/null)
         if [ "$$hash" != "$$stored" ]; then
-          npm ci && echo "$$hash" > node_modules/.ngf-lock-hash
+          npm ci && echo "$$hash" > node_modules/.arandano-lock-hash
         fi
         exec npm run dev
       '
     env_file: ../.env.dev
     environment:
-      NGF_STACK: dev
+      ARANDANO_STACK: dev
       HOSTNAME: 0.0.0.0
       # Ver compose.prod.yml: el healthcheck comprueba contra qué base está
       # hablando la app, no sólo que alguna responda.
-      NGF_DB_ESPERADA: ngf_dev
+      ARANDANO_DB_ESPERADA: arandano_dev
     volumes:
       - ../:/app
       - node_modules:/app/node_modules

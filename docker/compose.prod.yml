@@ -1,6 +1,6 @@
-# Stack de producción. Corre desde /srv/negociofacil/prod/, sin código
+# Stack de producción. Corre desde /srv/arandano/prod/, sin código
 # fuente: sólo este archivo, el .env, el Caddyfile y los volúmenes.
-name: ngf-prod
+name: arandano-prod
 
 services:
   postgres:
@@ -21,16 +21,16 @@ services:
       retries: 5
 
   app:
-    image: "ngf-app:${IMAGE_TAG:?IMAGE_TAG es obligatorio}"
+    image: "arandano-app:${IMAGE_TAG:?IMAGE_TAG es obligatorio}"
     env_file: .env
     environment:
-      NGF_STACK: prod
+      ARANDANO_STACK: prod
       # Contra qué base tiene que estar hablando esta app. El healthcheck
       # compara current_database() contra esto, así que una DATABASE_URL que
       # apunte al Postgres de dev se reporta como caída en vez de como sana.
       # Va acá y no derivado de DATABASE_URL: derivarlo de la variable que
       # puede estar mal no comprueba nada.
-      NGF_DB_ESPERADA: ngf_prod
+      ARANDANO_DB_ESPERADA: arandano_prod
     # Sin cap de CPU: con cpu_shares alto gana bajo contención y aprovecha
     # los dos cores cuando dev está quieto.
     cpu_shares: 1024

@@ -1,4 +1,4 @@
-# Certificado interno mientras negociofacil.com siga apuntando al parking
+# Certificado interno mientras arandano.app siga apuntando al parking
 # de AWS. El wildcard por DNS-01 entra cuando se apunte el DNS.
 #
 # El host se declara explícito ("localhost", no ":443" a secas): sin un
@@ -11,7 +11,7 @@
 # que cualquiera fuerce a Caddy a emitir certificados sin límite.
 #
 # ATENCIÓN, futuro cutover de DNS: este bloque sirve ÚNICAMENTE el host
-# "localhost" (matchea por SNI). Cuando *.negociofacil.com apunte a este
+# "localhost" (matchea por SNI). Cuando *.arandano.app apunte a este
 # servidor, NO reemplazar "tls internal" acá por la config de DNS-01: eso
 # deja este site sirviendo sólo "localhost" y todo el tráfico real
 # rechazado con el mismo "no certificate available" que motivó este
@@ -32,10 +32,10 @@ localhost:443 {
 # vuelta contra Postgres a través de un pool de `max: 5`, y no hay rate
 # limiting en ninguna capa.
 #
-# Mientras no haya tenants es una molestia. Cuando *.negociofacil.com apunte
+# Mientras no haya tenants es una molestia. Cuando *.arandano.app apunte
 # acá deja de serlo: los clientes entran por subdominio, la sesión viaja en
 # cookie, y un proxy en texto plano sirve esa cookie en claro a cualquiera que
-# esté en el camino. Un `http://flor.negociofacil.com` tipeado sin la "s"
+# esté en el camino. Un `http://flor.arandano.app` tipeado sin la "s"
 # alcanza para filtrarla.
 #
 # Antes del cutover, dos cosas (anotadas también como requisitos heredados en
