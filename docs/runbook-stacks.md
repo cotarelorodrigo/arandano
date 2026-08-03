@@ -94,7 +94,9 @@ sudo scripts/setup-host.sh
 ./scripts/verify-infra.sh all
 ```
 
-Corre 32 checks en siete suites (host, app, network, limits, isolation, logs, stress). Correrlo después de cada deploy — es lo que detecta que alguien aflojó un límite; acordarse no es un mecanismo.
+Corre 54 checks en nueve suites (host, app, network, limits, build, isolation, env, logs, stress). Correrlo después de cada deploy — es lo que detecta que alguien aflojó un límite; acordarse no es un mecanismo.
+
+Cada suite se puede correr sola pasándola por nombre (`./scripts/verify-infra.sh build`), que es lo práctico mientras se trabaja: `all` incluye la suite de estrés, y esa frena el Postgres de producción.
 
 **Atención**: la suite de estrés **frena el Postgres de producción brevemente** para simular una caída y confirmar que dev no lo tumba por contención de recursos. Lo reinicia solo al terminar, y un `trap` cubre una interrupción a mitad de camino (Ctrl+C o `TERM`) para que Postgres no quede parado de forma indefinida. Aun así, quien lo corra tiene que saber que el script toca producción — no es sólo un chequeo de lectura, y no debería sorprender que `ngf-prod-postgres-1` aparezca detenido por unos segundos mientras corre.
 
