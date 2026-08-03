@@ -332,7 +332,13 @@ suite_logs() {
   # contenedor y una reporta "rotación NO activa" — un falso negativo sobre
   # justo el mecanismo que evita que dev llene el disco.
   local logspam="ngf-logspam-$$"
-  trap 'docker rm -f "$logspam" >/dev/null 2>&1' RETURN
+  # El `trap - RETURN` dentro del propio handler no es adorno: un trap de
+  # RETURN queda registrado a nivel shell, no de la funcion que lo puso, asi
+  # que sin desarmarlo vuelve a dispararse cuando retorna la SIGUIENTE funcion
+  # — ahi `$logspam` ya salio de scope y, con `set -u`, el script muere con
+  # "unbound variable" despues de haber pasado los 54 checks. Un gate que sale
+  # 1 habiendo aprobado todo es peor que no tenerlo.
+  trap 'docker rm -f "$logspam" >/dev/null 2>&1; trap - RETURN' RETURN
 
   docker run -d --name "$logspam" alpine sh -c \
     'i=0; while [ $i -lt 60000 ]; do head -c 1000 /dev/zero | tr "\0" "x"; echo; i=$((i+1)); done' \
