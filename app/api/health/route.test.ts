@@ -12,12 +12,12 @@ describe('GET /api/health', () => {
   beforeEach(() => {
     query.mockReset()
     vi.resetModules()
-    process.env.NGF_DB_ESPERADA = 'ngf_test'
+    process.env.ARANDANO_DB_ESPERADA = 'arandano_test'
   })
 
   it('devuelve 200 y reporta el SHA como info, no como check', async () => {
     process.env.GIT_SHA = 'abc1234'
-    query.mockResolvedValue({ rows: [{ db: 'ngf_test' }] })
+    query.mockResolvedValue({ rows: [{ db: 'arandano_test' }] })
 
     const { GET } = await import('./route')
     const res = await GET()

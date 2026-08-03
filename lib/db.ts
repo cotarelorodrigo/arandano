@@ -2,7 +2,7 @@ import { Pool } from 'pg'
 
 // Singleton: en dev el hot reload re-evalúa los módulos y sin esto se
 // abriría un pool nuevo en cada recarga hasta agotar las conexiones.
-const globalForPg = globalThis as unknown as { ngfPool?: Pool }
+const globalForPg = globalThis as unknown as { arandanoPool?: Pool }
 
 function crearPool(): Pool {
   const p = new Pool({
@@ -33,6 +33,6 @@ function crearPool(): Pool {
   return p
 }
 
-export const pool = globalForPg.ngfPool ?? crearPool()
+export const pool = globalForPg.arandanoPool ?? crearPool()
 
-if (process.env.NODE_ENV !== 'production') globalForPg.ngfPool = pool
+if (process.env.NODE_ENV !== 'production') globalForPg.arandanoPool = pool

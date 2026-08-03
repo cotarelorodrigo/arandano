@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "NegocioFácil",
+  title: "Arándano",
   description: "Plataforma de gestión para negocios argentinos.",
 };
 

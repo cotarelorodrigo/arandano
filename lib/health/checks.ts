@@ -11,14 +11,14 @@ const postgresCheck: HealthCheck = {
     // que este endpoint existe para atrapar, porque sin feature flags el
     // rollback automático se dispara con lo que este reporte diga.
     //
-    // El nombre esperado sale del entorno (NGF_DB_ESPERADA, que cada compose
+    // El nombre esperado sale del entorno (ARANDANO_DB_ESPERADA, que cada compose
     // fija junto al stack) y NO se deriva de DATABASE_URL: derivarlo de la
     // misma variable que puede estar mal no comprueba nada, siempre coincide
     // consigo misma.
-    const esperada = process.env.NGF_DB_ESPERADA
+    const esperada = process.env.ARANDANO_DB_ESPERADA
     if (!esperada) {
       throw new Error(
-        'NGF_DB_ESPERADA no está definida: el healthcheck no puede confirmar ' +
+        'ARANDANO_DB_ESPERADA no está definida: el healthcheck no puede confirmar ' +
           'contra qué base está hablando, así que tampoco puede afirmar que ' +
           'esté sana. Definirla en el compose del stack.',
       )
