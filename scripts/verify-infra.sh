@@ -55,7 +55,7 @@ suite_host() {
   check_cmd "plugin docker compose disponible" docker compose version
 
   local log_max live_restore
-  log_max=$(docker info --format '{{index .LoggingDriver}}' 2>/dev/null || echo NA)
+  log_max=$(docker info --format '{{.LoggingDriver}}' 2>/dev/null || echo NA)
   check_eq "log driver json-file" "json-file" "$log_max"
 
   check_cmd "daemon.json con rotación de logs" \
