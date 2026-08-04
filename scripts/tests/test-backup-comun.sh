@@ -34,6 +34,19 @@ check_eq "dump" \
 check_eq "manifiesto" \
   "prod/db/2026-08-04T04-00-00Z-nocturno.manifest.json.age" \
   "$(nombre_objeto prod 2026-08-04T04-00-00Z nocturno manifest)"
+# Los roles son objetos de CLUSTER y pg_dump no los incluye, así que van en su
+# propio objeto. Lleva motivo y vive en db/ igual que el dump: es parte del
+# mismo backup de la base y se recupera junto con él, nunca por separado.
+check_eq "globals" \
+  "prod/db/2026-08-04T04-00-00Z-nocturno.globals.sql.age" \
+  "$(nombre_objeto prod 2026-08-04T04-00-00Z nocturno globals)"
+# No puede colarse en el `sort | tail -1` con el que verify-backup.sh busca el
+# último dump: ese listado filtra por '*.dump.age'. Si el nombre del globals
+# matcheara ese patrón, la verificación intentaría restaurar un archivo SQL de
+# roles como si fuera un dump -Fc.
+GLOBALS_DE_PRUEBA=$(nombre_objeto prod 2026-08-04T04-00-00Z nocturno globals)
+check_eq "el globals no matchea el filtro '*.dump.age'" "no" \
+  "$(case "$GLOBALS_DE_PRUEBA" in *.dump.age) echo si ;; *) echo no ;; esac)"
 # Los secretos NO llevan motivo: son el mismo par de archivos siempre, y
 # meter el motivo sólo haría que el nombre mintiera sobre su contenido.
 check_eq "secretos" \

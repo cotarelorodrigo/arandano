@@ -70,9 +70,23 @@ cargar_config() {
   . "$ARANDANO_CONF"
   set +a
 
+  # RCLONE_CONFIG_HETZNER_FORCE_PATH_STYLE está en la lista aunque su valor
+  # correcto sea la palabra "false": lo que se exige es que la variable ESTÉ
+  # DEFINIDA, porque su ausencia hace que rclone caiga al default (path-style)
+  # y entonces TODA operación de bucket da 403 — un error que se lee como
+  # "credencial sin permisos" y manda a rotar credenciales que están bien. Es
+  # la trampa que más tiempo hace perder de todo el sistema (ver runbook,
+  # sección 3), y el momento en que se pierde es justo editando este archivo
+  # para rotar la credencial. Que falte tiene que abortar acá, con el nombre
+  # de la variable en pantalla, y no cinco pasos más adelante.
+  #
+  # Las dos URLs del dead man's switch también: sin ellas ping_dms falla igual,
+  # pero recién al final, con el dump ya gastado. El preflight es para eso.
   local faltan=() v
   for v in ARANDANO_BUCKET ARANDANO_AGE_RECIPIENTS ARANDANO_AGE_VERIFY_KEY \
+           ARANDANO_DMS_BACKUP_URL ARANDANO_DMS_VERIFY_URL \
            RCLONE_CONFIG_HETZNER_TYPE RCLONE_CONFIG_HETZNER_ENDPOINT \
+           RCLONE_CONFIG_HETZNER_FORCE_PATH_STYLE \
            RCLONE_CONFIG_HETZNER_ACCESS_KEY_ID \
            RCLONE_CONFIG_HETZNER_SECRET_ACCESS_KEY; do
     [[ -n "${!v:-}" ]] || faltan+=("$v")
@@ -111,11 +125,19 @@ prefijo_motivo() {
 }
 
 # Ordenables alfabéticamente, que acá es lo mismo que cronológicamente.
+#
+# `globals` es un artefacto aparte y no parte del dump porque no puede serlo:
+# los roles son objetos de CLUSTER, y `pg_dump` de una base no los incluye. Sin
+# este cuarto objeto, una restauración real recupera las tablas y pierde los
+# roles con sus contraseñas — que en esta arquitectura son la frontera de
+# aislamiento entre tenants — y un `pg_restore` de un dump con policies de RLS
+# atadas a un rol inexistente sale con 1 y deja la policy afuera.
 nombre_objeto() {
   local prefijo="${1:-}" ts="${2:-}" motivo="${3:-}" tipo="${4:-}"
   case "$tipo" in
     dump)     echo "$prefijo/db/$ts-$motivo.dump.age" ;;
     manifest) echo "$prefijo/db/$ts-$motivo.manifest.json.age" ;;
+    globals)  echo "$prefijo/db/$ts-$motivo.globals.sql.age" ;;
     secretos) echo "$prefijo/secretos/$ts.tar.age" ;;
     *) error "tipo de objeto inválido: ${tipo:-<vacío>}"; return 2 ;;
   esac
