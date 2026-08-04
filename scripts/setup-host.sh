@@ -164,6 +164,46 @@ UNIT
     || systemctl start "$BUILD_SLICE"
 }
 
+# Los roles de Postgres del stack de dev, para que reconstruir el host desde
+# cero también deje ese stack completo y no a medio armar a la espera de que
+# alguien recuerde correr setup-db-roles.sh a mano.
+#
+# Sólo dev: producción NO entra acá — su .env vive fuera del repo, en
+# /srv/arandano/prod/, y sus contraseñas se generan una sola vez (Task 10).
+# Stage tampoco: nace vacío en cada corrida de deploy.sh contra un Postgres
+# efímero, así que sus roles los crea deploy.sh, no este script.
+#
+# .env.dev no está versionado, así que en un host recién clonado puede no
+# existir todavía — en ese caso no hay nada que hacer acá y se saltea, sin
+# romper la re-ejecutabilidad del resto del script. Lo mismo si el Postgres
+# de dev todavía no está levantado: setup-host.sh configura el HOST, no
+# arranca los stacks de Compose, así que en la primera corrida sobre una
+# máquina nueva es normal que el contenedor no exista todavía.
+setup_db_roles_dev() {
+  local script_dir repo_dir env_file
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  repo_dir="$(dirname "$script_dir")"
+  env_file="$repo_dir/.env.dev"
+
+  if [[ ! -r "$env_file" ]]; then
+    echo "no existe $env_file, salteando roles de dev (correr setup-db-roles.sh a mano cuando exista)"
+    return 0
+  fi
+
+  if ! docker ps --format '{{.Names}}' | grep -qx 'arandano-dev-postgres-1'; then
+    echo "arandano-dev-postgres-1 no está corriendo, salteando roles de dev"
+    return 0
+  fi
+
+  ( set -a; . "$env_file"; set +a
+    "$script_dir/setup-db-roles.sh" \
+      --url="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@100.64.81.63:5433/${POSTGRES_DB}" \
+      --owner-password="${ARANDANO_OWNER_PASSWORD}" \
+      --app-password="${ARANDANO_APP_PASSWORD}" \
+      --con-createdb
+  )
+}
+
 # Las tres herramientas del sistema de backups. Van por apt y no por
 # instaladores propios: son paquetes de Ubuntu con actualizaciones de
 # seguridad, y este script tiene que poder correr dos veces sin efectos.
@@ -322,6 +362,7 @@ UNIT
 
 setup_swap
 setup_docker
+setup_db_roles_dev
 setup_build_slice
 setup_backup_tools
 setup_backup_timers
