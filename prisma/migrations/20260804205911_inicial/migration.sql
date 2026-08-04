@@ -105,8 +105,10 @@ ALTER TABLE "articulos" ADD CONSTRAINT "articulos_tenant_id_fkey" FOREIGN KEY ("
 --   * como NULL = uuid da NULL, y NULL no es true, SIN GUC NO PASA NINGUNA
 --     FILA. Falla cerrado, que es la única forma aceptable de fallar acá.
 --
--- El WITH CHECK es lo que impide insertar una fila con el tenant_id de otro y
--- lo que impide que un UPDATE mueva una fila existente a otro tenant.
+-- El WITH CHECK explícito asegura que la intención queda legible: protección
+-- tanto en lectura como en escritura. Para policies FOR ALL sin él, Postgres
+-- reutiliza USING para ambas, pero queremos que sea explícito para que un
+-- futuro refactor a policies por comando no cambie el significado.
 --
 -- Las policies van SIN cláusula TO: nombrar un rol adentro las ataría a que
 -- ese rol exista antes que la tabla, y un CREATE POLICY que nombra un rol

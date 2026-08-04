@@ -38,8 +38,20 @@ async function tablas() {
 }
 
 describe('cobertura de RLS', () => {
+  it('tabla() devuelve las tablas conocidas', async () => {
+    // Hallazgo 1: si tablas() devuelve vacío, los siguientes tres tests pasan
+    // sin verificar nada. Asegurar que al menos tenants aparece.
+    const ts = await tablas()
+    expect(
+      ts.some((t) => t.tabla === 'tenants'),
+      'tablas() no devolvió tenants; la consulta está rota',
+    ).toBe(true)
+  })
+
   it('toda tabla con tenant_id tiene RLS habilitada', async () => {
-    for (const t of (await tablas()).filter((t) => t.tiene_tenant_id)) {
+    const ts = (await tablas()).filter((t) => t.tiene_tenant_id)
+    expect(ts.length, 'no hay tablas con tenant_id; la consulta está rota').toBeGreaterThan(0)
+    for (const t of ts) {
       expect(t.rls, `${t.tabla} tiene tenant_id pero RLS está apagada`).toBe(true)
     }
   })
@@ -56,8 +68,10 @@ describe('cobertura de RLS', () => {
       )
       expect(rows, `${t.tabla} no tiene la policy tenant_aislamiento`).toHaveLength(1)
       expect(rows[0].tiene_using, `${t.tabla}: policy sin USING`).toBe(true)
-      // Sin WITH CHECK la protección sería sólo de lectura: se podría insertar
-      // con el tenant_id de otro.
+      // WITH CHECK explícito asegura que la intención queda legible: protección
+      // tanto en lectura como en escritura. Sin él, una policy FOR ALL reusa
+      // USING para ambas, pero queremos que sea explícito para que un futuro
+      // refactor a policies por comando no cambie el significado.
       expect(rows[0].tiene_with_check, `${t.tabla}: policy sin WITH CHECK`).toBe(true)
     }
   })
@@ -67,10 +81,10 @@ describe('cobertura de RLS', () => {
     // olvidó la COLUMNA en vez de la policy.
     for (const t of (await tablas()).filter((t) => !t.tiene_tenant_id)) {
       expect(
-        SIN_TENANT_ID[t.tabla],
+        Object.hasOwn(SIN_TENANT_ID, t.tabla),
         `la tabla ${t.tabla} no tiene tenant_id y no está en la lista blanca: ` +
           `o le falta la columna, o hay que declarar por qué no la necesita`,
-      ).toBeDefined()
+      ).toBe(true)
     }
   })
 
@@ -95,7 +109,13 @@ describe('cobertura de RLS', () => {
         WHERE c.relname = 'tenants' AND p.polname = 'tenant_aislamiento'`,
     )
     expect(rows).toHaveLength(1)
-    expect(rows[0].using_expr).toContain('id')
+    // Hallazgo 2: usar regex para exigir que 'id' aparezca como operando de una
+    // comparación, no sólo como subcadena. Evita que una policy rota (que
+    // mencione la GUC pero nunca filtre por tenants.id) pase el test.
+    expect(
+      rows[0].using_expr,
+      'tenants: policy no filtra correctamente por id',
+    ).toMatch(/\bid\b\s*=/)
     expect(rows[0].using_expr).toContain('arandano.tenant_id')
   })
 })
