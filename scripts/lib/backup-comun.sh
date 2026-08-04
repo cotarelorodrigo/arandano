@@ -51,6 +51,20 @@ cargar_config() {
     error "no se puede leer $ARANDANO_CONF"
     return 1
   fi
+  # Fuente incondicional: cada asignación de $ARANDANO_CONF pisa cualquier
+  # variable homónima que ya exista en el entorno, sea del sistema o un
+  # override puesto a mano en la misma línea del comando (`VAR=x
+  # ./backup.sh`). Es a propósito y NO es un bug a arreglar con `${VAR:=...}`:
+  # el archivo tiene que ser la única fuente de verdad para que nadie pueda
+  # desviar sin querer a qué bucket o a qué URL de dead man's switch corre un
+  # backup real. La otra cara de esa garantía es que `ARANDANO_BUCKET=no-existe
+  # ./backup.sh --motivo=test` NO fuerza un fallo de prueba — sube al bucket
+  # real igual, porque esta línea reescribe el override antes de que el resto
+  # del script lo vea. Para simular un fallo real de verdad hay que romper el
+  # mecanismo que usa la subida con variables que este archivo NO define (y
+  # que por eso sobreviven), por ejemplo un proxy inalcanzable más reintentos
+  # acotados de rclone: `HTTPS_PROXY=http://127.0.0.1:1
+  # RCLONE_RETRIES=1 RCLONE_LOW_LEVEL_RETRIES=1 ./backup.sh --motivo=test`.
   set -a
   # shellcheck disable=SC1090
   . "$ARANDANO_CONF"
