@@ -164,7 +164,33 @@ UNIT
     || systemctl start "$BUILD_SLICE"
 }
 
+# Las tres herramientas del sistema de backups. Van por apt y no por
+# instaladores propios: son paquetes de Ubuntu con actualizaciones de
+# seguridad, y este script tiene que poder correr dos veces sin efectos.
+#
+# /etc/arandano/ en 0700 y no 0755: adentro viven la clave privada de
+# verificación y las credenciales del bucket. Que el directorio sea
+# root-only es la primera de las dos capas; los permisos de cada archivo
+# son la segunda.
+setup_backup_tools() {
+  local faltan=()
+  for pkg in age rclone jq; do
+    dpkg -s "$pkg" >/dev/null 2>&1 || faltan+=("$pkg")
+  done
+
+  if [[ ${#faltan[@]} -eq 0 ]]; then
+    echo "age, rclone y jq ya instalados, salteando"
+  else
+    echo "instalando: ${faltan[*]}"
+    apt-get update -qq
+    apt-get install -y -qq "${faltan[@]}"
+  fi
+
+  install -d -m 0700 -o root -g root /etc/arandano
+}
+
 setup_swap
 setup_docker
 setup_build_slice
+setup_backup_tools
 echo "listo"

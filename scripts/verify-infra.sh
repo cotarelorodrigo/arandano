@@ -508,6 +508,22 @@ suite_stress() {
   trap - EXIT INT TERM
 }
 
+suite_backup() {
+  suite_header "Backups: herramientas, claves y frescura"
+
+  # El host no traía ninguna de las tres. Sin ellas backup.sh no arranca, y
+  # el modo de falla sería descubrirlo a las 04:00 de una madrugada.
+  check_cmd "age instalado" command -v age
+  check_cmd "rclone instalado" command -v rclone
+  check_cmd "jq instalado" command -v jq
+
+  # /tmp es tmpfs en este host: un dump ahí se escribe en RAM y rompe el
+  # presupuesto de memoria. /var/tmp tiene que estar en disco.
+  local fstype_vartmp
+  fstype_vartmp=$(df --output=fstype /var/tmp 2>/dev/null | tail -1 | tr -d ' ')
+  check_ne "/var/tmp no es tmpfs" "tmpfs" "$fstype_vartmp"
+}
+
 main() {
   local target="${1:-all}"
 
@@ -529,7 +545,8 @@ main() {
     env) suite_env ;;
     logs) suite_logs ;;
     stress) suite_stress ;;
-    all)  suite_host; suite_app; suite_network; suite_limits; suite_build; suite_isolation; suite_env; suite_logs; suite_stress ;;
+    backup) suite_backup ;;
+    all)  suite_host; suite_app; suite_network; suite_limits; suite_build; suite_isolation; suite_env; suite_logs; suite_stress; suite_backup ;;
     *) echo "suite desconocida: $target" >&2; exit 2 ;;
   esac
 
