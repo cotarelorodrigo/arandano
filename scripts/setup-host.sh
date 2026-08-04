@@ -198,8 +198,112 @@ setup_backup_tools() {
   install -d -m 0700 -o root -g root /etc/arandano
 }
 
+# Los timers del sistema de backups.
+#
+# Persistent=true en los dos: si el servidor estuvo apagado a la hora del
+# disparo, la corrida perdida se recupera al arrancar en vez de saltearse. Un
+# backup que no corre porque la máquina estaba caída es exactamente el día en
+# que más falta hace.
+#
+# Los horarios son UTC. Los clientes son comercios argentinos (UTC-3) que
+# trabajan de 9 a 20: 04:00 UTC son las 01:00 ART y 05:00 UTC del domingo son
+# las 02:00 ART. Fuera de la ventana de uso en ambos casos.
+setup_backup_timers() {
+  local cambio=false unidad tmp
+
+  _instalar_unidad() {
+    # `destino` en su propia línea por lo mismo que en subir_verificando: un
+    # `local a=… b=…$a` expande `$a` desde el scope exterior, no desde la
+    # asignación de al lado.
+    local nombre="$1" contenido="$2"
+    local destino="/etc/systemd/system/$nombre"
+    local tmp; tmp=$(mktemp)
+    printf '%s' "$contenido" > "$tmp"
+    if [[ -f "$destino" ]] && cmp -s "$tmp" "$destino"; then
+      rm -f "$tmp"
+    else
+      install -m 0644 "$tmp" "$destino"
+      rm -f "$tmp"
+      cambio=true
+    fi
+  }
+
+  _instalar_unidad arandano-backup.service "$(cat <<'UNIT'
+[Unit]
+Description=Backup nocturno de la base de producción de Arándano
+# El script necesita Docker para el contenedor efímero del dump.
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/root/arandano/scripts/backup.sh --motivo=nocturno
+# Los logs van a journald, que ya tiene rotación configurada. Sin esto el
+# diagnóstico de un backup fallido sería adivinar.
+StandardOutput=journal
+StandardError=journal
+UNIT
+)"
+
+  _instalar_unidad arandano-backup.timer "$(cat <<'UNIT'
+[Unit]
+Description=Dispara el backup nocturno a las 04:00 UTC (01:00 ART)
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 UTC
+Persistent=true
+# Hasta 5 minutos de dispersión: no hay nada más compitiendo a esa hora, pero
+# evita que el minuto exacto sea un patrón.
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
+UNIT
+)"
+
+  _instalar_unidad arandano-verify-backup.service "$(cat <<'UNIT'
+[Unit]
+Description=Verificación semanal del último backup de Arándano
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/root/arandano/scripts/verify-backup.sh
+StandardOutput=journal
+StandardError=journal
+UNIT
+)"
+
+  _instalar_unidad arandano-verify-backup.timer "$(cat <<'UNIT'
+[Unit]
+Description=Dispara la verificación los domingos a las 05:00 UTC (02:00 ART)
+
+[Timer]
+OnCalendar=Sun *-*-* 05:00:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
+UNIT
+)"
+
+  if [[ "$cambio" == true ]]; then
+    systemctl daemon-reload
+  else
+    echo "los timers de backup ya tienen la configuración correcta"
+  fi
+
+  # enable --now y no sólo enable: `enable` solo deja el timer armado recién
+  # para el próximo reboot.
+  systemctl enable --now arandano-backup.timer >/dev/null
+  systemctl enable --now arandano-verify-backup.timer >/dev/null
+}
+
 setup_swap
 setup_docker
 setup_build_slice
 setup_backup_tools
+setup_backup_timers
 echo "listo"

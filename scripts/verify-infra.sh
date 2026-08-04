@@ -555,6 +555,15 @@ suite_backup() {
     bucket_ok=0
   fi
   check_eq "el bucket responde con la credencial del host" "1" "$bucket_ok"
+
+  # Un timer que existe pero no está enabled sobrevive hasta el próximo
+  # reboot y después desaparece en silencio. El dead man's switch lo
+  # detectaría recién 24 horas después; esto lo detecta ahora.
+  local t
+  for t in arandano-backup.timer arandano-verify-backup.timer; do
+    check_cmd "$t está habilitado" systemctl is-enabled --quiet "$t"
+    check_cmd "$t está activo" systemctl is-active --quiet "$t"
+  done
 }
 
 main() {
