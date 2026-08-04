@@ -209,7 +209,7 @@ setup_backup_tools() {
 # trabajan de 9 a 20: 04:00 UTC son las 01:00 ART y 05:00 UTC del domingo son
 # las 02:00 ART. Fuera de la ventana de uso en ambos casos.
 setup_backup_timers() {
-  local cambio=false unidad tmp
+  local cambio=false
 
   _instalar_unidad() {
     # `destino` en su propia línea por lo mismo que en subir_verificando: un
@@ -238,6 +238,18 @@ Requires=docker.service
 [Service]
 Type=oneshot
 ExecStart=/root/arandano/scripts/backup.sh --motivo=nocturno
+# Un oneshot arranca con TimeoutStartSec=infinity, y acá eso no es "paciencia":
+# es que un pg_dump o un rclone colgado corre para siempre reteniendo
+# /var/lock/arandano-backup.lock, y a partir de ese momento TODA corrida
+# posterior sale 1 — incluido el backup pre-migración, así que todo deploy
+# queda bloqueado hasta que alguien mire el servidor.
+#
+# 30 minutos: la base entera hoy son kilobytes y el backup completo tarda
+# segundos, así que esto es dos órdenes de magnitud de margen sobre lo real y
+# aguanta que la base crezca mucho antes de quedar corto. Revisarlo si el dump
+# alguna vez se acerca; un timeout que se dispara sobre un backup sano sería
+# peor que no tenerlo.
+TimeoutStartSec=1800
 # Los logs van a journald, que ya tiene rotación configurada. Sin esto el
 # diagnóstico de un backup fallido sería adivinar.
 StandardOutput=journal
@@ -270,6 +282,13 @@ Requires=docker.service
 [Service]
 Type=oneshot
 ExecStart=/root/arandano/scripts/verify-backup.sh
+# Mismo motivo que en el backup, con más margen: la verificación baja objetos
+# del bucket, levanta un Postgres descartable (con hasta 60s de espera propia) y
+# restaura. Una hora es holgado para todo eso y sigue siendo finito, que es lo
+# único que importa: colgada para siempre, la unidad se queda con su lock y
+# ninguna verificación posterior vuelve a correr — el dead man's switch avisaría
+# recién a la semana siguiente.
+TimeoutStartSec=3600
 StandardOutput=journal
 StandardError=journal
 UNIT

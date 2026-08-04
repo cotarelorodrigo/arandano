@@ -519,9 +519,18 @@ suite_backup() {
 
   # /tmp es tmpfs en este host: un dump ahí se escribe en RAM y rompe el
   # presupuesto de memoria. /var/tmp tiene que estar en disco.
+  #
+  # El `if` de vacío no es defensivo de más: si `df` falla o cambia de formato,
+  # la variable queda vacía y `check_ne "tmpfs" ""` da ✓ sin haber medido nada
+  # — el mismo patrón de "no midió, luego aprueba" que ya obligó a arreglar el
+  # chequeo de dmesg en suite_stress y el de retención de más abajo.
   local fstype_vartmp
   fstype_vartmp=$(df --output=fstype /var/tmp 2>/dev/null | tail -1 | tr -d ' ')
-  check_ne "/var/tmp no es tmpfs" "tmpfs" "$fstype_vartmp"
+  if [[ -z "$fstype_vartmp" ]]; then
+    bad "no se pudo leer el filesystem de /var/tmp — chequeo sin datos, no cuenta como aprobado"
+  else
+    check_ne "/var/tmp no es tmpfs" "tmpfs" "$fstype_vartmp"
+  fi
 
   # La privada de verificación y las credenciales del bucket son lo único
   # secreto del sistema. Un 0644 acá es un backup histórico legible por
@@ -608,6 +617,13 @@ suite_backup() {
   # fallar, igual que el check de frescura de arriba usa 999 y no 0. Con
   # 999999 acá, un 0 legítimo sólo puede salir de la rama
   # `if length == 0 then 0` del propio jq, o sea de un listado real y exitoso.
+  #
+  # OJO al reescribir el subshell: el fail-safe depende de que el `set -o
+  # pipefail` del script se herede acá adentro, que es lo que hace que un
+  # `rclone` fallido arrastre el pipe entero a exit != 0 y dispare el `||
+  # echo 999999`. Un subshell `( … )` hereda esa opción; un `bash -c '…'` NO,
+  # y entonces el exit code sería el de `jq` sobre entrada vacía — cero — y el
+  # check pasaría en falso sin haber medido nada.
   local mas_viejo=999999
   if [[ -r /etc/arandano/backup.env ]]; then
     mas_viejo=$(
@@ -626,6 +642,44 @@ suite_backup() {
     ok "el objeto más viejo tiene $mas_viejo días (retención: 30)"
   else
     bad "el objeto más viejo tiene $mas_viejo días: la regla de ciclo de vida no está borrando"
+  fi
+
+  # Profundidad del histórico: la cota INFERIOR que al check de arriba le falta.
+  #
+  # El de arriba sólo detecta que la retención se alargue. Si se rompe hacia el
+  # lado corto —la regla se reescribe mal, o su filtro de prefijo hace que
+  # prod/ herede los 2 días de test/— el histórico se derrumba a un par de días
+  # y TODO sigue en verde: la frescura pasa (hay un backup de anoche), "el
+  # objeto más viejo tiene 1 días" pasa, y el dead man's switch pinga porque el
+  # backup nocturno sigue corriendo bien. Los 30 días de exportación que el
+  # proyecto le promete al cliente desaparecerían sin una sola señal.
+  #
+  # El mínimo se DERIVA de la profundidad medida en vez de ser una constante,
+  # porque un umbral fijo (28, digamos) haría fallar el check todas las primeras
+  # cuatro semanas, cuando faltan backups por una razón legítima: todavía no
+  # pasó el tiempo. Si el objeto más viejo tiene N días, hubo N+1 noches, así
+  # que deberían existir del orden de N+1 dumps; se toleran 2 faltantes de
+  # margen (una noche saltada más el corrimiento del barrido del proveedor)
+  # antes de gritar.
+  local dumps=-1
+  if [[ -r /etc/arandano/backup.env ]]; then
+    dumps=$(
+      ( set -a; . /etc/arandano/backup.env; set +a
+        rclone lsjson "hetzner:$ARANDANO_BUCKET/prod/db/" --include '*.dump.age' 2>/dev/null \
+          | jq -r 'length'
+      ) 2>/dev/null || echo -1
+    )
+  fi
+  # Mismo criterio fail-safe que el resto del archivo, por los dos lados: -1 si
+  # no se pudo listar (y -1 nunca alcanza ningún mínimo), y si `mas_viejo` ya
+  # venía del fallback 999999 el mínimo se vuelve inalcanzable — un check que no
+  # midió no puede reportar éxito.
+  local minimo_dumps=$(( mas_viejo - 2 ))
+  if [[ "$minimo_dumps" -lt 1 ]]; then minimo_dumps=1; fi
+  if [[ "$dumps" -ge "$minimo_dumps" ]]; then
+    ok "el histórico tiene $dumps dumps sobre $mas_viejo días de profundidad (mínimo: $minimo_dumps)"
+  else
+    bad "el histórico tiene $dumps dumps sobre $mas_viejo días de profundidad (mínimo: $minimo_dumps): faltan backups o la retención se acortó, y los 30 días prometidos al cliente ya no existen"
   fi
 }
 
