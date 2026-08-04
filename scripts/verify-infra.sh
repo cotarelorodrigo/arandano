@@ -564,6 +564,59 @@ suite_backup() {
     check_cmd "$t está habilitado" systemctl is-enabled --quiet "$t"
     check_cmd "$t está activo" systemctl is-active --quiet "$t"
   done
+
+  # Frescura: el último objeto tiene que tener menos de 26 horas. El margen
+  # sobre 24 es para que unos minutos de corrimiento del timer no den un
+  # falso positivo.
+  #
+  # El dead man's switch cubre "el backup dejó de correr"; esto cubre el caso
+  # en que corre, pinga, y sin embargo el bucket no tiene nada nuevo.
+  #
+  # El `sub` sobre ModTime no es cosmético: rclone devuelve la fecha con
+  # nanosegundos ("...T12:00:00.123456789Z") y `fromdateiso8601` de jq sólo
+  # acepta segundos enteros — sin recortar la parte fraccionaria, la expresión
+  # lanza un error y el check queda siempre en 999 horas, o sea fallando por
+  # una razón que no tiene nada que ver con los backups.
+  local horas_ultimo=999
+  if [[ -r /etc/arandano/backup.env ]]; then
+    horas_ultimo=$(
+      ( set -a; . /etc/arandano/backup.env; set +a
+        rclone lsjson "hetzner:$ARANDANO_BUCKET/prod/db/" --include '*.dump.age' 2>/dev/null \
+          | jq -r 'if length == 0 then 999 else
+                     ([.[].ModTime | sub("\\.[0-9]+"; "") | fromdateiso8601] | max) as $t
+                     | ((now - $t) / 3600 | floor)
+                   end'
+      ) 2>/dev/null || echo 999
+    )
+  fi
+  if [[ "$horas_ultimo" -lt 26 ]]; then
+    ok "el último backup tiene $horas_ultimo horas"
+  else
+    bad "el último backup tiene $horas_ultimo horas (máximo: 26)"
+  fi
+
+  # La retención la aplica una regla de ciclo de vida del bucket, no el
+  # script. Se comprueba el EFECTO y no la configuración: que la regla exista
+  # no prueba que esté corriendo.
+  local mas_viejo=0
+  if [[ -r /etc/arandano/backup.env ]]; then
+    mas_viejo=$(
+      ( set -a; . /etc/arandano/backup.env; set +a
+        rclone lsjson "hetzner:$ARANDANO_BUCKET/prod/" --recursive 2>/dev/null \
+          | jq -r 'if length == 0 then 0 else
+                     ([.[].ModTime | sub("\\.[0-9]+"; "") | fromdateiso8601] | min) as $t
+                     | ((now - $t) / 86400 | floor)
+                   end'
+      ) 2>/dev/null || echo 0
+    )
+  fi
+  # 31 y no 30: la regla borra "a los 30 días", y el barrido del proveedor no
+  # es instantáneo.
+  if [[ "$mas_viejo" -le 31 ]]; then
+    ok "el objeto más viejo tiene $mas_viejo días (retención: 30)"
+  else
+    bad "el objeto más viejo tiene $mas_viejo días: la regla de ciclo de vida no está borrando"
+  fi
 }
 
 main() {
