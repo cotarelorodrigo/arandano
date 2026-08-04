@@ -149,12 +149,26 @@ done
 # con "role does not exist", hace salir a pg_restore con 1 y deja la policy sin
 # crear. Reproducido en contenedores limpios antes de escribir esto.
 #
-# ON_ERROR_STOP queda en 0 a propósito y el veredicto se saca leyendo la salida,
-# no el exit code (psql sale 0 igual): --globals-only incluye el rol
+# ON_ERROR_STOP queda en 0 a propósito: --globals-only incluye el rol
 # superusuario del cluster de ORIGEN, que puede llamarse igual que el de esta
 # base descartable, y entonces su CREATE ROLE choca. Ese choque es esperado y no
 # significa nada; cualquier OTRO error sí, y por eso se filtra por el mensaje
 # exacto en vez de ignorar todo el paso.
+#
+# El veredicto sale de DOS señales, y hacen falta las dos porque cada una es
+# ciega a lo que ve la otra:
+#
+#   - El exit code atrapa los fallos de CLIENTE y de conexión (archivo ausente
+#     → 1, no se pudo conectar → 2). Esos mensajes los imprime psql con
+#     minúscula ("psql: error: …"), así que el grep de abajo NO los encuentra:
+#     mirando sólo la salida, un globals que nunca se aplicó pasaba en verde y
+#     el script seguía loguenado "globals aplicados" sin haber aplicado nada.
+#   - El grep atrapa los errores SQL del SERVIDOR, que sin ON_ERROR_STOP salen
+#     con exit 0 (medido: errores de SQL no mueven el exit code de psql). Esos
+#     el exit code no los ve.
+#
+# Con una sola de las dos queda un agujero, y es justo la clase de camino que
+# reporta éxito sin haber protegido nada.
 #
 # El `ALTER ROLE … PASSWORD` que viene detrás puede cambiarle la contraseña al
 # superusuario de esta base si los nombres coinciden. No rompe nada porque todo
@@ -162,8 +176,19 @@ done
 # `trust`; el `-e PGPASSWORD` de los `docker exec` no se usa para autenticar.
 log "aplicando globals (roles del cluster)"
 docker cp "$TRABAJO/globals.sql" "$CONTENEDOR:/tmp/globals.sql"
+# El `|| psql_rc=$?` y no un `|| true`: `set -e` mataría el script sin decir por
+# qué, y descartar el código con `true` es exactamente la regresión que esto
+# arregla. La asignación tiene que ir DESPUÉS del `=$(…)`, porque el exit code
+# que interesa es el del comando de la sustitución.
+psql_rc=0
 salida_globals=$(docker exec "$CONTENEDOR" \
-  psql -U verificacion -d verificacion -f /tmp/globals.sql 2>&1) || true
+  psql -U verificacion -d verificacion -f /tmp/globals.sql 2>&1) || psql_rc=$?
+
+if [[ "$psql_rc" -ne 0 ]]; then
+  error "psql falló al aplicar los globals (exit $psql_rc): el archivo no se aplicó"
+  printf '%s\n' "$salida_globals" >&2
+  exit 1
+fi
 
 errores_globals=$(printf '%s\n' "$salida_globals" \
   | grep 'ERROR:' | grep -vE 'ERROR: +role ".+" already exists' || true)
