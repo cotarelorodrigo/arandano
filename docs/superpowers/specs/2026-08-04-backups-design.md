@@ -189,6 +189,13 @@ La forma preferida es una **regla de ciclo de vida del bucket** en vez de un
 borrado desde el script: así la credencial que vive en el servidor no necesita
 permiso de borrado, y alguien que tome el VPS no puede vaciar el histórico. Se
 confirma al implementar si Hetzner Object Storage soporta reglas de lifecycle.
+
+> **Corrección posterior a la implementación.** "No lo necesita" no se
+> convirtió en "no lo tiene": la credencial que quedó en el servidor sí puede
+> borrar, y el bucket no tiene versionado, object lock ni bucket policy. La
+> segunda mitad de la frase de arriba —"alguien que tome el VPS no puede vaciar
+> el histórico"— es entonces falsa hoy. Ver `docs/runbook-backups.md`, sección
+> 1, para el estado real y las dos mitigaciones posibles, ninguna implementada.
 Si no las soporta, cae al borrado desde `backup.sh` con dos guardas: sólo
 después de una subida verificada, y nunca si el listado devuelve menos objetos
 de los que la retención implica.
@@ -203,6 +210,18 @@ MiB —el mismo patrón que ya usa `arandano-stage`—, corre `pg_restore
 `--no-owner --no-acl` porque la base descartable no tiene los roles de
 producción; el dump sí los preserva, que es lo que corresponde para una
 recuperación real.
+
+> **Corrección posterior a la implementación.** La frase de arriba es falsa en
+> un punto que importa: `pg_dump` de una base **no preserva los roles**, porque
+> los roles son objetos de *cluster*. El dump sólo guarda las referencias a
+> ellos (dueños, GRANT, `CREATE POLICY … TO <rol>`), y restaurarlo en un
+> cluster que no los tiene hace fallar la creación de las policies de RLS —
+> `pg_restore` sale con 1 y la policy no queda. Por eso el backup toma un
+> **cuarto artefacto**, `pg_dumpall --globals-only`, cifrado y subido como los
+> otros tres, y tanto `verify-backup.sh` como los procedimientos del runbook lo
+> aplican **antes** del `pg_restore`. `--no-owner --no-acl` se mantiene en la
+> verificación semanal (ahí lo que se prueba es que los datos estén enteros),
+> pero **no** va en una reconstrucción real.
 
 Comprueba dos cosas:
 
