@@ -157,15 +157,19 @@ cada corrida.
 ### Cuál de las dos URLs usa cada cosa
 
 Es la ambigüedad más peligrosa de este diseño, así que se resuelve por
-construcción y no por disciplina: **el `datasource` de `schema.prisma` declara
-`url = env("MIGRATE_DATABASE_URL")`**.
+construcción y no por disciplina: **`prisma.config.ts` declara
+`datasource: { url: process.env.MIGRATE_DATABASE_URL }`**.
 
-Eso funciona porque con driver adapters el cliente en runtime se conecta a
-través del `pg.Pool` que se le pasa, no a través de la URL del datasource: la
-URL del datasource termina siendo usada **sólo por el CLI**, que es exactamente
-quien tiene que usar la del owner. No queda ninguna combinación de variables en
-la que la app se conecte como owner por error, porque la app no lee esa variable
-en absoluto.
+En Prisma 7 la URL de conexión salió de `schema.prisma` —el bloque `datasource`
+ya no lleva `url`— y vive en `prisma.config.ts`, que **sólo lee el CLI**. El
+cliente en runtime se conecta a través del `pg.Pool` que se le pasa al driver
+adapter, y no lee ese archivo en absoluto. Así que no queda ninguna combinación
+de variables en la que la app se conecte como owner por error: la app no tiene
+forma de enterarse de que `MIGRATE_DATABASE_URL` existe.
+
+`prisma.config.ts` tampoco carga `.env` por su cuenta, y eso también juega a
+favor: la URL del owner tiene que estar puesta explícitamente en el entorno del
+comando que migra, en vez de aparecer sola porque había un archivo al lado.
 
 ## Modelos
 
@@ -223,6 +227,21 @@ protección sería sólo de lectura.
 
 En `tenants` la policy compara contra `id` en vez de `tenant_id`, de modo que un
 tenant tampoco pueda enumerar a los demás.
+
+Las policies se escriben **sin cláusula `TO`**, así que aplican a cualquier rol
+que no esté exento por ser dueño o superusuario. Nombrar un rol adentro de la
+policy la ataría a que ese rol exista antes que la tabla, y eso es exactamente el
+fallo que `verify-backup.sh` ya documenta haber reproducido: una `CREATE POLICY`
+que nombra un rol inexistente hace salir a `pg_restore` con 1 y deja la policy
+sin crear. Sin `TO`, el restore no depende del orden.
+
+**Consecuencia que hay que tener presente: `arandano_app` no puede crear
+tenants.** El `WITH CHECK` de `tenants` exige que la fila nueva coincida con la
+GUC, y al dar de alta un tenant todavía no hay ninguna GUC que poner. El alta es
+una operación de la plataforma, no de un tenant, así que va a necesitar un camino
+privilegiado propio —el rol owner o una función `SECURITY DEFINER`— que se
+diseña en el ciclo de registro. No se resuelve acá, y anotarlo evita que en ese
+ciclo se lo confunda con un bug de las policies.
 
 ### El guardarraíl de cobertura
 
