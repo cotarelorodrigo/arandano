@@ -67,9 +67,10 @@ Desde una **máquina limpia**, no el servidor — es exactamente el escenario
 para el que existe la clave de custodia.
 
 ```bash
-# 1. Instalar age y rclone
-sudo apt-get update && sudo apt-get install -y age rclone   # Debian/Ubuntu
-# brew install age rclone                                   # macOS
+# 1. Instalar age, rclone, jq (Paso 6 la usa) y Docker (Pasos 5-6 restauran
+#    adentro de un contenedor)
+sudo apt-get update && sudo apt-get install -y age rclone jq docker.io   # Debian/Ubuntu
+# brew install age rclone jq --cask docker                                # macOS (o Docker Desktop)
 
 # 2. Configurar el remoto "hetzner" por variables de entorno, con una
 #    credencial de sólo lectura del bucket (Hetzner Cloud Console →
@@ -103,28 +104,42 @@ age -d -i arandano-custodia.key -o dump          ./dump.age
 age -d -i arandano-custodia.key -o manifest.json ./manifest.json.age
 age -d -i arandano-custodia.key -o secretos.tar  ./secretos.tar.age
 
-# 5. Restaurar la base. --no-owner --no-acl si el destino no tiene los
-#    mismos roles que producción (por ejemplo, un Postgres descartable de
-#    prueba); sin esas banderas si el destino sí los tiene y hace falta
-#    preservarlos.
+# 5. Levantar el destino y ESPERAR al servidor DEFINITIVO antes de restaurar.
+#    postgres:17-alpine arranca un servidor temporal para correr los scripts
+#    de init, lo apaga, y recién ahí levanta el definitivo. pg_isready
+#    contesta igual contra los dos, así que hay que contar la SEGUNDA
+#    aparición del log de arranque — reproducido en este repo: la misma
+#    secuencia sin esperar cayó una vez en la ventana del apagado, con
+#    pg_restore fallando "the database system is shutting down".
 docker run -d --name restore-emergencia -e POSTGRES_PASSWORD=x postgres:17-alpine
+for _ in $(seq 1 60); do
+  n=$(docker logs restore-emergencia 2>&1 | grep -c 'database system is ready to accept connections')
+  [[ "$n" -ge 2 ]] && break
+  sleep 1
+done
+[[ "$n" -ge 2 ]] || { echo "no levantó en 60s" >&2; exit 1; }
+
 docker cp dump restore-emergencia:/tmp/dump
 docker exec -e PGPASSWORD=x restore-emergencia \
   pg_restore --no-owner --no-acl -U postgres -d postgres /tmp/dump
 
-# 6. Recuperar .env y Caddyfile del tar de secretos
+# 6. Verificar contra el manifiesto: cada tabla restaurada tiene que caer
+#    entre sus dos conteos (previo/posterior) — mismo chequeo que hace
+#    verify-backup.sh cada domingo.
+while IFS=$'\t' read -r tabla previo posterior; do
+  n=$(docker exec -e PGPASSWORD=x restore-emergencia \
+    psql -tAq -U postgres -d postgres -c "SELECT count(*) FROM public.\"$tabla\";")
+  echo "$tabla: restaurado=$n banda=$previo..$posterior"
+done < <(jq -r '.tablas | to_entries[] | "\(.key)\t\(.value.previo)\t\(.value.posterior)"' manifest.json)
+
+# 7. Recuperar .env y Caddyfile del tar de secretos
 tar -xf secretos.tar .env Caddyfile
 # quedan en el directorio actual; van a /srv/arandano/prod/ del servidor
 # reconstruido.
 
-# 7. Limpiar lo descifrado — no debe quedar en claro en disco
+# 8. Limpiar lo descifrado — no debe quedar en claro en disco
 shred -u dump manifest.json secretos.tar dump.age manifest.json.age secretos.tar.age .env Caddyfile
 ```
-
-El manifiesto sirve para chequear que la restauración trajo lo esperado: cada
-tabla debe caer entre sus dos conteos (`previo` y `posterior`) — es la misma
-comparación que hace `verify-backup.sh` cada domingo, ver
-`scripts/lib/backup-comun.sh:conteo_en_banda()`.
 
 ## 4. Cuando el dead man's switch avisa
 
@@ -219,8 +234,18 @@ rclone copyto "hetzner:arandano/prod/db/$ULT" ./dump.age
 # Descifrar con la clave de CUSTODIA, no con la de verificación
 age -d -i arandano-custodia.key -o dump ./dump.age
 
-# Restaurar en un Postgres descartable
+# Restaurar en un Postgres descartable. ESPERAR al servidor DEFINITIVO antes
+# de restaurar (postgres:17-alpine apaga un servidor temporal de init antes
+# de levantar el real; pg_isready no distingue uno de otro — ver sección 3,
+# Paso 5, para el porqué completo).
 docker run -d --name prueba-custodia -e POSTGRES_PASSWORD=x postgres:17-alpine
+for _ in $(seq 1 60); do
+  n=$(docker logs prueba-custodia 2>&1 | grep -c 'database system is ready to accept connections')
+  [[ "$n" -ge 2 ]] && break
+  sleep 1
+done
+[[ "$n" -ge 2 ]] || { echo "no levantó en 60s" >&2; exit 1; }
+
 docker cp dump prueba-custodia:/tmp/dump
 docker exec -e PGPASSWORD=x prueba-custodia \
   pg_restore --no-owner --no-acl -U postgres -d postgres /tmp/dump
