@@ -598,7 +598,17 @@ suite_backup() {
   # La retención la aplica una regla de ciclo de vida del bucket, no el
   # script. Se comprueba el EFECTO y no la configuración: que la regla exista
   # no prueba que esté corriendo.
-  local mas_viejo=0
+  #
+  # El default y el fallback tienen que ser un número absurdamente grande, no
+  # 0: si `rclone lsjson` falla (credencial inválida, remoto mal configurado,
+  # bucket inexistente), el `|| echo` es lo que se ejecuta, y con 0 ahí ese
+  # fallo queda indistinguible de "el bucket está vacío" — el mismo valor que
+  # hace pasar el check en verde. Un check que no pudo medir nada nunca debe
+  # reportar éxito: el valor de fallo tiene que caer del lado que lo hace
+  # fallar, igual que el check de frescura de arriba usa 999 y no 0. Con
+  # 999999 acá, un 0 legítimo sólo puede salir de la rama
+  # `if length == 0 then 0` del propio jq, o sea de un listado real y exitoso.
+  local mas_viejo=999999
   if [[ -r /etc/arandano/backup.env ]]; then
     mas_viejo=$(
       ( set -a; . /etc/arandano/backup.env; set +a
@@ -607,7 +617,7 @@ suite_backup() {
                      ([.[].ModTime | sub("\\.[0-9]+"; "") | fromdateiso8601] | min) as $t
                      | ((now - $t) / 86400 | floor)
                    end'
-      ) 2>/dev/null || echo 0
+      ) 2>/dev/null || echo 999999
     )
   fi
   # 31 y no 30: la regla borra "a los 30 días", y el barrido del proveedor no
