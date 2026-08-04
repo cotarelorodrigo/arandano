@@ -37,6 +37,20 @@ done
 [[ -n "$MOTIVO" ]] || { error "falta --motivo"; uso; }
 PREFIJO=$(prefijo_motivo "$MOTIVO")
 
+# El nocturno y un pre-migracion disparado por deploy.sh pueden coincidir.
+# Dos pg_dump a la vez sobre 2 vCPU no se rompen entre sí, pero sí compiten
+# por la memoria que el presupuesto ya tiene contada una sola vez.
+#
+# -n (no esperar) y no -w: si ya hay un backup corriendo, el segundo NO tiene
+# que encolarse. Encolarse significaría que deploy.sh se queda colgado
+# esperando al nocturno, y un deploy bloqueado es peor que un backup salteado
+# cuando acaba de correr otro hace un minuto.
+exec 9>/var/lock/arandano-backup.lock
+if ! flock -n 9; then
+  error "ya hay un backup corriendo; esta corrida se saltea"
+  exit 1
+fi
+
 cargar_config
 cargar_env_prod
 
@@ -201,3 +215,14 @@ subir_verificando "$TRABAJO/secretos.tar.age"  "$OBJ_SECRETOS"
 #
 # La suite `backup` de verify-infra.sh comprueba el EFECTO de la regla (que
 # no haya objetos más viejos que la retención), no su configuración.
+
+# --- Paso 9: ping -----------------------------------------------------------
+# Únicamente si los ocho pasos anteriores salieron bien. `set -e` garantiza
+# que cualquier falla previa ya salió del script sin llegar hasta acá.
+#
+# La alarma llega por AUSENCIA de señal, no por un mensaje de error que
+# también podría fallar. Es lo que hace que un timer muerto, un disco lleno o
+# un servidor apagado se detecten igual que un error del script — y es
+# exactamente el modo de falla que un mail de error no cubre.
+ping_dms "${ARANDANO_DMS_BACKUP_URL:-}"
+log "listo"
