@@ -172,10 +172,19 @@ UNIT
 # verificación y las credenciales del bucket. Que el directorio sea
 # root-only es la primera de las dos capas; los permisos de cada archivo
 # son la segunda.
+#
+# La detección de "ya instalado" es `command -v`, no `dpkg -s`: `dpkg -s`
+# sale con 0 para cualquier paquete con entrada en la base de dpkg, incluso
+# uno removido sin --purge (estado "rc", "deinstall ok config-files"). Con
+# `dpkg -s` este script diría "ya instalados, salteando" sobre un host al
+# que le sacaron el binario, que es exactamente el caso en que se lo vuelve
+# a correr para reconstruir la máquina. `command -v` es además el mismo
+# criterio que ya usa `suite_backup` en verify-infra.sh — los dos scripts
+# tienen que poder coincidir en si una herramienta está presente.
 setup_backup_tools() {
   local faltan=()
   for pkg in age rclone jq; do
-    dpkg -s "$pkg" >/dev/null 2>&1 || faltan+=("$pkg")
+    command -v "$pkg" >/dev/null 2>&1 || faltan+=("$pkg")
   done
 
   if [[ ${#faltan[@]} -eq 0 ]]; then
