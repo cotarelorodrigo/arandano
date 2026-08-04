@@ -242,7 +242,15 @@ Y del producto:
 ### Bloqueantes antes del primer tenant real
 
 1. **Completar el healthcheck** con los checks de query filtrada por tenant y de pg-boss (`lib/health/checks.ts` tiene el pendiente anotado). Sin ellos el rollback automático se dispara con criterio incompleto.
-2. **Backups** con `pg_dump` y restore verificado contra base descartable.
+2. ~~**Backups** con `pg_dump` y restore verificado contra base descartable.~~
+   **Hecho** (2026-08-04). `scripts/backup.sh` nocturno a las 04:00 UTC y
+   `scripts/verify-backup.sh` los domingos a las 05:00 UTC, con dead man's
+   switch. Ver `docs/runbook-backups.md`. **Pendiente dentro de esto**: la
+   prueba de la clave de custodia (spec, *Requisitos de custodia*) todavía no
+   se corrió — requiere la clave privada de custodia, que por diseño no está
+   en el servidor, así que la tiene que hacer una persona en su laptop. Ver
+   la sección *Pendiente* de `docs/runbook-backups.md` para los comandos
+   exactos.
 3. **`deploy.sh`** con su gate completo.
 4. **`deploy.sh` tiene que negarse a buildear con el working tree sucio** (`git diff --quiet`). La imagen se tagea con el SHA de git, así que buildear con cambios sin commitear produce una imagen cuya etiqueta apunta a un código que no contiene — y esa etiqueta es lo que alguien lee para saber qué está corriendo.
 5. **`deploy.sh` tiene que pasar `GIT_SHA` explícito** en cada build. El Dockerfile ya falla sin él, a propósito.
