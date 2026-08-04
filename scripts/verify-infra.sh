@@ -522,6 +522,39 @@ suite_backup() {
   local fstype_vartmp
   fstype_vartmp=$(df --output=fstype /var/tmp 2>/dev/null | tail -1 | tr -d ' ')
   check_ne "/var/tmp no es tmpfs" "tmpfs" "$fstype_vartmp"
+
+  # La privada de verificación y las credenciales del bucket son lo único
+  # secreto del sistema. Un 0644 acá es un backup histórico legible por
+  # cualquier proceso del host.
+  check_eq "/etc/arandano es 700" "700" \
+    "$(stat -c '%a' /etc/arandano 2>/dev/null || echo NA)"
+  check_eq "backup.env es 600" "600" \
+    "$(stat -c '%a' /etc/arandano/backup.env 2>/dev/null || echo NA)"
+  check_eq "la clave de verificación es 600" "600" \
+    "$(stat -c '%a' /etc/arandano/age-verify.key 2>/dev/null || echo NA)"
+
+  # Dos destinatarios, no uno: la de custodia (privada fuera del servidor)
+  # y la de verificación. Con una sola, o no hay resistencia a ransomware o
+  # no hay verificación automática.
+  local destinatarios
+  destinatarios=$(grep -c '^age1' /etc/arandano/age-recipients.txt 2>/dev/null || echo 0)
+  check_eq "hay exactamente 2 destinatarios de age" "2" "$destinatarios"
+
+  # Que el bucket exista y la credencial alcance. Sin esto, el primer
+  # síntoma sería un backup que no subió.
+  #
+  # El subshell con `set -a` y no `env`: los valores del .env pueden llevar
+  # caracteres que rompen un armado de línea de comandos, y además así las
+  # credenciales no aparecen en `ps`.
+  local bucket_ok=1
+  if [[ -r /etc/arandano/backup.env ]]; then
+    ( set -a; . /etc/arandano/backup.env; set +a
+      rclone lsd "hetzner:$ARANDANO_BUCKET" --low-level-retries 1 >/dev/null 2>&1 ) \
+      || bucket_ok=0
+  else
+    bucket_ok=0
+  fi
+  check_eq "el bucket responde con la credencial del host" "1" "$bucket_ok"
 }
 
 main() {
