@@ -134,3 +134,70 @@ jq -n \
    }' > "$TRABAJO/manifest.json"
 
 log "manifiesto: $(jq -r '.tablas | length' "$TRABAJO/manifest.json") tablas"
+
+# --- Paso 5: secretos -------------------------------------------------------
+# El conjunto mínimo para reconstruir el servicio desde cero: sin el .env la
+# base restaurada no se puede abrir, y sin el Caddyfile no hay TLS.
+log "secretos"
+tar -cf "$TRABAJO/secretos.tar" \
+  -C /srv/arandano/prod .env Caddyfile
+
+# --- Paso 6: cifrado --------------------------------------------------------
+# Dos destinatarios: la clave de custodia (privada fuera del servidor) y la
+# de verificación (privada en /etc/arandano/, sólo la usa verify-backup.sh).
+# Con una sola, o no hay verificación automática o no hay resistencia a que
+# alguien tome el VPS.
+log "cifrado"
+for f in dump manifest.json secretos.tar; do
+  age -R "$ARANDANO_AGE_RECIPIENTS" -o "$TRABAJO/$f.age" "$TRABAJO/$f"
+done
+
+# --- Paso 7: subida ---------------------------------------------------------
+OBJ_DUMP=$(nombre_objeto "$PREFIJO" "$TS" "$MOTIVO" dump)
+OBJ_MANIFEST=$(nombre_objeto "$PREFIJO" "$TS" "$MOTIVO" manifest)
+OBJ_SECRETOS=$(nombre_objeto "$PREFIJO" "$TS" "$MOTIVO" secretos)
+
+# Releer el tamaño del objeto YA SUBIDO y compararlo contra el local. Un
+# `rclone copyto` que sale con 0 dice que el comando terminó, no que del otro
+# lado haya quedado el archivo entero.
+subir_verificando() {
+  local local_path="$1" objeto="$2"
+  # Declarado aparte y no en la misma línea que $objeto: bash expande todas
+  # las palabras de un `local ... ` en el contexto de quien llama ANTES de
+  # correr el builtin, así que "$objeto" ahí adentro leería la variable del
+  # scope exterior (sin setear) y no la recién asignada un campo antes.
+  local destino="hetzner:$ARANDANO_BUCKET/$objeto"
+  local tam_local tam_remoto
+
+  rclone copyto "$local_path" "$destino"
+
+  tam_local=$(stat -c%s "$local_path")
+  # lsjson y no `rclone size`: `size` está pensado para directorios y sobre la
+  # ruta de un archivo suelto puede devolver 0 objetos, que se leería como
+  # "subió vacío" cuando en realidad subió bien.
+  tam_remoto=$(rclone lsjson "$destino" | jq -r '.[0].Size // 0')
+
+  if [[ "$tam_local" != "$tam_remoto" ]]; then
+    error "$objeto subió incompleto (local: $tam_local, remoto: $tam_remoto)"
+    return 1
+  fi
+  log "subido $objeto ($tam_local bytes)"
+}
+
+subir_verificando "$TRABAJO/dump.age"        "$OBJ_DUMP"
+subir_verificando "$TRABAJO/manifest.json.age" "$OBJ_MANIFEST"
+subir_verificando "$TRABAJO/secretos.tar.age"  "$OBJ_SECRETOS"
+
+# --- Paso 8: expiración -----------------------------------------------------
+# No hay nada acá, y es a propósito. La retención de 30 días la aplica una
+# regla de ciclo de vida DEL BUCKET, no este script. Dos razones:
+#
+#   - La credencial que vive en el servidor no necesita permiso de borrado,
+#     así que alguien que tome el VPS no puede vaciar el histórico.
+#   - Un borrado desde el script que corriera aunque la subida fallara iría
+#     comiéndose el histórico un día por vez hasta dejar el bucket vacío. El
+#     sistema pensado para protegerte sería el que te deja sin nada, en
+#     silencio.
+#
+# La suite `backup` de verify-infra.sh comprueba el EFECTO de la regla (que
+# no haya objetos más viejos que la retención), no su configuración.
