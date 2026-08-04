@@ -10,7 +10,7 @@ let tenantB: string
 
 /** Corre una consulta con la GUC del tenant fijada, dentro de una transacción,
  *  igual que hace la app en producción. */
-async function comoTenant<T>(tenantId: string | null, sql: string, params: unknown[] = []) {
+async function comoTenant(tenantId: string | null, sql: string, params: unknown[] = []) {
   await app.query('BEGIN')
   try {
     if (tenantId !== null) {
@@ -105,8 +105,60 @@ describe('aislamiento por RLS', () => {
     )
 
     for (const tabla of ['articulos', 'tenant_modules', 'users']) {
-      const { rows } = await comoTenant(tenantA, `SELECT 1 FROM ${tabla}`)
-      expect(rows, `${tabla} filtró filas de otro tenant`).toHaveLength(0)
+      const { rows: deA } = await comoTenant(tenantA, `SELECT 1 FROM ${tabla}`)
+      expect(deA, `${tabla} filtró filas de otro tenant`).toHaveLength(0)
+
+      // La mitad que falta: si la tabla también fuera invisible para su
+      // propio dueño (falta el CREATE POLICY, o compara la columna que no
+      // es), el assert de arriba daría 0 igual y el test quedaría en verde
+      // sin haber probado aislamiento — sólo "vacío para todos".
+      const { rows: deB } = await comoTenant(tenantB, `SELECT 1 FROM ${tabla}`)
+      expect(deB, `${tabla} no es legible por su propio tenant`).toHaveLength(1)
     }
+  })
+
+  it('rechaza insertar un tenant nuevo con un id que no coincide con la GUC', async () => {
+    // La app nunca puede acertar el id: es un uuid al azar, así que esto es
+    // lo que hace verdadera la afirmación de test/datos.ts de que sólo el
+    // owner puede crear tenants — arandano_app sí tiene GRANT INSERT.
+    await expect(
+      comoTenant(
+        tenantA,
+        `INSERT INTO tenants (id, subdominio, nombre, estado, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), 'rls-infiltrado', 'rls-infiltrado', 'TRIAL', now(), now())`,
+      ),
+    ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+  })
+
+  it('rechaza insertar en tenant_modules con el tenant_id de otro', async () => {
+    await expect(
+      comoTenant(
+        tenantA,
+        `INSERT INTO tenant_modules (tenant_id, modulo, activado_en) VALUES ($1, 'GASTRONOMIA', now())`,
+        [tenantB],
+      ),
+    ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+  })
+
+  it('rechaza insertar en users con el tenant_id de otro', async () => {
+    await expect(
+      comoTenant(
+        tenantA,
+        `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, 'Infiltrado', 'infiltrado@ejemplo.com', 'EMPLEADO', now(), now())`,
+        [tenantB],
+      ),
+    ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+  })
+
+  it('rechaza insertar en articulos con el tenant_id de otro', async () => {
+    await expect(
+      comoTenant(
+        tenantA,
+        `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, 'SKU-INFILTRADO', 'Infiltrado', 'PRODUCTO', 1.00, now(), now())`,
+        [tenantB],
+      ),
+    ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
   })
 })
