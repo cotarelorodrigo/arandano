@@ -94,3 +94,47 @@ ALTER TABLE "clientes" ADD CONSTRAINT "clientes_tenant_id_fkey" FOREIGN KEY ("te
 
 -- AddForeignKey
 ALTER TABLE "articulos" ADD CONSTRAINT "articulos_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- ---------------------------------------------------------------------------
+-- Row Level Security
+--
+-- Tres piezas de la expresión, ninguna decorativa:
+--   * el segundo argumento `true` de current_setting hace que una GUC sin
+--     setear devuelva NULL en vez de tirar error;
+--   * el nullif evita que una cadena vacía llegue al cast y lo haga explotar;
+--   * como NULL = uuid da NULL, y NULL no es true, SIN GUC NO PASA NINGUNA
+--     FILA. Falla cerrado, que es la única forma aceptable de fallar acá.
+--
+-- El WITH CHECK es lo que impide insertar una fila con el tenant_id de otro y
+-- lo que impide que un UPDATE mueva una fila existente a otro tenant.
+--
+-- Las policies van SIN cláusula TO: nombrar un rol adentro las ataría a que
+-- ese rol exista antes que la tabla, y un CREATE POLICY que nombra un rol
+-- inexistente hace salir a pg_restore con 1 y deja la policy sin crear. Está
+-- reproducido y documentado en scripts/verify-backup.sh.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE "tenants" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_aislamiento" ON "tenants" FOR ALL
+  USING      ("id" = nullif(current_setting('arandano.tenant_id', true), '')::uuid)
+  WITH CHECK ("id" = nullif(current_setting('arandano.tenant_id', true), '')::uuid);
+
+ALTER TABLE "tenant_modules" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_aislamiento" ON "tenant_modules" FOR ALL
+  USING      ("tenant_id" = nullif(current_setting('arandano.tenant_id', true), '')::uuid)
+  WITH CHECK ("tenant_id" = nullif(current_setting('arandano.tenant_id', true), '')::uuid);
+
+ALTER TABLE "users" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_aislamiento" ON "users" FOR ALL
+  USING      ("tenant_id" = nullif(current_setting('arandano.tenant_id', true), '')::uuid)
+  WITH CHECK ("tenant_id" = nullif(current_setting('arandano.tenant_id', true), '')::uuid);
+
+ALTER TABLE "clientes" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_aislamiento" ON "clientes" FOR ALL
+  USING      ("tenant_id" = nullif(current_setting('arandano.tenant_id', true), '')::uuid)
+  WITH CHECK ("tenant_id" = nullif(current_setting('arandano.tenant_id', true), '')::uuid);
+
+ALTER TABLE "articulos" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_aislamiento" ON "articulos" FOR ALL
+  USING      ("tenant_id" = nullif(current_setting('arandano.tenant_id', true), '')::uuid)
+  WITH CHECK ("tenant_id" = nullif(current_setting('arandano.tenant_id', true), '')::uuid);
