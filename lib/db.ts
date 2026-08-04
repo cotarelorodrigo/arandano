@@ -36,3 +36,19 @@ function crearPool(): Pool {
 export const pool = globalForPg.arandanoPool ?? crearPool()
 
 if (process.env.NODE_ENV !== 'production') globalForPg.arandanoPool = pool
+
+import { PrismaPg } from '@prisma/adapter-pg'
+import { PrismaClient } from '@/generated/prisma/client'
+
+// El adapter acepta un pg.Pool ya construido, así que Prisma NO abre un pool
+// propio: el límite de conexiones sigue viviendo en un solo lugar, arriba, que
+// es donde está documentado por qué vale 5.
+const globalForPrisma = globalThis as unknown as { arandanoPrisma?: PrismaClient }
+
+function crearPrisma(): PrismaClient {
+  return new PrismaClient({ adapter: new PrismaPg(pool) })
+}
+
+export const prisma = globalForPrisma.arandanoPrisma ?? crearPrisma()
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.arandanoPrisma = prisma
