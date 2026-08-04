@@ -10,6 +10,10 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Explícito y no sólo vía el prebuild de package.json: si alguien cambia los
+# scripts de npm, el build tiene que seguir fallando acá y no producir una
+# imagen sin cliente generado.
+RUN npx prisma generate
 RUN npm run build
 
 FROM node:24-alpine AS runtime
@@ -42,3 +46,26 @@ ENV GIT_SHA=$GIT_SHA
 USER arandano
 EXPOSE 3000
 CMD ["node", "server.js"]
+
+# Imagen de migración: el CLI de Prisma no está en la de runtime, que sale del
+# output standalone y no lleva devDependencies. Se buildea del mismo SHA que la
+# app, así que las migraciones que corren son exactamente las del código que se
+# está promoviendo.
+FROM node:24-alpine AS migrate
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json prisma.config.ts ./
+COPY prisma ./prisma
+
+ARG GIT_SHA
+RUN test -n "$GIT_SHA" || { \
+    echo "ERROR: falta --build-arg GIT_SHA=\$(git rev-parse --short HEAD)."; \
+    exit 1; \
+    }
+ENV GIT_SHA=$GIT_SHA
+
+# Sin CMD por defecto a propósito: quien la corre dice qué comando quiere
+# (`migrate deploy`, `migrate status`, `migrate diff`), y así una corrida
+# accidental sin argumentos no aplica nada.
+ENTRYPOINT ["npx", "prisma"]
