@@ -56,9 +56,15 @@ proxima_version() {
 # "encontré" y "todo bien" no pueden ser el mismo 0.
 #
 # El criterio no es "destruye datos" sino "el código ANTERIOR deja de funcionar
-# contra este schema". Por eso entran los renames, que no borran nada: el
-# rollback revierte la imagen y no la base, así que una columna renombrada deja
-# a la imagen vieja consultando algo que ya no existe.
+# contra este schema" (la lista de patrones de abajo es una implementación de
+# ESE criterio, no el criterio en sí — si aparece un caso nuevo que lo cumple,
+# el patrón que falta se agrega, no se discute el criterio). Por eso entran los
+# renames, que no borran nada: el rollback revierte la imagen y no la base, así
+# que una columna renombrada deja a la imagen vieja consultando algo que ya no
+# existe. Por la misma razón entra SET NOT NULL: Prisma lo emite cada vez que
+# un campo opcional pasa a requerido, y la imagen vieja sigue insertando filas
+# sin esa columna — el caso más común de todos, y el que más duele si se
+# escapa.
 migracion_destructiva() {
   local sql="${1:-}"
 
@@ -66,22 +72,89 @@ migracion_destructiva() {
   # una nota no es una migración destructiva; frenar el deploy por eso enseña a
   # ignorar el chequeo. Los de bloque se sacan primero porque pueden contener
   # un `--` adentro.
+  #
+  # Límite conocido y no cerrado del todo: si un `--` apareciera DENTRO de un
+  # literal de string (algo que Prisma nunca emite, pero una migración de
+  # datos o de RLS escrita a mano sí podría), este `sed` se comería el resto
+  # de la línea, incluido un `;` real, y `tr '\n' ' '` fusionaría dos
+  # sentencias en una. Por eso ningún patrón de abajo usa un comodín sin fondo
+  # tipo `[^;]*` que pueda cruzar esa fusión: donde hace falta separar un
+  # identificador de columna del resto de la sentencia (ALTER COLUMN ...
+  # TYPE), el patrón exige que venga entre comillas dobles pegado a "COLUMN"
+  # en vez de admitir cualquier cosa hasta el próximo `;`. Eso cierra el caso
+  # para esos patrones puntuales; lo que queda abierto es que una fusión así
+  # podría, en teoría, unir un DROP CONSTRAINT con un ADD CONSTRAINT de otra
+  # sentencia y hacer parecer emparejado algo que no lo estaba — un escenario
+  # que requiere un `--` dentro de un literal Y un DROP CONSTRAINT sin nombrar
+  # en la misma migración, algo que ninguna migración generada por Prisma
+  # produce.
   local limpio
   limpio=$(printf '%s' "$sql" \
     | perl -0777 -pe 's{/\*.*?\*/}{ }gs' \
     | sed -e 's|--.*$||' \
     | tr '\n' ' ')
 
+  # Fallar CERRADO si el pipeline de arriba se rompió. Un `limpio` vacío con
+  # `sql` no vacío no es "no había nada destructivo": es que algo (`perl`
+  # ausente del PATH es el caso real) devolvió nada, y de ahí para abajo TODOS
+  # los grep matchearían en falso contra una cadena vacía. Esta es la única
+  # función de este archivo cuyo único sentido de falla aceptable es frenar el
+  # deploy, así que acá "no sé" se trata como "sí, es destructiva".
+  if [[ -n "$sql" && -z "$limpio" ]]; then
+    error "migracion_destructiva: la limpieza de comentarios devolvió vacío con SQL no vacío (¿falta perl en el PATH?); fallando cerrado"
+    printf 'pipeline de limpieza roto (¿falta perl?)\n'
+    return 0
+  fi
+
+  # DROP CONSTRAINT seguido de un ADD CONSTRAINT del MISMO nombre en la misma
+  # migración no es destructivo: es el patrón que Prisma emite para cualquier
+  # cambio de relación (agregar onDelete: Cascade, volver opcional una FK) —
+  # recrea la constraint, no la elimina, y el código anterior no depende de que
+  # exista con ese nombre puntual entre un statement y el otro. Bloquearlo es
+  # justo el tipo de falso positivo que enseña a saltear el gate. Un DROP
+  # CONSTRAINT sin su ADD sigue siendo destructivo, y uno cuyo nombre no
+  # podemos extraer entre comillas (Prisma siempre cita identificadores; algo
+  # escrito a mano podría no hacerlo) se trata como destructivo por no poder
+  # verificar el emparejamiento — de nuevo, fallar cerrado y no abierto.
+  if printf '%s' "$limpio" | grep -qiE 'DROP[[:space:]]+CONSTRAINT'; then
+    local dropeadas agregadas nombre sin_nombre
+    dropeadas=$(printf '%s' "$limpio" \
+      | grep -oiE 'DROP[[:space:]]+CONSTRAINT[[:space:]]+"[^"]+"' \
+      | sed -E 's/.*"([^"]+)"/\1/')
+    agregadas=$(printf '%s' "$limpio" \
+      | grep -oiE 'ADD[[:space:]]+CONSTRAINT[[:space:]]+"[^"]+"' \
+      | sed -E 's/.*"([^"]+)"/\1/')
+
+    sin_nombre=$(printf '%s' "$limpio" | grep -oiE 'DROP[[:space:]]+CONSTRAINT' | wc -l)
+    if [[ "$sin_nombre" -gt "$(printf '%s\n' "$dropeadas" | grep -c . || true)" ]]; then
+      printf 'DROP CONSTRAINT sin nombre entre comillas (no se puede verificar el emparejamiento)\n'
+      return 0
+    fi
+
+    while IFS= read -r nombre; do
+      [[ -n "$nombre" ]] || continue
+      if ! grep -qxF "$nombre" <<<"$agregadas"; then
+        printf 'DROP CONSTRAINT "%s" sin ADD CONSTRAINT correspondiente\n' "$nombre"
+        return 0
+      fi
+    done <<<"$dropeadas"
+  fi
+
   local patron
   for patron in \
     'DROP[[:space:]]+COLUMN' \
     'DROP[[:space:]]+TABLE' \
     'DROP[[:space:]]+SCHEMA' \
-    'DROP[[:space:]]+CONSTRAINT' \
-    'TRUNCATE' \
+    'DROP[[:space:]]+TYPE' \
+    'DROP[[:space:]]+INDEX' \
+    'DROP[[:space:]]+VIEW' \
+    'DROP[[:space:]]+DEFAULT' \
+    '\bTRUNCATE\b' \
     'RENAME[[:space:]]+TO' \
     'RENAME[[:space:]]+COLUMN' \
-    'ALTER[[:space:]]+COLUMN[[:space:]]+[^;]*[[:space:]]TYPE[[:space:]]'
+    'RENAME[[:space:]]+VALUE' \
+    'SET[[:space:]]+NOT[[:space:]]+NULL' \
+    'ALTER[[:space:]]+COLUMN[[:space:]]+"[^"]+"[[:space:]]+TYPE[[:space:]]'
   do
     if printf '%s' "$limpio" | grep -qiE "$patron"; then
       printf '%s\n' "$patron"
