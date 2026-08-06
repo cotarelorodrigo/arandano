@@ -16,6 +16,36 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
+# Imagen de migración: el CLI de Prisma no está en la de runtime, que sale del
+# output standalone y no lleva devDependencies. Se buildea del mismo SHA que la
+# app, así que las migraciones que corren son exactamente las del código que se
+# está promoviendo.
+FROM node:24-alpine AS migrate
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json prisma.config.ts ./
+COPY prisma ./prisma
+
+ARG GIT_SHA
+RUN test -n "$GIT_SHA" || { \
+    echo "ERROR: falta --build-arg GIT_SHA=\$(git rev-parse --short HEAD)."; \
+    exit 1; \
+    }
+ENV GIT_SHA=$GIT_SHA
+
+# Sin CMD por defecto a propósito: quien la corre dice qué comando quiere
+# (`migrate deploy`, `migrate status`, `migrate diff`), y así una corrida
+# accidental sin argumentos no aplica nada.
+ENTRYPOINT ["npx", "prisma"]
+
+# runtime va ÚLTIMA, y no es cosmético: `docker build` sin `--target` buildea la
+# ÚLTIMA etapa del archivo, así que el default tiene que ser lo que se promueve
+# a producción. Cuando `migrate` quedó al final, un build sin `--target` etiquetó
+# el CLI de Prisma como `arandano-app:<sha>` — 1,36 GB con ENTRYPOINT `npx
+# prisma`, listo para promoverse. Los builds igual pasan `--target` explícito;
+# esto es la segunda defensa, para que olvidarlo no sea catastrófico.
+# Agregar etapas DESPUÉS de esta vuelve a abrir el mismo agujero.
 FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
@@ -46,26 +76,3 @@ ENV GIT_SHA=$GIT_SHA
 USER arandano
 EXPOSE 3000
 CMD ["node", "server.js"]
-
-# Imagen de migración: el CLI de Prisma no está en la de runtime, que sale del
-# output standalone y no lleva devDependencies. Se buildea del mismo SHA que la
-# app, así que las migraciones que corren son exactamente las del código que se
-# está promoviendo.
-FROM node:24-alpine AS migrate
-WORKDIR /app
-ENV NEXT_TELEMETRY_DISABLED=1
-COPY --from=deps /app/node_modules ./node_modules
-COPY package.json prisma.config.ts ./
-COPY prisma ./prisma
-
-ARG GIT_SHA
-RUN test -n "$GIT_SHA" || { \
-    echo "ERROR: falta --build-arg GIT_SHA=\$(git rev-parse --short HEAD)."; \
-    exit 1; \
-    }
-ENV GIT_SHA=$GIT_SHA
-
-# Sin CMD por defecto a propósito: quien la corre dice qué comando quiere
-# (`migrate deploy`, `migrate status`, `migrate diff`), y así una corrida
-# accidental sin argumentos no aplica nada.
-ENTRYPOINT ["npx", "prisma"]
