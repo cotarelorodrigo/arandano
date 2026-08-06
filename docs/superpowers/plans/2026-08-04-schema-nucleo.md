@@ -1960,7 +1960,7 @@ SHA=$(git rev-parse --short HEAD)
 
 docker build --cgroup-parent=arandanobuild.slice \
   --resource memory=2g --resource cpu-quota=100000 \
-  --build-arg GIT_SHA="$SHA" -t "arandano-app:$SHA" .
+  --target runtime --build-arg GIT_SHA="$SHA" -t "arandano-app:$SHA" .
 
 docker build --cgroup-parent=arandanobuild.slice \
   --resource memory=2g --resource cpu-quota=100000 \
@@ -1968,6 +1968,8 @@ docker build --cgroup-parent=arandanobuild.slice \
 ```
 
 Las banderas de recursos son las que efectivamente limitan en este host: `nice`, `--cpuset-cpus` y `--memory` son inertes acá y no avisan que lo son. Ver `docs/runbook-stacks.md`.
+
+`--target runtime` no es opcional: `docker build` sin `--target` buildea la **última** etapa del Dockerfile. Sin él, el día que alguien agregue una etapa al final, `arandano-app:<sha>` pasa a contener otra cosa sin que nada avise. El Dockerfile además deja `runtime` último a propósito, pero las dos defensas van juntas.
 
 Expected: los dos builds terminan en 0.
 
