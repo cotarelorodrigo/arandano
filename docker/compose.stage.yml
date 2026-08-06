@@ -49,7 +49,12 @@ services:
     image: "arandano-app:${IMAGE_TAG:?IMAGE_TAG es obligatorio}"
     environment:
       ARANDANO_STACK: stage
-      DATABASE_URL: postgres://arandano_stage:efimero-no-persiste@postgres:5432/arandano_stage
+      # Los roles de este stack NO existen hasta que deploy.sh corra
+      # scripts/setup-db-roles.sh contra este Postgres: es efímero y nace
+      # vacío en cada corrida. Hasta que exista deploy.sh, levantar este stack
+      # a mano deja la app sin poder conectarse, y es lo esperado.
+      DATABASE_URL: postgres://arandano_app:efimero-app@postgres:5432/arandano_stage
+      MIGRATE_DATABASE_URL: postgres://arandano_owner:efimero-owner@postgres:5432/arandano_stage
       # Ver compose.prod.yml: el healthcheck comprueba contra qué base está
       # hablando la app, no sólo que alguna responda.
       ARANDANO_DB_ESPERADA: arandano_stage

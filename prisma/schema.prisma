@@ -1,0 +1,124 @@
+// En Prisma 7 el bloque datasource NO lleva url: la cadena de conexión vive en
+// prisma.config.ts, que sólo lee el CLI. Eso es lo que hace imposible que la
+// app se conecte como owner por error — no lee ese archivo.
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../generated/prisma"
+  // Next.js no resuelve los imports con extensión explícita del generador
+  // nuevo; vaciarlo los deja como imports normales.
+  importFileExtension = ""
+}
+
+enum EstadoTenant {
+  TRIAL
+  ACTIVO
+  SUSPENDIDO
+
+  @@map("estado_tenant")
+}
+
+enum Modulo {
+  ORDENES_DE_TRABAJO
+  TURNOS
+  GASTRONOMIA
+
+  @@map("modulo")
+}
+
+enum RolUsuario {
+  DUENO
+  EMPLEADO
+
+  @@map("rol_usuario")
+}
+
+enum TipoArticulo {
+  PRODUCTO
+  SERVICIO
+
+  @@map("tipo_articulo")
+}
+
+// La raíz. No tiene tenant_id porque ES el tenant; su policy de RLS compara
+// contra id.
+model Tenant {
+  id            String       @id @default(uuid(7)) @db.Uuid
+  subdominio    String       @unique
+  nombre        String
+  estado        EstadoTenant @default(TRIAL)
+  creadoEn      DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  modulos   TenantModule[]
+  users     User[]
+  clientes  Cliente[]
+  articulos Articulo[]
+
+  @@map("tenants")
+}
+
+// La activación de un módulo es una fila. Un tenant activa varios: el local de
+// celulares es núcleo + órdenes de trabajo.
+model TenantModule {
+  tenantId   String   @map("tenant_id") @db.Uuid
+  modulo     Modulo
+  activadoEn DateTime @default(now()) @map("activado_en") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, modulo])
+  @@map("tenant_modules")
+}
+
+model User {
+  id            String     @id @default(uuid(7)) @db.Uuid
+  tenantId      String     @map("tenant_id") @db.Uuid
+  nombre        String
+  email         String
+  rol           RolUsuario @default(EMPLEADO)
+  creadoEn      DateTime   @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn DateTime   @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Por tenant y no global: la misma persona puede trabajar en dos negocios.
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+model Cliente {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  nombre        String
+  telefono      String?
+  email         String?
+  creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("clientes")
+}
+
+model Articulo {
+  id       String       @id @default(uuid(7)) @db.Uuid
+  tenantId String       @map("tenant_id") @db.Uuid
+  sku      String
+  nombre   String
+  tipo     TipoArticulo
+  // Decimal y nunca Float: un flotante binario no representa 0,10 y el error
+  // se acumula en cada suma de una caja.
+  precio        Decimal  @db.Decimal(12, 2)
+  creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sku])
+  @@map("articulos")
+}

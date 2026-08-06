@@ -11,6 +11,17 @@ export default defineConfig({
     // include atado a lib/ dejaría fuera del gate a todos los módulos futuros
     // sin decir una palabra. vitest ya excluye node_modules por defecto.
     include: ['**/*.test.{ts,tsx}'],
+    globalSetup: ['./test/global-setup.ts'],
+    // Todos los archivos de test comparten UNA sola base efímera. En paralelo
+    // se pisarían los datos entre sí, y peor: los tests de roles cambian
+    // atributos del rol que otros archivos están usando en ese momento. El
+    // costo es tiempo de pared; la alternativa es intermitencia, que en el gate
+    // de deploy se lee como "los tests son flaky" y termina en que se ignoran.
+    fileParallelism: false,
+    // Levantar el contenedor y esperar al servidor definitivo se lleva la mayor
+    // parte de este presupuesto.
+    hookTimeout: 120_000,
+    testTimeout: 30_000,
   },
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, '.') },

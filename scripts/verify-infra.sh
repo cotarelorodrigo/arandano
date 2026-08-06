@@ -683,6 +683,29 @@ suite_backup() {
   fi
 }
 
+suite_roles_db() {
+  suite_header "Base: la app no corre con privilegios"
+
+  local salida
+  salida=$(docker exec arandano-dev-postgres-1 psql -U "${POSTGRES_USER:-arandano_dev}" \
+    -d "${POSTGRES_DB:-arandano_dev}" -tAc \
+    "SELECT rolsuper::text || ',' || rolbypassrls::text FROM pg_roles WHERE rolname='arandano_app'" \
+    2>/dev/null | tr -d '[:space:]')
+
+  check_eq "arandano_app existe y no es superusuario ni bypassrls" "false,false" "$salida"
+
+  # RLS apagada en una tabla es indistinguible de "todo bien" mirando la app:
+  # las queries siguen andando y devuelven de más.
+  local sin_rls
+  sin_rls=$(docker exec arandano-dev-postgres-1 psql -U "${POSTGRES_USER:-arandano_dev}" \
+    -d "${POSTGRES_DB:-arandano_dev}" -tAc \
+    "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+      WHERE n.nspname='public' AND c.relkind='r' AND NOT c.relrowsecurity
+        AND c.relname <> '_prisma_migrations'" 2>/dev/null | tr -d '[:space:]')
+
+  check_eq "ninguna tabla de dev quedó sin RLS" "0" "$sin_rls"
+}
+
 main() {
   local target="${1:-all}"
 
@@ -705,7 +728,8 @@ main() {
     logs) suite_logs ;;
     stress) suite_stress ;;
     backup) suite_backup ;;
-    all)  suite_host; suite_app; suite_network; suite_limits; suite_build; suite_isolation; suite_env; suite_logs; suite_stress; suite_backup ;;
+    roles) suite_roles_db ;;
+    all)  suite_host; suite_app; suite_network; suite_limits; suite_build; suite_isolation; suite_env; suite_logs; suite_stress; suite_backup; suite_roles_db ;;
     *) echo "suite desconocida: $target" >&2; exit 2 ;;
   esac
 

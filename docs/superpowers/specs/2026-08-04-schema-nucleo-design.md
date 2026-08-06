@@ -221,9 +221,14 @@ Las tres piezas de esa expresión importan y ninguna es decorativa:
 - Como `NULL = uuid` da `NULL`, y `NULL` no es `true`, **sin GUC no pasa ninguna
   fila**. Falla cerrado, que es la única forma aceptable de fallar acá.
 
-El `WITH CHECK` es lo que impide insertar una fila con el `tenant_id` de otro, y
-lo que impide que un `UPDATE` mueva una fila existente a otro tenant. Sin él, la
-protección sería sólo de lectura.
+El `WITH CHECK` es lo que impide insertar una fila con el `tenant_id` de otro y
+lo que impide que un `UPDATE` mueva una fila existente a otro tenant. Se escribe
+explícito aunque en estas policies sea redundante: como son `FOR ALL`, Postgres
+ya reusa la expresión de `USING` para las escrituras cuando `WITH CHECK` se
+omite. Va escrito igual por dos razones — que la intención de la policy se lea
+sin tener que recordar esa regla, y que la policy no cambie de significado el día
+que alguien la reescriba como policies separadas por comando, donde la omisión
+**sí** dejaría la protección en sólo lectura.
 
 En `tenants` la policy compara contra `id` en vez de `tenant_id`, de modo que un
 tenant tampoco pueda enumerar a los demás.

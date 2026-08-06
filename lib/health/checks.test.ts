@@ -58,3 +58,52 @@ describe('check de postgres', () => {
     expect(report.checks[0].detail).toContain('ARANDANO_DB_ESPERADA')
   })
 })
+
+describe('check de identidad del rol', () => {
+  beforeEach(() => {
+    query.mockReset()
+    vi.resetModules()
+    process.env.ARANDANO_DB_ESPERADA = 'arandano_prod'
+  })
+
+  function respuestaDeRol(fila: Record<string, unknown>) {
+    query.mockImplementation((sql: string) => {
+      if (String(sql).includes('current_database')) {
+        return Promise.resolve({ rows: [{ db: 'arandano_prod' }] })
+      }
+      return Promise.resolve({ rows: [fila] })
+    })
+  }
+
+  it('pasa con un rol sin privilegios', async () => {
+    respuestaDeRol({ rol: 'arandano_app', super: false, bypassrls: false, es_dueno: false })
+    const { checks } = await import('@/lib/health/checks')
+    const reporte = await runChecks(checks)
+    const rol = reporte.checks.find((c) => c.name === 'rol')
+    expect(rol?.ok).toBe(true)
+    expect(rol?.detail).toBe('rol=arandano_app')
+  })
+
+  it('falla si el rol es superusuario, porque RLS se ignoraría en silencio', async () => {
+    respuestaDeRol({ rol: 'arandano_dev', super: true, bypassrls: false, es_dueno: false })
+    const { checks } = await import('@/lib/health/checks')
+    const reporte = await runChecks(checks)
+    const rol = reporte.checks.find((c) => c.name === 'rol')
+    expect(rol?.ok).toBe(false)
+    expect(rol?.detail).toMatch(/superusuario/i)
+  })
+
+  it('falla si el rol tiene BYPASSRLS', async () => {
+    respuestaDeRol({ rol: 'arandano_app', super: false, bypassrls: true, es_dueno: false })
+    const { checks } = await import('@/lib/health/checks')
+    const reporte = await runChecks(checks)
+    expect(reporte.checks.find((c) => c.name === 'rol')?.detail).toMatch(/bypassrls/i)
+  })
+
+  it('falla si el rol es dueño de las tablas, porque el dueño está exento', async () => {
+    respuestaDeRol({ rol: 'arandano_owner', super: false, bypassrls: false, es_dueno: true })
+    const { checks } = await import('@/lib/health/checks')
+    const reporte = await runChecks(checks)
+    expect(reporte.checks.find((c) => c.name === 'rol')?.detail).toMatch(/due/i)
+  })
+})

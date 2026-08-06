@@ -24,6 +24,7 @@
 - **Comentarios, mensajes de commit y salida de los scripts en español.**
 - **Cada commit termina con:** `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`
 - **Nunca** correr `prisma migrate reset` ni `prisma db push` contra `arandano-prod`.
+- **Los pasos que tocan `arandano-dev`, `arandano-prod` o `/srv/arandano/prod/` operan sobre estado compartido de la máquina, no sobre el worktree.** `docker/compose.dev.yml` monta `../:/app`: recrear la app de dev desde un worktree la deja sirviendo el código del worktree, y cuando ese worktree se borre, dev queda con un bind mount a un directorio que ya no existe. Mientras dura el plan es lo que se quiere —dev sirve la rama— pero **después del merge hay que recrear `arandano-dev` desde `/root/arandano`**, y eso está en la verificación final.
 
 ## File Structure
 
@@ -1942,14 +1943,24 @@ ENV GIT_SHA=$GIT_SHA
 ENTRYPOINT ["npx", "prisma"]
 ```
 
-- [ ] **Step 3: Buildear las dos imágenes**
+- [ ] **Step 3: Frenar `arandano-dev` antes de buildear**
+
+```bash
+docker compose -f docker/compose.dev.yml stop
+```
+
+No es opcional y no es cortesía: la aritmética de memoria de CLAUDE.md no cierra de otra forma. Prod 3200 MiB + dev 2304 + el build 2048 + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6. Con dev abajo el pico queda en ~7.5 GB. Sin esto, el OOM killer elige víctima durante el build, y puede ser el Postgres de producción.
+
+Es el mismo orden que `deploy.sh` va a tener que respetar (bloqueante #6 de CLAUDE.md): dev abajo desde el primer paso, no antes del smoke test.
+
+- [ ] **Step 4: Buildear las dos imágenes**
 
 ```bash
 SHA=$(git rev-parse --short HEAD)
 
 docker build --cgroup-parent=arandanobuild.slice \
   --resource memory=2g --resource cpu-quota=100000 \
-  --build-arg GIT_SHA="$SHA" -t "arandano-app:$SHA" .
+  --target runtime --build-arg GIT_SHA="$SHA" -t "arandano-app:$SHA" .
 
 docker build --cgroup-parent=arandanobuild.slice \
   --resource memory=2g --resource cpu-quota=100000 \
@@ -1958,9 +1969,17 @@ docker build --cgroup-parent=arandanobuild.slice \
 
 Las banderas de recursos son las que efectivamente limitan en este host: `nice`, `--cpuset-cpus` y `--memory` son inertes acá y no avisan que lo son. Ver `docs/runbook-stacks.md`.
 
+`--target runtime` no es opcional: `docker build` sin `--target` buildea la **última** etapa del Dockerfile. Sin él, el día que alguien agregue una etapa al final, `arandano-app:<sha>` pasa a contener otra cosa sin que nada avise. El Dockerfile además deja `runtime` último a propósito, pero las dos defensas van juntas.
+
 Expected: los dos builds terminan en 0.
 
-- [ ] **Step 4: Verificar que la imagen de migración funciona**
+- [ ] **Step 5: Volver a levantar `arandano-dev`**
+
+```bash
+docker compose -f docker/compose.dev.yml up -d
+```
+
+- [ ] **Step 6: Verificar que la imagen de migración funciona**
 
 ```bash
 set -a; . ./.env.dev; set +a
@@ -1970,7 +1989,7 @@ docker run --rm --network arandano-dev_default \
 ```
 Expected: reporta que la base está al día con las migraciones del repo.
 
-- [ ] **Step 5: Verificar que la imagen de la app arranca y ve el cliente generado**
+- [ ] **Step 7: Verificar que la imagen de la app arranca y ve el cliente generado**
 
 ```bash
 docker run --rm -d --name arandano-prueba-imagen --network arandano-dev_default \
@@ -1989,7 +2008,7 @@ Si falla con un error de módulo no encontrado sobre `generated/prisma`, el outp
 COPY --from=build --chown=arandano:arandano /app/generated ./generated
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add Dockerfile .dockerignore
@@ -2152,3 +2171,12 @@ EOF
 - [ ] `scripts/verify-backup.sh` — en verde con las tablas reales.
 - [ ] `curl -s http://127.0.0.1/api/health` en prod — 200, `rol=arandano_app`.
 - [ ] `git log --oneline` — un commit por tarea, ninguno con el árbol sucio detrás.
+- [ ] **Después del merge y desde `/root/arandano`**, recrear dev para que su bind mount vuelva a apuntar al workspace principal y no al worktree, que está por desaparecer:
+
+  ```bash
+  cd /root/arandano
+  docker compose -f docker/compose.dev.yml up -d --force-recreate
+  docker inspect arandano-dev-app-1 --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}'
+  ```
+
+  Expected: la primera línea es `/root/arandano`. Si dice una ruta bajo `.claude/worktrees/`, el worktree todavía no se borró y dev se rompería al borrarlo.
