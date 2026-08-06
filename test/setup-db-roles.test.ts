@@ -2,7 +2,14 @@ import { describe, it, expect, beforeAll } from 'vitest'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { Client } from 'pg'
-import { urlSuperusuario, urlApp, PASSWORD_OWNER, PASSWORD_APP } from './postgres-efimero'
+import {
+  urlSuperusuario,
+  urlSuperusuarioInterna,
+  urlApp,
+  CONTENEDOR,
+  PASSWORD_OWNER,
+  PASSWORD_APP,
+} from './postgres-efimero'
 
 const ejecutar = promisify(execFile)
 
@@ -81,6 +88,35 @@ describe('setup-db-roles.sh', () => {
     } finally {
       await cliente.end()
     }
+  })
+
+  // El Postgres de producción no publica ningún puerto al host, así que
+  // --network=host —el default— no puede alcanzarlo por más que la URL sea
+  // correcta. Estos dos tests fijan que la red sea elegible, porque de eso
+  // depende que este script sirva contra prod y, después, dentro de deploy.sh.
+  describe('--network', () => {
+    it('alcanza una base que no publica puerto', async () => {
+      await ejecutar('scripts/setup-db-roles.sh', [
+        `--network=container:${CONTENEDOR}`,
+        `--url=${urlSuperusuarioInterna()}`,
+        `--owner-password=${PASSWORD_OWNER}`,
+        `--app-password=${PASSWORD_APP}`,
+      ])
+      expect((await atributos('arandano_owner')).rolcanlogin).toBe(true)
+    })
+
+    it('sin el flag, esa misma URL no llega', async () => {
+      // La contracara del test anterior: prueba que lo que hizo la diferencia
+      // fue el flag y no que la URL interna funcione por casualidad desde el
+      // host. Sin esto, el test de arriba pasaría igual con el flag ignorado.
+      await expect(
+        ejecutar('scripts/setup-db-roles.sh', [
+          `--url=${urlSuperusuarioInterna()}`,
+          `--owner-password=${PASSWORD_OWNER}`,
+          `--app-password=${PASSWORD_APP}`,
+        ]),
+      ).rejects.toThrow()
+    })
   })
 
   it('el rol de la app no puede crear tablas', async () => {

@@ -15,10 +15,12 @@ URL=""
 OWNER_PASSWORD=""
 APP_PASSWORD=""
 CON_CREATEDB=false
+NETWORK=host
 
 uso() {
   cat >&2 <<'EOF'
-uso: setup-db-roles.sh --url=<URL> --owner-password=<P> --app-password=<P> [--con-createdb]
+uso: setup-db-roles.sh --url=<URL> --owner-password=<P> --app-password=<P>
+                       [--con-createdb] [--network=<RED>]
 
   --url             cadena de conexión del SUPERUSUARIO del stack. Es el único
                     rol que puede crear otros roles.
@@ -29,6 +31,12 @@ uso: setup-db-roles.sh --url=<URL> --owner-password=<P> --app-password=<P> [--co
                     database de `prisma migrate dev`, así que va en dev y en la
                     base de tests. NUNCA en producción: `migrate deploy` no la
                     usa, y un rol de prod con CREATEDB es privilegio regalado.
+  --network         red de Docker desde la que se alcanza la base. Por defecto
+                    `host`, que sirve para las bases que publican puerto (dev y
+                    la de tests). El Postgres de producción NO publica ninguno,
+                    así que para esa hay que entrar por su red: pasar
+                    `--network=arandano-prod_default` y una URL con el nombre
+                    del servicio (`@postgres:5432`) en vez de 127.0.0.1.
 EOF
   exit 2
 }
@@ -39,6 +47,7 @@ for arg in "$@"; do
     --owner-password=*)  OWNER_PASSWORD="${arg#*=}" ;;
     --app-password=*)    APP_PASSWORD="${arg#*=}" ;;
     --con-createdb)      CON_CREATEDB=true ;;
+    --network=*)         NETWORK="${arg#*=}" ;;
     -h|--help)           uso ;;
     *) echo "argumento desconocido: $arg" >&2; uso ;;
   esac
@@ -51,15 +60,15 @@ done
 if [[ "$CON_CREATEDB" == true ]]; then CREATEDB_SQL="CREATEDB"; else CREATEDB_SQL="NOCREATEDB"; fi
 
 # psql corre dentro de un contenedor efímero porque el host no tiene cliente de
-# Postgres instalado, y no hace falta que lo tenga. --network=host para poder
-# alcanzar tanto 127.0.0.1 (la base de tests) como las redes de los stacks por
-# su puerto publicado.
+# Postgres instalado, y no hace falta que lo tenga. El default `host` alcanza
+# 127.0.0.1 y cualquier base que publique puerto; la de producción no publica
+# ninguno, y para esa está --network (ver `uso`).
 #
 # Las contraseñas viajan como VARIABLES de psql y se interpolan con :'nombre',
 # que las emite como literal correctamente entrecomillado. Interpolarlas en el
 # texto del SQL con "$VAR" sería una inyección esperando a una contraseña con
 # comilla simple.
-docker run --rm -i --network=host \
+docker run --rm -i --network="$NETWORK" \
   -e PGCONNECT_TIMEOUT=10 \
   postgres:17-alpine \
   psql "$URL" \

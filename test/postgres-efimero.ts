@@ -19,6 +19,13 @@ function url(usuario: string, password: string): string {
 }
 
 export const urlSuperusuario = () => url(SUPERUSUARIO, PASSWORD_SUPER)
+
+// La misma base vista desde ADENTRO de su namespace de red: sin puerto
+// publicado y en el 5432 de siempre. Es la topología del Postgres de
+// producción, que no publica nada al host, así que sirve para probar contra
+// ella sin inventar un contenedor aparte.
+export const urlSuperusuarioInterna = () =>
+  `postgres://${SUPERUSUARIO}:${PASSWORD_SUPER}@127.0.0.1:5432/${BASE}`
 export const urlOwner = () => url('arandano_owner', PASSWORD_OWNER)
 export const urlApp = () => url('arandano_app', PASSWORD_APP)
 
