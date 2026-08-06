@@ -81,13 +81,15 @@ migracion_destructiva() {
   # tipo `[^;]*` que pueda cruzar esa fusión: donde hace falta separar un
   # identificador de columna del resto de la sentencia (ALTER COLUMN ...
   # TYPE), el patrón exige que venga entre comillas dobles pegado a "COLUMN"
-  # en vez de admitir cualquier cosa hasta el próximo `;`. Eso cierra el caso
-  # para esos patrones puntuales; lo que queda abierto es que una fusión así
-  # podría, en teoría, unir un DROP CONSTRAINT con un ADD CONSTRAINT de otra
-  # sentencia y hacer parecer emparejado algo que no lo estaba — un escenario
-  # que requiere un `--` dentro de un literal Y un DROP CONSTRAINT sin nombrar
-  # en la misma migración, algo que ninguna migración generada por Prisma
-  # produce.
+  # en vez de admitir cualquier cosa hasta el próximo `;`. Lo que queda
+  # abierto DESPUÉS de ese cierre sólo puede sobre-disparar, nunca
+  # sub-disparar: la búsqueda es por keyword sobre texto ya aplanado, y una
+  # fusión espuria sólo puede crear una adyacencia que no existía en el SQL
+  # original (falso positivo, frena algo inocente), nunca borrar un keyword
+  # destructivo que sí estaba (falso negativo, dejar pasar algo peligroso).
+  # Es una categoría de problema distinta y mucho más barata: un gate
+  # conservador que a veces frena de más se nota y se revisa a mano; uno que
+  # deja pasar de menos no se nota hasta que ya es tarde.
   #
   # Fallar CERRADO si la etapa de `perl` se rompe (el caso real: falta del
   # PATH), chequeando SU exit code puntual — no si el resultado final quedó
@@ -97,6 +99,11 @@ migracion_destructiva() {
   # limpiar, y confundir esos dos casos convertía un comentario inocente en
   # "fallando cerrado (¿falta perl?)" — un falso positivo que además mentía
   # sobre la causa, el mismo tipo de ruido que enseña a saltear el gate.
+  #
+  # Este chequeo depende de que `perl` sea la ÚLTIMA etapa de ESTE pipeline:
+  # `$(...)` propaga el exit code del último comando de la tubería. Agregar
+  # algo después de `perl` acá (otro `sed`, por ejemplo) volvería este `if`
+  # ciego a que `perl` fallara, en silencio.
   local sin_bloques
   if ! sin_bloques=$(printf '%s' "$sql" | perl -0777 -pe 's{/\*.*?\*/}{ }gs' 2>/dev/null); then
     error "migracion_destructiva: perl falló limpiando comentarios de bloque (¿falta del PATH?); fallando cerrado"
@@ -104,8 +111,20 @@ migracion_destructiva() {
     return 0
   fi
 
+  # Misma lógica para la segunda tubería: `sed` y `tr` no fallan casi nunca,
+  # pero "casi nunca" no es "nunca" en una máquina que buildea con 2 GiB de
+  # cupo (ver CLAUDE.md) — un `fork: Cannot allocate memory` acá deja pasar
+  # una migración destructiva por el único gate que existe. `set -o pipefail`
+  # va DENTRO del subshell del command substitution, no afuera: así no toca
+  # las opciones del script que haya sourceado esta lib. Con las tres etapas
+  # sanas el pipe sale 0 igual que antes, aunque el resultado sea texto
+  # vacío (el caso de la migración de puro comentario sigue leyendo aditiva).
   local limpio
-  limpio=$(printf '%s' "$sin_bloques" | sed -e 's|--.*$||' | tr '\n' ' ')
+  if ! limpio=$(set -o pipefail; printf '%s' "$sin_bloques" | sed -e 's|--.*$||' | tr '\n' ' '); then
+    error "migracion_destructiva: sed o tr fallaron limpiando comentarios de línea; fallando cerrado"
+    printf 'pipeline de limpieza roto (sed o tr fallaron)\n'
+    return 0
+  fi
 
   # DROP CONSTRAINT seguido de un ADD CONSTRAINT del MISMO nombre en la misma
   # migración no es destructivo: es el patrón que Prisma emite para cualquier

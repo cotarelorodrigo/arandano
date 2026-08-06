@@ -124,6 +124,21 @@ check_false "una migración que sólo tiene un comentario es aditiva" \
 # comentario" de "no sé qué es" si la herramienta que lo determina no corrió.
 check_true "sin perl en el PATH, hasta un comentario solo falla cerrado" \
   migracion_destructiva_con_perl_roto '-- This is an empty migration.'
+# El guard de `perl` sólo cubre esa primera tubería; la segunda
+# (`printf | sed | tr`) también puede romperse -por ejemplo con un
+# `fork: Cannot allocate memory` en la máquina real, que buildea con 2 GiB de
+# cupo (CLAUDE.md)- y sin su propio guard fallaría ABIERTO: mismo shadow que
+# con perl, ahora sobre `sed`.
+migracion_destructiva_con_sed_roto() {
+  local sql="$1"
+  (
+    sed() { return 127; }
+    export -f sed
+    migracion_destructiva "$sql"
+  )
+}
+check_true "sin sed en el PATH, una migración no vacía falla cerrado (se trata como destructiva)" \
+  migracion_destructiva_con_sed_roto 'ALTER TABLE "clientes" DROP COLUMN "email";'
 
 printf '\n\033[1mmensaje_de_tag / imagen_de_tag\033[0m\n'
 MENSAJE="$(mensaje_de_tag 25297f7 20260804205911_inicial)"
