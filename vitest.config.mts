@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig, configDefaults } from 'vitest/config'
 import path from 'node:path'
 
 export default defineConfig({
@@ -11,6 +11,16 @@ export default defineConfig({
     // include atado a lib/ dejaría fuera del gate a todos los módulos futuros
     // sin decir una palabra. vitest ya excluye node_modules por defecto.
     include: ['**/*.test.{ts,tsx}'],
+    // ...pero los worktrees SÍ se excluyen, y no es una excepción al párrafo de
+    // arriba: no son código del repo, son otra copia del mismo repo. El ciclo de
+    // una feature abre un worktree (ver CLAUDE.md) y queda bajo .claude/, o sea
+    // adentro del árbol. Sin esto, `npm test` levanta las dos copias y ambas
+    // corren contra la MISMA base efímera (nombre y puerto fijos), con lo que la
+    // segunda choca contra los fixtures de la primera: "duplicate key value
+    // violates unique constraint tenants_subdominio_key". Como `npm test` es la
+    // primera etapa del gate de deploy, eso haría fallar un deploy por tener una
+    // feature en curso al lado — con un error que no habla de nada de eso.
+    exclude: [...configDefaults.exclude, '**/.claude/**'],
     globalSetup: ['./test/global-setup.ts'],
     // Todos los archivos de test comparten UNA sola base efímera. En paralelo
     // se pisarían los datos entre sí, y peor: los tests de roles cambian
