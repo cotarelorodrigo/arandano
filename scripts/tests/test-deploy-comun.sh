@@ -35,7 +35,18 @@ check_true  "DROP DEFAULT"   migracion_destructiva 'ALTER TABLE "clientes" ALTER
 check_true  "TRUNCATE"       migracion_destructiva 'TRUNCATE "ventas";'
 check_true  "RENAME COLUMN"  migracion_destructiva 'ALTER TABLE "users" RENAME COLUMN "mail" TO "email";'
 check_true  "RENAME TO (rename de tabla)" migracion_destructiva 'ALTER TABLE "clientes" RENAME TO "customers";'
-check_true  "cambio de tipo" migracion_destructiva 'ALTER TABLE "t" ALTER COLUMN "c" TYPE varchar(10);'
+# Las dos formas que Prisma realmente emite para un cambio de tipo de
+# columna, confirmadas corriendo `npx prisma migrate diff` de verdad (ver
+# task-2-report.md): "SET DATA TYPE" para un cambio de tipo simple, y el
+# "TYPE" a secas (sin "SET DATA") dentro del bloque que recrea un enum
+# angostado. El primer intento de esta lib sólo cubría la forma sin "SET
+# DATA", que Prisma nunca genera; la aserción original (con `varchar(10)` en
+# minúsculas) pasaba igual porque estaba escrita a partir del patrón y no del
+# SQL real, y por eso no atrapó el hueco.
+check_true  "cambio de tipo (SET DATA TYPE, la forma real de Prisma)" \
+  migracion_destructiva 'ALTER TABLE "Cliente" ALTER COLUMN "nombre" SET DATA TYPE VARCHAR(20);'
+check_true  "cambio de tipo (TYPE a secas, dentro de la recreación de un enum)" \
+  migracion_destructiva 'ALTER TABLE "Tenant" ALTER COLUMN "estado" TYPE "Estado_new" USING ("estado"::text::"Estado_new");'
 check_true  "en minúsculas"  migracion_destructiva 'alter table "t" drop column "c";'
 # El caso más común de todos: Prisma emite exactamente esto cada vez que un
 # campo opcional pasa a requerido. La imagen vieja sigue insertando filas sin
@@ -98,6 +109,21 @@ migracion_destructiva_con_perl_roto() {
 }
 check_true "sin perl en el PATH, una migración no vacía falla cerrado (se trata como destructiva)" \
   migracion_destructiva_con_perl_roto 'ALTER TABLE "t" ADD COLUMN "c" TEXT;'
+# El caso que el fail-closed original confundía con "el pipeline se rompió":
+# una migración que es PURAMENTE un comentario también queda vacía después de
+# limpiar, pero el pipeline no falló -- perl corrió bien, no había nada que
+# limpiar. Ese texto exacto ("-- This is an empty migration.") es lo que
+# escribe `prisma migrate dev --create-only` en una migración vacía, y llega
+# acá sin salto de línea final tal como lo entrega `$(cat archivo)` -- que es
+# justo cómo el test de más abajo le pasa la migración inicial real. Tiene
+# que leerse aditiva, no destructiva.
+check_false "una migración que sólo tiene un comentario es aditiva" \
+  migracion_destructiva '-- This is an empty migration.'
+# Con el pipeline SÍ roto (perl ausente) sigue fallando cerrado aunque el SQL
+# sea, en los hechos, sólo un comentario: no podemos distinguir "es un
+# comentario" de "no sé qué es" si la herramienta que lo determina no corrió.
+check_true "sin perl en el PATH, hasta un comentario solo falla cerrado" \
+  migracion_destructiva_con_perl_roto '-- This is an empty migration.'
 
 printf '\n\033[1mmensaje_de_tag / imagen_de_tag\033[0m\n'
 MENSAJE="$(mensaje_de_tag 25297f7 20260804205911_inicial)"

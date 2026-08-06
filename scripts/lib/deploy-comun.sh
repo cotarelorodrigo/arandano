@@ -88,23 +88,24 @@ migracion_destructiva() {
   # que requiere un `--` dentro de un literal Y un DROP CONSTRAINT sin nombrar
   # en la misma migración, algo que ninguna migración generada por Prisma
   # produce.
-  local limpio
-  limpio=$(printf '%s' "$sql" \
-    | perl -0777 -pe 's{/\*.*?\*/}{ }gs' \
-    | sed -e 's|--.*$||' \
-    | tr '\n' ' ')
-
-  # Fallar CERRADO si el pipeline de arriba se rompió. Un `limpio` vacío con
-  # `sql` no vacío no es "no había nada destructivo": es que algo (`perl`
-  # ausente del PATH es el caso real) devolvió nada, y de ahí para abajo TODOS
-  # los grep matchearían en falso contra una cadena vacía. Esta es la única
-  # función de este archivo cuyo único sentido de falla aceptable es frenar el
-  # deploy, así que acá "no sé" se trata como "sí, es destructiva".
-  if [[ -n "$sql" && -z "$limpio" ]]; then
-    error "migracion_destructiva: la limpieza de comentarios devolvió vacío con SQL no vacío (¿falta perl en el PATH?); fallando cerrado"
-    printf 'pipeline de limpieza roto (¿falta perl?)\n'
+  #
+  # Fallar CERRADO si la etapa de `perl` se rompe (el caso real: falta del
+  # PATH), chequeando SU exit code puntual — no si el resultado final quedó
+  # vacío. Esto importa porque una migración que es PURAMENTE un comentario
+  # (lo que escribe `prisma migrate dev --create-only` en una migración
+  # vacía: "-- This is an empty migration.") también queda vacía después de
+  # limpiar, y confundir esos dos casos convertía un comentario inocente en
+  # "fallando cerrado (¿falta perl?)" — un falso positivo que además mentía
+  # sobre la causa, el mismo tipo de ruido que enseña a saltear el gate.
+  local sin_bloques
+  if ! sin_bloques=$(printf '%s' "$sql" | perl -0777 -pe 's{/\*.*?\*/}{ }gs' 2>/dev/null); then
+    error "migracion_destructiva: perl falló limpiando comentarios de bloque (¿falta del PATH?); fallando cerrado"
+    printf 'pipeline de limpieza roto (perl falló)\n'
     return 0
   fi
+
+  local limpio
+  limpio=$(printf '%s' "$sin_bloques" | sed -e 's|--.*$||' | tr '\n' ' ')
 
   # DROP CONSTRAINT seguido de un ADD CONSTRAINT del MISMO nombre en la misma
   # migración no es destructivo: es el patrón que Prisma emite para cualquier
@@ -154,7 +155,7 @@ migracion_destructiva() {
     'RENAME[[:space:]]+COLUMN' \
     'RENAME[[:space:]]+VALUE' \
     'SET[[:space:]]+NOT[[:space:]]+NULL' \
-    'ALTER[[:space:]]+COLUMN[[:space:]]+"[^"]+"[[:space:]]+TYPE[[:space:]]'
+    'ALTER[[:space:]]+COLUMN[[:space:]]+"[^"]+"[[:space:]]+(SET[[:space:]]+DATA[[:space:]]+)?TYPE[[:space:]]'
   do
     if printf '%s' "$limpio" | grep -qiE "$patron"; then
       printf '%s\n' "$patron"
