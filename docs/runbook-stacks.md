@@ -17,6 +17,7 @@
   docker build \
     --cgroup-parent=arandanobuild.slice \
     --resource memory=2g --resource cpu-quota=100000 \
+    --target runtime \
     --build-arg GIT_SHA=$(git rev-parse --short HEAD) \
     -t arandano-app:$(git rev-parse --short HEAD) .
   ```
