@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run",
+    "test": "scripts/tests/correr-todos.sh && vitest run",
     "generate": "prisma generate",
     "pretest": "npm run generate",
     "prebuild": "npm run generate"
