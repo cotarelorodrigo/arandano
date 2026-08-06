@@ -74,11 +74,50 @@ La imagen se tagea con el SHA corto de git, y el Dockerfile falla el build si no
 docker build \
   --cgroup-parent=arandanobuild.slice \
   --resource memory=2g --resource cpu-quota=100000 \
+  --target runtime \
   --build-arg GIT_SHA=$(git rev-parse --short HEAD) \
   -t arandano-app:$(git rev-parse --short HEAD) .
 ```
 
 Sin este argumento no hay forma de que `/api/health` reporte qué código está corriendo, y ese dato es el que distingue "la app respondió" de "la app que se esperaba respondió". `deploy.sh` también debe negarse a arrancar el build si el working tree está sucio (`git diff --quiet`): buildear con cambios sin commitear tagea la imagen con un SHA que no describe lo que realmente contiene.
+
+**`--target runtime` tampoco es opcional.** `docker build` sin `--target` buildea la **última** etapa del Dockerfile, no la que uno tiene en la cabeza. Cuando la etapa `migrate` quedó al final del archivo, este mismo comando produjo el CLI de Prisma —1,36 GB, con `ENTRYPOINT ["npx","prisma"]`— etiquetado como `arandano-app:<sha>` y listo para promoverse a producción. El Dockerfile ahora deja `runtime` último a propósito, pero las dos defensas van juntas: la de adentro se pierde en cuanto alguien agrega una etapa al final.
+
+La imagen de migración sale del mismo SHA, con la otra etapa:
+
+```bash
+docker build \
+  --cgroup-parent=arandanobuild.slice \
+  --resource memory=2g --resource cpu-quota=100000 \
+  --target migrate \
+  --build-arg GIT_SHA=$(git rev-parse --short HEAD) \
+  -t arandano-migrate:$(git rev-parse --short HEAD) .
+```
+
+## Los dos roles de Postgres
+
+La app **no** se conecta con el superusuario del stack. Hay dos roles, y la separación es lo que hace que las policias de RLS signifiquen algo — Postgres las ignora para un superusuario o para un rol con `BYPASSRLS`.
+
+| Rol | Quién lo usa | Para qué |
+|---|---|---|
+| `arandano_owner` | La imagen `arandano-migrate`, vía `MIGRATE_DATABASE_URL` | Es dueño de las tablas y corre `prisma migrate deploy`. **Sin `CREATEDB` en producción**: `migrate deploy` no usa shadow database, así que sería privilegio regalado. |
+| `arandano_app` | La app, vía `DATABASE_URL` | El único sobre el que las policies efectivamente aplican. No es dueño de ninguna tabla y no puede crearlas. |
+
+El superusuario del stack (`POSTGRES_USER`) queda sólo para tareas administrativas: crear los roles y los backups.
+
+`scripts/setup-db-roles.sh` los crea y **es idempotente** — se puede volver a correr sobre una base que ya los tiene, por ejemplo para rotar contraseñas. Contra dev o la base de tests alcanza el default; contra producción hay que pasarle la red, porque ese Postgres no publica ningún puerto al host:
+
+```bash
+set -a; . /srv/arandano/prod/.env; set +a
+scripts/setup-db-roles.sh \
+  --network=arandano-prod_default \
+  --url="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}" \
+  --owner-password=... --app-password=...
+```
+
+Las contraseñas se generan con `openssl rand -hex`, no con `-base64`: el alfabeto base64 incluye `/` y `+`, que dentro de una URL de conexión rompen el parseo o se malinterpretan en silencio.
+
+Que esto siga en pie lo verifica `scripts/verify-infra.sh roles`, y en producción el check `rol` de `/api/health`, que falla si la app quedó conectada como superusuario, con `BYPASSRLS` o como dueña de las tablas.
 
 ## `scripts/setup-host.sh`: la receta de reproducción de la máquina
 

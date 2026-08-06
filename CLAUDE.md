@@ -184,6 +184,8 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 - **Módulos como add-ons pagos o atados al plan**: descartado. Complica el precio y el trial, y castiga rubros enteros que necesitan un módulo específico para que el producto les sirva de algo.
 - **Feature flags por tenant para rollout gradual**: descartado por ahora. `TenantModule` los haría baratos de implementar, pero suman flags que mantener y ramas muertas en el código. Se eligió deploy directo con rollback automático; el costo aceptado es que no hay liberación gradual y que el gate del deploy queda como única red. Reconsiderable cuando la base de clientes crezca lo suficiente como para que una hora de servicio degradado cueste más que mantener los flags.
 - **Segundo VPS para desarrollo o staging**: descartado. Dev y producción conviven en la misma máquina de forma permanente; staging es la promoción del mismo artefacto, no otro servidor.
+- **Postgres administrado (Supabase) en lugar del Postgres propio**: evaluado el 2026-08-06 y **pospuesto**, no descartado para siempre. A favor pesaban la durabilidad de los datos de clientes (hoy un incidente de disco cuesta hasta 24 h, que es el intervalo del backup nocturno) y liberar los 1536 MiB que reserva prod. En contra: es un ciclo entero de spec, plan e implementación que rehace backups, `verify-infra.sh`, los tres compose y `setup-db-roles.sh` sin entregar una sola feature, y el beneficio principal es proporcional a datos de clientes que todavía no existen. Se decidió seguir con Postgres propio para el MVP. **Lo que hace reconsiderarlo**: que haya clientes reales facturando adentro. **Lo que NO lo bloquea**: el schema, el modelo de RLS y el `tenant_id` son independientes del proveedor, y el camino de migración es `pg_dump` → `pg_restore`, que ya está escrito y verificado — así que mudarse sigue siendo barato después. **Mitigación mientras tanto**: subir la frecuencia del backup, que ataca el 80 % del riesgo con un cambio chico sobre un script probado.
+- **SQLite en dev con Postgres en producción**: descartado. Dejaría el aislamiento entre tenants probado en ningún lado salvo producción: SQLite no tiene RLS (se caen `test/rls.test.ts` y `test/rls-cobertura.test.ts`), no tiene roles (`arandano_owner` / `arandano_app`, los `GRANT` y los default privileges), y no tiene GUCs de sesión, que es el mecanismo con el que `lib/tenant/prisma.ts` ata el cliente al tenant. Además Prisma lleva un historial de migraciones por provider, así que el SQL que corre en prod no se ejecutaría nunca en dev — exactamente el modo de falla del bloqueante 9.
 
 ## Riesgos conocidos
 
@@ -228,7 +230,12 @@ Los primeros cuatro son de entorno y van antes que cualquier línea de producto,
 
 Y del producto:
 
-- Definir el schema de Prisma del núcleo: `Tenant`, `TenantModule`, `User`, `Cliente`, `Articulo` (producto con stock o servicio sin stock), `MovimientoStock`, `Venta`, `Pago`, `Factura`, todos con `tenant_id`.
+- ~~Definir el schema de Prisma del núcleo.~~ **Hecho** (2026-08-06). `Tenant`,
+  `TenantModule`, `User`, `Cliente` y `Articulo` (producto con stock o servicio
+  sin stock), todos con `tenant_id` y con policies de RLS que fallan cerrado,
+  aplicados en producción con la app conectada como `arandano_app`. Ver
+  `docs/superpowers/specs/2026-08-04-schema-nucleo-design.md`. **Quedan para el
+  ciclo de ventas**: `MovimientoStock`, `Venta`, `Pago` y `Factura`.
 - Definir el schema del módulo de órdenes de trabajo (`OrdenDeTrabajo` y sus estados), en `modules/ordenes-de-trabajo/`, con el mismo `tenant_id` y las mismas policies de RLS.
 - Definir el registry de módulos y los puntos de extensión del núcleo: navegación, tipos de artículo, `crearVentaDesde`, movimientos de stock, intents del bot, jobs de pg-boss, vistas del catálogo público y datos demo.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
@@ -241,7 +248,11 @@ Y del producto:
 
 ### Bloqueantes antes del primer tenant real
 
-1. **Completar el healthcheck** con los checks de query filtrada por tenant y de pg-boss (`lib/health/checks.ts` tiene el pendiente anotado). Sin ellos el rollback automático se dispara con criterio incompleto.
+1. **Completar el healthcheck.** El check de identidad del rol de conexión ya
+   está (`lib/health/checks.ts`): rechaza superusuario, `BYPASSRLS` y ser dueño
+   de las tablas. **Pendiente**: el check de query filtrada por tenant, que
+   necesita un tenant conocido al que apuntar y llega con el tenant canario, y
+   el de pg-boss, que espera a que pg-boss se configure.
 2. ~~**Backups** con `pg_dump` y restore verificado contra base descartable.~~
    **Hecho** (2026-08-04). `scripts/backup.sh` nocturno a las 04:00 UTC y
    `scripts/verify-backup.sh` los domingos a las 05:00 UTC, con dead man's
