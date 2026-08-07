@@ -197,7 +197,7 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 - **Los presets se multiplican.** Cada rubro nuevo agrega datos demo y nomenclatura que hay que mantener. Si crecen sin control, se vuelven una carga silenciosa: conviene que un preset sea chico por definición y que ningún preset pueda introducir lógica.
 - **Dev y producción comparten kernel, disco y CPU de forma permanente.** Es una decisión tomada, no un estado transitorio: no hay una segunda máquina prevista. Los límites de recursos, la rotación de logs y la swap son la única defensa entre un build y un cliente caído. Que sigan puestos es parte del checklist de deploy, no algo que se configura una vez y se olvida. El día que el ruido de desarrollo se note en el servicio, la salida es mover dev a un VPS chico — no aflojar los límites.
 - **Sin feature flags, cada deploy alcanza a todos los clientes a la vez.** El healthcheck, los smoke tests y el rollback automático son la única red, así que su calidad no es negociable: un healthcheck superficial deja el rollback automático sin criterio para dispararse. Vale revisar esta decisión cuando la base de clientes crezca lo bastante como para que una hora de servicio degradado cueste más que mantener flags.
-- **La ventana de montar todo esto se cierra con el primer cliente.** Hoy la máquina está vacía: sin Docker, sin contenedores, y el dominio todavía apunta a otro lado. Toda la separación de entornos, los backups y el script de deploy tienen que existir antes del primer tenant real, porque después cada cambio se hace con datos de alguien encima.
+- **La ventana de montar todo esto se cierra con el primer cliente.** La separación de entornos, los backups y el gate de `deploy.sh` ya están — lo que queda es más chico pero no menos filoso: el healthcheck completo (falta el check de tenant y el de pg-boss) y el cutover del DNS, que hoy todavía resuelve a IPs de parking de AWS. Cuanto menos quede, más vale cerrarlo ahora: después del primer tenant real, cada cambio se hace con datos de alguien encima.
 
 ## Roadmap de producto
 
@@ -229,9 +229,10 @@ Los primeros cuatro son de entorno y van antes que cualquier línea de producto,
   `docs/runbook-stacks.md`. **Sumado después**: `arandano-ensayo`, un cuarto
   stack descartable para que `deploy.sh --objetivo=ensayo` ensaye el gate
   completo sin tocar clientes.
-- ~~Escribir `deploy.sh` con su gate completo (tests, build tageado, backup,
-  `migrate deploy`, smoke test, promoción, healthcheck, tag de git pusheado a
-  `origin`, rollback).~~ **Hecho** (2026-08-06). Ver
+- ~~Escribir `deploy.sh` con su gate completo.~~ **Hecho** (2026-08-06). El
+  orden real de los 16 pasos vive en un solo lugar — el párrafo "El deploy es
+  un comando con gate" más arriba — para no mantener una segunda copia que
+  pueda desincronizarse del script. Ver
   `docs/superpowers/specs/2026-08-06-deploy-design.md` y la sección *Deploy y
   rollback* de `docs/runbook-stacks.md`.
 - ~~Montar los backups con `pg_dump` y el restore verificado contra una base
