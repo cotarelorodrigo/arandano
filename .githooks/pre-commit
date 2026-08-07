@@ -16,7 +16,16 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 source scripts/lib/deploy-comun.sh
 
-archivos=$(git diff --cached --name-only --diff-filter=ACM -- 'prisma/migrations/**/migration.sql')
+# Filtro por EXCLUSIÓN (minúscula) y no por lista de inclusión: el criterio
+# es "toda migración que trae SQL nuevo para juzgar", y una lista de letras a
+# incluir (A, C, M...) es tan larga como estados tiene git — se probó con
+# ACM y a un `git mv` puro (status R, sin cambio de contenido) le bastó no
+# estar en la lista para colarse. `d` es la única exclusión que hace falta:
+# una migración BORRADA no tiene SQL que evaluar, así que no hay nada que
+# leer en `git show ":$archivo"` (fallaría). Todo lo demás — agregado,
+# modificado, renombrado puro o con cambios, tipo de archivo cambiado — trae
+# contenido nuevo bajo esa ruta y tiene que pasar por el analizador.
+archivos=$(git diff --cached --name-only --diff-filter=d -- 'prisma/migrations/**/migration.sql')
 [[ -n "$archivos" ]] || exit 0
 
 encontrado=0
