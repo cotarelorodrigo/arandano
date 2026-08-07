@@ -467,15 +467,126 @@ log "ensayo en stage ok"
 # rollback.sh neutraliza con `env -u IMAGE_TAG`. Leer sólo lo que hace falta,
 # con grep, la evita de raíz en vez de defenderse después.
 log "paso 10/16: migraciones del repo == migraciones del objetivo"
-MIGRATE_DATABASE_URL=$(grep -m1 -oP '^MIGRATE_DATABASE_URL=\K\S*' "$DIR/.env" || true)
+
+# `tail -n1` y no `-m1`: Compose y `set -a; .` toman la ÚLTIMA aparición de una
+# clave duplicada, no la primera. El caso real es alguien arreglando una URL a
+# mano agregando la línea corregida abajo de la vieja en vez de reemplazarla
+# — con `-m1` este script migraría una base DISTINTA de la que la app
+# termina usando, en silencio. El recorte de comillas de las dos líneas de
+# abajo replica la otra normalización que hacen esos dos: un valor
+# `KEY="valor"` o `KEY='valor'` llega SIN las comillas a la app y a Compose;
+# `\S*` de grep no las saca solo.
+MIGRATE_DATABASE_URL=$(grep -oP '^MIGRATE_DATABASE_URL=\K\S*' "$DIR/.env" | tail -n1 || true)
+MIGRATE_DATABASE_URL="${MIGRATE_DATABASE_URL%\"}"; MIGRATE_DATABASE_URL="${MIGRATE_DATABASE_URL#\"}"
+MIGRATE_DATABASE_URL="${MIGRATE_DATABASE_URL%\'}"; MIGRATE_DATABASE_URL="${MIGRATE_DATABASE_URL#\'}"
 if [[ -z "$MIGRATE_DATABASE_URL" ]]; then
   error "$DIR/.env no define MIGRATE_DATABASE_URL (o está vacío); no se puede migrar contra $OBJETIVO"
   exit 1
 fi
 RED_OBJETIVO="arandano-${OBJETIVO}_default"
-docker run --rm --network "$RED_OBJETIVO" \
+
+# `migrate status` sale 1 tanto para "hay migraciones pendientes" —el estado
+# ESPERADO en cualquier deploy que traiga una migración nueva, y exactamente
+# lo que los pasos 11-12 existen para resolver— como para "una migración
+# quedó a medio aplicar", que NO hay que seguir. `set -e` no puede distinguir
+# un exit code del otro, así que la salida y el código se capturan a mano en
+# vez de dejar que el bare command decida. Verificado contra una base real
+# (ver el reporte de esta tarea): una base sin la migración aplicada imprime
+# "Following migration have not yet been applied" y sale 1; la misma base con
+# una migración marcada como no terminada imprime "Following migration have
+# failed" y también sale 1 — el texto es la única forma de distinguirlos.
+estado_migrate=""
+rc_migrate=0
+estado_migrate=$(docker run --rm --network "$RED_OBJETIVO" \
   -e MIGRATE_DATABASE_URL="$MIGRATE_DATABASE_URL" \
-  "arandano-migrate:$SHA" migrate status
+  "arandano-migrate:$SHA" migrate status 2>&1) || rc_migrate=$?
+printf '%s\n' "$estado_migrate"
+
+case "$rc_migrate" in
+  0)
+    log "  $OBJETIVO no tiene migraciones pendientes"
+    ;;
+  1)
+    # Anclado a preguntar "Following migration(s) have not yet been applied"
+    # Y descartar que el mismo texto también traiga una sección de "have
+    # failed": no hay evidencia de que `migrate status` mezcle las dos en una
+    # corrida, pero no cuesta nada no asumirlo — todo lo que este chequeo no
+    # reconoce explícitamente como el estado seguro cae del lado de frenar,
+    # mismo criterio que ya usa `migracion_destructiva`.
+    if grep -qE '^Following migrations? have not yet been applied:' <<<"$estado_migrate" \
+       && ! grep -qE '^Following migrations? have failed:' <<<"$estado_migrate"; then
+      log "  hay migraciones pendientes en $OBJETIVO; se aplican en el paso 12"
+    else
+      error "migrate status contra $OBJETIVO no dio un estado reconocido como seguro (ver arriba)"
+      exit 1
+    fi
+    ;;
+  *)
+    error "migrate status contra $OBJETIVO salió $rc_migrate (ni 0 ni 1) -- abortando"
+    exit 1
+    ;;
+esac
+
+# `migrate status` sólo mira una dirección: ¿le falta al objetivo algo que el
+# repo ya tiene? Nunca la otra: ¿tiene el objetivo algo aplicado que el repo
+# YA NO tiene? Verificado contra una base real (ver el reporte de esta
+# tarea): insertar una fila en _prisma_migrations para un nombre ausente del
+# repo deja "Database schema is up to date!", exit 0 — invisible para el
+# `case` de arriba. El bloqueante 9 de CLAUDE.md pide las dos direcciones, así
+# que ésta se verifica con una consulta directa a la tabla que Prisma usa
+# como historial.
+salida_bd=""
+rc_bd=0
+salida_bd=$(docker run --rm -i --network "$RED_OBJETIVO" postgres:17-alpine \
+  psql "$MIGRATE_DATABASE_URL" --set=ON_ERROR_STOP=1 -tAc \
+  "SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY migration_name" \
+  2>&1) || rc_bd=$?
+if [[ "$rc_bd" -ne 0 ]]; then
+  # Este mensaje exacto con exit 1 es el ÚNICO caso esperado: un objetivo
+  # virgen que todavía no tiene la tabla, que es justo el estado que el `case`
+  # de arriba ya aceptó como "pendiente" (verificado: una base recién creada
+  # no necesita la tabla preexistente para que `migrate status` reporte
+  # migraciones pendientes). Cualquier otra falla —contraseña, red, permisos,
+  # un error de SQL distinto— no se puede distinguir de "esta consulta no dice
+  # la verdad", y no saber es motivo para frenar, no para seguir.
+  if [[ "$rc_bd" -eq 1 && "$salida_bd" == *'relation "_prisma_migrations" does not exist'* ]]; then
+    log "  $OBJETIVO no tiene _prisma_migrations todavía (base virgen)"
+    salida_bd=""
+  else
+    error "no se pudo verificar qué migraciones tiene aplicadas $OBJETIVO (exit $rc_bd)"
+    printf '%s\n' "$salida_bd" >&2
+    exit 1
+  fi
+fi
+migraciones_repo=$(find prisma/migrations -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
+sobrantes=$(comm -23 <(printf '%s\n' "$salida_bd" | sed '/^$/d' | sort) <(printf '%s\n' "$migraciones_repo"))
+if [[ -n "$sobrantes" ]]; then
+  error "$OBJETIVO tiene migraciones aplicadas que YA NO están en el repo:"
+  printf '%s\n' "$sobrantes" >&2
+  error "el repo tiene que ser EXACTAMENTE lo aplicado en el objetivo (CLAUDE.md, bloqueante 9)"
+  exit 1
+fi
+log "  sin migraciones aplicadas de más"
+
+# Leído ACÁ, antes del backup y la migración, y no recién antes del paso 13
+# como en la versión anterior de este archivo: si el .env no tiene una línea
+# IMAGE_TAG=, este script no va a poder rollbackear más adelante si algo sale
+# mal en el paso 13 o el 14 — y es mejor enterarse de eso ANTES de tocar algo
+# irreversible (el backup, la migración) que después, con la migración ya
+# aplicada y sin poder decir a dónde volver. Mismo guard, mismo mensaje, que
+# ya usa rollback.sh para el idéntico caso.
+if ! grep -q '^IMAGE_TAG=' "$DIR/.env" 2>/dev/null; then
+  error "$DIR/.env no tiene una línea IMAGE_TAG=; no se podría rollbackear si algo falla más adelante"
+  error "revisá el archivo a mano antes de reintentar: necesita IMAGE_TAG=<sha>"
+  exit 1
+fi
+# -m1 y \S* (no .*): con dos líneas IMAGE_TAG= (no debería pasar) se toma sólo
+# la primera; \S* corta antes de un espacio final o un \r de un archivo CRLF
+# en vez de arrastrarlo adentro del valor. A diferencia del read de
+# MIGRATE_DATABASE_URL de arriba, esta clave la escriben sólo deploy.sh y
+# rollback.sh, siempre como línea única — no hace falta la misma defensa
+# contra un valor tocado a mano dos veces.
+TAG_ANTERIOR=$(grep -m1 -oP '^IMAGE_TAG=\K\S*' "$DIR/.env")
 
 # Paso 11. Contrato del spec de backups: si el backup falla, se aborta ANTES de
 # migrar. Una migración sin backup previo es el escenario irreversible que esos
@@ -502,12 +613,11 @@ docker run --rm --network "$RED_OBJETIVO" \
 # Desde acá, una falla es ROLLBACK y no aborto: es el único tramo donde el
 # objetivo ya cambió. Un aborto en el paso 12 deja schema nuevo con código
 # viejo, que es el estado que expand/contract garantiza compatible.
+#
+# TAG_ANTERIOR ya se leyó más arriba, antes del backup — ver el comentario de
+# ahí sobre por qué conviene enterarse de un .env malformado antes de tocar
+# algo irreversible en vez de acá.
 # ---------------------------------------------------------------------------
-
-# -m1 y \S* (no .*): mismo motivo que ya documenta rollback.sh — con dos
-# líneas IMAGE_TAG= se toma sólo la primera, y \S* corta antes de un espacio
-# final o un \r de un archivo CRLF en vez de arrastrarlo adentro del valor.
-TAG_ANTERIOR=$(grep -m1 -oP '^IMAGE_TAG=\K\S*' "$DIR/.env")
 
 # El rollback automático NO reimplementa nada: invoca el mismo comando que
 # correría una persona. Así el camino de emergencia es el que se ejercita.
@@ -516,10 +626,18 @@ rollback_y_salir() {
   error "disparando rollback automático a $TAG_ANTERIOR"
   if scripts/rollback.sh --a="$TAG_ANTERIOR" --objetivo="$OBJETIVO"; then
     error "rollback ok: $OBJETIVO volvió a $TAG_ANTERIOR. NO se creó tag."
+    exit 1
   else
+    # Código propio (3, no 1): acá no alcanza con "el deploy falló" — la RED
+    # que existe justo para ese caso (el rollback automático) TAMBIÉN falló.
+    # Salir con el mismo 1 que un aborto de preflight (nada tocado, todo
+    # normal) le escondería a un cron, un CI o un operador que sólo mire "$?"
+    # que la máquina puede haber quedado en un estado que necesita atención
+    # manual inmediata. Mismo espíritu que rollback.sh: "sale con código
+    # propio" para su propio peor caso.
     error "EL ROLLBACK TAMBIÉN FALLÓ. Ver el detalle de arriba."
+    exit 3
   fi
-  exit 1
 }
 
 log "paso 13/16: promoviendo arandano-app:$SHA (venía de $TAG_ANTERIOR)"
@@ -565,28 +683,55 @@ log "  $OBJETIVO responde sano con sha=$SHA"
 #
 # Una falla acá NO dispara rollback. Si el push falla —se cayó la red, venció el
 # token— producción ya está viva y sana; revertirla por un problema de metadatos
-# convertiría un fallo cosmético en una caída.
+# convertiría un fallo cosmético en una caída. Pero "no rollbackea" no es lo
+# mismo que "no importa": si algo de acá falla, el script tiene que decirlo
+# con un código de salida propio y NUNCA con "deploy ok" — un cron, un CI o un
+# operador que sólo mira "$?" tiene que poder distinguir "todo terminó" de
+# "producción está sana pero quedó un tag pendiente en el VPS, que desaparece
+# con el VPS si nadie lo empuja" (CLAUDE.md).
 # ---------------------------------------------------------------------------
+
+PASO15_PENDIENTE=""
 
 if [[ "$TAGEA" == true ]]; then
   log "paso 15/16: tag de git"
-  VERSION=$(proxima_version "$ultimo_tag" "$TIPO_VERSION")
-  nombres_migraciones=$(printf '%s\n' "$migraciones_nuevas" \
-    | sed -nE 's|^prisma/migrations/([^/]+)/migration\.sql$|\1|p' | paste -sd' ' -)
-  if git tag -a "$VERSION" -m "$(mensaje_de_tag "$SHA" "$nombres_migraciones")"; then
-    log "  $VERSION creado"
-    if git push origin "$VERSION"; then
-      log "  $VERSION pusheado a origin"
-    else
-      error "el tag $VERSION se creó pero NO se pudo pushear"
-      error "producción está sana; esto es metadatos. Reintentar: git push origin $VERSION"
-    fi
+  # Sin guardar: bajo `set -e`, un `proxima_version` que falla (tag previo con
+  # formato inesperado) mata el script ACÁ MISMO con sólo el mensaje que ya
+  # imprime esa función — sin la reafirmación de "producción está sana" que sí
+  # tienen las otras dos ramas de acá abajo, y sin la posibilidad de llegar al
+  # cierre de más abajo que evita el "deploy ok" engañoso.
+  VERSION=""
+  if ! VERSION=$(proxima_version "$ultimo_tag" "$TIPO_VERSION"); then
+    PASO15_PENDIENTE="no se pudo calcular la próxima versión a partir de '$ultimo_tag' (ver el error de arriba)"
+    error "producción está sana; esto es metadatos, no dispara rollback"
   else
-    error "no se pudo crear el tag $VERSION. Producción está sana."
+    nombres_migraciones=$(printf '%s\n' "$migraciones_nuevas" \
+      | sed -nE 's|^prisma/migrations/([^/]+)/migration\.sql$|\1|p' | paste -sd' ' -)
+    if git tag -a "$VERSION" -m "$(mensaje_de_tag "$SHA" "$nombres_migraciones")"; then
+      log "  $VERSION creado"
+      if git push origin "$VERSION"; then
+        log "  $VERSION pusheado a origin"
+      else
+        PASO15_PENDIENTE="el tag $VERSION se creó pero NO se pudo pushear a origin -- reintentar: git push origin $VERSION"
+        error "$PASO15_PENDIENTE"
+        error "producción está sana; esto es metadatos, no dispara rollback"
+      fi
+    else
+      PASO15_PENDIENTE="no se pudo crear el tag $VERSION"
+      error "$PASO15_PENDIENTE"
+      error "producción está sana; esto es metadatos, no dispara rollback"
+    fi
   fi
 else
   log "paso 15/16: objetivo=$OBJETIVO, no se tagea"
 fi
 
 log "paso 16/16: el trap vuelve a levantar arandano-dev"
+if [[ -n "$PASO15_PENDIENTE" ]]; then
+  # Código propio (4): ni el 1 de un aborto normal (acá NO abortó nada, el
+  # objetivo está sirviendo el SHA nuevo) ni un 0 que un cron leería como
+  # "todo terminó" con un tag que sólo existe en este checkout.
+  error "deploy con pendiente: $OBJETIVO corriendo arandano-app:$SHA, pero $PASO15_PENDIENTE"
+  exit 4
+fi
 log "deploy ok: $OBJETIVO corriendo arandano-app:$SHA"
