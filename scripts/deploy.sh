@@ -22,6 +22,21 @@ uso: deploy.sh [--minor] [--objetivo=prod|ensayo]
               (pantalla nueva, módulo, feature); PATCH para todo lo demás.
   --objetivo  prod (default) o ensayo. Con ensayo corre la secuencia completa
               contra el stack descartable, sin tagear ni pushear.
+
+códigos de salida — lo primero que conviene mirar en un cron o un CI:
+  0  deploy ok, sin nada pendiente.
+  1  abortó SIN tocar el objetivo (pasos 1-12): nada pasó, no hay nada que
+     revisar en el objetivo mismo.
+  2  uso inválido (argumentos).
+  3  el rollback automático TAMBIÉN falló. El peor caso: puede hacer falta
+     atención manual inmediata — ver el bloque que imprime qué imagen corría,
+     a cuál intentó volver y qué comando correr.
+  4  el objetivo quedó sirviendo la imagen NUEVA y sana, pero el tag de git
+     no se pudo crear o pushear — pendiente, no dispara rollback.
+  5  rollbackeó con éxito: el objetivo terminó sirviendo la imagen ANTERIOR,
+     sana. Distinto de 1 a propósito — "no pasó nada" y "se migró, se
+     promovió y se revirtió solo" son mañanas distintas, aunque las dos
+     dejen al objetivo intacto.
 EOF
   exit 2
 }
@@ -490,11 +505,16 @@ RED_OBJETIVO="arandano-${OBJETIVO}_default"
 # lo que los pasos 11-12 existen para resolver— como para "una migración
 # quedó a medio aplicar", que NO hay que seguir. `set -e` no puede distinguir
 # un exit code del otro, así que la salida y el código se capturan a mano en
-# vez de dejar que el bare command decida. Verificado contra una base real
-# (ver el reporte de esta tarea): una base sin la migración aplicada imprime
-# "Following migration have not yet been applied" y sale 1; la misma base con
-# una migración marcada como no terminada imprime "Following migration have
-# failed" y también sale 1 — el texto es la única forma de distinguirlos.
+# vez de dejar que el bare command decida.
+#
+# La CLASIFICACIÓN del texto vive en `veredicto_migrate_status`
+# (deploy-comun.sh), no acá: es la única decisión de todo este gate que había
+# quedado inline y sin test — anclada a texto en inglés que Prisma puede
+# reformular en cualquier upgrade sin avisar, y ejercitarla de verdad exige
+# Docker más una base viva, así que nadie iba a re-correr a mano la matriz de
+# estados en el próximo upgrade. deploy.sh sigue siendo el único que habla
+# con Docker; la función pura es la única que decide qué significa lo que
+# Docker devolvió.
 estado_migrate=""
 rc_migrate=0
 estado_migrate=$(docker run --rm --network "$RED_OBJETIVO" \
@@ -502,27 +522,15 @@ estado_migrate=$(docker run --rm --network "$RED_OBJETIVO" \
   "arandano-migrate:$SHA" migrate status 2>&1) || rc_migrate=$?
 printf '%s\n' "$estado_migrate"
 
-case "$rc_migrate" in
-  0)
+case "$(veredicto_migrate_status "$estado_migrate" "$rc_migrate")" in
+  al_dia)
     log "  $OBJETIVO no tiene migraciones pendientes"
     ;;
-  1)
-    # Anclado a preguntar "Following migration(s) have not yet been applied"
-    # Y descartar que el mismo texto también traiga una sección de "have
-    # failed": no hay evidencia de que `migrate status` mezcle las dos en una
-    # corrida, pero no cuesta nada no asumirlo — todo lo que este chequeo no
-    # reconoce explícitamente como el estado seguro cae del lado de frenar,
-    # mismo criterio que ya usa `migracion_destructiva`.
-    if grep -qE '^Following migrations? have not yet been applied:' <<<"$estado_migrate" \
-       && ! grep -qE '^Following migrations? have failed:' <<<"$estado_migrate"; then
-      log "  hay migraciones pendientes en $OBJETIVO; se aplican en el paso 12"
-    else
-      error "migrate status contra $OBJETIVO no dio un estado reconocido como seguro (ver arriba)"
-      exit 1
-    fi
+  pendiente)
+    log "  hay migraciones pendientes en $OBJETIVO; se aplican en el paso 12"
     ;;
   *)
-    error "migrate status contra $OBJETIVO salió $rc_migrate (ni 0 ni 1) -- abortando"
+    error "migrate status contra $OBJETIVO no dio un estado reconocido como seguro (rc=$rc_migrate, ver arriba)"
     exit 1
     ;;
 esac
@@ -534,7 +542,9 @@ esac
 # repo deja "Database schema is up to date!", exit 0 — invisible para el
 # `case` de arriba. El bloqueante 9 de CLAUDE.md pide las dos direcciones, así
 # que ésta se verifica con una consulta directa a la tabla que Prisma usa
-# como historial.
+# como historial. La COMPARACIÓN (`migraciones_sobrantes`) es la otra mitad
+# que se movió a deploy-comun.sh; acá sólo quedan la consulta a Postgres y el
+# `find`, que son justo lo que una función pura no puede hacer.
 salida_bd=""
 rc_bd=0
 salida_bd=$(docker run --rm -i --network "$RED_OBJETIVO" postgres:17-alpine \
@@ -559,7 +569,7 @@ if [[ "$rc_bd" -ne 0 ]]; then
   fi
 fi
 migraciones_repo=$(find prisma/migrations -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort)
-sobrantes=$(comm -23 <(printf '%s\n' "$salida_bd" | sed '/^$/d' | sort) <(printf '%s\n' "$migraciones_repo"))
+sobrantes=$(migraciones_sobrantes "$salida_bd" "$migraciones_repo")
 if [[ -n "$sobrantes" ]]; then
   error "$OBJETIVO tiene migraciones aplicadas que YA NO están en el repo:"
   printf '%s\n' "$sobrantes" >&2
@@ -625,16 +635,19 @@ rollback_y_salir() {
   error "$1"
   error "disparando rollback automático a $TAG_ANTERIOR"
   if scripts/rollback.sh --a="$TAG_ANTERIOR" --objetivo="$OBJETIVO"; then
+    # Código propio (5, no 1): un "$?" de 1 es indistinguible de un aborto de
+    # preflight donde el objetivo nunca se tocó. Acá SÍ se tocó — se migró, se
+    # promovió, y recién ahí se revirtió solo — y aunque el objetivo terminó
+    # sano, es una mañana distinta de "no pasó nada". Un cron o un CI que sólo
+    # mira "$?" tiene que poder distinguir las dos sin leer el log.
     error "rollback ok: $OBJETIVO volvió a $TAG_ANTERIOR. NO se creó tag."
-    exit 1
+    exit 5
   else
-    # Código propio (3, no 1): acá no alcanza con "el deploy falló" — la RED
-    # que existe justo para ese caso (el rollback automático) TAMBIÉN falló.
-    # Salir con el mismo 1 que un aborto de preflight (nada tocado, todo
-    # normal) le escondería a un cron, un CI o un operador que sólo mire "$?"
-    # que la máquina puede haber quedado en un estado que necesita atención
-    # manual inmediata. Mismo espíritu que rollback.sh: "sale con código
-    # propio" para su propio peor caso.
+    # Código propio (3, no 1 ni 5): acá no alcanza con "el deploy falló y se
+    # revirtió" — la RED que existe justo para ese caso (el rollback
+    # automático) TAMBIÉN falló. Puede hacer falta atención manual inmediata.
+    # Mismo espíritu que rollback.sh: "sale con código propio" para su propio
+    # peor caso.
     error "EL ROLLBACK TAMBIÉN FALLÓ. Ver el detalle de arriba."
     exit 3
   fi

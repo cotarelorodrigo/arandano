@@ -409,5 +409,155 @@ check_true  "tres apariciones también está listo" \
 $LINEA
 $LINEA"
 
+printf '\n\033[1mveredicto_migrate_status\033[0m\n'
+# Las cinco salidas de abajo son EXACTAMENTE lo que imprimió `prisma migrate
+# status` de verdad contra una base real (Postgres 17 descartable, roles
+# creados con setup-db-roles.sh, arandano-migrate:1674ca2) en cada uno de
+# estos cinco estados — no una paráfrasis del patrón. Ver el reporte de esta
+# tarea (ronda 2) para los comandos exactos. La advertencia no es teórica:
+# migracion_destructiva ya tuvo un caso (ver el comentario junto a la
+# aserción "cambio de tipo" más arriba) donde una aserción escrita a partir
+# del patrón, y no de la salida real, no atrapó que el patrón no cubría lo
+# que Prisma realmente emite.
+SALIDA_PENDIENTE=$(cat <<'EOF'
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma/schema.prisma.
+Datasource "db": PostgreSQL database "testsuper", schema "public" at "postgres:5432"
+
+1 migration found in prisma/migrations
+Following migration have not yet been applied:
+20260804205911_inicial
+
+To apply migrations in development run prisma migrate dev.
+To apply migrations in production run prisma migrate deploy.
+npm notice
+npm notice New major version of npm available! 11.17.0 -> 12.0.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+npm notice To update run: npm install -g npm@12.0.2
+npm notice
+EOF
+)
+SALIDA_AL_DIA=$(cat <<'EOF'
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma/schema.prisma.
+Datasource "db": PostgreSQL database "testsuper", schema "public" at "postgres:5432"
+
+1 migration found in prisma/migrations
+
+Database schema is up to date!
+npm notice
+npm notice New major version of npm available! 11.17.0 -> 12.0.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+npm notice To update run: npm install -g npm@12.0.2
+npm notice
+EOF
+)
+SALIDA_FALLIDA=$(cat <<'EOF'
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma/schema.prisma.
+Datasource "db": PostgreSQL database "testsuper", schema "public" at "postgres:5432"
+
+1 migration found in prisma/migrations
+Following migration have failed:
+20260804205911_inicial
+
+During development if the failed migration(s) have not been deployed to a production database you can then fix the migration(s) and run prisma migrate dev.
+
+The failed migration(s) can be marked as rolled back or applied:
+
+- If you rolled back the migration(s) manually:
+prisma migrate resolve --rolled-back "20260804205911_inicial"
+
+- If you fixed the database manually (hotfix):
+prisma migrate resolve --applied "20260804205911_inicial"
+
+Read more about how to resolve migration issues in a production database:
+https://pris.ly/d/migrate-resolve
+npm notice
+npm notice New major version of npm available! 11.17.0 -> 12.0.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+npm notice To update run: npm install -g npm@12.0.2
+npm notice
+EOF
+)
+SALIDA_P1000=$(cat <<'EOF'
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma/schema.prisma.
+Datasource "db": PostgreSQL database "testsuper", schema "public" at "postgres:5432"
+Error: P1000: Authentication failed against database server, the provided database credentials for `arandano_owner` are not valid.
+
+Please make sure to provide valid database credentials for the database server at the configured address.
+npm notice
+npm notice New major version of npm available! 11.17.0 -> 12.0.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+npm notice To update run: npm install -g npm@12.0.2
+npm notice
+EOF
+)
+SALIDA_P1001=$(cat <<'EOF'
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma/schema.prisma.
+Datasource "db": PostgreSQL database "testsuper", schema "public" at "hostquenoexiste:5432"
+Error: P1001: Can't reach database server at `hostquenoexiste:5432`
+
+Please make sure your database server is running at `hostquenoexiste:5432`.
+npm notice
+npm notice New major version of npm available! 11.17.0 -> 12.0.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+npm notice To update run: npm install -g npm@12.0.2
+npm notice
+EOF
+)
+
+check_eq "pendiente: rc=1 con 'have not yet been applied' -> pendiente" \
+  "pendiente" "$(veredicto_migrate_status "$SALIDA_PENDIENTE" 1)"
+check_eq "al día: rc=0 -> al_dia" \
+  "al_dia" "$(veredicto_migrate_status "$SALIDA_AL_DIA" 0)"
+# El caso que motivó todo este cambio: antes de la ronda 1, esto también
+# hubiera fallado bare contra un exit 1 no distinguido de "pendiente".
+check_eq "migración fallida: rc=1 con 'have failed' -> inseguro" \
+  "inseguro" "$(veredicto_migrate_status "$SALIDA_FALLIDA" 1)"
+check_eq "P1000 (credenciales inválidas): rc=1 sin el texto seguro -> inseguro" \
+  "inseguro" "$(veredicto_migrate_status "$SALIDA_P1000" 1)"
+check_eq "P1001 (host inalcanzable): rc=1 sin el texto seguro -> inseguro" \
+  "inseguro" "$(veredicto_migrate_status "$SALIDA_P1001" 1)"
+check_eq "un texto que Prisma nunca dijo, con rc=1, es inseguro" \
+  "inseguro" "$(veredicto_migrate_status "esto no es nada que Prisma diga" 1)"
+check_eq "un rc que no es ni 0 ni 1 es inseguro aunque el texto sea el seguro" \
+  "inseguro" "$(veredicto_migrate_status "$SALIDA_PENDIENTE" 127)"
+# La dirección segura es una propiedad de LA FUNCIÓN, no del llamador: hasta
+# sin argumentos, sin texto y sin rc, cae del lado de frenar.
+check_eq "sin nada, cae del lado de frenar" "inseguro" "$(veredicto_migrate_status)"
+
+printf '\n\033[1mmigraciones_sobrantes\033[0m\n'
+check_eq "sin drift: aplicadas == repo, no hay sobrantes" \
+  "" "$(migraciones_sobrantes '20260804205911_inicial' '20260804205911_inicial')"
+# La fila fantasma real de la ronda 1: un nombre en _prisma_migrations que ya
+# no está en prisma/migrations/.
+check_eq "una migración aplicada que ya no está en el repo" \
+  "20990101000000_fantasma" \
+  "$(migraciones_sobrantes '20260804205911_inicial
+20990101000000_fantasma' '20260804205911_inicial')"
+check_eq "varias migraciones sobrantes, una por línea" \
+  "20990101000000_fantasma1
+20990102000000_fantasma2" \
+  "$(migraciones_sobrantes '20260804205911_inicial
+20990101000000_fantasma1
+20990102000000_fantasma2' '20260804205911_inicial')"
+# El caso normal: el repo trae una migración nueva que TODAVÍA no está
+# aplicada. Eso NO es drift — es justo lo que el paso 12 va a aplicar.
+# Reportarlo acá convertiría un deploy normal en un abort.
+check_eq "sólo-en-repo (pendiente normal) no se reporta como drift" \
+  "" \
+  "$(migraciones_sobrantes '20260804205911_inicial' '20260804205911_inicial
+20990101000000_nueva_todavia_no_aplicada')"
+check_eq "base virgen (nada aplicado) contra un repo con una migración: nada sobrante" \
+  "" "$(migraciones_sobrantes '' '20260804205911_inicial')"
+
 printf '\n%d ok, %d fallan\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]

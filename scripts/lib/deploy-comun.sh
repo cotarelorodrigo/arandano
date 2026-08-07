@@ -459,3 +459,72 @@ postgres_definitivo_listo() {
   n=$(printf '%s' "$logs" | grep -c 'database system is ready to accept connections' || true)
   [[ "$n" -ge 2 ]]
 }
+
+# ¿`prisma migrate status` dice que el objetivo tiene migraciones pendientes,
+# está al día, o algo raro? Devuelve por stdout una de tres palabras:
+# `pendiente`, `al_dia` o `inseguro` — nunca falla, así que el llamador nunca
+# necesita un `case` con una rama por defecto propia: la dirección segura
+# ("no sé qué es esto, frenar") es una propiedad de ESTA función, no de quien
+# la invoca.
+#
+# El paso 10 de deploy.sh vivía con esta lógica inline hasta que una revisión
+# señaló que era la única decisión del gate sin test — anclada a texto en
+# inglés que Prisma puede reformular en cualquier upgrade, y ejercitarla de
+# verdad exige Docker más una base viva, así que nadie iba a volver a correr
+# la matriz de cuatro estados en el próximo upgrade. Se extrae acá para que
+# el mismo test que corre en milisegundos, sin Docker, sea lo que atrapa el
+# día que el texto cambie.
+#
+# `migrate status` sale 1 tanto para "hay migraciones pendientes" (el estado
+# ESPERADO en cualquier deploy que traiga una migración nueva) como para
+# "una migración quedó a medio aplicar", una credencial inválida (P1000) o un
+# host inalcanzable (P1001) — verificado contra una base real con las cinco
+# salidas exactas que curan los tests de este archivo (ver el reporte de esta
+# tarea). El texto es la ÚNICA forma de distinguir el caso seguro del resto,
+# así que se ancla al inicio de línea con `^Following migrations? have not
+# yet been applied:` — singular o plural, porque Prisma dice "migration" en
+# singular incluso con una sola pendiente (no es un typo de este código, es
+# lo que el CLI realmente emite) — Y se exige que la MISMA salida no traiga
+# también una sección "have failed": no hay evidencia de que `migrate status`
+# mezcle las dos secciones en una corrida real, pero no cuesta nada no
+# asumirlo — mismo criterio de "lo que no se reconoce frena" que ya usa
+# `migracion_destructiva`.
+veredicto_migrate_status() {
+  local salida="${1:-}" rc="${2:-}"
+  if [[ "$rc" == 0 ]]; then
+    printf 'al_dia\n'
+    return 0
+  fi
+  if [[ "$rc" == 1 ]] \
+     && grep -qE '^Following migrations? have not yet been applied:' <<<"$salida" \
+     && ! grep -qE '^Following migrations? have failed:' <<<"$salida"; then
+    printf 'pendiente\n'
+    return 0
+  fi
+  printf 'inseguro\n'
+  return 0
+}
+
+# De una lista de migraciones APLICADAS en el objetivo y una lista de
+# migraciones que tiene el REPO (una por línea, nombres de carpeta de
+# prisma/migrations/), ¿cuáles están aplicadas pero YA NO están en el repo?
+# Es la dirección que `migrate status` no mira nunca (sólo compara "¿al
+# objetivo le falta algo que el repo ya tiene?", nunca al revés) — verificado
+# insertando una fila real en _prisma_migrations para un nombre ausente del
+# repo: `migrate status` reportó "Database schema is up to date!", exit 0,
+# invisible (ver el reporte de esta tarea). El bloqueante 9 de CLAUDE.md pide
+# las dos direcciones.
+#
+# Pura a propósito: recibe las dos listas ya leídas y no toca ni psql ni
+# find — eso es trabajo de deploy.sh, que es quien puede hablarle a Docker y
+# al filesystem. `comm -23` es exactamente "lo que está en la primera lista
+# y no en la segunda"; `sort -u` antes normaliza duplicados y evita que
+# `comm` (que exige las dos entradas ordenadas) devuelva basura si alguna de
+# las dos listas llega desordenada. Los nombres que sólo están en el repo
+# (el caso normal: una migración nueva, todavía sin aplicar) NO se reportan
+# acá — leerlos como "sobrante" convertiría el deploy normal en un abort.
+migraciones_sobrantes() {
+  local aplicadas="${1:-}" repo="${2:-}"
+  comm -23 <(printf '%s\n' "$aplicadas" | sed '/^$/d' | sort -u) \
+           <(printf '%s\n' "$repo" | sed '/^$/d' | sort -u)
+}
