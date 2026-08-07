@@ -164,6 +164,17 @@ UNIT
     || systemctl start "$BUILD_SLICE"
 }
 
+# Los hooks viven versionados en .githooks/, no en .git/hooks/ (que no se
+# versiona y no viaja con el clon). Sin esta línea, el chequeo de migraciones
+# destructivas existe en el repo y no corre en la máquina.
+#
+# `git config` sin --local ni --global apunta al repo del cwd, así que hace
+# falta `-C /root/arandano` explícito: este script se invoca como root y
+# puede correr desde cualquier directorio.
+setup_git_hooks() {
+  git -C /root/arandano config core.hooksPath .githooks
+}
+
 # Los roles de Postgres del stack de dev, para que reconstruir el host desde
 # cero también deje ese stack completo y no a medio armar a la espera de que
 # alguien recuerde correr setup-db-roles.sh a mano.
@@ -362,6 +373,7 @@ UNIT
 
 setup_swap
 setup_docker
+setup_git_hooks
 setup_db_roles_dev
 setup_build_slice
 setup_backup_tools
