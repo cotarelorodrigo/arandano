@@ -38,7 +38,7 @@ localhost:443 {
 # esté en el camino. Un `http://flor.arandano.app` tipeado sin la "s"
 # alcanza para filtrarla.
 #
-# Antes del cutover, dos cosas (anotadas también como requisitos heredados en
+# Antes del cutover, tres cosas (anotadas también como requisitos heredados en
 # el ledger del ciclo):
 #   1. Este bloque pasa a ser SÓLO redirección: `redir https://{host}{uri}`,
 #      nunca `reverse_proxy`. El :80 queda para que ACME resuelva el desafío
@@ -47,6 +47,15 @@ localhost:443 {
 #      endpoint más caro que hay expuesto y el único que un uptime check
 #      externo necesita alcanzar, así que la decisión no es obvia — pero
 #      tomarla después del cutover es tomarla con clientes adentro.
+#   3. En el MISMO commit que el punto 1, cambiar URL_SALUD en
+#      scripts/deploy.sh y en scripts/rollback.sh, y hacer un deploy de punta a
+#      punta después. Los dos consultan el healthcheck por
+#      http://127.0.0.1/api/health, o sea por este bloque, y ninguno sigue
+#      redirecciones: con el `redir` puesto reciben un 308 de cuerpo vacío,
+#      `health_ok` lo rechaza, y cada deploy sano termina rollbackeado y con
+#      el rollback fallando por lo mismo (salida 3). `--objetivo=ensayo` pega
+#      directo al puerto de la app, sin Caddy, así que el ensayo NO lo atrapa.
+#      Detalle completo en CLAUDE.md, *Bloqueantes antes del cutover de DNS*.
 :80 {
 	reverse_proxy app:3000
 }
