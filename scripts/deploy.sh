@@ -37,6 +37,16 @@ códigos de salida — lo primero que conviene mirar en un cron o un CI:
      sana. Distinto de 1 a propósito — "no pasó nada" y "se migró, se
      promovió y se revirtió solo" son mañanas distintas, aunque las dos
      dejen al objetivo intacto.
+  6  el deploy salió bien pero la LIMPIEZA de la máquina falló: arandano-dev
+     no volvió a levantar, arandano-stage quedó arriba, o las dos. El
+     objetivo está sirviendo la imagen nueva y sana; lo que quedó roto es el
+     entorno de trabajo del servidor. Como el 4, no dispara rollback y no
+     hay nada que revertir — pero hace falta arreglar la máquina antes del
+     próximo deploy.
+
+  130 / 143  interrumpido por señal (Ctrl-C / TERM). Frena donde estaba y
+     corre la limpieza igual; en qué estado quedó el objetivo depende de qué
+     paso lo agarró — el log dice cuál fue el último.
 EOF
   exit 2
 }
@@ -58,6 +68,20 @@ for arg in "$@"; do
   esac
 done
 
+# ATENCIÓN, futuro cutover de DNS: el URL_SALUD de `prod` entra por el bloque
+# `:80` del Caddyfile, que hoy es un `reverse_proxy` catch-all. Ese bloque tiene
+# que pasar a ser `redir https://{host}{uri}` antes del cutover (CLAUDE.md,
+# *Bloqueantes antes del cutover de DNS*, punto 2) — y el día que eso pase, este
+# poll recibe un 308 con cuerpo vacío, `health_ok` lo rechaza, el paso 14 nunca
+# da verde, y CADA deploy sano termina rollbackeado (y el rollback, que pega a
+# la misma URL, también timeoutea: salida 3). Ni curl acá ni el de rollback.sh
+# siguen redirecciones, a propósito: seguirlas debilitaría el chequeo.
+#
+# Ir por Caddy es deliberado — es el camino que hacen los clientes de verdad,
+# no un atajo —, así que la salida no es esquivarlo: es cambiar esta línea (y la
+# gemela de rollback.sh) en el MISMO commit que cambie el Caddyfile, y hacer un
+# deploy de punta a punta después. Ojo: `--objetivo=ensayo` pega directo al
+# puerto de la app, sin Caddy, así que el ensayo NO puede atrapar esto.
 case "$OBJETIVO" in
   prod)   DIR=/srv/arandano/prod;   URL_SALUD=http://127.0.0.1;            TAGEA=true ;;
   ensayo) DIR=/srv/arandano/ensayo; URL_SALUD=http://100.64.81.63:3002;    TAGEA=false ;;
@@ -151,15 +175,53 @@ limpiar() {
   # Un deploy que terminó bien (codigo=0) pero dejó la limpieza a medias no es
   # un éxito: es justo el defecto que encontró la revisión — "ensayo en stage
   # ok" en pantalla y salida 0 con dev abajo. Si el codigo original YA era
-  # distinto de 0, se respeta ese (es la causa raíz real); si era 0, una
-  # limpieza rota lo vuelve 1 para que quien invoque el script (un cron, un
-  # operador, un futuro CI) no lea éxito donde hay máquina rota.
+  # distinto de 0, se respeta ese (es la causa raíz real, y todos los códigos
+  # que llegan acá ya piden atención igual); si era 0, una limpieza rota lo
+  # vuelve 6.
+  #
+  # 6 y NO 1, que es como estaba: esta función corre DESPUÉS de los pasos 13-15,
+  # así que el caso real es producción ya promovida, sana y tageada, y recién
+  # ahí el `up` de arandano-dev fallando (a dev le pasa: pasó horas en
+  # Exited(1) mientras se escribía este mismo script). Salir 1 ahí es afirmar
+  # "abortó SIN tocar el objetivo: nada pasó" —el significado que le dan el
+  # --help, el runbook y el spec— con producción sirviendo código nuevo bajo un
+  # tag nuevo. Un cron o un operador que mira "$?" leería exactamente lo
+  # contrario de lo que pasó.
+  #
+  # Código propio y no el 4: los dos son "el objetivo está bien, falta algo",
+  # pero lo que falta es distinto y se arregla distinto — el 4 se resuelve con
+  # un `git push`, éste con `docker compose up` en la máquina. Un solo código
+  # para los dos obliga a leer el log para saber cuál de las dos cosas hacer.
   if [[ "$fallo_limpieza" == true && "$codigo" -eq 0 ]]; then
-    codigo=1
+    codigo=6
   fi
   exit "$codigo"
 }
 trap limpiar EXIT
+# El de INT es el que arregla un agujero medido, no una precaución: sin él, un
+# SIGINT dirigido al PID de este script no lo frena. Bash abandona la espera del
+# hijo en curso, EJECUTA EL COMANDO SIGUIENTE y sigue de largo hasta el final,
+# saliendo 0. Reproducido sobre este mismo archivo (con `set -euo pipefail`, que
+# no cambia nada): interrumpirlo así durante el paso 11 o el 12 se saltea el
+# backup pre-migración o el `migrate deploy`, promueve igual, e imprime "deploy
+# ok" — el gate mintiendo justo en los dos pasos que no tienen vuelta atrás.
+#
+# El hueco es la señal al PID SOLO: un `pkill -INT -f deploy.sh`, un `kill` a
+# mano, un supervisor. Un Ctrl-C de verdad va a todo el grupo de procesos, así
+# que el hijo muere también y el script se cae con él — ése ya andaba bien.
+#
+# El de TERM es simetría: medido, un SIGTERM sin trap ya frena el script y ya
+# sale 143 en este bash. Se pone igual para que las dos señales tengan una sola
+# regla explícita en vez de depender de una diferencia de comportamiento que
+# nadie eligió, y para no divergir de scripts/backup.sh, que lleva los mismos
+# dos traps. Los códigos son 128 + número de señal, lo mismo que reporta bash
+# para un Ctrl-C real, así que un `$?` de 130 sigue significando lo de siempre.
+#
+# Convertir la señal en un `exit` prolijo, además, hace correr el trap de EXIT,
+# o sea la limpieza: sin eso una interrupción deja arandano-dev abajo y la
+# shadow database o arandano-stage arriba comiendo memoria.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 SHA=$(git rev-parse --short HEAD)
 log "deploy $SHA -> $OBJETIVO (versión: $TIPO_VERSION)"

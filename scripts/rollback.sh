@@ -22,6 +22,9 @@ uso: rollback.sh [--a=<sha>] [--objetivo=prod|ensayo]
 
   --a         sha de la imagen a la que volver. Sin esto, se deriva del
               ANTEÚLTIMO tag de git: el último describe lo que está corriendo.
+              Correrlo dos veces seguidas sin --a NO lleva dos versiones atrás:
+              la segunda deriva el MISMO destino, y el script lo dice en vez de
+              reportar un éxito que no hizo nada.
   --objetivo  qué stack. prod (default) o ensayo.
 EOF
   exit 2
@@ -39,17 +42,45 @@ for arg in "$@"; do
       # antes de que este script vea el argumento.
       [[ -n "$DESTINO" ]] || { error "--a necesita un valor (sha); vino vacío"; uso; }
       ;;
-    --objetivo=*) OBJETIVO="${arg#*=}" ;;
+    --objetivo=*)
+      # Mismo guard que --a= acá arriba y que --objetivo= en deploy.sh, por el
+      # mismo motivo: vacío no es lo mismo que omitido. Omitido, el default es
+      # "prod"; vacío quedaría indistinguible de eso y el `case` de abajo lo
+      # rechazaría con "objetivo inválido: " en blanco, sin decir que el
+      # problema fue una variable sin expandir en el comando de quien invoca.
+      OBJETIVO="${arg#*=}"
+      [[ -n "$OBJETIVO" ]] || { error "--objetivo necesita un valor (prod o ensayo); vino vacío"; uso; }
+      ;;
     -h|--help)    uso ;;
     *) error "argumento desconocido: $arg"; uso ;;
   esac
 done
 
+# ATENCIÓN, futuro cutover de DNS: el URL_SALUD de `prod` es el mismo de
+# deploy.sh y entra por el bloque `:80` del Caddyfile, que hoy es un
+# `reverse_proxy` catch-all y tiene que pasar a ser `redir https://{host}{uri}`
+# antes del cutover (CLAUDE.md, *Bloqueantes antes del cutover de DNS*, punto
+# 2). El día que eso pase, este loop recibe un 308 con cuerpo vacío, `health_ok`
+# lo rechaza y hasta un rollback que levantó perfecto reporta "NO VERIFICÓ EN
+# 90s" — y como deploy.sh usa este mismo script como su rollback automático,
+# ahí se convierte en su salida 3, el peor caso, sin que nada esté roto.
+# Explicación completa en el comentario gemelo de deploy.sh: hay que cambiar
+# las DOS líneas en el mismo commit que cambie el Caddyfile.
 case "$OBJETIVO" in
   prod)   DIR=/srv/arandano/prod;   URL_SALUD=http://127.0.0.1 ;;
   ensayo) DIR=/srv/arandano/ensayo; URL_SALUD=http://100.64.81.63:3002 ;;
   *) error "objetivo inválido: $OBJETIVO"; uso ;;
 esac
+
+# Mismo motivo y mismo detalle que en deploy.sh (ver el comentario largo de
+# ahí): sin el trap de INT, un SIGINT al PID de este script no lo frena — bash
+# abandona la espera del hijo en curso y sigue con el comando SIGUIENTE.
+# Reproducido acá también: se saltea el `docker compose up` y cae directo al
+# loop de healthcheck, o se saltea el loop y reporta el peor caso sin haber
+# esperado nada. Un rollback es lo último que puede improvisar. El de TERM va
+# por simetría, igual que allá.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Sin --a: el ANTEÚLTIMO tag. El último describe lo que está corriendo ahora,
 # así que volver ahí no sería volver a ningún lado.
@@ -119,6 +150,35 @@ fi
 # fallback, ese caso imprime "venía de: " en blanco en vez de decir que no se
 # pudo leer un valor.
 ACTUAL=$(grep -m1 -oP '^IMAGE_TAG=\K\S*' "$DIR/.env" || true)
+
+# Volver a donde ya estamos no es un rollback, y llamarlo "rollback ok" es peor
+# que fallar. El caso real es correr esto DOS VECES sin argumentos: el destino
+# sale del ANTEÚLTIMO tag las dos veces —el último sigue describiendo lo que se
+# promovió, no lo que corre— así que la segunda corrida reescribe el .env con lo
+# que ya está corriendo, recrea el contenedor con la MISMA imagen, el
+# healthcheck da sano con ese sha y sale 0. Quien quería ir dos versiones atrás
+# se queda una, convencido de que fue dos, y encima con la evidencia en contra:
+# la app responde sana.
+#
+# No es una falla de la máquina, así que no hay nada que arreglar: lo único
+# necesario es decirlo y no reportar éxito. Se chequea ANTES del `sed`, porque
+# tocar el archivo para dejarlo igual no aporta nada.
+#
+# Para el rollback automático de deploy.sh esto sólo se dispara si el SHA que se
+# estaba promoviendo era el que YA estaba corriendo (redeploy del mismo commit).
+# Ahí el rollback de verdad no tiene a dónde ir, deploy.sh lo lee como "el
+# rollback también falló" y sale 3 — que es lo correcto: producción quedó
+# enferma y ninguna imagen anterior la va a salvar sola.
+if [[ -n "$ACTUAL" && "$DESTINO" == "$ACTUAL" ]]; then
+  error "$OBJETIVO ya está corriendo arandano-app:$DESTINO — esto no sería un rollback, sería un no-op"
+  error "  stack:  $OBJETIVO ($DIR)"
+  error "si querías ir MÁS atrás, elegí la imagen a mano:"
+  error "  git tag --list 'v1.*' --sort=-v:refname          # las versiones, de la más nueva a la más vieja"
+  error "  git tag -l --format='%(contents)' <tag>          # a qué imagen corresponde cada una"
+  error "  scripts/rollback.sh --a=<sha> --objetivo=$OBJETIVO"
+  exit 1
+fi
+
 [[ -n "$ACTUAL" ]] || ACTUAL="(desconocido)"
 log "rollback en $OBJETIVO: $ACTUAL -> $DESTINO"
 log "la base de datos NO se toca"

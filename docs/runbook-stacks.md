@@ -194,11 +194,21 @@ porque cada uno dice algo distinto sobre qué le pasó a producción (ver
 | `3` | El rollback automático **también** falló. | Indeterminado — el peor caso; el script imprime qué imagen corría, a cuál intentó volver y qué comando correr. Atención manual inmediata. |
 | `4` | El objetivo quedó sirviendo la imagen **nueva y sana**, pero el tag de git no se pudo crear o pushear. | Sí, correctamente — sólo el tag queda pendiente, no dispara rollback. |
 | `5` | Rollbackeó con éxito. | Sí — terminó sirviendo la imagen **anterior**, sana. |
+| `6` | El deploy salió bien, pero la **limpieza de la máquina** falló: `arandano-dev` no volvió a levantar, `arandano-stage` quedó arriba, o las dos. | Sí, correctamente — el objetivo sirve la imagen nueva y sana; lo roto es el entorno de trabajo del servidor. |
+| `130` / `143` | Interrumpido por señal (Ctrl-C / `TERM`). Frena donde estaba y corre la limpieza igual. | Depende de qué paso lo agarró — el log dice cuál fue el último. |
 
 `1` y `5` dejan las dos al objetivo intacto, pero son mañanas distintas: "no
-pasó nada" contra "se migró, se promovió y se revirtió solo". `4` es la otra
-distinción que importa — producción está bien, lo que falta es sólo el
-registro humano de qué versión es.
+pasó nada" contra "se migró, se promovió y se revirtió solo". `4` y `6` son la
+otra distinción que importa: en las dos el objetivo está bien y lo que falta es
+otra cosa, pero se arreglan distinto — el `4` con un `git push origin <tag>`, el
+`6` con un `docker compose -f docker/compose.dev.yml up -d --wait` (o bajando
+`arandano-stage`) en el servidor. Por eso son códigos distintos y no uno solo:
+un código compartido obliga a leer el log para saber cuál de las dos cosas hacer.
+
+Que `6` exista es un arreglo, no un detalle: hasta la revisión final de la rama
+ese caso salía `1`, o sea el código documentado como "abortó sin tocar el
+objetivo, nada pasó" — con producción sirviendo código nuevo bajo un tag nuevo,
+porque la limpieza corre **después** de la promoción, el healthcheck y el tag.
 
 **`--no-deps` en la promoción y en el rollback no es una optimización, es
 obligatorio — no sacarlo.** Sin él, `docker compose up -d --force-recreate
