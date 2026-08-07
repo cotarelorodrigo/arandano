@@ -66,6 +66,10 @@ proxima_version() {
 # sin esa columna — el caso más común de todos, y el que más duele si se
 # escapa.
 #
+# Hay UNA excepción a ese criterio, marcada como tal en la lista: DISABLE ROW
+# LEVEL SECURITY entra por aislamiento entre tenants, no por rollback. Ver el
+# comentario en el patrón.
+#
 # TODO el análisis pasa por UN solo programa de perl, y eso es a propósito. La
 # versión anterior encadenaba etapas —perl, sed, tr, y después grep y wc— y
 # cada etapa era una manera distinta de fallar ABIERTO: si una no corría, el
@@ -79,22 +83,32 @@ proxima_version() {
 #
 # Qué queda afuera, dicho sin redondear:
 #
-#   - El contenido de los literales y de los cuerpos $$ se conserva tal cual,
-#     así que un texto que MENCIONA un DROP frena el deploy. Es un falso
-#     positivo y es a propósito: alguien mira y sigue de largo en un minuto.
+#   - Para BUSCAR (etapa 3) el contenido de los literales y de los cuerpos $$
+#     se conserva tal cual, así que un texto que MENCIONA un DROP frena el
+#     deploy. Es un falso positivo y es a propósito: alguien mira y sigue de
+#     largo en un minuto.
+#   - Para DEJAR PASAR (el emparejamiento de constraints de la etapa 2) ese
+#     mismo texto NO cuenta, porque si contara alcanzaría con mencionar un
+#     "ADD CONSTRAINT" adentro de un string para desarmar el chequeo. Esa
+#     asimetría es deliberada; está explicada en la etapa 2.
 #   - Un `\'` adentro de un literal sin prefijo E, y cualquier SQL que deje sin
 #     cerrar un literal, un comentario de bloque o un $$, se tratan como no
 #     analizables y frenan. También falsos positivos, y los dos últimos son SQL
 #     inválido que no iba a aplicar igual.
 #   - Lo que esta función NO decide es si la LISTA de patrones está completa.
-#     Un DROP POLICY o un DROP FUNCTION no están en la lista y no van a
-#     disparar: eso no es un residuo del parseo, es una decisión sobre la
-#     lista, y se cambia agregando el patrón (con su emparejamiento si el caso
-#     normal es recrear, como pasa con las constraints).
+#     La familia DROP POLICY / DROP FUNCTION / DROP TRIGGER / DROP SEQUENCE no
+#     está y no va a disparar. En el caso de las policies es una decisión
+#     tomada y no un olvido: recrear una policy (DROP + CREATE del mismo
+#     nombre) es su forma normal, pero TODAS las policies de este repo se
+#     llaman `tenant_aislamiento`, así que un emparejamiento por nombre —el
+#     mismo truco que usan las constraints— dejaría pasar un DROP POLICY sobre
+#     "clientes" emparejado con un CREATE POLICY sobre "articulos", y perder el
+#     aislamiento de "clientes" en silencio. Un emparejamiento que además mire
+#     la tabla es otro trabajo, no un patrón más en la lista.
 #
-# O sea: todo lo que el analizador no entiende cae del lado de frenar. Lo único
-# que puede dejar pasar algo peligroso es un patrón que falte en la lista, y
-# eso se ve leyendo la lista.
+# O sea: todo lo que el analizador no entiende cae del lado de frenar, y lo que
+# puede dejar pasar algo peligroso es un patrón que falte en la lista — eso se
+# ve leyendo la lista.
 migracion_destructiva() {
   local sql="${1:-}"
 
@@ -127,7 +141,17 @@ $sql = '' unless defined $sql;
 # DROP que viniera después. Prisma nunca escribe un `--` adentro de un literal,
 # pero una migración de datos o una policy de RLS escrita a mano sí — y todo el
 # aislamiento entre tenants de este proyecto son policies escritas a mano.
+#
+# Salen DOS textos del mismo recorrido, y la diferencia importa:
+#   $limpio    conserva literales y cuerpos $$ tal cual.
+#   $sin_texto los reemplaza por '' (dos comillas, no un espacio, para que el
+#              blanqueo no pueda pegar dos tokens y fabricar una frase que no
+#              estaba).
+# La etapa 3 busca sobre $limpio, así que un texto que MENCIONA un DROP frena
+# el deploy — falso positivo a propósito. La etapa 2 usa $sin_texto para el
+# lado que DEJA PASAR (ver ahí abajo por qué sólo para ese lado).
 my $limpio = '';
+my $sin_texto = '';
 my $n = length $sql;
 my $i = 0;
 
@@ -147,6 +171,7 @@ while ($i < $n) {
     }
     no_analizable("comentario de bloque sin cerrar") if $prof > 0;
     $limpio .= ' ';
+    $sin_texto .= ' ';
     next;
   }
 
@@ -155,6 +180,7 @@ while ($i < $n) {
     $i += 2;
     $i++ while ($i < $n && substr($sql, $i, 1) ne "\n");
     $limpio .= ' ';
+    $sin_texto .= ' ';
     next;
   }
 
@@ -189,6 +215,7 @@ while ($i < $n) {
     }
     no_analizable("literal de string sin cerrar") unless $cerrado;
     $limpio .= substr($sql, $i, $j - $i);
+    $sin_texto .= "''";
     $i = $j;
     next;
   }
@@ -209,7 +236,10 @@ while ($i < $n) {
       $j++;
     }
     no_analizable("identificador entre comillas sin cerrar") unless $cerrado;
+    # El identificador va IGUAL en los dos: es el nombre de la constraint que la
+    # etapa 2 tiene que poder leer.
     $limpio .= substr($sql, $i, $j - $i);
+    $sin_texto .= substr($sql, $i, $j - $i);
     $i = $j;
     next;
   }
@@ -224,15 +254,18 @@ while ($i < $n) {
     no_analizable("bloque \$\$ sin cerrar") if $fin < 0;
     my $hasta = $fin + length($tag);
     $limpio .= substr($sql, $i, $hasta - $i);
+    $sin_texto .= "''";
     $i = $hasta;
     next;
   }
 
   $limpio .= $c;
+  $sin_texto .= $c;
   $i++;
 }
 
 $limpio =~ s/\s+/ /g;
+$sin_texto =~ s/\s+/ /g;
 
 # Etapa 2: un DROP CONSTRAINT emparejado con un ADD CONSTRAINT del MISMO nombre
 # no es destructivo. Es lo que Prisma emite para cualquier cambio de relación
@@ -240,6 +273,20 @@ $limpio =~ s/\s+/ /g;
 # la elimina, y el código anterior no depende de que exista entre un statement
 # y el otro. Bloquearlo es justo el falso positivo que enseña a saltear el
 # gate.
+#
+# Los dos lados NO leen el mismo texto, y es lo único que evita que un texto
+# cualquiera desarme el gate:
+#
+#   - Los DROP se cuentan sobre $limpio (con literales y cuerpos $$ tal cual).
+#     Ese lado sólo puede EXIGIR más emparejamientos, así que conservar el
+#     texto sólo hace frenar de más. Y no perdemos el caso real de un DROP
+#     CONSTRAINT adentro de un cuerpo $$, que sí es DDL que se va a ejecutar.
+#   - Los ADD se leen de $sin_texto (literales y cuerpos $$ blanqueados). Ese
+#     lado DEJA PASAR, así que su evidencia tiene que ser DDL de verdad y no
+#     texto: un INSERT a una tabla de auditoría de DDL que guarde el string
+#     'ALTER TABLE ... ADD CONSTRAINT "x" ...', o un EXECUTE adentro de una
+#     función, alcanzaba para emparejar un DROP CONSTRAINT "x" real y que la
+#     migración se leyera aditiva.
 my @dropeadas = $limpio =~ /DROP[[:space:]]+CONSTRAINT[[:space:]]+"([^"]+)"/gi;
 my $drops = () = $limpio =~ /DROP[[:space:]]+CONSTRAINT/gi;
 # Un DROP CONSTRAINT cuyo nombre no se puede leer entre comillas no se puede
@@ -250,7 +297,7 @@ if ($drops > scalar @dropeadas) {
   exit 0;
 }
 if (@dropeadas) {
-  my %agregadas = map { $_ => 1 } ($limpio =~ /ADD[[:space:]]+CONSTRAINT[[:space:]]+"([^"]+)"/gi);
+  my %agregadas = map { $_ => 1 } ($sin_texto =~ /ADD[[:space:]]+CONSTRAINT[[:space:]]+"([^"]+)"/gi);
   for my $nombre (@dropeadas) {
     next if $agregadas{$nombre};
     print "DROP CONSTRAINT \"$nombre\" sin ADD CONSTRAINT correspondiente\n";
@@ -277,6 +324,20 @@ for my $patron (
   # recrea un enum angostado. Anclado a las comillas del identificador para que
   # no matchee ni CREATE TYPE ni ALTER TYPE ... ADD VALUE.
   'ALTER[[:space:]]+COLUMN[[:space:]]+"[^"]+"[[:space:]]+(SET[[:space:]]+DATA[[:space:]]+)?TYPE[[:space:]]',
+  # Este último NO responde al mismo criterio que los doce de arriba, y hay que
+  # decirlo o el próximo lector lo va a leer como incoherente con el header y
+  # lo va a sacar. Los otros son seguridad de ROLLBACK: el código anterior deja
+  # de funcionar contra el schema nuevo. Éste es AISLAMIENTO: el código
+  # anterior sigue funcionando perfecto, y justamente por eso devuelve filas de
+  # OTROS tenants. Apaga el RLS de una tabla sin que aparezca un DROP en ningún
+  # lado, y a diferencia de una policy recreada no tiene forma legítima
+  # recurrente, así que no necesita emparejamiento ni arriesga falsos
+  # positivos. ENABLE no matchea: la migración inicial está llena de ENABLE.
+  #
+  # Es un backstop barato, no la defensa real. La defensa real es el check de
+  # query filtrada por tenant en el healthcheck, que CLAUDE.md tiene como
+  # bloqueante #1 antes del primer tenant.
+  'DISABLE[[:space:]]+ROW[[:space:]]+LEVEL[[:space:]]+SECURITY',
 ) {
   if ($limpio =~ /$patron/i) {
     print "$patron\n";

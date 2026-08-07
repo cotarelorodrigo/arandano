@@ -88,6 +88,33 @@ check_true  "DROP CONSTRAINT sin su ADD sigue siendo destructivo" \
 # que se trata como destructivo (fallar cerrado, no abierto).
 check_true  "DROP CONSTRAINT sin nombre entre comillas se trata como destructivo" \
   migracion_destructiva 'ALTER TABLE "posts" DROP CONSTRAINT posts_authorId_fkey;'
+# El emparejamiento es lo único de esta función que DEJA PASAR algo, así que su
+# evidencia tiene que ser DDL de verdad. Un ADD CONSTRAINT que sólo está
+# MENCIONADO adentro de un string -el shape plausible es un INSERT a una tabla
+# de auditoría de DDL- no recrea ninguna constraint, y sin embargo alcanzaba
+# para emparejar un DROP real y que la migración se leyera aditiva.
+check_true "un ADD CONSTRAINT mencionado adentro de un literal no empareja un DROP real" \
+  migracion_destructiva 'INSERT INTO "auditoria_ddl" ("sql") VALUES ('"'"'ALTER TABLE "posts" ADD CONSTRAINT "posts_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "users"("id")'"'"');
+ALTER TABLE "posts" DROP CONSTRAINT "posts_authorId_fkey";'
+# Lo mismo desde un cuerpo $$: un EXECUTE de texto tampoco es evidencia.
+check_true "un ADD CONSTRAINT adentro de un cuerpo \$\$ tampoco empareja un DROP real" \
+  migracion_destructiva 'CREATE FUNCTION f() RETURNS void AS $$ BEGIN EXECUTE '"'"'ALTER TABLE "posts" ADD CONSTRAINT "posts_authorId_fkey" FOREIGN KEY ("a") REFERENCES "u"("id")'"'"'; END $$ LANGUAGE plpgsql;
+ALTER TABLE "posts" DROP CONSTRAINT "posts_authorId_fkey";'
+# Y la contracara, que es lo que impide "arreglar" lo de arriba blanqueando los
+# dos lados: el lado que EXIGE emparejamiento sigue leyendo el texto entero, así
+# que un DROP CONSTRAINT adentro de un cuerpo $$ -DDL que se va a ejecutar de
+# verdad- sigue frenando el deploy.
+check_true "un DROP CONSTRAINT adentro de un cuerpo \$\$ sigue frenando" \
+  migracion_destructiva 'CREATE FUNCTION f() RETURNS void AS $$ BEGIN ALTER TABLE "posts" DROP CONSTRAINT "posts_fkey"; END $$ LANGUAGE plpgsql;'
+# El único patrón de la lista que no responde al criterio de rollback: apagar el
+# RLS de una tabla no rompe al código anterior -sigue andando perfecto- y por
+# eso mismo le devuelve filas de OTROS tenants. No hay DROP en ningún lado.
+check_true "DISABLE ROW LEVEL SECURITY apaga el aislamiento y frena el deploy" \
+  migracion_destructiva 'ALTER TABLE "clientes" DISABLE ROW LEVEL SECURITY;'
+# Y su contracara, que la migración inicial real usa en TODAS las tablas: si
+# ENABLE disparara, ninguna migración de este repo pasaría el gate.
+check_false "ENABLE ROW LEVEL SECURITY es aditivo" \
+  migracion_destructiva 'ALTER TABLE "clientes" ENABLE ROW LEVEL SECURITY;'
 # ALTER TYPE ... ADD VALUE agranda un enum: la imagen vieja no conoce el valor
 # nuevo pero sigue funcionando, así que es aditivo. Es la contracara de RENAME
 # VALUE, y los dos empiezan igual.
