@@ -220,10 +220,23 @@ Los presets de rubro nuevos (veterinaria, peluquería, dietética, etc.) no son 
 
 Los primeros cuatro son de entorno y van antes que cualquier línea de producto, porque definen dónde y cómo se escribe todo lo demás:
 
-- Configurar swap e instalar Docker (el servidor hoy no lo tiene).
-- Armar los tres stacks Compose (`arandano-dev`, `arandano-stage` y `arandano-prod`) con redes, volúmenes y bases separadas, límites de CPU y memoria, y rotación de logs.
-- Escribir `deploy.sh` con su gate completo (tests, build tageado, backup, `migrate deploy`, smoke test, promoción, healthcheck, tag de git pusheado a `origin`, rollback).
-- Montar los backups con `pg_dump` y el restore verificado contra una base descartable.
+- ~~Configurar swap e instalar Docker (el servidor hoy no lo tiene).~~ **Hecho**
+  (2026-08-03). `scripts/setup-host.sh` (`setup_swap`, `setup_docker`),
+  idempotente. Ver `docs/runbook-stacks.md`.
+- ~~Armar los tres stacks Compose (`arandano-dev`, `arandano-stage` y
+  `arandano-prod`) con redes, volúmenes y bases separadas, límites de CPU y
+  memoria, y rotación de logs.~~ **Hecho** (2026-08-04). Ver
+  `docs/runbook-stacks.md`. **Sumado después**: `arandano-ensayo`, un cuarto
+  stack descartable para que `deploy.sh --objetivo=ensayo` ensaye el gate
+  completo sin tocar clientes.
+- ~~Escribir `deploy.sh` con su gate completo (tests, build tageado, backup,
+  `migrate deploy`, smoke test, promoción, healthcheck, tag de git pusheado a
+  `origin`, rollback).~~ **Hecho** (2026-08-06). Ver
+  `docs/superpowers/specs/2026-08-06-deploy-design.md` y la sección *Deploy y
+  rollback* de `docs/runbook-stacks.md`.
+- ~~Montar los backups con `pg_dump` y el restore verificado contra una base
+  descartable.~~ **Hecho** (2026-08-04). Ver *Bloqueantes antes del primer
+  tenant real*, punto 2, y `docs/runbook-backups.md`.
 - Completar el healthcheck — ver *Bloqueantes antes del primer tenant real*, que es donde vive la lista con el detalle.
 - Conectar Sentry y un uptime check externo contra el healthcheck.
 - Apuntar el DNS de `arandano.app` y el wildcard `*.arandano.app` al servidor, y configurar el certificado wildcard por DNS-01 en Caddy.

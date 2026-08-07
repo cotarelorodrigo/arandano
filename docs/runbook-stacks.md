@@ -1,4 +1,4 @@
-# Runbook: los tres stacks
+# Runbook: los stacks
 
 | Stack | Levantar | Escucha en |
 |---|---|---|
