@@ -660,7 +660,33 @@ sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${SHA}|" "$DIR/.env"
 # alguien lo tuviera exportado a mano en la shell que invoca deploy.sh, le
 # ganaría al .env recién reescrito. Costo cero, defensa contra un error ajeno
 # a este script.
-if ! ( cd "$DIR" && env -u IMAGE_TAG docker compose up -d --force-recreate app ); then
+# `--no-deps` es obligatorio, no una optimización. Sin él, `up --force-recreate
+# app` NO recrea sólo `app`: Compose arrastra las dependencias de `depends_on`
+# y el `--force-recreate` aplica también a ellas, así que RECREA EL CONTENEDOR
+# DE POSTGRES en el medio de la promoción. Encontrado por el ensayo completo
+# (task-10) y reproducido en el log: el paso 13 imprimía "Container
+# arandano-ensayo-postgres-1 Recreated" sin que nada lo pidiera.
+#
+# En ensayo eso es fatal y por eso lo encontró: ese Postgres vive en tmpfs, así
+# que recrearlo borra los roles del stack Y la migración que el paso 12 acababa
+# de aplicar — la app arrancaba contra una base vacía, el healthcheck del paso
+# 14 daba 503 ("password authentication failed for user arandano_app"), el
+# rollback se disparaba, volvía a recrear Postgres por lo mismo, y el deploy
+# salía 3 sin que hubiera absolutamente nada malo en la imagen promovida.
+#
+# En producción no borra datos (el volumen es persistente), pero igual está
+# mal: reinicia la base de los clientes en CADA deploy sin ninguna necesidad —
+# conexiones cortadas, el pool de la app reconectando, y un `oom_score_adj`
+# que hay que volver a aplicar (CLAUDE.md) — todo para promover un cambio que
+# sólo toca el contenedor de la app. Una promoción cambia la imagen de la app;
+# la base no es parte de lo que se promueve.
+#
+# `--no-deps` no debilita ningún guard: para llegar hasta acá, los pasos 10 y
+# 12 ya hablaron con ese Postgres (migrate status y migrate deploy), así que
+# está garantizado arriba. Y si NO lo estuviera, que la app arranque sola y el
+# paso 14 lo cante es más honesto que que Compose levante la base en silencio
+# adentro de un paso que dice "promoviendo".
+if ! ( cd "$DIR" && env -u IMAGE_TAG docker compose up -d --no-deps --force-recreate app ); then
   rollback_y_salir "la promoción falló"
 fi
 

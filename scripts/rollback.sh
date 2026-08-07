@@ -162,7 +162,17 @@ sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${DESTINO}|" "$DIR/.env"
 # existe localmente, así que `up` no falla — recién lo atrapa la comparación
 # de sha más abajo, 90 segundos después, sin que nada en pantalla diga por
 # qué).
-if ! ( cd "$DIR" && env -u IMAGE_TAG docker compose up -d --force-recreate app ); then
+#
+# `--no-deps`: sin él, este script IMPRIMÍA "la base de datos NO se toca" (ver
+# más arriba) y acto seguido recreaba el contenedor de Postgres, porque
+# `--force-recreate` alcanza también a las dependencias de `depends_on` que
+# Compose arrastra al nombrar `app`. El mensaje era literalmente falso.
+# Encontrado por el ensayo completo (task-10), donde el Postgres de ensayo vive
+# en tmpfs y el rollback terminaba de vaciar la base que intentaba salvar.
+# Mismo arreglo y mismo motivo que el paso 13 de deploy.sh: un rollback vuelve
+# la IMAGEN de la app a la anterior, y nada más — esa es justamente la razón
+# por la que expand/contract es obligatorio.
+if ! ( cd "$DIR" && env -u IMAGE_TAG docker compose up -d --no-deps --force-recreate app ); then
   fallar "EL ROLLBACK FALLÓ AL LEVANTAR EL CONTENEDOR (el .env YA quedó reescrito con IMAGE_TAG=$DESTINO)"
 fi
 
