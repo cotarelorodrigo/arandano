@@ -94,7 +94,17 @@ limpiar() {
   fi
   if docker ps --filter name=arandano-stage --format '{{.Names}}' | grep -q .; then
     log "bajando arandano-stage"
-    docker compose -f docker/compose.stage.yml down -v >/dev/null 2>&1
+    # IMAGE_TAG es obligatorio en compose.stage.yml (con `:?`) y Compose lo
+    # exige para CUALQUIER subcomando, incluido `down` — lo interpola al
+    # parsear el archivo, no sólo al levantar el servicio. Sin pasarlo acá
+    # este `down -v` fallaría en silencio (stdout/stderr van a /dev/null y
+    # `set +e` ya está activo) y la limpieza dejaría stage arriba. `${SHA:-}`
+    # y no `$SHA` a secas: si algo interrumpe el script ANTES de que la línea
+    # de más abajo asigne SHA, esta función igual tiene que poder evaluarse
+    # bajo `set -u` — aunque en la práctica el `if` de arriba ya garantiza que
+    # sólo se llega acá si stage llegó a levantarse, y eso no pasa antes de
+    # que SHA exista.
+    IMAGE_TAG="${SHA:-}" docker compose -f docker/compose.stage.yml down -v >/dev/null 2>&1
   fi
   if [[ "$DEV_FRENADA" == true ]]; then
     log "volviendo a levantar arandano-dev"
@@ -272,3 +282,71 @@ npx tsc --noEmit 9>&-
 npm run lint 9>&-
 
 log "preflight ok"
+
+# ---------------------------------------------------------------------------
+# Build
+# ---------------------------------------------------------------------------
+
+# Paso 6. ANTES del build, no antes de stage. La aritmética no cierra de otra
+# forma: prod 3200 + dev 2304 + build 2048 + ~1,1 GB de sistema ≈ 8,5 GB sobre
+# una caja de 7,6 GB. Con dev abajo desde acá el pico queda en ~7,5 GB. De paso
+# queda cubierta la regla de que dev y stage no corren juntos.
+log "paso 6/16: frenando arandano-dev"
+docker compose -f docker/compose.dev.yml down
+DEV_FRENADA=true
+
+# Paso 7. --target explícito en las dos: `docker build` sin --target buildea la
+# ÚLTIMA etapa del archivo, y el día que alguien agregue una al final,
+# arandano-app pasaría a contener otra cosa sin que nada avise. Las banderas de
+# recursos son las que efectivamente limitan en este host; nice, --cpuset-cpus
+# y --memory son inertes acá y no avisan que lo son (ver Dockerfile y
+# CLAUDE.md).
+log "paso 7/16: buildeando arandano-app:$SHA y arandano-migrate:$SHA"
+docker build --cgroup-parent=arandanobuild.slice \
+  --resource memory=2g --resource cpu-quota=100000 \
+  --target runtime --build-arg GIT_SHA="$SHA" -t "arandano-app:$SHA" .
+docker build --cgroup-parent=arandanobuild.slice \
+  --resource memory=2g --resource cpu-quota=100000 \
+  --target migrate --build-arg GIT_SHA="$SHA" -t "arandano-migrate:$SHA" .
+
+# ---------------------------------------------------------------------------
+# Ensayo en stage: la migración se prueba sobre una base VIRGEN antes de tocar
+# la de clientes. Si va a explotar, que explote acá.
+# ---------------------------------------------------------------------------
+
+log "paso 8/16: levantando arandano-stage y ensayando la migración"
+
+# IMAGE_TAG se pasa INLINE a cada comando de stage y nunca con `export`:
+# Docker Compose le da precedencia a una variable de entorno del shell por
+# sobre el .env del stack, y una tarea posterior promueve a producción
+# escribiendo IMAGE_TAG en /srv/arandano/prod/.env y corriendo compose ahí —
+# un IMAGE_TAG exportado acá seguiría vivo en ese momento y le ganaría al
+# .env recién escrito, promoviendo la imagen equivocada. Es el mismo defecto
+# que ya apareció en rollback.sh (corregido ahí con `env -u IMAGE_TAG`); acá
+# se evita de raíz no exportando nunca la variable.
+IMAGE_TAG="$SHA" docker compose -f docker/compose.stage.yml up -d --wait postgres
+
+# Los roles de stage no existen: la base nace vacía en cada corrida. Las
+# contraseñas están en claro en compose.stage.yml y eso es aceptable sólo acá,
+# porque la base es efímera y nunca ve datos de clientes.
+scripts/setup-db-roles.sh \
+  --network=arandano-stage_default \
+  --url="postgres://arandano_stage:efimero-no-persiste@postgres:5432/arandano_stage" \
+  --owner-password=efimero-owner \
+  --app-password=efimero-app \
+  --con-createdb
+
+docker run --rm --network arandano-stage_default \
+  -e MIGRATE_DATABASE_URL="postgres://arandano_owner:efimero-owner@postgres:5432/arandano_stage" \
+  "arandano-migrate:$SHA" migrate deploy
+
+# --wait espera al healthcheck del compose, no a que el contenedor arranque:
+# sin eso el smoke test correría contra un Next todavía levantando, y las
+# fallas intermitentes del gate se leen como bugs del código.
+IMAGE_TAG="$SHA" docker compose -f docker/compose.stage.yml up -d --wait app
+
+log "paso 9/16: smoke tests contra stage"
+scripts/smoke.sh http://100.64.81.63:3001 "$SHA"
+
+IMAGE_TAG="$SHA" docker compose -f docker/compose.stage.yml down -v
+log "ensayo en stage ok"
