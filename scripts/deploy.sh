@@ -451,3 +451,142 @@ scripts/smoke.sh "http://${url_stage}" "$SHA"
 
 IMAGE_TAG="$SHA" docker compose -f docker/compose.stage.yml down -v
 log "ensayo en stage ok"
+
+# ---------------------------------------------------------------------------
+# Producción. De acá en adelante el objetivo se toca de verdad.
+# ---------------------------------------------------------------------------
+
+# Sólo MIGRATE_DATABASE_URL hace falta de $DIR/.env para este tramo, y se lee
+# con grep — NO con `set -a; . "$DIR/.env"; set +a` como decía el brief
+# original. Ese sourceo hubiera EXPORTADO también IMAGE_TAG al entorno de este
+# proceso, y esa exportación sigue viva cuando el paso 13 reescribe el archivo
+# con `sed` más abajo: Compose le da precedencia a una variable de entorno del
+# shell por sobre el .env de un stack, así que `docker compose up` de ese paso
+# promovería el SHA viejo ya exportado en vez del que el sed acaba de escribir
+# — la misma trampa que Task 8 evitó a propósito en el paso de stage y que
+# rollback.sh neutraliza con `env -u IMAGE_TAG`. Leer sólo lo que hace falta,
+# con grep, la evita de raíz en vez de defenderse después.
+log "paso 10/16: migraciones del repo == migraciones del objetivo"
+MIGRATE_DATABASE_URL=$(grep -m1 -oP '^MIGRATE_DATABASE_URL=\K\S*' "$DIR/.env" || true)
+if [[ -z "$MIGRATE_DATABASE_URL" ]]; then
+  error "$DIR/.env no define MIGRATE_DATABASE_URL (o está vacío); no se puede migrar contra $OBJETIVO"
+  exit 1
+fi
+RED_OBJETIVO="arandano-${OBJETIVO}_default"
+docker run --rm --network "$RED_OBJETIVO" \
+  -e MIGRATE_DATABASE_URL="$MIGRATE_DATABASE_URL" \
+  "arandano-migrate:$SHA" migrate status
+
+# Paso 11. Contrato del spec de backups: si el backup falla, se aborta ANTES de
+# migrar. Una migración sin backup previo es el escenario irreversible que esos
+# scripts existen para evitar.
+log "paso 11/16: backup pre-migración"
+if [[ "$OBJETIVO" == prod ]]; then
+  scripts/backup.sh --motivo=pre-migracion
+else
+  # En ensayo el backup igual CORRE —para que el paso se ejercite— pero contra
+  # el prefijo test/ del bucket, para no ensuciar el histórico real de prod.
+  # NUNCA --motivo=pre-migracion acá: ese motivo es lo que distingue, en el
+  # histórico real, un backup que de verdad precedió a una migración de
+  # producción.
+  scripts/backup.sh --motivo=test
+fi
+
+# Paso 12. Sólo migrate deploy. Nunca migrate reset ni db push.
+log "paso 12/16: migrate deploy contra $OBJETIVO"
+docker run --rm --network "$RED_OBJETIVO" \
+  -e MIGRATE_DATABASE_URL="$MIGRATE_DATABASE_URL" \
+  "arandano-migrate:$SHA" migrate deploy
+
+# ---------------------------------------------------------------------------
+# Desde acá, una falla es ROLLBACK y no aborto: es el único tramo donde el
+# objetivo ya cambió. Un aborto en el paso 12 deja schema nuevo con código
+# viejo, que es el estado que expand/contract garantiza compatible.
+# ---------------------------------------------------------------------------
+
+# -m1 y \S* (no .*): mismo motivo que ya documenta rollback.sh — con dos
+# líneas IMAGE_TAG= se toma sólo la primera, y \S* corta antes de un espacio
+# final o un \r de un archivo CRLF en vez de arrastrarlo adentro del valor.
+TAG_ANTERIOR=$(grep -m1 -oP '^IMAGE_TAG=\K\S*' "$DIR/.env")
+
+# El rollback automático NO reimplementa nada: invoca el mismo comando que
+# correría una persona. Así el camino de emergencia es el que se ejercita.
+rollback_y_salir() {
+  error "$1"
+  error "disparando rollback automático a $TAG_ANTERIOR"
+  if scripts/rollback.sh --a="$TAG_ANTERIOR" --objetivo="$OBJETIVO"; then
+    error "rollback ok: $OBJETIVO volvió a $TAG_ANTERIOR. NO se creó tag."
+  else
+    error "EL ROLLBACK TAMBIÉN FALLÓ. Ver el detalle de arriba."
+  fi
+  exit 1
+}
+
+log "paso 13/16: promoviendo arandano-app:$SHA (venía de $TAG_ANTERIOR)"
+sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${SHA}|" "$DIR/.env"
+# `env -u IMAGE_TAG`, belt-and-braces igual que en rollback.sh: este script no
+# exporta IMAGE_TAG en ningún punto (ver el comentario del paso 10), pero si
+# alguien lo tuviera exportado a mano en la shell que invoca deploy.sh, le
+# ganaría al .env recién reescrito. Costo cero, defensa contra un error ajeno
+# a este script.
+if ! ( cd "$DIR" && env -u IMAGE_TAG docker compose up -d --force-recreate app ); then
+  rollback_y_salir "la promoción falló"
+fi
+
+# Paso 14. Con plazo, no con reintentos infinitos: un healthcheck que espera
+# para siempre no es un gate.
+#
+# La comparación de sha es el bloqueante 8: el healthcheck puede dar 200 desde
+# el contenedor VIEJO si la promoción no reemplazó nada, y el deploy se
+# declararía exitoso aunque lo que respondió nunca haya sido lo que pasó el
+# smoke test.
+log "paso 14/16: healthcheck de $OBJETIVO (plazo 90s)"
+limite=$((SECONDS + 90))
+salud=""
+sano=false
+while (( SECONDS < limite )); do
+  salud=$(curl -fsS --max-time 5 "$URL_SALUD/api/health" 2>/dev/null) || salud=""
+  if [[ -n "$salud" ]] && health_ok "$salud" \
+     && [[ "$(sha_del_health "$salud")" == "$SHA" ]]; then
+    sano=true
+    break
+  fi
+  sleep 3
+done
+if [[ "$sano" != true ]]; then
+  rollback_y_salir "el healthcheck no dio sano con sha=$SHA en 90s (último: ${salud:-<sin respuesta>})"
+fi
+log "  $OBJETIVO responde sano con sha=$SHA"
+
+# ---------------------------------------------------------------------------
+# Paso 15. El tag va DESPUÉS del healthcheck: significa "esto estuvo vivo y sano
+# en producción", no "esto se intentó". Un deploy que rollbackea no consume
+# número, así que la secuencia no tiene huecos.
+#
+# Una falla acá NO dispara rollback. Si el push falla —se cayó la red, venció el
+# token— producción ya está viva y sana; revertirla por un problema de metadatos
+# convertiría un fallo cosmético en una caída.
+# ---------------------------------------------------------------------------
+
+if [[ "$TAGEA" == true ]]; then
+  log "paso 15/16: tag de git"
+  VERSION=$(proxima_version "$ultimo_tag" "$TIPO_VERSION")
+  nombres_migraciones=$(printf '%s\n' "$migraciones_nuevas" \
+    | sed -nE 's|^prisma/migrations/([^/]+)/migration\.sql$|\1|p' | paste -sd' ' -)
+  if git tag -a "$VERSION" -m "$(mensaje_de_tag "$SHA" "$nombres_migraciones")"; then
+    log "  $VERSION creado"
+    if git push origin "$VERSION"; then
+      log "  $VERSION pusheado a origin"
+    else
+      error "el tag $VERSION se creó pero NO se pudo pushear"
+      error "producción está sana; esto es metadatos. Reintentar: git push origin $VERSION"
+    fi
+  else
+    error "no se pudo crear el tag $VERSION. Producción está sana."
+  fi
+else
+  log "paso 15/16: objetivo=$OBJETIVO, no se tagea"
+fi
+
+log "paso 16/16: el trap vuelve a levantar arandano-dev"
+log "deploy ok: $OBJETIVO corriendo arandano-app:$SHA"
