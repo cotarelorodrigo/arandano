@@ -5,21 +5,11 @@
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 source scripts/lib/backup-comun.sh
-
-PASS=0
-FAIL=0
-ok()  { printf '  \033[32m✓\033[0m %s\n' "$1"; PASS=$((PASS + 1)); }
-bad() { printf '  \033[31m✗\033[0m %s\n' "$1"; FAIL=$((FAIL + 1)); }
-
-check_eq() {
-  local desc="$1" expected="$2" actual="$3"
-  if [[ "$expected" == "$actual" ]]; then ok "$desc"
-  else bad "$desc (esperado: $expected, obtenido: $actual)"; fi
-}
-check_true()  { if "${@:2}"; then ok "$1"; else bad "$1 (esperaba éxito)"; fi; }
-# stderr silenciado: los casos que deben fallar imprimen su propio mensaje de
-# error, y verlos mezclados con los ✓ hace que una corrida sana parezca rota.
-check_false() { if "${@:2}" 2>/dev/null; then bad "$1 (esperaba fallo)"; else ok "$1"; fi; }
+# ok/bad/check_eq/check_true/check_false y los contadores PASS/FAIL están en
+# lib-asserts.sh, no acá: un futuro test-*.sh los va a necesitar también, y
+# duplicarlos verbatim en un segundo archivo es cómo dos copias se
+# desincronizan sin que nadie lo note.
+source scripts/tests/lib-asserts.sh
 
 printf '\n\033[1mprefijo_motivo\033[0m\n'
 check_eq "nocturno va al prefijo real"      "prod" "$(prefijo_motivo nocturno)"

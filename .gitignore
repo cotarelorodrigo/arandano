@@ -42,3 +42,12 @@ next-env.d.ts
 
 # prisma
 /generated
+
+# claude code: settings.json (compartido) SÍ se commitea, por eso .claude/
+# no se ignora entero — sólo estas dos cosas, que nunca deberían.
+# worktrees/ son los worktrees de git que arma el harness para trabajar
+# aislado de la rama principal; no es código del repo.
+.claude/worktrees/
+# settings.local.json es config por máquina; el sufijo .local es la
+# convención para lo que no se comparte.
+.claude/settings.local.json

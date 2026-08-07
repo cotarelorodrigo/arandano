@@ -1,0 +1,55 @@
+# Stack de ensayo: la forma de producción, pero desechable.
+#
+# Existe para una sola cosa: correr la secuencia COMPLETA de deploy.sh sin
+# tocar clientes. Por eso copia la estructura de compose.prod.yml —env_file con
+# IMAGE_TAG interpolado, healthcheck, force-recreate— y no la de stage: si el
+# ensayo promoviera distinto que prod, el paso de promoción quedaría sin probar,
+# que es justo el que dispara el rollback.
+#
+# Lo que NO copia son los límites de recursos. Un ensayo corre CON producción
+# arriba, y en el tramo del ensayo en stage pueden coexistir los dos stacks
+# descartables: prod 3200 + stage 1280 + ensayo 1280 + ~1,1 GB de sistema
+# ≈ 6,9 GB sobre 7,6. Entra sólo porque deploy.sh frenó arandano-dev y sus
+# 2304 MiB. Con los límites de prod (3200) no entraría.
+name: arandano-ensayo
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    env_file: .env
+    # Base efímera en tmpfs: cada ensayo arranca de cero, que es lo que hace
+    # que el ensayo de la migración signifique algo. Mismos valores medidos que
+    # stage y verify-backup.sh: el tmpfs va por debajo de mem_limit porque sus
+    # páginas cuentan 1:1 contra el cgroup y no son page cache descartable.
+    tmpfs:
+      - /var/lib/postgresql/data:size=320m,mode=1777
+    cpus: 0.25
+    cpu_shares: 128
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    image: "arandano-app:${IMAGE_TAG:?IMAGE_TAG es obligatorio}"
+    env_file: .env
+    environment:
+      ARANDANO_STACK: ensayo
+      ARANDANO_DB_ESPERADA: arandano_ensayo
+    # Sólo por Tailscale, como dev y stage. Este stack no existe desde internet.
+    ports:
+      - "100.64.81.63:3002:3000"
+    cpus: 0.5
+    cpu_shares: 128
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy

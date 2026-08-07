@@ -1,15 +1,21 @@
-# Runbook: los tres stacks
+# Runbook: los stacks
 
 | Stack | Levantar | Escucha en |
 |---|---|---|
 | dev | `docker compose -f docker/compose.dev.yml up -d` | `http://100.64.81.63:3000` |
 | stage | `IMAGE_TAG=<sha> docker compose -f docker/compose.stage.yml up -d` | `http://100.64.81.63:3001` |
+| ensayo | `IMAGE_TAG=<sha> docker compose -f docker/compose.ensayo.yml up -d` | `http://100.64.81.63:3002` |
 | prod | `cd /srv/arandano/prod && docker compose up -d` | `https://<ip-pública>` (hoy sólo `https://localhost`, ver más abajo) |
+
+`arandano-ensayo` es descartable, igual que stage: existe únicamente para que
+`scripts/deploy.sh --objetivo=ensayo` corra la secuencia completa del gate
+—incluida la promoción— sin tocar clientes. Escucha sólo en la IP de
+Tailscale, nunca en internet. Ver *Deploy y rollback* más abajo.
 
 ## Reglas
 
-- **Cuidado con `down -v` desde el workspace.** Los tres compose declaran `name:`, así que `-f` solo ya resuelve el proyecto correcto y `-p` es redundante. El riesgo real es otro: `docker compose -f docker/compose.prod.yml down -v`, tipeado desde `/root/arandano`, apunta a **los volúmenes de producción** — `arandano-prod_pgdata` incluido. Es un archivo de dev que borra datos de clientes. Antes de cualquier `down -v`, mirar **qué compose** dice el `-f`, no desde qué directorio se está corriendo.
-- **`arandano-dev` se frena antes de que arranque el BUILD**, no antes de stage. La memoria no cierra de otra forma: prod (3200 MiB) + dev (2304) + el build (2048) + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6 GB. Con dev abajo el pico queda en ~7.5 GB, que es el número que documenta el presupuesto. Como el build es el primer paso del deploy y stage viene después, frenar dev al principio también cubre la regla vieja de que dev y stage no corren juntos (sus límites de CPU sumados pasan de un core: dev 0.75 + 0.25, stage 0.5 + 0.25). Se vuelve a levantar `arandano-dev` recién al terminar el deploy. `deploy.sh` todavía no existe (ver bloqueantes en `CLAUDE.md`); hasta que esté escrito, esta secuencia es manual.
+- **Cuidado con `down -v` desde el workspace.** Los cuatro compose declaran `name:`, así que `-f` solo ya resuelve el proyecto correcto y `-p` es redundante. El riesgo real es otro: `docker compose -f docker/compose.prod.yml down -v`, tipeado desde `/root/arandano`, apunta a **los volúmenes de producción** — `arandano-prod_pgdata` incluido. Es un archivo de dev que borra datos de clientes. Antes de cualquier `down -v`, mirar **qué compose** dice el `-f`, no desde qué directorio se está corriendo.
+- **`arandano-dev` se frena antes de que arranque el BUILD**, no antes de stage. La memoria no cierra de otra forma: prod (3200 MiB) + dev (2304) + el build (2048) + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6 GB. Con dev abajo el pico queda en ~7.5 GB, que es el número que documenta el presupuesto. Como el build es el primer paso del deploy y stage viene después, frenar dev al principio también cubre la regla vieja de que dev y stage no corren juntos (sus límites de CPU sumados pasan de un core: dev 0.75 + 0.25, stage 0.5 + 0.25). Se vuelve a levantar `arandano-dev` recién al terminar el deploy. `scripts/deploy.sh` ya hace esta secuencia solo, en su paso 6/16 y en el trap de limpieza — ver *Deploy y rollback* más abajo.
 - Producción no se edita: se corre una imagen. Nada de editores en `/srv/arandano/prod/` — ese directorio sólo tiene `docker-compose.yml`, `.env`, el `Caddyfile` y los volúmenes, sin código fuente.
 - Buildear siempre con el presupuesto de recursos puesto (ver la sección de abajo — el comando importa, las banderas "obvias" no hacen nada):
 
@@ -80,7 +86,7 @@ docker build \
   -t arandano-app:$(git rev-parse --short HEAD) .
 ```
 
-Sin este argumento no hay forma de que `/api/health` reporte qué código está corriendo, y ese dato es el que distingue "la app respondió" de "la app que se esperaba respondió". `deploy.sh` también debe negarse a arrancar el build si el working tree está sucio (`git diff --quiet`): buildear con cambios sin commitear tagea la imagen con un SHA que no describe lo que realmente contiene.
+Sin este argumento no hay forma de que `/api/health` reporte qué código está corriendo, y ese dato es el que distingue "la app respondió" de "la app que se esperaba respondió". `deploy.sh` también se niega a arrancar el build si el working tree está sucio (`git status --porcelain`, no `git diff` + `git diff --cached`: esos dos no ven archivos sin trackear, y una migración nunca `git add`eada es justo el caso que hay que frenar acá): buildear con cambios sin commitear tagea la imagen con un SHA que no describe lo que realmente contiene.
 
 **`--target runtime` tampoco es opcional.** `docker build` sin `--target` buildea la **última** etapa del Dockerfile, no la que uno tiene en la cabeza. Cuando la etapa `migrate` quedó al final del archivo, este mismo comando produjo el CLI de Prisma —1,36 GB, con `ENTRYPOINT ["npx","prisma"]`— etiquetado como `arandano-app:<sha>` y listo para promoverse a producción. El Dockerfile ahora deja `runtime` último a propósito, pero las dos defensas van juntas: la de adentro se pierde en cuanto alguien agrega una etapa al final.
 
@@ -142,6 +148,97 @@ Cada suite se puede correr sola pasándola por nombre (`./scripts/verify-infra.s
 
 **No correr dos instancias a la vez.** Los contenedores de prueba ya llevan nombre único por corrida (`arandano-logspam-$$`, `arandano-memhog-$$`, `arandano-cpuhog-$$`), así que dos corridas simultáneas ya no se pisan entre sí. Lo que sigue sin poder solaparse es la suite de estrés: **frena el Postgres de producción**, y dos corridas encimadas pueden dejar una parando la base justo cuando la otra da por sentado que está arriba.
 
+## Deploy y rollback
+
+```bash
+scripts/deploy.sh                     # patch: fixes, refactors, migraciones aditivas
+scripts/deploy.sh --minor             # minor: algo que el cliente ve
+scripts/deploy.sh --objetivo=ensayo   # la secuencia completa, sin tocar prod
+```
+
+El script frena `arandano-dev` al arrancar (paso 6/16, antes del build — ver
+la regla de arriba) y lo vuelve a levantar al terminar, pase lo que pase.
+Toma un `flock`: si ya hay un deploy corriendo, **aborta** en vez de
+saltearse la corrida — salir con 0 sin haber promovido es cómo alguien cree
+que deployó algo que nunca deployó.
+
+Los 16 pasos, en orden: working tree limpio → migraciones nuevas sin SQL
+destructivo → `schema.prisma` sincronizado con las migraciones (shadow
+database local, mismo patrón que `verify-backup.sh`) → `npm test` →
+typecheck y lint → frenar `arandano-dev` → build de `arandano-app` y
+`arandano-migrate` tageados con el SHA → levantar `arandano-stage` y ensayar
+la migración → smoke tests contra stage → migraciones del repo == migraciones
+del objetivo, en las dos direcciones → backup pre-migración → `migrate
+deploy` contra el objetivo → promoción de la imagen → healthcheck con
+comparación de SHA → tag de git (salteado con `--objetivo=ensayo`, que
+tampoco pushea nada) → el trap vuelve a levantar `arandano-dev`. El chequeo
+de schema (paso 3) corre con el `npx prisma` del propio repo, así que se
+queda en el preflight en vez de esperar a que exista una imagen buildeada.
+
+**Tres zonas de fallo.** Hasta `migrate deploy` inclusive, una falla aborta y no
+hay nada que revertir: producción sigue con su imagen anterior, y si la
+migración llegó a correr, el schema nuevo con el código viejo es un estado
+compatible por construcción (expand/contract). Desde la promoción, una falla
+dispara el rollback automático. La creación del tag es la excepción: si falla,
+producción ya está sana y **no** se rollbackea.
+
+**Códigos de salida** — lo primero que conviene mirar a las 11 de la noche,
+porque cada uno dice algo distinto sobre qué le pasó a producción (ver
+`scripts/deploy.sh --help` para el texto completo):
+
+| Código | Significado | ¿Tocó el objetivo? |
+|---|---|---|
+| `0` | Deploy ok, sin nada pendiente. | Sí — imagen nueva, sana, tageada. |
+| `1` | Abortó en los pasos 1-12, antes de tocar el objetivo. | No — nada que revisar ahí. |
+| `2` | Uso inválido (argumentos). | No. |
+| `3` | El rollback automático **también** falló. | Indeterminado — el peor caso; el script imprime qué imagen corría, a cuál intentó volver y qué comando correr. Atención manual inmediata. |
+| `4` | El objetivo quedó sirviendo la imagen **nueva y sana**, pero el tag de git no se pudo crear o pushear. | Sí, correctamente — sólo el tag queda pendiente, no dispara rollback. |
+| `5` | Rollbackeó con éxito. | Sí — terminó sirviendo la imagen **anterior**, sana. |
+| `6` | El deploy salió bien, pero la **limpieza de la máquina** falló: `arandano-dev` no volvió a levantar, `arandano-stage` quedó arriba, o las dos. | Sí, correctamente — el objetivo sirve la imagen nueva y sana; lo roto es el entorno de trabajo del servidor. |
+| `130` / `143` | Interrumpido por señal (Ctrl-C / `TERM`). Frena donde estaba y corre la limpieza igual. | Depende de qué paso lo agarró — el log dice cuál fue el último. |
+
+`1` y `5` dejan las dos al objetivo intacto, pero son mañanas distintas: "no
+pasó nada" contra "se migró, se promovió y se revirtió solo". `4` y `6` son la
+otra distinción que importa: en las dos el objetivo está bien y lo que falta es
+otra cosa, pero se arreglan distinto — el `4` con un `git push origin <tag>`, el
+`6` con un `docker compose -f docker/compose.dev.yml up -d --wait` (o bajando
+`arandano-stage`) en el servidor. Por eso son códigos distintos y no uno solo:
+un código compartido obliga a leer el log para saber cuál de las dos cosas hacer.
+
+Que `6` exista es un arreglo, no un detalle: hasta la revisión final de la rama
+ese caso salía `1`, o sea el código documentado como "abortó sin tocar el
+objetivo, nada pasó" — con producción sirviendo código nuevo bajo un tag nuevo,
+porque la limpieza corre **después** de la promoción, el healthcheck y el tag.
+
+**`--no-deps` en la promoción y en el rollback no es una optimización, es
+obligatorio — no sacarlo.** Sin él, `docker compose up -d --force-recreate
+app` recrea también el contenedor de Postgres. La causa **no** es
+`--force-recreate`: es que `postgres` y `app` comparten el mismo `env_file:
+.env`, así que reescribir `IMAGE_TAG` para promover cambia el entorno
+*computado* de postgres, Compose lo ve driftado respecto del contenedor vivo,
+y lo recrea al pasar por él como dependencia de `app`. En producción eso
+reinicia la base de los clientes en cada deploy sin ninguna necesidad — una
+promoción cambia la imagen de la app, no la de la base. El detalle completo,
+con las cuatro mediciones que descartan `--force-recreate` como causa, está
+en el comentario del paso 13 de `scripts/deploy.sh`.
+
+**Rollback a mano**, para lo que el healthcheck no ve:
+
+```bash
+scripts/rollback.sh            # al anteúltimo tag
+scripts/rollback.sh --a=<sha>  # a una imagen concreta
+```
+
+No toca la base de datos. Nunca. Por eso el gate se niega ante una migración
+destructiva: si el schema nuevo no soporta el código viejo, revertir la imagen
+no alcanza.
+
+**El hook de pre-commit** frena una migración destructiva antes de que entre al
+repo. Se activa con `git config core.hooksPath .githooks`, que ya está en
+`scripts/setup-host.sh`. Es una red temprana, no la definitiva — sólo cubre
+migraciones destructivas, no los otros chequeos del gate — y `deploy.sh`
+vuelve a chequear lo mismo porque `--no-verify` existe.
+
 ## Certificado de producción, hoy
 
-`arandano.app` todavía resuelve a IPs de parking de AWS, así que el `Caddyfile` de prod sirve únicamente el host `localhost` con `tls internal` (certificado interno, no público). Cuando el DNS del dominio real apunte al servidor, el cutover es agregar un site block nuevo para el dominio con DNS-01, dejando el de `localhost` intacto para diagnóstico local — no reemplazar el bloque existente.
+`arandano.app` hoy no resuelve — `dig arandano.app` devuelve NXDOMAIN, medido el 2026-08-07 (ver *Bloqueantes antes del cutover de DNS* en `CLAUDE.md`, punto 1, para qué falta confirmar antes de asumir que sólo falta apuntarlo) — así que el `Caddyfile` de prod sirve únicamente el host `localhost` con `tls internal` (certificado interno, no público). Cuando el DNS del dominio real apunte al servidor, el cutover es agregar un site block nuevo para el dominio con DNS-01, dejando el de `localhost` intacto para diagnóstico local — no reemplazar el bloque existente.

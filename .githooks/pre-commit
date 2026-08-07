@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Frena un commit que traiga una migración destructiva.
+#
+# Vive versionado en .githooks/ y no en .git/hooks/, que no se versiona. Se
+# activa con `git config core.hooksPath .githooks` — línea que está en
+# scripts/setup-host.sh, porque un hook que hay que acordarse de instalar no
+# está instalado.
+#
+# Este es el ÚNICO chequeo que va acá. Los otros dos del gate necesitan
+# levantar un Postgres, y un hook que hace eso en cada commit sobre 2 vCPU
+# termina con alguien usando --no-verify. Un hook desactivado no protege nada.
+#
+# Es una red temprana, no la definitiva: deploy.sh vuelve a chequear lo mismo,
+# porque --no-verify existe.
+set -uo pipefail
+cd "$(git rev-parse --show-toplevel)"
+source scripts/lib/deploy-comun.sh
+
+# Filtro por EXCLUSIÓN (minúscula) y no por lista de inclusión: el criterio
+# es "toda migración que trae SQL nuevo para juzgar", y una lista de letras a
+# incluir (A, C, M...) es tan larga como estados tiene git — se probó con
+# ACM y a un `git mv` puro (status R, sin cambio de contenido) le bastó no
+# estar en la lista para colarse. `d` es la única exclusión que hace falta:
+# una migración BORRADA no tiene SQL que evaluar, así que no hay nada que
+# leer en `git show ":$archivo"` (fallaría). Todo lo demás — agregado,
+# modificado, renombrado puro o con cambios, tipo de archivo cambiado — trae
+# contenido nuevo bajo esa ruta y tiene que pasar por el analizador.
+archivos=$(git diff --cached --name-only --diff-filter=d -- 'prisma/migrations/**/migration.sql')
+[[ -n "$archivos" ]] || exit 0
+
+encontrado=0
+while IFS= read -r archivo; do
+  # El contenido STAGEADO, no el del working tree: es lo que se va a commitear.
+  sql=$(git show ":$archivo")
+  if patron=$(migracion_destructiva "$sql"); then
+    # "motivo" y no "patrón": migracion_destructiva no siempre devuelve un
+    # regex de la lista de la etapa 3. El emparejamiento de constraints y el
+    # caso de SQL no analizable devuelven una frase en prosa (ver el comentario
+    # de la función en deploy-comun.sh), y "patrón: SQL no analizable: ..."
+    # leería raro. "motivo" sirve para los dos casos por igual.
+    error "migración destructiva en $archivo (motivo: $patron)"
+    encontrado=1
+  fi
+done <<< "$archivos"
+
+if [[ "$encontrado" -ne 0 ]]; then
+  cat >&2 <<'EOF'
+
+El rollback automático revierte la IMAGEN, no la base. Si el schema nuevo no
+soporta la versión anterior del código, el rollback no funciona y —sin feature
+flags— no queda ninguna red.
+
+Expand/contract: primero se deploya el código que deja de usar la columna, y
+el DROP viaja en un deploy POSTERIOR.
+
+Si de verdad corresponde (una limpieza de contract cuyo código ya no está en
+producción hace varios deploys), commitear con --no-verify y dejar dicho en el
+mensaje por qué es seguro.
+EOF
+  exit 1
+fi
