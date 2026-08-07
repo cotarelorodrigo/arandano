@@ -389,5 +389,25 @@ check_false "un JSON inválido no está sano" health_ok 'esto no es json'
 check_eq "extrae el sha" "25297f7" "$(sha_del_health "$SANO")"
 check_false "sin info.sha es error" sha_del_health '{"status":"ok","checks":[{"ok":true}]}'
 
+printf '\n\033[1mpostgres_definitivo_listo\033[0m\n'
+LINEA='database system is ready to accept connections'
+check_false "sin logs no está listo"                        postgres_definitivo_listo ""
+check_false "logs sin la línea no está listo"                postgres_definitivo_listo "algo, algo, LOG:  otra cosa"
+# Una sola aparición es el servidor TEMPORAL del init, todavía no el
+# definitivo — es exactamente el caso que rompía setup-db-roles.sh antes de
+# este fix.
+check_false "una sola aparición (servidor temporal) no está listo" \
+  postgres_definitivo_listo "LOG:  $LINEA"
+check_true  "dos apariciones (temporal + definitivo) sí está listo" \
+  postgres_definitivo_listo "LOG:  $LINEA
+algo en el medio
+LOG:  $LINEA"
+# Tres o más (un restart adicional, por ejemplo) sigue siendo "listo": el
+# umbral es "al menos dos", no "exactamente dos".
+check_true  "tres apariciones también está listo" \
+  postgres_definitivo_listo "$LINEA
+$LINEA
+$LINEA"
+
 printf '\n%d ok, %d fallan\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]

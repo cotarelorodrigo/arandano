@@ -81,7 +81,7 @@ SOMBRA_ACTIVA=false
 # pisáramos con el del último comando de limpieza, un deploy fallido podría
 # reportar éxito.
 limpiar() {
-  local codigo=$?
+  local codigo=$? rc=0 fallo_limpieza=false
   set +e
   # La shadow database primero: 512 MiB más 320 MiB de tmpfs pinchados en una
   # caja de 7.6 GB, justo en el momento en que alguien aborta un deploy y está
@@ -96,19 +96,51 @@ limpiar() {
     log "bajando arandano-stage"
     # IMAGE_TAG es obligatorio en compose.stage.yml (con `:?`) y Compose lo
     # exige para CUALQUIER subcomando, incluido `down` — lo interpola al
-    # parsear el archivo, no sólo al levantar el servicio. Sin pasarlo acá
-    # este `down -v` fallaría en silencio (stdout/stderr van a /dev/null y
-    # `set +e` ya está activo) y la limpieza dejaría stage arriba. `${SHA:-}`
-    # y no `$SHA` a secas: si algo interrumpe el script ANTES de que la línea
-    # de más abajo asigne SHA, esta función igual tiene que poder evaluarse
-    # bajo `set -u` — aunque en la práctica el `if` de arriba ya garantiza que
+    # parsear el archivo, no sólo al levantar el servicio. `${SHA:-}` y no
+    # `$SHA` a secas: si algo interrumpe el script ANTES de que la línea de
+    # más abajo asigne SHA, esta función igual tiene que poder evaluarse bajo
+    # `set -u` — aunque en la práctica el `if` de arriba ya garantiza que
     # sólo se llega acá si stage llegó a levantarse, y eso no pasa antes de
     # que SHA exista.
-    IMAGE_TAG="${SHA:-}" docker compose -f docker/compose.stage.yml down -v >/dev/null 2>&1
+    #
+    # SIN silenciar la salida ni el exit code: un `down -v` que fallara acá
+    # se leía como éxito (stdout/stderr a /dev/null, código descartado) y
+    # dejaba ~1,28 GB de tmpfs reservados — la aritmética de memoria del
+    # PRÓXIMO deploy (prod 3200 + build 2048 + esos 1280 + sistema) deja de
+    # cerrar sin que nada lo avise. Encontrado por revisión y reproducido:
+    # con el `down` roto a propósito, el script igual imprimía "ensayo en
+    # stage ok" y salía 0 con stage arriba. `rc` se captura explícito (no con
+    # `||` en el `if`) porque `set +e` ya está activo en esta función.
+    IMAGE_TAG="${SHA:-}" docker compose -f docker/compose.stage.yml down -v
+    rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+      fallo_limpieza=true
+      error "no se pudo bajar arandano-stage (exit $rc) — quedó arriba con ~1,28 GB de tmpfs reservados; bajarlo a mano (docker compose -f docker/compose.stage.yml down -v) antes del próximo deploy"
+    fi
   fi
   if [[ "$DEV_FRENADA" == true ]]; then
     log "volviendo a levantar arandano-dev"
-    docker compose -f docker/compose.dev.yml up -d >/dev/null 2>&1
+    # --wait: sin él, `up -d` vuelve en cuanto los contenedores arrancan, no
+    # cuando postgres está realmente healthy — un "éxito" acá sería débil.
+    # Mismo motivo que el paso 8 con stage. Y sin silenciar salida ni exit
+    # code, por la misma razón que el `down -v` de arriba: encontrado por
+    # revisión, con el `up` roto a propósito el script igual terminaba en 0
+    # sin decir que dev había quedado abajo.
+    docker compose -f docker/compose.dev.yml up -d --wait
+    rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+      fallo_limpieza=true
+      error "arandano-dev no volvió a levantar (exit $rc) — atenderlo a mano antes de reintentar deploy.sh"
+    fi
+  fi
+  # Un deploy que terminó bien (codigo=0) pero dejó la limpieza a medias no es
+  # un éxito: es justo el defecto que encontró la revisión — "ensayo en stage
+  # ok" en pantalla y salida 0 con dev abajo. Si el codigo original YA era
+  # distinto de 0, se respeta ese (es la causa raíz real); si era 0, una
+  # limpieza rota lo vuelve 1 para que quien invoque el script (un cron, un
+  # operador, un futuro CI) no lea éxito donde hay máquina rota.
+  if [[ "$fallo_limpieza" == true && "$codigo" -eq 0 ]]; then
+    codigo=1
   fi
   exit "$codigo"
 }
@@ -292,8 +324,14 @@ log "preflight ok"
 # una caja de 7,6 GB. Con dev abajo desde acá el pico queda en ~7,5 GB. De paso
 # queda cubierta la regla de que dev y stage no corren juntos.
 log "paso 6/16: frenando arandano-dev"
-docker compose -f docker/compose.dev.yml down
+# DEV_FRENADA se marca ANTES del `down`, no después: si una señal interrumpe
+# el script durante este `down` mismo, el trap tiene que saber que hay que
+# intentar volver a levantar dev — marcarla después dejaría la corrida
+# interrumpida con dev abajo y el flag todavía en false, y el trap no haría
+# ni diría nada. El `up -d` del trap es idempotente, así que marcarla de más
+# temprano no tiene costo.
 DEV_FRENADA=true
+docker compose -f docker/compose.dev.yml down
 
 # Paso 7. --target explícito en las dos: `docker build` sin --target buildea la
 # ÚLTIMA etapa del archivo, y el día que alguien agregue una al final,
@@ -322,41 +360,71 @@ log "paso 8/16: levantando arandano-stage y ensayando la migración"
 # escribiendo IMAGE_TAG en /srv/arandano/prod/.env y corriendo compose ahí —
 # un IMAGE_TAG exportado acá seguiría vivo en ese momento y le ganaría al
 # .env recién escrito, promoviendo la imagen equivocada. Es el mismo defecto
-# que ya apareció en rollback.sh (corregido ahí con `env -u IMAGE_TAG`); acá
-# se evita de raíz no exportando nunca la variable.
+# que ya apareció en rollback.sh (corregido ahí con `env -u IMAGE_TAG`, que
+# sigue siendo belt-and-braces ahí aunque acá nunca se exporte — ver su
+# comentario). Acá se evita de raíz no exportando nunca la variable.
+#
+# `down -v` PRIMERO, tolerante a que no haya nada que bajar (mismo patrón que
+# el paso 3 con `docker rm -f "$SOMBRA" || true`): sin esto, un stage que
+# quedó arriba de una corrida anterior — por la limpieza fallida que arregla
+# el comentario del trap más arriba, un SIGKILL, un OOM o un reboot a mitad
+# de una corrida — se REUSA en vez de recrearse. Encontrado por revisión y
+# reproducido: contra un stage con la migración YA aplicada, este paso
+# imprimía "No pending migrations to apply." y el gate salía verde sin haber
+# ensayado nada — exactamente lo que este bloque de comentarios de arriba
+# dice que stage existe para evitar.
+IMAGE_TAG="$SHA" docker compose -f docker/compose.stage.yml down -v >/dev/null 2>&1 || true
 IMAGE_TAG="$SHA" docker compose -f docker/compose.stage.yml up -d --wait postgres
 
-# Los roles de stage no existen: la base nace vacía en cada corrida. Las
-# contraseñas están en claro en compose.stage.yml y eso es aceptable sólo acá,
-# porque la base es efímera y nunca ve datos de clientes.
+# `--wait` de la línea de arriba confía en el healthcheck (`pg_isready`), que
+# puede responder OK contra el servidor TEMPORAL que Postgres levanta para
+# sus scripts de init, antes de apagarlo y arrancar recién ahí el DEFINITIVO
+# — el mismo arranque en dos fases que el paso 3 ya sortea con la shadow
+# database. En la ventana entre uno y otro, una conexión nueva se cae con
+# "Connection refused" o "the database system is starting up" aunque compose
+# ya haya marcado el contenedor healthy. Confirmado en la práctica contra
+# arandano-stage real (ver task-8-report.md).
 #
-# Reintenta unas pocas veces a propósito: `--wait` de acá arriba confía en el
-# healthcheck (`pg_isready`), y `pg_isready` puede responder OK contra el
-# servidor TEMPORAL que Postgres levanta para sus scripts de init, antes de
-# apagarlo y arrancar recién ahí el DEFINITIVO — el mismo arranque en dos
-# fases que el paso 3 ya tiene que sortear con la shadow database (ver su
-# comentario, "la señal inequívoca es la SEGUNDA aparición de esta línea").
-# En la ventana entre uno y otro, una conexión nueva se cae con "Connection
-# refused" o "the database system is starting up" aunque compose ya haya
-# marcado el contenedor healthy. Confirmado en la práctica: sin este retry,
-# esto se reprodujo en 3 de 4 corridas reales contra stage. setup-db-roles.sh
-# es idempotente a propósito (ver su propio comentario), así que reintentarlo
-# es más simple y más robusto que enseñarle a `--wait` a distinguir las dos
-# fases del arranque de Postgres.
-intentos_roles=0
-until scripts/setup-db-roles.sh \
+# `postgres_definitivo_listo` (deploy-comun.sh, con test unitario) cuenta la
+# señal real en los logs en vez de reintentar a ciegas: un reintento a ciegas
+# alrededor de setup-db-roles.sh imprime un `psql: error: Connection refused`
+# en rojo en el camino FELIZ de todo deploy normal — entrena a mirar de
+# reojo el único output que no puede mirarse de reojo — y además convierte
+# una falla de CONFIGURACIÓN real (una contraseña mal escrita, por ejemplo)
+# en un veredicto de timing: reintentarla 10 veces contra un rechazo de
+# autenticación de verdad reporta "no prendió tras 10 intentos" en vez de la
+# `FATAL: password authentication failed` que sí explica el problema.
+# Determinístico y acotado: si esto no aparece en 30s, algo más grave está
+# pasando y seguir esperando no lo arregla.
+limite_postgres_stage=$(( $(date +%s) + 30 ))
+until postgres_definitivo_listo "$(docker logs arandano-stage-postgres-1 2>&1)"; do
+  if [[ "$(date +%s)" -ge "$limite_postgres_stage" ]]; then
+    error "el Postgres de arandano-stage no terminó su arranque en dos fases en 30s"
+    exit 1
+  fi
+  sleep 1
+done
+
+# Los roles de stage no existen: la base nace vacía en cada corrida (recién
+# forzado un par de líneas más arriba). Las contraseñas están en claro en
+# compose.stage.yml y eso es aceptable sólo acá, porque la base es efímera y
+# nunca ve datos de clientes.
+#
+# COPLADO A compose.stage.yml: usuario, contraseñas y nombre de base de acá
+# abajo (y el MIGRATE_DATABASE_URL un poco más abajo) tienen que coincidir
+# EXACTO con las variables `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`
+# del servicio `postgres` de ese archivo. Si uno de los dos lados cambia sin
+# el otro, esto no falla con un error claro — o bien setup-db-roles.sh no se
+# conecta (con el fix de arriba, eso ya no se confunde con el arranque en dos
+# fases porque ese wait ya pasó), o peor, se conecta contra un usuario que ya
+# no es el que compose.stage.yml espera, y stage queda en un estado que no
+# coincide con lo que la app de al lado tiene configurado.
+scripts/setup-db-roles.sh \
   --network=arandano-stage_default \
   --url="postgres://arandano_stage:efimero-no-persiste@postgres:5432/arandano_stage" \
   --owner-password=efimero-owner \
   --app-password=efimero-app \
-  --con-createdb; do
-  intentos_roles=$((intentos_roles + 1))
-  if [[ "$intentos_roles" -ge 10 ]]; then
-    error "setup-db-roles.sh contra arandano-stage no prendió tras $intentos_roles intentos"
-    exit 1
-  fi
-  sleep 2
-done
+  --con-createdb
 
 docker run --rm --network arandano-stage_default \
   -e MIGRATE_DATABASE_URL="postgres://arandano_owner:efimero-owner@postgres:5432/arandano_stage" \
@@ -367,8 +435,19 @@ docker run --rm --network arandano-stage_default \
 # fallas intermitentes del gate se leen como bugs del código.
 IMAGE_TAG="$SHA" docker compose -f docker/compose.stage.yml up -d --wait app
 
+# El host:puerto se LEE de compose en vez de repetirlo a mano (mismo patrón
+# que ya usa el paso 3 con `docker port "$SOMBRA" 5432/tcp`): si alguien
+# cambia el mapeo de puertos de compose.stage.yml, este comando lo sigue
+# solo. Escribirlo literal acá es exactamente cómo esto termina probando un
+# stack que ya no es el que compose.stage.yml describe.
+url_stage=$(docker port arandano-stage-app-1 3000/tcp | head -1)
+if [[ -z "$url_stage" ]]; then
+  error "no se pudo leer el puerto publicado de arandano-stage-app-1"
+  exit 1
+fi
+
 log "paso 9/16: smoke tests contra stage"
-scripts/smoke.sh http://100.64.81.63:3001 "$SHA"
+scripts/smoke.sh "http://${url_stage}" "$SHA"
 
 IMAGE_TAG="$SHA" docker compose -f docker/compose.stage.yml down -v
 log "ensayo en stage ok"

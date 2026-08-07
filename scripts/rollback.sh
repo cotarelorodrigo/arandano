@@ -148,15 +148,20 @@ sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${DESTINO}|" "$DIR/.env"
 #
 # `env -u IMAGE_TAG` y no un `docker compose up` a secas: Compose resuelve
 # `${IMAGE_TAG}` primero contra el ENTORNO del proceso y sólo si no está ahí
-# cae al `.env` — así que un IMAGE_TAG heredado (deploy.sh exporta el sha
-# NUEVO en su propio entorno para levantar stage, y después llama a este
-# script como su rollback automático DESDE ESE MISMO entorno) le gana al
-# valor que el sed de la línea de arriba acaba de escribir. El contrato
-# entero de este script es "el .env es la fuente de verdad de lo que corre";
-# heredar el sha equivocado desde una variable de entorno lo rompe en
-# silencio, y encima en el caso más común (la imagen heredada SÍ existe
-# localmente, así que `up` no falla — recién lo atrapa la comparación de sha
-# más abajo, 90 segundos después, sin que nada en pantalla diga por qué).
+# cae al `.env` — así que un IMAGE_TAG heredado desde el entorno le ganaría al
+# valor que el sed de la línea de arriba acaba de escribir. deploy.sh HOY no
+# exporta IMAGE_TAG en ningún punto — lo pasa inline a cada comando de stage,
+# a propósito, para no arriesgar justo este defecto (ver el comentario donde
+# lo hace) — así que esto es belt-and-braces: defensa contra que alguien lo
+# tenga exportado a mano en su propia shell antes de invocar este script, o
+# contra que un cambio futuro en deploy.sh vuelva a introducirlo sin que
+# nadie repare en esta dependencia cruzada entre los dos scripts. El
+# contrato entero de este script es "el .env es la fuente de verdad de lo
+# que corre"; heredar el sha equivocado desde una variable de entorno lo
+# rompe en silencio, y encima en el caso más común (la imagen heredada SÍ
+# existe localmente, así que `up` no falla — recién lo atrapa la comparación
+# de sha más abajo, 90 segundos después, sin que nada en pantalla diga por
+# qué).
 if ! ( cd "$DIR" && env -u IMAGE_TAG docker compose up -d --force-recreate app ); then
   fallar "EL ROLLBACK FALLÓ AL LEVANTAR EL CONTENEDOR (el .env YA quedó reescrito con IMAGE_TAG=$DESTINO)"
 fi

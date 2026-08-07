@@ -436,3 +436,26 @@ sha_del_health() {
   fi
   printf '%s\n' "$sha"
 }
+
+# ¿El Postgres que escribió estos logs ya terminó su arranque en dos fases?
+# El entrypoint de la imagen levanta un servidor TEMPORAL para correr sus
+# scripts de init (crear el rol, la base), lo apaga, y recién ahí arranca el
+# DEFINITIVO — y la línea "database system is ready to accept connections"
+# aparece una vez por cada uno. `pg_isready` (y por lo tanto el healthcheck de
+# `docker compose ... --wait`) puede responder OK contra el servidor TEMPORAL,
+# así que confiar en la primera aparición deja una ventana real donde una
+# conexión nueva se cae con "Connection refused" o "the database system is
+# starting up" aunque compose ya haya marcado el contenedor healthy —
+# reproducido en la práctica contra arandano-stage (ver task-8-report.md).
+# Contar hasta la SEGUNDA aparición es la señal inequívoca: mismo criterio que
+# ya usa a mano el paso 3 de deploy.sh (shadow database) y
+# test/postgres-efimero.ts.
+#
+# Pura: recibe el texto de `docker logs` ya leído, no lo lee ella misma — eso
+# es lo que la hace testeable sin Docker. El llamador (deploy.sh) es quien
+# hace `docker logs` en un loop acotado y decide cuándo rendirse.
+postgres_definitivo_listo() {
+  local logs="${1:-}" n
+  n=$(printf '%s' "$logs" | grep -c 'database system is ready to accept connections' || true)
+  [[ "$n" -ge 2 ]]
+}
