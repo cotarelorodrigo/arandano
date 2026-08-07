@@ -329,12 +329,34 @@ IMAGE_TAG="$SHA" docker compose -f docker/compose.stage.yml up -d --wait postgre
 # Los roles de stage no existen: la base nace vacía en cada corrida. Las
 # contraseñas están en claro en compose.stage.yml y eso es aceptable sólo acá,
 # porque la base es efímera y nunca ve datos de clientes.
-scripts/setup-db-roles.sh \
+#
+# Reintenta unas pocas veces a propósito: `--wait` de acá arriba confía en el
+# healthcheck (`pg_isready`), y `pg_isready` puede responder OK contra el
+# servidor TEMPORAL que Postgres levanta para sus scripts de init, antes de
+# apagarlo y arrancar recién ahí el DEFINITIVO — el mismo arranque en dos
+# fases que el paso 3 ya tiene que sortear con la shadow database (ver su
+# comentario, "la señal inequívoca es la SEGUNDA aparición de esta línea").
+# En la ventana entre uno y otro, una conexión nueva se cae con "Connection
+# refused" o "the database system is starting up" aunque compose ya haya
+# marcado el contenedor healthy. Confirmado en la práctica: sin este retry,
+# esto se reprodujo en 3 de 4 corridas reales contra stage. setup-db-roles.sh
+# es idempotente a propósito (ver su propio comentario), así que reintentarlo
+# es más simple y más robusto que enseñarle a `--wait` a distinguir las dos
+# fases del arranque de Postgres.
+intentos_roles=0
+until scripts/setup-db-roles.sh \
   --network=arandano-stage_default \
   --url="postgres://arandano_stage:efimero-no-persiste@postgres:5432/arandano_stage" \
   --owner-password=efimero-owner \
   --app-password=efimero-app \
-  --con-createdb
+  --con-createdb; do
+  intentos_roles=$((intentos_roles + 1))
+  if [[ "$intentos_roles" -ge 10 ]]; then
+    error "setup-db-roles.sh contra arandano-stage no prendió tras $intentos_roles intentos"
+    exit 1
+  fi
+  sleep 2
+done
 
 docker run --rm --network arandano-stage_default \
   -e MIGRATE_DATABASE_URL="postgres://arandano_owner:efimero-owner@postgres:5432/arandano_stage" \
