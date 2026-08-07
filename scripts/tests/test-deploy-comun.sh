@@ -100,6 +100,20 @@ ALTER TABLE "posts" DROP CONSTRAINT "posts_authorId_fkey";'
 check_true "un ADD CONSTRAINT adentro de un cuerpo \$\$ tampoco empareja un DROP real" \
   migracion_destructiva 'CREATE FUNCTION f() RETURNS void AS $$ BEGIN EXECUTE '"'"'ALTER TABLE "posts" ADD CONSTRAINT "posts_authorId_fkey" FOREIGN KEY ("a") REFERENCES "u"("id")'"'"'; END $$ LANGUAGE plpgsql;
 ALTER TABLE "posts" DROP CONSTRAINT "posts_authorId_fkey";'
+# Y el detalle del blanqueo que parece cosmético y no lo es: los literales y los
+# cuerpos $$ se reemplazan por '' (DOS COMILLAS), no por un espacio ni por nada.
+# Las dos comillas son un token que NO es espacio, así que un literal metido
+# entre `ADD CONSTRAINT` y el nombre entre comillas dobles parte esa secuencia y
+# el regex de la etapa 2 no la reconoce como un ADD de verdad. Blanqueando con
+# " " o con "" el literal se evapora, `ADD CONSTRAINT "posts_authorId_fkey"`
+# queda pegado, y ese ADD falso -que no recrea absolutamente nada- empareja el
+# DROP real de la línea de arriba: la migración se lee aditiva y el gate la deja
+# pasar. Medido con las dos mutaciones aplicadas al perl (ver el reporte de esta
+# ronda); sin esta aserción, las dos dejaban la suite en verde.
+check_true "un literal entre ADD CONSTRAINT y el nombre no puede emparejar un DROP real" \
+  migracion_destructiva 'INSERT INTO "auditoria" ("sql") VALUES ('"'"'nota: ADD CONSTRAINT'"'"');
+ALTER TABLE "posts" DROP CONSTRAINT "posts_authorId_fkey";
+SELECT ADD CONSTRAINT '"'"'blah'"'"' "posts_authorId_fkey";'
 # Y la contracara, que es lo que impide "arreglar" lo de arriba blanqueando los
 # dos lados: el lado que EXIGE emparejamiento sigue leyendo el texto entero, así
 # que un DROP CONSTRAINT adentro de un cuerpo $$ -DDL que se va a ejecutar de
@@ -526,6 +540,36 @@ check_eq "P1000 (credenciales inválidas): rc=1 sin el texto seguro -> inseguro"
   "inseguro" "$(veredicto_migrate_status "$SALIDA_P1000" 1)"
 check_eq "P1001 (host inalcanzable): rc=1 sin el texto seguro -> inseguro" \
   "inseguro" "$(veredicto_migrate_status "$SALIDA_P1001" 1)"
+# La razón de ser del `! grep ... have failed` de la función: una salida que
+# trae LAS DOS secciones. No hay evidencia de que `migrate status` las mezcle en
+# una corrida real -de ahí que esta salida sea armada, y no capturada como las
+# cinco de arriba-, y justamente por eso el ancla negativa es lo único que la
+# sostiene: sin ella, el `have not yet been applied` de la primera sección
+# alcanza para clasificar como `pendiente` una salida que además dice que una
+# migración quedó a medio aplicar, y el deploy sigue hasta `migrate deploy`
+# contra una base en ese estado. Verificado reemplazando el ancla negativa por
+# `true`: sin esta aserción la suite quedaba igual en verde.
+SALIDA_PENDIENTE_Y_FALLIDA=$(cat <<'EOF'
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma/schema.prisma.
+Datasource "db": PostgreSQL database "testsuper", schema "public" at "postgres:5432"
+
+2 migrations found in prisma/migrations
+Following migrations have not yet been applied:
+20990101000000_nueva
+
+Following migration have failed:
+20260804205911_inicial
+
+The failed migration(s) can be marked as rolled back or applied:
+
+- If you rolled back the migration(s) manually:
+prisma migrate resolve --rolled-back "20260804205911_inicial"
+EOF
+)
+check_eq "pendiente Y fallida en la misma salida -> inseguro" \
+  "inseguro" "$(veredicto_migrate_status "$SALIDA_PENDIENTE_Y_FALLIDA" 1)"
 check_eq "un texto que Prisma nunca dijo, con rc=1, es inseguro" \
   "inseguro" "$(veredicto_migrate_status "esto no es nada que Prisma diga" 1)"
 check_eq "un rc que no es ni 0 ni 1 es inseguro aunque el texto sea el seguro" \

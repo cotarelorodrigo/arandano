@@ -106,9 +106,26 @@ proxima_version() {
 #     aislamiento de "clientes" en silencio. Un emparejamiento que además mire
 #     la tabla es otro trabajo, no un patrón más en la lista.
 #
-# O sea: todo lo que el analizador no entiende cae del lado de frenar, y lo que
-# puede dejar pasar algo peligroso es un patrón que falte en la lista — eso se
-# ve leyendo la lista.
+# O sea: todo lo que el analizador no ENTIENDE cae del lado de frenar. Pero "no
+# entender" y "no cubrir" son cosas distintas, y hay tres formas de que algo
+# peligroso pase — leer la lista de patrones sólo muestra la primera:
+#
+#   1. Un patrón que falta en la lista de la etapa 3. Ésa sí se ve leyendo la
+#      lista, y se arregla agregándolo.
+#   2. El emparejamiento de constraints de la etapa 2, que empareja SÓLO por
+#      nombre: no mira la tabla ni la definición. Un DROP CONSTRAINT "x" sobre
+#      una tabla emparejado con un ADD CONSTRAINT "x" sobre OTRA, o con uno que
+#      la recrea con otra definición, se lee aditivo. En este repo el riesgo es
+#      chico porque Prisma nombra las constraints con la tabla adentro
+#      (`posts_authorId_fkey`), pero eso es una convención de Prisma, no algo
+#      que esta función verifique.
+#   3. Las familias que quedaron afuera (DROP POLICY / FUNCTION / TRIGGER /
+#      SEQUENCE, ver el punto de arriba). En el caso de las policies es una
+#      decisión tomada y no un olvido, y tampoco se arregla sumando el patrón:
+#      hace falta el emparejamiento que además mire la tabla.
+#
+# Antes de concluir que alcanza con sumar un patrón, conviene descartar que el
+# caso no sea uno de los otros dos: ésos no se arreglan con un patrón más.
 migracion_destructiva() {
   local sql="${1:-}"
 
