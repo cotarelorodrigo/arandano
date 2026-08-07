@@ -175,6 +175,45 @@ setup_git_hooks() {
   git -C /root/arandano config core.hooksPath .githooks
 }
 
+# `deploy.sh` pushea el tag de versión a `origin` en su último paso (ver
+# docs/runbook-stacks.md, sección Deploy y rollback). Sin credenciales
+# configuradas en la máquina, ese push falla: el deploy ya promovió y ya
+# pasó el healthcheck, así que no hay rollback — sale con el código 4
+# (objetivo sano, tag pendiente, ver `deploy.sh --help`).
+#
+# Mismo patrón que /etc/arandano/backup.env: el directorio es 0700, el
+# archivo de credenciales es 0600, y este script NO escribe el token adentro
+# — sólo deja la plantilla si falta. Completar `GITHUB_TOKEN` a mano queda
+# para quien opera la máquina, igual que `sudo -e /etc/arandano/backup.env`
+# en el runbook de backups.
+#
+# install -d de /etc/arandano se repite acá (y no sólo en
+# setup_backup_tools) porque este chequeo tiene que valer sin importar en
+# qué orden corran las dos funciones.
+setup_git_credential_helper() {
+  install -d -m 0700 -o root -g root /etc/arandano
+
+  local env_file=/etc/arandano/git.env
+  if [[ -f "$env_file" ]]; then
+    echo "$env_file ya existe, salteando"
+  else
+    cat > "$env_file" <<'EOF'
+# Credencial del credential helper global de git (ver setup_git_credential_helper
+# en scripts/setup-host.sh). Completar a mano, este archivo no viaja con el repo:
+# GITHUB_TOKEN=<token con permiso de push al repo, ej. fine-grained con Contents:write>
+EOF
+    chmod 0600 "$env_file"
+    echo "creado $env_file — falta completar GITHUB_TOKEN a mano"
+  fi
+
+  local helper='!f() { . /etc/arandano/git.env; echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f'
+  if [[ "$(git config --global --get credential.helper 2>/dev/null || true)" == "$helper" ]]; then
+    echo "credential.helper global ya configurado"
+  else
+    git config --global credential.helper "$helper"
+  fi
+}
+
 # Los roles de Postgres del stack de dev, para que reconstruir el host desde
 # cero también deje ese stack completo y no a medio armar a la espera de que
 # alguien recuerde correr setup-db-roles.sh a mano.
@@ -374,6 +413,7 @@ UNIT
 setup_swap
 setup_docker
 setup_git_hooks
+setup_git_credential_helper
 setup_db_roles_dev
 setup_build_slice
 setup_backup_tools
