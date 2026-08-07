@@ -93,8 +93,16 @@ fi
 # `docker compose up` interpola esa variable de ENTORNO en vez de leer el
 # archivo — el stack vuelve a levantar exactamente con la imagen de la que se
 # suponía que estábamos saliendo.
+#
+# El `2>/dev/null` traga TANTO "no existe la clave" COMO "no se pudo leer el
+# archivo" (permisos, symlink roto, etc.), así que el mensaje no distingue
+# entre las dos — se avisan las dos posibilidades en vez de afirmar una que
+# podría no ser cierta. Y se agrega el remedio real: acá no sirve --a=<sha>
+# (eso resuelve DESTINO, no lo que le falta a este archivo), así que se le
+# dice al operador exactamente qué mirar.
 if ! grep -q '^IMAGE_TAG=' "$DIR/.env" 2>/dev/null; then
-  error "$DIR/.env no existe o no tiene una línea IMAGE_TAG=; no se puede rollbackear ahí"
+  error "no se pudo leer $DIR/.env o no tiene una línea IMAGE_TAG=; no se puede rollbackear ahí"
+  error "revisá el archivo a mano: necesita una línea IMAGE_TAG=<sha> para poder reescribirse"
   exit 1
 fi
 
@@ -102,7 +110,16 @@ fi
 # archivo lo permite) se toma sólo la primera y no las dos pegadas rompiendo
 # el bloque de diagnóstico; \S* corta antes de un espacio final o un \r de un
 # archivo CRLF en vez de arrastrarlo adentro de $ACTUAL.
-ACTUAL=$(grep -m1 -oP '^IMAGE_TAG=\K\S*' "$DIR/.env")
+#
+# `|| true` y el chequeo de vacío aparte, no un `|| echo "(desconocido)"`
+# pegado al grep: ese patrón sólo cubre "grep no encontró nada", pero acá el
+# guard de arriba ya garantiza que la clave existe — el caso real que hay que
+# cubrir es IMAGE_TAG= con valor VACÍO, donde \S* matchea igual (grep sale 0
+# con una captura de cero caracteres) y el `||` nunca se dispara. Sin este
+# fallback, ese caso imprime "venía de: " en blanco en vez de decir que no se
+# pudo leer un valor.
+ACTUAL=$(grep -m1 -oP '^IMAGE_TAG=\K\S*' "$DIR/.env" || true)
+[[ -n "$ACTUAL" ]] || ACTUAL="(desconocido)"
 log "rollback en $OBJETIVO: $ACTUAL -> $DESTINO"
 log "la base de datos NO se toca"
 
@@ -128,7 +145,19 @@ sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${DESTINO}|" "$DIR/.env"
 # falla mataría el script ACÁ MISMO, después de que el .env ya quedó
 # reescrito y antes de llegar al bloque accionable de más abajo — el operador
 # se queda sin saber a qué volvió el archivo ni qué comando correr después.
-if ! ( cd "$DIR" && docker compose up -d --force-recreate app ); then
+#
+# `env -u IMAGE_TAG` y no un `docker compose up` a secas: Compose resuelve
+# `${IMAGE_TAG}` primero contra el ENTORNO del proceso y sólo si no está ahí
+# cae al `.env` — así que un IMAGE_TAG heredado (deploy.sh exporta el sha
+# NUEVO en su propio entorno para levantar stage, y después llama a este
+# script como su rollback automático DESDE ESE MISMO entorno) le gana al
+# valor que el sed de la línea de arriba acaba de escribir. El contrato
+# entero de este script es "el .env es la fuente de verdad de lo que corre";
+# heredar el sha equivocado desde una variable de entorno lo rompe en
+# silencio, y encima en el caso más común (la imagen heredada SÍ existe
+# localmente, así que `up` no falla — recién lo atrapa la comparación de sha
+# más abajo, 90 segundos después, sin que nada en pantalla diga por qué).
+if ! ( cd "$DIR" && env -u IMAGE_TAG docker compose up -d --force-recreate app ); then
   fallar "EL ROLLBACK FALLÓ AL LEVANTAR EL CONTENEDOR (el .env YA quedó reescrito con IMAGE_TAG=$DESTINO)"
 fi
 
