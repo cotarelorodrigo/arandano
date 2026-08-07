@@ -660,19 +660,42 @@ sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${SHA}|" "$DIR/.env"
 # alguien lo tuviera exportado a mano en la shell que invoca deploy.sh, le
 # ganaría al .env recién reescrito. Costo cero, defensa contra un error ajeno
 # a este script.
-# `--no-deps` es obligatorio, no una optimización. Sin él, `up --force-recreate
-# app` NO recrea sólo `app`: Compose arrastra las dependencias de `depends_on`
-# y el `--force-recreate` aplica también a ellas, así que RECREA EL CONTENEDOR
-# DE POSTGRES en el medio de la promoción. Encontrado por el ensayo completo
-# (task-10) y reproducido en el log: el paso 13 imprimía "Container
+# `--no-deps` es obligatorio, no una optimización. Sin él, este `up` RECREA EL
+# CONTENEDOR DE POSTGRES en el medio de la promoción. Encontrado por el ensayo
+# completo (task-10): el paso 13 imprimía "Container
 # arandano-ensayo-postgres-1 Recreated" sin que nada lo pidiera.
 #
-# En ensayo eso es fatal y por eso lo encontró: ese Postgres vive en tmpfs, así
-# que recrearlo borra los roles del stack Y la migración que el paso 12 acababa
-# de aplicar — la app arrancaba contra una base vacía, el healthcheck del paso
-# 14 daba 503 ("password authentication failed for user arandano_app"), el
-# rollback se disparaba, volvía a recrear Postgres por lo mismo, y el deploy
-# salía 3 sin que hubiera absolutamente nada malo en la imagen promovida.
+# LA CAUSA NO ES `--force-recreate`. Es tentador culparlo y es falso; medido
+# sobre un stack de prueba con la forma de éste, mirando el ID del contenedor:
+#
+#   .env sin tocar    + up --force-recreate app  -> postgres INTACTO
+#   .env REESCRITO    + up app (sin --force-*)   -> postgres RECREADO
+#   .env REESCRITO    + up --no-deps --force-*   -> postgres INTACTO
+#
+# Lo que lo dispara es el `sed` de la línea de arriba, combinado con que
+# `postgres` y `app` comparten el MISMO `env_file: .env`. IMAGE_TAG no es una
+# variable "de la app": Compose se la inyecta también al contenedor de la base
+# (verificable con `docker inspect <postgres> --format '{{.Config.Env}}'`, ahí
+# está). Al reescribir IMAGE_TAG cambia el entorno COMPUTADO de postgres, así
+# que Compose lo ve driftado respecto del contenedor vivo y lo recrea al pasar
+# por él como dependencia de `app`. Con `environment:` inline en postgres —sin
+# leer el .env— el mismo comando lo deja intacto, que es la cuarta medición.
+#
+# La distinción importa para quien lea esto después: si la causa fuera
+# `--force-recreate`, `docker compose ... up -d --wait app` del paso 8 (stage)
+# sería peligroso y no lo es. Es seguro, pero NO por no tener
+# `--force-recreate`: es seguro porque el postgres de compose.stage.yml usa
+# `environment:` inline y no lee ningún .env. Ver el comentario que ancla eso
+# en ese archivo — el día que alguien le ponga un `env_file`, el bug reaparece
+# ahí, en una línea sin `--no-deps`.
+#
+# En ensayo esto es fatal y por eso lo encontró: ese Postgres vive en tmpfs,
+# así que recrearlo borra los roles del stack Y la migración que el paso 12
+# acababa de aplicar — la app arrancaba contra una base vacía, el healthcheck
+# del paso 14 daba 503 ("password authentication failed for user
+# arandano_app"), el rollback se disparaba, volvía a recrear Postgres por lo
+# mismo, y el deploy salía 3 sin que hubiera absolutamente nada malo en la
+# imagen promovida.
 #
 # En producción no borra datos (el volumen es persistente), pero igual está
 # mal: reinicia la base de los clientes en CADA deploy sin ninguna necesidad —
@@ -702,7 +725,26 @@ limite=$((SECONDS + 90))
 salud=""
 sano=false
 while (( SECONDS < limite )); do
-  salud=$(curl -fsS --max-time 5 "$URL_SALUD/api/health" 2>/dev/null) || salud=""
+  # `-sS` y NO `-fsS`: con `-f`, curl DESCARTA el cuerpo de una respuesta que
+  # no sea 2xx y sale 22, así que `salud` quedaba vacío y el error de abajo
+  # decía "<sin respuesta>" — justo cuando la app SÍ respondió y su respuesta
+  # era el único lugar donde estaba la causa. El healthcheck devuelve 503 con
+  # el detalle adentro: `connect ECONNREFUSED 172.20.0.2:5432` si la base no
+  # está, o `password authentication failed for user "arandano_app"` si están
+  # mal los roles. Ese segundo mensaje es literalmente el que hubo que sacar a
+  # mano para diagnosticar el bug del paso 13 durante el ensayo (task-10),
+  # porque este loop no lo mostraba.
+  #
+  # No cambia la lógica: `health_ok` exige `.status == "ok"`, así que un cuerpo
+  # `degraded` se rechaza igual que uno vacío, y un cuerpo no-JSON (un 502 de
+  # un proxy, por ejemplo) también, porque `jq -e` falla. Lo único que cambia
+  # es que ahora el mensaje de error sirve para algo.
+  #
+  # `2>/dev/null` se queda: cuando la app todavía está arrancando —el camino
+  # FELIZ de todo deploy— curl falla a nivel transporte y `-S` escribiría un
+  # error en rojo cada 3 segundos. Ahí sí no hay cuerpo que perder, y `salud`
+  # queda vacío como corresponde.
+  salud=$(curl -sS --max-time 5 "$URL_SALUD/api/health" 2>/dev/null) || salud=""
   if [[ -n "$salud" ]] && health_ok "$salud" \
      && [[ "$(sha_del_health "$salud")" == "$SHA" ]]; then
     sano=true

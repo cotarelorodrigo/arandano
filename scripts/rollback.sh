@@ -164,14 +164,22 @@ sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${DESTINO}|" "$DIR/.env"
 # qué).
 #
 # `--no-deps`: sin él, este script IMPRIMÍA "la base de datos NO se toca" (ver
-# más arriba) y acto seguido recreaba el contenedor de Postgres, porque
-# `--force-recreate` alcanza también a las dependencias de `depends_on` que
-# Compose arrastra al nombrar `app`. El mensaje era literalmente falso.
-# Encontrado por el ensayo completo (task-10), donde el Postgres de ensayo vive
-# en tmpfs y el rollback terminaba de vaciar la base que intentaba salvar.
-# Mismo arreglo y mismo motivo que el paso 13 de deploy.sh: un rollback vuelve
-# la IMAGEN de la app a la anterior, y nada más — esa es justamente la razón
-# por la que expand/contract es obligatorio.
+# más arriba) y acto seguido recreaba el contenedor de Postgres. El mensaje era
+# literalmente falso. Encontrado por el ensayo completo (task-10), donde el
+# Postgres de ensayo vive en tmpfs y el rollback terminaba de vaciar la base
+# que intentaba salvar.
+#
+# El culpable NO es `--force-recreate` (medido: con el .env sin tocar, ese flag
+# deja postgres intacto; con el .env reescrito, un `up app` pelado igual lo
+# recrea). Es el `sed` de la línea de arriba: `postgres` y `app` comparten el
+# mismo `env_file: .env`, así que reescribir IMAGE_TAG cambia el entorno
+# computado DE LA BASE, Compose la ve driftada y la recrea al pasar por ella
+# como dependencia de `app`. Explicación completa y las cuatro mediciones, en
+# el paso 13 de deploy.sh.
+#
+# Mismo arreglo y mismo motivo que allá: un rollback vuelve la IMAGEN de la app
+# a la anterior, y nada más — esa es justamente la razón por la que
+# expand/contract es obligatorio.
 if ! ( cd "$DIR" && env -u IMAGE_TAG docker compose up -d --no-deps --force-recreate app ); then
   fallar "EL ROLLBACK FALLÓ AL LEVANTAR EL CONTENEDOR (el .env YA quedó reescrito con IMAGE_TAG=$DESTINO)"
 fi
@@ -182,7 +190,14 @@ log "esperando a que $OBJETIVO responda sano"
 limite=$((SECONDS + 90))
 salud=""
 while (( SECONDS < limite )); do
-  salud=$(curl -fsS --max-time 5 "$URL_SALUD/api/health" 2>/dev/null) || salud=""
+  # `-sS` y no `-fsS`, por el mismo motivo que el paso 14 de deploy.sh (ver el
+  # comentario largo de ahí): `-f` descarta el cuerpo de un 503, que es donde
+  # el healthcheck pone la causa. Y acá duele todavía más: este loop alimenta
+  # el `último JSON:` del bloque de diagnóstico de `fallar`, o sea el texto que
+  # alguien lee a las 11 de la noche cuando el rollback —la última red que
+  # queda— no levantó. Ese campo decía "<sin respuesta>" en el peor momento
+  # posible, teniendo la respuesta a mano.
+  salud=$(curl -sS --max-time 5 "$URL_SALUD/api/health" 2>/dev/null) || salud=""
   if [[ -n "$salud" ]] && health_ok "$salud"; then
     # stderr silenciado ACÁ, no en la lib: sha_del_health hace bien en avisar
     # cuando falta info.sha, pero adentro de este loop de 3s en 3s esa misma

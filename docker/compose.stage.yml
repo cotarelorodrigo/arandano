@@ -14,6 +14,22 @@ services:
     # credenciales van por env_file (.env.dev y /srv/arandano/prod/.env),
     # nunca inline. Lo que hace esto aceptable es que la base sea efímera, no
     # que sea cómodo.
+    #
+    # PERO ESTE `environment:` INLINE NO ES SÓLO ESTÉTICA: este postgres NO
+    # DEBE LEER NINGÚN .env, y menos uno compartido con el servicio `app`.
+    # deploy.sh promueve reescribiendo IMAGE_TAG en el .env del stack; si
+    # postgres leyera ese mismo archivo, IMAGE_TAG entraría también en SU
+    # entorno computado, Compose lo vería driftado respecto del contenedor vivo
+    # y lo RECREARÍA al levantar `app` — aunque el comando no diga
+    # `--force-recreate`. Eso es exactamente el bug que el ensayo completo
+    # encontró en el paso 13 de deploy.sh (ver el comentario largo de ahí, con
+    # las cuatro mediciones), y ahí se contiene con `--no-deps`.
+    #
+    # El paso 8 de deploy.sh levanta este stack con `up -d --wait app`, SIN
+    # `--no-deps` — a propósito, porque acá sí hace falta que Compose levante
+    # la base. Lo único que hace que eso sea seguro es esta ausencia de
+    # env_file. Ponerle uno reintroduce el bug en una línea que no tiene
+    # ninguna defensa.
     environment:
       POSTGRES_USER: arandano_stage
       POSTGRES_PASSWORD: efimero-no-persiste
