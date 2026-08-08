@@ -117,21 +117,31 @@ ALTER DEFAULT PRIVILEGES FOR ROLE arandano_owner IN SCHEMA public
 ALTER DEFAULT PRIVILEGES FOR ROLE arandano_owner IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO arandano_app;
 
--- Lo mismo para las funciones. resolver_tenant es la primera y no va a ser la
--- última: son la vía por la que la app lee lo que RLS le esconde por diseño, y
--- una migración NO puede otorgar el EXECUTE por su cuenta porque nombrar un rol
--- ahí adentro la vuelve inaplicable sobre la shadow database del paso 3 del gate
--- y sobre un pg_restore a una base sin roles.
+-- Las funciones NO llevan default privilege de EXECUTE, y es deliberado. Una
+-- función SECURITY DEFINER es la vía por la que la app lee lo que RLS le esconde
+-- por diseño: es la superficie que SALTEA el aislamiento, no una que el
+-- aislamiento proteja. Un default privilege que se lo diera a arandano_app haría
+-- que toda función futura naciera ejecutable sin que nadie lo decida — fallar
+-- abierto justo donde el resto del proyecto falla cerrado.
 --
--- El REVOKE no es redundante con el de la migración: Postgres le da EXECUTE a
--- PUBLIC por defecto al crear una función, y un default privilege que sólo
--- AGREGA deja ese regalo intacto. Van los dos, el de acá para lo que venga.
+-- Por eso van sólo los REVOKE, y cada función se otorga POR NOMBRE abajo. Sumar
+-- una función obliga a sumar su línea acá, que es exactamente la decisión
+-- visible en el diff que se quiere.
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO arandano_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE arandano_owner IN SCHEMA public
   REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
-ALTER DEFAULT PRIVILEGES FOR ROLE arandano_owner IN SCHEMA public
-  GRANT EXECUTE ON FUNCTIONS TO arandano_app;
+
+-- El grant por nombre tolera que la función todavía no exista: este script corre
+-- ANTES de las migraciones sobre una base nueva, y otra vez DESPUÉS para que el
+-- grant se aplique. to_regprocedure devuelve NULL en vez de tirar error cuando la
+-- función no está, así que la misma corrida sirve en los dos momentos.
+DO \$\$
+BEGIN
+  IF to_regprocedure('public.resolver_tenant(text)') IS NOT NULL THEN
+    EXECUTE 'GRANT EXECUTE ON FUNCTION public.resolver_tenant(text) TO arandano_app';
+  END IF;
+END
+\$\$;
 EOF
 
 echo "roles listos (owner con $CREATEDB_SQL)"

@@ -5,6 +5,7 @@ import { Client } from 'pg'
 import {
   urlSuperusuario,
   urlSuperusuarioInterna,
+  urlOwner,
   urlApp,
   CONTENEDOR,
   PASSWORD_OWNER,
@@ -90,31 +91,33 @@ describe('setup-db-roles.sh', () => {
     }
   })
 
-  // Mismo mecanismo que el test anterior pero para funciones: una migración no
-  // puede otorgar el EXECUTE con un GRANT que nombre a arandano_app (rompería
-  // sobre la shadow database y sobre un pg_restore sin roles), así que el
-  // default privilege es la única vía. defaclobjtype = 'f' es funciones; el ACL
-  // con grantee vacío (p.ej. `=X/arandano_owner`) es la entrada de PUBLIC, y su
-  // ausencia es lo que prueba que el REVOKE de PUBLIC también quedó como default.
-  it('deja los default privileges para que las funciones futuras nazcan ejecutables sólo por la app', async () => {
+  // Lo opuesto del caso de tablas de arriba, y a propósito: una función
+  // SECURITY DEFINER no tiene una segunda puerta como RLS en las tablas —es
+  // la vía por la que la app lee lo que RLS le esconde por diseño—, así que
+  // un default privilege que la hiciera ejecutable de entrada haría nacer
+  // ejecutable a toda función futura sin que nadie lo decida. La ausencia de
+  // esta fila es lo que prueba que el grant es por nombre y no por default
+  // privilege.
+  it('no deja default privilege de EXECUTE sobre funciones para arandano_owner', async () => {
     const cliente = new Client({ connectionString: urlSuperusuario() })
     await cliente.connect()
     try {
       const { rows } = await cliente.query(
-        `SELECT array_to_string(d.defaclacl, ',') AS acl
+        `SELECT 1
            FROM pg_default_acl d
            JOIN pg_roles r ON r.oid = d.defaclrole
           WHERE r.rolname = 'arandano_owner' AND d.defaclobjtype = 'f'`,
       )
-      expect(rows).toHaveLength(1)
-      expect(rows[0].acl).toContain('arandano_app=X')
-      expect(rows[0].acl).not.toMatch(/(^|,)=X/)
+      expect(rows).toHaveLength(0)
     } finally {
       await cliente.end()
     }
   })
 
-  it('resolver_tenant queda ejecutable para arandano_app y cerrado para PUBLIC, por default privileges y no por GRANT en la migración', async () => {
+  // Nombrado por el estado final (arandano_app puede, PUBLIC no) y no por el
+  // mecanismo: la aserción no puede distinguir un GRANT por nombre de un
+  // default privilege, así que el nombre tampoco debe prometerlo.
+  it('resolver_tenant queda ejecutable para arandano_app y cerrado para PUBLIC', async () => {
     const cliente = new Client({ connectionString: urlSuperusuario() })
     await cliente.connect()
     try {
@@ -126,6 +129,42 @@ describe('setup-db-roles.sh', () => {
       expect(rows[0].publico).toBe(false)
     } finally {
       await cliente.end()
+    }
+  })
+
+  // La prueba de que sumar una función SECURITY DEFINER no le regala acceso a
+  // la app: una función que setup-db-roles.sh nunca nombró se queda sin
+  // EXECUTE para arandano_app, aunque la haya creado arandano_owner (el mismo
+  // dueño de resolver_tenant) después de que el script corrió.
+  //
+  // El REVOKE ALL ... FROM PUBLIC de acá abajo replica lo que hace CUALQUIER
+  // migración real que agregue una función SECURITY DEFINER (ver
+  // prisma/migrations/20260808203015_resolver_tenant/migration.sql): Postgres
+  // le da EXECUTE a PUBLIC al crear la función, y esa es la única línea que lo
+  // cierra — el REVOKE por default privilege de setup-db-roles.sh no alcanza a
+  // una función que no existía cuando el script corrió. Sin este REVOKE acá, el
+  // test estaría midiendo ese hueco de PUBLIC (que no es lo que arandano_app
+  // hereda de sí mismo) y no lo que realmente hace falta probar: que
+  // arandano_app no tiene un privilegio PROPIO sobre una función que
+  // setup-db-roles.sh nunca nombró.
+  it('una función nueva de arandano_owner que el script no nombra no le da EXECUTE a la app', async () => {
+    const owner = new Client({ connectionString: urlOwner() })
+    await owner.connect()
+    try {
+      await owner.query(
+        `CREATE FUNCTION test_sin_grant_amplio() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$`,
+      )
+      try {
+        await owner.query('REVOKE ALL ON FUNCTION test_sin_grant_amplio() FROM PUBLIC')
+        const { rows } = await owner.query(
+          `SELECT has_function_privilege('arandano_app', 'test_sin_grant_amplio()', 'EXECUTE') AS app`,
+        )
+        expect(rows[0].app).toBe(false)
+      } finally {
+        await owner.query('DROP FUNCTION test_sin_grant_amplio()')
+      }
+    } finally {
+      await owner.end()
     }
   })
 
