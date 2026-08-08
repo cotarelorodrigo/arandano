@@ -48,10 +48,12 @@ export function subdominioDeHost(
 
   const prefijo = limpio.slice(0, limpio.length - base.length - 1)
 
-  // Exactamente una etiqueta. `a.b.arandano.app` no es de nadie: aceptarlo
-  // significaría que dos hosts distintos resuelven al mismo tenant, y con
-  // cookies de sesión eso es una superficie que no hace falta tener.
-  if (prefijo.includes('.')) return { tipo: 'ajeno' }
+  // Exactamente una etiqueta: ni más de una (`a.b.arandano.app`, que
+  // aceptarlo significaría que dos hosts distintos resuelven al mismo
+  // tenant, una superficie que no hace falta tener con cookies de sesión de
+  // por medio) ni cero (`.arandano.app`, que sin este chequeo atravesaba las
+  // dos condiciones de arriba y volvía subdominio: '').
+  if (prefijo === '' || prefijo.includes('.')) return { tipo: 'ajeno' }
 
   return { tipo: 'tenant', subdominio: prefijo }
 }

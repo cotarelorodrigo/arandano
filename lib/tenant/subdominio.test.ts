@@ -46,6 +46,12 @@ describe('subdominioDeHost', () => {
     expect(subdominioDeHost('a.b.arandano.app', BASE)).toEqual({ tipo: 'ajeno' })
   })
 
+  // Cero etiquetas tampoco son "exactamente una": un punto de más antes del
+  // dominio base no puede colar un subdominio vacío como si fuera un tenant.
+  it('un punto sin etiqueta delante del dominio base es ajeno, no un subdominio vacío', () => {
+    expect(subdominioDeHost('.arandano.app', BASE)).toEqual({ tipo: 'ajeno' })
+  })
+
   // La IP pelada es como se llega hoy a dev, y deja de resolver a propósito:
   // no hay camino de resolución exclusivo de dev.
   it('trata la IP pelada como ajena', () => {
