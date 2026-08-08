@@ -303,7 +303,7 @@ fi
 # Corriendo local, el paso se queda exactamente donde la tabla de pasos del
 # spec lo puso — adentro del preflight, antes de gastar nada — y no hace
 # falta moverlo ni construir nada para probarlo.
-log "paso 3/16: schema.prisma y migraciones sincronizados"
+log "paso 3/16: schema.prisma, migraciones y diagrama sincronizados"
 docker rm -f "$SOMBRA" >/dev/null 2>&1 || true
 # -p 127.0.0.1::5432 y no un puerto fijo: Docker elige uno libre y sólo en
 # loopback, así que dos corridas que se pisaran (el lock ya lo impide, pero un
@@ -378,6 +378,18 @@ elif [[ "$diff_rc" -ne 0 ]]; then
   exit 1
 fi
 log "  sin diferencias"
+
+# El diagrama de la base, en el mismo paso: es la misma pregunta que las
+# migraciones —¿el repo es coherente consigo mismo?— y un paso 17 obligaría a
+# renumerar los dieciséis por una verificación de documentación.
+#
+# El hook de pre-commit ya chequea esto, pero --no-verify existe, igual que con
+# las migraciones destructivas.
+if ! scripts/generar-erd.sh --schema=prisma/schema.prisma --salida=docs/schema.md --verificar; then
+  error "docs/schema.md está desactualizado respecto de prisma/schema.prisma"
+  exit 1
+fi
+log "  el diagrama coincide con el schema"
 
 # Pasos 4 y 5.
 # 9>&- en los tres: ver el comentario junto al `exec 9>` de más arriba. Son
