@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "scripts/tests/correr-todos.sh && vitest run",
     "generate": "prisma generate",
+    "tenant:crear": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/crear-tenant.mts",
     "pretest": "npm run generate",
     "prebuild": "npm run generate"
   },
