@@ -250,6 +250,12 @@ Y del producto:
   aplicados en producción con la app conectada como `arandano_app`. Ver
   `docs/superpowers/specs/2026-08-04-schema-nucleo-design.md`. **Quedan para el
   ciclo de ventas**: `MovimientoStock`, `Venta`, `Pago` y `Factura`.
+- ~~Mantener un diagrama actualizado de la base.~~ **Hecho** (2026-08-07).
+  `docs/schema.md`, generado por `scripts/generar-erd.sh` desde el DDL que
+  produce `prisma migrate diff` —no desde el schema— y verificado por el hook de
+  pre-commit y por el paso 3 de `deploy.sh`, así que no puede quedar
+  desactualizado en silencio. Ver
+  `docs/superpowers/specs/2026-08-07-diagrama-schema-design.md`.
 - Definir el schema del módulo de órdenes de trabajo (`OrdenDeTrabajo` y sus estados), en `modules/ordenes-de-trabajo/`, con el mismo `tenant_id` y las mismas policies de RLS.
 - Definir el registry de módulos y los puntos de extensión del núcleo: navegación, tipos de artículo, `crearVentaDesde`, movimientos de stock, intents del bot, jobs de pg-boss, vistas del catálogo público y datos demo.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).

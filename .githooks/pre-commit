@@ -26,9 +26,13 @@ source scripts/lib/deploy-comun.sh
 # modificado, renombrado puro o con cambios, tipo de archivo cambiado — trae
 # contenido nuevo bajo esa ruta y tiene que pasar por el analizador.
 archivos=$(git diff --cached --name-only --diff-filter=d -- 'prisma/migrations/**/migration.sql')
-[[ -n "$archivos" ]] || exit 0
 
+# El bloque va adentro de un `if` y no detrás de un `|| exit 0`: este archivo
+# tiene más de un chequeo, y un exit temprano acá se saltea en silencio todo lo
+# que venga después. Pasó: el chequeo del diagrama, agregado al final, no corría
+# nunca en un commit que no tocara migraciones — que es la mayoría.
 encontrado=0
+if [[ -n "$archivos" ]]; then
 while IFS= read -r archivo; do
   # El contenido STAGEADO, no el del working tree: es lo que se va a commitear.
   sql=$(git show ":$archivo")
@@ -58,4 +62,65 @@ producción hace varios deploys), commitear con --no-verify y dejar dicho en el
 mensaje por qué es seguro.
 EOF
   exit 1
+fi
+fi
+
+# --- El diagrama de la base -------------------------------------------------
+#
+# Sólo si el commit toca el schema o el propio diagrama. Cuesta ~1,4s y no
+# levanta ninguna base —`prisma migrate diff --from-empty` no necesita una—, que
+# es la condición que CLAUDE.md le pone a lo que puede vivir en un hook: uno que
+# arranque un Postgres en cada commit termina con alguien usando --no-verify.
+#
+# Compara el contenido STAGEADO contra el STAGEADO, no el del working tree, por
+# lo mismo que el chequeo de arriba: si alguien edita el schema, regenera el
+# diagrama y hace `git add` sólo del schema, los dos archivos del disco
+# coinciden entre sí y el hook pasaría — dejando entrar exactamente el commit
+# que existe para frenar.
+# Sin --diff-filter=d acá, a diferencia del bloque de migraciones: un BORRADO de
+# docs/schema.md sí hay que atraparlo —el diagrama tiene que existir mientras
+# exista el schema— y excluirlo dejaba pasar un commit que lo elimina.
+tocados=$(git diff --cached --name-only -- 'prisma/schema.prisma' 'docs/schema.md')
+if [[ -n "$tocados" ]]; then
+  tmp_dir=$(mktemp -d)
+  trap 'rm -rf "$tmp_dir"' EXIT
+
+  # El temporal puede vivir fuera del repo: `prisma migrate diff` resuelve
+  # prisma.config.ts desde el CWD, no desde la ruta del schema, y el hook ya
+  # hizo `cd` a la raíz. Verificado corriendo el generador contra un schema en
+  # /tmp.
+  tmp_schema="$tmp_dir/schema.prisma"
+  if ! git show ":prisma/schema.prisma" > "$tmp_schema" 2>/dev/null; then
+    error "no se pudo leer prisma/schema.prisma del índice"
+    exit 1
+  fi
+
+  if ! git show ":docs/schema.md" > "$tmp_dir/schema.md" 2>/dev/null; then
+    error "docs/schema.md no está en el índice, pero el commit toca el schema"
+    error "generalo y sumalo: scripts/generar-erd.sh --schema=prisma/schema.prisma --salida=docs/schema.md && git add docs/schema.md"
+    exit 1
+  fi
+
+  # La comparación la hace el hook y no `--verificar`: ese modo imprime un
+  # "regenerar con: ..." que nombraría las rutas temporales de acá adentro, o
+  # sea un comando que al operador no le sirve. El diff sí sirve; el consejo lo
+  # da el bloque de abajo, con las rutas de verdad.
+  if ! generado=$(scripts/generar-erd.sh --schema="$tmp_schema"); then
+    error "no se pudo generar el diagrama desde el schema stageado"
+    exit 1
+  fi
+  if ! diff -u "$tmp_dir/schema.md" <(printf '%s\n' "$generado"); then
+    cat >&2 <<'EOF'
+
+El diagrama de la base no coincide con el schema que estás por commitear.
+
+Regeneralo y sumalo al commit:
+
+    scripts/generar-erd.sh --schema=prisma/schema.prisma --salida=docs/schema.md
+    git add docs/schema.md
+
+docs/schema.md es 100 % generado: no lo edites a mano.
+EOF
+    exit 1
+  fi
 fi

@@ -239,6 +239,35 @@ repo. Se activa con `git config core.hooksPath .githooks`, que ya está en
 migraciones destructivas, no los otros chequeos del gate — y `deploy.sh`
 vuelve a chequear lo mismo porque `--no-verify` existe.
 
+## El diagrama de la base
+
+`docs/schema.md` es **generado**, no escrito. Se regenera con:
+
+```bash
+scripts/generar-erd.sh --schema=prisma/schema.prisma --salida=docs/schema.md
+```
+
+No editarlo a mano: la próxima regeneración se lleva el cambio puesto. Si hace
+falta explicar algo que el diagrama no dice, el lugar es el spec del schema del
+núcleo, que es donde está el modelo de aislamiento.
+
+**Sale del DDL que produce `prisma migrate diff`, no del schema.** Por eso los
+nombres y los tipos son los de Postgres (`tenant_modules`, `timestamptz(3)`) y
+no los de Prisma: el documento describe la base, y se genera de lo que
+efectivamente la crea. `migrate diff --from-empty` no necesita ninguna base de
+datos y tarda alrededor de un segundo y medio.
+
+Se verifica en dos lugares, así que no puede quedar desactualizado en silencio:
+el hook de pre-commit cuando el commit toca el schema o el propio diagrama, y el
+paso 3 de `deploy.sh` siempre. Los dos imprimen el diff y el comando para
+regenerar. El hook compara el contenido **stageado** contra el stageado — si
+comparara el del disco, regenerar y hacer `git add` sólo del schema pasaría el
+chequeo.
+
+**Lo que el diagrama no muestra son las policies de RLS.** Viven en el SQL
+escrito a mano de las migraciones, no en el schema, así que `migrate diff` no
+las emite — y son justamente lo que aísla un tenant de otro.
+
 ## Certificado de producción, hoy
 
 `arandano.app` hoy no resuelve — `dig arandano.app` devuelve NXDOMAIN, medido el 2026-08-07 (ver *Bloqueantes antes del cutover de DNS* en `CLAUDE.md`, punto 1, para qué falta confirmar antes de asumir que sólo falta apuntarlo) — así que el `Caddyfile` de prod sirve únicamente el host `localhost` con `tls internal` (certificado interno, no público). Cuando el DNS del dominio real apunte al servidor, el cutover es agregar un site block nuevo para el dominio con DNS-01, dejando el de `localhost` intacto para diagnóstico local — no reemplazar el bloque existente.

@@ -1,5 +1,12 @@
 # Diagrama de la base, generado y verificado — Implementation Plan
 
+> **SUPERADO — no ejecutar.** Este plan implementa el ERD parseando
+> `prisma/schema.prisma` con un parser propio. Ese enfoque se descartó después
+> de cuatro rondas de review: ver *Por qué esta es la segunda versión* en
+> `docs/superpowers/specs/2026-08-07-diagrama-schema-design.md`. Lo que se
+> implementó genera el diagrama del DDL que produce `prisma migrate diff`.
+> Queda como registro de lo que se intentó, no como instrucciones.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Un ERD en Mermaid generado desde `prisma/schema.prisma`, verificado por el hook de pre-commit y por `deploy.sh`, de modo que no pueda quedar desactualizado sin que algo frene.
