@@ -68,6 +68,18 @@ if [[ "$CON_CREATEDB" == true ]]; then CREATEDB_SQL="CREATEDB"; else CREATEDB_SQ
 # que las emite como literal correctamente entrecomillado. Interpolarlas en el
 # texto del SQL con "$VAR" sería una inyección esperando a una contraseña con
 # comilla simple.
+#
+# CREATEDB_SQL viaja igual, como variable de psql, y no interpolado por bash
+# en el texto del heredoc — es lo que permite que el heredoc de acá abajo
+# esté ENTRE COMILLAS (<<'EOF'). Con comillas, bash no expande absolutamente
+# nada de su contenido: ni variables, ni comillas invertidas, ni $(...). Sin
+# ellas (como estaba antes), cualquier backtick que alguien escriba en un
+# comentario SQL —no sólo código— se ejecuta como comando en el HOST con los
+# privilegios de este script; se encontró exactamente así, con un comentario
+# que mencionaba `prisma migrate dev` entre comillas invertidas, y bash
+# tratando de correr "prisma" de verdad. Acá :createdb_sql y no :'createdb_sql':
+# CREATEDB/NOCREATEDB son palabras clave de ALTER ROLE, no un literal de
+# texto, así que hace falta la sustitución CRUDA de psql, sin comillas.
 docker run --rm -i --network="$NETWORK" \
   -e PGCONNECT_TIMEOUT=10 \
   postgres:17-alpine \
@@ -75,12 +87,13 @@ docker run --rm -i --network="$NETWORK" \
     --set=ON_ERROR_STOP=1 \
     --set=owner_password="$OWNER_PASSWORD" \
     --set=app_password="$APP_PASSWORD" \
-    -f - <<EOF
+    --set=createdb_sql="$CREATEDB_SQL" \
+    -f - <<'EOF'
 -- CREATE ROLE no tiene IF NOT EXISTS, así que el DO block es la única forma
 -- idempotente. Los atributos se fijan aparte con ALTER, que sí es idempotente,
 -- para que una corrida sobre un rol preexistente lo deje igual que una sobre
 -- uno nuevo.
-DO \$\$
+DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'arandano_owner') THEN
     CREATE ROLE arandano_owner;
@@ -89,10 +102,10 @@ BEGIN
     CREATE ROLE arandano_app;
   END IF;
 END
-\$\$;
+$$;
 
 ALTER ROLE arandano_owner WITH LOGIN NOSUPERUSER NOCREATEROLE NOBYPASSRLS
-  $CREATEDB_SQL INHERIT PASSWORD :'owner_password';
+  :createdb_sql INHERIT PASSWORD :'owner_password';
 
 ALTER ROLE arandano_app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS
   INHERIT PASSWORD :'app_password';
@@ -175,13 +188,13 @@ REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM arandano_app;
 -- ANTES de las migraciones sobre una base nueva, y otra vez DESPUÉS para que el
 -- grant se aplique. to_regprocedure devuelve NULL en vez de tirar error cuando la
 -- función no está, así que la misma corrida sirve en los dos momentos.
-DO \$\$
+DO $$
 BEGIN
   IF to_regprocedure('public.resolver_tenant(text)') IS NOT NULL THEN
     EXECUTE 'GRANT EXECUTE ON FUNCTION public.resolver_tenant(text) TO arandano_app';
   END IF;
 END
-\$\$;
+$$;
 
 COMMIT;
 EOF
