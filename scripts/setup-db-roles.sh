@@ -131,6 +131,20 @@ REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES FOR ROLE arandano_owner IN SCHEMA public
   REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 
+-- Convergencia, no sólo estado inicial. Un ALTER DEFAULT PRIVILEGES es fila
+-- guardada en la base, no una declaración que se re-evalúe: sacar el GRANT de
+-- este script no le hace nada a una base que ya corrió la versión anterior
+-- (Task 5b), que le había dado a arandano_app el default privilege de EXECUTE
+-- sobre funciones más el GRANT amplio sobre las que ya existían. Sin este
+-- REVOKE, esa base queda con el privilegio amplio para siempre — exactamente
+-- lo que este fix existe para sacar — y encima toda función NUEVA seguiría
+-- naciendo ejecutable por la app, porque el default privilege viejo sigue
+-- activo. Van ANTES del bloque DO: el segundo revoca también resolver_tenant,
+-- y el DO se la devuelve por nombre a continuación.
+ALTER DEFAULT PRIVILEGES FOR ROLE arandano_owner IN SCHEMA public
+  REVOKE EXECUTE ON FUNCTIONS FROM arandano_app;
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM arandano_app;
+
 -- El grant por nombre tolera que la función todavía no exista: este script corre
 -- ANTES de las migraciones sobre una base nueva, y otra vez DESPUÉS para que el
 -- grant se aplique. to_regprocedure devuelve NULL en vez de tirar error cuando la
