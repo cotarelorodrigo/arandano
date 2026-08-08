@@ -51,6 +51,39 @@ sub ident_seguro {
   return $valor;
 }
 
+# Postgres tiene tipos de dos palabras y Mermaid delimita
+# `tipo nombre claves comentario` por espacios: emitir "double precision peso"
+# se parsearía como tipo `double`, nombre `precision` y `peso` en la ranura de
+# claves. Se emite el alias de una sola palabra, que es el mismo tipo, y
+# cualquier otro tipo con espacio frena la generación en vez de producir una
+# fila que no renderiza.
+sub tipo_emitible {
+  my ($crudo) = @_;
+  my $t = lc $crudo;
+  $t =~ s/\s+/ /g;
+  $t =~ s/^\s+|\s+$//g;
+
+  my %alias = (
+    'double precision'            => 'float8',
+    'character varying'           => 'varchar',
+    'character'                   => 'char',
+    'bit varying'                 => 'varbit',
+    'timestamp with time zone'    => 'timestamptz',
+    'timestamp without time zone' => 'timestamp',
+    'time with time zone'         => 'timetz',
+    'time without time zone'      => 'time',
+  );
+
+  my ($base, $args) = $t =~ /^(.*?)\s*(\(.*\))?$/;
+  $args //= '';
+  $base = $alias{$base} if exists $alias{$base};
+  my $salida = "$base$args";
+
+  die "el tipo \"$crudo\" lleva un espacio y Mermaid no puede emitirlo\n"
+    if $salida =~ /\s/;
+  return $salida;
+}
+
 my @lineas = split /\n/, $ddl, -1;
 my $i = 0;
 while ($i < @lineas) {
@@ -85,14 +118,37 @@ while ($i < @lineas) {
       # nada de eso puede desalinear esta columna ni la siguiente.
       if ($c =~ /^\s*"([^"]+)"\s+(.+?)\s*,?\s*$/) {
         my ($col, $resto) = (ident_seguro('la columna', $1), $2);
-        my ($tipo, $cola);
-        if    ($resto =~ /^"([^"]+)"\s*(.*)$/)                            { ($tipo, $cola) = ($1, $2) }
-        elsif ($resto =~ /^([A-Za-z][A-Za-z0-9_]*(?:\([^)]*\))?)\s*(.*)$/) { ($tipo, $cola) = ($1, $2) }
-        else { die "no se entiende el tipo de la columna: $c\n" }
-        # Prisma emite siempre `TIPO [NOT NULL] [DEFAULT ...]`, en ese orden,
-        # así que alcanza con mirar el arranque. Buscar "NOT NULL" en toda la
-        # cola se dejaría engañar por un DEFAULT que contenga ese texto.
-        push @cols, { nombre => $col, tipo => lc $tipo, nn => ($cola =~ /^NOT\s+NULL\b/ ? 1 : 0) };
+        my ($tipo, $nn);
+
+        if ($resto =~ /^"([^"]+)"\s*(.*)$/) {
+          # Tipo enum: viene entrecomillado, así que no hay ambigüedad.
+          #
+          # Los grupos se copian ANTES de correr cualquier otro match: en una
+          # asignación de lista, $1 es un alias, y un `=~` en otro elemento de
+          # la misma lista resetea las capturas antes de que se asigne. Escrito
+          # en una línea, el tipo salía vacío.
+          my ($t, $cola) = ($1, $2);
+          $tipo = $t;
+          $nn = ($cola =~ /^NOT\s+NULL\b/) ? 1 : 0;
+        } else {
+          # El tipo es TODO lo que hay hasta el DEFAULT o el NOT NULL. Tomar
+          # sólo el primer identificador trunca los tipos de dos palabras
+          # (`DOUBLE PRECISION`) y, peor, desalinea el NOT NULL que viene
+          # después: `Float` y `Float?` producían la misma salida.
+          #
+          # El DEFAULT se saca PRIMERO: Prisma emite `TIPO [NOT NULL]
+          # [DEFAULT ...]` en ese orden, y un default puede contener el texto
+          # "NOT NULL" (`@default("x NOT NULL")` es legal). Sacándolo primero,
+          # lo que queda para buscar NOT NULL ya no tiene literales adentro.
+          my $r = $resto;
+          $r =~ s/\s+DEFAULT\s+.*$//;
+          $nn = ($r =~ s/\s+NOT\s+NULL\s*$//) ? 1 : 0;
+          $r =~ s/\s+$//;
+          die "no se entiende el tipo de la columna: $c\n" unless length $r;
+          $tipo = $r;
+        }
+
+        push @cols, { nombre => $col, tipo => tipo_emitible($tipo), nn => $nn };
         next;
       }
 
@@ -179,12 +235,25 @@ for my $tabla (sort keys %tablas) {
 
 my @rel;
 for my $fk (@fks) {
-  # Uno a uno cuando existe un índice único sobre exactamente las columnas de la
-  # FK. Se lee del SQL en vez de inferirse del modelo.
+  my $hijo = $tablas{ $fk->{hijo} };
+  my %nn = map { $_->{nombre} => $_->{nn} } @{ $hijo->{cols} };
   my $clave = join("\x1f", sort @{ $fk->{cols} });
-  my $uno = grep { join("\x1f", sort @$_) eq $clave } @{ $unicos{ $fk->{hijo} } || [] };
-  my $card = $uno ? '||--||' : '||--o{';
-  push @rel, "  $fk->{padre} $card $fk->{hijo} : \"ON DELETE $fk->{del}\"";
+
+  # Lado del padre: si alguna columna de la FK admite NULL, un hijo puede no
+  # tener padre. Decir `||` ahí afirma que todo hijo tiene exactamente uno, y
+  # con un ON DELETE SET NULL eso se contradice con la etiqueta de la misma
+  # línea.
+  my $izq = (grep { !$nn{$_} } @{ $fk->{cols} }) ? '|o' : '||';
+
+  # Lado del hijo: a lo sumo uno cuando la base lo garantiza — con un índice
+  # único sobre exactamente esas columnas, o porque son la PK entera. `||` de
+  # este lado afirmaría que todo padre TIENE uno, y la base sólo garantiza que
+  # no tenga dos.
+  my $unico = grep { join("\x1f", sort @$_) eq $clave } @{ $unicos{ $fk->{hijo} } || [] };
+  my $es_pk = join("\x1f", sort keys %{ $hijo->{pk} }) eq $clave;
+  my $der = ($unico || $es_pk) ? 'o|' : 'o{';
+
+  push @rel, "  $fk->{padre} $izq--$der $fk->{hijo} : \"ON DELETE $fk->{del}\"";
 }
 push @salida, sort @rel;
 push @salida, '```';
@@ -209,13 +278,21 @@ print join("\n", @salida), "\n";
 PERL
   )
 
-  local salida rc=0
-  salida=$(printf '%s' "$ddl" | perl -e "$programa" 2>&1) || rc=$?
+  local salida rc=0 err
+  err=$(mktemp)
+  # stdout y stderr POR SEPARADO, no `2>&1`: perl puede escribir warnings por
+  # stderr saliendo 0 —un `LC_ALL` apuntando a un locale no instalado alcanza— y
+  # mezclarlos los metería adentro de docs/schema.md. La guarda de "0 mudo" no
+  # los atraparía, justamente porque la salida no queda vacía.
+  salida=$(printf '%s' "$ddl" | perl -e "$programa" 2>"$err") || rc=$?
 
   if [[ "$rc" -ne 0 ]]; then
-    erd_error "no se pudo generar el ERD: ${salida:-el analizador no corrió (¿falta perl?)}"
+    erd_error "no se pudo generar el ERD: $(tr '\n' ' ' < "$err" | sed 's/  */ /g')"
+    erd_error "  (si no dice nada, es que el analizador no corrió: ¿falta perl?)"
+    rm -f "$err"
     return 1
   fi
+  rm -f "$err"
   # Un 0 mudo no es una respuesta: es lo que devolvería un `perl -e ""`. Escribir
   # un docs/schema.md vacío pasaría la verificación describiendo una base sin
   # tablas.

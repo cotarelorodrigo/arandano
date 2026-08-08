@@ -77,7 +77,10 @@ fi
 # diagrama y hace `git add` sólo del schema, los dos archivos del disco
 # coinciden entre sí y el hook pasaría — dejando entrar exactamente el commit
 # que existe para frenar.
-tocados=$(git diff --cached --name-only --diff-filter=d -- 'prisma/schema.prisma' 'docs/schema.md')
+# Sin --diff-filter=d acá, a diferencia del bloque de migraciones: un BORRADO de
+# docs/schema.md sí hay que atraparlo —el diagrama tiene que existir mientras
+# exista el schema— y excluirlo dejaba pasar un commit que lo elimina.
+tocados=$(git diff --cached --name-only -- 'prisma/schema.prisma' 'docs/schema.md')
 if [[ -n "$tocados" ]]; then
   tmp_dir=$(mktemp -d)
   trap 'rm -rf "$tmp_dir"' EXIT

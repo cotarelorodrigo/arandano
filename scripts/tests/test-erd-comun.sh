@@ -130,7 +130,37 @@ CREATE TABLE "users" (
 );
 CREATE UNIQUE INDEX "perfiles_user_id_key" ON "perfiles"("user_id");
 ALTER TABLE "perfiles" ADD CONSTRAINT "perfiles_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;')
-check_true "FK cubierta por un índice único -> uno a uno" grep -qE 'users \|\|--\|\| perfiles' <<<"$UNO"
+# `o|` y no `||` del lado del hijo: la base garantiza que un user no tenga DOS
+# perfiles, no que tenga uno. `||` afirmaría que todo user tiene perfil.
+check_true "FK cubierta por un índice único -> a lo sumo uno" grep -qE 'users \|\|--o\| perfiles' <<<"$UNO"
+
+# Lo mismo cuando la FK ES la PK: la clave primaria ya impide la segunda fila.
+PK_FK=$(erd_desde_ddl 'CREATE TABLE "perfiles" (
+    "user_id" UUID NOT NULL,
+    CONSTRAINT "perfiles_pkey" PRIMARY KEY ("user_id")
+);
+CREATE TABLE "users" (
+    "id" UUID NOT NULL,
+    CONSTRAINT "users_pkey" PRIMARY KEY ("id")
+);
+ALTER TABLE "perfiles" ADD CONSTRAINT "perfiles_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;')
+check_true "una FK que ES la PK entera también es a lo sumo uno" \
+  grep -qE 'users \|\|--o\| perfiles' <<<"$PK_FK"
+
+# Una FK que admite NULL significa que un hijo puede no tener padre. Decir `||`
+# ahí se contradice con el ON DELETE SET NULL de la misma línea.
+OPC=$(erd_desde_ddl 'CREATE TABLE "hijos" (
+    "id" UUID NOT NULL,
+    "padre_id" UUID,
+    CONSTRAINT "hijos_pkey" PRIMARY KEY ("id")
+);
+CREATE TABLE "padres" (
+    "id" UUID NOT NULL,
+    CONSTRAINT "padres_pkey" PRIMARY KEY ("id")
+);
+ALTER TABLE "hijos" ADD CONSTRAINT "hijos_padre_id_fkey" FOREIGN KEY ("padre_id") REFERENCES "padres"("id") ON DELETE SET NULL ON UPDATE CASCADE;')
+check_true "una FK nullable no afirma participación obligatoria" \
+  grep -qE 'padres \|o--o\{ hijos' <<<"$OPC"
 # La PK compuesta de tenant_modules cubre tenant_id, pero la FK es sólo una de
 # sus dos columnas: no es 1-1, y confundirlo afirmaría algo que la base prohíbe.
 check_true "una FK que cubre parte de la PK sigue siendo uno a muchos" \
@@ -191,6 +221,38 @@ MENTIROSO=$(erd_desde_ddl 'CREATE TABLE "a" (
 );')
 check_true "un DEFAULT que dice NOT NULL no vuelve obligatoria a la columna" \
   grep -q 'text trampa "opcional"' <<<"$MENTIROSO"
+
+printf '\n\033[1mtipos de dos palabras y arrays\033[0m\n'
+# DDL real, generado con `prisma migrate diff` sobre un schema con Float,
+# Float?, String[] y un @default que contiene el texto "NOT NULL". Tomar sólo
+# el primer identificador como tipo truncaba `DOUBLE PRECISION` a `double` y,
+# peor, desalineaba el NOT NULL que venía después: Float y Float? salían iguales.
+DOSPALABRAS=$(erd_desde_ddl 'CREATE TABLE "pruebas" (
+    "id" TEXT NOT NULL,
+    "peso" DOUBLE PRECISION NOT NULL,
+    "pesoOp" DOUBLE PRECISION,
+    "tags" TEXT[],
+    "nota" TEXT NOT NULL DEFAULT '"'"'x NOT NULL'"'"',
+
+    CONSTRAINT "pruebas_pkey" PRIMARY KEY ("id")
+);')
+# El alias de una palabra, porque Mermaid delimita por espacios.
+check_true  "DOUBLE PRECISION se emite como float8"  grep -qE '^    float8 peso$' <<<"$DOSPALABRAS"
+check_true  "y conserva su obligatoriedad"           grep -qE '^    float8 peso$' <<<"$DOSPALABRAS"
+check_true  "la versión nullable sí dice opcional"   grep -q 'float8 pesoOp "opcional"' <<<"$DOSPALABRAS"
+check_false "obligatoria y opcional no salen iguales" \
+  test "$(grep -c 'float8' <<<"$DOSPALABRAS")" = "$(grep -c 'float8.*opcional' <<<"$DOSPALABRAS")"
+check_true  "un array conserva los corchetes"        grep -qE '^    text\[\] tags "opcional"$' <<<"$DOSPALABRAS"
+# La trampa al revés de la anterior: acá el NOT NULL es real Y el default lo
+# menciona. Sacar el DEFAULT antes de buscar NOT NULL resuelve las dos.
+check_false "un NOT NULL real con un default que lo menciona no se pierde" \
+  grep -q 'text nota "opcional"' <<<"$DOSPALABRAS"
+check_true  "y el tipo no se lleva puesto el default" grep -qE '^    text nota$' <<<"$DOSPALABRAS"
+check_false "un tipo con espacio se rechaza en vez de romper el render" \
+  erd_desde_ddl 'CREATE TABLE "a" (
+    "id" MONEDA RARA NOT NULL,
+    CONSTRAINT "a_pkey" PRIMARY KEY ("id")
+);'
 
 printf '\n\033[1mel DDL real de este repo\033[0m\n'
 # La aserción que atrapa una regresión el día que alguien agregue un modelo con

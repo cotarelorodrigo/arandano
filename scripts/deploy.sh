@@ -385,7 +385,10 @@ log "  sin diferencias"
 #
 # El hook de pre-commit ya chequea esto, pero --no-verify existe, igual que con
 # las migraciones destructivas.
-if ! scripts/generar-erd.sh --schema=prisma/schema.prisma --salida=docs/schema.md --verificar; then
+# 9>&- como los demás hijos largos: este llama a `npx prisma`, que es
+# exactamente el tipo de proceso que puede dejar un worker huérfano sosteniendo
+# el lock del deploy. Ver el comentario junto al `exec 9>` de más arriba.
+if ! scripts/generar-erd.sh --schema=prisma/schema.prisma --salida=docs/schema.md --verificar 9>&-; then
   error "docs/schema.md está desactualizado respecto de prisma/schema.prisma"
   exit 1
 fi
