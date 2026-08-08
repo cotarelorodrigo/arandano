@@ -522,6 +522,29 @@ docker run --rm --network arandano-stage_default \
   -e MIGRATE_DATABASE_URL="postgres://arandano_owner:efimero-owner@postgres:5432/arandano_stage" \
   "arandano-migrate:$SHA" migrate deploy
 
+# El canario de stage, creado con el MISMO script versionado que crea tenants
+# en producción — no con un INSERT a mano. Eso tiene dos efectos: el check de
+# tenant del healthcheck tiene a quién apuntar, y el alta queda ejercitada en
+# cada deploy contra una base virgen, antes de que nada toque producción.
+#
+# EL ORDEN IMPORTA: va después de `migrate deploy` (las tablas tienen que
+# existir) y ANTES de `up -d --wait app` (el `--wait` espera al healthcheck, y
+# el check de tenant falla si el canario no está). Moverlo después del `up`
+# hace que todo deploy sano se cuelgue esperando un healthcheck que nunca va a
+# dar verde, con un mensaje que habla del canario y no del orden.
+#
+# --entrypoint node porque el ENTRYPOINT de la imagen es `npx prisma`.
+docker run --rm --network arandano-stage_default \
+  -e MIGRATE_DATABASE_URL="postgres://arandano_owner:efimero-owner@postgres:5432/arandano_stage" \
+  -e DOMINIO_BASE="stage.arandano.app" \
+  --entrypoint node "arandano-migrate:$SHA" \
+  --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/crear-tenant.mts \
+  --subdominio=canario \
+  --nombre="Canario de stage" \
+  --modulos=ORDENES_DE_TRABAJO \
+  --duenio=canario@arandano.app \
+  --duenio-nombre="Canario"
+
 # --wait espera al healthcheck del compose, no a que el contenedor arranque:
 # sin eso el smoke test correría contra un Next todavía levantando, y las
 # fallas intermitentes del gate se leen como bugs del código.
