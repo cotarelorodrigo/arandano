@@ -191,22 +191,17 @@ describe('setup-db-roles.sh', () => {
     }
   })
 
-  // La prueba de que sumar una función SECURITY DEFINER no le regala acceso a
-  // la app: una función que setup-db-roles.sh nunca nombró se queda sin
-  // EXECUTE para arandano_app, aunque la haya creado arandano_owner (el mismo
-  // dueño de resolver_tenant) después de que el script corrió.
-  //
-  // El REVOKE ALL ... FROM PUBLIC de acá abajo replica lo que hace CUALQUIER
-  // migración real que agregue una función SECURITY DEFINER (ver
-  // prisma/migrations/20260808203015_resolver_tenant/migration.sql): Postgres
-  // le da EXECUTE a PUBLIC al crear la función, y esa es la única línea que lo
-  // cierra — el REVOKE por default privilege de setup-db-roles.sh no alcanza a
-  // una función que no existía cuando el script corrió. Sin este REVOKE acá, el
-  // test estaría midiendo ese hueco de PUBLIC (que no es lo que arandano_app
-  // hereda de sí mismo) y no lo que realmente hace falta probar: que
-  // arandano_app no tiene un privilegio PROPIO sobre una función que
-  // setup-db-roles.sh nunca nombró.
-  it('una función nueva de arandano_owner que el script no nombra no le da EXECUTE a la app', async () => {
+  // El comportamiento real, sin taparlo: una función nueva nace ejecutable
+  // por PUBLIC (Postgres se lo da a todo el mundo al crearla, y el REVOKE por
+  // default privilege de arriba es inerte para objetos que todavía no
+  // existen — ver el comentario largo de setup-db-roles.sh). Lo que la
+  // cierra es la PRÓXIMA corrida del script, con su REVOKE EXECUTE ON ALL
+  // FUNCTIONS en bloque contra lo que ya existe — no un default privilege, y
+  // no un GRANT amplio a arandano_app: la vuelta a correr cierra PUBLIC sin
+  // regalarle nada a la app. Es la prueba de que sumar una función SECURITY
+  // DEFINER no le regala acceso a la app aunque nadie se acuerde de revocar
+  // PUBLIC a mano.
+  it('una función nueva nace abierta a PUBLIC, y la corrida siguiente la cierra sin darle EXECUTE a la app', async () => {
     const owner = new Client({ connectionString: urlOwner() })
     await owner.connect()
     try {
@@ -214,10 +209,18 @@ describe('setup-db-roles.sh', () => {
         `CREATE FUNCTION test_sin_grant_amplio() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$`,
       )
       try {
-        await owner.query('REVOKE ALL ON FUNCTION test_sin_grant_amplio() FROM PUBLIC')
-        const { rows } = await owner.query(
-          `SELECT has_function_privilege('arandano_app', 'test_sin_grant_amplio()', 'EXECUTE') AS app`,
+        const antes = await owner.query(
+          `SELECT has_function_privilege('public', 'test_sin_grant_amplio()', 'EXECUTE') AS publico`,
         )
+        expect(antes.rows[0].publico).toBe(true)
+
+        await correrScript()
+
+        const { rows } = await owner.query(
+          `SELECT has_function_privilege('public', 'test_sin_grant_amplio()', 'EXECUTE') AS publico,
+                  has_function_privilege('arandano_app', 'test_sin_grant_amplio()', 'EXECUTE') AS app`,
+        )
+        expect(rows[0].publico).toBe(false)
         expect(rows[0].app).toBe(false)
       } finally {
         await owner.query('DROP FUNCTION test_sin_grant_amplio()')

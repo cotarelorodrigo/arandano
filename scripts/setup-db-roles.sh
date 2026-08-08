@@ -124,10 +124,36 @@ ALTER DEFAULT PRIVILEGES FOR ROLE arandano_owner IN SCHEMA public
 -- que toda función futura naciera ejecutable sin que nadie lo decida — fallar
 -- abierto justo donde el resto del proyecto falla cerrado.
 --
--- Por eso van sólo los REVOKE, y cada función se otorga POR NOMBRE abajo. Sumar
--- una función obliga a sumar su línea acá, que es exactamente la decisión
--- visible en el diff que se quiere.
+-- Por eso van sólo los REVOKE, y cada función se otorga POR NOMBRE abajo.
+-- Sumar una función obliga a sumar su línea acá para que arandano_app la
+-- pueda ejecutar; lo que SÍ cierra a PUBLIC en una función nueva no es este
+-- REVOKE (ver el comentario de más abajo, es inerte para objetos futuros) sino
+-- la próxima corrida de este bloque en bruto contra los objetos existentes.
+--
+-- Todo este bloque de privilegios de funciones va en una única transacción:
+-- sin esto, psql corre en autocommit y hay una ventana real entre el REVOKE
+-- de acá y el re-GRANT por nombre de más abajo en la que la imagen VIEJA,
+-- que sigue sirviendo mientras este script corre en medio de un deploy, no
+-- puede ejecutar la función. BEGIN/COMMIT hace que otra conexión vea el
+-- antes o el después, nunca el hueco de en medio.
+BEGIN;
+
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
+-- Inerte para funciones que todavía no existen, y es sabido: pg_default_acl
+-- sólo guarda deltas ADITIVOS sobre el default de Postgres (acldefault), así
+-- que un REVOKE que no tiene nada previo que revocar no persiste ninguna
+-- fila — se puede medir corriendo este script sobre un postgres:17-alpine
+-- virgen y creando después una función SECURITY DEFINER cualquiera como
+-- arandano_owner: has_function_privilege(..., 'public', ...) da true. Lo que
+-- de verdad cierra una función NUEVA a PUBLIC es el REVOKE EXECUTE ON ALL
+-- FUNCTIONS de la línea de arriba, la PRÓXIMA vez que este script corra sobre
+-- ella ya creada — en el camino de deploy eso es inmediato gracias al paso 13
+-- de deploy.sh, pero en dev no pasa solo después de un `prisma migrate dev`;
+-- cada migración de una función SECURITY DEFINER tiene que hacer su propio
+-- REVOKE ALL ... FROM PUBLIC, como ya hace
+-- prisma/migrations/20260808203015_resolver_tenant/migration.sql. Esta línea
+-- queda igual: no hace nada por el futuro, pero sigue cerrando de inmediato
+-- cualquier función que ya exista al momento de correr.
 ALTER DEFAULT PRIVILEGES FOR ROLE arandano_owner IN SCHEMA public
   REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 
@@ -156,6 +182,8 @@ BEGIN
   END IF;
 END
 \$\$;
+
+COMMIT;
 EOF
 
 echo "roles listos (owner con $CREATEDB_SQL)"

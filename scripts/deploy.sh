@@ -504,8 +504,9 @@ done
 #
 # COPLADO A compose.stage.yml: usuario, contraseñas y nombre de base de acá
 # abajo (y los MIGRATE_DATABASE_URL un poco más abajo, hay dos desde la
-# Task 5: el del migrate deploy de stage y el del alta del canario) tienen
-# que coincidir EXACTO con las variables
+# Task 5: el del migrate deploy de stage y el del alta del canario, más una
+# segunda corrida de setup-db-roles.sh que suma la Task 5c) tienen que
+# coincidir EXACTO con las variables
 # `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`
 # del servicio `postgres` de ese archivo. Si uno de los dos lados cambia sin
 # el otro, esto no falla con un error claro — o bien setup-db-roles.sh no se
@@ -523,6 +524,27 @@ scripts/setup-db-roles.sh \
 docker run --rm --network arandano-stage_default \
   -e MIGRATE_DATABASE_URL="postgres://arandano_owner:efimero-owner@postgres:5432/arandano_stage" \
   "arandano-migrate:$SHA" migrate deploy
+
+# Segunda corrida, DESPUÉS de migrar: mismo motivo que la segunda corrida de
+# test/global-setup.ts y el paso 13 de más abajo contra el objetivo real.
+# resolver_tenant (y cualquier función que sume una migración futura) recién
+# existe a partir de acá, y el grant por nombre de setup-db-roles.sh sólo se
+# aplica si to_regprocedure encuentra la función — con el mecanismo viejo (Task
+# 5b, default privilege amplio) daba igual en qué momento corriera esto,
+# porque el default alcanzaba a cualquier función futura; con el grant por
+# nombre de la Task 5c NO: sin esta segunda corrida, stage terminaría cada
+# ensayo con resolver_tenant sin EXECUTE para arandano_app mientras el
+# objetivo real sí lo tiene (el paso 13 sí corre después de migrar) —
+# exactamente el punto ciego invertido que esta task vino a cerrar, y rompe
+# "lo que se probó es exactamente lo que se sirve". Hoy no lo nota ningún
+# smoke test porque nada llama a resolver_tenant todavía; en cuanto se cablee
+# el middleware (Task 7) stage fallaría en cada deploy sin que haya nada malo.
+scripts/setup-db-roles.sh \
+  --network=arandano-stage_default \
+  --url="postgres://arandano_stage:efimero-no-persiste@postgres:5432/arandano_stage" \
+  --owner-password=efimero-owner \
+  --app-password=efimero-app \
+  --con-createdb
 
 # El canario de stage, creado con el MISMO script versionado que crea tenants
 # en producción — no con un INSERT a mano. Eso tiene dos efectos: el check de
@@ -707,11 +729,13 @@ TAG_ANTERIOR=$(grep -m1 -oP '^IMAGE_TAG=\K\S*' "$DIR/.env")
 # a necesitar, y se valida ACÁ —antes del backup y la migración— para
 # enterarse de un .env malformado antes de tocar algo irreversible, en vez de
 # después con la migración ya aplicada. Restricción 1 del paso 13 (ver el
-# comentario de ahí): las contraseñas de arandano_owner y arandano_app NO son
-# una variable suelta que $DIR/.env tenga —ARANDANO_OWNER_PASSWORD y
-# ARANDANO_APP_PASSWORD no existen— sino que viven adentro de
-# MIGRATE_DATABASE_URL y DATABASE_URL, que ya está probado más arriba que son
-# las vigentes. Extraerlas de ahí en vez de inventar una fuente nueva es lo
+# comentario de ahí): las contraseñas de arandano_owner y arandano_app se leen
+# de acá y no de una variable suelta —aunque $DIR/.env de prod SÍ define
+# ARANDANO_OWNER_PASSWORD y ARANDANO_APP_PASSWORD hoy— porque leerlas de
+# MIGRATE_DATABASE_URL y DATABASE_URL es lo único que garantiza que sean las
+# VIGENTES: son las que la app y las migraciones usan de verdad para
+# conectarse, ya probadas más arriba. Una variable suelta puede desincronizarse
+# de la URL sin que nada lo note; la URL no puede. Extraerlas de ahí es lo
 # que garantiza que setup-db-roles.sh no vaya a ROTAR ninguna contraseña con
 # su propio ALTER ROLE ... PASSWORD.
 DATABASE_URL=$(grep -oP '^DATABASE_URL=\K\S*' "$DIR/.env" | tail -n1 || true)

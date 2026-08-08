@@ -115,7 +115,7 @@ El deploy frena `arandano-dev` desde el arranque —antes del build, no antes de
 - **Expand/contract**: ninguna columna se borra ni se renombra en el mismo deploy que deja de usarla. Primero se deploya el código que no la usa, y el drop viene en un deploy posterior. Es lo que mantiene el rollback siempre posible.
 - `pg_dump` inmediatamente antes de cada migración, además del backup nocturno.
 
-**El deploy es un comando con gate.** `deploy.sh` encadena: working tree limpio → migraciones no destructivas → schema sincronizado con las migraciones → tests → typecheck → frenar `arandano-dev` → build tageado → ensayo de la migración y smoke tests contra `arandano-stage` → `migrate status` contra prod, en las dos direcciones → backup → `migrate deploy` → promoción de la imagen (`--no-deps`) → healthcheck con comparación de SHA → tag de git pusheado a `origin`, con rollback automático a la imagen anterior si falla la promoción o el healthcheck. El chequeo de schema va temprano, en el preflight, y no después del build: corre con el `npx prisma` del propio repo, así que no necesita ninguna imagen construida todavía. El ensayo en stage va **antes** de tocar producción: la migración se prueba sobre una base virgen antes que sobre la de clientes. Corrido con `--objetivo=ensayo` (`docs/runbook-stacks.md`), el mismo script ensaya la secuencia completa contra un stack descartable, sin crear ni pushear tag. Sin pasos manuales que se puedan saltear un martes a las 11 de la noche.
+**El deploy es un comando con gate.** `deploy.sh` encadena: working tree limpio → migraciones no destructivas → schema sincronizado con las migraciones → tests → typecheck → frenar `arandano-dev` → build tageado → ensayo de la migración y smoke tests contra `arandano-stage` → `migrate status` contra prod, en las dos direcciones → backup → `migrate deploy` → `setup-db-roles.sh` contra el objetivo (el `EXECUTE` de las funciones se otorga por nombre, no por default privilege, así que esta corrida post-migración es la que lo aplica — Task 5c) → promoción de la imagen (`--no-deps`) → healthcheck con comparación de SHA → tag de git pusheado a `origin`, con rollback automático a la imagen anterior si falla la promoción o el healthcheck. El chequeo de schema va temprano, en el preflight, y no después del build: corre con el `npx prisma` del propio repo, así que no necesita ninguna imagen construida todavía. El ensayo en stage va **antes** de tocar producción: la migración se prueba sobre una base virgen antes que sobre la de clientes. Corrido con `--objetivo=ensayo` (`docs/runbook-stacks.md`), el mismo script ensaya la secuencia completa contra un stack descartable, sin crear ni pushear tag. Sin pasos manuales que se puedan saltear un martes a las 11 de la noche.
 
 **Cada deploy exitoso deja un tag de git.** La imagen ya va tageada con el SHA, pero el SHA no se lee ni se ordena: el tag es el índice humano de qué estuvo en producción y cuándo.
 
@@ -230,11 +230,14 @@ Los primeros cuatro son de entorno y van antes que cualquier línea de producto,
   stack descartable para que `deploy.sh --objetivo=ensayo` ensaye el gate
   completo sin tocar clientes.
 - ~~Escribir `deploy.sh` con su gate completo.~~ **Hecho** (2026-08-06). El
-  orden real de los 16 pasos vive en un solo lugar — el párrafo "El deploy es
+  orden real de los 17 pasos vive en un solo lugar — el párrafo "El deploy es
   un comando con gate" más arriba — para no mantener una segunda copia que
   pueda desincronizarse del script. Ver
   `docs/superpowers/specs/2026-08-06-deploy-design.md` y la sección *Deploy y
-  rollback* de `docs/runbook-stacks.md`.
+  rollback* de `docs/runbook-stacks.md`. **Sumado después** (2026-08-08, Task
+  5c): la corrida de `setup-db-roles.sh` contra el objetivo después de
+  `migrate deploy`, para que el `EXECUTE` por nombre de las funciones se
+  aplique sin depender de que alguien se acuerde de correrlo a mano.
 - ~~Montar los backups con `pg_dump` y el restore verificado contra una base
   descartable.~~ **Hecho** (2026-08-04). Ver *Bloqueantes antes del primer
   tenant real*, punto 2, y `docs/runbook-backups.md`.
