@@ -38,6 +38,13 @@ $$;
 
 -- Postgres le otorga EXECUTE a PUBLIC por defecto al crear una función. Sin
 -- este REVOKE la puerta queda abierta para cualquier rol futuro, incluidos los
--- que todavía no existen.
+-- que todavía no existen. PUBLIC no es un rol que pueda faltar, así que esta
+-- línea corre sobre cualquier base.
 REVOKE ALL ON FUNCTION resolver_tenant(text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION resolver_tenant(text) TO arandano_app;
+
+-- Lo que NO va acá es el GRANT a arandano_app: una migración no puede nombrar
+-- un rol, porque tiene que poder correr sobre la shadow database del paso 3
+-- del gate (un Postgres desnudo con usuario `sombra`, sin arandano_app) y
+-- sobre un pg_restore a una base todavía sin roles. Es la misma invariante que
+-- ya declara la migración inicial para las policies de RLS. El EXECUTE para
+-- arandano_app lo da scripts/setup-db-roles.sh por default privileges.

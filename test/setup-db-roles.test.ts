@@ -90,6 +90,45 @@ describe('setup-db-roles.sh', () => {
     }
   })
 
+  // Mismo mecanismo que el test anterior pero para funciones: una migración no
+  // puede otorgar el EXECUTE con un GRANT que nombre a arandano_app (rompería
+  // sobre la shadow database y sobre un pg_restore sin roles), así que el
+  // default privilege es la única vía. defaclobjtype = 'f' es funciones; el ACL
+  // con grantee vacío (p.ej. `=X/arandano_owner`) es la entrada de PUBLIC, y su
+  // ausencia es lo que prueba que el REVOKE de PUBLIC también quedó como default.
+  it('deja los default privileges para que las funciones futuras nazcan ejecutables sólo por la app', async () => {
+    const cliente = new Client({ connectionString: urlSuperusuario() })
+    await cliente.connect()
+    try {
+      const { rows } = await cliente.query(
+        `SELECT array_to_string(d.defaclacl, ',') AS acl
+           FROM pg_default_acl d
+           JOIN pg_roles r ON r.oid = d.defaclrole
+          WHERE r.rolname = 'arandano_owner' AND d.defaclobjtype = 'f'`,
+      )
+      expect(rows).toHaveLength(1)
+      expect(rows[0].acl).toContain('arandano_app=X')
+      expect(rows[0].acl).not.toMatch(/(^|,)=X/)
+    } finally {
+      await cliente.end()
+    }
+  })
+
+  it('resolver_tenant queda ejecutable para arandano_app y cerrado para PUBLIC, por default privileges y no por GRANT en la migración', async () => {
+    const cliente = new Client({ connectionString: urlSuperusuario() })
+    await cliente.connect()
+    try {
+      const { rows } = await cliente.query(
+        `SELECT has_function_privilege('arandano_app', 'resolver_tenant(text)', 'EXECUTE') AS app,
+                has_function_privilege('public', 'resolver_tenant(text)', 'EXECUTE') AS publico`,
+      )
+      expect(rows[0].app).toBe(true)
+      expect(rows[0].publico).toBe(false)
+    } finally {
+      await cliente.end()
+    }
+  })
+
   // El Postgres de producción no publica ningún puerto al host, así que
   // --network=host —el default— no puede alcanzarlo por más que la URL sea
   // correcta. Estos dos tests fijan que la red sea elegible, porque de eso

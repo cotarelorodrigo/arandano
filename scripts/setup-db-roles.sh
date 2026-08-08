@@ -116,6 +116,22 @@ ALTER DEFAULT PRIVILEGES FOR ROLE arandano_owner IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO arandano_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE arandano_owner IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO arandano_app;
+
+-- Lo mismo para las funciones. resolver_tenant es la primera y no va a ser la
+-- última: son la vía por la que la app lee lo que RLS le esconde por diseño, y
+-- una migración NO puede otorgar el EXECUTE por su cuenta porque nombrar un rol
+-- ahí adentro la vuelve inaplicable sobre la shadow database del paso 3 del gate
+-- y sobre un pg_restore a una base sin roles.
+--
+-- El REVOKE no es redundante con el de la migración: Postgres le da EXECUTE a
+-- PUBLIC por defecto al crear una función, y un default privilege que sólo
+-- AGREGA deja ese regalo intacto. Van los dos, el de acá para lo que venga.
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO arandano_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE arandano_owner IN SCHEMA public
+  REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES FOR ROLE arandano_owner IN SCHEMA public
+  GRANT EXECUTE ON FUNCTIONS TO arandano_app;
 EOF
 
 echo "roles listos (owner con $CREATEDB_SQL)"
