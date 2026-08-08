@@ -31,6 +31,15 @@ services:
       # Va acá y no derivado de DATABASE_URL: derivarlo de la variable que
       # puede estar mal no comprueba nada.
       ARANDANO_DB_ESPERADA: arandano_prod
+      DOMINIO_BASE: arandano.app
+      # El check de tenant del healthcheck resuelve este subdominio con
+      # resolver_tenant() y comprueba que RLS filtre en las dos direcciones.
+      # A diferencia de stage, acá nadie lo crea solo: el tenant canario de
+      # producción (CLAUDE.md, "el tenant canario") tiene que existir en esta
+      # base ANTES del primer deploy que promueva este código, o el check de
+      # tenant del healthcheck falla y dispara el rollback automático de un
+      # deploy sano.
+      TENANT_CANARIO_SUBDOMINIO: canario
     # Sin cap de CPU: con cpu_shares alto gana bajo contención y aprovecha
     # los dos cores cuando dev está quieto.
     cpu_shares: 1024

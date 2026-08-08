@@ -91,14 +91,90 @@ const rolCheck: HealthCheck = {
 }
 
 /**
+ * Un uuid que no puede ser de ningún tenant: los ids reales son v7
+ * (`@default(uuid(7))`) o v4 (`gen_random_uuid()` del alta), y ninguno de los
+ * dos genera este patrón de ceros.
+ */
+const TENANT_INEXISTENTE = '00000000-0000-4000-8000-000000000000'
+
+/**
+ * Que el aislamiento entre tenants esté APLICANDO, no sólo que una query
+ * filtrada devuelva algo.
+ *
+ * La versión literal del bloqueante — "una query real filtrada por tenant que
+ * devuelva datos" — no alcanza: una query filtrada devuelve datos igual con RLS
+ * apagado, así que un check que sólo mire eso pasa exactamente en el estado que
+ * existe para detectar. Por eso hay dos mitades, y la que importa es la
+ * negativa: con un tenant_id inventado no se puede ver ni una fila.
+ *
+ * Atrapa un BYPASSRLS otorgado por error, una policy caída en una migración, y
+ * la aplicación conectada con un rol exento.
+ */
+const tenantCheck: HealthCheck = {
+  name: 'tenant',
+  timeoutMs: 3000,
+  run: async () => {
+    const subdominio = process.env.TENANT_CANARIO_SUBDOMINIO
+    if (!subdominio) {
+      throw new Error(
+        'TENANT_CANARIO_SUBDOMINIO no está definida: el healthcheck no tiene a qué ' +
+          'tenant apuntar, así que no puede comprobar que el aislamiento aplique. ' +
+          'Definirla en el compose del stack.',
+      )
+    }
+
+    // Por la misma puerta que usa la aplicación, así el check también la ejercita.
+    const { rows } = await pool.query('SELECT id FROM resolver_tenant($1)', [subdominio])
+    const tenantId = rows[0]?.id
+    if (!tenantId) {
+      throw new Error(
+        `el tenant canario "${subdominio}" no existe en esta base: crearlo con ` +
+          '`npm run tenant:crear` antes de deployar este código',
+      )
+    }
+
+    // Una conexión dedicada y no pool.query(): set_config(..., true) es local a
+    // la transacción, y dos pool.query() pueden caer en clientes distintos.
+    const cliente = await pool.connect()
+    try {
+      await cliente.query('BEGIN')
+
+      await cliente.query(`SELECT set_config('arandano.tenant_id', $1, true)`, [tenantId])
+      const propio = await cliente.query('SELECT count(*)::int AS n FROM tenants')
+
+      // El segundo set_config pisa al primero dentro de la misma transacción.
+      await cliente.query(`SELECT set_config('arandano.tenant_id', $1, true)`, [TENANT_INEXISTENTE])
+      const ajeno = await cliente.query('SELECT count(*)::int AS n FROM tenants')
+
+      await cliente.query('ROLLBACK')
+
+      if (propio.rows[0].n !== 1) {
+        throw new Error(
+          `con el tenant_id del canario "${subdominio}" la base devolvió ` +
+            `${propio.rows[0].n} filas de tenants y tendría que devolver 1`,
+        )
+      }
+      if (ajeno.rows[0].n !== 0) {
+        throw new Error(
+          `con un tenant_id inventado la base devolvió ${ajeno.rows[0].n} filas de ` +
+            'tenants: RLS no está filtrando y el aislamiento entre tenants no aplica',
+        )
+      }
+    } finally {
+      cliente.release()
+    }
+
+    return `canario=${subdominio}`
+  },
+}
+
+/**
  * La lista de checks del healthcheck.
  *
  * Sólo entra acá lo que puede FALLAR. El SHA y el uptime del proceso son
  * contexto, no señal: se reportan aparte, en `info` (ver `info.ts`).
  *
- * PENDIENTE — bloqueante antes del primer deploy real (ver CLAUDE.md):
- * falta el check de una query filtrada por tenant, que necesita un tenant
- * conocido al que apuntar (llega con el tenant canario), y el de pg-boss, que
- * espera a que pg-boss se configure.
+ * PENDIENTE — ver CLAUDE.md: falta el check de pg-boss, que espera a que
+ * pg-boss se configure.
  */
-export const checks: HealthCheck[] = [postgresCheck, rolCheck]
+export const checks: HealthCheck[] = [postgresCheck, rolCheck, tenantCheck]

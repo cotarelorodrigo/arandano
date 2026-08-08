@@ -71,6 +71,15 @@ caso_rol_sin_privilegios() {
   ' >/dev/null 2>&1
 }
 
+# El check que comprueba que RLS está filtrando en las dos direcciones. Si
+# falla, el aislamiento entre tenants no aplica.
+caso_check_tenant() {
+  printf '%s' "$SALUD" | jq -e '
+    [.checks[] | select(.name == "tenant")] | length == 1
+    and (.[0].ok == true)
+  ' >/dev/null 2>&1
+}
+
 caso_home_responde() {
   curl -fsS --max-time 10 -o /dev/null "$URL_BASE/"
 }
@@ -81,6 +90,7 @@ for caso in \
   caso_health_sano \
   caso_sha_esperado \
   caso_rol_sin_privilegios \
+  caso_check_tenant \
   caso_home_responde
 do
   if "$caso"; then ok "$caso"; else bad "$caso"; fi

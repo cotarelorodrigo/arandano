@@ -38,6 +38,12 @@ services:
     environment:
       ARANDANO_STACK: ensayo
       ARANDANO_DB_ESPERADA: arandano_ensayo
+      DOMINIO_BASE: stage.arandano.app
+      # Mismos valores que compose.stage.yml: el check de tenant necesita un
+      # canario al que apuntar, y este stack no tiene uno propio creado en
+      # cada corrida como stage — hay que darlo de alta a mano contra esta
+      # base antes de que `deploy.sh --objetivo=ensayo` pueda dar verde.
+      TENANT_CANARIO_SUBDOMINIO: canario
     # Sólo por Tailscale, como dev y stage. Este stack no existe desde internet.
     ports:
       - "100.64.81.63:3002:3000"

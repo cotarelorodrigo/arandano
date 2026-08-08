@@ -74,6 +74,12 @@ services:
       # Ver compose.prod.yml: el healthcheck comprueba contra qué base está
       # hablando la app, no sólo que alguna responda.
       ARANDANO_DB_ESPERADA: arandano_stage
+      DOMINIO_BASE: stage.arandano.app
+      # El check de tenant del healthcheck resuelve este subdominio con
+      # resolver_tenant() y comprueba que RLS filtre en las dos direcciones.
+      # El paso 8 de deploy.sh crea este canario contra la base efímera de
+      # stage en cada corrida, antes de este `up -d --wait app`.
+      TENANT_CANARIO_SUBDOMINIO: canario
     ports:
       - "100.64.81.63:3001:3000"
     cpus: 0.5

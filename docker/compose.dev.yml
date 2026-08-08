@@ -46,6 +46,11 @@ services:
       # Ver compose.prod.yml: el healthcheck comprueba contra qué base está
       # hablando la app, no sólo que alguna responda.
       ARANDANO_DB_ESPERADA: arandano_dev
+      DOMINIO_BASE: dev.arandano.app
+      # El check de tenant del healthcheck resuelve este subdominio con
+      # resolver_tenant() y comprueba que RLS filtre en las dos direcciones.
+      # El canario de dev se creó a mano con `npm run tenant:crear` (Task 4).
+      TENANT_CANARIO_SUBDOMINIO: canario
     volumes:
       - ../:/app
       - node_modules:/app/node_modules

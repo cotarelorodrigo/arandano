@@ -4,11 +4,30 @@ import { runChecks } from '@/lib/health/runChecks'
 // El check de postgres habla con el pool real; acá sólo interesa qué hace con
 // la respuesta, no que haya una base levantada.
 const query = vi.fn()
-vi.mock('@/lib/db', () => ({ pool: { query: (...a: unknown[]) => query(...a) } }))
+const clienteQuery = vi.fn()
+const release = vi.fn()
+vi.mock('@/lib/db', () => ({
+  pool: {
+    query: (...a: unknown[]) => query(...a),
+    // El check de tenant necesita la MISMA conexión para las dos mitades:
+    // set_config(..., true) es local a la transacción, y pool.query() no
+    // garantiza que dos llamadas caigan en el mismo cliente.
+    connect: async () => ({
+      query: (...a: unknown[]) => clienteQuery(...a),
+      release: () => release(),
+    }),
+  },
+}))
 
 async function correrPostgresCheck() {
   const { checks } = await import('@/lib/health/checks')
-  return runChecks(checks)
+  // Sólo el check de postgres: desde que se sumó el check de tenant, `checks`
+  // trae un tercero que también puede fallar (p. ej. sin
+  // TENANT_CANARIO_SUBDOMINIO, que este describe no define), y estos tests
+  // afirman sobre `report.status` en conjunto — aislar el check bajo prueba es
+  // lo que hace que esa afirmación siga hablando sólo de postgres.
+  const check = checks.find((c) => c.name === 'postgres')!
+  return runChecks([check])
 }
 
 describe('check de postgres', () => {
@@ -105,5 +124,100 @@ describe('check de identidad del rol', () => {
     const { checks } = await import('@/lib/health/checks')
     const reporte = await runChecks(checks)
     expect(reporte.checks.find((c) => c.name === 'rol')?.detail).toMatch(/due/i)
+  })
+})
+
+describe('check de tenant', () => {
+  const original = process.env.TENANT_CANARIO_SUBDOMINIO
+
+  beforeEach(() => {
+    query.mockReset()
+    clienteQuery.mockReset()
+    release.mockReset()
+    vi.resetModules()
+    process.env.TENANT_CANARIO_SUBDOMINIO = 'canario'
+  })
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.TENANT_CANARIO_SUBDOMINIO
+    else process.env.TENANT_CANARIO_SUBDOMINIO = original
+  })
+
+  async function correrTenantCheck() {
+    const { checks } = await import('@/lib/health/checks')
+    const check = checks.find((c) => c.name === 'tenant')!
+    const { runChecks } = await import('@/lib/health/runChecks')
+    return runChecks([check])
+  }
+
+  /** Programa las respuestas de la conexión dedicada: BEGIN, set_config,
+   *  count propio, set_config, count ajeno, ROLLBACK. */
+  function conCuentas(propio: number, ajeno: number) {
+    clienteQuery.mockImplementation((sql: string) => {
+      if (/count/.test(sql)) {
+        const n = clienteQuery.mock.calls.filter((c) => /count/.test(c[0] as string)).length
+        return Promise.resolve({ rows: [{ n: n === 1 ? propio : ajeno }] })
+      }
+      return Promise.resolve({ rows: [] })
+    })
+  }
+
+  it('pasa cuando el canario existe y RLS filtra en las dos direcciones', async () => {
+    query.mockResolvedValue({ rows: [{ id: 'id-del-canario' }] })
+    conCuentas(1, 0)
+
+    const report = await correrTenantCheck()
+
+    expect(report.status).toBe('ok')
+    expect(report.checks[0].detail).toBe('canario=canario')
+    expect(release).toHaveBeenCalled()
+  })
+
+  it('falla si el canario no existe', async () => {
+    query.mockResolvedValue({ rows: [] })
+
+    const report = await correrTenantCheck()
+
+    expect(report.status).toBe('degraded')
+    expect(report.checks[0].detail).toContain('canario')
+  })
+
+  // La mitad que hace que este check valga algo. Sin ella, el check pasa
+  // igual con RLS apagado — que es exactamente el estado que existe para
+  // detectar.
+  it('falla si con un tenant_id inventado igual ve filas', async () => {
+    query.mockResolvedValue({ rows: [{ id: 'id-del-canario' }] })
+    conCuentas(1, 3)
+
+    const report = await correrTenantCheck()
+
+    expect(report.status).toBe('degraded')
+    expect(report.checks[0].detail).toMatch(/RLS/)
+  })
+
+  it('falla si con el tenant_id del canario no ve su propia fila', async () => {
+    query.mockResolvedValue({ rows: [{ id: 'id-del-canario' }] })
+    conCuentas(0, 0)
+
+    const report = await correrTenantCheck()
+
+    expect(report.status).toBe('degraded')
+  })
+
+  it('falla ruidosamente si falta TENANT_CANARIO_SUBDOMINIO', async () => {
+    delete process.env.TENANT_CANARIO_SUBDOMINIO
+    const report = await correrTenantCheck()
+
+    expect(report.status).toBe('degraded')
+    expect(report.checks[0].detail).toContain('TENANT_CANARIO_SUBDOMINIO')
+  })
+
+  it('suelta la conexión aunque falle', async () => {
+    query.mockResolvedValue({ rows: [{ id: 'id-del-canario' }] })
+    clienteQuery.mockRejectedValue(new Error('se cayó la base'))
+
+    await correrTenantCheck()
+
+    expect(release).toHaveBeenCalled()
   })
 })
