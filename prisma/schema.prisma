@@ -43,6 +43,34 @@ enum TipoArticulo {
   @@map("tipo_articulo")
 }
 
+// El "por qué" de cada movimiento. Es el punto de extensión que CLAUDE.md le
+// promete a los módulos: órdenes de trabajo descontando repuestos, gastronomía
+// descontando insumos por receta. Sumar un motivo es una migración aditiva.
+enum MotivoMovimiento {
+  VENTA
+  ANULACION_VENTA
+  AJUSTE
+  INGRESO
+
+  @@map("motivo_movimiento")
+}
+
+enum MedioPago {
+  EFECTIVO
+  TRANSFERENCIA
+  TARJETA_DEBITO
+  TARJETA_CREDITO
+
+  @@map("medio_pago")
+}
+
+enum Moneda {
+  ARS
+  USD
+
+  @@map("moneda")
+}
+
 // La raíz. No tiene tenant_id porque ES el tenant; su policy de RLS compara
 // contra id.
 model Tenant {
@@ -50,13 +78,24 @@ model Tenant {
   subdominio    String       @unique
   nombre        String
   estado        EstadoTenant @default(TRIAL)
+  // El correlativo de ventas es POR TENANT, así que no puede ser una secuencia
+  // de Postgres —esas son globales—. Se incrementa dentro de la misma
+  // transacción que crea la venta: eso serializa las ventas simultáneas de un
+  // mismo local (irrelevante: no hay dos cajas cobrando en el mismo
+  // milisegundo) y a cambio no hay huecos ni números repetidos, que es lo que
+  // hace que "la venta 123" sirva para hablar por teléfono.
+  proximoNumeroVenta Int @default(1) @map("proximo_numero_venta")
   creadoEn      DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  modulos   TenantModule[]
-  users     User[]
-  clientes  Cliente[]
-  articulos Articulo[]
+  modulos     TenantModule[]
+  users       User[]
+  clientes    Cliente[]
+  articulos   Articulo[]
+  ventas      Venta[]
+  ventaItems  VentaItem[]
+  pagos       Pago[]
+  movimientos MovimientoStock[]
 
   @@map("tenants")
 }
@@ -85,6 +124,10 @@ model User {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  ventasHechas   Venta[]           @relation("VentasHechas")
+  ventasAnuladas Venta[]           @relation("VentasAnuladas")
+  movimientos    MovimientoStock[]
+
   // Por tenant y no global: la misma persona puede trabajar en dos negocios.
   @@unique([tenantId, email])
   @@map("users")
@@ -101,6 +144,8 @@ model Cliente {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  ventas Venta[]
+
   @@index([tenantId])
   @@map("clientes")
 }
@@ -114,11 +159,127 @@ model Articulo {
   // Decimal y nunca Float: un flotante binario no representa 0,10 y el error
   // se acumula en cada suma de una caja.
   precio        Decimal  @db.Decimal(12, 2)
+  // Decimal(12,3) y no entero, aunque un local de celulares venda unidades:
+  // CLAUDE.md ya tiene previsto gastronomía descontando insumos por receta, y
+  // medio kilo de harina no es un entero. Cambiar el tipo después toca todas
+  // las filas de todos los tenants; ponerlo bien ahora no cuesta nada.
+  //
+  // Es un CACHÉ de la suma de sus movimientos, no la fuente de verdad. Se
+  // actualiza con UPDATE relativo en la misma transacción que el movimiento, y
+  // `test/ventas.test.ts` prueba que la suma cierra.
+  stock Decimal @default(0) @db.Decimal(12, 3)
   creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  movimientos MovimientoStock[]
+  ventaItems  VentaItem[]
+
   @@unique([tenantId, sku])
   @@map("articulos")
+}
+
+// Append-only: nada se edita ni se borra. Es lo que permite responder "por qué
+// tengo 3 y no 5", que es la pregunta que un dueño hace cuando el inventario no
+// le cierra.
+model MovimientoStock {
+  id         String           @id @default(uuid(7)) @db.Uuid
+  tenantId   String           @map("tenant_id") @db.Uuid
+  articuloId String           @map("articulo_id") @db.Uuid
+  // Con signo: negativo descuenta, positivo ingresa.
+  delta     Decimal          @db.Decimal(12, 3)
+  motivo    MotivoMovimiento
+  // Null en AJUSTE e INGRESO, que no vienen de una venta.
+  ventaId   String?          @map("venta_id") @db.Uuid
+  usuarioId String           @map("usuario_id") @db.Uuid
+  nota      String?
+  creadoEn  DateTime         @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Restrict y no Cascade: borrar un artículo no puede borrar la historia de lo
+  // que se vendió. Si tiene movimientos, no se borra.
+  articulo Articulo @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+  venta    Venta?   @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+  usuario  User     @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, articuloId])
+  @@index([tenantId, ventaId])
+  @@map("movimientos_stock")
+}
+
+model Venta {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  numero   Int
+  // Opcional: la venta de mostrador, sin cliente identificado, es la mayoría de
+  // las ventas de un local.
+  clienteId    String?   @map("cliente_id") @db.Uuid
+  usuarioId    String    @map("usuario_id") @db.Uuid
+  // En pesos. Lo calcula el motor sumando los ítems; no llega de afuera.
+  total        Decimal   @db.Decimal(12, 2)
+  // La venta anulada NO se borra: sus ítems y su total quedan intactos porque
+  // el historial tiene que poder responder qué se cobró, y cuando llegue ARCA
+  // ésta va a ser el comprobante que necesita su nota de crédito.
+  anuladaEn    DateTime? @map("anulada_en") @db.Timestamptz(3)
+  anuladaPorId String?   @map("anulada_por_id") @db.Uuid
+  creadoEn     DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cliente    Cliente? @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  usuario    User     @relation("VentasHechas", fields: [usuarioId], references: [id], onDelete: Restrict)
+  anuladaPor User?    @relation("VentasAnuladas", fields: [anuladaPorId], references: [id], onDelete: Restrict)
+
+  items       VentaItem[]
+  pagos       Pago[]
+  movimientos MovimientoStock[]
+
+  @@unique([tenantId, numero])
+  @@index([tenantId, creadoEn])
+  @@map("ventas")
+}
+
+// Precio y descripción CONGELADOS al momento de la venta. No son una referencia
+// viva al artículo: los precios cambian todas las semanas y los artículos se
+// renombran, y una venta de marzo tiene que seguir diciendo lo que se cobró en
+// marzo. `articuloId` se guarda igual, para poder navegar, pero no es de donde
+// sale lo que se muestra.
+model VentaItem {
+  id             String  @id @default(uuid(7)) @db.Uuid
+  tenantId       String  @map("tenant_id") @db.Uuid
+  ventaId        String  @map("venta_id") @db.Uuid
+  articuloId     String  @map("articulo_id") @db.Uuid
+  descripcion    String
+  cantidad       Decimal @db.Decimal(12, 3)
+  precioUnitario Decimal @map("precio_unitario") @db.Decimal(12, 2)
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  venta    Venta    @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  articulo Articulo @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, ventaId])
+  @@map("venta_items")
+}
+
+// Varios por venta: el pago partido —una parte en efectivo, otra por
+// transferencia— es la norma, no la excepción.
+model Pago {
+  id       String    @id @default(uuid(7)) @db.Uuid
+  tenantId String    @map("tenant_id") @db.Uuid
+  ventaId  String    @map("venta_id") @db.Uuid
+  medio    MedioPago
+  moneda   Moneda
+  // En la moneda del pago, no en pesos.
+  monto      Decimal  @db.Decimal(12, 2)
+  // Los ARS que valía una unidad de esa moneda EN ESE MOMENTO. Un pago en pesos
+  // lleva 1. Guardarla es lo que después deja cerrar la caja en las dos monedas
+  // sin tener que reconstruir a qué valor se tomó cada dólar.
+  cotizacion Decimal  @db.Decimal(12, 4)
+  creadoEn   DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  venta  Venta  @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, ventaId])
+  @@map("pagos")
 }

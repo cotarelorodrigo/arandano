@@ -21,6 +21,7 @@ erDiagram
     text nombre
     tipo_articulo tipo
     decimal(12,2) precio
+    decimal(12,3) stock
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
@@ -33,6 +34,27 @@ erDiagram
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
+  movimientos_stock {
+    uuid id PK
+    uuid tenant_id FK
+    uuid articulo_id FK
+    decimal(12,3) delta
+    motivo_movimiento motivo
+    uuid venta_id FK "opcional"
+    uuid usuario_id FK
+    text nota "opcional"
+    timestamptz(3) creado_en
+  }
+  pagos {
+    uuid id PK
+    uuid tenant_id FK
+    uuid venta_id FK
+    medio_pago medio
+    moneda moneda
+    decimal(12,2) monto
+    decimal(12,4) cotizacion
+    timestamptz(3) creado_en
+  }
   tenant_modules {
     uuid tenant_id PK, FK
     modulo modulo PK
@@ -43,6 +65,7 @@ erDiagram
     text subdominio UK
     text nombre
     estado_tenant estado
+    integer proximo_numero_venta
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
@@ -55,19 +78,60 @@ erDiagram
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
+  venta_items {
+    uuid id PK
+    uuid tenant_id FK
+    uuid venta_id FK
+    uuid articulo_id FK
+    text descripcion
+    decimal(12,3) cantidad
+    decimal(12,2) precio_unitario
+  }
+  ventas {
+    uuid id PK
+    uuid tenant_id FK "único junto a numero"
+    integer numero "único junto a tenant_id"
+    uuid cliente_id FK "opcional"
+    uuid usuario_id FK
+    decimal(12,2) total
+    timestamptz(3) anulada_en "opcional"
+    uuid anulada_por_id FK "opcional"
+    timestamptz(3) creado_en
+  }
+  articulos ||--o{ movimientos_stock : "ON DELETE RESTRICT"
+  articulos ||--o{ venta_items : "ON DELETE RESTRICT"
+  clientes |o--o{ ventas : "ON DELETE RESTRICT"
   tenants ||--o{ articulos : "ON DELETE CASCADE"
   tenants ||--o{ clientes : "ON DELETE CASCADE"
+  tenants ||--o{ movimientos_stock : "ON DELETE CASCADE"
+  tenants ||--o{ pagos : "ON DELETE CASCADE"
   tenants ||--o{ tenant_modules : "ON DELETE CASCADE"
   tenants ||--o{ users : "ON DELETE CASCADE"
+  tenants ||--o{ venta_items : "ON DELETE CASCADE"
+  tenants ||--o{ ventas : "ON DELETE CASCADE"
+  users |o--o{ ventas : "ON DELETE RESTRICT"
+  users ||--o{ movimientos_stock : "ON DELETE RESTRICT"
+  users ||--o{ ventas : "ON DELETE RESTRICT"
+  ventas |o--o{ movimientos_stock : "ON DELETE RESTRICT"
+  ventas ||--o{ pagos : "ON DELETE CASCADE"
+  ventas ||--o{ venta_items : "ON DELETE CASCADE"
 ```
 
 ## Enums
 
 - **estado_tenant**: `TRIAL`, `ACTIVO`, `SUSPENDIDO`
+- **medio_pago**: `EFECTIVO`, `TRANSFERENCIA`, `TARJETA_DEBITO`, `TARJETA_CREDITO`
 - **modulo**: `ORDENES_DE_TRABAJO`, `TURNOS`, `GASTRONOMIA`
+- **moneda**: `ARS`, `USD`
+- **motivo_movimiento**: `VENTA`, `ANULACION_VENTA`, `AJUSTE`, `INGRESO`
 - **rol_usuario**: `DUENO`, `EMPLEADO`
 - **tipo_articulo**: `PRODUCTO`, `SERVICIO`
 
 ## Índices no únicos
 
 - **clientes**: `clientes_tenant_id_idx` sobre (`tenant_id`)
+- **movimientos_stock**: `movimientos_stock_tenant_id_articulo_id_idx` sobre (`tenant_id`, `articulo_id`)
+- **movimientos_stock**: `movimientos_stock_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
+- **pagos**: `pagos_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
+- **venta_items**: `venta_items_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
+- **ventas**: `ventas_tenant_id_creado_en_idx` sobre (`tenant_id`, `creado_en`)
