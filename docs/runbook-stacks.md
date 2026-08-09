@@ -339,6 +339,34 @@ repo. Se activa con `git config core.hooksPath .githooks`, que ya está en
 migraciones destructivas, no los otros chequeos del gate — y `deploy.sh`
 vuelve a chequear lo mismo porque `--no-verify` existe.
 
+### Rotar el token del healthcheck
+
+`ARANDANO_SALUD_TOKEN` habilita el nivel detallado de `/api/health` — los
+checks con su detalle y el `sha`. Sin él, el endpoint devuelve sólo el
+veredicto, y `deploy.sh` no puede comparar el sha contra la imagen que
+promovió.
+
+```bash
+# 1. Reemplazar el valor en el .env del stack
+sed -i "s/^ARANDANO_SALUD_TOKEN=.*/ARANDANO_SALUD_TOKEN=$(openssl rand -hex 32)/" \
+  /srv/arandano/prod/.env
+
+# 2. Recrear la app para que lo tome (env_file se lee al arrancar)
+( cd /srv/arandano/prod && docker compose up -d --no-deps --force-recreate app )
+
+# 3. Comprobar que el nivel detallado sigue respondiendo
+source /root/arandano/scripts/lib/deploy-comun.sh
+CA=$(mktemp -p /var/tmp ca.XXXXXX)
+extraer_ca_caddy /srv/arandano/prod "$CA"
+consultar_salud https://localhost "$(token_salud /srv/arandano/prod)" "$CA" | head -c 120
+rm -f "$CA"
+```
+
+No hace falta tocar el uptime check externo: monitorea con el nivel anónimo, a
+propósito, para que rotar este token no lo ponga en rojo. El token de stage
+(`efimero-salud`) no se rota: vive en claro en `docker/compose.stage.yml` y en
+`scripts/deploy.sh` porque ese stack es efímero y nunca ve datos de clientes.
+
 ## El diagrama de la base
 
 `docs/schema.md` es **generado**, no escrito. Se regenera con:

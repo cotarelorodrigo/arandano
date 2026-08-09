@@ -308,6 +308,20 @@ Y del producto:
 Plazo distinto y más temprano que la lista anterior: hay que cerrar esto antes de apuntar `arandano.app` al servidor, no antes del primer tenant.
 
 1. **Establecer el estado real del dominio.** `dig arandano.app` devuelve NXDOMAIN (medido el 2026-08-07, desde este servidor) — no resuelve a ninguna IP. `algo.arandano.app` tampoco resuelve. Desde acá no se puede distinguir si nunca se registró, si expiró, o si está registrado sin zona publicada: los resolvers externos están bloqueados desde este host y la consulta RDAP no devolvió nada. "Apuntar el DNS al servidor" y "registrar el dominio" son tareas distintas, y quien tenga a cargo el cutover necesita confirmar cuál de las dos hace falta antes de seguir con el resto de esta lista.
-2. **El bloque `:80` del Caddyfile tiene que pasar a ser sólo redirección** (`redir https://{host}{uri}`), nunca `reverse_proxy`. Hoy es un catch-all en texto plano sin host: `curl http://178.156.251.41/api/health` responde 200 desde internet. Con tenants adentro, eso serviría cookies de sesión en claro.
-3. **Decidir si `/api/health` se autentica o se restringe por origen.** Es el endpoint más caro expuesto (un ida y vuelta a Postgres por request, pool de máximo 5, sin rate limiting en ninguna capa) y a la vez el único que un uptime check externo necesita alcanzar.
-4. **Quien toque ese bloque `:80` tiene que cambiar `URL_SALUD` en `scripts/deploy.sh` y en `scripts/rollback.sh` en el mismo commit, y hacer un deploy de punta a punta después.** Los dos scripts consultan el healthcheck en `http://127.0.0.1/api/health`, o sea a través de ese mismo catch-all, y ninguno de los dos sigue redirecciones. El día que el bloque pase a `redir https://{host}{uri}`, el poll recibe un 308 con cuerpo vacío, `health_ok` lo rechaza, y entonces: el paso 16 nunca da verde → **cada deploy sano dispara el rollback automático** → `rollback.sh` consulta la misma URL y también timeoutea → salida 3, el peor caso del gate, con producción revertida sin que hubiera nada malo. Hoy funciona, así que no es urgente; lo que no puede pasar es descubrirlo durante el cutover. Dos detalles que lo hacen fácil de subestimar: `--objetivo=ensayo` pega directo al puerto de la app sin pasar por Caddy, así que **el ensayo del gate no puede atrapar esto**; y la salida no es hacer que los scripts sigan redirecciones — ir por Caddy es deliberado, porque es el camino que hacen los clientes de verdad, y seguir un 308 a ciegas debilitaría el chequeo. Los dos `URL_SALUD` tienen un comentario que apunta acá.
+2. ~~**El bloque `:80` del Caddyfile tiene que pasar a ser sólo redirección.**~~
+   **Hecho** (2026-08-09). `redir https://{host}{uri} 308`. La app dejó de ser
+   alcanzable por IP, a propósito. Ver
+   `docs/superpowers/specs/2026-08-09-cutover-dns-design.md`.
+3. ~~**Decidir si `/api/health` se autentica o se restringe por origen.**~~
+   **Hecho** (2026-08-09). Dos niveles: sin credencial devuelve sólo el
+   veredicto —lo que un uptime check externo necesita—, y con el header
+   `X-Arandano-Salud` devuelve los checks y el `sha`. **Lo que NO resuelve**:
+   el amplificador de carga. El nivel anónimo sigue costando un ida y vuelta a
+   Postgres contra un pool de `max: 5`, y Caddy en su build estándar no trae
+   rate limiting.
+4. ~~**Quien toque el bloque `:80` tiene que cambiar `URL_SALUD` en los dos
+   scripts en el mismo commit.**~~ **Hecho** (2026-08-09). `URL_SALUD` de prod
+   es `https://localhost`, validando contra la raíz de la CA interna de Caddy —
+   lo que además le suma al gate detectar un certificado sin emitir, que antes
+   pasaba desapercibido. El punto ciego de `--objetivo=ensayo` sigue existiendo:
+   ese stack no tiene Caddy, así que no ejercita ni el proxy ni el TLS.
