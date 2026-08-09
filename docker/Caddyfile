@@ -20,6 +20,25 @@
 # comentario, indistinguible del lado del cliente de un TLS roto. Agregar
 # un site block NUEVO para el dominio real, dejando este intacto para
 # diagnóstico local.
+#
+# Y CON ÉL, DOS CHEQUEOS NUEVOS — esto es una trampa, no un detalle. El gate
+# del deploy valida hoy el certificado INTERNO de este site block (deploy.sh
+# y rollback.sh consultan https://localhost validando contra la raíz de la CA
+# interna), y eso se acredita como "el gate detecta un certificado sin emitir".
+# Es cierto hoy y deja de serlo justo el día del cutover: el certificado que
+# van a ver los clientes es el wildcard ACME/DNS-01 del OTRO site block, y si
+# ése no se aprovisiona, este site sigue validando perfecto, el gate sigue en
+# verde, y todo cliente recibe el "no certificate available" de arriba. La
+# detección tapa el único caso que ya no importa. Lo que hay que sumar ese
+# mismo día, en el mismo commit que agregue el site block:
+#
+#   - un caso contra el hostname real, no contra localhost:
+#     curl --resolve arandano.app:443:127.0.0.1 https://arandano.app/api/health
+#   - un check de scripts/verify-infra.sh que mire el certificado del wildcard
+#     (que valide contra las CA públicas del sistema, no contra la CA interna).
+#
+# Es la misma clase de trampa que el bloqueante 4 del cutover (los URL_SALUD
+# que iban por el :80), y por eso lleva la misma advertencia explícita.
 localhost:443 {
 	tls internal
 	reverse_proxy app:3000

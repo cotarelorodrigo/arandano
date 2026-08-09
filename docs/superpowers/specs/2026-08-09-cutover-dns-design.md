@@ -170,6 +170,25 @@ Lo que el gate detecta después de este cambio, y no detectaba antes:
 | Caddy caído | sí | sí |
 | Certificado sin emitir o vencido | **no** | **sí** |
 
+**Esa última fila vale hoy y deja de valer el día del cutover.** Lo que el gate
+valida es el certificado **interno** del site block `localhost:443`. Después del
+cutover, el certificado que ven los clientes es el wildcard ACME/DNS-01 de un
+site block **distinto**: si ese wildcard no se aprovisiona, `localhost:443`
+sigue validando perfecto, esta fila sigue diciendo "sí", el gate sigue en verde,
+y todo cliente recibe el `no certificate available` que el `Caddyfile` describe
+como indistinguible de un TLS roto. O sea que la capacidad que esta tabla se
+acredita es real ahora y **falsa exactamente cuando importa**, igual que pasaba
+con `URL_SALUD` entrando por el `:80` (bloqueante 4). Lo que hay que sumar ese
+día, en el mismo commit que agregue el site block del dominio real:
+
+- un caso del gate contra el **hostname real**, no contra `localhost`:
+  `curl --resolve arandano.app:443:127.0.0.1 https://arandano.app/api/health`;
+- un check de `scripts/verify-infra.sh` sobre el certificado del wildcard, que
+  valide contra las CA públicas del sistema y no contra la CA interna.
+
+Este spec **no** los implementa: el wildcard es del ciclo del cutover. Lo que sí
+hace es no dejar la capacidad escrita como si cubriera lo que no cubre.
+
 **ensayo** no cambia: sigue pegando directo al puerto de la app. Su punto ciego
 —no ejercita Caddy ni TLS— es real y queda escrito acá en vez de disimulado. La
 alternativa, montar un Caddy en el stack de ensayo, es más pieza de la que el

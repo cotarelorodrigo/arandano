@@ -17,6 +17,7 @@ Tailscale, nunca en internet. Ver *Deploy y rollback* más abajo.
 - **Cuidado con `down -v` desde el workspace.** Los cuatro compose declaran `name:`, así que `-f` solo ya resuelve el proyecto correcto y `-p` es redundante. El riesgo real es otro: `docker compose -f docker/compose.prod.yml down -v`, tipeado desde `/root/arandano`, apunta a **los volúmenes de producción** — `arandano-prod_pgdata` incluido. Es un archivo de dev que borra datos de clientes. Antes de cualquier `down -v`, mirar **qué compose** dice el `-f`, no desde qué directorio se está corriendo.
 - **`arandano-dev` se frena antes de que arranque el BUILD**, no antes de stage. La memoria no cierra de otra forma: prod (3200 MiB) + dev (2304) + el build (2048) + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6 GB. Con dev abajo el pico queda en ~7.5 GB, que es el número que documenta el presupuesto. Como el build es el primer paso del deploy y stage viene después, frenar dev al principio también cubre la regla vieja de que dev y stage no corren juntos (sus límites de CPU sumados pasan de un core: dev 0.75 + 0.25, stage 0.5 + 0.25). Se vuelve a levantar `arandano-dev` recién al terminar el deploy. `scripts/deploy.sh` ya hace esta secuencia solo, en su paso 6/18 y en el trap de limpieza — ver *Deploy y rollback* más abajo.
 - Producción no se edita: se corre una imagen. Nada de editores en `/srv/arandano/prod/` — ese directorio sólo tiene `docker-compose.yml`, `.env`, el `Caddyfile` y los volúmenes, sin código fuente.
+- **El `.env` de cada stack necesita `ARANDANO_SALUD_TOKEN`** (generado con `openssl rand -hex 32`), además de las credenciales de la base: sin él `/api/health` responde sólo el veredicto, el gate no recibe `info.sha` y `deploy.sh` **aborta antes de buildear**. Es requisito duro desde el cutover, no una opción — quien reconstruya `/srv/arandano/prod` o `/srv/arandano/ensayo` tiene que ponerlo en el `.env` nuevo. Rotarlo: ver *Rotar el token del healthcheck* más abajo.
 - Buildear siempre con el presupuesto de recursos puesto (ver la sección de abajo — el comando importa, las banderas "obvias" no hacen nada):
 
   ```bash
@@ -179,7 +180,7 @@ sudo scripts/setup-host.sh
 ./scripts/verify-infra.sh all
 ```
 
-Corre 54 checks en nueve suites (host, app, network, limits, build, isolation, env, logs, stress). Correrlo después de cada deploy — es lo que detecta que alguien aflojó un límite; acordarse no es un mecanismo.
+Corre once suites: host, app, network, limits, build, isolation, env, logs, stress, backup y roles. (Acá decía "54 checks en nueve suites": el número quedó viejo apenas se sumaron suites y checks, y nadie vuelve a contarlos — un total escrito a mano es un dato que miente en silencio. El total real lo imprime el propio script al terminar.) Correrlo después de cada deploy — es lo que detecta que alguien aflojó un límite; acordarse no es un mecanismo.
 
 Cada suite se puede correr sola pasándola por nombre (`./scripts/verify-infra.sh build`), que es lo práctico mientras se trabaja: `all` incluye la suite de estrés, y esa frena el Postgres de producción.
 
@@ -245,7 +246,9 @@ que deployó algo que nunca deployó.
 
 Los 18 pasos, en orden: working tree limpio → migraciones nuevas sin SQL
 destructivo → `schema.prisma` sincronizado con las migraciones (shadow
-database local, mismo patrón que `verify-backup.sh`) → `npm test` →
+database local, mismo patrón que `verify-backup.sh`), el diagrama al día y —
+sólo con `--objetivo=prod`— el `Caddyfile` de `/srv/arandano/prod` idéntico al
+del repo → `npm test` →
 typecheck y lint → frenar `arandano-dev` → build de `arandano-app` y
 `arandano-migrate` tageados con el SHA → levantar `arandano-stage` y ensayar
 la migración → smoke tests contra stage → migraciones del repo == migraciones
@@ -256,10 +259,38 @@ es la que lo aplica — ver la Task 5c) → alta del tenant canario contra el
 objetivo, tolerando que ya exista (Task 6: sin esto, el check de tenant del
 healthcheck no tiene a qué canario apuntar la primera vez que se deploya
 contra un objetivo nuevo) → promoción de la imagen → healthcheck
-con comparación de SHA → tag de git (salteado con `--objetivo=ensayo`, que
+con comparación de SHA, y —sólo en `prod`— el `:80` respondiendo `308` → tag
+de git (salteado con `--objetivo=ensayo`, que
 tampoco pushea nada) → el trap vuelve a levantar `arandano-dev`. El chequeo
 de schema (paso 3) corre con el `npx prisma` del propio repo, así que se
 queda en el preflight en vez de esperar a que exista una imagen buildeada.
+
+**Las dos afirmaciones sobre el `Caddyfile` (pasos 3 y 16) son la única
+cobertura que el gate tiene del proxy.** Hasta el cutover, `URL_SALUD` entraba
+por el bloque `:80`, así que un `:80` roto rompía el deploy: la configuración
+de Caddy tenía cobertura *accidental*. Al rutear el gate por `localhost:443`
+esa cobertura desapareció, y el `Caddyfile` quedó siendo la única parte de la
+configuración de producción que se entrega a mano y que el gate ya no veía —
+alguien podía volver el `:80` a `reverse_proxy app:3000` y todos los deploys
+siguientes reportaban 18/18 en verde mientras producción servía la app en texto
+plano. El paso 3 compara el **archivo** (`diff` contra el repo, aborta y no
+toca nada) y el paso 16 comprueba el **comportamiento** (el `308`), porque un
+`cp` sin `caddy reload` deja el archivo bien y el proxy mal. Van adentro de esos
+pasos y no como pasos nuevos para no renumerar dieciocho pasos y sus referencias
+cruzadas — mismo criterio que ya tenía el diagrama dentro del paso 3.
+
+**Cambiar `docker/Caddyfile` obliga a copiarlo a `/srv/arandano/prod`**, en la
+misma sesión y no "después": desde que existe el paso 3, un `Caddyfile` del repo
+que difiera del de producción **aborta todo deploy de prod**, incluido un
+hotfix. La copia es manual a propósito (producción no es un checkout), y el
+`reload` es la mitad que se olvida:
+
+```bash
+cp docker/Caddyfile /srv/arandano/prod/Caddyfile
+( cd /srv/arandano/prod && docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile )
+./scripts/verify-infra.sh network   # el 308 y el certificado, ya recargados
+./scripts/verify-infra.sh env       # que el archivo copiado sea igual al del repo
+```
 
 **El canario es dato de producción load-bearing, no un dato de prueba
 descartable.** Desde que el check `tenant` del healthcheck existe (Task 6),
@@ -347,20 +378,43 @@ veredicto, y `deploy.sh` no puede comparar el sha contra la imagen que
 promovió.
 
 ```bash
-# 1. Reemplazar el valor en el .env del stack
-sed -i "s/^ARANDANO_SALUD_TOKEN=.*/ARANDANO_SALUD_TOKEN=$(openssl rand -hex 32)/" \
-  /srv/arandano/prod/.env
+source /root/arandano/scripts/lib/deploy-comun.sh
+ENV=/srv/arandano/prod/.env
+
+# 0. El guard, y no es opcional: un `sed -i "s/^ARANDANO_SALUD_TOKEN=.*/.../"`
+#    sobre un archivo que NO tiene esa línea es un no-op silencioso con salida
+#    0. Sin este grep, el paso 1 no cambia nada, el 2 recrea la app con el
+#    token VIEJO y el 3 la verifica leyendo el mismo archivo sin cambiar: sale
+#    todo bien y el token filtrado sigue vigente. Es el mismo modo de falla
+#    contra el que `scripts/rollback.sh` se protege antes de su propio `sed`
+#    sobre `IMAGE_TAG`.
+grep -q '^ARANDANO_SALUD_TOKEN=' "$ENV" || {
+  echo "ERROR: $ENV no tiene una línea ARANDANO_SALUD_TOKEN=; agregarla a mano antes de rotar" >&2
+  return 1 2>/dev/null || exit 1
+}
+
+# 1. Guardar el valor ANTERIOR y reemplazarlo
+ANTES=$(token_salud /srv/arandano/prod)
+sed -i "s/^ARANDANO_SALUD_TOKEN=.*/ARANDANO_SALUD_TOKEN=$(openssl rand -hex 32)/" "$ENV"
 
 # 2. Recrear la app para que lo tome (env_file se lee al arrancar)
 ( cd /srv/arandano/prod && docker compose up -d --no-deps --force-recreate app )
 
-# 3. Comprobar que el nivel detallado sigue respondiendo
-source /root/arandano/scripts/lib/deploy-comun.sh
+# 3. Comprobar que el token CAMBIÓ y que el nivel detallado sigue respondiendo
+#    con el nuevo. Comparar antes/después es lo que distingue "roté" de "leí
+#    dos veces el mismo archivo": pedir sólo el detalle responde igual de bien
+#    con el token viejo intacto.
+DESPUES=$(token_salud /srv/arandano/prod)
+[ "$ANTES" != "$DESPUES" ] && echo "ok: el token cambió" || echo "ERROR: el token NO cambió"
 CA=$(mktemp -p /var/tmp ca.XXXXXX)
 extraer_ca_caddy /srv/arandano/prod "$CA"
-consultar_salud https://localhost "$(token_salud /srv/arandano/prod)" "$CA" | head -c 120
+consultar_salud https://localhost "$DESPUES" "$CA" | head -c 120
 rm -f "$CA"
+unset ANTES DESPUES
 ```
+
+Los valores no se imprimen en ningún paso — se comparan. Y `unset` al final,
+para no dejar el token viejo y el nuevo colgados en la shell de quien rotó.
 
 No hace falta tocar el uptime check externo: monitorea con el nivel anónimo, a
 propósito, para que rotar este token no lo ponga en rojo. El token de stage
