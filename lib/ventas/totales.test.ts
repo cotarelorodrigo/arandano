@@ -69,6 +69,19 @@ describe('totalDePagos', () => {
     expect(total.toString()).toBe('185075')
   })
 
+  it('redondea cada pago antes de sumar', () => {
+    const total = totalDePagos([
+      { monto: d('3'), cotizacion: d('0.005') },
+      { monto: d('3'), cotizacion: d('0.005') },
+    ])
+    // Redondear primero: 0,015 -> 0,02 por pago, 0,02 + 0,02 = 0,04.
+    // Sumar primero daría 0,015 + 0,015 = 0,03 antes de redondear, y esa
+    // diferencia de un centavo es la misma venta rechazada por no cerrar
+    // contra el total de los ítems (ver el caso equivalente en
+    // 'totalDeItems'): acá se ancla del lado de los pagos.
+    expect(total.toString()).toBe('0.04')
+  })
+
   it('una lista vacía da cero', () => {
     expect(totalDePagos([]).toString()).toBe('0')
   })
