@@ -80,6 +80,14 @@ services:
       # El paso 8 de deploy.sh crea este canario contra la base efímera de
       # stage en cada corrida, antes de este `up -d --wait app`.
       TENANT_CANARIO_SUBDOMINIO: canario
+      # Token en claro en un archivo versionado, por el mismo motivo que las
+      # credenciales de este stack unas líneas más arriba: la base es efímera,
+      # nace vacía en cada corrida, nunca ve datos de clientes, y el stack sólo
+      # escucha en la IP de Tailscale. No hay secreto que proteger.
+      # OJO: este literal está DUPLICADO en scripts/deploy.sh, que se lo pasa a
+      # smoke.sh. Si cambia acá, cambia allá — igual que efimero-app y
+      # efimero-owner, que ya viven así.
+      ARANDANO_SALUD_TOKEN: efimero-salud
     ports:
       - "100.64.81.63:3001:3000"
     cpus: 0.5
