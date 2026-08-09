@@ -323,7 +323,45 @@ fi
 # Corriendo local, el paso se queda exactamente donde la tabla de pasos del
 # spec lo puso — adentro del preflight, antes de gastar nada — y no hace
 # falta moverlo ni construir nada para probarlo.
-log "paso 3/18: schema.prisma, migraciones y diagrama sincronizados"
+log "paso 3/18: schema.prisma, migraciones, diagrama y Caddyfile sincronizados"
+
+# El Caddyfile va ACÁ, en el mismo paso y no en uno nuevo, por el mismo motivo
+# que el diagrama unas líneas más abajo: es la misma pregunta —¿lo que va a
+# correr coincide con lo que el repo dice?— y un paso 19 obligaría a renumerar
+# los dieciocho, incluidas las referencias cruzadas por número que tienen este
+# script, el runbook, CLAUDE.md y los specs. Va primero dentro del paso porque
+# no cuesta nada: falla antes de levantar la shadow database.
+#
+# POR QUÉ EXISTE: hasta el cutover, URL_SALUD entraba por el bloque `:80`, así
+# que un `:80` roto rompía el deploy — la configuración del proxy tenía
+# cobertura ACCIDENTAL del gate. Al rutear el gate por `localhost:443` (que era
+# lo correcto: es el único site block con certificado) esa cobertura
+# desapareció, y el Caddyfile quedó siendo la ÚNICA parte de la configuración
+# de producción que se copia a mano y que el gate ya no puede ver. El escenario
+# concreto: alguien vuelve el `:80` a `reverse_proxy app:3000` en
+# /srv/arandano/prod/Caddyfile y todos los deploys siguientes reportan 18/18 en
+# verde, taguean y promueven, mientras producción sirve la app en texto plano
+# por el puerto 80 — con las cookies de sesión adentro en cuanto haya login. El
+# único detector era `verify-infra.sh network`, que nada ejecuta solo.
+#
+# Sólo para `prod`: el stack de ensayo no tiene Caddy ni Caddyfile
+# (compose.ensayo.yml define sólo postgres y app), así que ahí este archivo no
+# existe y exigirlo rompería el ensayo del gate sin detectar nada.
+if [[ "$OBJETIVO" == prod ]]; then
+  if ! diff -q docker/Caddyfile "$DIR/Caddyfile" >/dev/null 2>&1; then
+    error "el Caddyfile de $DIR difiere del repo (o no se puede leer)"
+    diff -u docker/Caddyfile "$DIR/Caddyfile" >&2 || true
+    error "el gate ya no entra por el bloque :80, así que esta comparación es lo único que lo ve"
+    # El archivo entra al contenedor por bind mount (compose.prod.yml), así que
+    # copiarlo alcanza para que Caddy lo VEA — pero no para que lo APLIQUE: eso
+    # lo hace el reload, y olvidarlo es justo la mitad del escenario que este
+    # chequeo cubre.
+    error "para dejarlos iguales: cp docker/Caddyfile $DIR/Caddyfile && ( cd $DIR && docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile )"
+    exit 1
+  fi
+  log "  el Caddyfile de $DIR coincide con el repo"
+fi
+
 docker rm -f "$SOMBRA" >/dev/null 2>&1 || true
 # -p 127.0.0.1::5432 y no un puerto fijo: Docker elige uno libre y sólo en
 # loopback, así que dos corridas que se pisaran (el lock ya lo impide, pero un
@@ -1056,6 +1094,38 @@ if [[ "$sano" != true ]]; then
   rollback_y_salir "el healthcheck no dio sano con sha=$SHA en 90s (último: ${salud:-<sin respuesta>})"
 fi
 log "  $OBJETIVO responde sano con sha=$SHA"
+
+# La otra mitad del chequeo del Caddyfile (paso 3): ahí se compara el ARCHIVO,
+# acá el COMPORTAMIENTO. Son dos fallas distintas y ninguna implica la otra —
+# el archivo puede coincidir y Caddy seguir sirviendo la config vieja porque
+# alguien hizo el `cp` y se olvidó del `reload`, que es el caso más fácil de
+# cometer de los dos.
+#
+# Va en el paso 16 y no en uno propio por el mismo motivo que el paso 3: evitar
+# renumerar dieciocho pasos y sus referencias cruzadas. Y va DESPUÉS del
+# healthcheck y ANTES del tag a propósito: un deploy que dejó producción en
+# texto plano por el 80 no puede terminar creando un tag, que es la etiqueta de
+# "esto estuvo vivo y sano en producción".
+#
+# Sin `-L`: seguir el 308 anularía el chequeo — la gracia es ver el 308 mismo.
+#
+# Falla como cualquier otra falla de este tramo, o sea rollback. Con
+# matices que conviene dejar escritos, porque la alternativa se discutió:
+# revertir la imagen NO arregla un proxy mal configurado (el rollback no toca
+# el Caddyfile), así que lo que hace este disparo es (a) no tagear, (b) no
+# reportar éxito, y (c) dejar producción en la imagen anterior, que es el
+# default conservador de este script. Un código de salida propio habría
+# distinguido mejor la causa, pero agrega una pieza nueva al contrato de
+# salidas —documentado en tres lugares— para un caso que igual necesita una
+# persona: el mensaje de acá abajo es el que dice qué mirar.
+if [[ "$OBJETIVO" == prod ]]; then
+  codigo_80=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+    http://127.0.0.1/api/health 2>/dev/null) || codigo_80=000
+  if [[ "$codigo_80" != 308 ]]; then
+    rollback_y_salir "el :80 de $OBJETIVO devolvió $codigo_80 y no 308: Caddy no está sirviendo el Caddyfile del repo (¿falta el reload?), y la app puede estar saliendo en texto plano"
+  fi
+  log "  :80 redirige (308), no sirve la app"
+fi
 
 # ---------------------------------------------------------------------------
 # Paso 17. El tag va DESPUÉS del healthcheck: significa "esto estuvo vivo y sano
