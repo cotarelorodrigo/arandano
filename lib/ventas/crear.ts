@@ -93,7 +93,20 @@ export async function crearVenta(
             precioUnitario: l.precioUnitario,
           })),
         },
-        pagos: { create: pagos.map((p) => ({ tenantId, ...p })) },
+        // Campo por campo, igual que los ítems dos líneas arriba: un
+        // `...p` dejaría pasar cualquier propiedad de más que traiga un body
+        // JSON ya parseado, y Prisma la rechaza con `PrismaClientValidationError`
+        // —un 500 sin `codigo`— en vez del `ErrorDeVenta` que el resto de esta
+        // función usa para todo lo demás.
+        pagos: {
+          create: pagos.map((p) => ({
+            tenantId,
+            medio: p.medio,
+            moneda: p.moneda,
+            monto: p.monto,
+            cotizacion: p.cotizacion,
+          })),
+        },
       },
     })
 
