@@ -388,6 +388,37 @@ describe('anularVenta', () => {
     expect(movs).toHaveLength(1)
   })
 
+  // El de arriba llama en SECUENCIA: la primera transacción siempre comitea
+  // antes de que arranque la segunda, así que nunca ejercita la ventana entre
+  // leer y decidir — daba verde incluso con el guard que sí se pisaba. Éste
+  // solapa las dos anulaciones, que es lo que hace un doble click en la UI.
+  // Con un `findUnique` + `if (anuladaEn !== null)` las dos leen `null` antes de
+  // que cualquiera escriba, las dos compensan, y el stock queda acreditado dos
+  // veces por el delta completo.
+  it('dos anulaciones simultáneas compensan una sola vez', async () => {
+    const antes = new Prisma.Decimal(await stockDe(remera))
+
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('5') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('5000'), cotizacion: d('1') }],
+    })
+
+    await Promise.all([
+      anularVenta({ tenantId, ventaId: id, usuarioId }),
+      anularVenta({ tenantId, ventaId: id, usuarioId }),
+    ])
+
+    // El valor exacto de antes de la venta, no "algo parecido": sobre-acreditar
+    // es justamente el síntoma.
+    expect(new Prisma.Decimal(await stockDe(remera)).toString()).toBe(antes.toString())
+    const movs = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.movimientoStock.findMany({ where: { ventaId: id, motivo: 'ANULACION_VENTA' } }),
+    )
+    expect(movs).toHaveLength(1)
+  })
+
   it('una venta de servicios se anula sin mover stock', async () => {
     const { id } = await crearVenta({
       tenantId,
