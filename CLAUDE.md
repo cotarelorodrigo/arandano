@@ -200,6 +200,51 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 - **Sin feature flags, cada deploy alcanza a todos los clientes a la vez.** El healthcheck, los smoke tests y el rollback automático son la única red, así que su calidad no es negociable: un healthcheck superficial deja el rollback automático sin criterio para dispararse. Vale revisar esta decisión cuando la base de clientes crezca lo bastante como para que una hora de servicio degradado cueste más que mantener flags.
 - **La ventana de montar todo esto se cierra con el primer cliente.** La separación de entornos, los backups y el gate de `deploy.sh` ya están — lo que queda es más chico pero no menos filoso: el healthcheck completo (falta el check de pg-boss; el de tenant ya está) y el cutover del DNS, que hoy directamente no resuelve (`dig arandano.app` da NXDOMAIN, medido el 2026-08-07 — ver *Bloqueantes antes del cutover de DNS*). Cuanto menos quede, más vale cerrarlo ahora: después del primer tenant real, cada cambio se hace con datos de alguien encima.
 
+## Decisiones abiertas del modelo de datos
+
+Las levantó el review final del motor de stock y ventas (2026-08-09). Ninguna es
+un defecto de lo construido: son decisiones que hoy están tomadas **por omisión**,
+y las tres se vuelven más caras con cada mes que pasa.
+
+- **El costo del movimiento no se puede backfillear. Es la única puerta de una
+  sola dirección de esta lista.** El costo que un reporte de margen necesita es el
+  del **momento del movimiento**, no el actual: si un artículo se compró a 100 y
+  hoy vale 180, la venta de marzo se midió contra 100. `MovimientoStock` no lo
+  guarda, y no hay dato del cual reconstruirlo. Todo movimiento creado desde hoy
+  hasta el día que exista esa columna queda sin costo **para siempre**. Cerrarla
+  cuesta una columna nullable `costoUnitario Decimal(12,2)?` en una migración
+  aditiva, sin código que la use todavía. Decidirlo a conciencia: si la respuesta
+  es "no vamos a hacer reportes de margen", está bien — pero que sea una respuesta
+  y no un olvido.
+- **Stock por sucursal: hoy el default es "un tenant por local", sin que esté
+  escrito.** Este documento vende sucursales como límite de plan, pero
+  `Articulo.stock` es un escalar: no hay dónde poner la sucursal. Multi-sucursal
+  no es una columna más — es mover el stock a una tabla `(articulo, sucursal)` y
+  arrastrar con él `MovimientoStock`, `Venta` y todas las consultas. Es la
+  migración más cara que tiene este schema por delante. Las dos respuestas son
+  legítimas: "un tenant por local" (barata, y coherente con que el alta de tenant
+  sea instantánea) o "va a haber `sucursalId` y sabemos lo que cuesta". Hoy rige
+  la primera por omisión.
+- **`MovimientoStock` sólo sabe nacer de una venta**, y eso choca con lo que este
+  documento le promete a los módulos. El origen del movimiento es `ventaId`, una
+  FK concreta. Cuando lleguen órdenes de trabajo descontando repuestos y
+  gastronomía descontando insumos por receta, cada módulo va a querer **su propia
+  columna nullable en una tabla del núcleo** (`orden_de_trabajo_id`,
+  `comanda_id`), y la lógica que filtra por origen se duplica por módulo. Es
+  exactamente el riesgo que la sección anterior nombra: que el núcleo quede con
+  forma de servicio técnico. Las dos salidas conocidas —columna por módulo, o el
+  par `(origenTipo, origenId)` sin FK— tienen costos distintos y conviene elegir
+  **con el módulo de Órdenes de Trabajo en la mano**, que es el próximo. El cambio
+  en sí es aditivo; lo caro es elegir mal y descubrirlo con tres módulos escritos.
+
+Dos más chicas, del mismo review y del mismo momento: `Venta.numero` es el
+correlativo **interno** y no sirve como número fiscal —ARCA va a necesitar punto
+de venta y tipo de comprobante—, y `crearVenta` **no es idempotente**: un doble
+submit crea dos ventas y descuenta el stock dos veces. Es correcto que el motor
+sea así, pero la UI va a necesitar una clave de idempotencia, y el lugar barato
+para ponerla es un `@@unique([tenantId, claveIdempotencia])` sobre `ventas` —
+migración aditiva, y conviene decidirla antes de que haya ventas cargadas.
+
 ## Roadmap de producto
 
 Cada etapa es su propio ciclo de spec → plan → implementación. No se arranca la siguiente sin la anterior cerrada.
