@@ -13,6 +13,8 @@ import { crearTenant } from './datos'
 // `Prisma` y `ErrorDeVenta` sí van estáticos: no tocan la base.
 let enTransaccionDeTenant: typeof import('@/lib/tenant/transaccion').enTransaccionDeTenant
 let crearVenta: typeof import('@/lib/ventas/crear').crearVenta
+let anularVenta: typeof import('@/lib/ventas/anular').anularVenta
+let ajustarStock: typeof import('@/lib/ventas/anular').ajustarStock
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -29,6 +31,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
   ;({ crearVenta } = await import('@/lib/ventas/crear'))
+  ;({ anularVenta, ajustarStock } = await import('@/lib/ventas/anular'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -288,14 +291,18 @@ describe('crearVenta', () => {
   // directo para armar su escenario, y eso rompe la invariante a propósito —
   // el test daría rojo por el andamiaje del test, no por un bug del motor.
   //
-  // Versión reducida de la del plan maestro: la original arrancaba con un
-  // `ajustarStock` (INGRESO de 40) antes de la venta, pero esa función es
-  // interfaz de la Task 5 (`lib/ventas/anular.ts`, todavía no existe), no de
-  // ésta — el plan la dejó escrita adentro del bloque de la Task 4 por error
-  // de edición. `recon` ya arranca en stock 0, así que un solo `crearVenta`
-  // alcanza para cerrar la invariante sin tocar interfaz ajena: la Task 5
-  // puede sumarle después el paso de `ajustarStock` con dos líneas más.
+  // Ahora que `ajustarStock` existe (Task 5), el test ejercita las DOS vías de
+  // movimiento antes de reconciliar: un ingreso de 40 y una venta de 7.5. Si
+  // sólo probara una de las dos, no distinguiría un bug que afecte a la otra.
   it('el stock cierra contra la suma de sus movimientos', async () => {
+    await ajustarStock({
+      tenantId,
+      articuloId: recon,
+      delta: d('40'),
+      motivo: 'INGRESO',
+      usuarioId,
+      nota: 'stock inicial para la reconciliación',
+    })
     await crearVenta({
       tenantId,
       usuarioId,
@@ -312,7 +319,7 @@ describe('crearVenta', () => {
       return { stock: a.stock, suma: agg._sum.delta ?? new Prisma.Decimal(0) }
     })
     expect(stock.toString()).toBe(suma.toString())
-    expect(stock.toString()).toBe('-7.5')
+    expect(stock.toString()).toBe('32.5')
   })
 
   it('los números de venta son correlativos y sin huecos', async () => {
@@ -320,5 +327,143 @@ describe('crearVenta', () => {
       (await tx.venta.findMany({ orderBy: { numero: 'asc' } })).map((v) => v.numero),
     )
     expect(numeros).toEqual(numeros.map((_, i) => i + 1))
+  })
+})
+
+describe('anularVenta', () => {
+  it('devuelve el stock y deja la venta legible', async () => {
+    await owner.query(`UPDATE articulos SET stock = 50 WHERE id = $1`, [remera])
+    const antes = new Prisma.Decimal(await stockDe(remera))
+
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('3') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('3000'), cotizacion: d('1') }],
+    })
+    expect(new Prisma.Decimal(await stockDe(remera)).toString()).toBe(
+      antes.minus(3).toString(),
+    )
+
+    await anularVenta({ tenantId, ventaId: id, usuarioId })
+
+    expect(new Prisma.Decimal(await stockDe(remera)).toString()).toBe(antes.toString())
+
+    const venta = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.venta.findUniqueOrThrow({ where: { id }, include: { items: true, pagos: true } }),
+    )
+    // La venta NO se borra: sus ítems y su total quedan intactos, porque el día
+    // que exista ARCA ésta va a ser el comprobante que necesita su nota de
+    // crédito.
+    expect(venta.anuladaEn).not.toBeNull()
+    expect(venta.anuladaPorId).toBe(usuarioId)
+    expect(venta.total.toString()).toBe('3000')
+    expect(venta.items).toHaveLength(1)
+    expect(venta.pagos).toHaveLength(1)
+
+    const movs = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.movimientoStock.findMany({ where: { ventaId: id }, orderBy: { creadoEn: 'asc' } }),
+    )
+    expect(movs.map((m) => m.motivo)).toEqual(['VENTA', 'ANULACION_VENTA'])
+    expect(movs[1].delta.toString()).toBe('3')
+  })
+
+  // El reintento de un click es más probable que la mala intención.
+  it('anular dos veces no duplica la devolución', async () => {
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000'), cotizacion: d('1') }],
+    })
+    await anularVenta({ tenantId, ventaId: id, usuarioId })
+    const stockTrasPrimera = await stockDe(remera)
+
+    await anularVenta({ tenantId, ventaId: id, usuarioId })
+
+    expect(await stockDe(remera)).toBe(stockTrasPrimera)
+    const movs = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.movimientoStock.findMany({ where: { ventaId: id, motivo: 'ANULACION_VENTA' } }),
+    )
+    expect(movs).toHaveLength(1)
+  })
+
+  it('una venta de servicios se anula sin mover stock', async () => {
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: servicio, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('500'), cotizacion: d('1') }],
+    })
+    await anularVenta({ tenantId, ventaId: id, usuarioId })
+
+    const movs = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.movimientoStock.findMany({ where: { ventaId: id } }),
+    )
+    expect(movs).toHaveLength(0)
+  })
+
+  it('rechaza una venta que no existe', async () => {
+    await expect(
+      anularVenta({
+        tenantId,
+        ventaId: '00000000-0000-7000-8000-000000000000',
+        usuarioId,
+      }),
+    ).rejects.toMatchObject({ codigo: 'VENTA_INEXISTENTE' })
+  })
+})
+
+describe('ajustarStock', () => {
+  it('un ingreso suma y queda registrado con su nota', async () => {
+    const antes = new Prisma.Decimal(await stockDe(remera))
+
+    await ajustarStock({
+      tenantId,
+      articuloId: remera,
+      delta: d('25'),
+      motivo: 'INGRESO',
+      usuarioId,
+      nota: 'compra al proveedor',
+    })
+
+    expect(new Prisma.Decimal(await stockDe(remera)).toString()).toBe(
+      antes.plus(25).toString(),
+    )
+    const mov = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.movimientoStock.findFirstOrThrow({
+        where: { articuloId: remera, motivo: 'INGRESO' },
+        orderBy: { creadoEn: 'desc' },
+      }),
+    )
+    expect(mov.nota).toBe('compra al proveedor')
+    expect(mov.ventaId).toBeNull()
+  })
+
+  it('un ajuste negativo devuelve a cero un stock negativo', async () => {
+    await owner.query(`UPDATE articulos SET stock = -5 WHERE id = $1`, [remera])
+
+    await ajustarStock({
+      tenantId,
+      articuloId: remera,
+      delta: d('5'),
+      motivo: 'AJUSTE',
+      usuarioId,
+      nota: 'corrección de inventario',
+    })
+
+    expect(await stockDe(remera)).toBe('0')
+  })
+
+  it('rechaza un artículo que no existe', async () => {
+    await expect(
+      ajustarStock({
+        tenantId,
+        articuloId: '00000000-0000-7000-8000-000000000000',
+        delta: d('1'),
+        motivo: 'AJUSTE',
+        usuarioId,
+      }),
+    ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
   })
 })
