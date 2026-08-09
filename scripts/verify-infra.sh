@@ -120,6 +120,32 @@ suite_network() {
   else
     ok "puerto 3000 no alcanzable desde la IP pública"
   fi
+
+  # El check que habría atrapado el estado anterior. Durante meses
+  # `curl http://127.0.0.1/api/health` devolvió 200: el bloque :80 era un
+  # reverse_proxy catch-all sirviendo la app en texto plano a internet, con el
+  # nombre de la base, el del rol y el sha adentro de la respuesta.
+  local codigo_80
+  codigo_80=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+    http://127.0.0.1/api/health 2>/dev/null || echo 000)
+  check_eq ":80 redirige en vez de servir la app" "308" "$codigo_80"
+
+  # Que el site block localhost:443 siga sirviendo Y que su certificado valide
+  # contra la CA interna. De esto depende el gate del deploy: si Caddy no
+  # aprovisiona el certificado, deploy.sh y rollback.sh no pueden consultar el
+  # healthcheck.
+  local ca_tmp verifico
+  ca_tmp=$(mktemp -p /var/tmp arandano-ca-check.XXXXXXXX)
+  ( cd /srv/arandano/prod && docker compose exec -T caddy \
+      cat /data/caddy/pki/authorities/local/root.crt ) > "$ca_tmp" 2>/dev/null || true
+  if [[ -s "$ca_tmp" ]]; then
+    verifico=$(curl -s -o /dev/null -w '%{ssl_verify_result}' --max-time 5 \
+      --cacert "$ca_tmp" https://localhost/api/health 2>/dev/null || echo 99)
+  else
+    verifico=99
+  fi
+  rm -f "$ca_tmp"
+  check_eq "el certificado de localhost valida contra la CA interna" "0" "$verifico"
 }
 
 suite_limits() {
