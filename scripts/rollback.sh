@@ -69,16 +69,64 @@ case "$OBJETIVO" in
   *) error "objetivo inválido: $OBJETIVO"; uso ;;
 esac
 
-TOKEN_SALUD=$(token_salud "$DIR")
+# El token y la CA para consultar el healthcheck. ACÁ AVISAN Y SIGUEN; NO
+# ABORTAN, y esa diferencia con deploy.sh es deliberada:
+#
+#   - deploy.sh aborta temprano si no puede resolverlos, y hace bien: allá lo
+#     que está en juego es PROMOVER, y no deployar es siempre mejor que
+#     deployar a ciegas.
+#   - Acá lo que está en juego es REVERTIR, y la prioridad se da vuelta. Este
+#     script es la última red que queda, y se corre justo cuando producción ya
+#     está rota. Que no se pueda preparar la VERIFICACIÓN no es motivo para no
+#     hacer la REVERSIÓN: sería negarse a apagar el incendio porque no anda el
+#     termómetro.
+#
+# El caso no es hipotético: el contenedor de Caddy tiene `mem_limit: 128m` y es
+# candidato natural de un OOM, o sea que "Caddy caído" y "hace falta un
+# rollback" son el mismo momento con alta probabilidad. Con un abort acá, la
+# salida entera del script era una línea sobre la CA, salía 1 con la imagen
+# mala todavía sirviendo, sin pasar por el bloque `fallar` —que es el camino
+# diseñado para "revertí pero no pude verificar", con su `venía de:` /
+# `se intentó:` / `último JSON:`— y deploy.sh lo leía como salida 3 ("el
+# rollback también falló") sin que el rollback se hubiera intentado.
+#
+# Si esto queda a medias, el poll de 90s de más abajo falla solo y `fallar`
+# imprime el diagnóstico accionable. El aviso sale ACÁ, antes del silencio de
+# esos 90 segundos, para que el operador sepa desde el arranque que la
+# verificación no va a llegar.
+#
+# `|| TOKEN_SALUD=""` y no una asignación suelta: bajo `set -e`, un
+# `VAR=$(funcion_que_falla)` mata el script ahí mismo — que es exactamente el
+# defecto que se está corrigiendo. El `||` no traga el aviso: token_salud ya
+# escribió su propio error por stderr antes de devolver ≠0.
+TOKEN_SALUD=$(token_salud "$DIR") || TOKEN_SALUD=""
 CA_SALUD=""
 if [[ "$URL_SALUD" == https://* ]]; then
-  CA_SALUD=$(mktemp -p /var/tmp arandano-ca.XXXXXXXX)
-  # Acá SÍ va un trap de EXIT propio: a diferencia de deploy.sh, este script no
-  # tiene ninguno (sólo los de INT y TERM, que son independientes y no se
-  # pisan). Si alguna vez se le agrega otro EXIT, hay que COMPONER las dos
-  # acciones en un solo trap: el segundo reemplaza al primero en silencio.
-  trap 'rm -f "$CA_SALUD"' EXIT
-  extraer_ca_caddy "$DIR" "$CA_SALUD"
+  # CA_TMP (la ruta a borrar) y CA_SALUD (la CA que se puede USAR) son dos
+  # variables distintas a propósito: si la extracción falla, el temporal existe
+  # igual y hay que borrarlo, pero no sirve como `--cacert`. Con una sola
+  # variable, vaciarla para señalar "no sirve" dejaría al trap sin la ruta.
+  CA_TMP=$(mktemp -p /var/tmp arandano-ca.XXXXXXXX) || CA_TMP=""
+  if [[ -n "$CA_TMP" ]]; then
+    # Acá SÍ va un trap de EXIT propio: a diferencia de deploy.sh, este script
+    # no tiene ninguno (sólo los de INT y TERM, que son independientes y no se
+    # pisan). Si alguna vez se le agrega otro EXIT, hay que COMPONER las dos
+    # acciones en un solo trap: el segundo reemplaza al primero en silencio.
+    trap 'rm -f "${CA_TMP:-}"' EXIT
+    # `if` explícito y no `extraer_ca_caddy … && CA_SALUD=…`: en una AND-list el
+    # comportamiento de errexit ante la falla del primer comando es justo la
+    # clase de sutileza que nadie quiere estar releyendo durante una caída.
+    if extraer_ca_caddy "$DIR" "$CA_TMP"; then
+      CA_SALUD="$CA_TMP"
+    fi
+  fi
+fi
+
+if [[ -z "$TOKEN_SALUD" ]] || { [[ "$URL_SALUD" == https://* ]] && [[ -z "$CA_SALUD" ]]; }; then
+  error "AVISO: no se pudo preparar la consulta al healthcheck de $OBJETIVO (ver el error de arriba)"
+  error "  LA REVERSIÓN SE VA A HACER IGUAL. Lo que no se va a poder es VERIFICARLA."
+  error "  el poll de 90s va a agotarse y esto va a terminar en 'EL ROLLBACK NO VERIFICÓ EN 90s'"
+  error "  con la imagen ya revertida: comprobalo a mano con los comandos que imprime ahí"
 fi
 
 # Mismo motivo y mismo detalle que en deploy.sh (ver el comentario largo de
