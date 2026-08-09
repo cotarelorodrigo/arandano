@@ -152,6 +152,20 @@ describe('GET /api/health', () => {
       expect(body).toEqual({ status: 'ok' })
     })
 
+    // Dos cuerpos distintos bajo la misma URL y el mismo método: sin `Vary`,
+    // un caché intermedio (el que aparece en cuanto haya dominio real y
+    // uptime check externo delante) puede servirle a cualquiera el cuerpo
+    // detallado que se le entregó al gate.
+    it('declara Vary en los dos niveles', async () => {
+      const { GET } = await import('./route')
+
+      const anonima = await GET(pedir())
+      expect(anonima.headers.get('vary')).toBe('X-Arandano-Salud')
+
+      const detallada = await GET(pedir('token-de-prueba'))
+      expect(detallada.headers.get('vary')).toBe('X-Arandano-Salud')
+    })
+
     // El veredicto sale de todos los checks también en el nivel anónimo: es
     // lo que le permite al uptime check externo seguir detectando una base
     // caída sin ver un solo detalle.
