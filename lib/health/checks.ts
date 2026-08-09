@@ -137,28 +137,45 @@ const tenantCheck: HealthCheck = {
     // la transacción, y dos pool.query() pueden caer en clientes distintos.
     const cliente = await pool.connect()
     try {
-      await cliente.query('BEGIN')
+      try {
+        await cliente.query('BEGIN')
 
-      await cliente.query(`SELECT set_config('arandano.tenant_id', $1, true)`, [tenantId])
-      const propio = await cliente.query('SELECT count(*)::int AS n FROM tenants')
+        await cliente.query(`SELECT set_config('arandano.tenant_id', $1, true)`, [tenantId])
+        const propio = await cliente.query('SELECT count(*)::int AS n FROM tenants')
 
-      // El segundo set_config pisa al primero dentro de la misma transacción.
-      await cliente.query(`SELECT set_config('arandano.tenant_id', $1, true)`, [TENANT_INEXISTENTE])
-      const ajeno = await cliente.query('SELECT count(*)::int AS n FROM tenants')
+        // El segundo set_config pisa al primero dentro de la misma transacción.
+        await cliente.query(`SELECT set_config('arandano.tenant_id', $1, true)`, [TENANT_INEXISTENTE])
+        const ajeno = await cliente.query('SELECT count(*)::int AS n FROM tenants')
 
-      await cliente.query('ROLLBACK')
+        await cliente.query('ROLLBACK')
 
-      if (propio.rows[0].n !== 1) {
-        throw new Error(
-          `con el tenant_id del canario "${subdominio}" la base devolvió ` +
-            `${propio.rows[0].n} filas de tenants y tendría que devolver 1`,
-        )
-      }
-      if (ajeno.rows[0].n !== 0) {
-        throw new Error(
-          `con un tenant_id inventado la base devolvió ${ajeno.rows[0].n} filas de ` +
-            'tenants: RLS no está filtrando y el aislamiento entre tenants no aplica',
-        )
+        if (propio.rows[0].n !== 1) {
+          throw new Error(
+            `con el tenant_id del canario "${subdominio}" la base devolvió ` +
+              `${propio.rows[0].n} filas de tenants y tendría que devolver 1`,
+          )
+        }
+        if (ajeno.rows[0].n !== 0) {
+          throw new Error(
+            `con un tenant_id inventado la base devolvió ${ajeno.rows[0].n} filas de ` +
+              'tenants: RLS no está filtrando y el aislamiento entre tenants no aplica',
+          )
+        }
+      } catch (err) {
+        // Cualquier error entre el BEGIN y el ROLLBACK de arriba (la tabla
+        // ausente en una ventana de expand/contract, un rol sin SELECT, un
+        // statement_timeout, un deadlock) deja al cliente en 25P02 ("current
+        // transaction is aborted"). pg-pool NO hace rollback al liberar: sin
+        // pasarle el error, `_queryable` sigue en true y el cliente vuelve al
+        // pool de idle todavía adentro de la transacción rota. La PRÓXIMA
+        // consulta de cualquiera que lo tome —incluida la corrida siguiente de
+        // este mismo check, cuyo propio BEGIN fallaría igual y volvería a
+        // liberar sin ROLLBACK— hereda el mismo estado. Con `max: 5` y un
+        // endpoint que sondean el gate y el uptime check externo, cinco
+        // sondeos envenenan el pool entero: la app queda caída para todos los
+        // tenants por un healthcheck que rompió lo que monitorea.
+        await cliente.query('ROLLBACK').catch(() => {})
+        throw err
       }
     } finally {
       cliente.release()

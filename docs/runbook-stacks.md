@@ -15,7 +15,7 @@ Tailscale, nunca en internet. Ver *Deploy y rollback* más abajo.
 ## Reglas
 
 - **Cuidado con `down -v` desde el workspace.** Los cuatro compose declaran `name:`, así que `-f` solo ya resuelve el proyecto correcto y `-p` es redundante. El riesgo real es otro: `docker compose -f docker/compose.prod.yml down -v`, tipeado desde `/root/arandano`, apunta a **los volúmenes de producción** — `arandano-prod_pgdata` incluido. Es un archivo de dev que borra datos de clientes. Antes de cualquier `down -v`, mirar **qué compose** dice el `-f`, no desde qué directorio se está corriendo.
-- **`arandano-dev` se frena antes de que arranque el BUILD**, no antes de stage. La memoria no cierra de otra forma: prod (3200 MiB) + dev (2304) + el build (2048) + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6 GB. Con dev abajo el pico queda en ~7.5 GB, que es el número que documenta el presupuesto. Como el build es el primer paso del deploy y stage viene después, frenar dev al principio también cubre la regla vieja de que dev y stage no corren juntos (sus límites de CPU sumados pasan de un core: dev 0.75 + 0.25, stage 0.5 + 0.25). Se vuelve a levantar `arandano-dev` recién al terminar el deploy. `scripts/deploy.sh` ya hace esta secuencia solo, en su paso 6/17 y en el trap de limpieza — ver *Deploy y rollback* más abajo.
+- **`arandano-dev` se frena antes de que arranque el BUILD**, no antes de stage. La memoria no cierra de otra forma: prod (3200 MiB) + dev (2304) + el build (2048) + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6 GB. Con dev abajo el pico queda en ~7.5 GB, que es el número que documenta el presupuesto. Como el build es el primer paso del deploy y stage viene después, frenar dev al principio también cubre la regla vieja de que dev y stage no corren juntos (sus límites de CPU sumados pasan de un core: dev 0.75 + 0.25, stage 0.5 + 0.25). Se vuelve a levantar `arandano-dev` recién al terminar el deploy. `scripts/deploy.sh` ya hace esta secuencia solo, en su paso 6/18 y en el trap de limpieza — ver *Deploy y rollback* más abajo.
 - Producción no se edita: se corre una imagen. Nada de editores en `/srv/arandano/prod/` — ese directorio sólo tiene `docker-compose.yml`, `.env`, el `Caddyfile` y los volúmenes, sin código fuente.
 - Buildear siempre con el presupuesto de recursos puesto (ver la sección de abajo — el comando importa, las banderas "obvias" no hacen nada):
 
@@ -156,13 +156,13 @@ scripts/deploy.sh --minor             # minor: algo que el cliente ve
 scripts/deploy.sh --objetivo=ensayo   # la secuencia completa, sin tocar prod
 ```
 
-El script frena `arandano-dev` al arrancar (paso 6/17, antes del build — ver
+El script frena `arandano-dev` al arrancar (paso 6/18, antes del build — ver
 la regla de arriba) y lo vuelve a levantar al terminar, pase lo que pase.
 Toma un `flock`: si ya hay un deploy corriendo, **aborta** en vez de
 saltearse la corrida — salir con 0 sin haber promovido es cómo alguien cree
 que deployó algo que nunca deployó.
 
-Los 17 pasos, en orden: working tree limpio → migraciones nuevas sin SQL
+Los 18 pasos, en orden: working tree limpio → migraciones nuevas sin SQL
 destructivo → `schema.prisma` sincronizado con las migraciones (shadow
 database local, mismo patrón que `verify-backup.sh`) → `npm test` →
 typecheck y lint → frenar `arandano-dev` → build de `arandano-app` y
@@ -171,11 +171,28 @@ la migración → smoke tests contra stage → migraciones del repo == migracion
 del objetivo, en las dos direcciones → backup pre-migración → `migrate
 deploy` contra el objetivo → `setup-db-roles.sh` contra el objetivo (el
 EXECUTE de las funciones se otorga por nombre, y esta corrida post-migración
-es la que lo aplica — ver la Task 5c) → promoción de la imagen → healthcheck
+es la que lo aplica — ver la Task 5c) → alta del tenant canario contra el
+objetivo, tolerando que ya exista (Task 6: sin esto, el check de tenant del
+healthcheck no tiene a qué canario apuntar la primera vez que se deploya
+contra un objetivo nuevo) → promoción de la imagen → healthcheck
 con comparación de SHA → tag de git (salteado con `--objetivo=ensayo`, que
 tampoco pushea nada) → el trap vuelve a levantar `arandano-dev`. El chequeo
 de schema (paso 3) corre con el `npx prisma` del propio repo, así que se
 queda en el preflight en vez de esperar a que exista una imagen buildeada.
+
+**El canario es dato de producción load-bearing, no un dato de prueba
+descartable.** Desde que el check `tenant` del healthcheck existe (Task 6),
+el paso 14 da de alta (o confirma que ya existe) un tenant con subdominio
+`canario` contra el objetivo real en cada deploy, y el healthcheck lo
+resuelve por ese subdominio exacto en cada request. Borrar esa fila o
+renombrar su `subdominio` a mano —desde Prisma Studio, un `UPDATE` suelto,
+lo que sea— hace que el check de tenant falle: la app entera pasa a
+`degraded`, el healthcheck responde 503, y eso dispara tanto el rollback
+automático del PRÓXIMO deploy (que no encuentra el canario y revierte un
+código sano) como el uptime check externo. Si algún día hace falta borrar o
+renombrar el canario a propósito, hacerlo en el mismo deploy que actualiza
+`TENANT_CANARIO_SUBDOMINIO` en los `docker/compose.*.yml` — nunca por
+separado.
 
 **Tres zonas de fallo.** Hasta `migrate deploy` inclusive, una falla aborta y no
 hay nada que revertir: producción sigue con su imagen anterior, y si la
@@ -222,7 +239,7 @@ y lo recrea al pasar por él como dependencia de `app`. En producción eso
 reinicia la base de los clientes en cada deploy sin ninguna necesidad — una
 promoción cambia la imagen de la app, no la de la base. El detalle completo,
 con las cuatro mediciones que descartan `--force-recreate` como causa, está
-en el comentario del paso 14 de `scripts/deploy.sh`.
+en el comentario del paso 15 de `scripts/deploy.sh`.
 
 **Rollback a mano**, para lo que el healthcheck no ve:
 

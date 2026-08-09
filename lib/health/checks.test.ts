@@ -179,7 +179,11 @@ describe('check de tenant', () => {
     const report = await correrTenantCheck()
 
     expect(report.status).toBe('degraded')
-    expect(report.checks[0].detail).toContain('canario')
+    // toMatch(/no existe/) y no toContain('canario'): el detail de ÉXITO
+    // ("canario=canario") también contiene la palabra "canario", así que ese
+    // toContain pasaría igual si el check devolviera el string de éxito por
+    // error.
+    expect(report.checks[0].detail).toMatch(/no existe/)
   })
 
   // La mitad que hace que este check valga algo. Sin ella, el check pasa
@@ -202,6 +206,10 @@ describe('check de tenant', () => {
     const report = await correrTenantCheck()
 
     expect(report.status).toBe('degraded')
+    // Como sus hermanos: sin esto, el test pasaría igual si el check
+    // fallara por cualquier otro motivo, no específicamente por el conteo
+    // "propio".
+    expect(report.checks[0].detail).toMatch(/tendría que devolver 1/)
   })
 
   it('falla ruidosamente si falta TENANT_CANARIO_SUBDOMINIO', async () => {
@@ -212,12 +220,17 @@ describe('check de tenant', () => {
     expect(report.checks[0].detail).toContain('TENANT_CANARIO_SUBDOMINIO')
   })
 
-  it('suelta la conexión aunque falle', async () => {
+  it('emite ROLLBACK y suelta la conexión aunque la transacción falle', async () => {
     query.mockResolvedValue({ rows: [{ id: 'id-del-canario' }] })
     clienteQuery.mockRejectedValue(new Error('se cayó la base'))
 
     await correrTenantCheck()
 
+    // Hallazgo 1 de la review: sin este ROLLBACK explícito en el catch,
+    // pg-pool devuelve el cliente al pool todavía adentro de la transacción
+    // abortada (25P02) -- ninguna consulta futura de cualquiera que lo tome
+    // vuelve a funcionar, ni siquiera la próxima corrida de este mismo check.
+    expect(clienteQuery).toHaveBeenCalledWith('ROLLBACK')
     expect(release).toHaveBeenCalled()
   })
 })
