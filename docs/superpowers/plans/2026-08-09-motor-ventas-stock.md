@@ -770,11 +770,18 @@ Crear `test/ventas.test.ts`:
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { Client } from 'pg'
 import { Prisma } from '@/generated/prisma/client'
-import { urlOwner } from './postgres-efimero'
+import { urlOwner, urlApp } from './postgres-efimero'
 import { crearTenant } from './datos'
-import { enTransaccionDeTenant } from '@/lib/tenant/transaccion'
-import { crearVenta } from '@/lib/ventas/crear'
-import { ErrorDeVenta } from '@/lib/ventas/errores'
+
+// Import DINÁMICO de todo lo que arrastre `lib/db.ts`: ese módulo construye su
+// Pool de pg AL IMPORTARSE, leyendo DATABASE_URL, que no está seteada
+// globalmente en el repo. Un import estático moriría con ECONNREFUSED contra
+// localhost:5432 antes de que corra un solo test. Es el patrón que ya usan
+// lib/tenant/prisma.test.ts y lib/tenant/transaccion.test.ts.
+//
+// `Prisma` y `ErrorDeVenta` sí van estáticos: no tocan la base.
+let enTransaccionDeTenant: typeof import('@/lib/tenant/transaccion').enTransaccionDeTenant
+let crearVenta: typeof import('@/lib/ventas/crear').crearVenta
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -788,6 +795,10 @@ let servicio: string
 let recon: string
 
 beforeAll(async () => {
+  process.env.DATABASE_URL = urlApp()
+  ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
+  ;({ crearVenta } = await import('@/lib/ventas/crear'))
+
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
   tenantId = await crearTenant(owner, `ventas-${Date.now()}`)
@@ -1224,11 +1235,19 @@ git commit -m "feat(ventas): crearVenta con precios congelados y descuento atóm
 
 Agregar al final de `test/ventas.test.ts`:
 
-Primero, sumar el import **arriba del archivo**, junto a los que ya están —
-JavaScript no admite un `import` a mitad del módulo:
+Primero, declarar los dos bindings **arriba del archivo**, junto a los que ya
+están:
 
 ```ts
-import { anularVenta, ajustarStock } from '@/lib/ventas/anular'
+let anularVenta: typeof import('@/lib/ventas/anular').anularVenta
+let ajustarStock: typeof import('@/lib/ventas/anular').ajustarStock
+```
+
+y resolverlos en el `beforeAll` que ya existe, junto a los otros dos imports
+dinámicos (mismo motivo: `lib/ventas/anular.ts` arrastra `lib/db.ts`):
+
+```ts
+  ;({ anularVenta, ajustarStock } = await import('@/lib/ventas/anular'))
 ```
 
 Y después, al final del archivo:
