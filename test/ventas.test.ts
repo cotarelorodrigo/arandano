@@ -26,6 +26,17 @@ let servicio: string
 // Sólo se toca a través del motor: es lo que hace significativo el test de
 // reconciliación. Ver su comentario más abajo.
 let recon: string
+// Dedicados, para que el escenario que cada uno necesita —un stock al borde del
+// desborde, un artículo que cambia de tipo— no le mueva el piso a los demás.
+let desbordable: string
+let mutante: string
+let clientePropio: string
+// El otro negocio. Existe para probar que sus filas NO son usables desde acá:
+// las FKs de Postgres las aceptan (sus triggers corren como dueño de la tabla,
+// exento de RLS) y el daño lo sufre él, no quien las manda.
+let otroTenantId: string
+let clienteAjeno: string
+let usuarioAjeno: string
 
 beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
@@ -49,7 +60,9 @@ beforeAll(async () => {
     `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, creado_en, actualizado_en)
      VALUES (gen_random_uuid(), $1, 'REM-1', 'Remera', 'PRODUCTO', 1000.00, 1000, now(), now()),
             (gen_random_uuid(), $1, 'SRV-1', 'Arreglo', 'SERVICIO', 500.00, 0, now(), now()),
-            (gen_random_uuid(), $1, 'REC-1', 'Reconciliable', 'PRODUCTO', 100.00, 0, now(), now())
+            (gen_random_uuid(), $1, 'REC-1', 'Reconciliable', 'PRODUCTO', 100.00, 0, now(), now()),
+            (gen_random_uuid(), $1, 'DES-1', 'Desbordable', 'PRODUCTO', 1000.00, 0, now(), now()),
+            (gen_random_uuid(), $1, 'MUT-1', 'Mutante', 'PRODUCTO', 100.00, 10, now(), now())
      RETURNING id, sku`,
     [tenantId],
   )
@@ -58,6 +71,32 @@ beforeAll(async () => {
   remera = porSku('REM-1')
   servicio = porSku('SRV-1')
   recon = porSku('REC-1')
+  desbordable = porSku('DES-1')
+  mutante = porSku('MUT-1')
+
+  const c = await owner.query(
+    `INSERT INTO clientes (id, tenant_id, nombre, creado_en, actualizado_en)
+     VALUES (gen_random_uuid(), $1, 'Cliente propio', now(), now())
+     RETURNING id`,
+    [tenantId],
+  )
+  clientePropio = c.rows[0].id
+
+  otroTenantId = await crearTenant(owner, `ventas-otro-${Date.now()}`)
+  const ca = await owner.query(
+    `INSERT INTO clientes (id, tenant_id, nombre, creado_en, actualizado_en)
+     VALUES (gen_random_uuid(), $1, 'Cliente del otro', now(), now())
+     RETURNING id`,
+    [otroTenantId],
+  )
+  clienteAjeno = ca.rows[0].id
+  const ua = await owner.query(
+    `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
+     VALUES (gen_random_uuid(), $1, 'Vendedor del otro', 'v@otro.test', 'EMPLEADO', now(), now())
+     RETURNING id`,
+    [otroTenantId],
+  )
+  usuarioAjeno = ua.rows[0].id
 })
 
 afterAll(async () => {
@@ -180,12 +219,31 @@ describe('crearVenta', () => {
 
   // El caso de arriba prueba PAGOS_NO_CIERRAN, que se valida ANTES de escribir
   // nada — así que "no se movió nada" es cierto ahí incluso sin transacción, y
-  // no ejercita ningún rollback real. Éste sí: un clienteId inexistente pasa
-  // la validación de pagos y explota recién en `venta.create`, por la FK
-  // `Restrict` de `Venta.cliente` — después de que `proximoNumero` ya
-  // incrementó el contador dentro de la misma transacción. Si el rollback no
-  // funcionara, el contador quedaría avanzado con la venta fallida.
+  // no ejercita ningún rollback real. Éste sí.
+  //
+  // POR QUÉ EL DESBORDE DEL STOCK Y NO OTRA COSA. Este test usaba un `clienteId`
+  // inexistente, que explotaba en `venta.create` por la FK. Desde que
+  // `crearVenta` resuelve `clienteId` y `usuarioId` contra el cliente
+  // transaccional —el arreglo del hallazgo de las FKs entre tenants—, ese fallo
+  // se mudó a ANTES del contador y el test se volvía trivial. Los candidatos que
+  // quedaban se descartan solos: la FK del artículo también se valida antes, y
+  // el correlativo lo asigna el motor, así que una colisión de `numero` sólo se
+  // fabrica adivinando el próximo número desde el test, o sea acoplándolo a los
+  // internos de `proximoNumero`.
+  //
+  // El desborde no se puede mudar temprano, y no por descuido: el UPDATE del
+  // stock es RELATIVO (`stock = stock + delta`) a propósito —es lo que hace que
+  // dos ventas simultáneas no se pisen—, así que el valor resultante sólo se
+  // conoce adentro de la transacción y con el lock ya tomado. Validarlo antes
+  // sería releer el stock afuera, que es exactamente la carrera que el UPDATE
+  // relativo existe para evitar. Y es además la ÚLTIMA sentencia de la
+  // transacción: cuando falla ya están escritos el contador, la venta, su ítem,
+  // su pago y el movimiento de stock. Es el rollback más exigente que el motor
+  // admite.
   it('un fallo después de incrementar el contador también revierte todo', async () => {
+    // Al borde de lo que entra en Decimal(12,3): un descuento de 1000 más lo
+    // lleva a diez dígitos enteros y Postgres lo rechaza con 22003.
+    await owner.query(`UPDATE articulos SET stock = -999999999 WHERE id = $1`, [desbordable])
     const numeroAntes = await enTransaccionDeTenant(tenantId, async (tx) =>
       (await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } })).proximoNumeroVenta,
     )
@@ -194,16 +252,152 @@ describe('crearVenta', () => {
       crearVenta({
         tenantId,
         usuarioId,
-        clienteId: '00000000-0000-7000-8000-0000000000ff',
-        items: [{ articuloId: remera, cantidad: d('1') }],
-        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000'), cotizacion: d('1') }],
+        items: [{ articuloId: desbordable, cantidad: d('1000') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000000'), cotizacion: d('1') }],
       }),
-    ).rejects.toThrow()
+    ).rejects.toMatchObject({ codigo: 'FUERA_DE_RANGO' })
 
     const numeroDespues = await enTransaccionDeTenant(tenantId, async (tx) =>
       (await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } })).proximoNumeroVenta,
     )
     expect(numeroDespues).toBe(numeroAntes)
+
+    // Y tampoco quedó nada de lo que sí se había escrito antes del desborde.
+    const { movs, items } = await enTransaccionDeTenant(tenantId, async (tx) => ({
+      movs: await tx.movimientoStock.findMany({ where: { articuloId: desbordable } }),
+      items: await tx.ventaItem.findMany({ where: { articuloId: desbordable } }),
+    }))
+    expect(movs).toHaveLength(0)
+    expect(items).toHaveLength(0)
+    expect(await stockDe(desbordable)).toBe('-999999999')
+  })
+
+  // Las FKs de Postgres NO alcanzan para esto: sus triggers corren como dueño de
+  // la tabla referenciada, y el dueño está exento de RLS mientras no haya FORCE
+  // ROW LEVEL SECURITY. O sea que la fila entraba, y el que lo pagaba era el
+  // OTRO negocio: a partir de ahí no podía borrar a su propio cliente, porque el
+  // onDelete Restrict se lo impedía nombrando una fila que RLS le esconde.
+  it('rechaza un clienteId de otro tenant, y acepta el propio', async () => {
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        clienteId: clienteAjeno,
+        items: [{ articuloId: remera, cantidad: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'CLIENTE_INEXISTENTE' })
+
+    // La otra mitad: si el chequeo rechazara TODO clienteId, el assert de arriba
+    // pasaría igual y no probaría nada sobre tenants.
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      clienteId: clientePropio,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000'), cotizacion: d('1') }],
+    })
+    const venta = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.venta.findUniqueOrThrow({ where: { id } }),
+    )
+    expect(venta.clienteId).toBe(clientePropio)
+
+    // Y la consecuencia que se medía en el review: el otro tenant sigue pudiendo
+    // borrar a su cliente, porque ninguna venta ajena quedó apuntándole.
+    await expect(
+      owner.query('DELETE FROM clientes WHERE id = $1', [clienteAjeno]),
+    ).resolves.toBeDefined()
+  })
+
+  it('rechaza un usuarioId de otro tenant', async () => {
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId: usuarioAjeno,
+        items: [{ articuloId: remera, cantidad: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'USUARIO_INEXISTENTE' })
+  })
+
+  // El caso exacto que se midió: `1.0005` a $1000 validaba contra un pago de
+  // 1000,50 y la fila guardada terminaba diciendo `1.001 × 1000 = 1001`. La
+  // venta no explicaba su propio total y el motor reportaba éxito. Se rechaza en
+  // vez de recortar: ver el porqué en `excedeEscala`, en lib/ventas/totales.ts.
+  it('rechaza una cantidad con más decimales de los que la columna guarda', async () => {
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: [{ articuloId: remera, cantidad: d('1.0005') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000.50'), cotizacion: d('1') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'ESCALA_EXCEDIDA' })
+  })
+
+  // La otra mitad, y no es redundante: si el chequeo mirara los decimales
+  // ESCRITOS en vez de los significativos, `1.000` —tres ceros de cola, que es
+  // como sale de un input de moneda— se rechazaría sin motivo.
+  it('acepta la escala exacta de la columna, ceros de cola incluidos', async () => {
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1.000') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000.00'), cotizacion: d('1.0000') }],
+    })
+    expect(id).toBeTruthy()
+  })
+
+  it('rechaza un monto con más de dos decimales', async () => {
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: [{ articuloId: remera, cantidad: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000.005'), cotizacion: d('1') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'ESCALA_EXCEDIDA' })
+  })
+
+  it('rechaza una cotización con más de cuatro decimales', async () => {
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: [{ articuloId: remera, cantidad: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'USD', monto: d('1'), cotizacion: d('1000.00005') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'ESCALA_EXCEDIDA' })
+  })
+
+  // Cierra contra el total y aun así es mentira: la caja va a pedir 900 mil
+  // pesos en efectivo que nunca entraron. Una devolución es una venta anulada,
+  // no un pago en negativo.
+  it('rechaza un pago negativo aunque la suma cierre', async () => {
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: [{ articuloId: remera, cantidad: d('1') }],
+        pagos: [
+          { medio: 'EFECTIVO', moneda: 'ARS', monto: d('900000'), cotizacion: d('1') },
+          { medio: 'TARJETA_DEBITO', moneda: 'ARS', monto: d('-899000'), cotizacion: d('1') },
+        ],
+      }),
+    ).rejects.toMatchObject({ codigo: 'MONTO_INVALIDO' })
+  })
+
+  // Sin cotización no se puede reconstruir a qué valor se tomó el dólar, que es
+  // exactamente para lo que el campo existe.
+  it('rechaza una cotización en cero', async () => {
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: [{ articuloId: remera, cantidad: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'USD', monto: d('1'), cotizacion: d('0') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'COTIZACION_INVALIDA' })
   })
 
   it('rechaza un artículo que no existe', async () => {
@@ -326,6 +520,11 @@ describe('crearVenta', () => {
     const numeros = await enTransaccionDeTenant(tenantId, async (tx) =>
       (await tx.venta.findMany({ orderBy: { numero: 'asc' } })).map((v) => v.numero),
     )
+    // Sin esta línea el test pasa con CERO ventas: `[]` es igual a `[]`. Es la
+    // misma trampa que test/rls-cobertura.test.ts ya documenta — una aserción
+    // que se cumple por vacío no prueba nada, y encima tapa el caso en que las
+    // ventas dejaron de escribirse.
+    expect(numeros.length, 'no hay ventas; los tests de arriba no escribieron nada').toBeGreaterThan(0)
     expect(numeros).toEqual(numeros.map((_, i) => i + 1))
   })
 })
@@ -443,6 +642,57 @@ describe('anularVenta', () => {
       }),
     ).rejects.toMatchObject({ codigo: 'VENTA_INEXISTENTE' })
   })
+
+  it('rechaza un usuarioId de otro tenant sin tocar la venta', async () => {
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000'), cotizacion: d('1') }],
+    })
+
+    await expect(
+      anularVenta({ tenantId, ventaId: id, usuarioId: usuarioAjeno }),
+    ).rejects.toMatchObject({ codigo: 'USUARIO_INEXISTENTE' })
+
+    // El chequeo va ANTES del UPDATE justamente para esto: si fuera después, la
+    // venta ya habría quedado anulada con la FK ajena escrita.
+    const venta = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.venta.findUniqueOrThrow({ where: { id } }),
+    )
+    expect(venta.anuladaEn).toBeNull()
+    expect(venta.anuladaPorId).toBeNull()
+  })
+
+  // La afirmación del comentario de `anularVenta` —que derivar de los
+  // MOVIMIENTOS y no de los ítems hace que las dos mitades coincidan "aunque el
+  // tipo del artículo haya cambiado"— no tenía cobertura. Acá se cumple la
+  // condición: el artículo pasa a SERVICIO entre la venta y la anulación.
+  // Recorrer los ítems daría cero movimientos compensatorios (ningún ítem sería
+  // de un PRODUCTO) y el stock quedaría descontado para siempre; este test lo
+  // vería como `8` en vez de `10`.
+  it('compensa los movimientos y no los ítems: aunque el artículo pase a SERVICIO, devuelve el stock', async () => {
+    const antes = new Prisma.Decimal(await stockDe(mutante))
+
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: mutante, cantidad: d('2') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('200'), cotizacion: d('1') }],
+    })
+    expect(new Prisma.Decimal(await stockDe(mutante)).toString()).toBe(antes.minus(2).toString())
+
+    await owner.query(`UPDATE articulos SET tipo = 'SERVICIO' WHERE id = $1`, [mutante])
+
+    await anularVenta({ tenantId, ventaId: id, usuarioId })
+
+    expect(new Prisma.Decimal(await stockDe(mutante)).toString()).toBe(antes.toString())
+    const movs = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.movimientoStock.findMany({ where: { ventaId: id, motivo: 'ANULACION_VENTA' } }),
+    )
+    expect(movs).toHaveLength(1)
+    expect(movs[0].delta.toString()).toBe('2')
+  })
 })
 
 describe('ajustarStock', () => {
@@ -496,5 +746,51 @@ describe('ajustarStock', () => {
         usuarioId,
       }),
     ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
+  })
+
+  it('rechaza un usuarioId de otro tenant', async () => {
+    await expect(
+      ajustarStock({
+        tenantId,
+        articuloId: remera,
+        delta: d('1'),
+        motivo: 'AJUSTE',
+        usuarioId: usuarioAjeno,
+      }),
+    ).rejects.toMatchObject({ codigo: 'USUARIO_INEXISTENTE' })
+  })
+
+  // El tipo de `motivo` sólo protege a los llamadores tipados. Un body JSON ya
+  // parseado pasa 'VENTA' sin que TypeScript se entere, y eso crearía un
+  // movimiento VENTA con `ventaId` null — rompiendo la invariante sobre la que
+  // está construido el filtro de `anularVenta`. El `as never` de acá es
+  // deliberado: emula al llamador sin tipos, que es el único que puede hacerlo.
+  it('rechaza un motivo que no le corresponde, como VENTA', async () => {
+    await expect(
+      ajustarStock({
+        tenantId,
+        articuloId: remera,
+        delta: d('1'),
+        motivo: 'VENTA' as never,
+        usuarioId,
+      }),
+    ).rejects.toMatchObject({ codigo: 'MOTIVO_INVALIDO' })
+
+    const movs = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.movimientoStock.findMany({ where: { articuloId: remera, motivo: 'VENTA', ventaId: null } }),
+    )
+    expect(movs, 'quedó un movimiento VENTA sin venta asociada').toHaveLength(0)
+  })
+
+  it('rechaza un delta con más decimales de los que la columna guarda', async () => {
+    await expect(
+      ajustarStock({
+        tenantId,
+        articuloId: remera,
+        delta: d('1.0005'),
+        motivo: 'INGRESO',
+        usuarioId,
+      }),
+    ).rejects.toMatchObject({ codigo: 'ESCALA_EXCEDIDA' })
   })
 })

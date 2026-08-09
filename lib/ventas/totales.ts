@@ -2,8 +2,40 @@ import { Prisma } from '@/generated/prisma/client'
 
 type Decimal = Prisma.Decimal
 
+// Las escalas EXACTAS de las columnas que guardan cada cosa. Están acá y no
+// repartidas por el motor porque son lo mismo que ya usa `redondearDinero`:
+// el número de decimales que Postgres conserva. Si una migración cambia una
+// columna, este archivo es el que hay que tocar.
 /** Los decimales en los que se guarda la plata: `Decimal(12, 2)`. */
-const ESCALA_DINERO = 2
+export const ESCALA_DINERO = 2
+/** Cantidades y stock: `Decimal(12, 3)` — medio kilo de harina no es entero. */
+export const ESCALA_CANTIDAD = 3
+/** La cotización de la moneda: `Decimal(12, 4)`. */
+export const ESCALA_COTIZACION = 4
+
+/**
+ * Si `v` tiene más decimales de los que la columna va a conservar.
+ *
+ * Existe porque validar sobre un valor que Postgres después redondea deja una
+ * venta que no explica su propio total: `cantidad = 1.0005` a $1000 cerraba
+ * contra un pago de 1000,50 y la fila guardada terminaba diciendo
+ * `1.001 × 1000 = 1001`. El motor reportaba éxito.
+ *
+ * Se RECHAZA en vez de recortar en silencio, y es una decisión, no una
+ * omisión. Recortar es lo que suena amable y es lo que hace daño: cambia la
+ * cantidad que sale del inventario y la plata que entra a la caja sin que el
+ * llamador se entere, y el que después mira el ticket no tiene forma de saber
+ * que lo que pidió no fue lo que pasó. Rechazar deja la decisión donde está la
+ * información: el que arma la venta sabe si quiso 1.0005 o 1.001, el motor no.
+ * Redondear explícitamente antes de llamar sigue estando disponible; lo que ya
+ * no está disponible es que pase sin que nadie lo elija.
+ *
+ * `decimalPlaces()` normaliza los ceros de cola —`1.000` da 0—, así que un
+ * valor que se escribió con la escala de la columna nunca se rechaza.
+ */
+export function excedeEscala(v: Decimal, escala: number): boolean {
+  return v.decimalPlaces() > escala
+}
 
 /**
  * Todo producto se redondea ACÁ, antes de entrar en cualquier suma.
