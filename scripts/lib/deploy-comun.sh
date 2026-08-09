@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
 # Lógica de decisión compartida entre deploy.sh y rollback.sh.
 #
-# Sólo funciones PURAS: reciben strings, devuelven strings o un código de
-# salida, y no tocan Docker, la red, git ni el disco. Eso es lo que permite que
-# scripts/tests/test-deploy-comun.sh corra en milisegundos, y por lo tanto que
-# nadie tenga excusa para saltearlo.
+# Casi todas son funciones PURAS: reciben strings, devuelven strings o un código
+# de salida, y no tocan Docker, la red, git ni el disco. Eso es lo que permite
+# que scripts/tests/test-deploy-comun.sh corra en milisegundos, y por lo tanto
+# que nadie tenga excusa para saltearlo.
+#
+# Las tres del healthcheck —token_salud, extraer_ca_caddy y consultar_salud—
+# son la excepción y sí tocan disco, Docker y red. Viven acá igual porque el
+# motivo por el que este archivo existe pesa más que la regla: deploy.sh y
+# rollback.sh tienen que hablar EXACTAMENTE el mismo dialecto al consultar el
+# healthcheck, y una copia en cada script es exactamente cómo se desincronizan
+# (mismo argumento que mensaje_de_tag / imagen_de_tag, abajo). El costo es que
+# esas tres no tienen test unitario; se ejercitan en cada deploy.
 #
 # mensaje_de_tag e imagen_de_tag son INVERSAS y viven juntas a propósito:
 # deploy.sh escribe el mensaje del tag y rollback.sh lo lee. Separarlas en dos
@@ -452,6 +460,57 @@ sha_del_health() {
     return 1
   fi
   printf '%s\n' "$sha"
+}
+
+# El token del objetivo, leído de su .env.
+#
+# En un subshell a propósito: ese archivo también tiene las credenciales de la
+# base, y sourcearlo en el proceso principal las dejaría en el entorno de todo
+# lo que el script ejecute después.
+token_salud() {
+  local dir="$1" token
+  token=$(
+    set -a
+    # shellcheck disable=SC1091
+    . "$dir/.env" 2>/dev/null || true
+    set +a
+    printf '%s' "${ARANDANO_SALUD_TOKEN:-}"
+  )
+  if [[ -z "$token" ]]; then
+    error "falta ARANDANO_SALUD_TOKEN en $dir/.env — sin él el healthcheck responde anónimo, sin checks ni sha, y el gate lo rechaza"
+    return 1
+  fi
+  printf '%s' "$token"
+}
+
+# La raíz de la CA interna de Caddy, del volumen del stack.
+#
+# Se valida el certificado en vez de usar `curl -k` porque es lo único que hace
+# que el gate detecte que Caddy no logró aprovisionar el certificado — el modo
+# de falla que el Caddyfile marca como indistinguible de un TLS roto del lado
+# del cliente. Con -k, un deploy pasaría en verde con el sitio inaccesible para
+# cualquier navegador.
+extraer_ca_caddy() {
+  local dir="$1" destino="$2"
+  ( cd "$dir" && docker compose exec -T caddy \
+      cat /data/caddy/pki/authorities/local/root.crt ) > "$destino" 2>/dev/null || true
+  if [[ ! -s "$destino" ]]; then
+    error "no se pudo extraer la raíz de la CA interna de Caddy desde $dir"
+    return 1
+  fi
+}
+
+# El cuerpo del healthcheck del objetivo, autenticado.
+#
+# Vive acá y no duplicada en deploy.sh y rollback.sh porque los dos tienen que
+# hablar EXACTAMENTE el mismo dialecto: si uno manda el header y el otro no, el
+# que no lo manda recibe la respuesta anónima —sin `checks`—, `health_ok` la
+# rechaza, y un rollback que levantó perfecto reporta que no verificó.
+consultar_salud() {
+  local url="$1" token="$2" cacert="${3:-}"
+  local args=(-sS --max-time 5 -H "X-Arandano-Salud: $token")
+  [[ -n "$cacert" ]] && args+=(--cacert "$cacert")
+  curl "${args[@]}" "$url/api/health" 2>/dev/null
 }
 
 # ¿El Postgres que escribió estos logs ya terminó su arranque en dos fases?

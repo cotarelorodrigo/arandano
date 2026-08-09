@@ -50,7 +50,13 @@ bad() { printf '  \033[31m✗\033[0m %s\n' "$1"; FAIL=$((FAIL + 1)); }
 # su cuenta con health_ok/sha_del_health fallando cerrado sobre un string
 # vacío — no es un cuelgue ni una cascada muda, son fallas explícitas, una por
 # caso, con --max-time cortando la espera.
-SALUD=$(curl -fsS --max-time 10 "$URL_BASE/api/health" 2>/dev/null) || SALUD=""
+# El token llega por entorno, no por argumento: un argumento queda visible en
+# `ps`. Sin él, /api/health devuelve sólo el veredicto y los casos que miran
+# .checks[] y el sha fallan — que es lo correcto: significa que el smoke test
+# no está probando lo que cree.
+SALUD=$(curl -fsS --max-time 10 \
+  -H "X-Arandano-Salud: ${ARANDANO_SALUD_TOKEN:?falta ARANDANO_SALUD_TOKEN}" \
+  "$URL_BASE/api/health" 2>/dev/null) || SALUD=""
 
 caso_health_responde() {
   [[ -n "$SALUD" ]]

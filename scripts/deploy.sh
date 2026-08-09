@@ -68,29 +68,36 @@ for arg in "$@"; do
   esac
 done
 
-# ATENCIÓN, futuro cutover de DNS: el URL_SALUD de `prod` entra por el bloque
-# `:80` del Caddyfile, que hoy es un `reverse_proxy` catch-all. Ese bloque tiene
-# que pasar a ser `redir https://{host}{uri}` antes del cutover (CLAUDE.md,
-# *Bloqueantes antes del cutover de DNS*, punto 2) — y el día que eso pase, este
-# poll recibe un 308 con cuerpo vacío, `health_ok` lo rechaza, el paso 16 nunca
-# da verde, y CADA deploy sano termina rollbackeado (y el rollback, que pega a
-# la misma URL, también timeoutea: salida 3). Ni curl acá ni el de rollback.sh
-# siguen redirecciones, a propósito: seguirlas debilitaría el chequeo.
+# El URL_SALUD de `prod` entra por el site block `localhost:443` del Caddyfile,
+# NO por el `:80`, que desde el cutover es sólo `redir https://{host}{uri}`.
 #
-# Ir por Caddy es deliberado — es el camino que hacen los clientes de verdad,
-# no un atajo —, así que la salida no es esquivarlo: es cambiar esta línea (y la
-# gemela de rollback.sh) en el MISMO commit que cambie el Caddyfile, y hacer un
-# deploy de punta a punta después. Ojo: `--objetivo=ensayo` pega directo al
-# puerto de la app, sin Caddy, así que el ensayo NO puede atrapar esto.
+# Se valida el certificado contra la raíz de la CA interna de Caddy (ver
+# extraer_ca_caddy): así el poll detecta también que Caddy no haya podido
+# aprovisionar el certificado, que antes pasaba desapercibido.
+#
+# `ensayo` sigue pegando directo al puerto de la app: ese stack no tiene Caddy
+# (compose.ensayo.yml define sólo postgres y app), así que el ensayo del gate
+# NO ejercita ni el proxy ni el TLS. Es un punto ciego real y conocido; la
+# única verificación de esa parte es un deploy contra producción.
+#
 # DOMINIO_BASE_CANARIO y NOMBRE_CANARIO alimentan el paso 14 (alta del
 # canario contra el objetivo): mismo dominio que ARANDANO_DB_ESPERADA usa
 # para identificar el stack, uno por rama del case, para que la URL que
 # imprime crear-tenant.mts sea la real del objetivo y no la de stage.
 case "$OBJETIVO" in
-  prod)   DIR=/srv/arandano/prod;   URL_SALUD=http://127.0.0.1;            TAGEA=true;  DOMINIO_BASE_CANARIO=arandano.app;       NOMBRE_CANARIO="Canario" ;;
-  ensayo) DIR=/srv/arandano/ensayo; URL_SALUD=http://100.64.81.63:3002;    TAGEA=false; DOMINIO_BASE_CANARIO=stage.arandano.app; NOMBRE_CANARIO="Canario de ensayo" ;;
+  prod)   DIR=/srv/arandano/prod;   URL_SALUD=https://localhost;         TAGEA=true;  DOMINIO_BASE_CANARIO=arandano.app;       NOMBRE_CANARIO="Canario" ;;
+  ensayo) DIR=/srv/arandano/ensayo; URL_SALUD=http://100.64.81.63:3002;  TAGEA=false; DOMINIO_BASE_CANARIO=stage.arandano.app; NOMBRE_CANARIO="Canario de ensayo" ;;
   *) error "objetivo inválido: $OBJETIVO"; uso ;;
 esac
+
+# El token y la CA del objetivo. Se resuelven una vez, temprano: si falta el
+# token, es mejor abortar antes de buildear que después de promover.
+TOKEN_SALUD=$(token_salud "$DIR")
+CA_SALUD=""
+if [[ "$URL_SALUD" == https://* ]]; then
+  CA_SALUD=$(mktemp -p /var/tmp arandano-ca.XXXXXXXX)
+  extraer_ca_caddy "$DIR" "$CA_SALUD"
+fi
 
 # Un solo deploy a la vez. A diferencia de backup.sh, que ante un lock tomado se
 # saltea la corrida y sale con 0, acá se ABORTA: saltearse un deploy en silencio
@@ -126,6 +133,15 @@ SOMBRA_ACTIVA=false
 limpiar() {
   local codigo=$? rc=0 fallo_limpieza=false
   set +e
+  # La raíz de la CA es un temporal en claro; se va pase lo que pase. Va ACÁ y
+  # no en un `trap ... EXIT` propio porque un segundo trap de EXIT REEMPLAZA a
+  # éste en silencio (no se acumulan), y perder esta función deja ~1,28 GB de
+  # tmpfs reservados y arandano-dev abajo. Y va DESPUÉS del `local codigo=$?`:
+  # esa línea es la que captura el código de salida original, y cualquier
+  # comando antes de ella lo pisa. `${CA_SALUD:-}` y no `$CA_SALUD` porque bajo
+  # `set -u` esta función tiene que poder evaluarse aunque el script haya muerto
+  # antes de que el `case` del objetivo asigne la variable.
+  rm -f "${CA_SALUD:-}"
   # La shadow database primero: 512 MiB más 320 MiB de tmpfs pinchados en una
   # caja de 7.6 GB, justo en el momento en que alguien aborta un deploy y está
   # por reintentar. `docker rm -f` sobre un contenedor que ya no existe sale 0
@@ -600,7 +616,12 @@ if [[ -z "$url_stage" ]]; then
 fi
 
 log "paso 9/18: smoke tests contra stage"
-scripts/smoke.sh "http://${url_stage}" "$SHA" "stage.arandano.app" "canario" "$NOMBRE_CANARIO_STAGE"
+# Por entorno y no por argumento: un argumento queda visible en `ps` para
+# cualquier proceso del host. El valor está DUPLICADO en
+# docker/compose.stage.yml, igual que efimero-app y efimero-owner — es un
+# stack efímero que nunca ve datos de clientes.
+ARANDANO_SALUD_TOKEN=efimero-salud \
+  scripts/smoke.sh "http://${url_stage}" "$SHA" "stage.arandano.app" "canario" "$NOMBRE_CANARIO_STAGE"
 
 IMAGE_TAG="$SHA" docker compose -f docker/compose.stage.yml down -v
 log "ensayo en stage ok"
@@ -1000,6 +1021,10 @@ limite=$((SECONDS + 90))
 salud=""
 sano=false
 while (( SECONDS < limite )); do
+  # Los flags del curl viven en `consultar_salud` (scripts/lib/deploy-comun.sh),
+  # compartida con rollback.sh para que los dos hablen el mismo dialecto. Lo que
+  # sigue explica por qué son ésos y no otros:
+  #
   # `-sS` y NO `-fsS`: con `-f`, curl DESCARTA el cuerpo de una respuesta que
   # no sea 2xx y sale 22, así que `salud` quedaba vacío y el error de abajo
   # decía "<sin respuesta>" — justo cuando la app SÍ respondió y su respuesta
@@ -1019,7 +1044,7 @@ while (( SECONDS < limite )); do
   # FELIZ de todo deploy— curl falla a nivel transporte y `-S` escribiría un
   # error en rojo cada 3 segundos. Ahí sí no hay cuerpo que perder, y `salud`
   # queda vacío como corresponde.
-  salud=$(curl -sS --max-time 5 "$URL_SALUD/api/health" 2>/dev/null) || salud=""
+  salud=$(consultar_salud "$URL_SALUD" "$TOKEN_SALUD" "$CA_SALUD") || salud=""
   if [[ -n "$salud" ]] && health_ok "$salud" \
      && [[ "$(sha_del_health "$salud")" == "$SHA" ]]; then
     sano=true

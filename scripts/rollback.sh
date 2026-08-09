@@ -56,21 +56,30 @@ for arg in "$@"; do
   esac
 done
 
-# ATENCIÓN, futuro cutover de DNS: el URL_SALUD de `prod` es el mismo de
-# deploy.sh y entra por el bloque `:80` del Caddyfile, que hoy es un
-# `reverse_proxy` catch-all y tiene que pasar a ser `redir https://{host}{uri}`
-# antes del cutover (CLAUDE.md, *Bloqueantes antes del cutover de DNS*, punto
-# 2). El día que eso pase, este loop recibe un 308 con cuerpo vacío, `health_ok`
-# lo rechaza y hasta un rollback que levantó perfecto reporta "NO VERIFICÓ EN
-# 90s" — y como deploy.sh usa este mismo script como su rollback automático,
-# ahí se convierte en su salida 3, el peor caso, sin que nada esté roto.
-# Explicación completa en el comentario gemelo de deploy.sh: hay que cambiar
-# las DOS líneas en el mismo commit que cambie el Caddyfile.
+# El URL_SALUD de `prod` es el mismo de deploy.sh y entra por el site block
+# `localhost:443`, no por el `:80`, que desde el cutover es sólo redirección.
+# Los dos scripts tienen que hablar el mismo dialecto: si uno manda el header
+# del healthcheck y el otro no, el que no lo manda recibe la respuesta anónima
+# —sin `checks`—, health_ok la rechaza, y un rollback que levantó perfecto
+# reporta "NO VERIFICÓ EN 90s". Como deploy.sh usa este script como su rollback
+# automático, eso se convierte en su salida 3 sin que nada esté roto.
 case "$OBJETIVO" in
-  prod)   DIR=/srv/arandano/prod;   URL_SALUD=http://127.0.0.1 ;;
+  prod)   DIR=/srv/arandano/prod;   URL_SALUD=https://localhost ;;
   ensayo) DIR=/srv/arandano/ensayo; URL_SALUD=http://100.64.81.63:3002 ;;
   *) error "objetivo inválido: $OBJETIVO"; uso ;;
 esac
+
+TOKEN_SALUD=$(token_salud "$DIR")
+CA_SALUD=""
+if [[ "$URL_SALUD" == https://* ]]; then
+  CA_SALUD=$(mktemp -p /var/tmp arandano-ca.XXXXXXXX)
+  # Acá SÍ va un trap de EXIT propio: a diferencia de deploy.sh, este script no
+  # tiene ninguno (sólo los de INT y TERM, que son independientes y no se
+  # pisan). Si alguna vez se le agrega otro EXIT, hay que COMPONER las dos
+  # acciones en un solo trap: el segundo reemplaza al primero en silencio.
+  trap 'rm -f "$CA_SALUD"' EXIT
+  extraer_ca_caddy "$DIR" "$CA_SALUD"
+fi
 
 # Mismo motivo y mismo detalle que en deploy.sh (ver el comentario largo de
 # ahí): sin el trap de INT, un SIGINT al PID de este script no lo frena — bash
@@ -250,6 +259,8 @@ log "esperando a que $OBJETIVO responda sano"
 limite=$((SECONDS + 90))
 salud=""
 while (( SECONDS < limite )); do
+  # Los flags del curl viven en `consultar_salud` (scripts/lib/deploy-comun.sh),
+  # compartida con deploy.sh justamente para que los dos no se desincronicen.
   # `-sS` y no `-fsS`, por el mismo motivo que el paso 14 de deploy.sh (ver el
   # comentario largo de ahí): `-f` descarta el cuerpo de un 503, que es donde
   # el healthcheck pone la causa. Y acá duele todavía más: este loop alimenta
@@ -257,7 +268,7 @@ while (( SECONDS < limite )); do
   # alguien lee a las 11 de la noche cuando el rollback —la última red que
   # queda— no levantó. Ese campo decía "<sin respuesta>" en el peor momento
   # posible, teniendo la respuesta a mano.
-  salud=$(curl -sS --max-time 5 "$URL_SALUD/api/health" 2>/dev/null) || salud=""
+  salud=$(consultar_salud "$URL_SALUD" "$TOKEN_SALUD" "$CA_SALUD") || salud=""
   if [[ -n "$salud" ]] && health_ok "$salud"; then
     # stderr silenciado ACÁ, no en la lib: sha_del_health hace bien en avisar
     # cuando falta info.sha, pero adentro de este loop de 3s en 3s esa misma

@@ -25,39 +25,23 @@ localhost:443 {
 	reverse_proxy app:3000
 }
 
-# ATENCIÓN, este bloque es el que hay que tocar en el cutover de DNS.
+# Sólo redirección, nunca reverse_proxy. Este puerto existe para resolver el
+# desafío HTTP de ACME y para empujar a todo el mundo a TLS; no para servir la
+# app.
 #
-# Tal como está es un catch-all en texto plano: sin host, sin redirección a
-# HTTPS, atendiendo cualquier nombre que llegue al puerto 80 desde internet.
-# Hoy eso significa que `curl http://178.156.251.41/api/health` responde 200
-# desde afuera, sin autenticación y sin cifrar — cada request cuesta un ida y
-# vuelta contra Postgres a través de un pool de `max: 5`, y no hay rate
-# limiting en ninguna capa.
+# 308 y no el 302 que Caddy usa por default: es permanente y preserva el
+# método, así que un POST a http:// no se degrada en silencio a GET.
 #
-# Mientras no haya tenants es una molestia. Cuando *.arandano.app apunte
-# acá deja de serlo: los clientes entran por subdominio, la sesión viaja en
-# cookie, y un proxy en texto plano sirve esa cookie en claro a cualquiera que
-# esté en el camino. Un `http://flor.arandano.app` tipeado sin la "s"
-# alcanza para filtrarla.
+# CONSECUENCIA BUSCADA: la app deja de ser alcanzable por IP. `{host}` es el
+# Host de la request, así que quien entre por http://178.156.251.41/ recibe un
+# 308 hacia https://178.156.251.41/, cuyo SNI es la IP y no matchea ningún site
+# block — el TLS falla y no hay respuesta. La app se sirve por nombre. No es
+# una regresión: es el motivo del cambio.
 #
-# Antes del cutover, tres cosas (anotadas también como requisitos heredados en
-# el ledger del ciclo):
-#   1. Este bloque pasa a ser SÓLO redirección: `redir https://{host}{uri}`,
-#      nunca `reverse_proxy`. El :80 queda para que ACME resuelva el desafío
-#      HTTP y para empujar a todo el mundo a TLS, no para servir la app.
-#   2. Decidir si /api/health se autentica o se restringe por origen. Es el
-#      endpoint más caro que hay expuesto y el único que un uptime check
-#      externo necesita alcanzar, así que la decisión no es obvia — pero
-#      tomarla después del cutover es tomarla con clientes adentro.
-#   3. En el MISMO commit que el punto 1, cambiar URL_SALUD en
-#      scripts/deploy.sh y en scripts/rollback.sh, y hacer un deploy de punta a
-#      punta después. Los dos consultan el healthcheck por
-#      http://127.0.0.1/api/health, o sea por este bloque, y ninguno sigue
-#      redirecciones: con el `redir` puesto reciben un 308 de cuerpo vacío,
-#      `health_ok` lo rechaza, y cada deploy sano termina rollbackeado y con
-#      el rollback fallando por lo mismo (salida 3). `--objetivo=ensayo` pega
-#      directo al puerto de la app, sin Caddy, así que el ensayo NO lo atrapa.
-#      Detalle completo en CLAUDE.md, *Bloqueantes antes del cutover de DNS*.
+# El gate del deploy NO entra por acá: deploy.sh y rollback.sh consultan
+# https://localhost/api/health, o sea el site block de arriba, validando contra
+# la raíz de la CA interna. Cambiar esa URL y este bloque en commits separados
+# es lo que rompía producción — ver el spec del cutover.
 :80 {
-	reverse_proxy app:3000
+	redir https://{host}{uri} 308
 }
