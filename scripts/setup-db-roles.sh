@@ -130,6 +130,38 @@ ALTER DEFAULT PRIVILEGES FOR ROLE arandano_owner IN SCHEMA public
 ALTER DEFAULT PRIVILEGES FOR ROLE arandano_owner IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO arandano_app;
 
+-- Las tablas-libro: append-only de verdad, no por comentario.
+--
+-- prisma/schema.prisma afirma sobre movimientos_stock que "nada se edita ni se
+-- borra", y sobre esa afirmación se apoya la promesa de poder responder "por qué
+-- tengo 3 y no 5". Medido con el rol real de la app antes de esta línea: un
+-- UPDATE afectaba 4 filas y un DELETE otras 4. La afirmación era sólo un
+-- comentario. El motor únicamente hace INSERT sobre esa tabla, así que revocar
+-- no le saca nada a nadie: lo único que cambia es que ahora la base sostiene lo
+-- que el schema promete.
+--
+-- Va DESPUÉS del GRANT ... ON ALL TABLES de arriba, y no antes, porque el
+-- último gana: invertirlos volvería a otorgar lo que acá se saca.
+--
+-- Es un REVOKE POR TABLA, y el default privilege de más arriba sigue dándole
+-- UPDATE y DELETE a toda tabla nueva. O sea: una tabla-libro futura —el libro de
+-- caja, los asientos de ARCA— necesita SU PROPIA línea acá. No se hereda. La
+-- alternativa (quitar UPDATE/DELETE del default privilege y otorgarlos tabla por
+-- tabla) haría nacer mutilada a toda tabla normal, que son la mayoría, y el
+-- olvido se pagaría con una app rota en vez de con un libro editable.
+--
+-- Envuelto en to_regclass porque este script corre también ANTES de la primera
+-- migración, cuando la tabla todavía no existe: sin el guard, un REVOKE sobre
+-- una tabla inexistente aborta todo el archivo. Es el mismo recurso que usa el
+-- grant por nombre de resolver_tenant, más abajo.
+DO $$
+BEGIN
+  IF to_regclass('public.movimientos_stock') IS NOT NULL THEN
+    EXECUTE 'REVOKE UPDATE, DELETE ON public.movimientos_stock FROM arandano_app';
+  END IF;
+END
+$$;
+
 -- Las funciones NO llevan default privilege de EXECUTE, y es deliberado. Una
 -- función SECURITY DEFINER es la vía por la que la app lee lo que RLS le esconde
 -- por diseño: es la superficie que SALTEA el aislamiento, no una que el

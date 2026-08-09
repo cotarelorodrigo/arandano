@@ -259,6 +259,55 @@ describe('setup-db-roles.sh', () => {
     })
   })
 
+  // Append-only sostenido por la base y no por un comentario del schema.
+  //
+  // Probado por COMPORTAMIENTO —corriendo el UPDATE y el DELETE con el rol real
+  // de la app— y no con has_table_privilege: mirar el catálogo es volver a
+  // verificar la forma en vez del efecto, que es justo el defecto que este
+  // arreglo viene a cerrar. Postgres chequea el privilegio al planificar, así
+  // que el error salta aunque no haya ninguna fila que tocar; por eso no hacen
+  // falta fixtures.
+  //
+  // Que el INSERT siga funcionando lo prueba test/ventas.test.ts entero, que
+  // escribe movimientos en casi todos sus casos y comparte esta misma base: si
+  // el REVOKE se pasara de alcance, ese archivo se cae completo. Un INSERT acá
+  // sería una copia peor —necesitaría tenant, artículo y usuario a mano— de algo
+  // que ya está cubierto.
+  describe('movimientos_stock es append-only', () => {
+    it('la app no puede editar ni borrar, y sí leer', async () => {
+      const app = new Client({ connectionString: urlApp() })
+      await app.connect()
+      try {
+        await expect(app.query('UPDATE movimientos_stock SET nota = nota')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(app.query('DELETE FROM movimientos_stock')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        // La otra mitad: si el REVOKE se hubiera llevado puesto el SELECT, los
+        // dos asserts de arriba pasarían igual y la app no podría ni mostrar el
+        // historial que esta tabla existe para guardar.
+        await expect(app.query('SELECT 1 FROM movimientos_stock')).resolves.toBeDefined()
+      } finally {
+        await app.end()
+      }
+    })
+
+    it('las demás tablas siguen siendo editables por la app', async () => {
+      // El contraste que hace significativo al test de arriba: sin esto, un
+      // REVOKE demasiado amplio —o un rol al que nunca se le otorgó nada— daría
+      // los mismos rojos y el mismo verde.
+      const app = new Client({ connectionString: urlApp() })
+      await app.connect()
+      try {
+        await expect(app.query('UPDATE articulos SET nombre = nombre')).resolves.toBeDefined()
+        await expect(app.query('DELETE FROM clientes WHERE false')).resolves.toBeDefined()
+      } finally {
+        await app.end()
+      }
+    })
+  })
+
   it('el rol de la app no puede crear tablas', async () => {
     const cliente = new Client({ connectionString: urlApp() })
     await cliente.connect()
