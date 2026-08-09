@@ -175,6 +175,34 @@ describe('crearVenta', () => {
     expect(numeroDespues).toBe(numeroAntes)
   })
 
+  // El caso de arriba prueba PAGOS_NO_CIERRAN, que se valida ANTES de escribir
+  // nada — así que "no se movió nada" es cierto ahí incluso sin transacción, y
+  // no ejercita ningún rollback real. Éste sí: un clienteId inexistente pasa
+  // la validación de pagos y explota recién en `venta.create`, por la FK
+  // `Restrict` de `Venta.cliente` — después de que `proximoNumero` ya
+  // incrementó el contador dentro de la misma transacción. Si el rollback no
+  // funcionara, el contador quedaría avanzado con la venta fallida.
+  it('un fallo después de incrementar el contador también revierte todo', async () => {
+    const numeroAntes = await enTransaccionDeTenant(tenantId, async (tx) =>
+      (await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } })).proximoNumeroVenta,
+    )
+
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        clienteId: '00000000-0000-7000-8000-0000000000ff',
+        items: [{ articuloId: remera, cantidad: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toThrow()
+
+    const numeroDespues = await enTransaccionDeTenant(tenantId, async (tx) =>
+      (await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } })).proximoNumeroVenta,
+    )
+    expect(numeroDespues).toBe(numeroAntes)
+  })
+
   it('rechaza un artículo que no existe', async () => {
     await expect(
       crearVenta({
@@ -192,7 +220,7 @@ describe('crearVenta', () => {
     ).rejects.toMatchObject({ codigo: 'SIN_ITEMS' })
   })
 
-  it('rechaza cantidad cero o negativa', async () => {
+  it('rechaza cantidad cero', async () => {
     await expect(
       crearVenta({
         tenantId,
@@ -203,9 +231,25 @@ describe('crearVenta', () => {
     ).rejects.toMatchObject({ codigo: 'CANTIDAD_INVALIDA' })
   })
 
+  it('rechaza cantidad negativa', async () => {
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: [{ articuloId: remera, cantidad: d('-1') }],
+        pagos: [],
+      }),
+    ).rejects.toMatchObject({ codigo: 'CANTIDAD_INVALIDA' })
+  })
+
   // Decisión de negocio explícita del spec: el cliente está parado en el
-  // mostrador y la plata es real.
+  // mostrador y la plata es real. Arranca poniendo el stock en 1 con un
+  // UPDATE directo: sin eso, el test depende de que los casos anteriores
+  // hayan dejado a `remera` con poco stock, y reordenarlos lo rompería sin
+  // que el motor tenga ningún bug.
   it('permite dejar el stock negativo', async () => {
+    await owner.query(`UPDATE articulos SET stock = 1 WHERE id = $1`, [remera])
+
     const { id } = await crearVenta({
       tenantId,
       usuarioId,
@@ -214,8 +258,7 @@ describe('crearVenta', () => {
     })
     expect(id).toBeTruthy()
     expect(new Prisma.Decimal(await stockDe(remera)).isNegative()).toBe(true)
-
-    })
+  })
 
   // La prueba del UPDATE relativo. Con `SET stock = $leido - $cantidad` una de
   // las dos se pierde y este test lo detecta.
@@ -237,51 +280,40 @@ describe('crearVenta', () => {
   })
 
   // La reconciliación que justifica tener el campo denormalizado. Es un test y
-  // no una intención.
+  // no una intención — ver el comentario de `Articulo.stock` en
+  // `prisma/schema.prisma`, que promete exactamente esto.
   //
   // Corre sobre `recon`, un artículo que SÓLO se toca a través del motor.
   // Usar `remera` no serviría: otros tests le escriben el stock con UPDATE
   // directo para armar su escenario, y eso rompe la invariante a propósito —
   // el test daría rojo por el andamiaje del test, no por un bug del motor.
   //
-  // PENDIENTE, no perdido: este test llama a `ajustarStock`, que es interfaz
-  // de la Task 5 (`lib/ventas/anular.ts`, todavía no existe) — no de la Task 4.
-  // El plan maestro lo dejó escrito adentro del bloque de la Task 4 por error
-  // de edición: la Task 4 sólo produce `ErrorDeVenta` y `crearVenta` (ver su
-  // sección "Interfaces"), y `ajustarStock` recién se declara en la sección de
-  // la Task 5. No hay forma de armar el escenario de `recon` sin pasar por el
-  // motor (ver el comentario de arriba), así que sustituirlo por un UPDATE
-  // directo invalidaría el propio test. Queda comentado —y no como `it.skip`—
-  // porque `ajustarStock` no existe todavía ni siquiera como tipo, y un
-  // `it.skip` de todas formas type-checkea su cuerpo. Task 5 la reactiva tal
-  // cual, sacándola del comentario, en cuanto agregue el import.
-  //
-  // it('el stock cierra contra la suma de sus movimientos', async () => {
-  //   await ajustarStock({
-  //     tenantId,
-  //     articuloId: recon,
-  //     delta: d('40'),
-  //     motivo: 'INGRESO',
-  //     usuarioId,
-  //   })
-  //   await crearVenta({
-  //     tenantId,
-  //     usuarioId,
-  //     items: [{ articuloId: recon, cantidad: d('7.5') }],
-  //     pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('750'), cotizacion: d('1') }],
-  //   })
-  //
-  //   const { stock, suma } = await enTransaccionDeTenant(tenantId, async (tx) => {
-  //     const a = await tx.articulo.findUniqueOrThrow({ where: { id: recon } })
-  //     const agg = await tx.movimientoStock.aggregate({
-  //       where: { articuloId: recon },
-  //       _sum: { delta: true },
-  //     })
-  //     return { stock: a.stock, suma: agg._sum.delta ?? new Prisma.Decimal(0) }
-  //   })
-  //   expect(stock.toString()).toBe(suma.toString())
-  //   expect(stock.toString()).toBe('32.5')
-  // })
+  // Versión reducida de la del plan maestro: la original arrancaba con un
+  // `ajustarStock` (INGRESO de 40) antes de la venta, pero esa función es
+  // interfaz de la Task 5 (`lib/ventas/anular.ts`, todavía no existe), no de
+  // ésta — el plan la dejó escrita adentro del bloque de la Task 4 por error
+  // de edición. `recon` ya arranca en stock 0, así que un solo `crearVenta`
+  // alcanza para cerrar la invariante sin tocar interfaz ajena: la Task 5
+  // puede sumarle después el paso de `ajustarStock` con dos líneas más.
+  it('el stock cierra contra la suma de sus movimientos', async () => {
+    await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: recon, cantidad: d('7.5') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('750'), cotizacion: d('1') }],
+    })
+
+    const { stock, suma } = await enTransaccionDeTenant(tenantId, async (tx) => {
+      const a = await tx.articulo.findUniqueOrThrow({ where: { id: recon } })
+      const agg = await tx.movimientoStock.aggregate({
+        where: { articuloId: recon },
+        _sum: { delta: true },
+      })
+      return { stock: a.stock, suma: agg._sum.delta ?? new Prisma.Decimal(0) }
+    })
+    expect(stock.toString()).toBe(suma.toString())
+    expect(stock.toString()).toBe('-7.5')
+  })
 
   it('los números de venta son correlativos y sin huecos', async () => {
     const numeros = await enTransaccionDeTenant(tenantId, async (tx) =>
