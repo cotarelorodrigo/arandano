@@ -564,13 +564,21 @@ scripts/setup-db-roles.sh \
 # dar verde, con un mensaje que habla del canario y no del orden.
 #
 # --entrypoint node porque el ENTRYPOINT de la imagen es `npx prisma`.
+#
+# NOMBRE_CANARIO_STAGE en una variable, y no un literal repetido: el paso 9
+# (smoke tests) le pasa a `caso_tenant_resuelve` el nombre que tiene que
+# aparecer en el cuerpo de la página del canario, y ese nombre tiene que ser
+# EXACTAMENTE el que este alta acaba de escribir. Dos literales idénticos en
+# el mismo archivo son dos literales que un día se editan uno sin el otro; la
+# variable hace que eso sea imposible.
+NOMBRE_CANARIO_STAGE="Canario de stage"
 docker run --rm --network arandano-stage_default \
   -e MIGRATE_DATABASE_URL="postgres://arandano_owner:efimero-owner@postgres:5432/arandano_stage" \
   -e DOMINIO_BASE="stage.arandano.app" \
   --entrypoint node "arandano-migrate:$SHA" \
   --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/crear-tenant.mts \
   --subdominio=canario \
-  --nombre="Canario de stage" \
+  --nombre="$NOMBRE_CANARIO_STAGE" \
   --modulos=ORDENES_DE_TRABAJO \
   --duenio=canario@arandano.app \
   --duenio-nombre="Canario"
@@ -592,7 +600,7 @@ if [[ -z "$url_stage" ]]; then
 fi
 
 log "paso 9/18: smoke tests contra stage"
-scripts/smoke.sh "http://${url_stage}" "$SHA" "stage.arandano.app" "canario"
+scripts/smoke.sh "http://${url_stage}" "$SHA" "stage.arandano.app" "canario" "$NOMBRE_CANARIO_STAGE"
 
 IMAGE_TAG="$SHA" docker compose -f docker/compose.stage.yml down -v
 log "ensayo en stage ok"

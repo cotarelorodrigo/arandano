@@ -27,8 +27,12 @@ URL_BASE="${1:-}"
 SHA_ESPERADO="${2:-}"
 DOMINIO_BASE="${3:-}"
 SUBDOMINIO_CANARIO="${4:-}"
-if [[ -z "$URL_BASE" || -z "$SHA_ESPERADO" || -z "$DOMINIO_BASE" || -z "$SUBDOMINIO_CANARIO" ]]; then
-  echo "uso: smoke.sh <url_base> <sha_esperado> <dominio_base> <subdominio_canario>" >&2
+# El nombre, no sólo el subdominio: sin él, caso_tenant_resuelve sólo podía
+# verificar que ALGÚN tenant salió en el cuerpo, no que fue el canario. Un
+# nombre hardcodeado o el de otro tenant hubiera pasado igual.
+NOMBRE_CANARIO="${5:-}"
+if [[ -z "$URL_BASE" || -z "$SHA_ESPERADO" || -z "$DOMINIO_BASE" || -z "$SUBDOMINIO_CANARIO" || -z "$NOMBRE_CANARIO" ]]; then
+  echo "uso: smoke.sh <url_base> <sha_esperado> <dominio_base> <subdominio_canario> <nombre_canario>" >&2
   exit 2
 fi
 
@@ -82,17 +86,33 @@ caso_check_tenant() {
   ' >/dev/null 2>&1
 }
 
+# El Host del APEX, no el del canario: caso_tenant_resuelve (más abajo) ya
+# pega al Host del canario y verifica algo más fuerte que un curl -f solo, así
+# que este caso quedaría enteramente subsumido si repitiera el mismo Host.
+# En vez de duplicar, cubre la otra rama que no tenía ningún caso: el apex
+# responde 200 con el placeholder y el cuerpo NO trae los testids de una
+# página de tenant — si algún día el apex resolviera por error a un tenant
+# (el bug inverso al que este ciclo entero existe para impedir), esto lo
+# atrapa.
+caso_home_responde() {
+  local cuerpo
+  cuerpo=$(curl -fsS --max-time 10 -H "Host: ${DOMINIO_BASE}" "$URL_BASE/") || return 1
+  ! grep -q 'data-testid="tenant-nombre"' <<<"$cuerpo"
+}
+
 # El Host es obligatorio a partir de la resolución por subdominio: sin él, la
 # request llega con la IP:puerto del stack, que es un dominio ajeno y responde
 # 404. No es un workaround del test — es el mismo camino que hace un cliente.
-caso_home_responde() {
-  curl -fsS --max-time 10 -o /dev/null \
-    -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/"
-}
-
+#
+# grep -F contra "testid>nombre" y no sólo contra el testid suelto: una
+# regresión que renderizara un tenant hardcodeado o el tenant equivocado
+# hubiera dejado pasar igual un chequeo que sólo mirara que EL ATRIBUTO está
+# presente. El nombre viene por argumento (Task 7, hallazgo de review) y no
+# hardcodeado acá, para no mantener dos copias del mismo literal que
+# `deploy.sh` ya usa al dar de alta el canario de stage.
 caso_tenant_resuelve() {
   curl -fsS --max-time 10 -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/" \
-    | grep -q 'data-testid="tenant-nombre"'
+    | grep -qF "data-testid=\"tenant-nombre\">${NOMBRE_CANARIO}"
 }
 
 caso_subdominio_inexistente_404() {
