@@ -68,6 +68,7 @@ flowchart TD
 | Pieza | Elección | Motivo |
 |---|---|---|
 | Framework full-stack | **Next.js (App Router) + TypeScript** | Un solo lenguaje front/back, ecosistema React rico para dashboards, corre como servidor Node propio (no serverless) para sostener websockets |
+| Componentes de UI | **shadcn/ui** sobre Tailwind | Se copian al repo en vez de instalarse como dependencia: el código es nuestro y se puede modificar sin pelearle a la librería. Accesibilidad y teclado ya resueltos por Radix, que es lo que más cuesta hacer bien en una pantalla de venta que se opera sin mouse |
 | Base de datos | **PostgreSQL** | Estándar, soporta RLS nativo para el aislamiento por tenant |
 | ORM | **Prisma** | Mejor DX y documentación del ecosistema Node; Prisma Studio sirve como ventana rápida de debug |
 | Autenticación | **Auth.js** (NextAuth) | Nativo de Next.js, sesiones/JWT sin reinventar nada |
@@ -265,6 +266,13 @@ Y del producto:
   `docs/superpowers/specs/2026-08-07-diagrama-schema-design.md`.
 - Definir el schema del módulo de órdenes de trabajo (`OrdenDeTrabajo` y sus estados), en `modules/ordenes-de-trabajo/`, con el mismo `tenant_id` y las mismas policies de RLS.
 - Definir el registry de módulos y los puntos de extensión del núcleo: navegación, tipos de artículo, `crearVentaDesde`, movimientos de stock, intents del bot, jobs de pg-boss, vistas del catálogo público y datos demo.
+- **Inicializar shadcn/ui, que hoy está a medias.** El CLI ya está en
+  `devDependencies` (`shadcn` 4.16.1), pero **nunca se corrió**: no hay Tailwind,
+  ni `components.json`, ni las variables de tema en `app/globals.css`. O sea que
+  la dependencia está y la infraestructura no, que es el peor de los dos estados
+  — parece resuelto y no lo está. Adoptarlo de verdad implica sumar Tailwind
+  (shadcn 4.x apunta a Tailwind v4) y correr el init. Va en el primer ciclo que
+  construya interfaz, no antes: hoy la app no tiene ni una pantalla.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~
