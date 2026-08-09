@@ -33,9 +33,10 @@ const MENSAJE_TRANSACCION_INTERACTIVA =
   'pierde en silencio (sin este guard, ni siquiera tira error) y, con las 5 ' +
   'conexiones del pool tomadas por transacciones interactivas en vuelo, el ' +
   'batch que se escapa se cuelga hasta connectionTimeoutMillis (1500ms) y falla. ' +
-  'Para trabajo atómico multi-paso (p. ej. crearVentaDesde: venta + movimiento ' +
-  'de stock) hace falta un helper dedicado que abra la transacción interactiva ' +
-  'y corra el set_config una sola vez adentro — todavía no existe, es tarea aparte.'
+  'Para trabajo atómico multi-paso (p. ej. crearVenta: venta + movimiento de ' +
+  'stock) usar enTransaccionDeTenant() de lib/tenant/transaccion.ts, que abre la ' +
+  'transacción interactiva sobre el cliente BASE y corre el set_config una sola ' +
+  'vez adentro.'
 
 /**
  * Cliente de Prisma atado a un tenant.
