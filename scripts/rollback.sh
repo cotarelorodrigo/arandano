@@ -69,6 +69,24 @@ case "$OBJETIVO" in
   *) error "objetivo inválido: $OBJETIVO"; uso ;;
 esac
 
+# Los traps de señal van ANTES de todo lo que pueda bloquear, y eso incluye la
+# extracción del token y de la CA de acá abajo. Mismo motivo y mismo detalle
+# que en deploy.sh (ver el comentario largo de ahí): sin el trap de INT, un
+# SIGINT al PID de este script no lo frena — bash abandona la espera del hijo en
+# curso y sigue con el comando SIGUIENTE. Reproducido acá también: se saltea el
+# `docker compose up` y cae directo al loop de healthcheck, o se saltea el loop
+# y reporta el peor caso sin haber esperado nada. Un rollback es lo último que
+# puede improvisar. El de TERM va por simetría, igual que allá.
+#
+# EL ORDEN IMPORTA y por eso están acá arriba y no después del bloque de la CA,
+# que es donde estaban: `extraer_ca_caddy` hace un `docker compose exec` contra
+# un host que, en el momento en que alguien corre este script, está enfermo por
+# definición — o sea que es justo el comando que puede colgarse y el momento en
+# que alguien manda la señal. Instalar los traps después dejaba esa ventana
+# descubierta, que es exactamente la que este comentario existe para cerrar.
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 # El token y la CA para consultar el healthcheck. ACÁ AVISAN Y SIGUEN; NO
 # ABORTAN, y esa diferencia con deploy.sh es deliberada:
 #
@@ -128,16 +146,6 @@ if [[ -z "$TOKEN_SALUD" ]] || { [[ "$URL_SALUD" == https://* ]] && [[ -z "$CA_SA
   error "  el poll de 90s va a agotarse y esto va a terminar en 'EL ROLLBACK NO VERIFICÓ EN 90s'"
   error "  con la imagen ya revertida: comprobalo a mano con los comandos que imprime ahí"
 fi
-
-# Mismo motivo y mismo detalle que en deploy.sh (ver el comentario largo de
-# ahí): sin el trap de INT, un SIGINT al PID de este script no lo frena — bash
-# abandona la espera del hijo en curso y sigue con el comando SIGUIENTE.
-# Reproducido acá también: se saltea el `docker compose up` y cae directo al
-# loop de healthcheck, o se saltea el loop y reporta el peor caso sin haber
-# esperado nada. Un rollback es lo último que puede improvisar. El de TERM va
-# por simetría, igual que allá.
-trap 'exit 130' INT
-trap 'exit 143' TERM
 
 # Sin --a: el ANTEÚLTIMO tag. El último describe lo que está corriendo ahora,
 # así que volver ahí no sería volver a ningún lado.
