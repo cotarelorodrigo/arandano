@@ -40,9 +40,16 @@ services:
       ARANDANO_DB_ESPERADA: arandano_ensayo
       DOMINIO_BASE: stage.arandano.app
       # Mismos valores que compose.stage.yml: el check de tenant necesita un
-      # canario al que apuntar, y este stack no tiene uno propio creado en
-      # cada corrida como stage — hay que darlo de alta a mano contra esta
-      # base antes de que `deploy.sh --objetivo=ensayo` pueda dar verde.
+      # canario al que apuntar. NO hace falta darlo de alta a mano: el
+      # paso 14/18 de deploy.sh lo crea contra el objetivo real (ensayo o
+      # prod) tolerando que ya exista, así que también lo crea acá solo —
+      # antes era así, y quedó corregido (ver docs/runbook-stacks.md,
+      # "El tenant canario"). Lo que SÍ hay que preparar a mano antes de
+      # correr el gate contra un `arandano-ensayo` recién levantado son sus
+      # roles de Postgres: el paso 14 necesita a `arandano_owner` ya creado,
+      # y ese rol lo crea el paso 13, que corre DESPUÉS del paso 10 —el que
+      # muere primero si el rol no está— ver "Preparar arandano-ensayo desde
+      # cero" en docs/runbook-stacks.md.
       TENANT_CANARIO_SUBDOMINIO: canario
     # Sólo por Tailscale, como dev y stage. Este stack no existe desde internet.
     ports:

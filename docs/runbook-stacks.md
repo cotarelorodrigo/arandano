@@ -140,10 +140,21 @@ lo decidiera: fallar abierto justo donde el resto del proyecto falla cerrado.
 EXECUTE` va **por nombre**, función por función, en un bloque `DO` al final
 del script (hoy sólo `resolver_tenant`). **Quien agregue una función
 `SECURITY DEFINER` nueva tiene que sumar su propia línea ahí.** Si no lo
-hace, la app recibe `permission denied for function ...` en producción — y
-recién ahí, porque `setup-db-roles.sh` corre contra el objetivo real
-DESPUÉS de la migración (paso 13/18 de `deploy.sh`, ver *Deploy y
-rollback*), así que ningún paso anterior del gate lo detecta.
+hace, la app recibe `permission denied for function ...`.
+
+Para `resolver_tenant` el gate SÍ lo atrapa antes de llegar a producción: el
+paso 8 corre `setup-db-roles.sh` contra stage una segunda vez, después de
+migrar, así que el `GRANT` por nombre ya está aplicado ahí; y el paso 9
+corre los smoke tests, con `caso_check_tenant` exigiendo que el check
+`tenant` del healthcheck esté en `ok` — ese check llama a
+`resolver_tenant()` (`lib/health/checks.ts`), así que si el `GRANT` faltara
+el gate moriría ahí mismo, en el paso 9 contra stage, mucho antes de tocar
+el objetivo real. Lo que el gate **no** cubre es una función nueva que
+todavía no esté ejercitada por ningún smoke test propio: para ésa, sin un
+caso en `scripts/smoke.sh` que la llame, el primer síntoma de un `GRANT`
+olvidado sí es el `permission denied` contra el objetivo real, porque
+`setup-db-roles.sh` corre ahí recién en el paso 13 (después de la
+migración) y nada anterior la ejercita.
 
 El heredoc con ese SQL va **entre comillas** (`<<'EOF'`, no `<<EOF`). Con
 comillas, bash no expande absolutamente nada de su contenido: ni variables,
@@ -185,8 +196,10 @@ declara en ningún lado, y las dos se cobraron de verdad durante este ciclo:
    status` con `docker run --network arandano-ensayo_default ...`. Si el
    stack no está arriba, esa red todavía no existe, y el gate muere ahí con
    `network arandano-ensayo_default not found` — **después** de haber
-   buildeado `arandano-app` y `arandano-migrate` (pasos 7-8) y de haber
-   frenado `arandano-dev` (paso 6). Nada de eso se revierte solo.
+   frenado `arandano-dev` (paso 6), buildeado `arandano-app` y
+   `arandano-migrate` (paso 7), ensayado la migración completa contra
+   stage —roles, `migrate deploy`, alta del canario de stage— (paso 8) y
+   corrido los smoke tests (paso 9). Nada de eso se revierte solo.
 2. **Ese objetivo ya tiene los roles creados.** El mismo paso 10 se conecta
    como `arandano_owner` para correr `migrate status`, pero ese rol recién lo
    crea el paso 13 — que corre DESPUÉS. Contra un `arandano-ensayo` recién
@@ -428,11 +441,17 @@ de `tenants` y con uno inventado devuelva 0.
   efímera — nace de nuevo en cada corrida.
 - En **ensayo** y en **prod** lo crea el paso 14/18, contra el objetivo real,
   tolerando que ya exista (ver *Preparar `arandano-ensayo` desde cero* más
-  arriba para las dos precondiciones que ese paso da por sentadas).
-- En **dev** hay que crearlo a mano una vez, con el comando de arriba (con
-  `--subdominio=canario` en vez de `flor`). **En producción, antes del
-  deploy que introduce el check**: si no existe, el healthcheck falla y el
-  paso 16 dispara el rollback automático.
+  arriba para las dos precondiciones que ese paso da por sentadas). Es
+  justamente lo que evita el escenario que motivó agregarlo (Task 6): sin
+  este paso, el primer deploy que promoviera el check de tenant migraba,
+  otorgaba y promovía sin que nada hubiera creado el canario contra el
+  objetivo real, y el healthcheck (paso 16) fallaba con "el tenant canario
+  no existe en esta base" — rollback automático de un deploy sano. Con el
+  paso 14 en el gate, ni ensayo ni prod necesitan un alta manual previa,
+  ni siquiera en el primer deploy que introduce el check.
+- En **dev** sí hay que crearlo a mano, una vez, con el comando de arriba
+  (con `--subdominio=canario` en vez de `flor`): `deploy.sh` nunca corre
+  contra dev, así que ningún paso automático lo va a crear ahí.
 
 **La fila del canario es dato de producción load-bearing, no un dato de
 prueba descartable.** Detalle completo, y por qué no se puede borrar ni
