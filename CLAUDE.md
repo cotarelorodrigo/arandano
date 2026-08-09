@@ -71,7 +71,7 @@ flowchart TD
 | Base de datos | **PostgreSQL** | Estándar, soporta RLS nativo para el aislamiento por tenant |
 | ORM | **Prisma** | Mejor DX y documentación del ecosistema Node; Prisma Studio sirve como ventana rápida de debug |
 | Autenticación | **Auth.js** (NextAuth) | Nativo de Next.js, sesiones/JWT sin reinventar nada |
-| Multi-tenancy (app) | **Middleware propio** (`middleware.ts`) resuelve subdominio → tenant; extensión de Prisma fuerza filtro por `tenant_id` | Capa de aplicación explícita, sin depender de "magia" de un paquete |
+| Multi-tenancy (app) | **Helper de servidor** (`lib/tenant/desde-request.ts`) resuelve subdominio → tenant leyendo el `Host`; extensión de Prisma fuerza filtro por `tenant_id` | Sin `middleware.ts`: el middleware de Next no puede consultar Postgres, así que tendría que pasarle el resultado a la app por un header — y un header del que la app deduce qué tenant servir es superficie de suplantación que no compra nada, porque el `Host` la app ya lo lee directo |
 | Multi-tenancy (datos) | **Row Level Security de Postgres** como segunda capa de defensa | Si algún query se olvida el filtro, la base igual protege el dato |
 | Modularidad por rubro | **Monolito modular**: `modules/<nombre>/` con schema, rutas, UI y jobs propios, más un registry; activación por fila en `TenantModule` | Un rubro nuevo no toca infraestructura ni suma un deploy; las tablas de cada módulo viven en el mismo Postgres y heredan el mismo RLS |
 | Colas / background jobs | **pg-boss** (cola sobre el mismo Postgres) | Evita sumar Redis desde el día uno; cubre seguimientos automáticos y pedido de reseñas |
@@ -197,7 +197,7 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 - **Los presets se multiplican.** Cada rubro nuevo agrega datos demo y nomenclatura que hay que mantener. Si crecen sin control, se vuelven una carga silenciosa: conviene que un preset sea chico por definición y que ningún preset pueda introducir lógica.
 - **Dev y producción comparten kernel, disco y CPU de forma permanente.** Es una decisión tomada, no un estado transitorio: no hay una segunda máquina prevista. Los límites de recursos, la rotación de logs y la swap son la única defensa entre un build y un cliente caído. Que sigan puestos es parte del checklist de deploy, no algo que se configura una vez y se olvida. El día que el ruido de desarrollo se note en el servicio, la salida es mover dev a un VPS chico — no aflojar los límites.
 - **Sin feature flags, cada deploy alcanza a todos los clientes a la vez.** El healthcheck, los smoke tests y el rollback automático son la única red, así que su calidad no es negociable: un healthcheck superficial deja el rollback automático sin criterio para dispararse. Vale revisar esta decisión cuando la base de clientes crezca lo bastante como para que una hora de servicio degradado cueste más que mantener flags.
-- **La ventana de montar todo esto se cierra con el primer cliente.** La separación de entornos, los backups y el gate de `deploy.sh` ya están — lo que queda es más chico pero no menos filoso: el healthcheck completo (falta el check de tenant y el de pg-boss) y el cutover del DNS, que hoy directamente no resuelve (`dig arandano.app` da NXDOMAIN, medido el 2026-08-07 — ver *Bloqueantes antes del cutover de DNS*). Cuanto menos quede, más vale cerrarlo ahora: después del primer tenant real, cada cambio se hace con datos de alguien encima.
+- **La ventana de montar todo esto se cierra con el primer cliente.** La separación de entornos, los backups y el gate de `deploy.sh` ya están — lo que queda es más chico pero no menos filoso: el healthcheck completo (falta el check de pg-boss; el de tenant ya está) y el cutover del DNS, que hoy directamente no resuelve (`dig arandano.app` da NXDOMAIN, medido el 2026-08-07 — ver *Bloqueantes antes del cutover de DNS*). Cuanto menos quede, más vale cerrarlo ahora: después del primer tenant real, cada cambio se hace con datos de alguien encima.
 
 ## Roadmap de producto
 
@@ -267,7 +267,12 @@ Y del producto:
 - Definir el registry de módulos y los puntos de extensión del núcleo: navegación, tipos de artículo, `crearVentaDesde`, movimientos de stock, intents del bot, jobs de pg-boss, vistas del catálogo público y datos demo.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
-- Implementar el middleware de resolución de tenant por subdominio.
+- ~~Implementar el middleware de resolución de tenant por subdominio.~~
+  **Hecho** (2026-08-08), y no como middleware: la resolución vive en
+  `lib/tenant/desde-request.ts`, apoyada en la función `resolver_tenant` de
+  Postgres — ver `docs/superpowers/specs/2026-08-08-resolucion-tenant-design.md`.
+  Incluye el alta de tenant (`npm run tenant:crear`) y el check de aislamiento
+  del healthcheck.
 - Configurar Auth.js.
 - Configurar `pg-boss` para las tareas en background (seguimientos automáticos, pedido de reseñas, webhooks del bot).
 - Aislar la integración con la Cloud API de Meta (WhatsApp/Instagram) en su propio módulo.
@@ -277,9 +282,10 @@ Y del producto:
 
 1. **Completar el healthcheck.** El check de identidad del rol de conexión ya
    está (`lib/health/checks.ts`): rechaza superusuario, `BYPASSRLS` y ser dueño
-   de las tablas. **Pendiente**: el check de query filtrada por tenant, que
-   necesita un tenant conocido al que apuntar y llega con el tenant canario, y
-   el de pg-boss, que espera a que pg-boss se configure.
+   de las tablas. El check de aislamiento por tenant también (2026-08-08):
+   resuelve el tenant canario y comprueba las dos mitades — con su `tenant_id`
+   ve 1 fila, con uno inventado ve 0. **Pendiente**: el de pg-boss, que espera a
+   que pg-boss se configure.
 2. ~~**Backups** con `pg_dump` y restore verificado contra base descartable.~~
    **Hecho** (2026-08-04). `scripts/backup.sh` nocturno a las 04:00 UTC y
    `scripts/verify-backup.sh` los domingos a las 05:00 UTC, con dead man's
