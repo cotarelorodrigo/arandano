@@ -77,29 +77,79 @@ suite_host() {
 suite_app() {
   suite_header "App: healthcheck con contenido real"
 
+  # El detalle del healthcheck (los checks, el sha) sólo sale con el header
+  # `X-Arandano-Salud`. Sin él la respuesta es `{"status":"ok"}` y NADA de lo
+  # que esta suite mira existe en el cuerpo — que es como quedó en rojo cuando
+  # /api/health pasó a tener dos niveles. El token de dev vive inline en
+  # docker/compose.dev.yml (ver el comentario de ahí: dev nunca ve datos de
+  # clientes y sólo escucha en Tailscale).
+  #
+  # Duplicado acá y en ese compose, igual que `efimero-salud` está duplicado en
+  # compose.stage.yml y en deploy.sh: si cambia allá, cambia acá.
+  local token_dev=dev-salud-no-es-secreto
+
+  # /var/tmp y no /tmp: en este host /tmp es tmpfs, o sea que escribir ahí
+  # compite contra la memoria de producción (mismo criterio que backup.sh y que
+  # el temporal de la CA de más abajo).
+  local detalle=/var/tmp/arandano-health.json
+
   # Borrar antes de pedir: si curl no puede conectar, no escribe el archivo y
   # los greps de abajo leerían el JSON de una corrida anterior. El exit code
   # global igual saldría mal por el chequeo del 200, pero la salida mostraría
   # tres pass espurios al lado del fail — y lo que alguien lee a las 11 de la
   # noche es la salida, no el exit code.
-  rm -f /tmp/arandano-health.json
+  rm -f "$detalle"
 
+  # `|| code=000` y NO `|| echo 000`: con el `echo`, la salida del `echo` se
+  # CONCATENA a lo que curl ya escribió en stdout — y curl, cuando no puede
+  # conectar, imprime igual su `%{http_code}` como "000". El resultado era
+  # "000000", que ningún `check_eq` explica: el veredicto seguía bien pero el
+  # mensaje de diagnóstico mentía sobre qué respondió el servidor.
   local code
-  code=$(curl -s -o /tmp/arandano-health.json -w '%{http_code}' \
-    "http://$TS_IP:3000/api/health" 2>/dev/null || echo 000)
+  code=$(curl -s -o "$detalle" -w '%{http_code}' \
+    -H "X-Arandano-Salud: $token_dev" \
+    "http://$TS_IP:3000/api/health" 2>/dev/null) || code=000
   check_eq "healthcheck de dev devuelve 200" "200" "$code"
 
   check_cmd "reporta el check de postgres" \
-    grep -q '"name":"postgres"' /tmp/arandano-health.json
+    grep -q '"name":"postgres"' "$detalle"
   # El SHA ahora viaja en `info`, no como un check verde: no puede fallar, así
   # que no vota el veredicto.
   check_cmd "expone el SHA como info, no como check" \
-    grep -q '"info":{"sha":' /tmp/arandano-health.json
+    grep -q '"info":{"sha":' "$detalle"
+  # Esta era una aserción NEGATIVA pelada (`! grep -q '"name":"app"'`), y una
+  # aserción negativa aprueba cualquier cuerpo que no contenga el patrón —
+  # incluido uno vacío o un `{"status":"ok"}`. Pasó de verdad: mientras esta
+  # suite consultaba sin el header, este ✓ convivía con tres ✗ sin significar
+  # nada.
+  #
+  # La forma positiva no tiene ese modo de falla: se exige que HAYA checks y
+  # que ninguno se llame "app". Contra un cuerpo anónimo o vacío, `.checks`
+  # no existe y `jq -e` falla, así que el check se reporta ✗ en vez de ✓.
   check_cmd "el SHA/uptime ya no se reporta como un check" \
-    bash -c '! grep -q "\"name\":\"app\"" /tmp/arandano-health.json'
+    jq -e '(.checks | length) > 0 and all(.checks[]; .name != "app")' "$detalle"
   # El check de postgres confirma identidad de base, no sólo alcanzabilidad.
   check_cmd "el check de postgres confirma contra qué base habla" \
-    grep -q '"detail":"db=arandano_dev"' /tmp/arandano-health.json
+    grep -q '"detail":"db=arandano_dev"' "$detalle"
+
+  # La forma ANÓNIMA, que es la propiedad de seguridad que entregó el cutover:
+  # sin el header, este endpoint no puede devolver ni el nombre de la base, ni
+  # el del rol, ni el subdominio del canario, ni el commit que está corriendo.
+  # Hasta acá su única cobertura eran unitarios con mocks (app/api/health/
+  # route.test.ts) más una comprobación manual de una sola vez; esto la vuelve
+  # re-ejecutable contra un stack corriendo, que es donde el token, el compose
+  # y el código se juntan de verdad.
+  #
+  # Se compara la lista COMPLETA de claves y no `length == 1`: así el mensaje
+  # de un fallo dice qué se filtró ("status,checks,info") en vez de un número.
+  local anon claves_anon
+  anon=/var/tmp/arandano-health-anon.json
+  rm -f "$anon"
+  curl -s -o "$anon" --max-time 5 "http://$TS_IP:3000/api/health" >/dev/null 2>&1 || true
+  claves_anon=$(jq -r 'keys | join(",")' "$anon" 2>/dev/null) || claves_anon=NA
+  [[ -n "$claves_anon" ]] || claves_anon=NA
+  check_eq "sin el header, la respuesta trae SÓLO status" "status" "$claves_anon"
+  rm -f "$anon"
 }
 
 suite_network() {
@@ -125,26 +175,42 @@ suite_network() {
   # `curl http://127.0.0.1/api/health` devolvió 200: el bloque :80 era un
   # reverse_proxy catch-all sirviendo la app en texto plano a internet, con el
   # nombre de la base, el del rol y el sha adentro de la respuesta.
+  #
+  # `|| codigo_80=000` y NO `|| echo 000`, mismo motivo que en suite_app: el
+  # `echo` CONCATENA con el `%{http_code}` que curl ya imprimió (que ante un
+  # fallo de conexión es "000"), y el diagnóstico terminaba diciendo "000000"
+  # — un código que no existe, leído justo durante el cutover.
   local codigo_80
   codigo_80=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
-    http://127.0.0.1/api/health 2>/dev/null || echo 000)
+    http://127.0.0.1/api/health 2>/dev/null) || codigo_80=000
   check_eq ":80 redirige en vez de servir la app" "308" "$codigo_80"
 
   # Que el site block localhost:443 siga sirviendo Y que su certificado valide
   # contra la CA interna. De esto depende el gate del deploy: si Caddy no
   # aprovisiona el certificado, deploy.sh y rollback.sh no pueden consultar el
   # healthcheck.
+  #
+  # `|| ca_tmp=""` más el `if`: si `mktemp` fallara (disco lleno, /var/tmp sin
+  # permisos), `$ca_tmp` queda vacío y `> ""` es un "ambiguous redirect" que el
+  # `2>/dev/null` de esa misma línea NO silencia — el error de redirección lo
+  # emite el shell ANTES de aplicar la redirección de stderr. Con el guard, ese
+  # caso cae en `verifico=99` y se reporta como el fallo que es.
+  #
+  # `|| verifico=99` y no `|| echo 99`, por lo mismo que los dos códigos HTTP
+  # de más arriba: el `echo` concatenaba y el mensaje decía "099".
   local ca_tmp verifico
-  ca_tmp=$(mktemp -p /var/tmp arandano-ca-check.XXXXXXXX)
-  ( cd /srv/arandano/prod && docker compose exec -T caddy \
-      cat /data/caddy/pki/authorities/local/root.crt ) > "$ca_tmp" 2>/dev/null || true
-  if [[ -s "$ca_tmp" ]]; then
+  ca_tmp=$(mktemp -p /var/tmp arandano-ca-check.XXXXXXXX) || ca_tmp=""
+  if [[ -n "$ca_tmp" ]]; then
+    ( cd /srv/arandano/prod && docker compose exec -T caddy \
+        cat /data/caddy/pki/authorities/local/root.crt ) > "$ca_tmp" 2>/dev/null || true
+  fi
+  if [[ -n "$ca_tmp" && -s "$ca_tmp" ]]; then
     verifico=$(curl -s -o /dev/null -w '%{ssl_verify_result}' --max-time 5 \
-      --cacert "$ca_tmp" https://localhost/api/health 2>/dev/null || echo 99)
+      --cacert "$ca_tmp" https://localhost/api/health 2>/dev/null) || verifico=99
   else
     verifico=99
   fi
-  rm -f "$ca_tmp"
+  [[ -n "$ca_tmp" ]] && rm -f "$ca_tmp"
   check_eq "el certificado de localhost valida contra la CA interna" "0" "$verifico"
 }
 
