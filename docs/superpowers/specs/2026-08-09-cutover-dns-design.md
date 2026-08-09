@@ -114,7 +114,9 @@ es cuánto detalle se devuelve.
 { "status": "ok" }
 ```
 
-con 200, o `{ "status": "error" }` con 503. Un uptime check externo no pierde
+con 200, o `{ "status": "degraded" }` con 503. El valor es `degraded` y no
+`error` porque es el que ya usa `HealthReport` en `lib/health/types.ts`: el
+nivel anónimo recorta el detalle, no reescribe el vocabulario. Un uptime check externo no pierde
 capacidad de detección: si Postgres se cae, sigue viendo el 503.
 
 **Con `X-Arandano-Salud: <token>` válido** — la forma de hoy, sin cambios: el
