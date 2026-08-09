@@ -71,7 +71,7 @@ flowchart TD
 | Base de datos | **PostgreSQL** | Estándar, soporta RLS nativo para el aislamiento por tenant |
 | ORM | **Prisma** | Mejor DX y documentación del ecosistema Node; Prisma Studio sirve como ventana rápida de debug |
 | Autenticación | **Auth.js** (NextAuth) | Nativo de Next.js, sesiones/JWT sin reinventar nada |
-| Multi-tenancy (app) | **Middleware propio** (`middleware.ts`) resuelve subdominio → tenant; extensión de Prisma fuerza filtro por `tenant_id` | Capa de aplicación explícita, sin depender de "magia" de un paquete |
+| Multi-tenancy (app) | **Helper de servidor** (`lib/tenant/desde-request.ts`) resuelve subdominio → tenant leyendo el `Host`; extensión de Prisma fuerza filtro por `tenant_id` | Sin `middleware.ts`: el middleware de Next no puede consultar Postgres, así que tendría que pasarle el resultado a la app por un header — y un header del que la app deduce qué tenant servir es superficie de suplantación que no compra nada, porque el `Host` la app ya lo lee directo |
 | Multi-tenancy (datos) | **Row Level Security de Postgres** como segunda capa de defensa | Si algún query se olvida el filtro, la base igual protege el dato |
 | Modularidad por rubro | **Monolito modular**: `modules/<nombre>/` con schema, rutas, UI y jobs propios, más un registry; activación por fila en `TenantModule` | Un rubro nuevo no toca infraestructura ni suma un deploy; las tablas de cada módulo viven en el mismo Postgres y heredan el mismo RLS |
 | Colas / background jobs | **pg-boss** (cola sobre el mismo Postgres) | Evita sumar Redis desde el día uno; cubre seguimientos automáticos y pedido de reseñas |
@@ -115,7 +115,7 @@ El deploy frena `arandano-dev` desde el arranque —antes del build, no antes de
 - **Expand/contract**: ninguna columna se borra ni se renombra en el mismo deploy que deja de usarla. Primero se deploya el código que no la usa, y el drop viene en un deploy posterior. Es lo que mantiene el rollback siempre posible.
 - `pg_dump` inmediatamente antes de cada migración, además del backup nocturno.
 
-**El deploy es un comando con gate.** `deploy.sh` encadena: working tree limpio → migraciones no destructivas → schema sincronizado con las migraciones → tests → typecheck → frenar `arandano-dev` → build tageado → ensayo de la migración y smoke tests contra `arandano-stage` → `migrate status` contra prod, en las dos direcciones → backup → `migrate deploy` → promoción de la imagen (`--no-deps`) → healthcheck con comparación de SHA → tag de git pusheado a `origin`, con rollback automático a la imagen anterior si falla la promoción o el healthcheck. El chequeo de schema va temprano, en el preflight, y no después del build: corre con el `npx prisma` del propio repo, así que no necesita ninguna imagen construida todavía. El ensayo en stage va **antes** de tocar producción: la migración se prueba sobre una base virgen antes que sobre la de clientes. Corrido con `--objetivo=ensayo` (`docs/runbook-stacks.md`), el mismo script ensaya la secuencia completa contra un stack descartable, sin crear ni pushear tag. Sin pasos manuales que se puedan saltear un martes a las 11 de la noche.
+**El deploy es un comando con gate.** `deploy.sh` encadena: working tree limpio → migraciones no destructivas → schema sincronizado con las migraciones → tests → typecheck → frenar `arandano-dev` → build tageado → ensayo de la migración contra `arandano-stage` → smoke tests contra `arandano-stage` → `migrate status` contra prod, en las dos direcciones → backup → `migrate deploy` → `setup-db-roles.sh` contra el objetivo (el `EXECUTE` de las funciones se otorga por nombre, no por default privilege, así que esta corrida post-migración es la que lo aplica — Task 5c) → alta del tenant canario contra el objetivo, tolerando que ya exista (Task 6: el check de tenant del healthcheck necesita un canario al que apuntar, y sin este paso sólo existía contra la base efímera de stage) → promoción de la imagen (`--no-deps`) → healthcheck con comparación de SHA → tag de git pusheado a `origin`, con rollback automático a la imagen anterior si falla la promoción o el healthcheck. El chequeo de schema va temprano, en el preflight, y no después del build: corre con el `npx prisma` del propio repo, así que no necesita ninguna imagen construida todavía. El ensayo en stage va **antes** de tocar producción: la migración se prueba sobre una base virgen antes que sobre la de clientes. Corrido con `--objetivo=ensayo` (`docs/runbook-stacks.md`), el mismo script ensaya la secuencia completa contra un stack descartable, sin crear ni pushear tag. Sin pasos manuales que se puedan saltear un martes a las 11 de la noche.
 
 **Cada deploy exitoso deja un tag de git.** La imagen ya va tageada con el SHA, pero el SHA no se lee ni se ordena: el tag es el índice humano de qué estuvo en producción y cuándo.
 
@@ -164,7 +164,7 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 6. Verificación manual en el tenant canario, inmediatamente después.
 7. La limpieza (contract) va en un deploy posterior.
 
-**El tenant canario.** Un tenant real en producción que sea propio: un demo que se use en serio, o el local de alguien de confianza. Sin flags no sirve para liberar de a poco, pero sí es el primer lugar donde se mira después de cada deploy — antes de que lo mire un cliente.
+**El tenant canario.** Un tenant real en producción que sea propio: un demo que se use en serio, o el local de alguien de confianza. Sin flags no sirve para liberar de a poco, pero sí es el primer lugar donde se mira después de cada deploy — antes de que lo mire un cliente. Desde que existe el check de tenant del healthcheck (Task 6), la fila del canario dejó de ser sólo un lugar donde mirar: es dato de producción load-bearing — el gate la da de alta contra el objetivo en cada deploy, tolerando que ya exista, y el healthcheck depende de que siga ahí con ese subdominio exacto (detalle en *Deploy y rollback* de `docs/runbook-stacks.md`).
 
 **Cuando algo se rompe: rollback primero, diagnóstico después.** El healthcheck lo dispara solo, pero también tiene que ser un comando de una línea para lo que el healthcheck no ve. La tentación de "lo arreglo en dos minutos" es lo que convierte una caída de cinco minutos en una de dos horas. Y nunca editar en caliente en `/srv/arandano/prod/`: un fix urgente sigue siendo un deploy y pasa el mismo gate, porque es justo cuando hay apuro que más falta hace.
 
@@ -197,7 +197,7 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 - **Los presets se multiplican.** Cada rubro nuevo agrega datos demo y nomenclatura que hay que mantener. Si crecen sin control, se vuelven una carga silenciosa: conviene que un preset sea chico por definición y que ningún preset pueda introducir lógica.
 - **Dev y producción comparten kernel, disco y CPU de forma permanente.** Es una decisión tomada, no un estado transitorio: no hay una segunda máquina prevista. Los límites de recursos, la rotación de logs y la swap son la única defensa entre un build y un cliente caído. Que sigan puestos es parte del checklist de deploy, no algo que se configura una vez y se olvida. El día que el ruido de desarrollo se note en el servicio, la salida es mover dev a un VPS chico — no aflojar los límites.
 - **Sin feature flags, cada deploy alcanza a todos los clientes a la vez.** El healthcheck, los smoke tests y el rollback automático son la única red, así que su calidad no es negociable: un healthcheck superficial deja el rollback automático sin criterio para dispararse. Vale revisar esta decisión cuando la base de clientes crezca lo bastante como para que una hora de servicio degradado cueste más que mantener flags.
-- **La ventana de montar todo esto se cierra con el primer cliente.** La separación de entornos, los backups y el gate de `deploy.sh` ya están — lo que queda es más chico pero no menos filoso: el healthcheck completo (falta el check de tenant y el de pg-boss) y el cutover del DNS, que hoy directamente no resuelve (`dig arandano.app` da NXDOMAIN, medido el 2026-08-07 — ver *Bloqueantes antes del cutover de DNS*). Cuanto menos quede, más vale cerrarlo ahora: después del primer tenant real, cada cambio se hace con datos de alguien encima.
+- **La ventana de montar todo esto se cierra con el primer cliente.** La separación de entornos, los backups y el gate de `deploy.sh` ya están — lo que queda es más chico pero no menos filoso: el healthcheck completo (falta el check de pg-boss; el de tenant ya está) y el cutover del DNS, que hoy directamente no resuelve (`dig arandano.app` da NXDOMAIN, medido el 2026-08-07 — ver *Bloqueantes antes del cutover de DNS*). Cuanto menos quede, más vale cerrarlo ahora: después del primer tenant real, cada cambio se hace con datos de alguien encima.
 
 ## Roadmap de producto
 
@@ -230,11 +230,18 @@ Los primeros cuatro son de entorno y van antes que cualquier línea de producto,
   stack descartable para que `deploy.sh --objetivo=ensayo` ensaye el gate
   completo sin tocar clientes.
 - ~~Escribir `deploy.sh` con su gate completo.~~ **Hecho** (2026-08-06). El
-  orden real de los 16 pasos vive en un solo lugar — el párrafo "El deploy es
+  orden real de los 18 pasos vive en un solo lugar — el párrafo "El deploy es
   un comando con gate" más arriba — para no mantener una segunda copia que
   pueda desincronizarse del script. Ver
   `docs/superpowers/specs/2026-08-06-deploy-design.md` y la sección *Deploy y
-  rollback* de `docs/runbook-stacks.md`.
+  rollback* de `docs/runbook-stacks.md`. **Sumado después** (2026-08-08, Task
+  5c): la corrida de `setup-db-roles.sh` contra el objetivo después de
+  `migrate deploy`, para que el `EXECUTE` por nombre de las funciones se
+  aplique sin depender de que alguien se acuerde de correrlo a mano.
+  **Sumado después** (2026-08-09, Task 6): el alta del tenant canario contra
+  el objetivo real, tolerando que ya exista — la fila del canario pasa a ser
+  dato de producción load-bearing en cuanto existe el check de tenant del
+  healthcheck (ver *Deploy y rollback* de `docs/runbook-stacks.md`).
 - ~~Montar los backups con `pg_dump` y el restore verificado contra una base
   descartable.~~ **Hecho** (2026-08-04). Ver *Bloqueantes antes del primer
   tenant real*, punto 2, y `docs/runbook-backups.md`.
@@ -260,7 +267,12 @@ Y del producto:
 - Definir el registry de módulos y los puntos de extensión del núcleo: navegación, tipos de artículo, `crearVentaDesde`, movimientos de stock, intents del bot, jobs de pg-boss, vistas del catálogo público y datos demo.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
-- Implementar el middleware de resolución de tenant por subdominio.
+- ~~Implementar el middleware de resolución de tenant por subdominio.~~
+  **Hecho** (2026-08-08), y no como middleware: la resolución vive en
+  `lib/tenant/desde-request.ts`, apoyada en la función `resolver_tenant` de
+  Postgres — ver `docs/superpowers/specs/2026-08-08-resolucion-tenant-design.md`.
+  Incluye el alta de tenant (`npm run tenant:crear`) y el check de aislamiento
+  del healthcheck.
 - Configurar Auth.js.
 - Configurar `pg-boss` para las tareas en background (seguimientos automáticos, pedido de reseñas, webhooks del bot).
 - Aislar la integración con la Cloud API de Meta (WhatsApp/Instagram) en su propio módulo.
@@ -270,9 +282,10 @@ Y del producto:
 
 1. **Completar el healthcheck.** El check de identidad del rol de conexión ya
    está (`lib/health/checks.ts`): rechaza superusuario, `BYPASSRLS` y ser dueño
-   de las tablas. **Pendiente**: el check de query filtrada por tenant, que
-   necesita un tenant conocido al que apuntar y llega con el tenant canario, y
-   el de pg-boss, que espera a que pg-boss se configure.
+   de las tablas. El check de aislamiento por tenant también (2026-08-08):
+   resuelve el tenant canario y comprueba las dos mitades — con su `tenant_id`
+   ve 1 fila, con uno inventado ve 0. **Pendiente**: el de pg-boss, que espera a
+   que pg-boss se configure.
 2. ~~**Backups** con `pg_dump` y restore verificado contra base descartable.~~
    **Hecho** (2026-08-04). `scripts/backup.sh` nocturno a las 04:00 UTC y
    `scripts/verify-backup.sh` los domingos a las 05:00 UTC, con dead man's
@@ -297,4 +310,4 @@ Plazo distinto y más temprano que la lista anterior: hay que cerrar esto antes 
 1. **Establecer el estado real del dominio.** `dig arandano.app` devuelve NXDOMAIN (medido el 2026-08-07, desde este servidor) — no resuelve a ninguna IP. `algo.arandano.app` tampoco resuelve. Desde acá no se puede distinguir si nunca se registró, si expiró, o si está registrado sin zona publicada: los resolvers externos están bloqueados desde este host y la consulta RDAP no devolvió nada. "Apuntar el DNS al servidor" y "registrar el dominio" son tareas distintas, y quien tenga a cargo el cutover necesita confirmar cuál de las dos hace falta antes de seguir con el resto de esta lista.
 2. **El bloque `:80` del Caddyfile tiene que pasar a ser sólo redirección** (`redir https://{host}{uri}`), nunca `reverse_proxy`. Hoy es un catch-all en texto plano sin host: `curl http://178.156.251.41/api/health` responde 200 desde internet. Con tenants adentro, eso serviría cookies de sesión en claro.
 3. **Decidir si `/api/health` se autentica o se restringe por origen.** Es el endpoint más caro expuesto (un ida y vuelta a Postgres por request, pool de máximo 5, sin rate limiting en ninguna capa) y a la vez el único que un uptime check externo necesita alcanzar.
-4. **Quien toque ese bloque `:80` tiene que cambiar `URL_SALUD` en `scripts/deploy.sh` y en `scripts/rollback.sh` en el mismo commit, y hacer un deploy de punta a punta después.** Los dos scripts consultan el healthcheck en `http://127.0.0.1/api/health`, o sea a través de ese mismo catch-all, y ninguno de los dos sigue redirecciones. El día que el bloque pase a `redir https://{host}{uri}`, el poll recibe un 308 con cuerpo vacío, `health_ok` lo rechaza, y entonces: el paso 14 nunca da verde → **cada deploy sano dispara el rollback automático** → `rollback.sh` consulta la misma URL y también timeoutea → salida 3, el peor caso del gate, con producción revertida sin que hubiera nada malo. Hoy funciona, así que no es urgente; lo que no puede pasar es descubrirlo durante el cutover. Dos detalles que lo hacen fácil de subestimar: `--objetivo=ensayo` pega directo al puerto de la app sin pasar por Caddy, así que **el ensayo del gate no puede atrapar esto**; y la salida no es hacer que los scripts sigan redirecciones — ir por Caddy es deliberado, porque es el camino que hacen los clientes de verdad, y seguir un 308 a ciegas debilitaría el chequeo. Los dos `URL_SALUD` tienen un comentario que apunta acá.
+4. **Quien toque ese bloque `:80` tiene que cambiar `URL_SALUD` en `scripts/deploy.sh` y en `scripts/rollback.sh` en el mismo commit, y hacer un deploy de punta a punta después.** Los dos scripts consultan el healthcheck en `http://127.0.0.1/api/health`, o sea a través de ese mismo catch-all, y ninguno de los dos sigue redirecciones. El día que el bloque pase a `redir https://{host}{uri}`, el poll recibe un 308 con cuerpo vacío, `health_ok` lo rechaza, y entonces: el paso 16 nunca da verde → **cada deploy sano dispara el rollback automático** → `rollback.sh` consulta la misma URL y también timeoutea → salida 3, el peor caso del gate, con producción revertida sin que hubiera nada malo. Hoy funciona, así que no es urgente; lo que no puede pasar es descubrirlo durante el cutover. Dos detalles que lo hacen fácil de subestimar: `--objetivo=ensayo` pega directo al puerto de la app sin pasar por Caddy, así que **el ensayo del gate no puede atrapar esto**; y la salida no es hacer que los scripts sigan redirecciones — ir por Caddy es deliberado, porque es el camino que hacen los clientes de verdad, y seguir un 308 a ciegas debilitaría el chequeo. Los dos `URL_SALUD` tienen un comentario que apunta acá.

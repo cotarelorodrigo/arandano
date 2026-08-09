@@ -1,5 +1,7 @@
-# Certificado interno mientras arandano.app siga apuntando al parking
-# de AWS. El wildcard por DNS-01 entra cuando se apunte el DNS.
+# Certificado interno mientras arandano.app no resuelva. Medido el 2026-08-07
+# desde este servidor: `dig arandano.app` devuelve NXDOMAIN, y no se puede
+# distinguir desde acá si nunca se registró, si expiró, o si está registrado sin
+# zona publicada. El wildcard por DNS-01 entra cuando se apunte el DNS.
 #
 # El host se declara explícito ("localhost", no ":443" a secas): sin un
 # nombre en la dirección del site, Caddy no sabe para qué hostname

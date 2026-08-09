@@ -4,6 +4,8 @@ node_modules
 .env
 .env.*
 docs
-scripts
+# scripts/ ya no está excluido: la etapa `migrate` del Dockerfile lo copia
+# para poder correr el alta de tenant sobre la red de stage. Los .test.ts
+# igual quedan afuera por la regla de abajo.
 **/*.test.ts
 generated

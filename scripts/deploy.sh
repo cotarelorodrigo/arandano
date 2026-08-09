@@ -72,7 +72,7 @@ done
 # `:80` del Caddyfile, que hoy es un `reverse_proxy` catch-all. Ese bloque tiene
 # que pasar a ser `redir https://{host}{uri}` antes del cutover (CLAUDE.md,
 # *Bloqueantes antes del cutover de DNS*, punto 2) — y el día que eso pase, este
-# poll recibe un 308 con cuerpo vacío, `health_ok` lo rechaza, el paso 14 nunca
+# poll recibe un 308 con cuerpo vacío, `health_ok` lo rechaza, el paso 16 nunca
 # da verde, y CADA deploy sano termina rollbackeado (y el rollback, que pega a
 # la misma URL, también timeoutea: salida 3). Ni curl acá ni el de rollback.sh
 # siguen redirecciones, a propósito: seguirlas debilitaría el chequeo.
@@ -82,9 +82,13 @@ done
 # gemela de rollback.sh) en el MISMO commit que cambie el Caddyfile, y hacer un
 # deploy de punta a punta después. Ojo: `--objetivo=ensayo` pega directo al
 # puerto de la app, sin Caddy, así que el ensayo NO puede atrapar esto.
+# DOMINIO_BASE_CANARIO y NOMBRE_CANARIO alimentan el paso 14 (alta del
+# canario contra el objetivo): mismo dominio que ARANDANO_DB_ESPERADA usa
+# para identificar el stack, uno por rama del case, para que la URL que
+# imprime crear-tenant.mts sea la real del objetivo y no la de stage.
 case "$OBJETIVO" in
-  prod)   DIR=/srv/arandano/prod;   URL_SALUD=http://127.0.0.1;            TAGEA=true ;;
-  ensayo) DIR=/srv/arandano/ensayo; URL_SALUD=http://100.64.81.63:3002;    TAGEA=false ;;
+  prod)   DIR=/srv/arandano/prod;   URL_SALUD=http://127.0.0.1;            TAGEA=true;  DOMINIO_BASE_CANARIO=arandano.app;       NOMBRE_CANARIO="Canario" ;;
+  ensayo) DIR=/srv/arandano/ensayo; URL_SALUD=http://100.64.81.63:3002;    TAGEA=false; DOMINIO_BASE_CANARIO=stage.arandano.app; NOMBRE_CANARIO="Canario de ensayo" ;;
   *) error "objetivo inválido: $OBJETIVO"; uso ;;
 esac
 
@@ -245,7 +249,7 @@ log "deploy $SHA -> $OBJETIVO (versión: $TIPO_VERSION)"
 # `--porcelain` sí ve no trackeados (con el mismo respeto de .gitignore que ya
 # tenía `git status --short`), así que un archivo sin agregar frena acá igual
 # que uno modificado.
-log "paso 1/16: working tree limpio"
+log "paso 1/18: working tree limpio"
 estado=$(git status --porcelain)
 if [[ -n "$estado" ]]; then
   error "el working tree tiene cambios sin commitear (incluye no trackeados)"
@@ -263,7 +267,7 @@ fi
 # no tiene SQL que evaluar. Todo lo demás — agregado, modificado, renombrado
 # puro o con cambios, tipo de archivo cambiado — trae contenido nuevo bajo esa
 # ruta y tiene que pasar por acá.
-log "paso 2/16: migraciones nuevas sin SQL destructivo"
+log "paso 2/18: migraciones nuevas sin SQL destructivo"
 ultimo_tag=$(git tag --list 'v1.*' --sort=-v:refname | head -1)
 if [[ -n "$ultimo_tag" ]]; then
   migraciones_nuevas=$(git diff --name-only --diff-filter=d "$ultimo_tag..HEAD" \
@@ -303,7 +307,7 @@ fi
 # Corriendo local, el paso se queda exactamente donde la tabla de pasos del
 # spec lo puso — adentro del preflight, antes de gastar nada — y no hace
 # falta moverlo ni construir nada para probarlo.
-log "paso 3/16: schema.prisma, migraciones y diagrama sincronizados"
+log "paso 3/18: schema.prisma, migraciones y diagrama sincronizados"
 docker rm -f "$SOMBRA" >/dev/null 2>&1 || true
 # -p 127.0.0.1::5432 y no un puerto fijo: Docker elige uno libre y sólo en
 # loopback, así que dos corridas que se pisaran (el lock ya lo impide, pero un
@@ -398,10 +402,10 @@ log "  el diagrama coincide con el schema"
 # 9>&- en los tres: ver el comentario junto al `exec 9>` de más arriba. Son
 # justo los candidatos más probables a dejar un worker huérfano (vitest,
 # tsc --watch-like workers, eslint) que sobreviva a este script.
-log "paso 4/16: npm test"
+log "paso 4/18: npm test"
 npm test 9>&-
 
-log "paso 5/16: typecheck y lint"
+log "paso 5/18: typecheck y lint"
 npx tsc --noEmit 9>&-
 npm run lint 9>&-
 
@@ -415,7 +419,7 @@ log "preflight ok"
 # forma: prod 3200 + dev 2304 + build 2048 + ~1,1 GB de sistema ≈ 8,5 GB sobre
 # una caja de 7,6 GB. Con dev abajo desde acá el pico queda en ~7,5 GB. De paso
 # queda cubierta la regla de que dev y stage no corren juntos.
-log "paso 6/16: frenando arandano-dev"
+log "paso 6/18: frenando arandano-dev"
 # DEV_FRENADA se marca ANTES del `down`, no después: si una señal interrumpe
 # el script durante este `down` mismo, el trap tiene que saber que hay que
 # intentar volver a levantar dev — marcarla después dejaría la corrida
@@ -431,7 +435,7 @@ docker compose -f docker/compose.dev.yml down
 # recursos son las que efectivamente limitan en este host; nice, --cpuset-cpus
 # y --memory son inertes acá y no avisan que lo son (ver Dockerfile y
 # CLAUDE.md).
-log "paso 7/16: buildeando arandano-app:$SHA y arandano-migrate:$SHA"
+log "paso 7/18: buildeando arandano-app:$SHA y arandano-migrate:$SHA"
 docker build --cgroup-parent=arandanobuild.slice \
   --resource memory=2g --resource cpu-quota=100000 \
   --target runtime --build-arg GIT_SHA="$SHA" -t "arandano-app:$SHA" .
@@ -444,7 +448,7 @@ docker build --cgroup-parent=arandanobuild.slice \
 # la de clientes. Si va a explotar, que explote acá.
 # ---------------------------------------------------------------------------
 
-log "paso 8/16: levantando arandano-stage y ensayando la migración"
+log "paso 8/18: levantando arandano-stage y ensayando la migración"
 
 # IMAGE_TAG se pasa INLINE a cada comando de stage y nunca con `export`:
 # Docker Compose le da precedencia a una variable de entorno del shell por
@@ -503,8 +507,11 @@ done
 # nunca ve datos de clientes.
 #
 # COPLADO A compose.stage.yml: usuario, contraseñas y nombre de base de acá
-# abajo (y el MIGRATE_DATABASE_URL un poco más abajo) tienen que coincidir
-# EXACTO con las variables `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`
+# abajo (y los MIGRATE_DATABASE_URL un poco más abajo, hay dos desde la
+# Task 5: el del migrate deploy de stage y el del alta del canario, más una
+# segunda corrida de setup-db-roles.sh que suma la Task 5c) tienen que
+# coincidir EXACTO con las variables
+# `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`
 # del servicio `postgres` de ese archivo. Si uno de los dos lados cambia sin
 # el otro, esto no falla con un error claro — o bien setup-db-roles.sh no se
 # conecta (con el fix de arriba, eso ya no se confunde con el arranque en dos
@@ -522,6 +529,60 @@ docker run --rm --network arandano-stage_default \
   -e MIGRATE_DATABASE_URL="postgres://arandano_owner:efimero-owner@postgres:5432/arandano_stage" \
   "arandano-migrate:$SHA" migrate deploy
 
+# Segunda corrida, DESPUÉS de migrar: mismo motivo que la segunda corrida de
+# test/global-setup.ts y el paso 13 de más abajo contra el objetivo real.
+# resolver_tenant (y cualquier función que sume una migración futura) recién
+# existe a partir de acá, y el grant por nombre de setup-db-roles.sh sólo se
+# aplica si to_regprocedure encuentra la función — con el mecanismo viejo (Task
+# 5b, default privilege amplio) daba igual en qué momento corriera esto,
+# porque el default alcanzaba a cualquier función futura; con el grant por
+# nombre de la Task 5c NO: sin esta segunda corrida, stage terminaría cada
+# ensayo con resolver_tenant sin EXECUTE para arandano_app mientras el
+# objetivo real sí lo tiene (el paso 13 sí corre después de migrar) —
+# exactamente el punto ciego invertido que esta task vino a cerrar, y rompe
+# "lo que se probó es exactamente lo que se sirve". Desde la Task 6, el check
+# `tenant` del healthcheck SÍ llama a resolver_tenant en cada corrida de este
+# paso — smoke.sh (paso 9, caso_check_tenant) lo ejercita contra stage — así
+# que sin esta segunda corrida, stage fallaría en cada deploy sin que hubiera
+# nada malo en el código promovido.
+scripts/setup-db-roles.sh \
+  --network=arandano-stage_default \
+  --url="postgres://arandano_stage:efimero-no-persiste@postgres:5432/arandano_stage" \
+  --owner-password=efimero-owner \
+  --app-password=efimero-app \
+  --con-createdb
+
+# El canario de stage, creado con el MISMO script versionado que crea tenants
+# en producción — no con un INSERT a mano. Eso tiene dos efectos: el check de
+# tenant del healthcheck tiene a quién apuntar, y el alta queda ejercitada en
+# cada deploy contra una base virgen, antes de que nada toque producción.
+#
+# EL ORDEN IMPORTA: va después de `migrate deploy` (las tablas tienen que
+# existir) y ANTES de `up -d --wait app` (el `--wait` espera al healthcheck, y
+# el check de tenant falla si el canario no está). Moverlo después del `up`
+# hace que todo deploy sano se cuelgue esperando un healthcheck que nunca va a
+# dar verde, con un mensaje que habla del canario y no del orden.
+#
+# --entrypoint node porque el ENTRYPOINT de la imagen es `npx prisma`.
+#
+# NOMBRE_CANARIO_STAGE en una variable, y no un literal repetido: el paso 9
+# (smoke tests) le pasa a `caso_tenant_resuelve` el nombre que tiene que
+# aparecer en el cuerpo de la página del canario, y ese nombre tiene que ser
+# EXACTAMENTE el que este alta acaba de escribir. Dos literales idénticos en
+# el mismo archivo son dos literales que un día se editan uno sin el otro; la
+# variable hace que eso sea imposible.
+NOMBRE_CANARIO_STAGE="Canario de stage"
+docker run --rm --network arandano-stage_default \
+  -e MIGRATE_DATABASE_URL="postgres://arandano_owner:efimero-owner@postgres:5432/arandano_stage" \
+  -e DOMINIO_BASE="stage.arandano.app" \
+  --entrypoint node "arandano-migrate:$SHA" \
+  --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/crear-tenant.mts \
+  --subdominio=canario \
+  --nombre="$NOMBRE_CANARIO_STAGE" \
+  --modulos=ORDENES_DE_TRABAJO \
+  --duenio=canario@arandano.app \
+  --duenio-nombre="Canario"
+
 # --wait espera al healthcheck del compose, no a que el contenedor arranque:
 # sin eso el smoke test correría contra un Next todavía levantando, y las
 # fallas intermitentes del gate se leen como bugs del código.
@@ -538,8 +599,8 @@ if [[ -z "$url_stage" ]]; then
   exit 1
 fi
 
-log "paso 9/16: smoke tests contra stage"
-scripts/smoke.sh "http://${url_stage}" "$SHA"
+log "paso 9/18: smoke tests contra stage"
+scripts/smoke.sh "http://${url_stage}" "$SHA" "stage.arandano.app" "canario" "$NOMBRE_CANARIO_STAGE"
 
 IMAGE_TAG="$SHA" docker compose -f docker/compose.stage.yml down -v
 log "ensayo en stage ok"
@@ -548,17 +609,19 @@ log "ensayo en stage ok"
 # Producción. De acá en adelante el objetivo se toca de verdad.
 # ---------------------------------------------------------------------------
 
-# Sólo MIGRATE_DATABASE_URL hace falta de $DIR/.env para este tramo, y se lee
-# con grep — NO con `set -a; . "$DIR/.env"; set +a` como decía el brief
-# original. Ese sourceo hubiera EXPORTADO también IMAGE_TAG al entorno de este
-# proceso, y esa exportación sigue viva cuando el paso 13 reescribe el archivo
-# con `sed` más abajo: Compose le da precedencia a una variable de entorno del
-# shell por sobre el .env de un stack, así que `docker compose up` de ese paso
+# Cada variable que hace falta de $DIR/.env para este tramo (acá
+# MIGRATE_DATABASE_URL; el paso 13 suma DATABASE_URL, POSTGRES_USER,
+# POSTGRES_PASSWORD y POSTGRES_DB) se lee con grep — NO con
+# `set -a; . "$DIR/.env"; set +a` como decía el brief original. Ese sourceo
+# hubiera EXPORTADO también IMAGE_TAG al entorno de este proceso, y esa
+# exportación sigue viva cuando el paso 15 reescribe el archivo con `sed` más
+# abajo: Compose le da precedencia a una variable de entorno del shell por
+# sobre el .env de un stack, así que `docker compose up` de ese paso
 # promovería el SHA viejo ya exportado en vez del que el sed acaba de escribir
 # — la misma trampa que Task 8 evitó a propósito en el paso de stage y que
 # rollback.sh neutraliza con `env -u IMAGE_TAG`. Leer sólo lo que hace falta,
 # con grep, la evita de raíz en vez de defenderse después.
-log "paso 10/16: migraciones del repo == migraciones del objetivo"
+log "paso 10/18: migraciones del repo == migraciones del objetivo"
 
 # `tail -n1` y no `-m1`: Compose y `set -a; .` toman la ÚLTIMA aparición de una
 # clave duplicada, no la primera. El caso real es alguien arreglando una URL a
@@ -655,10 +718,10 @@ if [[ -n "$sobrantes" ]]; then
 fi
 log "  sin migraciones aplicadas de más"
 
-# Leído ACÁ, antes del backup y la migración, y no recién antes del paso 13
+# Leído ACÁ, antes del backup y la migración, y no recién antes del paso 15
 # como en la versión anterior de este archivo: si el .env no tiene una línea
 # IMAGE_TAG=, este script no va a poder rollbackear más adelante si algo sale
-# mal en el paso 13 o el 14 — y es mejor enterarse de eso ANTES de tocar algo
+# mal en el paso 15 o el 16 — y es mejor enterarse de eso ANTES de tocar algo
 # irreversible (el backup, la migración) que después, con la migración ya
 # aplicada y sin poder decir a dónde volver. Mismo guard, mismo mensaje, que
 # ya usa rollback.sh para el idéntico caso.
@@ -675,10 +738,63 @@ fi
 # contra un valor tocado a mano dos veces.
 TAG_ANTERIOR=$(grep -m1 -oP '^IMAGE_TAG=\K\S*' "$DIR/.env")
 
+# Mismo motivo que el guard de IMAGE_TAG de arriba: esto arma las credenciales
+# que el paso 13 (setup-db-roles.sh contra el objetivo, después de migrar) va
+# a necesitar, y se valida ACÁ —antes del backup y la migración— para
+# enterarse de un .env malformado antes de tocar algo irreversible, en vez de
+# después con la migración ya aplicada. Restricción 1 del paso 13 (ver el
+# comentario de ahí): las contraseñas de arandano_owner y arandano_app se leen
+# de acá y no de una variable suelta —aunque $DIR/.env de prod SÍ define
+# ARANDANO_OWNER_PASSWORD y ARANDANO_APP_PASSWORD hoy— porque leerlas de
+# MIGRATE_DATABASE_URL y DATABASE_URL es lo único que garantiza que sean las
+# VIGENTES: son las que la app y las migraciones usan de verdad para
+# conectarse, ya probadas más arriba. Una variable suelta puede desincronizarse
+# de la URL sin que nada lo note; la URL no puede. Extraerlas de ahí es lo
+# que garantiza que setup-db-roles.sh no vaya a ROTAR ninguna contraseña con
+# su propio ALTER ROLE ... PASSWORD.
+DATABASE_URL=$(grep -oP '^DATABASE_URL=\K\S*' "$DIR/.env" | tail -n1 || true)
+DATABASE_URL="${DATABASE_URL%\"}"; DATABASE_URL="${DATABASE_URL#\"}"
+DATABASE_URL="${DATABASE_URL%\'}"; DATABASE_URL="${DATABASE_URL#\'}"
+if [[ -z "$DATABASE_URL" ]]; then
+  error "$DIR/.env no define DATABASE_URL (o está vacío); no se puede extraer la contraseña de arandano_app"
+  exit 1
+fi
+
+# Las contraseñas se generan con `openssl rand -hex` (docs/runbook-stacks.md),
+# así que no llevan `@` ni `:` que compliquen este recorte.
+if [[ "$MIGRATE_DATABASE_URL" =~ ^postgres://[^:@/]+:([^@]+)@ ]]; then
+  OWNER_PASSWORD_OBJETIVO="${BASH_REMATCH[1]}"
+else
+  error "no se pudo extraer la contraseña de arandano_owner de MIGRATE_DATABASE_URL"
+  exit 1
+fi
+if [[ "$DATABASE_URL" =~ ^postgres://[^:@/]+:([^@]+)@ ]]; then
+  APP_PASSWORD_OBJETIVO="${BASH_REMATCH[1]}"
+else
+  error "no se pudo extraer la contraseña de arandano_app de DATABASE_URL"
+  exit 1
+fi
+
+# El superusuario del stack (el único rol que puede ALTER ROLE sobre owner y
+# app) no viaja dentro de ninguna URL de aplicación: es POSTGRES_USER /
+# POSTGRES_PASSWORD / POSTGRES_DB, sueltas en $DIR/.env porque son las que lee
+# `env_file` para el contenedor de postgres (docker/compose.prod.yml,
+# docker/compose.ensayo.yml). Mismo patrón que ya documenta
+# docs/runbook-stacks.md para correr setup-db-roles.sh a mano.
+POSTGRES_USER_OBJETIVO=$(grep -oP '^POSTGRES_USER=\K\S*' "$DIR/.env" | tail -n1 || true)
+POSTGRES_PASSWORD_OBJETIVO=$(grep -oP '^POSTGRES_PASSWORD=\K\S*' "$DIR/.env" | tail -n1 || true)
+POSTGRES_DB_OBJETIVO=$(grep -oP '^POSTGRES_DB=\K\S*' "$DIR/.env" | tail -n1 || true)
+for _v in POSTGRES_USER_OBJETIVO POSTGRES_PASSWORD_OBJETIVO POSTGRES_DB_OBJETIVO; do
+  if [[ -z "${!_v}" ]]; then
+    error "$DIR/.env no define ${_v%_OBJETIVO} (o está vacío); no se puede armar la URL del superusuario"
+    exit 1
+  fi
+done
+
 # Paso 11. Contrato del spec de backups: si el backup falla, se aborta ANTES de
 # migrar. Una migración sin backup previo es el escenario irreversible que esos
 # scripts existen para evitar.
-log "paso 11/16: backup pre-migración"
+log "paso 11/18: backup pre-migración"
 if [[ "$OBJETIVO" == prod ]]; then
   scripts/backup.sh --motivo=pre-migracion
 else
@@ -691,7 +807,7 @@ else
 fi
 
 # Paso 12. Sólo migrate deploy. Nunca migrate reset ni db push.
-log "paso 12/16: migrate deploy contra $OBJETIVO"
+log "paso 12/18: migrate deploy contra $OBJETIVO"
 docker run --rm --network "$RED_OBJETIVO" \
   -e MIGRATE_DATABASE_URL="$MIGRATE_DATABASE_URL" \
   "arandano-migrate:$SHA" migrate deploy
@@ -730,7 +846,88 @@ rollback_y_salir() {
   fi
 }
 
-log "paso 13/16: promoviendo arandano-app:$SHA (venía de $TAG_ANTERIOR)"
+# Paso 13. setup-db-roles.sh corre contra el objetivo, ahora que la migración
+# ya aplicó. Contra el objetivo real ESTE PASO NO CORRÍA NUNCA antes de la
+# Task 5c: aparece en test/global-setup.ts y en el paso 8 de acá arriba
+# (contra stage), pero stage destruye su base y re-corre setup-db-roles.sh
+# NUEVO en cada corrida, así que siempre daba verde sin importar el estado del
+# objetivo — el mismo punto ciego que CLAUDE.md documenta para URL_SALUD.
+# Verificado contra producción (ver task-5c-brief.md): sin este paso,
+# resolver_tenant queda sin EXECUTE para arandano_app tras la migración que
+# la creó — la Task 5b eligió otorgar el EXECUTE por función nombrada y no por
+# default privilege, así que el REVOKE de la migración es lo único que se
+# aplica solo; el GRANT lo tiene que aplicar este script, y hasta ahora nadie
+# lo corría acá.
+#
+# Las credenciales (restricción 1: las vigentes, extraídas de
+# MIGRATE_DATABASE_URL/DATABASE_URL y no inventadas) ya se armaron más arriba,
+# junto al guard de IMAGE_TAG y por el mismo motivo: enterarse de un .env
+# malformado antes del backup y la migración, no después.
+log "paso 13/18: aplicando roles y grants contra $OBJETIVO"
+
+# Restricción 2: por la red del objetivo, no por `host` — el Postgres de
+# producción no publica ningún puerto. Restricción 3: SIN --con-createdb,
+# `migrate deploy` no usa shadow database y un rol de producción con CREATEDB
+# es privilegio regalado.
+if ! scripts/setup-db-roles.sh \
+    --network="$RED_OBJETIVO" \
+    --url="postgres://${POSTGRES_USER_OBJETIVO}:${POSTGRES_PASSWORD_OBJETIVO}@postgres:5432/${POSTGRES_DB_OBJETIVO}" \
+    --owner-password="$OWNER_PASSWORD_OBJETIVO" \
+    --app-password="$APP_PASSWORD_OBJETIVO"; then
+  rollback_y_salir "setup-db-roles.sh falló contra $OBJETIVO"
+fi
+
+# Paso 14. El alta del canario contra el OBJETIVO real, tolerando que ya
+# exista. Hallazgos 2 y 3 de la review de la Task 6: el check de tenant del
+# healthcheck (paso 16) necesita un canario al que apuntar, y hasta este
+# paso nada lo creaba salvo contra la base efímera de stage (paso 8), que
+# nace vacía en cada corrida y no es el objetivo. Sin esto, el primer deploy
+# que promoviera el check de tenant migraba, otorgaba, promovía, y el paso
+# 16 fallaba con `el tenant canario "canario" no existe en esta base` —
+# rollback automático de un deploy sano. En ensayo el síntoma era peor
+# todavía: el canario sólo existía porque alguien lo daba de alta a mano, sin
+# nada versionado que lo recreara si el Postgres de ensayo se recreaba.
+#
+# Corre en TODOS los deploys, no sólo el primero — a partir del segundo, el
+# canario ya está, y crear-tenant.mts responde "ya existe un tenant con el
+# subdominio" (mensaje propio, ver scripts/crear-tenant.mts) con exit 1. Ese
+# caso puntual se tolera como no-op; cualquier OTRA falla (la base no
+# responde, un permiso roto) sí dispara rollback_y_salir, igual que el resto
+# de este tramo — "desde acá, una falla es rollback y no aborto" del
+# comentario de arriba del paso 12 sigue valiendo acá.
+#
+# Después de este paso, la fila del canario es dato de producción
+# LOAD-BEARING: el healthcheck depende de que exista con este subdominio
+# exacto. Borrarla o renombrarla a mano convierte la app en un 503 y
+# despierta al uptime check externo (ver docs/runbook-stacks.md).
+#
+# --entrypoint node porque el ENTRYPOINT de la imagen es `npx prisma` (mismo
+# patrón que el alta de stage, paso 8). MIGRATE_DATABASE_URL y RED_OBJETIVO
+# ya están armados más arriba (paso 10 y el guard de IMAGE_TAG), con las
+# mismas credenciales vigentes que usó `migrate deploy` en el paso 12.
+log "paso 14/18: alta del canario contra $OBJETIVO (tolerando que ya exista)"
+salida_canario=""
+rc_canario=0
+salida_canario=$(docker run --rm --network "$RED_OBJETIVO" \
+    -e MIGRATE_DATABASE_URL="$MIGRATE_DATABASE_URL" \
+    -e DOMINIO_BASE="$DOMINIO_BASE_CANARIO" \
+    --entrypoint node "arandano-migrate:$SHA" \
+    --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/crear-tenant.mts \
+    --subdominio=canario \
+    --nombre="$NOMBRE_CANARIO" \
+    --modulos=ORDENES_DE_TRABAJO \
+    --duenio=canario@arandano.app \
+    --duenio-nombre="Canario" 2>&1) || rc_canario=$?
+printf '%s\n' "$salida_canario"
+if [[ "$rc_canario" -ne 0 ]]; then
+  if grep -q 'ya existe un tenant con el subdominio' <<<"$salida_canario"; then
+    log "  el canario ya existe en $OBJETIVO: nada que hacer"
+  else
+    rollback_y_salir "el alta del canario contra $OBJETIVO falló (ver arriba)"
+  fi
+fi
+
+log "paso 15/18: promoviendo arandano-app:$SHA (venía de $TAG_ANTERIOR)"
 sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${SHA}|" "$DIR/.env"
 # `env -u IMAGE_TAG`, belt-and-braces igual que en rollback.sh: este script no
 # exporta IMAGE_TAG en ningún punto (ver el comentario del paso 10), pero si
@@ -739,7 +936,7 @@ sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${SHA}|" "$DIR/.env"
 # a este script.
 # `--no-deps` es obligatorio, no una optimización. Sin él, este `up` RECREA EL
 # CONTENEDOR DE POSTGRES en el medio de la promoción. Encontrado por el ensayo
-# completo (task-10): el paso 13 imprimía "Container
+# completo (task-10, cuando este paso era el 13): imprimía "Container
 # arandano-ensayo-postgres-1 Recreated" sin que nada lo pidiera.
 #
 # LA CAUSA NO ES `--force-recreate`. Es tentador culparlo y es falso; medido
@@ -769,7 +966,7 @@ sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${SHA}|" "$DIR/.env"
 # En ensayo esto es fatal y por eso lo encontró: ese Postgres vive en tmpfs,
 # así que recrearlo borra los roles del stack Y la migración que el paso 12
 # acababa de aplicar — la app arrancaba contra una base vacía, el healthcheck
-# del paso 14 daba 503 ("password authentication failed for user
+# del paso 16 daba 503 ("password authentication failed for user
 # arandano_app"), el rollback se disparaba, volvía a recrear Postgres por lo
 # mismo, y el deploy salía 3 sin que hubiera absolutamente nada malo en la
 # imagen promovida.
@@ -781,23 +978,24 @@ sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${SHA}|" "$DIR/.env"
 # sólo toca el contenedor de la app. Una promoción cambia la imagen de la app;
 # la base no es parte de lo que se promueve.
 #
-# `--no-deps` no debilita ningún guard: para llegar hasta acá, los pasos 10 y
-# 12 ya hablaron con ese Postgres (migrate status y migrate deploy), así que
-# está garantizado arriba. Y si NO lo estuviera, que la app arranque sola y el
-# paso 14 lo cante es más honesto que que Compose levante la base en silencio
-# adentro de un paso que dice "promoviendo".
+# `--no-deps` no debilita ningún guard: para llegar hasta acá, los pasos 10,
+# 12 y 13 ya hablaron con ese Postgres (migrate status, migrate deploy y
+# setup-db-roles.sh), así que está garantizado arriba. Y si NO lo estuviera,
+# que la app arranque sola y el paso 16 lo cante es más honesto que que
+# Compose levante la base en silencio adentro de un paso que dice
+# "promoviendo".
 if ! ( cd "$DIR" && env -u IMAGE_TAG docker compose up -d --no-deps --force-recreate app ); then
   rollback_y_salir "la promoción falló"
 fi
 
-# Paso 14. Con plazo, no con reintentos infinitos: un healthcheck que espera
+# Paso 16. Con plazo, no con reintentos infinitos: un healthcheck que espera
 # para siempre no es un gate.
 #
 # La comparación de sha es el bloqueante 8: el healthcheck puede dar 200 desde
 # el contenedor VIEJO si la promoción no reemplazó nada, y el deploy se
 # declararía exitoso aunque lo que respondió nunca haya sido lo que pasó el
 # smoke test.
-log "paso 14/16: healthcheck de $OBJETIVO (plazo 90s)"
+log "paso 16/18: healthcheck de $OBJETIVO (plazo 90s)"
 limite=$((SECONDS + 90))
 salud=""
 sano=false
@@ -809,8 +1007,8 @@ while (( SECONDS < limite )); do
   # el detalle adentro: `connect ECONNREFUSED 172.20.0.2:5432` si la base no
   # está, o `password authentication failed for user "arandano_app"` si están
   # mal los roles. Ese segundo mensaje es literalmente el que hubo que sacar a
-  # mano para diagnosticar el bug del paso 13 durante el ensayo (task-10),
-  # porque este loop no lo mostraba.
+  # mano para diagnosticar el bug del paso 15 durante el ensayo (task-10, con
+  # la numeración de entonces), porque este loop no lo mostraba.
   #
   # No cambia la lógica: `health_ok` exige `.status == "ok"`, así que un cuerpo
   # `degraded` se rechaza igual que uno vacío, y un cuerpo no-JSON (un 502 de
@@ -835,7 +1033,7 @@ fi
 log "  $OBJETIVO responde sano con sha=$SHA"
 
 # ---------------------------------------------------------------------------
-# Paso 15. El tag va DESPUÉS del healthcheck: significa "esto estuvo vivo y sano
+# Paso 17. El tag va DESPUÉS del healthcheck: significa "esto estuvo vivo y sano
 # en producción", no "esto se intentó". Un deploy que rollbackea no consume
 # número, así que la secuencia no tiene huecos.
 #
@@ -849,10 +1047,10 @@ log "  $OBJETIVO responde sano con sha=$SHA"
 # con el VPS si nadie lo empuja" (CLAUDE.md).
 # ---------------------------------------------------------------------------
 
-PASO15_PENDIENTE=""
+PASO17_PENDIENTE=""
 
 if [[ "$TAGEA" == true ]]; then
-  log "paso 15/16: tag de git"
+  log "paso 17/18: tag de git"
   # Sin guardar: bajo `set -e`, un `proxima_version` que falla (tag previo con
   # formato inesperado) mata el script ACÁ MISMO con sólo el mensaje que ya
   # imprime esa función — sin la reafirmación de "producción está sana" que sí
@@ -860,7 +1058,7 @@ if [[ "$TAGEA" == true ]]; then
   # cierre de más abajo que evita el "deploy ok" engañoso.
   VERSION=""
   if ! VERSION=$(proxima_version "$ultimo_tag" "$TIPO_VERSION"); then
-    PASO15_PENDIENTE="no se pudo calcular la próxima versión a partir de '$ultimo_tag' (ver el error de arriba)"
+    PASO17_PENDIENTE="no se pudo calcular la próxima versión a partir de '$ultimo_tag' (ver el error de arriba)"
     error "producción está sana; esto es metadatos, no dispara rollback"
   else
     nombres_migraciones=$(printf '%s\n' "$migraciones_nuevas" \
@@ -870,26 +1068,26 @@ if [[ "$TAGEA" == true ]]; then
       if git push origin "$VERSION"; then
         log "  $VERSION pusheado a origin"
       else
-        PASO15_PENDIENTE="el tag $VERSION se creó pero NO se pudo pushear a origin -- reintentar: git push origin $VERSION"
-        error "$PASO15_PENDIENTE"
+        PASO17_PENDIENTE="el tag $VERSION se creó pero NO se pudo pushear a origin -- reintentar: git push origin $VERSION"
+        error "$PASO17_PENDIENTE"
         error "producción está sana; esto es metadatos, no dispara rollback"
       fi
     else
-      PASO15_PENDIENTE="no se pudo crear el tag $VERSION"
-      error "$PASO15_PENDIENTE"
+      PASO17_PENDIENTE="no se pudo crear el tag $VERSION"
+      error "$PASO17_PENDIENTE"
       error "producción está sana; esto es metadatos, no dispara rollback"
     fi
   fi
 else
-  log "paso 15/16: objetivo=$OBJETIVO, no se tagea"
+  log "paso 17/18: objetivo=$OBJETIVO, no se tagea"
 fi
 
-log "paso 16/16: el trap vuelve a levantar arandano-dev"
-if [[ -n "$PASO15_PENDIENTE" ]]; then
+log "paso 18/18: el trap vuelve a levantar arandano-dev"
+if [[ -n "$PASO17_PENDIENTE" ]]; then
   # Código propio (4): ni el 1 de un aborto normal (acá NO abortó nada, el
   # objetivo está sirviendo el SHA nuevo) ni un 0 que un cron leería como
   # "todo terminó" con un tag que sólo existe en este checkout.
-  error "deploy con pendiente: $OBJETIVO corriendo arandano-app:$SHA, pero $PASO15_PENDIENTE"
+  error "deploy con pendiente: $OBJETIVO corriendo arandano-app:$SHA, pero $PASO17_PENDIENTE"
   exit 4
 fi
 log "deploy ok: $OBJETIVO corriendo arandano-app:$SHA"

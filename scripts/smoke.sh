@@ -25,8 +25,14 @@ source scripts/lib/deploy-comun.sh
 
 URL_BASE="${1:-}"
 SHA_ESPERADO="${2:-}"
-if [[ -z "$URL_BASE" || -z "$SHA_ESPERADO" ]]; then
-  echo "uso: smoke.sh <url_base> <sha_esperado>" >&2
+DOMINIO_BASE="${3:-}"
+SUBDOMINIO_CANARIO="${4:-}"
+# El nombre, no sólo el subdominio: sin él, caso_tenant_resuelve sólo podía
+# verificar que ALGÚN tenant salió en el cuerpo, no que fue el canario. Un
+# nombre hardcodeado o el de otro tenant hubiera pasado igual.
+NOMBRE_CANARIO="${5:-}"
+if [[ -z "$URL_BASE" || -z "$SHA_ESPERADO" || -z "$DOMINIO_BASE" || -z "$SUBDOMINIO_CANARIO" || -z "$NOMBRE_CANARIO" ]]; then
+  echo "uso: smoke.sh <url_base> <sha_esperado> <dominio_base> <subdominio_canario> <nombre_canario>" >&2
   exit 2
 fi
 
@@ -71,8 +77,75 @@ caso_rol_sin_privilegios() {
   ' >/dev/null 2>&1
 }
 
+# El check que comprueba que RLS está filtrando en las dos direcciones. Si
+# falla, el aislamiento entre tenants no aplica.
+caso_check_tenant() {
+  printf '%s' "$SALUD" | jq -e '
+    [.checks[] | select(.name == "tenant")] | length == 1
+    and (.[0].ok == true)
+  ' >/dev/null 2>&1
+}
+
+# El Host del APEX, no el del canario: caso_tenant_resuelve (más abajo) ya
+# pega al Host del canario y verifica algo más fuerte que un curl -f solo, así
+# que este caso quedaría enteramente subsumido si repitiera el mismo Host.
+# En vez de duplicar, cubre la otra rama que no tenía ningún caso: el apex
+# responde 200 con el placeholder y el cuerpo NO trae los testids de una
+# página de tenant — si algún día el apex resolviera por error a un tenant
+# (el bug inverso al que este ciclo entero existe para impedir), esto lo
+# atrapa.
 caso_home_responde() {
-  curl -fsS --max-time 10 -o /dev/null "$URL_BASE/"
+  local cuerpo
+  cuerpo=$(curl -fsS --max-time 10 -H "Host: ${DOMINIO_BASE}" "$URL_BASE/") || return 1
+  ! grep -q 'data-testid="tenant-nombre"' <<<"$cuerpo"
+}
+
+# El Host es obligatorio a partir de la resolución por subdominio: sin él, la
+# request llega con la IP:puerto del stack, que es un dominio ajeno y responde
+# 404. No es un workaround del test — es el mismo camino que hace un cliente.
+#
+# grep -F contra "testid>nombre" y no sólo contra el testid suelto: una
+# regresión que renderizara un tenant hardcodeado o el tenant equivocado
+# hubiera dejado pasar igual un chequeo que sólo mirara que EL ATRIBUTO está
+# presente. El nombre viene por argumento (Task 7, hallazgo de review) y no
+# hardcodeado acá, para no mantener dos copias del mismo literal que
+# `deploy.sh` ya usa al dar de alta el canario de stage.
+caso_tenant_resuelve() {
+  curl -fsS --max-time 10 -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/" \
+    | grep -qF "data-testid=\"tenant-nombre\">${NOMBRE_CANARIO}"
+}
+
+caso_subdominio_inexistente_404() {
+  local code
+  code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' \
+    -H "Host: no-existe-jamas.${DOMINIO_BASE}" "$URL_BASE/")
+  [[ "$code" == "404" ]]
+}
+
+caso_host_ajeno_404() {
+  local code
+  code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' \
+    -H "Host: ejemplo.com" "$URL_BASE/")
+  [[ "$code" == "404" ]]
+}
+
+# Una página de tenant guardada por una cache compartida y servida a otro
+# tenant es una fuga de datos entre clientes — el modo de falla que todo el
+# resto de este diseño existe para impedir. Leer headers() ya obliga a Next a
+# renderizar dinámicamente; esto verifica que la respuesta que sale por el cable
+# lo diga, que es lo único que una cache intermedia va a mirar.
+#
+# La aserción es "no es cacheable públicamente" y no una comparación literal
+# contra el Cache-Control que emite Next hoy: lo que importa es la propiedad, y
+# atarse al texto exacto convierte un cambio de wording de Next en un deploy
+# rollbackeado sin ninguna regresión real.
+caso_tenant_no_cacheable() {
+  local cc
+  cc=$(curl -sI --max-time 10 -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/" \
+       | tr -d '\r' | grep -i '^cache-control:' | head -1)
+  [[ -n "$cc" ]] \
+    && ! grep -qiE 'public|s-maxage' <<<"$cc" \
+    && grep -qiE 'no-store|private' <<<"$cc"
 }
 
 printf '\n\033[1mSmoke: %s\033[0m\n' "$URL_BASE"
@@ -81,7 +154,12 @@ for caso in \
   caso_health_sano \
   caso_sha_esperado \
   caso_rol_sin_privilegios \
-  caso_home_responde
+  caso_check_tenant \
+  caso_home_responde \
+  caso_tenant_resuelve \
+  caso_subdominio_inexistente_404 \
+  caso_host_ajeno_404 \
+  caso_tenant_no_cacheable
 do
   if "$caso"; then ok "$caso"; else bad "$caso"; fi
 done

@@ -15,7 +15,7 @@ Tailscale, nunca en internet. Ver *Deploy y rollback* más abajo.
 ## Reglas
 
 - **Cuidado con `down -v` desde el workspace.** Los cuatro compose declaran `name:`, así que `-f` solo ya resuelve el proyecto correcto y `-p` es redundante. El riesgo real es otro: `docker compose -f docker/compose.prod.yml down -v`, tipeado desde `/root/arandano`, apunta a **los volúmenes de producción** — `arandano-prod_pgdata` incluido. Es un archivo de dev que borra datos de clientes. Antes de cualquier `down -v`, mirar **qué compose** dice el `-f`, no desde qué directorio se está corriendo.
-- **`arandano-dev` se frena antes de que arranque el BUILD**, no antes de stage. La memoria no cierra de otra forma: prod (3200 MiB) + dev (2304) + el build (2048) + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6 GB. Con dev abajo el pico queda en ~7.5 GB, que es el número que documenta el presupuesto. Como el build es el primer paso del deploy y stage viene después, frenar dev al principio también cubre la regla vieja de que dev y stage no corren juntos (sus límites de CPU sumados pasan de un core: dev 0.75 + 0.25, stage 0.5 + 0.25). Se vuelve a levantar `arandano-dev` recién al terminar el deploy. `scripts/deploy.sh` ya hace esta secuencia solo, en su paso 6/16 y en el trap de limpieza — ver *Deploy y rollback* más abajo.
+- **`arandano-dev` se frena antes de que arranque el BUILD**, no antes de stage. La memoria no cierra de otra forma: prod (3200 MiB) + dev (2304) + el build (2048) + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6 GB. Con dev abajo el pico queda en ~7.5 GB, que es el número que documenta el presupuesto. Como el build es el primer paso del deploy y stage viene después, frenar dev al principio también cubre la regla vieja de que dev y stage no corren juntos (sus límites de CPU sumados pasan de un core: dev 0.75 + 0.25, stage 0.5 + 0.25). Se vuelve a levantar `arandano-dev` recién al terminar el deploy. `scripts/deploy.sh` ya hace esta secuencia solo, en su paso 6/18 y en el trap de limpieza — ver *Deploy y rollback* más abajo.
 - Producción no se edita: se corre una imagen. Nada de editores en `/srv/arandano/prod/` — ese directorio sólo tiene `docker-compose.yml`, `.env`, el `Caddyfile` y los volúmenes, sin código fuente.
 - Buildear siempre con el presupuesto de recursos puesto (ver la sección de abajo — el comando importa, las banderas "obvias" no hacen nada):
 
@@ -126,6 +126,45 @@ Las contraseñas se generan con `openssl rand -hex`, no con `-base64`: el alfabe
 
 Que esto siga en pie lo verifica `scripts/verify-infra.sh roles`, y en producción el check `rol` de `/api/health`, que falla si la app quedó conectada como superusuario, con `BYPASSRLS` o como dueña de las tablas.
 
+### El `EXECUTE` de una función nueva no es automático
+
+Las tablas nuevas heredan privilegios vía `ALTER DEFAULT PRIVILEGES` (arriba),
+pero las funciones no: es deliberado. Una función `SECURITY DEFINER` es
+exactamente la superficie por la que la app lee lo que RLS le esconde a
+propósito — la vía que SALTEA el aislamiento, no una que el aislamiento
+proteja —, así que un default privilege que le diera `EXECUTE` a
+`arandano_app` haría que toda función futura naciera ejecutable sin que nadie
+lo decidiera: fallar abierto justo donde el resto del proyecto falla cerrado.
+
+`scripts/setup-db-roles.sh` sólo hace los `REVOKE` generales; el `GRANT
+EXECUTE` va **por nombre**, función por función, en un bloque `DO` al final
+del script (hoy sólo `resolver_tenant`). **Quien agregue una función
+`SECURITY DEFINER` nueva tiene que sumar su propia línea ahí.** Si no lo
+hace, la app recibe `permission denied for function ...`.
+
+Para `resolver_tenant` el gate SÍ lo atrapa antes de llegar a producción: el
+paso 8 corre `setup-db-roles.sh` contra stage una segunda vez, después de
+migrar, así que el `GRANT` por nombre ya está aplicado ahí; y el paso 9
+corre los smoke tests, con `caso_check_tenant` exigiendo que el check
+`tenant` del healthcheck esté en `ok` — ese check llama a
+`resolver_tenant()` (`lib/health/checks.ts`), así que si el `GRANT` faltara
+el gate moriría ahí mismo, en el paso 9 contra stage, mucho antes de tocar
+el objetivo real. Lo que el gate **no** cubre es una función nueva que
+todavía no esté ejercitada por ningún smoke test propio: para ésa, sin un
+caso en `scripts/smoke.sh` que la llame, el primer síntoma de un `GRANT`
+olvidado sí es el `permission denied` contra el objetivo real, porque
+`setup-db-roles.sh` corre ahí recién en el paso 13 (después de la
+migración) y nada anterior la ejercita.
+
+El heredoc con ese SQL va **entre comillas** (`<<'EOF'`, no `<<EOF`). Con
+comillas, bash no expande absolutamente nada de su contenido: ni variables,
+ni comillas invertidas, ni `$(...)`. Sin ellas, cualquier backtick que
+aparezca adentro —incluso dentro de un comentario SQL, no sólo en código— se
+ejecuta como comando en el **host**, con los privilegios de este script. Ya
+pasó una vez en este ciclo: un comentario que mencionaba `` `prisma migrate
+dev` `` entre comillas invertidas hacía que bash intentara correr `prisma`
+de verdad cada vez que el script corría.
+
 ## `scripts/setup-host.sh`: la receta de reproducción de la máquina
 
 Es el script que deja el VPS en el estado que estos stacks asumen: swap, Docker instalado desde el repo oficial, rotación de logs a nivel del daemon, `live-restore` y el slice `arandanobuild.slice` que capea los builds. Es **idempotente** — correrlo dos veces no rompe nada, cada paso chequea su propio estado antes de actuar — porque su razón de ser es poder reconstruir el servidor si se pierde, no sólo documentar cómo se armó una vez.
@@ -148,6 +187,48 @@ Cada suite se puede correr sola pasándola por nombre (`./scripts/verify-infra.s
 
 **No correr dos instancias a la vez.** Los contenedores de prueba ya llevan nombre único por corrida (`arandano-logspam-$$`, `arandano-memhog-$$`, `arandano-cpuhog-$$`), así que dos corridas simultáneas ya no se pisan entre sí. Lo que sigue sin poder solaparse es la suite de estrés: **frena el Postgres de producción**, y dos corridas encimadas pueden dejar una parando la base justo cuando la otra da por sentado que está arriba.
 
+## Preparar `arandano-ensayo` desde cero
+
+`scripts/deploy.sh --objetivo=ensayo` da por sentadas dos cosas que no
+declara en ningún lado, y las dos se cobraron de verdad durante este ciclo:
+
+1. **El stack objetivo ya está levantado.** El paso 10/18 corre `migrate
+   status` con `docker run --network arandano-ensayo_default ...`. Si el
+   stack no está arriba, esa red todavía no existe, y el gate muere ahí con
+   `network arandano-ensayo_default not found` — **después** de haber
+   frenado `arandano-dev` (paso 6), buildeado `arandano-app` y
+   `arandano-migrate` (paso 7), ensayado la migración completa contra
+   stage —roles, `migrate deploy`, alta del canario de stage— (paso 8) y
+   corrido los smoke tests (paso 9). Nada de eso se revierte solo.
+2. **Ese objetivo ya tiene los roles creados.** El mismo paso 10 se conecta
+   como `arandano_owner` para correr `migrate status`, pero ese rol recién lo
+   crea el paso 13 — que corre DESPUÉS. Contra un `arandano-ensayo` recién
+   levantado, sin roles todavía (su Postgres vive en `tmpfs`, así que un
+   `down -v` se los lleva puestos), el paso 10 falla igual, esta vez por
+   autenticación en lugar de por red.
+
+Dejarlo listo desde cero, antes de correr el gate:
+
+```bash
+IMAGE_TAG=<sha> docker compose -f docker/compose.ensayo.yml up -d
+
+set -a; . /srv/arandano/ensayo/.env; set +a
+OWNER_PASSWORD=$(echo "$MIGRATE_DATABASE_URL" | sed -E 's#.*://[^:]+:([^@]+)@.*#\1#')
+APP_PASSWORD=$(echo "$DATABASE_URL" | sed -E 's#.*://[^:]+:([^@]+)@.*#\1#')
+scripts/setup-db-roles.sh --network=arandano-ensayo_default \
+  --url="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}" \
+  --owner-password="$OWNER_PASSWORD" --app-password="$APP_PASSWORD"
+```
+
+`/srv/arandano/ensayo/.env` no tiene las contraseñas de `arandano_owner` ni
+de `arandano_app` sueltas en variables propias — sólo dentro de
+`MIGRATE_DATABASE_URL` y `DATABASE_URL` — así que hay que extraerlas de ahí
+en vez de inventarlas. `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB` sí
+están sueltas: son las del superusuario del stack, que `env_file` le pasa al
+contenedor de `postgres`. `setup-db-roles.sh` es idempotente, así que correr
+esto contra un `arandano-ensayo` que ya tiene los roles no rompe nada — es
+justo lo que hace el paso 13 del propio gate en cada corrida.
+
 ## Deploy y rollback
 
 ```bash
@@ -156,24 +237,43 @@ scripts/deploy.sh --minor             # minor: algo que el cliente ve
 scripts/deploy.sh --objetivo=ensayo   # la secuencia completa, sin tocar prod
 ```
 
-El script frena `arandano-dev` al arrancar (paso 6/16, antes del build — ver
+El script frena `arandano-dev` al arrancar (paso 6/18, antes del build — ver
 la regla de arriba) y lo vuelve a levantar al terminar, pase lo que pase.
 Toma un `flock`: si ya hay un deploy corriendo, **aborta** en vez de
 saltearse la corrida — salir con 0 sin haber promovido es cómo alguien cree
 que deployó algo que nunca deployó.
 
-Los 16 pasos, en orden: working tree limpio → migraciones nuevas sin SQL
+Los 18 pasos, en orden: working tree limpio → migraciones nuevas sin SQL
 destructivo → `schema.prisma` sincronizado con las migraciones (shadow
 database local, mismo patrón que `verify-backup.sh`) → `npm test` →
 typecheck y lint → frenar `arandano-dev` → build de `arandano-app` y
 `arandano-migrate` tageados con el SHA → levantar `arandano-stage` y ensayar
 la migración → smoke tests contra stage → migraciones del repo == migraciones
 del objetivo, en las dos direcciones → backup pre-migración → `migrate
-deploy` contra el objetivo → promoción de la imagen → healthcheck con
-comparación de SHA → tag de git (salteado con `--objetivo=ensayo`, que
+deploy` contra el objetivo → `setup-db-roles.sh` contra el objetivo (el
+EXECUTE de las funciones se otorga por nombre, y esta corrida post-migración
+es la que lo aplica — ver la Task 5c) → alta del tenant canario contra el
+objetivo, tolerando que ya exista (Task 6: sin esto, el check de tenant del
+healthcheck no tiene a qué canario apuntar la primera vez que se deploya
+contra un objetivo nuevo) → promoción de la imagen → healthcheck
+con comparación de SHA → tag de git (salteado con `--objetivo=ensayo`, que
 tampoco pushea nada) → el trap vuelve a levantar `arandano-dev`. El chequeo
 de schema (paso 3) corre con el `npx prisma` del propio repo, así que se
 queda en el preflight en vez de esperar a que exista una imagen buildeada.
+
+**El canario es dato de producción load-bearing, no un dato de prueba
+descartable.** Desde que el check `tenant` del healthcheck existe (Task 6),
+el paso 14 da de alta (o confirma que ya existe) un tenant con subdominio
+`canario` contra el objetivo real en cada deploy, y el healthcheck lo
+resuelve por ese subdominio exacto en cada request. Borrar esa fila o
+renombrar su `subdominio` a mano —desde Prisma Studio, un `UPDATE` suelto,
+lo que sea— hace que el check de tenant falle: la app entera pasa a
+`degraded`, el healthcheck responde 503, y eso dispara tanto el rollback
+automático del PRÓXIMO deploy (que no encuentra el canario y revierte un
+código sano) como el uptime check externo. Si algún día hace falta borrar o
+renombrar el canario a propósito, hacerlo en el mismo deploy que actualiza
+`TENANT_CANARIO_SUBDOMINIO` en los `docker/compose.*.yml` — nunca por
+separado.
 
 **Tres zonas de fallo.** Hasta `migrate deploy` inclusive, una falla aborta y no
 hay nada que revertir: producción sigue con su imagen anterior, y si la
@@ -220,7 +320,7 @@ y lo recrea al pasar por él como dependencia de `app`. En producción eso
 reinicia la base de los clientes en cada deploy sin ninguna necesidad — una
 promoción cambia la imagen de la app, no la de la base. El detalle completo,
 con las cuatro mediciones que descartan `--force-recreate` como causa, está
-en el comentario del paso 13 de `scripts/deploy.sh`.
+en el comentario del paso 15 de `scripts/deploy.sh`.
 
 **Rollback a mano**, para lo que el healthcheck no ve:
 
@@ -271,3 +371,88 @@ las emite — y son justamente lo que aísla un tenant de otro.
 ## Certificado de producción, hoy
 
 `arandano.app` hoy no resuelve — `dig arandano.app` devuelve NXDOMAIN, medido el 2026-08-07 (ver *Bloqueantes antes del cutover de DNS* en `CLAUDE.md`, punto 1, para qué falta confirmar antes de asumir que sólo falta apuntarlo) — así que el `Caddyfile` de prod sirve únicamente el host `localhost` con `tls internal` (certificado interno, no público). Cuando el DNS del dominio real apunte al servidor, el cutover es agregar un site block nuevo para el dominio con DNS-01, dejando el de `localhost` intacto para diagnóstico local — no reemplazar el bloque existente.
+
+## Tenants y subdominios
+
+Desde el 2026-08-08 la aplicación resuelve el tenant del header `Host` contra
+`DOMINIO_BASE`, que cada compose fija: `arandano.app` en prod,
+`dev.arandano.app` en dev, `stage.arandano.app` en stage y ensayo.
+
+### La IP pelada dejó de servir la app
+
+`http://100.64.81.63:3000` ahora responde **404**, y es correcto: ese host no
+termina en `dev.arandano.app`, así que es un dominio ajeno. No hay —ni va a
+haber— un camino de resolución exclusivo de dev; un atajo así se filtra a
+producción y ahí es una forma de suplantar tenants.
+
+### Llegar a un tenant desde la terminal
+
+No hace falta DNS:
+
+```bash
+curl -H 'Host: canario.dev.arandano.app' http://100.64.81.63:3000/
+```
+
+### Llegar a un tenant desde el navegador
+
+Ahí sí hace falta que el nombre resuelva. En el `/etc/hosts` de tu máquina:
+
+```
+100.64.81.63  canario.dev.arandano.app
+```
+
+Los archivos hosts no tienen wildcards, así que va una línea por subdominio de
+prueba. Con dos o tres alcanza. Se evaluó `sslip.io` para tener el wildcard
+gratis y se descartó: `100.64.81.63` está en el rango CGNAT, que muchos
+resolvers filtran por protección de rebinding, y fallaría de forma intermitente.
+
+### Crear un tenant
+
+`MIGRATE_DATABASE_URL` sale de `.env.dev` porque el alta corre como
+`arandano_owner`, igual que las migraciones — la aplicación nunca crea tenants.
+
+**Ojo con el host.** `.env.dev` trae `MIGRATE_DATABASE_URL` apuntando a
+`@postgres:5432` — el nombre de servicio de Compose, que sólo resuelve DESDE
+DENTRO de la red de `arandano-dev`, nunca desde el host. Corriendo esto en el
+VPS (fuera de un contenedor), hay que reescribirlo a la IP de Tailscale y el
+puerto que dev publica para Postgres, `@100.64.81.63:5433`
+(`docker/compose.dev.yml`, servicio `postgres` — no confundir con el `3000`
+de la tabla del principio, que es el de la app):
+
+```bash
+MIGRATE_DATABASE_URL="$(grep -m1 MIGRATE_DATABASE_URL .env.dev | cut -d= -f2- | sed 's/@postgres:5432/@100.64.81.63:5433/')" \
+DOMINIO_BASE=dev.arandano.app \
+  npm run tenant:crear -- --subdominio=flor --nombre="Flor Celulares" \
+    --modulos=ORDENES_DE_TRABAJO --duenio=flor@ejemplo.com --duenio-nombre="Flor"
+```
+
+El dueño se crea sin credenciales: `users` todavía no tiene columna de
+contraseña. Eso llega con el ciclo de autenticación.
+
+### El tenant canario
+
+Es el tenant al que apunta el check `tenant` del healthcheck, y se identifica
+con `TENANT_CANARIO_SUBDOMINIO` (vale `canario` en los cuatro stacks). El check
+no se conforma con que una query filtrada devuelva datos —eso pasa igual con RLS
+apagado—: comprueba que con el `tenant_id` del canario la base devuelva 1 fila
+de `tenants` y con uno inventado devuelva 0.
+
+- En **stage** lo crea `deploy.sh` solo, dentro del paso 8, contra la base
+  efímera — nace de nuevo en cada corrida.
+- En **ensayo** y en **prod** lo crea el paso 14/18, contra el objetivo real,
+  tolerando que ya exista (ver *Preparar `arandano-ensayo` desde cero* más
+  arriba para las dos precondiciones que ese paso da por sentadas). Es
+  justamente lo que evita el escenario que motivó agregarlo (Task 6): sin
+  este paso, el primer deploy que promoviera el check de tenant migraba,
+  otorgaba y promovía sin que nada hubiera creado el canario contra el
+  objetivo real, y el healthcheck (paso 16) fallaba con "el tenant canario
+  no existe en esta base" — rollback automático de un deploy sano. Con el
+  paso 14 en el gate, ni ensayo ni prod necesitan un alta manual previa,
+  ni siquiera en el primer deploy que introduce el check.
+- En **dev** sí hay que crearlo a mano, una vez, con el comando de arriba
+  (con `--subdominio=canario` en vez de `flor`): `deploy.sh` nunca corre
+  contra dev, así que ningún paso automático lo va a crear ahí.
+
+**La fila del canario es dato de producción load-bearing, no un dato de
+prueba descartable.** Detalle completo, y por qué no se puede borrar ni
+renombrar por fuera de un deploy, en *Deploy y rollback* más arriba.

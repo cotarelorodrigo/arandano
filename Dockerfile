@@ -27,6 +27,15 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json prisma.config.ts ./
 COPY prisma ./prisma
 
+# scripts/ y lib/ viajan en esta imagen para que el gate pueda correr el alta
+# de tenant sobre la red de stage: el Postgres de ese stack no publica puerto,
+# así que el script no se puede correr desde el host. `lib/` entra entero y no
+# sólo el archivo que se importa: acotarlo obliga a acordarse de ampliarlo cada
+# vez que el script comparta un módulo más, y ese olvido rompe el deploy en el
+# paso 8 en vez de en el build.
+COPY scripts ./scripts
+COPY lib ./lib
+
 ARG GIT_SHA
 RUN test -n "$GIT_SHA" || { \
     echo "ERROR: falta --build-arg GIT_SHA=\$(git rev-parse --short HEAD)."; \
