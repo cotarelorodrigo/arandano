@@ -568,20 +568,41 @@ TOKEN_SALUD=$(token_salud "$DIR")
 CA_SALUD=""
 if [[ "$URL_SALUD" == https://* ]]; then
   CA_SALUD=$(mktemp -p /var/tmp arandano-ca.XXXXXXXX)
-  trap 'rm -f "$CA_SALUD"' EXIT
   extraer_ca_caddy "$DIR" "$CA_SALUD"
 fi
 ```
 
+El borrado del temporal NO va acá: va dentro de `limpiar`, por lo que explica
+el recuadro de abajo.
+
 > `/var/tmp` y no `/tmp`: en este host `/tmp` es tmpfs y compite contra la memoria de producción.
 
-> **CUIDADO CON EL `trap EXIT`.** `deploy.sh` toma un lock y muy probablemente ya
-> tenga un `trap … EXIT` para soltarlo. **Un segundo `trap … EXIT` reemplaza al
-> primero en silencio** — no se acumulan. Antes de agregar el de arriba,
-> `grep -n 'trap ' scripts/deploy.sh`: si ya existe uno de `EXIT`, hay que
-> **componer las dos acciones en un solo `trap`**, no escribir otro. Perder el
-> release del lock deja todo deploy posterior abortando con "ya hay uno
-> corriendo", y el síntoma no apunta para nada a este cambio.
+> **NO agregar un `trap … EXIT` en `deploy.sh`.** Ya tiene uno —
+> `trap limpiar EXIT` en la línea 204— y **un segundo `trap … EXIT` reemplaza al
+> primero en silencio**, no se acumulan. `limpiar` baja la shadow database,
+> baja `arandano-stage` y vuelve a levantar `arandano-dev`; perderla deja
+> ~1,28 GB de tmpfs reservados y dev abajo, con un síntoma que no apunta para
+> nada a este cambio.
+>
+> El borrado de la CA va **dentro de `limpiar`**, y **después** de su
+> `local codigo=$?` — esa primera línea captura el código de salida original y
+> cualquier comando antes de ella lo pisa:
+>
+> ```bash
+> limpiar() {
+>   local codigo=$? rc=0 fallo_limpieza=false
+>   set +e
+>   # La raíz de la CA es un temporal en claro; se va pase lo que pase.
+>   rm -f "${CA_SALUD:-}"
+>   # … el resto de la función, sin cambios
+> ```
+>
+> `${CA_SALUD:-}` y no `$CA_SALUD`: bajo `set -u`, si el script muere antes de
+> que el `case` asigne la variable, `limpiar` tiene que poder evaluarse igual.
+>
+> En `rollback.sh` la situación es la contraria: tiene `trap 'exit 130' INT` y
+> `trap 'exit 143' TERM`, pero **ningún `EXIT`**, así que ahí sí se agrega uno
+> nuevo tal como está escrito arriba.
 
 - [ ] **Step 3: Cambiar el poll del paso 16 en `deploy.sh`**
 
