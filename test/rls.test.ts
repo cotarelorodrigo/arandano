@@ -161,4 +161,122 @@ describe('aislamiento por RLS', () => {
       ),
     ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
   })
+
+  // Las cuatro tablas del ciclo de ventas, probadas por COMPORTAMIENTO y no por
+  // forma. `test/rls-cobertura.test.ts` las cubre estructuralmente —que exista
+  // la policy, con USING y con WITH CHECK— y eso no mira la EXPRESIÓN: con la
+  // policy de `ventas` puesta en `USING (true) WITH CHECK (true)` sus dos
+  // asserts siguen en verde mientras el tenant A lee las ventas del tenant B.
+  // Está medido. Lo único que distingue una policy que aísla de una que
+  // simplemente existe es leer filas con la GUC de otro, que es lo que hace esto.
+  //
+  // Los fixtures los inserta el OWNER —que está exento de RLS— y viven adentro
+  // del test y no en el beforeAll: así el test no depende de que ningún otro
+  // haya corrido antes, que es lo que hace que "1 fila" signifique algo.
+  describe('las tablas que guardan la plata', () => {
+    const TABLAS = ['ventas', 'venta_items', 'pagos', 'movimientos_stock'] as const
+    let usuarioB: string
+    let articuloB: string
+    let ventaB: string
+
+    beforeAll(async () => {
+      const u = await owner.query(
+        `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, 'Vendedor de B', 'ventas-b@ejemplo.com', 'EMPLEADO', now(), now())
+         RETURNING id`,
+        [tenantB],
+      )
+      usuarioB = u.rows[0].id
+
+      const a = await owner.query(
+        `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, 'SKU-VENTAS-B', 'Vendible de B', 'PRODUCTO', 100.00, 10, now(), now())
+         RETURNING id`,
+        [tenantB],
+      )
+      articuloB = a.rows[0].id
+
+      const v = await owner.query(
+        `INSERT INTO ventas (id, tenant_id, numero, usuario_id, total, creado_en)
+         VALUES (gen_random_uuid(), $1, 1, $2, 100.00, now())
+         RETURNING id`,
+        [tenantB, usuarioB],
+      )
+      ventaB = v.rows[0].id
+
+      await owner.query(
+        `INSERT INTO venta_items (id, tenant_id, venta_id, articulo_id, descripcion, cantidad, precio_unitario)
+         VALUES (gen_random_uuid(), $1, $2, $3, 'Vendible de B', 1, 100.00)`,
+        [tenantB, ventaB, articuloB],
+      )
+      await owner.query(
+        `INSERT INTO pagos (id, tenant_id, venta_id, medio, moneda, monto, cotizacion, creado_en)
+         VALUES (gen_random_uuid(), $1, $2, 'EFECTIVO', 'ARS', 100.00, 1.0000, now())`,
+        [tenantB, ventaB],
+      )
+      await owner.query(
+        `INSERT INTO movimientos_stock (id, tenant_id, articulo_id, delta, motivo, venta_id, usuario_id, creado_en)
+         VALUES (gen_random_uuid(), $1, $2, -1, 'VENTA', $3, $4, now())`,
+        [tenantB, articuloB, ventaB, usuarioB],
+      )
+    })
+
+    for (const tabla of TABLAS) {
+      it(`${tabla}: el otro tenant no ve la fila, y su dueño sí`, async () => {
+        const { rows: deA } = await comoTenant(tenantA, `SELECT 1 FROM ${tabla}`)
+        expect(deA, `${tabla} filtró filas de otro tenant`).toHaveLength(0)
+
+        // La mitad que falta, igual que en el caso de articulos/users de más
+        // arriba: sin ella, una tabla vacía para todos —policy que compara la
+        // columna que no es, o filas que nunca se insertaron— daría 0 y el test
+        // quedaría verde sin haber probado ningún aislamiento.
+        const { rows: deB } = await comoTenant(tenantB, `SELECT 1 FROM ${tabla}`)
+        expect(deB, `${tabla} no es legible por su propio tenant`).toHaveLength(1)
+      })
+    }
+
+    it('ventas: rechaza insertar con el tenant_id de otro', async () => {
+      await expect(
+        comoTenant(
+          tenantA,
+          `INSERT INTO ventas (id, tenant_id, numero, usuario_id, total, creado_en)
+           VALUES (gen_random_uuid(), $1, 999, $2, 1.00, now())`,
+          [tenantB, usuarioB],
+        ),
+      ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+    })
+
+    it('venta_items: rechaza insertar con el tenant_id de otro', async () => {
+      await expect(
+        comoTenant(
+          tenantA,
+          `INSERT INTO venta_items (id, tenant_id, venta_id, articulo_id, descripcion, cantidad, precio_unitario)
+           VALUES (gen_random_uuid(), $1, $2, $3, 'Infiltrado', 1, 1.00)`,
+          [tenantB, ventaB, articuloB],
+        ),
+      ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+    })
+
+    it('pagos: rechaza insertar con el tenant_id de otro', async () => {
+      await expect(
+        comoTenant(
+          tenantA,
+          `INSERT INTO pagos (id, tenant_id, venta_id, medio, moneda, monto, cotizacion, creado_en)
+           VALUES (gen_random_uuid(), $1, $2, 'EFECTIVO', 'ARS', 1.00, 1.0000, now())`,
+          [tenantB, ventaB],
+        ),
+      ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+    })
+
+    it('movimientos_stock: rechaza insertar con el tenant_id de otro', async () => {
+      await expect(
+        comoTenant(
+          tenantA,
+          `INSERT INTO movimientos_stock (id, tenant_id, articulo_id, delta, motivo, usuario_id, creado_en)
+           VALUES (gen_random_uuid(), $1, $2, 1, 'AJUSTE', $3, now())`,
+          [tenantB, articuloB, usuarioB],
+        ),
+      ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+    })
+  })
 })
