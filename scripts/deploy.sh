@@ -592,7 +592,7 @@ if [[ -z "$url_stage" ]]; then
 fi
 
 log "paso 9/18: smoke tests contra stage"
-scripts/smoke.sh "http://${url_stage}" "$SHA"
+scripts/smoke.sh "http://${url_stage}" "$SHA" "stage.arandano.app" "canario"
 
 IMAGE_TAG="$SHA" docker compose -f docker/compose.stage.yml down -v
 log "ensayo en stage ok"
