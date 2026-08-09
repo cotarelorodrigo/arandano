@@ -74,19 +74,19 @@ enum Moneda {
 // La raíz. No tiene tenant_id porque ES el tenant; su policy de RLS compara
 // contra id.
 model Tenant {
-  id            String       @id @default(uuid(7)) @db.Uuid
-  subdominio    String       @unique
-  nombre        String
-  estado        EstadoTenant @default(TRIAL)
+  id                 String       @id @default(uuid(7)) @db.Uuid
+  subdominio         String       @unique
+  nombre             String
+  estado             EstadoTenant @default(TRIAL)
   // El correlativo de ventas es POR TENANT, así que no puede ser una secuencia
   // de Postgres —esas son globales—. Se incrementa dentro de la misma
   // transacción que crea la venta: eso serializa las ventas simultáneas de un
   // mismo local (irrelevante: no hay dos cajas cobrando en el mismo
   // milisegundo) y a cambio no hay huecos ni números repetidos, que es lo que
   // hace que "la venta 123" sirva para hablar por teléfono.
-  proximoNumeroVenta Int @default(1) @map("proximo_numero_venta")
-  creadoEn      DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
-  actualizadoEn DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+  proximoNumeroVenta Int          @default(1) @map("proximo_numero_venta")
+  creadoEn           DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn      DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
   modulos     TenantModule[]
   users       User[]
@@ -151,14 +151,14 @@ model Cliente {
 }
 
 model Articulo {
-  id       String       @id @default(uuid(7)) @db.Uuid
-  tenantId String       @map("tenant_id") @db.Uuid
-  sku      String
-  nombre   String
-  tipo     TipoArticulo
+  id            String       @id @default(uuid(7)) @db.Uuid
+  tenantId      String       @map("tenant_id") @db.Uuid
+  sku           String
+  nombre        String
+  tipo          TipoArticulo
   // Decimal y nunca Float: un flotante binario no representa 0,10 y el error
   // se acumula en cada suma de una caja.
-  precio        Decimal  @db.Decimal(12, 2)
+  precio        Decimal      @db.Decimal(12, 2)
   // Decimal(12,3) y no entero, aunque un local de celulares venda unidades:
   // CLAUDE.md ya tiene previsto gastronomía descontando insumos por receta, y
   // medio kilo de harina no es un entero. Cambiar el tipo después toca todas
@@ -167,9 +167,9 @@ model Articulo {
   // Es un CACHÉ de la suma de sus movimientos, no la fuente de verdad. Se
   // actualiza con UPDATE relativo en la misma transacción que el movimiento, y
   // `test/ventas.test.ts` prueba que la suma cierra.
-  stock Decimal @default(0) @db.Decimal(12, 3)
-  creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
-  actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+  stock         Decimal      @default(0) @db.Decimal(12, 3)
+  creadoEn      DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -188,15 +188,15 @@ model MovimientoStock {
   tenantId   String           @map("tenant_id") @db.Uuid
   articuloId String           @map("articulo_id") @db.Uuid
   // Con signo: negativo descuenta, positivo ingresa.
-  delta     Decimal          @db.Decimal(12, 3)
-  motivo    MotivoMovimiento
+  delta      Decimal          @db.Decimal(12, 3)
+  motivo     MotivoMovimiento
   // Null en AJUSTE e INGRESO, que no vienen de una venta.
-  ventaId   String?          @map("venta_id") @db.Uuid
-  usuarioId String           @map("usuario_id") @db.Uuid
-  nota      String?
-  creadoEn  DateTime         @default(now()) @map("creado_en") @db.Timestamptz(3)
+  ventaId    String?          @map("venta_id") @db.Uuid
+  usuarioId  String           @map("usuario_id") @db.Uuid
+  nota       String?
+  creadoEn   DateTime         @default(now()) @map("creado_en") @db.Timestamptz(3)
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   // Restrict y no Cascade: borrar un artículo no puede borrar la historia de lo
   // que se vendió. Si tiene movimientos, no se borra.
   articulo Articulo @relation(fields: [articuloId], references: [id], onDelete: Restrict)
@@ -209,9 +209,9 @@ model MovimientoStock {
 }
 
 model Venta {
-  id       String @id @default(uuid(7)) @db.Uuid
-  tenantId String @map("tenant_id") @db.Uuid
-  numero   Int
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  numero       Int
   // Opcional: la venta de mostrador, sin cliente identificado, es la mayoría de
   // las ventas de un local.
   clienteId    String?   @map("cliente_id") @db.Uuid
@@ -264,18 +264,18 @@ model VentaItem {
 // Varios por venta: el pago partido —una parte en efectivo, otra por
 // transferencia— es la norma, no la excepción.
 model Pago {
-  id       String    @id @default(uuid(7)) @db.Uuid
-  tenantId String    @map("tenant_id") @db.Uuid
-  ventaId  String    @map("venta_id") @db.Uuid
-  medio    MedioPago
-  moneda   Moneda
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  ventaId    String    @map("venta_id") @db.Uuid
+  medio      MedioPago
+  moneda     Moneda
   // En la moneda del pago, no en pesos.
-  monto      Decimal  @db.Decimal(12, 2)
+  monto      Decimal   @db.Decimal(12, 2)
   // Los ARS que valía una unidad de esa moneda EN ESE MOMENTO. Un pago en pesos
   // lleva 1. Guardarla es lo que después deja cerrar la caja en las dos monedas
   // sin tener que reconstruir a qué valor se tomó cada dólar.
-  cotizacion Decimal  @db.Decimal(12, 4)
-  creadoEn   DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  cotizacion Decimal   @db.Decimal(12, 4)
+  creadoEn   DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   venta  Venta  @relation(fields: [ventaId], references: [id], onDelete: Cascade)

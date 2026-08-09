@@ -273,7 +273,17 @@ for tabla_con_tenant in tenant_modules users clientes articulos movimientos_stoc
   check_true "tenants -> $tabla_con_tenant" \
     grep -qE "^  tenants \|\|--o\{ $tabla_con_tenant :" <<<"$REAL"
 done
-check_true "los cuatro enums"        test "$(grep -cE '^\- \*\*(estado_tenant|modulo|rol_usuario|tipo_articulo)\*\*' <<<"$REAL")" = 4
+# Se nombran, no se cuentan, por el mismo razonamiento que las relaciones de
+# arriba (commit 4f2a55c): un `= 4` se rompe con cada enum nuevo, la reacción
+# natural ante ese rojo es subir el número, y el día que ese reflejo tape un
+# enum que en realidad DESAPARECIÓ del diagrama, un número no lo distingue de
+# uno agregado. Nombrándolos, sumar un enum es inocuo y perder uno tiene nombre.
+# Los tres del ciclo de ventas —motivo_movimiento, medio_pago, moneda— estaban
+# sin verificar precisamente porque el contador seguía diciendo 4.
+for enum in estado_tenant modulo rol_usuario tipo_articulo motivo_movimiento medio_pago moneda; do
+  check_true "el enum $enum está en el ERD" \
+    grep -qE "^\- \*\*$enum\*\*:" <<<"$REAL"
+done
 check_true "tenants no tiene tenant_id" \
   test "$(sed -n '/^  tenants {/,/^  }/p' <<<"$REAL" | grep -c 'tenant_id')" = 0
 check_false "email no dice ser único solo" grep -qE 'text email[^"]*UK' <<<"$REAL"
