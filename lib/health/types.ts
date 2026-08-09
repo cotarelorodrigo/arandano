@@ -28,3 +28,9 @@ export type HealthInfo = {
 
 /** Lo que devuelve el endpoint: el veredicto de los checks más el contexto. */
 export type HealthResponse = HealthReport & { info: HealthInfo }
+
+/** Lo que ve quien no manda el token: el veredicto y nada más. El `status`
+ *  sigue saliendo de TODOS los checks — se recorta el detalle, no la
+ *  evaluación—, así que un uptime check externo conserva toda su capacidad de
+ *  detección con sólo mirar el código HTTP. */
+export type HealthResponsePublica = Pick<HealthReport, 'status'>
