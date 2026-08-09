@@ -262,8 +262,17 @@ check_true "prisma migrate diff corrió" test -n "$REAL_DDL"
 REAL=$(erd_desde_ddl "$REAL_DDL")
 check_true "las cinco tablas del núcleo" \
   test "$(grep -cE '^  (tenants|tenant_modules|users|clientes|articulos) \{' <<<"$REAL")" = 5
-check_true "las cuatro relaciones hacia tenants" \
-  test "$(grep -cE '^  tenants \|\|--o\{' <<<"$REAL")" = 4
+# Se nombran las tablas, no se cuentan: un número fijo se rompe con cada tabla
+# nueva que cuelgue de tenants —esto pasó de 4 a 8 relaciones en la Task 2 del
+# ciclo de ventas—, y la reacción natural ante ese rojo es subir el número sin
+# pensar. El día que ese reflejo tape una relación que en realidad se perdió,
+# un número que sólo cuenta no lo distingue de una relación nueva y legítima.
+# Nombrándolas, agregar una tabla es inocuo (no toca esta lista) y perder una
+# es un fallo con nombre y apellido.
+for tabla_con_tenant in tenant_modules users clientes articulos movimientos_stock ventas venta_items pagos; do
+  check_true "tenants -> $tabla_con_tenant" \
+    grep -qE "^  tenants \|\|--o\{ $tabla_con_tenant :" <<<"$REAL"
+done
 check_true "los cuatro enums"        test "$(grep -cE '^\- \*\*(estado_tenant|modulo|rol_usuario|tipo_articulo)\*\*' <<<"$REAL")" = 4
 check_true "tenants no tiene tenant_id" \
   test "$(sed -n '/^  tenants {/,/^  }/p' <<<"$REAL" | grep -c 'tenant_id')" = 0
