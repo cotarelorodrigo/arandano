@@ -398,7 +398,7 @@ Al final de `docker/Caddyfile`, **después** del bloque `localhost:443` y **sin 
 # nada ni tocar el DNS por cada cliente nuevo, que es lo que sostiene la promesa
 # del alta instantánea.
 #
-# ATENCIÓN: el acme_ca de abajo apunta al STAGING de Let's Encrypt. Emite
+# ATENCIÓN: el `ca` de abajo apunta al STAGING de Let's Encrypt. Emite
 # certificados que ninguna CA pública firma, así que el navegador avisa — y es
 # a propósito. Sirve para validar la cadena entera (módulo, token, permisos
 # sobre la zona, propagación, este mismo bloque) sin gastar intentos del límite
@@ -412,7 +412,11 @@ arandano.app, *.arandano.app {
 		# propósito — emitir contra staging existe justamente para que este
 		# número se pueda ajustar sin que un fallo cueste nada.
 		propagation_delay 30s
-		acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+		# `ca` y NO `acme_ca`: dentro de un bloque `tls {}` de site block la
+		# subdirectiva es `ca`. `acme_ca` existe, pero sólo como opción global
+		# del Caddyfile, y acá `caddy validate` la rechaza con
+		# `unknown subdirective: acme_ca`.
+		ca https://acme-staging-v02.api.letsencrypt.org/directory
 	}
 	reverse_proxy app:3000
 }
@@ -494,9 +498,9 @@ producción es quedarse sin intentos con el sitio caído."
 **Files:**
 - Modify: `docker/Caddyfile`
 
-- [ ] **Step 1: Sacar el `acme_ca` de staging**
+- [ ] **Step 1: Sacar el `ca` de staging**
 
-En el bloque `arandano.app, *.arandano.app`, borrar la línea del `acme_ca` y el párrafo `ATENCIÓN` que la explica. En su lugar, dejar escrito lo que queda cierto:
+En el bloque `arandano.app, *.arandano.app`, borrar la línea del `ca` que apunta a staging —con su comentario sobre `acme_ca`— y el párrafo `ATENCIÓN` que la explica. En su lugar, dejar escrito lo que queda cierto:
 
 ```
 # El emisor es el de producción de Let's Encrypt (el default de Caddy). La
