@@ -199,7 +199,7 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 - **Los presets se multiplican.** Cada rubro nuevo agrega datos demo y nomenclatura que hay que mantener. Si crecen sin control, se vuelven una carga silenciosa: conviene que un preset sea chico por definición y que ningún preset pueda introducir lógica.
 - **Dev y producción comparten kernel, disco y CPU de forma permanente.** Es una decisión tomada, no un estado transitorio: no hay una segunda máquina prevista. Los límites de recursos, la rotación de logs y la swap son la única defensa entre un build y un cliente caído. Que sigan puestos es parte del checklist de deploy, no algo que se configura una vez y se olvida. El día que el ruido de desarrollo se note en el servicio, la salida es mover dev a un VPS chico — no aflojar los límites.
 - **Sin feature flags, cada deploy alcanza a todos los clientes a la vez.** El healthcheck, los smoke tests y el rollback automático son la única red, así que su calidad no es negociable: un healthcheck superficial deja el rollback automático sin criterio para dispararse. Vale revisar esta decisión cuando la base de clientes crezca lo bastante como para que una hora de servicio degradado cueste más que mantener flags.
-- **La ventana de montar todo esto se cierra con el primer cliente.** La separación de entornos, los backups y el gate de `deploy.sh` ya están — lo que queda es más chico pero no menos filoso: el healthcheck completo (falta el check de pg-boss; el de tenant ya está) y el cutover del DNS, que hoy directamente no resuelve (`dig arandano.app` da NXDOMAIN, medido el 2026-08-07 — ver *Bloqueantes antes del cutover de DNS*). Cuanto menos quede, más vale cerrarlo ahora: después del primer tenant real, cada cambio se hace con datos de alguien encima.
+- **La ventana de montar todo esto se cierra con el primer cliente.** La separación de entornos, los backups, el gate de `deploy.sh` y el cutover del DNS ya están: desde el 2026-08-10 `arandano.app` y `*.arandano.app` resuelven al servidor y se sirven con un certificado que un navegador acepta. Lo que queda es más chico pero no menos filoso: el healthcheck completo (falta el check de pg-boss; el de tenant ya está). Cuanto menos quede, más vale cerrarlo ahora: después del primer tenant real, cada cambio se hace con datos de alguien encima.
 
 ## Decisiones abiertas del modelo de datos
 
@@ -259,7 +259,7 @@ Los presets de rubro nuevos (veterinaria, peluquería, dietética, etc.) no son 
 ## Roadmap de infraestructura
 
 0. **Preparar la máquina**: swap, Docker, los tres stacks Compose (`arandano-dev`, `arandano-stage` y `arandano-prod`) con sus límites de recursos, el presupuesto de los builds, dev y stage detrás de Tailscale, y el healthcheck con contenido real. Los backups con restore verificado y `deploy.sh` son sus propios ciclos (ver *Bloqueantes antes del primer tenant real*), y van igual antes del primer tenant.
-1. **MVP**: 1 servidor Hetzner, Docker Compose (Next.js + Postgres + Caddy), tenants compartidos con RLS. Requiere apuntar el DNS de `arandano.app` y el wildcard `*.arandano.app` al servidor (hoy no resuelve — ver *Bloqueantes antes del cutover de DNS*, punto 1).
+1. **MVP**: 1 servidor Hetzner, Docker Compose (Next.js + Postgres + Caddy), tenants compartidos con RLS. **Hecho** (2026-08-10): `arandano.app` y el wildcard `*.arandano.app` apuntan al servidor y se sirven con el certificado wildcard que Caddy emite y renueva solo por DNS-01.
 2. **Upsell Premium**: provisioning automatizado (Terraform) de VPC dedicada + instancia propia del repo, disparado solo cuando un cliente lo contrata.
 3. **Escalar horizontal**: recién cuando el servidor único se quede corto de CPU/RAM, se necesite alta disponibilidad real, o el volumen de background jobs justifique sumar Redis — no antes.
 
@@ -294,7 +294,14 @@ Los primeros cuatro son de entorno y van antes que cualquier línea de producto,
   tenant real*, punto 2, y `docs/runbook-backups.md`.
 - Completar el healthcheck — ver *Bloqueantes antes del primer tenant real*, que es donde vive la lista con el detalle.
 - Conectar Sentry y un uptime check externo contra el healthcheck.
-- Apuntar el DNS de `arandano.app` y el wildcard `*.arandano.app` al servidor, y configurar el certificado wildcard por DNS-01 en Caddy.
+- ~~Apuntar el DNS de `arandano.app` y el wildcard `*.arandano.app` al servidor,
+  y configurar el certificado wildcard por DNS-01 en Caddy.~~ **Hecho**
+  (2026-08-10). El DNS se delegó de DonWeb a Hetzner —el wildcard exige DNS-01 y
+  el módulo de Caddy disponible es el de Hetzner—, Caddy corre desde una imagen
+  propia con ese módulo compilado, y el gate verifica el certificado que ven los
+  clientes además del interno. Ver
+  `docs/superpowers/specs/2026-08-09-cutover-wildcard-design.md` y la sección
+  *Deploy y rollback* de `docs/runbook-stacks.md`.
 
 Y del producto:
 
@@ -383,9 +390,31 @@ Y del producto:
 
 Plazo distinto y más temprano que la lista anterior: hay que cerrar esto antes de apuntar `arandano.app` al servidor, no antes del primer tenant.
 
-1. **Establecer el estado real del dominio.** `dig arandano.app` devuelve NXDOMAIN (medido el 2026-08-07, desde este servidor) — no resuelve a ninguna IP. `algo.arandano.app` tampoco resuelve. Desde acá no se puede distinguir si nunca se registró, si expiró, o si está registrado sin zona publicada: los resolvers externos están bloqueados desde este host y la consulta RDAP no devolvió nada. "Apuntar el DNS al servidor" y "registrar el dominio" son tareas distintas, y quien tenga a cargo el cutover necesita confirmar cuál de las dos hace falta antes de seguir con el resto de esta lista.
+1. ~~**Establecer el estado real del dominio.**~~ **Hecho** (2026-08-10). El
+   dominio estaba registrado en DonWeb y no tenía zona publicada; el DNS se
+   delegó a Hetzner porque el wildcard exige DNS-01 y el único módulo de Caddy
+   disponible para esta cuenta es el de Hetzner. `A @` y `A *` apuntan al
+   servidor, y `*.arandano.app` se emite y renueva solo contra Let's Encrypt.
+   Ver `docs/superpowers/specs/2026-08-09-cutover-wildcard-design.md`.
 
-   **Y cuando el dominio resuelva, el gate deja de cubrir el certificado que ven los clientes.** Hoy `deploy.sh` y `rollback.sh` validan el certificado **interno** del site block `localhost:443` (bloqueante 4), y eso se acredita como "el gate detecta un certificado sin emitir". Es cierto hoy y **falso exactamente cuando importa**: después del cutover el certificado de los clientes es el wildcard ACME/DNS-01 de un site block **distinto**, así que si ese wildcard no se aprovisiona, `localhost:443` sigue validando perfecto, el gate sigue en verde, y todo cliente recibe el `no certificate available` que el propio `Caddyfile` describe como indistinguible de un TLS roto. Lo que hay que sumar el día del cutover, en el mismo commit que agregue el site block del dominio: un caso contra el hostname real (`curl --resolve arandano.app:443:127.0.0.1 https://arandano.app/api/health`) y un check de `verify-infra.sh` sobre el certificado del wildcard, validando contra las CA públicas del sistema y no contra la CA interna. Es la misma clase de trampa que el bloqueante 4 y por eso queda escrita acá, en el `Caddyfile` y en el spec del cutover.
+   **Y el gate ya cubre el certificado que ven los clientes.** La advertencia que
+   estaba acá —que validar `localhost:443` con la CA interna se acredita como "el
+   gate detecta un certificado sin emitir", cierto antes del cutover y falso justo
+   cuando importa— quedó cerrada el 2026-08-10 con dos chequeos que entran por el
+   **hostname real** y validan contra las **CA públicas del sistema**, sin
+   `--cacert`, igual que un navegador:
+
+   - `deploy.sh`, paso 16: `curl --resolve arandano.app:443:127.0.0.1
+     https://arandano.app/api/health` tiene que dar 200, o dispara el rollback.
+   - `verify-infra.sh network`: dos casos con `ssl_verify_result`, uno contra el
+     apex y **otro contra un subdominio** — son el mismo certificado, pero un site
+     block mal escrito puede servir uno y no el otro, y el subdominio es el que
+     usan los clientes.
+
+   Un detalle que no es prolijidad: los dos capturan el resultado con `|| var=N`
+   y **nunca** con `|| echo N`. `ssl_verify_result` vale `0` —o sea "validó"—
+   cuando curl ni siquiera llega al handshake, así que sin ese override el check
+   daría verde ante una conexión rechazada. Es lo único que lo hace fallar cerrado.
 2. ~~**El bloque `:80` del Caddyfile tiene que pasar a ser sólo redirección.**~~
    **Hecho** (2026-08-09). `redir https://{host}{uri} 308`. La app dejó de ser
    alcanzable por IP, a propósito. Ver

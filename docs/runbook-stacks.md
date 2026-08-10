@@ -423,6 +423,79 @@ propósito, para que rotar este token no lo ponga en rojo. El token de stage
 (`efimero-salud`) no se rota: vive en claro en `docker/compose.stage.yml` y en
 `scripts/deploy.sh` porque ese stack es efímero y nunca ve datos de clientes.
 
+### Rotar el token de Hetzner DNS
+
+`HETZNER_DNS_TOKEN` es con lo que Caddy resuelve el desafío DNS-01 que emite y
+**renueva** el wildcard `*.arandano.app`. Si queda inválido no pasa nada visible
+hasta que toque renovar; ahí el certificado vence y todo cliente ve un TLS roto.
+
+Ojo con el alcance: es un token de la **Cloud API de Hetzner**, que se emite a
+nivel de proyecto y **no se puede acotar a una zona**. Quien lo tenga puede
+tocar todo el DNS de la cuenta.
+
+```bash
+ENV=/srv/arandano/prod/.env
+
+# 0. El mismo guard que la rotación del token de salud, por el mismo motivo: un
+#    sed sobre un archivo sin esa línea es un no-op silencioso con salida 0, y
+#    los pasos siguientes "andarían" con el token viejo.
+grep -q '^HETZNER_DNS_TOKEN=' "$ENV" || {
+  echo "ERROR: $ENV no tiene una línea HETZNER_DNS_TOKEN=; agregarla a mano antes de rotar" >&2
+  exit 1
+}
+
+# 1. Generar el token nuevo en la consola de Hetzner (Security → API tokens,
+#    permisos de lectura y escritura) y reemplazar la línea. No se imprime.
+sed -i "s|^HETZNER_DNS_TOKEN=.*|HETZNER_DNS_TOKEN=EL_NUEVO|" "$ENV"
+
+# 2. Recrear Caddy: env_file se lee al arrancar el contenedor, no en caliente.
+( cd /srv/arandano/prod && docker compose up -d --no-deps --force-recreate caddy )
+
+# 3. Forzar una emisión para probar el token de verdad. Recrear el contenedor NO
+#    alcanza: con el certificado vigente Caddy no tiene motivo para pedir otro,
+#    así que un token roto no se nota hasta la renovación. Hay que borrar el
+#    certificado del almacén — es el mismo mecanismo que el cutover necesitó
+#    para pasar del emisor de staging al de producción.
+( cd /srv/arandano/prod && docker compose exec -T caddy \
+    tar -cf - -C /data/caddy certificates > /var/tmp/caddy-certs-previos.tar )
+( cd /srv/arandano/prod && docker compose exec -T caddy \
+    rm -rf /data/caddy/certificates/acme-v02.api.letsencrypt.org-directory )
+( cd /srv/arandano/prod && docker compose restart caddy )
+
+# 4. Verificar contra las CA públicas, que es lo que ve un cliente.
+./scripts/verify-infra.sh network
+```
+
+**Al leer el log de Caddy, mirá el campo `"level"` y no la palabra `error`**:
+Caddy emite líneas `"level":"info"` que *contienen* un campo `error` explicando
+por qué crea la cuenta ACME. Filtrar por la palabra da un falso rojo.
+
+Y **borrá el token viejo en la consola de Hetzner**, no sólo del archivo: sacarlo
+del `.env` deja de usarlo, no lo invalida.
+
+### Rebuildear la imagen de Caddy
+
+Hace falta cuando sale una versión nueva de Caddy o del módulo de DNS. No la
+buildea `deploy.sh`: el proxy no cambia con cada commit de la aplicación, y
+tagearlo con el SHA de git diría un SHA que no tiene nada que ver con el proxy.
+
+```bash
+# 1. Cambiar readonly CADDY_VERSION en scripts/build-caddy.sh
+# 2. Buildear (el script verifica solo que la imagen traiga dns.providers.hetzner)
+./scripts/build-caddy.sh
+```
+
+**Actualizá el tag de `image:` en `docker/compose.prod.yml` en el MISMO commit.**
+`verify-infra.sh network` compara el tag del compose contra el que produce
+`build-caddy.sh`, así que si difieren el deploy aborta — que es lo que se quiere,
+pero es una tarde perdida si te enterás en el paso 3 del gate.
+
+El `/v2` del módulo tampoco es opcional: `caddy-dns/hetzner` sin sufijo resuelve
+a la v1, que habla contra la API de Hetzner DNS que ya está de baja. Con la v1
+compilada adentro el build **sale bien** y el módulo aparece igual en
+`caddy list-modules` —el id del módulo no cambió entre versiones—, así que la
+imagen mala es indistinguible de la buena hasta que falla una emisión.
+
 ## El diagrama de la base
 
 `docs/schema.md` es **generado**, no escrito. Se regenera con:
@@ -454,7 +527,31 @@ las emite — y son justamente lo que aísla un tenant de otro.
 
 ## Certificado de producción, hoy
 
-`arandano.app` hoy no resuelve — `dig arandano.app` devuelve NXDOMAIN, medido el 2026-08-07 (ver *Bloqueantes antes del cutover de DNS* en `CLAUDE.md`, punto 1, para qué falta confirmar antes de asumir que sólo falta apuntarlo) — así que el `Caddyfile` de prod sirve únicamente el host `localhost` con `tls internal` (certificado interno, no público). Cuando el DNS del dominio real apunte al servidor, el cutover es agregar un site block nuevo para el dominio con DNS-01, dejando el de `localhost` intacto para diagnóstico local — no reemplazar el bloque existente.
+Desde el 2026-08-10 el `Caddyfile` de prod tiene **dos** site blocks, y la
+distinción importa cada vez que alguien diagnostica un problema de TLS:
+
+- `arandano.app, *.arandano.app` — el que ven los clientes. Certificado wildcard
+  de Let's Encrypt, emitido y renovado por DNS-01 contra Hetzner.
+- `localhost:443` — con `tls internal`, o sea la CA **interna** de Caddy. Es por
+  donde entra el poll del healthcheck de `deploy.sh` y `rollback.sh`, y se dejó a
+  propósito: un gate que dependa del DNS público y de una CA pública se bloquea
+  por causas ajenas al código.
+
+**Que `localhost` valide no dice nada sobre el certificado de los clientes.** Son
+site blocks distintos con CA distintas. Por eso el gate tiene además los dos
+chequeos contra el hostname real con las CA públicas — ver el punto 1 de
+*Bloqueantes antes del cutover de DNS* en `CLAUDE.md`.
+
+Para mirar el certificado que recibe un cliente, sin depender del DNS público:
+
+```bash
+curl -sI --resolve arandano.app:443:127.0.0.1 https://arandano.app/ | head -1
+curl -s -o /dev/null -w 'ssl_verify=%{ssl_verify_result}\n' \
+  --resolve canario.arandano.app:443:127.0.0.1 https://canario.arandano.app/
+```
+
+Un `ssl_verify=0` sin `-k` ni `--cacert` es lo único equivalente a lo que hace un
+navegador.
 
 ## Tenants y subdominios
 
