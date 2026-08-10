@@ -9,10 +9,22 @@ vi.mock('next/headers', () => ({ headers: async () => new Headers() }))
 vi.mock('@/lib/tenant/desde-request', () => ({
   tenantDelRequest: async () => estado.resolucion,
 }))
-vi.mock('@/lib/auth/origen', () => ({ origenDelRequest: async () => 'http://x.test' }))
-vi.mock('@/lib/auth/para-tenant', () => ({
-  authParaTenant: () => ({ api: { getSession: async () => (estado.usuario ? { user: estado.usuario } : null) } }),
-}))
+
+// `vi.fn()` y no una función suelta: el chequeo 3 (que el tenant de la sesión
+// sea el del Host) no es un `if` en sesion.ts — es una garantía por
+// CONSTRUCCIÓN, que depende de que `authParaTenant` se llame con el tenant de
+// la resolución y no con cualquier otro (ver el comentario junto al `return`
+// en sesion.ts). Si mañana alguien le pasa un tenant que sale de otro lado
+// -de la sesión, de un header, de un closure viejo-, este archivo tiene que
+// poder detectarlo, y con una función suelta no había manera de aserirlo.
+const origenDelRequestMock = vi.hoisted(() => vi.fn(async () => 'http://x.test'))
+const authParaTenantMock = vi.hoisted(() =>
+  vi.fn(() => ({
+    api: { getSession: async () => (estado.usuario ? { user: estado.usuario } : null) },
+  })),
+)
+vi.mock('@/lib/auth/origen', () => ({ origenDelRequest: origenDelRequestMock }))
+vi.mock('@/lib/auth/para-tenant', () => ({ authParaTenant: authParaTenantMock }))
 
 const redirigido = vi.hoisted(() => vi.fn(() => { throw new Error('REDIRECT') }))
 const prohibido = vi.hoisted(() => vi.fn(() => { throw new Error('FORBIDDEN') }))
@@ -28,6 +40,8 @@ beforeEach(() => {
   estado.usuario = ACTIVO
   redirigido.mockClear()
   prohibido.mockClear()
+  origenDelRequestMock.mockClear()
+  authParaTenantMock.mockClear()
 })
 
 describe('sesionActual', () => {
@@ -35,6 +49,14 @@ describe('sesionActual', () => {
     const s = await sesionActual()
     expect(s?.usuario.email).toBe('j@x.test')
     expect(s?.subdominio).toBe('flor')
+
+    // El corazón del chequeo 3: el subdominio que arma el origen y el
+    // tenantId con el que se pide la sesión tienen que ser los de la
+    // resolución, no otros. `origenDelRequest(resolucion.tenant.nombre)`
+    // tipa perfecto y sería un bug silencioso -esta aserción es lo único
+    // que lo atraparía.
+    expect(origenDelRequestMock).toHaveBeenCalledWith('flor')
+    expect(authParaTenantMock).toHaveBeenCalledWith('t1', 'http://x.test')
   })
 
   it('es null sin sesión', async () => {

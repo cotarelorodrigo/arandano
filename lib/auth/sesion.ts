@@ -22,9 +22,10 @@ export type Sesion = {
  * 2. Que el usuario no esté desactivado — Better Auth no sabe nada de eso, y va
  *    en CADA request: si se chequeara sólo al entrar, echar a un empleado no
  *    tendría efecto hasta que se le venciera la sesión.
- * 3. Que el tenant de la sesión sea el del Host — RLS ya lo garantiza, porque
- *    la fila de `sessions` no aparece con otro GUC. Se chequea igual: una sola
- *    capa en el aislamiento entre clientes es poca, y este `if` es barato.
+ * 3. Que el tenant de la sesión sea el del Host. A diferencia de los otros
+ *    dos, éste NO es un `if` en el cuerpo de la función — ver el comentario
+ *    junto al `return`, más abajo, para el motivo y para dónde vive la
+ *    garantía en su lugar.
  *
  * `origenDelRequest` recibe el subdominio YA resuelto (no el Host crudo): ver
  * el porqué en `lib/auth/origen.ts`, que es el mismo motivo por el que este
