@@ -272,14 +272,21 @@ Expected: los tres checks nuevos en verde. Si el de módulos da `0`, la imagen d
 
 - [ ] **Step 5: Demostrar que el check del tag detecta el desfasaje**
 
+> **No restaurar con `git checkout --`.** En este punto de la secuencia la
+> edición del Step 2 todavía **no está commiteada** —el commit es el Step 8—, así
+> que un `git checkout` revierte el archivo a HEAD y se lleva puesto el trabajo
+> del Step 2 junto con la mutación de prueba. Hay que restaurar desde una copia.
+
 ```bash
+cp docker/compose.prod.yml /var/tmp/compose-prod.respaldo
 sed -i 's/arandano-caddy:2.11.4-hetzner/arandano-caddy:2.10.0-hetzner/' docker/compose.prod.yml
 ./scripts/verify-infra.sh network 2>&1 | grep -A1 'coincide con el que produce'
-git checkout -- docker/compose.prod.yml
-git status --porcelain docker/compose.prod.yml
+cp /var/tmp/compose-prod.respaldo docker/compose.prod.yml
+rm -f /var/tmp/compose-prod.respaldo
+diff <(git show :docker/compose.prod.yml 2>/dev/null || true) docker/compose.prod.yml >/dev/null && echo "restaurado" || echo "restaurado (con la edición del Step 2 todavía sin commitear, que es lo correcto acá)"
 ```
 
-Expected: el check falla con `esperado: arandano-caddy:2.11.4-hetzner, obtenido: arandano-caddy:2.10.0-hetzner`, y después `git status` sale vacío. Sin esta prueba, no sabríamos si el check compara algo o siempre da verde.
+Expected: el check falla con `esperado: arandano-caddy:2.11.4-hetzner, obtenido: arandano-caddy:2.10.0-hetzner`, y el archivo queda con la edición del Step 2 intacta. `git status --porcelain docker/compose.prod.yml` **debe** mostrar ` M` — el Step 2 todavía no se commiteó. Sin esta prueba, no sabríamos si el check compara algo o siempre da verde.
 
 - [ ] **Step 6: Copiar el compose a producción y recrear Caddy**
 
