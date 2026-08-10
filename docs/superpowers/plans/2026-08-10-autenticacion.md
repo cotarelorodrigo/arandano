@@ -1059,9 +1059,25 @@ export type Sesion = {
  * 2. Que el usuario no esté desactivado — Better Auth no sabe nada de eso, y va
  *    en CADA request: si se chequeara sólo al entrar, echar a un empleado no
  *    tendría efecto hasta que se le venciera la sesión.
- * 3. Que el tenant de la sesión sea el del Host — RLS ya lo garantiza, porque
- *    la fila de `sessions` no aparece con otro GUC. Se chequea igual: una sola
- *    capa en el aislamiento entre clientes es poca, y este `if` es barato.
+ * 3. Que el tenant de la sesión sea el del Host. **Esto NO es un `if` acá**, y no
+ *    por descuido: no es implementable. `sesion.user` no trae ningún campo de
+ *    tenant, y agregarlo a `additionalFields` sería peor — `conTenant` arma
+ *    `{ tenantId, ...dato }`, así que un `tenantId: undefined` de la librería
+ *    pisaría el autocompletado por el spread. Y cualquier consulta que hiciéramos
+ *    acá saldría por el mismo cliente atado al tenant, o sea que compararía algo
+ *    que RLS ya garantizó: una tautología, no una segunda capa.
+ *
+ *    La garantía es por construcción: `auth` sale de `authParaTenant(tenant.id)`
+ *    con el id que salió del Host, la policy de `sessions` filtra por ese GUC y
+ *    falla cerrado, y el rol de la aplicación es NOBYPASSRLS. Una sesión de otro
+ *    local no es *observable* desde acá.
+ *
+ *    Y justamente porque la garantía es por construcción, **la construcción se
+ *    testea**: `lib/auth/sesion.test.ts` asierta con qué argumentos se llamó a
+ *    `authParaTenant` y a `origenDelRequest`. Sin esa aserción, un refactor que
+ *    le pasara un tenant de otro lado dejaría todo en verde y el aislamiento
+ *    desaparecería sin una sola señal. Ojo que `origenDelRequest(tenant.nombre)`
+ *    tipa perfecto: esa aserción es lo único que lo atrapa.
  */
 export async function sesionActual(): Promise<Sesion | null> {
   const resolucion = await tenantDelRequest()
