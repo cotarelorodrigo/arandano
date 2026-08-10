@@ -88,14 +88,17 @@ model Tenant {
   creadoEn           DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn      DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  modulos     TenantModule[]
-  users       User[]
-  clientes    Cliente[]
-  articulos   Articulo[]
-  ventas      Venta[]
-  ventaItems  VentaItem[]
-  pagos       Pago[]
-  movimientos MovimientoStock[]
+  modulos        TenantModule[]
+  users          User[]
+  clientes       Cliente[]
+  articulos      Articulo[]
+  ventas         Venta[]
+  ventaItems     VentaItem[]
+  pagos          Pago[]
+  movimientos    MovimientoStock[]
+  sesiones       Session[]
+  cuentas        Account[]
+  verificaciones Verification[]
 
   @@map("tenants")
 }
@@ -119,6 +122,16 @@ model User {
   nombre        String
   email         String
   rol           RolUsuario @default(EMPLEADO)
+  // Better Auth la exige en su schema core (`emailVerified`, required). Queda
+  // siempre en false y nadie la lee: requireEmailVerification va apagado porque
+  // en este ciclo no hay proveedor de mail.
+  emailVerified Boolean    @default(false) @map("email_verificado")
+  // Idem: parte del core de Better Auth, sin uso todavía.
+  imagen        String?
+  // Dar de baja a un empleado NO puede ser borrar la fila: ventas.usuario_id es
+  // una FK con onDelete: Restrict, así que la fila de quien vendió algo alguna
+  // vez es indestructible por diseño. Se desactiva.
+  desactivadoEn DateTime?  @map("desactivado_en") @db.Timestamptz(3)
   creadoEn      DateTime   @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn DateTime   @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
@@ -127,6 +140,8 @@ model User {
   ventasHechas   Venta[]           @relation("VentasHechas")
   ventasAnuladas Venta[]           @relation("VentasAnuladas")
   movimientos    MovimientoStock[]
+  sesiones       Session[]
+  cuentas        Account[]
 
   // Por tenant y no global: la misma persona puede trabajar en dos negocios.
   @@unique([tenantId, email])
@@ -282,4 +297,73 @@ model Pago {
 
   @@index([tenantId, ventaId])
   @@map("pagos")
+}
+
+// Las tres tablas que siguen son de Better Auth, y por eso sus campos llevan
+// los nombres de la librería y no los del resto del schema: cada renombre sería
+// una entrada en su `fields:` que puede desincronizarse en silencio. Los nombres
+// de MODELO coinciden con los que Better Auth usa por defecto (`session`,
+// `account`, `verification`), así que el adapter encuentra `prisma.session` sin
+// una línea de configuración.
+
+model Session {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  // Único global y no por tenant: es un token aleatorio, no un dato del negocio.
+  token     String   @unique
+  expiresAt DateTime @map("expira_en") @db.Timestamptz(3)
+  ipAddress String?  @map("ip")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usuario User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@map("sessions")
+}
+
+// Donde vive el hash de la contraseña. Los campos de OAuth existen porque son
+// parte del schema core de Better Auth, no porque se usen: este ciclo sólo
+// habilita mail y contraseña.
+model Account {
+  id                    String    @id @default(uuid(7)) @db.Uuid
+  tenantId              String    @map("tenant_id") @db.Uuid
+  userId                String    @map("user_id") @db.Uuid
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expira_en") @db.Timestamptz(3)
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expira_en") @db.Timestamptz(3)
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
+  updatedAt             DateTime  @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usuario User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@map("accounts")
+}
+
+// Tokens de verificación. Entra aunque en este ciclo no haya mail: es parte del
+// schema core de la librería y su ausencia rompería operaciones internas.
+model Verification {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expira_en") @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, identifier])
+  @@map("verifications")
 }
