@@ -79,11 +79,11 @@ localhost:443 {
 # nada ni tocar el DNS por cada cliente nuevo, que es lo que sostiene la promesa
 # del alta instantánea.
 #
-# ATENCIÓN: el "ca" de abajo apunta al STAGING de Let's Encrypt. Emite
-# certificados que ninguna CA pública firma, así que el navegador avisa — y es
-# a propósito. Sirve para validar la cadena entera (módulo, token, permisos
-# sobre la zona, propagación, este mismo bloque) sin gastar intentos del límite
-# real, que es de 5 validaciones fallidas por hora. Se saca en la Task 4.
+# El emisor es el de producción de Let's Encrypt (el default de Caddy). La
+# primera emisión se hizo contra el staging para validar módulo, token,
+# permisos y propagación sin gastar intentos del límite real; ese rodeo está
+# documentado en el spec del cutover y conviene repetirlo ante cualquier cambio
+# de esta configuración.
 arandano.app, *.arandano.app {
 	tls {
 		dns hetzner {env.HETZNER_DNS_TOKEN}
@@ -93,7 +93,6 @@ arandano.app, *.arandano.app {
 		# propósito — emitir contra staging existe justamente para que este
 		# número se pueda ajustar sin que un fallo cueste nada.
 		propagation_delay 30s
-		ca https://acme-staging-v02.api.letsencrypt.org/directory
 	}
 	reverse_proxy app:3000
 }
