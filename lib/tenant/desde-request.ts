@@ -3,7 +3,10 @@ import { subdominioDeHost, SUBDOMINIOS_RESERVADOS } from './subdominio'
 import { resolverTenant, type TenantResuelto } from './resolver'
 
 export type ResolucionTenant =
-  | { tipo: 'tenant'; tenant: TenantResuelto }
+  // El subdominio va acá y NO dentro de `tenant`: TenantResuelto declara ser
+  // exactamente lo que devuelve la función de Postgres, y sumarle un campo que
+  // no viene de ahí rompería esa garantía. Lo necesita el baseURL de Better Auth.
+  | { tipo: 'tenant'; tenant: TenantResuelto; subdominio: string }
   | { tipo: 'apex' }
   | { tipo: 'ajeno' }
   | { tipo: 'reservado'; subdominio: string }
@@ -51,5 +54,5 @@ export async function tenantDelRequest(): Promise<ResolucionTenant> {
   const tenant = await resolverTenant(analizado.subdominio)
   if (!tenant) return { tipo: 'inexistente', subdominio: analizado.subdominio }
 
-  return { tipo: 'tenant', tenant }
+  return { tipo: 'tenant', tenant, subdominio: analizado.subdominio }
 }
