@@ -126,8 +126,14 @@ model User {
   // siempre en false y nadie la lee: requireEmailVerification va apagado porque
   // en este ciclo no hay proveedor de mail.
   emailVerified Boolean    @default(false) @map("email_verificado")
-  // Idem: parte del core de Better Auth, sin uso todavía.
-  imagen        String?
+  // Idem: parte del core de Better Auth, sin uso todavía. El campo se llama
+  // `image` (como Better Auth lo exige) y no `imagen`: la Task 2 sólo mapea
+  // `name`, `createdAt` y `updatedAt` en su config, así que cualquier campo
+  // del core sin ese nombre exacto necesitaría una entrada de mapeo propia
+  // que puede desincronizarse en silencio — la misma razón por la que
+  // emailVerified ya se llama así arriba. La columna de la base sigue en
+  // español vía @map.
+  image         String?    @map("imagen")
   // Dar de baja a un empleado NO puede ser borrar la fila: ventas.usuario_id es
   // una FK con onDelete: Restrict, así que la fila de quien vendió algo alguna
   // vez es indestructible por diseño. Se desactiva.
