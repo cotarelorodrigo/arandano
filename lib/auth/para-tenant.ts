@@ -36,10 +36,15 @@ function construir(tenantId: string, origen: string) {
 type Auth = ReturnType<typeof construir>
 
 /**
- * Tope de la memoización. Una instancia por tenant activo; los locales que no
- * reciben tráfico se caen solos. El número no es crítico: si se queda corto se
- * reconstruye alguna instancia de más, que es exactamente el costo que había
- * sin memoizar.
+ * Tope de la memoización. Desalojar una instancia no es gratis como parece:
+ * `OPCIONES_BASE` configura `rateLimit.storage: 'memory'` (ver opciones.ts,
+ * "el único freno contra la fuerza bruta"), y ese contador vive DENTRO de la
+ * instancia de Better Auth. Desalojar una instancia no sólo la reconstruye:
+ * reinicia su contador de intentos de `/sign-in/email` a cero. Por eso el
+ * desalojo de abajo es por USO y no por inserción — ver el reinsertado en
+ * `authParaTenant` — y "los locales sin tráfico se caen solos" recién así es
+ * cierto: con desalojo por inserción (FIFO), un local con tráfico continuo
+ * insertado temprano se cae igual, por turno, y pierde su contador con él.
  */
 const TOPE = 200
 
@@ -68,12 +73,21 @@ export function authParaTenant(tenantId: string, origen: string): Auth {
   const clave = `${tenantId}|${origen}`
 
   const guardada = cache.get(clave)
-  if (guardada) return guardada
+  if (guardada) {
+    // Reinsertar mueve la clave al final del Map (que itera en orden de
+    // inserción): un acierto de caché la saca de la cola de desalojo. Sin
+    // este reinsertado el desalojo sería FIFO por alta, no por uso — ver el
+    // comentario de TOPE.
+    cache.delete(clave)
+    cache.set(clave, guardada)
+    return guardada
+  }
 
   const auth = construir(tenantId, origen)
 
-  // Desalojo simple: la entrada más vieja primero. Map conserva el orden de
-  // inserción, así que la primera clave del iterador es la más antigua.
+  // La más vieja por USO —gracias al reinsertado de arriba— es la primera
+  // del iterador, así que sigue siendo válido tomarla como candidata al
+  // desalojo.
   if (cache.size >= TOPE) {
     const masVieja = cache.keys().next().value
     if (masVieja !== undefined) cache.delete(masVieja)
