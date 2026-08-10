@@ -24,6 +24,13 @@ describe('opciones de Better Auth', () => {
   })
 
   it('el rate limit del login es más duro que el general', () => {
+    // Esto es la FORMA de la configuración, no su efecto, y sirve para poco
+    // solo: durante todo el ciclo pasó en verde mientras el freno no se
+    // aplicaba en el camino que la pantalla usa. Quien busque la prueba de que
+    // el login tiene freno la encuentra en app/login/acciones.test.ts ("el
+    // freno de fuerza bruta"), que cuenta intentos a través de entrar(). Este
+    // caso queda porque los dos caminos —el router HTTP y la server action—
+    // leen sus números de esta misma regla.
     const login = OPCIONES_BASE.rateLimit?.customRules?.['/sign-in/email']
     expect(login, 'no hay regla propia para el login').toBeDefined()
     expect(login && typeof login === 'object' && 'max' in login ? login.max : undefined).toBe(5)

@@ -4,6 +4,7 @@ import { tenantDelRequest } from '@/lib/tenant/desde-request'
 import { authParaTenant } from '@/lib/auth/para-tenant'
 import { origenDelRequest } from '@/lib/auth/origen'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
+import { claveDeIntento, loginBloqueado, registrarLoginFallido } from '@/lib/auth/limite-de-intentos'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 
@@ -15,6 +16,8 @@ export type EstadoLogin = { error: string | null }
  * local, que es justo lo que no queremos publicar.
  */
 const GENERICO = 'Mail o contraseña incorrectos.'
+
+const DEMASIADOS = 'Demasiados intentos. Esperá un minuto y volvé a probar.'
 
 export async function entrar(_estado: EstadoLogin, datos: FormData): Promise<EstadoLogin> {
   const email = String(datos.get('email') ?? '').trim()
@@ -30,6 +33,16 @@ export async function entrar(_estado: EstadoLogin, datos: FormData): Promise<Est
   const origen = await origenDelRequest(resolucion.subdominio)
   const auth = authParaTenant(resolucion.tenant.id, origen)
 
+  // El freno de fuerza bruta va ACÁ y no en la configuración de Better Auth:
+  // el limitador de la librería corre en el onRequest de su router, y esta
+  // action no pasa por el router (ver lib/auth/limite-de-intentos.ts, que
+  // explica lo medido y por qué el contador es propio). Se consulta antes de
+  // llamar a signInEmail para que un intento de más no cueste un hash de
+  // scrypt.
+  const cabeceras = await headers()
+  const limite = claveDeIntento(resolucion.tenant.id, cabeceras)
+  if (loginBloqueado(limite)) return { error: DEMASIADOS }
+
   // SIN asResponse: el plugin nextCookies() de authParaTenant es el que escribe
   // la cookie en la respuesta de la action. Con asResponse habría que propagar
   // el Set-Cookie a mano, y olvidarse de hacerlo da el peor síntoma posible —
@@ -37,15 +50,15 @@ export async function entrar(_estado: EstadoLogin, datos: FormData): Promise<Est
   try {
     await auth.api.signInEmail({
       body: { email, password: clave },
-      headers: await headers(),
+      headers: cabeceras,
     })
-  } catch (e) {
-    // 429 es rate limit; cualquier otra cosa es credencial inválida y sale por
-    // el mensaje genérico.
-    const status = e && typeof e === 'object' && 'status' in e ? e.status : undefined
-    if (status === 429 || status === 'TOO_MANY_REQUESTS') {
-      return { error: 'Demasiados intentos. Esperá un minuto y volvé a probar.' }
-    }
+  } catch {
+    // Toda falla suma al contador, no sólo la credencial inválida: distinguir
+    // por código de error dejaría el freno atado a la forma exacta que hoy
+    // tiene una excepción de la librería, y el modo de falla de equivocarse
+    // sería un login SIN freno. Si lo que falla es la base, el login está roto
+    // igual y contarlo no le saca nada a nadie.
+    registrarLoginFallido(limite)
     return { error: GENERICO }
   }
 

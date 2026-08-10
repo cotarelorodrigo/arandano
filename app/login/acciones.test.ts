@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import { Client } from 'pg'
 import { urlOwner, urlApp } from '@/test/postgres-efimero'
 import { crearTenant } from '@/test/datos'
+import { REGLA_LOGIN } from '@/lib/auth/limite-de-intentos'
 
 // El tenant real se crea recién en beforeAll, después de que vi.mock ya
 // corrió (los mocks se hoistean por sobre los imports): por eso el mock lee
@@ -88,5 +89,51 @@ describe('entrar: el mensaje no distingue mail inexistente de contraseña incorr
     expect(porMailInexistente.error).toBe('Mail o contraseña incorrectos.')
     expect(porClaveIncorrecta.error).toBe('Mail o contraseña incorrectos.')
     expect(porMailInexistente.error).toBe(porClaveIncorrecta.error)
+  })
+})
+
+describe('el freno de fuerza bruta', () => {
+  /**
+   * Test de COMPORTAMIENTO, no de configuración. `lib/auth/opciones.test.ts`
+   * ya afirmaba que la regla del login dice `max: 5`, y esa aserción pasaba
+   * perfecto mientras la regla no se aplicaba en ningún lado que el producto
+   * usara: el limitador de Better Auth corre en el `onRequest` de su router y
+   * esta action llama a `auth.api.signInEmail` directo. La única forma de que
+   * el freno signifique algo es contar intentos a través de `entrar()`.
+   *
+   * Tenant propio, distinto del que usa el resto del archivo: el contador se
+   * lleva por `(tenant, ip)` y en test todas las llamadas comparten IP, así
+   * que correr esto sobre el tenant compartido dejaría el bucket quemado para
+   * cualquier test que se sume después — y, peor, haría que este test
+   * dependiera de cuántos intentos fallidos hizo el de más arriba.
+   */
+  it(`el intento ${REGLA_LOGIN.max + 1} deja de costar un hash y avisa que hay que esperar`, async () => {
+    const previoTenant = estado.tenantId
+    const previoSubdominio = estado.subdominio
+
+    const subdominio = `login-limite-${Date.now()}`
+    estado.tenantId = await crearTenant(owner, subdominio)
+    estado.subdominio = subdominio
+
+    try {
+      const mensajes: (string | null)[] = []
+      for (let i = 0; i <= REGLA_LOGIN.max; i++) {
+        const r = await entrar({ error: null }, formulario(MAIL_EXISTENTE, 'clave-equivocada'))
+        mensajes.push(r.error)
+      }
+
+      // Los primeros `max` llegan a Better Auth y salen por el mensaje
+      // genérico...
+      expect(mensajes.slice(0, REGLA_LOGIN.max)).toEqual(
+        Array<string>(REGLA_LOGIN.max).fill('Mail o contraseña incorrectos.'),
+      )
+      // ...y el siguiente ya no: lo frena el contador antes de tocar el hash.
+      expect(mensajes[REGLA_LOGIN.max], 'el intento de más pasó igual: no hay freno en este camino').toBe(
+        'Demasiados intentos. Esperá un minuto y volvé a probar.',
+      )
+    } finally {
+      estado.tenantId = previoTenant
+      estado.subdominio = previoSubdominio
+    }
   })
 })
