@@ -1571,20 +1571,32 @@ describe('resetear la clave', () => {
       body: { email: 'olvido@ejemplo.test', password: CLAVE }, asResponse: true,
     })
 
+    // El id de LA sesión vieja, capturado antes del reseteo. Contar filas no
+    // sirve: el login con la clave nueva crea una, y un conteo no distingue
+    // "la vieja murió y nació otra" de "las dos siguen vivas".
+    const previa = await owner.query('SELECT id FROM sessions WHERE user_id = $1', [id])
+    expect(previa.rows, 'el login no dejó sesión; el test no probaría nada').toHaveLength(1)
+    const sesionVieja: string = previa.rows[0].id
+
     const nueva = 'otra-clave-larga'
     await administrar.resetearClave({ tenantId, origen: ORIGEN, usuarioId: id, clave: nueva })
 
+    // La vieja ya no existe: resetearle la clave a alguien que se fue tiene que
+    // sacarlo de donde esté.
+    const quedo = await owner.query('SELECT id FROM sessions WHERE id = $1', [sesionVieja])
+    expect(quedo.rows, 'la sesión anterior al reseteo sobrevivió').toHaveLength(0)
+
+    // La nueva sirve...
     const conNueva = await authParaTenant(tenantId, ORIGEN).api.signInEmail({
       body: { email: 'olvido@ejemplo.test', password: nueva }, asResponse: true,
     })
     expect(conNueva.status).toBe(200)
 
-    // Resetearle la clave a alguien que se fue tiene que sacarlo de donde esté.
-    const { rows } = await owner.query(
-      'SELECT count(*)::int n FROM sessions WHERE user_id = $1 AND creado_en < now() - interval \'0 seconds\'',
-      [id],
-    )
-    expect(rows[0].n).toBeLessThanOrEqual(1)
+    // ...y la vieja no.
+    const conVieja = await authParaTenant(tenantId, ORIGEN).api.signInEmail({
+      body: { email: 'olvido@ejemplo.test', password: CLAVE }, asResponse: true,
+    }).catch(() => ({ status: 401 }))
+    expect(conVieja.status).not.toBe(200)
   })
 })
 ```
