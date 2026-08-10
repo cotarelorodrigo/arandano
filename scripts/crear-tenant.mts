@@ -131,8 +131,9 @@ async function crear(args: ArgsAlta): Promise<void> {
       )
     }
 
-    // Sin credenciales: `users` no tiene columna de contraseña todavía. Eso es
-    // trabajo del ciclo de autenticación, que va a necesitar su propia migración.
+    // Sin credenciales: el hash lo produce Better Auth, y este script corre como
+    // arandano_owner con `pg` pelado. La contraseña se define después, con
+    // `npm run usuario:clave` — ver el aviso que se imprime al terminar.
     await cliente.query(
       `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
        VALUES (gen_random_uuid(), $1, $2, $3, 'DUENO', now(), now())`,
@@ -145,8 +146,13 @@ async function crear(args: ArgsAlta): Promise<void> {
     console.log(`tenant creado: ${args.nombre}`)
     console.log(`  id:      ${tenantId}`)
     console.log(`  url:     https://${args.subdominio}.${dominio}/`)
-    console.log(`  dueño:   ${args.duenioNombre} <${args.duenio}> (sin credenciales todavía)`)
+    console.log(`  dueño:   ${args.duenioNombre} <${args.duenio}>`)
     console.log(`  módulos: ${args.modulos.length ? args.modulos.join(', ') : '(ninguno)'}`)
+    console.log('')
+    console.log('FALTA la contraseña del dueño. Sin ella no puede entrar:')
+    console.log(
+      `  npm run usuario:clave -- --subdominio=${args.subdominio} --email=${args.duenio}`,
+    )
   } catch (err) {
     await cliente.query('ROLLBACK')
     // El @unique de la columna es la defensa real contra el duplicado; acá sólo

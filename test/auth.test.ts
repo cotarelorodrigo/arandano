@@ -186,6 +186,56 @@ describe('el aislamiento roto se detecta (Step 6)', () => {
   })
 })
 
+describe('definir-clave', () => {
+  it('deja una contraseña con la que efectivamente se entra', async () => {
+    const { definirClave } = await import('@/scripts/definir-clave.mts')
+
+    const nueva = 'clave-nueva-del-script'
+    await definirClave({ tenantId: tenantB, email: MAIL, clave: nueva, origen: ORIGEN })
+
+    expect(await entrar(tenantB, nueva)).toBe(200)
+    // Y la vieja deja de servir: definir una clave la REEMPLAZA.
+    expect(await entrar(tenantB, CLAVE_B)).not.toBe(200)
+  })
+
+  it('falla claro si el usuario no existe en ese tenant', async () => {
+    const { definirClave } = await import('@/scripts/definir-clave.mts')
+    await expect(
+      definirClave({ tenantId: tenantA, email: 'nadie@ejemplo.test', clave: 'x'.repeat(10), origen: ORIGEN }),
+    ).rejects.toThrow(/no existe/)
+  })
+
+  /**
+   * El motivo entero de esta task: `crear-tenant.mts` inserta el dueño con SQL
+   * pelado, sin ninguna fila en `accounts`. Los dos tests de arriba corren
+   * sobre MAIL, que se dio de alta con `signUpEmail` en `beforeAll` y por lo
+   * tanto YA tiene una credencial — no ejercitan el camino real que motiva
+   * esta task. Este test recrea esa fila "cruda" a mano (mismo INSERT que usa
+   * el script) y confirma que `definirClave` también funciona cuando no hay
+   * ninguna fila de `accounts` de la que partir.
+   */
+  it('define la PRIMERA contraseña de un usuario dado de alta sin credenciales', async () => {
+    const { definirClave } = await import('@/scripts/definir-clave.mts')
+
+    const mailDuenio = 'duenio-sin-clave@ejemplo.test'
+    await owner.query(
+      `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Dueño sin clave', $2, 'DUENO', now(), now())`,
+      [tenantA, mailDuenio],
+    )
+
+    const primera = 'clave-inicial-del-duenio'
+    await definirClave({ tenantId: tenantA, email: mailDuenio, clave: primera, origen: ORIGEN })
+
+    const auth = authParaTenant(tenantA, ORIGEN)
+    const r = await auth.api.signInEmail({
+      body: { email: mailDuenio, password: primera },
+      asResponse: true,
+    })
+    expect(r.status).toBe(200)
+  })
+})
+
 describe('la sesión de un usuario desactivado', () => {
   it('deja de valer en el request siguiente', async () => {
     const auth = authParaTenant(tenantA, ORIGEN)
