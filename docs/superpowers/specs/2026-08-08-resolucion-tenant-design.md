@@ -8,8 +8,10 @@ crea un tenant; y cómo el healthcheck deja de tener un check pendiente.
 
 Es el primero de dos ciclos. Este resuelve **la frontera de datos**: quién es el
 tenant de este request. El siguiente resuelve **la identidad**: quién es la
-persona, con Auth.js. El corte importa porque son problemas distintos con
-defensas distintas, y porque este cierra un bloqueante y el otro no.
+persona, con Better Auth y no con Auth.js — el porqué del cambio de librería
+quedó en `docs/superpowers/specs/2026-08-10-autenticacion-design.md`, no acá.
+El corte importa porque son problemas distintos con defensas distintas, y
+porque este cierra un bloqueante y el otro no.
 
 ## Lo que ya está y lo que falta
 

@@ -18,6 +18,8 @@ Tailscale, nunca en internet. Ver *Deploy y rollback* más abajo.
 - **`arandano-dev` se frena antes de que arranque el BUILD**, no antes de stage. La memoria no cierra de otra forma: prod (3200 MiB) + dev (2304) + el build (2048) + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6 GB. Con dev abajo el pico queda en ~7.5 GB, que es el número que documenta el presupuesto. Como el build es el primer paso del deploy y stage viene después, frenar dev al principio también cubre la regla vieja de que dev y stage no corren juntos (sus límites de CPU sumados pasan de un core: dev 0.75 + 0.25, stage 0.5 + 0.25). Se vuelve a levantar `arandano-dev` recién al terminar el deploy. `scripts/deploy.sh` ya hace esta secuencia solo, en su paso 6/18 y en el trap de limpieza — ver *Deploy y rollback* más abajo.
 - Producción no se edita: se corre una imagen. Nada de editores en `/srv/arandano/prod/` — ese directorio sólo tiene `docker-compose.yml`, `.env`, el `Caddyfile` y los volúmenes, sin código fuente.
 - **El `.env` de cada stack necesita `ARANDANO_SALUD_TOKEN`** (generado con `openssl rand -hex 32`), además de las credenciales de la base: sin él `/api/health` responde sólo el veredicto, el gate no recibe `info.sha` y `deploy.sh` **aborta antes de buildear**. Es requisito duro desde el cutover, no una opción — quien reconstruya `/srv/arandano/prod` o `/srv/arandano/ensayo` tiene que ponerlo en el `.env` nuevo. Rotarlo: ver *Rotar el token del healthcheck* más abajo.
+- **El `.env` de cada stack necesita `BETTER_AUTH_SECRET`** (generado con `openssl rand -hex 32`), desde el ciclo de autenticación: es con lo que Better Auth firma las cookies de sesión (`lib/auth/para-tenant.ts`). Distinto por stack, como toda credencial — si dev y prod compartieran el secreto, una cookie fabricada en dev valdría contra los datos de clientes. En dev va en `.env.dev`; en stage va inline en `docker/compose.stage.yml` (Postgres efímero, mismo criterio que sus otras credenciales inline); en ensayo y en prod llega por el `.env` de cada uno, igual que `ARANDANO_SALUD_TOKEN` — quien reconstruya `/srv/arandano/prod` o `/srv/arandano/ensayo` tiene que ponerlo ahí. `scripts/verify-infra.sh env` comprueba que exista en dev y en prod, y que no coincidan.
+- **`PUERTO_PUBLICO` es el puerto con el que el navegador llega a cada stack**, y Better Auth lo necesita para armar su `baseURL` (`lib/auth/origen.ts`). Vale `3000` en dev, `3001` en stage y `3002` en ensayo — el mismo puerto que cada uno publica en `ports` — y en **producción queda SIN DEFINIR a propósito**: 443 es implícito en `https://`, y ponerle un default ahí rompería el `baseURL` de prod en silencio. Va directo en el `environment:` de cada `docker/compose.*.yml`, no en ningún `.env` — no es una credencial, es topología del stack.
 - Buildear siempre con el presupuesto de recursos puesto (ver la sección de abajo — el comando importa, las banderas "obvias" no hacen nada):
 
   ```bash
@@ -508,8 +510,52 @@ DOMINIO_BASE=dev.arandano.app \
     --modulos=ORDENES_DE_TRABAJO --duenio=flor@ejemplo.com --duenio-nombre="Flor"
 ```
 
-El dueño se crea sin credenciales: `users` todavía no tiene columna de
-contraseña. Eso llega con el ciclo de autenticación.
+El dueño se crea sin contraseña: `tenant:crear` corre como `arandano_owner`,
+con `pg` pelado, y no tiene de dónde sacar un hash en el formato correcto que
+Better Auth después pueda verificar. Definirla es el paso siguiente.
+
+### Definir la contraseña de un usuario
+
+`npm run usuario:clave` es el que está pensado para hacerlo — corre como la
+aplicación (`DATABASE_URL`, o sea `arandano_app`) y pasa por la API de Better
+Auth, así que también pasa por RLS. Es además el recupero del dueño: mientras
+no haya proveedor de mail, no hay otro camino para resetear una contraseña
+olvidada más que correr este mismo comando de nuevo.
+
+```bash
+DATABASE_URL="$(grep -m1 ^DATABASE_URL .env.dev | cut -d= -f2- | sed 's/@postgres:5432/@100.64.81.63:5433/')" \
+BETTER_AUTH_SECRET="$(grep -m1 BETTER_AUTH_SECRET .env.dev | cut -d= -f2-)" \
+DOMINIO_BASE=dev.arandano.app \
+  npm run usuario:clave -- --subdominio=flor --email=flor@ejemplo.com
+```
+
+Sin `--clave`, genera una al azar y la imprime junto con la URL de login.
+**La contraseña se imprime una sola vez y no se guarda en ningún lado** — es
+el único momento en que existe en texto plano. Si se pierde, el camino no es
+buscarla: es correr el comando de nuevo.
+
+**ROTO hoy (hallazgo de Task 11, sin arreglar todavía).** El comando de
+arriba, tal cual está escrito el código, **no llega a ejecutarse**: `node`
+pelado no resuelve el alias `@/` (`lib/auth/para-tenant.ts` importa
+`@/lib/tenant/prisma`) y sale con `ERR_MODULE_NOT_FOUND` antes de tocar la
+base — ni siquiera llega a necesitar la reescritura de `DATABASE_URL` de
+arriba. Arreglar sólo esa línea no alcanza: un nivel más adentro, el cliente
+de Prisma generado (`generated/prisma/client.ts`) usa imports relativos SIN
+extensión (`./enums`, `./internal/class`), válidos para un bundler
+(webpack/turbopack/Vite, que es como corre tanto Next como `vitest`) pero
+inválidos para la resolución ESM nativa de Node — así que ni reescribiendo el
+alias a una ruta relativa con `.ts` este comando llega a funcionar. `npm run
+tenant:crear` (más arriba) no tiene este problema porque deliberadamente evita
+Prisma y usa `pg` pelado (ver el comentario de cabecera de
+`scripts/crear-tenant.mts`); `definir-clave.mts` necesita la API de Better
+Auth para calcular el hash con el algoritmo correcto, así que no puede evitar
+el mismo camino. Ningún test lo cubre porque los tests existentes ejercitan
+`definirClave` (la función) bajo vitest — que sí resuelve `@/` — o
+`parsearArgumentosCLI` (pura), nunca el binario completo invocado con `node`.
+Que el guard, el login y el RBAC funcionan bien está verificado (Task 11 lo
+probó por HTTP contra `arandano-dev` con una clave puesta a mano, sin pasar
+por este comando); lo que está roto es específicamente este punto de entrada.
+Hace falta una task de seguimiento.
 
 ### El tenant canario
 

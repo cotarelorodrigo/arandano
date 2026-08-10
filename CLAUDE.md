@@ -71,7 +71,7 @@ flowchart TD
 | Componentes de UI | **shadcn/ui** sobre Tailwind | Se copian al repo en vez de instalarse como dependencia: el código es nuestro y se puede modificar sin pelearle a la librería. Accesibilidad y teclado ya resueltos por Radix, que es lo que más cuesta hacer bien en una pantalla de venta que se opera sin mouse |
 | Base de datos | **PostgreSQL** | Estándar, soporta RLS nativo para el aislamiento por tenant |
 | ORM | **Prisma** | Mejor DX y documentación del ecosistema Node; Prisma Studio sirve como ventana rápida de debug |
-| Autenticación | **Auth.js** (NextAuth) | Nativo de Next.js, sesiones/JWT sin reinventar nada |
+| Autenticación | **Better Auth** | Auth.js no maneja contraseñas en serio (su plugin de credentials es un ejemplo de referencia, no producción) — apuesta a proveedores OAuth o a magic link por mail. Un magic link en el mostrador de un local significa que el empleado tiene que abrir su mail para entrar y cobrar, así que el requisito real es usuario y contraseña, y ahí Better Auth es la opción madura del ecosistema Node |
 | Multi-tenancy (app) | **Helper de servidor** (`lib/tenant/desde-request.ts`) resuelve subdominio → tenant leyendo el `Host`; extensión de Prisma fuerza filtro por `tenant_id` | Sin `middleware.ts`: el middleware de Next no puede consultar Postgres, así que tendría que pasarle el resultado a la app por un header — y un header del que la app deduce qué tenant servir es superficie de suplantación que no compra nada, porque el `Host` la app ya lo lee directo |
 | Multi-tenancy (datos) | **Row Level Security de Postgres** como segunda capa de defensa | Si algún query se olvida el filtro, la base igual protege el dato |
 | Modularidad por rubro | **Monolito modular**: `modules/<nombre>/` con schema, rutas, UI y jobs propios, más un registry; activación por fila en `TenantModule` | Un rubro nuevo no toca infraestructura ni suma un deploy; las tablas de cada módulo viven en el mismo Postgres y heredan el mismo RLS |
@@ -187,6 +187,7 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 - **Segundo VPS para desarrollo o staging**: descartado. Dev y producción conviven en la misma máquina de forma permanente; staging es la promoción del mismo artefacto, no otro servidor.
 - **Postgres administrado (Supabase) en lugar del Postgres propio**: evaluado el 2026-08-06 y **pospuesto**, no descartado para siempre. A favor pesaban la durabilidad de los datos de clientes (hoy un incidente de disco cuesta hasta 24 h, que es el intervalo del backup nocturno) y liberar los 1536 MiB que reserva prod. En contra: es un ciclo entero de spec, plan e implementación que rehace backups, `verify-infra.sh`, los tres compose y `setup-db-roles.sh` sin entregar una sola feature, y el beneficio principal es proporcional a datos de clientes que todavía no existen. Se decidió seguir con Postgres propio para el MVP. **Lo que hace reconsiderarlo**: que haya clientes reales facturando adentro. **Lo que NO lo bloquea**: el schema, el modelo de RLS y el `tenant_id` son independientes del proveedor, y el camino de migración es `pg_dump` → `pg_restore`, que ya está escrito y verificado — así que mudarse sigue siendo barato después. **Mitigación mientras tanto**: subir la frecuencia del backup, que ataca el 80 % del riesgo con un cambio chico sobre un script probado.
 - **SQLite en dev con Postgres en producción**: descartado. Dejaría el aislamiento entre tenants probado en ningún lado salvo producción: SQLite no tiene RLS (se caen `test/rls.test.ts` y `test/rls-cobertura.test.ts`), no tiene roles (`arandano_owner` / `arandano_app`, los `GRANT` y los default privileges), y no tiene GUCs de sesión, que es el mecanismo con el que `lib/tenant/prisma.ts` ata el cliente al tenant. Además Prisma lleva un historial de migraciones por provider, así que el SQL que corre en prod no se ejecutaría nunca en dev — exactamente el modo de falla del bloqueante 9.
+- **Clerk** (autenticación gestionada como tercero): evaluado en el ciclo de autenticación (2026-08-10) y descartado. Resuelve bien lo aburrido —login, contraseñas, sesiones, todo listo—, pero pone un tercero en el camino de cobrar: si Clerk tiene un incidente, un local no puede abrir el punto de venta aunque Postgres y el resto de la app estén sanos. Cobra por organización activa, US$1 por tenant por mes pasadas las primeras 100, contra comercios argentinos que facturan en pesos — el costo escala justo con lo que más queremos escalar. Y no ahorra la parte difícil: el chequeo de "esta persona pertenece al tenant de este `Host`" sigue siendo código nuestro sobre RLS de todos modos, con o sin Clerk; y si su cookie se setea en `.arandano.app`, ese chequeo pasa de importante a load-bearing, porque la sesión sería válida en todos los subdominios por diseño. Se prefirió Better Auth: self-hosted, en el propio Postgres, con el mismo `tenant_id`. Ver `docs/superpowers/specs/2026-08-10-autenticacion-design.md`.
 
 ## Riesgos conocidos
 
@@ -311,13 +312,11 @@ Y del producto:
   `docs/superpowers/specs/2026-08-07-diagrama-schema-design.md`.
 - Definir el schema del módulo de órdenes de trabajo (`OrdenDeTrabajo` y sus estados), en `modules/ordenes-de-trabajo/`, con el mismo `tenant_id` y las mismas policies de RLS.
 - Definir el registry de módulos y los puntos de extensión del núcleo: navegación, tipos de artículo, `crearVentaDesde`, movimientos de stock, intents del bot, jobs de pg-boss, vistas del catálogo público y datos demo.
-- **Inicializar shadcn/ui, que hoy está a medias.** El CLI ya está en
-  `devDependencies` (`shadcn` 4.16.1), pero **nunca se corrió**: no hay Tailwind,
-  ni `components.json`, ni las variables de tema en `app/globals.css`. O sea que
-  la dependencia está y la infraestructura no, que es el peor de los dos estados
-  — parece resuelto y no lo está. Adoptarlo de verdad implica sumar Tailwind
-  (shadcn 4.x apunta a Tailwind v4) y correr el init. Va en el primer ciclo que
-  construya interfaz, no antes: hoy la app no tiene ni una pantalla.
+- ~~Inicializar shadcn/ui, que hoy está a medias.~~ **Hecho** (2026-08-10, en
+  el ciclo de autenticación): Tailwind v4 sumado, `components.json` armado y
+  las variables de tema en `app/globals.css`, con los cinco componentes que
+  usa la pantalla de login. Fue el primer ciclo que construyó interfaz, que
+  es lo que este ítem pedía esperar.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~
@@ -326,7 +325,12 @@ Y del producto:
   Postgres — ver `docs/superpowers/specs/2026-08-08-resolucion-tenant-design.md`.
   Incluye el alta de tenant (`npm run tenant:crear`) y el check de aislamiento
   del healthcheck.
-- Configurar Auth.js.
+- ~~Configurar Auth.js.~~ **Hecho** (2026-08-10), con Better Auth y no con
+  Auth.js — ver la fila *Autenticación* de la tabla de stack más arriba y
+  *Opciones evaluadas y descartadas* para el porqué. Usuario y contraseña por
+  tenant, guard de sesión en el núcleo, alta/reseteo/baja de usuarios sin
+  dejar nunca un local sin dueño. Ver
+  `docs/superpowers/specs/2026-08-10-autenticacion-design.md`.
 - Configurar `pg-boss` para las tareas en background (seguimientos automáticos, pedido de reseñas, webhooks del bot).
 - Aislar la integración con la Cloud API de Meta (WhatsApp/Instagram) en su propio módulo.
 - Aislar la emisión de facturas ARCA (`afip.js`) detrás de una interfaz propia.
@@ -355,6 +359,20 @@ Y del producto:
    destructivas.~~ **Hecho** (2026-08-06). Ver
    `docs/superpowers/specs/2026-08-06-deploy-design.md` y la sección *Deploy y
    rollback* de `docs/runbook-stacks.md`.
+4. **`npm run usuario:clave` está roto, y es el único camino para darle una
+   contraseña a un dueño.** Hallazgo de la verificación manual de Task 11
+   (2026-08-10): el comando documentado en *Definir la contraseña de un
+   usuario* de `docs/runbook-stacks.md` sale con `ERR_MODULE_NOT_FOUND` antes
+   de tocar la base — `node` pelado no resuelve el alias `@/`
+   (`lib/auth/para-tenant.ts`), y un nivel más adentro el cliente de Prisma
+   generado usa imports relativos sin extensión, que tampoco resuelven bajo
+   Node ESM nativo. Sin arreglarlo, **no hay forma de poner en producción la
+   contraseña del dueño de un tenant nuevo** — el alta queda a mitad de
+   camino. El resto del ciclo (guard, login, RBAC) está verificado y sano;
+   el detalle completo, por qué `tenant:crear` no tiene este problema, y por
+   qué ningún test existente lo agarra, están en el runbook. Bloquea el
+   primer tenant real, no el deploy en sí — el gate y el resto de esta task
+   están al día igual.
 
 ### Bloqueantes antes del cutover de DNS
 
