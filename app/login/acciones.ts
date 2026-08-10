@@ -56,6 +56,13 @@ export async function entrar(_estado: EstadoLogin, datos: FormData): Promise<Est
   const db = prismaParaTenant(resolucion.tenant.id)
   const usuario = await db.user.findFirst({ where: { email } })
   if (usuario?.desactivadoEn) {
+    // nextCookies() ya escribió la cookie de sesión como efecto del
+    // signInEmail de arriba —antes de que este chequeo corriera—, así que el
+    // navegador se va a ir con una cookie que apunta a una sesión que acá
+    // abajo borramos del lado del servidor. Es inofensivo: sesionActual()
+    // no encuentra la fila y la trata como sin sesión en el request
+    // siguiente (ver lib/auth/sesion.ts). Pero es lo que explica ver, en la
+    // pestaña de red, un Set-Cookie en la misma respuesta que este error.
     await db.session.deleteMany({ where: { userId: usuario.id } })
     return { error: 'Tu usuario está desactivado. Pedile al dueño que lo reactive.' }
   }
