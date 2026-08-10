@@ -1,4 +1,3 @@
-import { APIError } from 'better-auth'
 import { authParaTenant } from '@/lib/auth/para-tenant'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { enTransaccionDeTenant } from '@/lib/tenant/transaccion'
@@ -53,8 +52,9 @@ function validarLargoDeClave(clave: string, config: { minPasswordLength: number;
  *
  * Pasa por signUpEmail y no por un insert propio porque el hash tiene que
  * salir de Better Auth: es la única forma de que el algoritmo viva en un solo
- * lugar. El precio es que devuelve una sesión, que se descarta — el dueño no
- * puede terminar navegando como el empleado que acaba de crear.
+ * lugar. Ese alta ya NO emite sesión — `emailAndPassword.autoSignIn: false` en
+ * OPCIONES_BASE, donde está explicado el porqué largo: con el default, la
+ * cookie del empleado nuevo terminaba escrita en la respuesta del DUEÑO.
  *
  * El `rol` se escribe DESPUÉS y no en el alta: está declarado con `input:false`
  * justamente para que no se pueda mandar desde afuera.
@@ -62,10 +62,13 @@ function validarLargoDeClave(clave: string, config: { minPasswordLength: number;
  * No corre dentro de `enTransaccionDeTenant`: el paso de en medio
  * (`signUpEmail`) hace su propia escritura vía Better Auth, sobre una
  * conexión que este código no controla, así que no hay una única transacción
- * posible que lo cubra entero. Si el proceso muere entre el alta y el
- * `update` del rol, queda un usuario con rol EMPLEADO (el default del schema)
- * donde se pedía un DUENO — un fallo real, pero angosto y fuera del alcance
- * de esta task; queda anotado para la review, no resuelto acá.
+ * posible que lo cubra entero. Como la Task 10 shippeó un `<select>` que
+ * ofrece **Dueño**, ese hueco dejó de ser teórico: un fallo entre el alta y el
+ * `update` dejaría un EMPLEADO donde se pidió un DUENO, y el llamador vería
+ * una excepción que sugiere que no se creó nada. La salida, mientras no haya
+ * una transacción que abarque las dos escrituras, es compensar — ver el catch
+ * de más abajo: si el rol no se puede escribir, la fila recién creada se
+ * borra, y entonces la excepción que llega arriba dice la verdad.
  */
 export async function crearEmpleado(entrada: EntradaCrearEmpleado): Promise<{ id: string }> {
   const auth = authParaTenant(entrada.tenantId, entrada.origen)
@@ -91,35 +94,52 @@ export async function crearEmpleado(entrada: EntradaCrearEmpleado): Promise<{ id
     throw new ErrorDeUsuario('MAIL_REPETIDO', `ya hay alguien con el mail ${email} en este local`)
   }
 
-  let id: string
+  // Sin try/catch alrededor: con `autoSignIn: false`, un mail duplicado ya no
+  // sale por una excepción con código propio (era
+  // USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL, que se traducía acá). Cualquier
+  // excepción que tire este alta es "otra cosa" —Postgres caído, una policy de
+  // RLS que rechaza, una validación de la librería— y sube tal cual: traducir
+  // todo a MAIL_REPETIDO le mostraría al dueño "ya hay alguien con ese mail"
+  // ante cualquier falla, probaría con otra dirección y chocaría con el mismo
+  // veredicto falso.
+  const alta = await auth.api.signUpEmail({
+    body: { email, password: entrada.clave, name: entrada.nombre },
+  })
+
+  // El duplicado ahora se reconoce por acá. Con `autoSignIn: false`, un alta
+  // sobre un mail que ya existe NO falla: devuelve un usuario SINTÉTICO —id
+  // inventado por la librería, sin fila en ninguna tabla— para no delatar por
+  // el tiempo de respuesta que la dirección ya estaba registrada
+  // (sign-up.mjs, `shouldReturnGenericDuplicateResponse`). Medido contra la
+  // versión instalada, ver el reporte de la review final.
+  //
+  // La señal es comparar el id devuelto contra la fila que hay de verdad, y no
+  // la FORMA del id sintético (que hoy ni siquiera es un uuid, pero eso es un
+  // detalle de qué generador usa la librería) ni el resultado de escribir
+  // sobre él (un update con un id que no es uuid ni llega a "cero filas": lo
+  // rechaza el driver). Este camino sólo se alcanza por la carrera contra el
+  // chequeo de más arriba, así que es raro; el precio es un SELECT en el alta.
+  const creado = await db.user.findFirst({ where: { email } })
+  if (!creado || creado.id !== alta.user.id) {
+    throw new ErrorDeUsuario('MAIL_REPETIDO', `ya hay alguien con el mail ${email} en este local`)
+  }
+
   try {
-    const alta = await auth.api.signUpEmail({
-      body: { email, password: entrada.clave, name: entrada.nombre },
-    })
-    id = alta.user.id
+    await db.user.update({ where: { id: creado.id }, data: { rol: entrada.rol } })
   } catch (e) {
-    // El duplicado YA se descartó arriba: si el signUpEmail igual falla, la
-    // causa normal NO es un mail repetido (eso sería la carrera del comentario
-    // de arriba, que Better Auth reporta con este código puntual) sino
-    // cualquier otra cosa — Postgres caído, una policy de RLS que rechaza, una
-    // validación de la librería que el chequeo local no anticipó. Traducir
-    // TODO a MAIL_REPETIDO le mostraría al dueño "ya hay alguien con ese mail"
-    // ante cualquier falla; probaría con otra dirección y chocaría con el
-    // mismo veredicto falso. Sólo se traduce el código exacto que usa
-    // sign-up.mjs para esto (BASE_ERROR_CODES.USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL);
-    // cualquier otra cosa se relanza tal cual.
-    if (e instanceof APIError && e.body?.code === 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL') {
-      throw new ErrorDeUsuario('MAIL_REPETIDO', `ya hay alguien con el mail ${email} en este local`)
-    }
+    // Compensación, no prolijidad: la fila ya existe con el rol por default
+    // (EMPLEADO), y si acá se pedía DUENO, dejarla sería peor que no haberla
+    // creado — el llamador recibe una excepción que dice "no se creó nada" y
+    // en la lista aparecería alguien que nadie pidió, con el rol equivocado.
+    // Borrarla es seguro: recién nace, no puede tener ventas ni movimientos
+    // que la referencien, y su fila de `accounts` se va con ella por el
+    // onDelete: Cascade del schema. Si el borrado también falla, sube el error
+    // original —que es el que describe qué pasó— y no el de la compensación.
+    await db.user.delete({ where: { id: creado.id } }).catch(() => {})
     throw e
   }
 
-  // La sesión que devolvió el alta se descarta: no es de quien está operando.
-  await db.session.deleteMany({ where: { userId: id } })
-
-  await db.user.update({ where: { id }, data: { rol: entrada.rol } })
-
-  return { id }
+  return { id: creado.id }
 }
 
 export async function resetearClave(entrada: {

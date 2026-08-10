@@ -68,8 +68,11 @@ describe('alta de empleado', () => {
   })
 
   it('el alta NO deja logueado al empleado nuevo', async () => {
-    // signUpEmail devuelve una sesión. Si se dejara pasar, el dueño terminaría
-    // navegando como el empleado que acaba de crear.
+    // Contar filas de `sessions` es la mitad barata del asunto, y sola no
+    // alcanzaba: mientras el alta emitía sesión y `crearEmpleado` la borraba
+    // después, este conteo daba igual y el test pasaba. Lo que no podía ver es
+    // el `Set-Cookie` que el alta metía en el camino — ver el test de abajo,
+    // que es el que cubre esa mitad.
     const antes = await owner.query('SELECT count(*)::int n FROM sessions WHERE tenant_id = $1', [tenantId])
     await administrar.crearEmpleado({
       tenantId, origen: ORIGEN,
@@ -77,6 +80,67 @@ describe('alta de empleado', () => {
     })
     const despues = await owner.query('SELECT count(*)::int n FROM sessions WHERE tenant_id = $1', [tenantId])
     expect(despues.rows[0].n).toBe(antes.rows[0].n)
+  })
+
+  /**
+   * El hallazgo que el conteo de filas de arriba no podía ver.
+   *
+   * `nextCookies()` (lib/auth/para-tenant.ts) corre para CUALQUIER llamada a
+   * `auth.api.*`, no sólo para el router, y escribe en la respuesta de la
+   * server action en curso todo `Set-Cookie` que la operación produzca. El
+   * alta de un empleado corre adentro de la action del DUEÑO: con el alta
+   * emitiendo sesión, la cookie del empleado nuevo —con el MISMO nombre que
+   * la del login— se escribía sobre la del dueño, que después quedaba
+   * apuntando a una fila que `crearEmpleado` borraba. Neto: al dueño lo
+   * mandaba a /login; si ese borrado fallaba, seguía navegando como el
+   * empleado que acababa de crear, y `ventas.usuario_id` empezaba a atribuirle
+   * el trabajo a la persona equivocada.
+   *
+   * Fuera de un scope de request el plugin se traga el error de `cookies()` y
+   * no deja rastro, así que lo que se afirma acá es lo que sí es observable
+   * desde un test: que la respuesta del camino administrativo no lleva
+   * `set-cookie`. Si no la lleva, no hay nada que el plugin pueda escribirle
+   * encima a nadie.
+   */
+  it('el alta administrativa no emite cookie de sesión', async () => {
+    const r = await authParaTenant(tenantId, ORIGEN).api.signUpEmail({
+      body: { email: 'sincookie@ejemplo.test', password: CLAVE, name: 'Sin cookie' },
+      asResponse: true,
+    })
+    expect(r.status).toBe(200)
+    expect(
+      r.headers.get('set-cookie'),
+      'el alta emite cookie: nextCookies() se la escribe al dueño en la respuesta de su propia action',
+    ).toBeNull()
+  })
+
+  /**
+   * El rol se escribe en un paso aparte del alta (no hay transacción que
+   * abarque las dos escrituras: la del medio la hace Better Auth sobre una
+   * conexión que este código no controla). Mientras el único llamador era un
+   * test daba igual; con el `<select>` que ofrece **Dueño** en /usuarios, un
+   * fallo entre los dos pasos dejaría un EMPLEADO donde se pidió un DUENO
+   * mientras el llamador ve una excepción que suena a "no se creó nada".
+   *
+   * La falla se inyecta con un rol que la base no acepta —es el único punto
+   * de este camino que se puede romper a pedido sin tocar la implementación—
+   * y lo que se afirma es lo que le importa a quien llama: que después de la
+   * excepción no haya quedado nadie.
+   */
+  it('si el rol no se puede escribir, no deja un usuario a medias', async () => {
+    const email = 'amedias@ejemplo.test'
+    await expect(
+      administrar.crearEmpleado({
+        tenantId, origen: ORIGEN,
+        nombre: 'A medias', email, clave: CLAVE, rol: 'GERENTE' as 'EMPLEADO',
+      }),
+    ).rejects.toThrow()
+
+    const { rows } = await owner.query(
+      'SELECT id FROM users WHERE tenant_id = $1 AND email = $2',
+      [tenantId, email],
+    )
+    expect(rows, 'quedó el usuario creado con el rol equivocado, y el llamador cree que no se creó nada').toHaveLength(0)
   })
 })
 

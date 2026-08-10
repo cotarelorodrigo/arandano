@@ -95,6 +95,27 @@ export const OPCIONES_BASE = {
     // dejaría a todo el mundo afuera.
     requireEmailVerification: false,
     minPasswordLength: 8,
+    // Un alta NO deja logueado a nadie, y eso importa porque en este producto
+    // el alta la hace SIEMPRE otra persona: el dueño, desde /usuarios. Con el
+    // default (true), `signUpEmail` emite una sesión y un `Set-Cookie` con el
+    // MISMO nombre de cookie que el del login; el plugin nextCookies() —que
+    // corre para cualquier llamada a `auth.api.*`, no sólo para el router— la
+    // escribía en la respuesta de la server action del DUEÑO. O sea: dar de
+    // alta un empleado le pisaba la cookie al dueño con la sesión del recién
+    // creado. `crearEmpleado` lo tapaba borrando esa fila de sessions después,
+    // y el neto era que el dueño quedaba con una cookie apuntando a una sesión
+    // inexistente y se iba a /login en la navegación siguiente; si ese borrado
+    // hubiera fallado, el dueño seguía navegando COMO el empleado nuevo, y
+    // `ventas.usuario_id` empezaba a atribuirle trabajo a la persona
+    // equivocada.
+    //
+    // Efecto colateral medido y aceptado (sign-up.mjs,
+    // `shouldReturnGenericDuplicateResponse`): con autoSignIn en false, un mail
+    // duplicado deja de tirar USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL y devuelve
+    // un usuario SINTÉTICO, con un id inventado y sin fila en la base. Quien
+    // llama tiene que saberlo — ver `crearEmpleado`, que lo detecta comparando
+    // ese id contra la fila que hay de verdad.
+    autoSignIn: false,
   },
   session: {
     expiresIn: SEGUNDOS_DE_SESION,
