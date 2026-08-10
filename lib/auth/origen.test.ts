@@ -38,6 +38,26 @@ describe('origenDelRequest', () => {
     expect(await correr('flor')).toBe('https://flor.arandano.app')
   })
 
+  it('acepta http explícito por la lista blanca', async () => {
+    getHeader.mockImplementation((n: string) => (n === 'x-forwarded-proto' ? 'http' : null))
+    expect(await correr('flor')).toBe('http://flor.arandano.app')
+  })
+
+  it('sin el header, cae a http', async () => {
+    getHeader.mockReturnValue(null)
+    expect(await correr('flor')).toBe('http://flor.arandano.app')
+  })
+
+  // El caso que prueba el arreglo: quien alcanza la app sin pasar por Caddy
+  // (en dev, directo por la IP de Tailscale) puede mandar cualquier valor en
+  // x-forwarded-proto. Sin lista blanca, cada valor inventado arma un origen
+  // distinto y una clave de caché nueva en authParaTenant — el mismo ataque
+  // que el puerto, mudado al protocolo.
+  it('un protocolo inventado cae a http, no se cuela', async () => {
+    getHeader.mockImplementation((n: string) => (n === 'x-forwarded-proto' ? 'loquesea' : null))
+    expect(await correr('flor')).toBe('http://flor.arandano.app')
+  })
+
   // El punto entero del cambio obligatorio: el Host crudo puede traer un
   // puerto arbitrario (`flor.arandano.app:9999`) que igual resuelve al mismo
   // tenant (subdominioDeHost lo descarta), pero infla la clave de caché de

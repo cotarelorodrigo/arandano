@@ -37,8 +37,16 @@ import { headers } from 'next/headers'
  * navegador — sin volver a leer el Host, que es justo el camino que abre el
  * ataque de arriba.
  *
- * Con las dos mitades armadas así, el conjunto de orígenes posibles por
- * tenant queda en dos (http y https), no infinito.
+ * El protocolo es la tercera pieza de la misma familia de ataque, y por eso
+ * tampoco se toma crudo: sale de una lista blanca de dos valores en vez de
+ * `x-forwarded-proto` directo (detalle en el comentario de más abajo, junto
+ * a donde se arma).
+ *
+ * Con las tres piezas armadas así —subdominio resuelto, puerto de
+ * configuración, protocolo por lista blanca—, el conjunto de orígenes
+ * posibles por tenant queda en dos (http y https), no infinito, y esa
+ * propiedad vale en TODOS los entornos, no sólo en producción detrás de
+ * Caddy.
  */
 export async function origenDelRequest(subdominio: string): Promise<string> {
   const dominioBase = process.env.DOMINIO_BASE
@@ -48,9 +56,23 @@ export async function origenDelRequest(subdominio: string): Promise<string> {
     )
   }
 
-  // El protocolo sí sale del request: en producción lo pone Caddy al hacer
-  // proxy por HTTPS. `host` nunca se lee acá — ver el porqué arriba.
-  const protocolo = (await headers()).get('x-forwarded-proto') ?? 'http'
+  // El protocolo sí sale del request, pero por lista blanca y no por el
+  // valor crudo: quien alcanza la app sin pasar por Caddy —en dev, directo
+  // por la IP de Tailscale, sin proxy delante— puede mandar
+  // x-forwarded-proto con cualquier valor. Sin la lista blanca, cada valor
+  // inventado arma un origen distinto y una clave de caché nueva en
+  // authParaTenant: el mismo ataque que el puerto (ver el comentario de
+  // arriba), mudado al protocolo. En producción Caddy es el único camino de
+  // entrada y siempre lo reescribe a algo válido, así que esto no le cambia
+  // nada — la lista blanca sólo cierra el camino que dev deja abierto.
+  //
+  // No se toma el primer valor de una lista separada por comas
+  // (`x-forwarded-proto: https, http`, el formato de una cadena de más de un
+  // proxy): hoy hay un solo proxy en el camino, así que ese caso no existe
+  // todavía, y agregar código para manejarlo sería resolver un problema que
+  // no hay.
+  const crudo = (await headers()).get('x-forwarded-proto')
+  const protocolo = crudo === 'https' ? 'https' : 'http'
 
   const puertoPublico = process.env.PUERTO_PUBLICO
   const puerto = puertoPublico ? `:${puertoPublico}` : ''
