@@ -142,47 +142,63 @@ describe('aislamiento de la sesión', () => {
  * quedan `skipped` — lo mismo que hubiera pasado con un archivo lleno de
  * `expect(true).toBe(true)`.
  *
- * Esta prueba muta la POLICY en vez del cliente: afloja sólo el `USING` de
- * lectura de `users` —DESPUÉS de que `beforeAll` ya sembró los dos Juanes—,
- * dejando el `WITH CHECK` de escritura intacto. Es el modo de falla real que
- * este ciclo previene (una policy mal escrita, no un cliente mal armado), y
- * es justo lo que separa a un test con aserciones verificadas de uno que
- * nunca llegó a ejecutarlas.
+ * Esta prueba muta las POLICIES en vez del cliente: afloja el `USING` de
+ * lectura —DESPUÉS de que `beforeAll` ya sembró los dos Juanes—, dejando el
+ * `WITH CHECK` de escritura intacto. Es el modo de falla real que este ciclo
+ * previene (una policy mal escrita, no un cliente mal armado), y es justo lo
+ * que separa a un test con aserciones verificadas de uno que nunca llegó a
+ * ejecutarlas.
+ *
+ * Y afloja LAS DOS, `users` y `accounts`, que es la corrección que trajo la
+ * review final. Aflojando sólo `users`, las dos aserciones titulares del
+ * archivo —"NO entra en el local A con la clave de B" y su simétrica— no se
+ * daban vuelta: el login sigue dando 401, porque Better Auth busca primero el
+ * usuario por mail y DESPUÉS su fila de `accounts` por userId, y esa segunda
+ * búsqueda seguía acotada al tenant. Lo único observable era que se rompía el
+ * login legítimo, que es una señal mucho más débil — y no la que estos tests
+ * dicen estar cubriendo. Con las dos flojas, el cruce de credenciales entre
+ * locales SÍ pasa (200), que es el modo de falla realista: un cliente sin GUC
+ * afecta a todas las tablas a la vez, no a una sola.
  */
 describe('el aislamiento roto se detecta (Step 6)', () => {
-  it('con la policy de lectura de users aflojada, el login legítimo de B deja de entrar', async () => {
-    await owner.query('ALTER POLICY "tenant_aislamiento" ON users USING (true)')
+  const AFLOJAR = 'ALTER POLICY "tenant_aislamiento" ON %s USING (true)'
+  const RESTAURAR =
+    `ALTER POLICY "tenant_aislamiento" ON %s
+       USING (tenant_id = nullif(current_setting('arandano.tenant_id', true), '')::uuid)`
+
+  it('con las policies de lectura de users y accounts aflojadas, se entra en un local con la clave del otro', async () => {
+    await owner.query(AFLOJAR.replace('%s', 'users'))
+    await owner.query(AFLOJAR.replace('%s', 'accounts'))
     try {
       // Sin el USING acotado por tenant, la búsqueda por mail de Better Auth
       // encuentra CUALQUIER fila con ese email — en la práctica, siempre la
       // de A, que es la que quedó insertada primero (sin ORDER BY, Postgres
-      // devuelve la misma fila en ambos sentidos). El síntoma NO es el que
-      // se podría suponer a primera vista ("B entra con la clave de A"):
-      // Better Auth busca el usuario por mail y DESPUÉS busca su cuenta de
-      // credenciales por userId, y esa segunda búsqueda —contra `accounts`,
-      // cuya policy esta prueba no toca— sigue acotada al tenant de la
-      // sesión. Como el usuario que encontró es el de A pero la sesión es de
-      // B, esa cuenta no aparece nunca ("Credential account not found"), y
-      // el resultado es 401 tanto con CLAVE_A como con CLAVE_B.
-      //
-      // La señal real y observable es la inversa: el login LEGÍTIMO de B dejó
-      // de entrar. Con la policy intacta esto es 200 (ver el test "entra en
-      // el local B con la clave de B", arriba); acá, con la policy floja,
-      // es 401. Ese flip —200 a 401 para la MISMA llamada— es lo que prueba
-      // que el aislamiento roto se detecta.
-      expect(await entrar(tenantB, CLAVE_B)).toBe(401)
+      // devuelve la misma fila en ambos sentidos). Y con `accounts` también
+      // floja, su credencial aparece: parado en el local B, con la clave del
+      // local A, se entra. Ésa es exactamente la aserción titular de más
+      // arriba ("NO entra en el local B con la clave de A") dada vuelta, que
+      // es lo que este Step tiene que demostrar.
+      expect(
+        await entrar(tenantB, CLAVE_A),
+        'las policies flojas no cambiaron nada: entonces las aserciones de arriba no prueban lo que dicen',
+      ).toBe(200)
     } finally {
-      // El ALTER de arriba tocó sólo USING; WITH CHECK no se mencionó, así
+      // Los ALTER de arriba tocaron sólo USING; WITH CHECK no se mencionó, así
       // que sigue siendo el original y no hace falta restaurarlo. Alcanza
       // con devolverle a USING la expresión de
-      // prisma/migrations/20260804205911_inicial/migration.sql. El finally
-      // corre incluso si algún expect de arriba tira, así que la policy
-      // vuelve a quedar cerrada para el resto de la suite pase lo que pase.
-      await owner.query(
-        `ALTER POLICY "tenant_aislamiento" ON users
-           USING (tenant_id = nullif(current_setting('arandano.tenant_id', true), '')::uuid)`,
-      )
+      // prisma/migrations/20260804205911_inicial/migration.sql (users) y
+      // 20260810131312_autenticacion/migration.sql (accounts). El finally
+      // corre incluso si algún expect de arriba tira, así que las policies
+      // vuelven a quedar cerradas para el resto de la suite pase lo que pase.
+      await owner.query(RESTAURAR.replace('%s', 'users'))
+      await owner.query(RESTAURAR.replace('%s', 'accounts'))
     }
+  })
+
+  it('y con las policies restauradas vuelve a rebotar', async () => {
+    // El cierre del finally de arriba no es decorativo: si la restauración no
+    // funcionara, el resto de la suite correría sin aislamiento y en verde.
+    expect(await entrar(tenantB, CLAVE_A)).toBe(401)
   })
 })
 
