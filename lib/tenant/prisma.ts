@@ -1,7 +1,12 @@
 import { prisma } from '@/lib/db'
 
-/** Modelos que llevan tenant_id y por lo tanto se les puede autocompletar. */
-const MODELOS_CON_TENANT = new Set(['User', 'Cliente', 'Articulo', 'TenantModule'])
+/** Modelos que llevan tenant_id y por lo tanto se les puede autocompletar.
+ *  Session, Account y Verification son de Better Auth: la librería no sabe que
+ *  existe el tenant, así que el tenant_id de sus filas lo pone esta extensión. */
+const MODELOS_CON_TENANT = new Set([
+  'User', 'Cliente', 'Articulo', 'TenantModule',
+  'Session', 'Account', 'Verification',
+])
 
 /** Operaciones que escriben filas nuevas. */
 const OPERACIONES_DE_ALTA = new Set(['create', 'createMany', 'createManyAndReturn', 'upsert'])
