@@ -628,10 +628,14 @@ import { OPCIONES_BASE } from './opciones'
 type Auth = ReturnType<typeof betterAuth>
 
 /**
- * Tope de la memoización. Una instancia por tenant activo; los locales que no
- * reciben tráfico se caen solos. El número no es crítico: si se queda corto se
- * reconstruye alguna instancia de más, que es exactamente el costo que había
- * sin memoizar.
+ * Tope de la memoización. Una instancia por tenant activo.
+ *
+ * Desalojar una instancia NO es gratis, y por eso el desalojo es por uso y no
+ * por inserción: el contador del rate limit de `/sign-in/email` vive en memoria
+ * ADENTRO de la instancia (`storage: 'memory'` en OPCIONES_BASE), así que tirarla
+ * reinicia el único freno contra la fuerza bruta que tiene el login. Con
+ * desalojo por uso, el local que está siendo atacado se mantiene caliente por el
+ * tráfico del propio atacante y su contador no se puede reiniciar por desalojo.
  */
 const TOPE = 200
 
@@ -660,7 +664,13 @@ export function authParaTenant(tenantId: string, origen: string): Auth {
   const clave = `${tenantId}|${origen}`
 
   const guardada = cache.get(clave)
-  if (guardada) return guardada
+  if (guardada) {
+    // Reinsertar la mueve al final: es lo que convierte el desalojo en "por uso"
+    // en vez de "por orden de inserción". Ver el porqué en el comentario de TOPE.
+    cache.delete(clave)
+    cache.set(clave, guardada)
+    return guardada
+  }
 
   const auth = betterAuth({
     ...OPCIONES_BASE,
