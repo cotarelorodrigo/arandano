@@ -324,6 +324,19 @@ Y del producto:
   las variables de tema en `app/globals.css`, con los cinco componentes que
   usa la pantalla de login. Fue el primer ciclo que construyó interfaz, que
   es lo que este ítem pedía esperar.
+- **Definir el sistema de diseño, en su propio archivo.** Hoy la aplicación usa
+  la paleta neutra que trae shadcn por defecto: no tiene marca, y ninguna
+  decisión de color, tipografía o espaciado está escrita en ningún lado. La
+  referencia es **el color de un arándano** — el azul-violeta profundo de la
+  fruta, con el gris pálido de su "bloom" como secundario natural. El archivo
+  tiene que ser la fuente de verdad de los tokens que ya viven en
+  `app/globals.css`, no un documento paralelo que se desincronice: si declara un
+  color, ése es el que está en el CSS.
+
+  Va **antes** del ABM de artículos y del punto de venta, no después: son las
+  pantallas que van a fijar el lenguaje visual del producto, y rehacerlas es más
+  caro que decidir la paleta primero. Hoy sólo existen el login y la de usuarios,
+  así que es el momento más barato que va a haber.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~
