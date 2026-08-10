@@ -219,12 +219,34 @@ el gate seguir en verde, y todo cliente recibir un `no certificate available`.
    Encrypt no puede verificar una zona que no está delegada.
 2. Buildear la imagen y dejar el token en el `.env`.
 3. Caddyfile con el bloque nuevo, **apuntando al staging de Let's Encrypt**
-   (`acme_ca https://acme-staging-v02.api.letsencrypt.org/directory` dentro del
-   bloque `tls`).
+   (`ca https://acme-staging-v02.api.letsencrypt.org/directory` dentro del bloque
+   `tls`). Es `ca` y **no** `acme_ca`: esta última existe, pero sólo como opción
+   global del Caddyfile, y adentro de un `tls {}` de site block `caddy validate`
+   la rechaza con `unknown subdirective: acme_ca`.
 4. Copiar el Caddyfile a `/srv/arandano/prod/`, recargar, y verificar que emite.
-   Acá se valida la cadena entera —plugin, token, permisos sobre la zona,
-   propagación, site block— sin gastar un solo intento del límite real.
-5. Sacar el `acme_ca` de staging. Emite el certificado bueno.
+   Acá se valida la cadena entera —plugin, token, permisos, propagación, site
+   block— sin gastar un solo intento del límite real.
+5. Sacar el `ca` de staging **y borrar el certificado de staging del almacén**.
+   Las dos cosas, y la segunda es la que realmente emite.
+
+   Cambiar el emisor no dispara ninguna reemisión. Caddy guarda los certificados
+   en un directorio por emisor y, con el de staging vigente 90 días, al recargar
+   no encuentra razón para pedir otro: `caddy validate` pasa, el reload pasa, no
+   aparece ningún `tls.obtain`, y el puerto 443 sigue entregando el certificado
+   de staging con la configuración de producción ya activa. Es un falso verde
+   completo — todo lo que se mira da bien y lo único que importa, lo que el
+   cliente recibe, no cambió.
+
+   Lo que fuerza la emisión es borrar el directorio del emisor viejo
+   (`/data/caddy/certificates/acme-staging-v02.api.letsencrypt.org-directory`) y
+   reiniciar. Se borra **sólo** ese: `certificates/local/localhost` y
+   `pki/authorities/local` sostienen el site block `localhost:443`, que es por
+   donde el gate del deploy verifica producción.
+
+   Y al leer el log de la emisión, mirar el campo `"level"`, no la palabra
+   `error`: Caddy emite líneas `"level":"info"` que contienen un campo `error`
+   para explicar por qué está creando la cuenta ACME. Un grep por `error` a secas
+   las reporta como fallo.
 6. **Recién ahora** entran los dos chequeos del gate. Contra un certificado de
    staging fallarían, porque no lo firma una CA pública — agregarlos antes sería
    dejar el gate en rojo por diseño.

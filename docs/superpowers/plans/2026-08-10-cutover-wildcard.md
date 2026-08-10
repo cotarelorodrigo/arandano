@@ -521,7 +521,37 @@ cp docker/Caddyfile /srv/arandano/prod/Caddyfile
 
 Expected: `Valid configuration` y el reload sin error.
 
-- [ ] **Step 3: Esperar la emisión real y confirmar el emisor**
+- [ ] **Step 3: Borrar el certificado de staging del almacén — sin esto no se emite nada**
+
+Cambiar el emisor **no** dispara una reemisión. Caddy guarda los certificados en
+un directorio por emisor y, con el de staging todavía vigente (90 días), al
+recargar no ve ninguna razón para pedir otro: el log dice `config is unchanged`
+o carga limpio, no aparece ningún `tls.obtain`, y el puerto 443 sigue sirviendo
+staging con la configuración nueva ya activa. Es un falso verde perfecto —
+`caddy validate` pasa, el reload pasa, y el certificado que ve el cliente no
+cambió.
+
+```bash
+cd /srv/arandano/prod
+docker compose exec -T caddy tar -cf - -C /data/caddy \
+  certificates/acme-staging-v02.api.letsencrypt.org-directory > /var/tmp/caddy-certs-staging.tar
+docker compose exec -T caddy rm -rf \
+  /data/caddy/certificates/acme-staging-v02.api.letsencrypt.org-directory
+docker compose exec -T caddy ls /data/caddy/certificates/ /data/caddy/pki/authorities/
+docker compose restart caddy
+```
+
+Se borra **sólo** el directorio del emisor de staging. `certificates/local/localhost`
+y `pki/authorities/local` tienen que seguir ahí: es de lo que depende el site
+block `localhost:443` por donde el gate del deploy verifica producción, y por eso
+el `ls` va antes del restart y no después.
+
+- [ ] **Step 4: Esperar la emisión real y confirmar el emisor**
+
+Al leer el log, mirá el campo `"level"` y no la palabra `error`: Caddy emite
+líneas `"level":"info"` que **contienen** un campo `error` para explicar por qué
+crea la cuenta ACME (`no such file or directory` la primera vez). Un grep por
+`error` a secas las marca como fallo y manda a diagnosticar algo que está bien.
 
 ```bash
 sleep 180
@@ -531,7 +561,7 @@ echo | openssl s_client -connect 127.0.0.1:443 -servername arandano.app 2>/dev/n
 
 Expected: el `issuer` ya **no** dice STAGING, y las fechas cubren unos 90 días.
 
-- [ ] **Step 4: Confirmar que valida SIN `-k`, que es lo único que importa**
+- [ ] **Step 5: Confirmar que valida SIN `-k`, que es lo único que importa**
 
 ```bash
 curl -s --resolve arandano.app:443:127.0.0.1 \
@@ -544,7 +574,7 @@ curl -s --resolve canario.arandano.app:443:127.0.0.1 \
 
 Expected: los dos con `ssl_verify=0`, el apex en `200` y el wildcard en `200`. Sin `-k` y sin `--cacert`: valida contra las CA del sistema, que es lo que hace un navegador.
 
-- [ ] **Step 5: Confirmar que el gate del deploy sigue sano**
+- [ ] **Step 6: Confirmar que el gate del deploy sigue sano**
 
 El bloque `localhost:443` no se tocó, pero conviene comprobarlo antes de sumarle chequeos:
 
@@ -554,7 +584,7 @@ El bloque `localhost:443` no se tocó, pero conviene comprobarlo antes de sumarl
 
 Expected: `0 fallan`, incluidos el `:80 → 308` y el certificado interno de `localhost`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add docker/Caddyfile
