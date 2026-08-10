@@ -11,17 +11,21 @@ async function correr(subdominio: string) {
 }
 
 describe('origenDelRequest', () => {
-  const original = process.env.DOMINIO_BASE
+  const originalDominio = process.env.DOMINIO_BASE
+  const originalPuerto = process.env.PUERTO_PUBLICO
 
   beforeEach(() => {
     vi.resetModules()
     getHeader.mockReset()
     process.env.DOMINIO_BASE = 'arandano.app'
+    delete process.env.PUERTO_PUBLICO
   })
 
   afterEach(() => {
-    if (original === undefined) delete process.env.DOMINIO_BASE
-    else process.env.DOMINIO_BASE = original
+    if (originalDominio === undefined) delete process.env.DOMINIO_BASE
+    else process.env.DOMINIO_BASE = originalDominio
+    if (originalPuerto === undefined) delete process.env.PUERTO_PUBLICO
+    else process.env.PUERTO_PUBLICO = originalPuerto
   })
 
   it('arma el origen desde el subdominio y DOMINIO_BASE, con http de fallback', async () => {
@@ -48,5 +52,20 @@ describe('origenDelRequest', () => {
   it('falla ruidosamente si falta DOMINIO_BASE', async () => {
     delete process.env.DOMINIO_BASE
     await expect(correr('flor')).rejects.toThrow(/DOMINIO_BASE/)
+  })
+
+  // El puerto es dato de la configuración del stack, no del request — leerlo
+  // del Host reabriría el mismo ataque que el test de arriba documenta.
+  it('con PUERTO_PUBLICO definida, el origen lo incluye', async () => {
+    process.env.PUERTO_PUBLICO = '3000'
+    expect(await correr('flor')).toBe('http://flor.arandano.app:3000')
+  })
+
+  // El caso que protege producción: si alguien le pusiera un default a esta
+  // variable, el baseURL de producción (donde PUERTO_PUBLICO no está definida,
+  // porque 443 va implícito en https://) se rompería en silencio.
+  it('sin PUERTO_PUBLICO, el origen no lleva ningún puerto', async () => {
+    expect(await correr('flor')).not.toContain(':3000')
+    expect(await correr('flor')).not.toMatch(/arandano\.app:\d/)
   })
 })
