@@ -156,39 +156,76 @@ describe('desactivar', () => {
   // concurrentes leerían el mismo snapshot (2 dueños activos), las dos
   // pasarían el chequeo, y las dos escribirían — el local se queda sin
   // ninguno, porque cada una actualiza una fila distinta y no hay conflicto
-  // de escritura que las frene. Este test SOLAPA las dos desactivaciones —lo
-  // que un doble click, o dos personas administrando a la vez, produce—; en
-  // secuencia (llamando una y esperando a que termine antes de la otra) nunca
-  // ejercitaría la ventana entre leer y decidir, y daría verde con o sin el
-  // FOR UPDATE. Mismo patrón que "dos anulaciones simultáneas compensan una
-  // sola vez" en test/ventas.test.ts.
-  it('desactivar a los dos únicos dueños en simultáneo deja exactamente uno activo', async () => {
-    const { id: otroDuenio } = await administrar.crearEmpleado({
-      tenantId, origen: ORIGEN,
-      nombre: 'El otro dueño', email: 'otrodueno@ejemplo.test', clave: CLAVE, rol: 'DUENO',
-    })
+  // de escritura que las frene.
+  //
+  // UN SOLO intento —el patrón que ya usa "dos anulaciones simultáneas
+  // compensan una sola vez" en test/ventas.test.ts, y la forma que tenía
+  // este mismo test antes de esta vuelta— NO ALCANZA para detectar este bug
+  // en la práctica, medido: reinstalando la versión rota de `desactivar`
+  // (cuatro transacciones sueltas, sin `FOR UPDATE` — la de 543c59b) y
+  // corriendo un intento único, dio VERDE 7 de 7 veces en procesos nuevos. La
+  // carrera necesita un proceso "caliente" (pool de conexiones ya abierto,
+  // V8 con JIT) para que las dos cadenas de `await` se acerquen lo bastante
+  // en el tiempo; un intento único en un proceso recién arrancado se
+  // serializa solo, por lentitud de arranque, no por ningún lock. Repitiendo
+  // el mismo intento 20 veces DENTRO de un mismo proceso (ya caliente
+  // después de las primeras vueltas) sí lo reprodujo: 16 de 20 (80%)
+  // terminaron con CERO dueños activos.
+  //
+  // Por eso este test repite el intento ITERACIONES veces en vez de una: con
+  // ~80% de detección por vuelta, 10 vueltas bajan la chance de un falso
+  // verde contra código roto a menos de una en diez millones (0.2¹⁰ ≈
+  // 1.02e-7). Si alguna vez alguien lo "simplifica" de vuelta a un intento
+  // único, vuelve a ser lo que la medición de arriba mostró que es:
+  // decoración, no una guarda — un test que puede pasar 7 de 7 veces contra
+  // el bug que dice estar cubriendo.
+  //
+  // Un tenant NUEVO por vuelta (no el `tenantId` compartido del archivo):
+  // reusar uno solo dejaría al ganador de la vuelta anterior como active
+  // DUENO de la vuelta siguiente, y la vuelta siguiente correría con 3
+  // dueños en danza en vez de 2 — más ruido para razonar, sin sumar señal.
+  const ITERACIONES = 10
+  it(`desactivar a los dos únicos dueños en simultáneo nunca deja el local sin ninguno (${ITERACIONES} intentos)`, async () => {
+    for (let i = 0; i < ITERACIONES; i++) {
+      const tenantDeLaVuelta = await crearTenant(owner, `carrera-${Date.now()}-${i}`)
+      const { id: a } = await administrar.crearEmpleado({
+        tenantId: tenantDeLaVuelta, origen: ORIGEN,
+        nombre: 'Dueño A', email: 'a@ejemplo.test', clave: CLAVE, rol: 'DUENO',
+      })
+      const { id: b } = await administrar.crearEmpleado({
+        tenantId: tenantDeLaVuelta, origen: ORIGEN,
+        nombre: 'Dueño B', email: 'b@ejemplo.test', clave: CLAVE, rol: 'DUENO',
+      })
 
-    const resultados = await Promise.allSettled([
-      administrar.desactivar({ tenantId, usuarioId: duenioId }),
-      administrar.desactivar({ tenantId, usuarioId: otroDuenio }),
-    ])
+      const resultados = await Promise.allSettled([
+        administrar.desactivar({ tenantId: tenantDeLaVuelta, usuarioId: a }),
+        administrar.desactivar({ tenantId: tenantDeLaVuelta, usuarioId: b }),
+      ])
 
-    // La que pierde la carrera queda protegida por el MISMO guard que ya
-    // prueba el test de arriba — no por suerte de que Postgres la haya
-    // corrido después. Exactamente una de las dos tiene que rechazar.
-    const rechazados = resultados.filter(
-      (r): r is PromiseRejectedResult => r.status === 'rejected',
-    )
-    expect(rechazados).toHaveLength(1)
-    expect(rechazados[0].reason).toMatchObject({ codigo: 'ULTIMO_DUENO' })
+      // Chequeo de contenido, no el chequeo principal: si alguna de las dos
+      // rechazó, tiene que ser por ULTIMO_DUENO y no por otra cosa que la
+      // carrera esté disparando por accidente.
+      for (const r of resultados) {
+        if (r.status === 'rejected') {
+          expect(r.reason).toMatchObject({ codigo: 'ULTIMO_DUENO' })
+        }
+      }
 
-    // El valor exacto (ni cero ni dos) es justamente el síntoma de la carrera
-    // sin el lock: sobre ese bug, esta cuenta daba 0.
-    const { rows } = await owner.query(
-      'SELECT count(*)::int n FROM users WHERE id = ANY($1) AND desactivado_en IS NULL',
-      [[duenioId, otroDuenio]],
-    )
-    expect(rows[0].n, 'el local se quedó sin dueños activos, o con los dos').toBe(1)
+      // EL INVARIANTE — no el conteo de rechazos de arriba, que es el detalle
+      // de implementación de CÓMO se sostiene el invariante. Un local nunca
+      // puede quedar con cero dueños activos. Bajo el arreglo esto es
+      // determinista —la que pierde la carrera SIEMPRE rechaza, porque el
+      // lock la obliga a releer el estado que la otra ya escribió—, así que
+      // el resultado tiene que ser exactamente 1 en cada una de las
+      // ITERACIONES vueltas, no "como mucho 1": un solo fallo de una sola
+      // vuelta tira todo el test, que es la propiedad que lo vuelve un
+      // regression-test de verdad y no un muestreo con suerte.
+      const { rows } = await owner.query(
+        'SELECT count(*)::int n FROM users WHERE id = ANY($1) AND desactivado_en IS NULL',
+        [[a, b]],
+      )
+      expect(rows[0].n, `vuelta ${i}: el local se quedó sin dueños activos, o con los dos`).toBe(1)
+    }
   })
 })
 
