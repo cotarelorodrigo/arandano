@@ -208,7 +208,17 @@ export async function desactivar(entrada: { tenantId: string; usuarioId: string 
          ORDER BY id
            FOR UPDATE
       `
-      const otrosActivos = duenosActivos.filter((d) => d.id !== entrada.usuarioId)
+      // Contra `usuario.id` —lo que devolvió el findUnique de arriba, ya
+      // canonicalizado por Postgres al castear el literal— y NO contra
+      // `entrada.usuarioId`: Postgres compara `uuid` normalizando mayúsculas,
+      // JS no. Si `desactivar` recibiera un id en mayúsculas (la próxima
+      // task arma la pantalla y ese id sale de un formulario, no de
+      // Postgres), comparar contra el crudo dejaría a `otrosActivos`
+      // conteniéndose a sí mismo —la fila SÍ está en minúsculas en
+      // `duenosActivos`— y la guarda pasaría de largo, desactivando al
+      // último dueño activo: el estado exacto que esta función existe para
+      // impedir.
+      const otrosActivos = duenosActivos.filter((d) => d.id !== usuario.id)
       if (otrosActivos.length === 0) {
         throw new ErrorDeUsuario(
           'ULTIMO_DUENO',
