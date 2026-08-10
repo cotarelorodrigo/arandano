@@ -1394,8 +1394,18 @@ if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
 En `package.json`, junto a `tenant:crear`:
 
 ```json
-    "usuario:clave": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/definir-clave.mts",
+    "usuario:clave": "tsx scripts/definir-clave.mts",
 ```
+
+> Corregido después de escrito el plan (Task 11): acá decía
+> `node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/definir-clave.mts`,
+> y con ese runner el comando **no llegaba a ejecutarse nunca** —
+> `lib/auth/para-tenant.ts` importa `@/lib/tenant/prisma` con el alias de
+> `tsconfig.json`, que `node` pelado no resuelve, así que salía con
+> `ERR_MODULE_NOT_FOUND` antes de tocar la base para cualquier invocación. La
+> Task 11 pasó los dos scripts a `tsx`; el detalle completo, incluidas las
+> alternativas descartadas, está en `docs/runbook-stacks.md` ("Corre con
+> `tsx`, no con `node` pelado").
 
 - [ ] **Step 5: Actualizar el mensaje de `crear-tenant.mts`, que ahora miente**
 
