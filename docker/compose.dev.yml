@@ -47,6 +47,13 @@ services:
       # hablando la app, no sólo que alguna responda.
       ARANDANO_DB_ESPERADA: arandano_dev
       DOMINIO_BASE: dev.arandano.app
+      # El puerto con el que el navegador llega a este stack — dev publica la
+      # app en :3000 (ver el mapeo de `ports` más abajo). Better Auth lo
+      # necesita para armar su `baseURL` (lib/auth/origen.ts): en producción
+      # 443 es implícito en `https://` y esta variable queda SIN DEFINIR ahí
+      # a propósito (ver compose.prod.yml) — ponerle un default acá que se
+      # copiara sin pensar rompería el `baseURL` de prod en silencio.
+      PUERTO_PUBLICO: "3000"
       # El check de tenant del healthcheck resuelve este subdominio con
       # resolver_tenant() y comprueba que RLS filtre en las dos direcciones.
       # El canario de dev se creó a mano con `npm run tenant:crear` (Task 4).

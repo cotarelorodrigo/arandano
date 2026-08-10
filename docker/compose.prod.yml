@@ -32,6 +32,18 @@ services:
       # puede estar mal no comprueba nada.
       ARANDANO_DB_ESPERADA: arandano_prod
       DOMINIO_BASE: arandano.app
+      # PUERTO_PUBLICO NO va acá, a propósito: en producción el sitio se
+      # sirve en 443, implícito en `https://`, así que Better Auth arma su
+      # `baseURL` sin puerto (lib/auth/origen.ts). Ponerle un default —"443"
+      # o cualquier otro— rompería ese `baseURL` en silencio. Ver
+      # compose.dev.yml y compose.stage.yml para los stacks donde sí hace
+      # falta.
+      #
+      # BETTER_AUTH_SECRET tampoco aparece acá: llega por `env_file: .env`,
+      # igual que DATABASE_URL más arriba, que tampoco se restata en este
+      # bloque. Tiene que estar en /srv/arandano/prod/.env antes del próximo
+      # deploy que promueva este código — `scripts/verify-infra.sh env`
+      # comprueba que exista y que no coincida con el de dev.
       # El check de tenant del healthcheck resuelve este subdominio con
       # resolver_tenant() y comprueba que RLS filtre en las dos direcciones.
       # NO hace falta darlo de alta a mano antes del primer deploy que

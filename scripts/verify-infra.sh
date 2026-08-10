@@ -335,6 +335,19 @@ suite_env() {
   prod_url=$(docker exec arandano-prod-app-1 printenv DATABASE_URL 2>/dev/null || echo NA-prod)
   check_ne "dev y prod no comparten DATABASE_URL" "$dev_url" "$prod_url"
 
+  # Es el secreto con el que se firman las sesiones. Compartido entre dev y
+  # prod, una cookie fabricada en dev valdría contra los datos de clientes.
+  local secreto_dev secreto_prod
+  secreto_dev=$(docker exec arandano-dev-app-1 printenv BETTER_AUTH_SECRET 2>/dev/null || echo '')
+  secreto_prod=$(docker exec arandano-prod-app-1 printenv BETTER_AUTH_SECRET 2>/dev/null || echo '')
+
+  # La presencia se chequea aparte y ANTES de compararlos: dos vacíos son
+  # distintos de nada y check_ne los daría por buenos, que es exactamente el
+  # falso verde que este caso existe para evitar.
+  check_cmd "dev tiene BETTER_AUTH_SECRET" test -n "$secreto_dev"
+  check_cmd "prod tiene BETTER_AUTH_SECRET" test -n "$secreto_prod"
+  check_ne "dev y prod no comparten BETTER_AUTH_SECRET" "$secreto_dev" "$secreto_prod"
+
   # Y que cada app sepa contra qué base debe estar hablando: es lo que
   # convierte el check de postgres en una prueba de identidad y no sólo de
   # alcanzabilidad.

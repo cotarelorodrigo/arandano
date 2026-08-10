@@ -39,6 +39,16 @@ services:
       ARANDANO_STACK: ensayo
       ARANDANO_DB_ESPERADA: arandano_ensayo
       DOMINIO_BASE: stage.arandano.app
+      # El puerto con el que se llega a este stack (ver el mapeo de `ports`
+      # más abajo): Better Auth lo necesita para armar su `baseURL`
+      # (lib/auth/origen.ts). Ver compose.dev.yml para el porqué completo, y
+      # compose.prod.yml para por qué prod NO define esta variable.
+      PUERTO_PUBLICO: "3002"
+      # BETTER_AUTH_SECRET NO va acá: llega por `env_file: .env`, igual que
+      # DATABASE_URL (que tampoco se restata en este bloque) — este stack
+      # copia la estructura de compose.prod.yml (ver el comentario del
+      # encabezado), así que su `.env` (en /srv/arandano/ensayo/) necesita la
+      # variable igual que el de prod.
       # Mismos valores que compose.stage.yml: el check de tenant necesita un
       # canario al que apuntar. NO hace falta darlo de alta a mano: el
       # paso 14/18 de deploy.sh lo crea contra el objetivo real (ensayo o
