@@ -180,8 +180,12 @@ el `create` viaje sin `id` y aplique el `@default(uuid(7))` que declara el
 schema. Las tres tablas nuevas se declaran con ese mismo default.
 
 Si en la versión instalada devolver `false` no fuera aceptable para algún
-modelo, la salida es un generador propio que produzca `uuid(7)` — nunca el `v4`
-por default, que es la variante que rompe el orden.
+modelo, la salida es aceptar el `uuid` v4 de la librería. No sería un caso
+nuevo: `scripts/crear-tenant.mts` y `test/datos.ts` ya insertan tenants con
+`gen_random_uuid()` —v4— sobre una columna declarada `@default(uuid(7))`, y el
+comentario que lo acompaña deja escrito el porqué (el default sólo aplica cuando
+la fila la crea Prisma, y la versión del uuid no tiene consecuencia funcional).
+Lo que no se hace es dejar la decisión sin tomar.
 
 ### Tres tablas nuevas
 
@@ -321,8 +325,11 @@ y `(app)/usuarios`. Todo el texto en español.
   login. Se comporta como hoy.
 - **Sesión viva de un usuario que se desactivó**: el guard la rechaza en el
   request siguiente.
-- **Sesión viva de un tenant que se suspendió**: fuera de alcance de este ciclo;
-  `Tenant.estado` no se consulta todavía. Queda anotado.
+- **Tenant suspendido**: el guard lo rechaza y el handler de auth devuelve 403,
+  así que nadie entra ni sigue adentro. Lo que queda fuera de alcance es
+  **borrar** las filas de `sessions` al suspender: si el local se reactiva, las
+  sesiones que no habían vencido vuelven a servir. Es aceptable porque la
+  suspensión es reversible por diseño.
 - **Dos altas simultáneas del mismo mail en el mismo tenant**: lo corta
   `@@unique([tenantId, email])`, que ya existe.
 - **El último `DUENO` de un tenant**: no se puede desactivar a sí mismo ni
