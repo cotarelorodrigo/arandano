@@ -1,0 +1,19 @@
+# syntax=docker/dockerfile:1
+
+# La versión NO se escribe acá: llega por --build-arg desde
+# scripts/build-caddy.sh, que es su único dueño. Repetirla en los dos lugares es
+# la forma de que un día el tag diga 2.11.4 sobre un binario 2.12.0.
+#
+# Va antes del primer FROM porque las dos etapas la usan en su línea `FROM`, y
+# un ARG global es lo único que se puede interpolar ahí.
+ARG CADDY_VERSION
+
+# La imagen oficial `-builder` trae xcaddy y la cadena de Go ya armadas. Es el
+# patrón que documenta el propio proyecto de Caddy para compilar módulos.
+FROM caddy:${CADDY_VERSION}-builder AS builder
+RUN xcaddy build --with github.com/caddy-dns/hetzner
+
+# El runtime tiene que ser la MISMA versión que el builder. Un binario compilado
+# contra una y corriendo sobre otra arranca y falla de formas raras.
+FROM caddy:${CADDY_VERSION}-alpine
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
