@@ -8,7 +8,12 @@ import { ErrorDeUsuario } from '@/lib/usuarios/errores'
 
 export type EstadoUsuarios = { error: string | null; aviso: string | null }
 
-const INICIAL: EstadoUsuarios = { error: null, aviso: null }
+// El valor inicial NO vive acá, aunque sea lo natural: este archivo es
+// 'use server', y ahí Next.js convierte cada export en un endpoint RPC, así que
+// sólo admite funciones async. Exportar una constante hace que el módulo falle
+// al evaluarse —en runtime, con el build en verde— y tira abajo la pantalla
+// entera. Vive en formularios.tsx, que es quien lo usa, igual que en la pantalla
+// de login. test/use-server.test.ts lo fija.
 
 /** Cada action vuelve a exigir dueño: que la pantalla no se muestre no es una
  *  defensa, porque una action se puede invocar sin pasar por la pantalla. */
@@ -81,4 +86,3 @@ export async function alta(_e: EstadoUsuarios, datos: FormData): Promise<EstadoU
   }
 }
 
-export { INICIAL }

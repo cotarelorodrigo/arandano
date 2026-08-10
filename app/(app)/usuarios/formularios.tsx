@@ -1,12 +1,16 @@
 'use client'
 
 import { useActionState } from 'react'
-import { altaEmpleado, nuevaClave, baja, alta, INICIAL, type EstadoUsuarios } from './acciones'
+import { altaEmpleado, nuevaClave, baja, alta, type EstadoUsuarios } from './acciones'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+
+// Acá y no en acciones.ts: aquel archivo es 'use server' y sólo puede exportar
+// funciones async. Mismo lugar que en app/login/formulario.tsx.
+const INICIAL: EstadoUsuarios = { error: null, aviso: null }
 
 /** El aviso lleva la contraseña en texto plano y es el único momento en que
  *  existe: el dueño la tiene que copiar y pasársela a la persona. */

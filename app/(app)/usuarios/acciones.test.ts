@@ -53,7 +53,10 @@ let altaEmpleado: typeof import('./acciones').altaEmpleado
 let nuevaClave: typeof import('./acciones').nuevaClave
 let baja: typeof import('./acciones').baja
 let alta: typeof import('./acciones').alta
-let INICIAL: typeof import('./acciones').INICIAL
+// Propio del test y no importado de acciones.ts: ese archivo es 'use server' y
+// sólo puede exportar funciones async. Es un valor inicial, no un dato con
+// lógica: duplicar tres campos nulos cuesta menos que un export prohibido.
+const INICIAL = { error: null, aviso: null }
 let authParaTenant: typeof import('@/lib/auth/para-tenant').authParaTenant
 let origenDelRequest: typeof import('@/lib/auth/origen').origenDelRequest
 let administrar: typeof import('@/lib/usuarios/administrar')
@@ -71,7 +74,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   process.env.DOMINIO_BASE = 'arandano.test'
 
-  ;({ altaEmpleado, nuevaClave, baja, alta, INICIAL } = await import('./acciones'))
+  ;({ altaEmpleado, nuevaClave, baja, alta } = await import('./acciones'))
   ;({ authParaTenant } = await import('@/lib/auth/para-tenant'))
   ;({ origenDelRequest } = await import('@/lib/auth/origen'))
   administrar = await import('@/lib/usuarios/administrar')
