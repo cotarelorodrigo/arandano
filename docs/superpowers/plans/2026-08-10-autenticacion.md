@@ -1760,27 +1760,59 @@ export async function resetearClave(entrada: {
   await db.session.deleteMany({ where: { userId: entrada.usuarioId } })
 }
 
+// OJO: esta versión tiene una carrera y quedó corregida en la implementación.
+// Se conserva acá con la corrección explicada porque el error es instructivo.
+//
+// Contar los dueños activos y después escribir, con `prismaParaTenant`, son
+// CUATRO transacciones distintas: ese helper envuelve cada operación en la suya.
+// Dos desactivaciones simultáneas ven 2 dueños, las dos pasan la guarda, y el
+// local queda sin ninguno — el estado que esta regla existe para impedir.
+//
+// Y la trampa: envolverlo en `enTransaccionDeTenant` NO alcanza. Bajo READ
+// COMMITTED las dos transacciones leen el mismo snapshot y actualizan filas
+// DISTINTAS, así que no hay conflicto de escritura y ambas commitean. Hace falta
+// un lock explícito:
+//
+//   SELECT id FROM users WHERE rol = 'DUENO' AND desactivado_en IS NULL
+//    ORDER BY id FOR UPDATE
+//
+// Se lockea el conjunto COMPLETO y no "los otros": excluirse a uno mismo hace
+// que T1 tome {B} y T2 tome {A}, y después cada una pida su propia fila en el
+// UPDATE — ciclo, y deadlock. Con el conjunto completo y `ORDER BY id`, las dos
+// piden lo mismo en el mismo orden y una espera. Es el patrón que ya usa
+// `anularVenta`. Postgres pone el LockRows por encima del Sort, así que el orden
+// del ORDER BY es realmente el de adquisición.
+//
+// El borrado de sesiones va DENTRO de la misma transacción: si el update sale y
+// el deleteMany falla, queda una persona desactivada con sesiones vivas, y eso
+// no necesita concurrencia para pasar.
+//
+// La auto-exclusión se compara contra el id que devolvió el `findUnique`, no
+// contra el que llegó por parámetro: Postgres canonicaliza un literal `uuid` al
+// castear y JS no, así que un id en mayúsculas se colaría en el conjunto y la
+// cuenta se contendría a sí misma.
 export async function desactivar(entrada: { tenantId: string; usuarioId: string }): Promise<void> {
-  const db = prismaParaTenant(entrada.tenantId)
+  await enTransaccionDeTenant(entrada.tenantId, async (tx) => {
+    const usuario = await tx.user.findUnique({ where: { id: entrada.usuarioId } })
+    if (!usuario) throw new ErrorDeUsuario('NO_EXISTE', 'ese usuario no existe en este local')
 
-  const usuario = await db.user.findUnique({ where: { id: entrada.usuarioId } })
-  if (!usuario) throw new ErrorDeUsuario('NO_EXISTE', 'ese usuario no existe en este local')
-
-  if (usuario.rol === 'DUENO') {
-    const duenosActivos = await db.user.count({ where: { rol: 'DUENO', desactivadoEn: null } })
-    if (duenosActivos <= 1) {
-      throw new ErrorDeUsuario(
-        'ULTIMO_DUENO',
-        'es el último dueño activo: dejar el local sin dueño sólo se arregla con un comando en el servidor',
-      )
+    if (usuario.rol === 'DUENO') {
+      const duenosActivos = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM users
+         WHERE rol = 'DUENO' AND desactivado_en IS NULL
+         ORDER BY id FOR UPDATE`
+      const otrosActivos = duenosActivos.filter((d) => d.id !== usuario.id)
+      if (otrosActivos.length === 0) {
+        throw new ErrorDeUsuario(
+          'ULTIMO_DUENO',
+          'es el último dueño activo: dejar el local sin dueño sólo se arregla con un comando en el servidor',
+        )
+      }
     }
-  }
 
-  await db.user.update({ where: { id: entrada.usuarioId }, data: { desactivadoEn: new Date() } })
-
-  // El guard ya lo rechazaría en el request siguiente; borrar las filas hace que
-  // no quede una sesión válida esperando a que alguien se olvide del guard.
-  await db.session.deleteMany({ where: { userId: entrada.usuarioId } })
+    await tx.user.update({ where: { id: entrada.usuarioId }, data: { desactivadoEn: new Date() } })
+    await tx.session.deleteMany({ where: { userId: entrada.usuarioId } })
+  })
 }
 
 export async function reactivar(entrada: { tenantId: string; usuarioId: string }): Promise<void> {
