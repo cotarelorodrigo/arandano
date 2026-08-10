@@ -67,7 +67,20 @@ services:
         condition: service_healthy
 
   caddy:
-    image: caddy:2-alpine
+    # Imagen propia: la oficial no trae dns.providers y sin eso no hay wildcard.
+    # Tageada por VERSIÓN y no por SHA — la buildea scripts/build-caddy.sh, no
+    # deploy.sh. Si este tag y el del script se desincronizan, el stack levanta
+    # una imagen vieja sin que nada avise; suite_network lo comprueba.
+    image: arandano-caddy:2.11.4-hetzner
+    environment:
+      # UNA sola variable, nunca el env_file de prod: ese archivo tiene la
+      # contraseña de Postgres y el proxy no tiene ninguna razón para verla.
+      # Compose la interpola desde el .env del directorio del proyecto.
+      #
+      # El `:?` hace que el stack se NIEGUE a levantar sin el token, en vez de
+      # arrancar sano y fallar recién al renovar dentro de 60 días. Un misconfig
+      # tiene que doler ahora, no en dos meses.
+      HETZNER_DNS_TOKEN: ${HETZNER_DNS_TOKEN:?falta HETZNER_DNS_TOKEN en /srv/arandano/prod/.env}
     ports:
       - "80:80"
       - "443:443"

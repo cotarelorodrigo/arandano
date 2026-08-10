@@ -212,6 +212,30 @@ suite_network() {
   fi
   [[ -n "$ca_tmp" ]] && rm -f "$ca_tmp"
   check_eq "el certificado de localhost valida contra la CA interna" "0" "$verifico"
+
+  # La imagen propia tiene que existir Y traer el módulo. Lo segundo es lo que
+  # vale: una imagen buildeada sin el plugin se ve idéntica a una buena, y la
+  # diferencia recién aparece al renovar — 60 días después, sin nadie mirando.
+  local imagen_caddy modulos
+  imagen_caddy=$(grep -oE 'arandano-caddy:[0-9.]+-hetzner' docker/compose.prod.yml | head -1)
+  check_ne "compose.prod.yml nombra la imagen propia de Caddy" "" "$imagen_caddy"
+
+  modulos=0
+  if [[ -n "$imagen_caddy" ]]; then
+    modulos=$(docker run --rm "$imagen_caddy" caddy list-modules 2>/dev/null \
+      | grep -c '^dns.providers.hetzner$') || modulos=0
+  fi
+  check_eq "la imagen de Caddy trae dns.providers.hetzner" "1" "$modulos"
+
+  # El tag vive en dos archivos —el script que la buildea y el compose que la
+  # corre— y no hay forma de derivar uno del otro sin parsear bash. Si se
+  # desincronizan, producción levanta una imagen vieja y nada lo dice: el
+  # síntoma sería una renovación que falla dentro de dos meses.
+  local version_script tag_esperado
+  version_script=$(grep -oE '^readonly CADDY_VERSION=[0-9.]+' scripts/build-caddy.sh | cut -d= -f2)
+  tag_esperado="arandano-caddy:${version_script}-hetzner"
+  check_eq "el tag del compose coincide con el que produce build-caddy.sh" \
+    "$tag_esperado" "$imagen_caddy"
 }
 
 suite_limits() {
