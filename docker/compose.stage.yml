@@ -75,6 +75,16 @@ services:
       # hablando la app, no sólo que alguna responda.
       ARANDANO_DB_ESPERADA: arandano_stage
       DOMINIO_BASE: stage.arandano.app
+      # El puerto con el que se llega a este stack (ver el mapeo de `ports`
+      # más abajo): Better Auth lo necesita para armar su `baseURL`
+      # (lib/auth/origen.ts). Ver compose.dev.yml para el porqué completo, y
+      # compose.prod.yml para por qué prod NO define esta variable.
+      PUERTO_PUBLICO: "3001"
+      # Secreto de firma de Better Auth, inline por el mismo motivo que las
+      # credenciales de arriba: este Postgres es efímero, nace vacío en cada
+      # corrida, nunca ve datos de clientes, y el stack sólo escucha en la IP
+      # de Tailscale. No hay secreto que proteger.
+      BETTER_AUTH_SECRET: efimero-secreto-no-persiste
       # El check de tenant del healthcheck resuelve este subdominio con
       # resolver_tenant() y comprueba que RLS filtre en las dos direcciones.
       # El paso 8 de deploy.sh crea este canario contra la base efímera de

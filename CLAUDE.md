@@ -71,7 +71,7 @@ flowchart TD
 | Componentes de UI | **shadcn/ui** sobre Tailwind | Se copian al repo en vez de instalarse como dependencia: el código es nuestro y se puede modificar sin pelearle a la librería. Accesibilidad y teclado ya resueltos por Radix, que es lo que más cuesta hacer bien en una pantalla de venta que se opera sin mouse |
 | Base de datos | **PostgreSQL** | Estándar, soporta RLS nativo para el aislamiento por tenant |
 | ORM | **Prisma** | Mejor DX y documentación del ecosistema Node; Prisma Studio sirve como ventana rápida de debug |
-| Autenticación | **Auth.js** (NextAuth) | Nativo de Next.js, sesiones/JWT sin reinventar nada |
+| Autenticación | **Better Auth** | Auth.js no maneja contraseñas en serio (su plugin de credentials es un ejemplo de referencia, no producción) — apuesta a proveedores OAuth o a magic link por mail. Un magic link en el mostrador de un local significa que el empleado tiene que abrir su mail para entrar y cobrar, así que el requisito real es usuario y contraseña, y ahí Better Auth es la opción madura del ecosistema Node |
 | Multi-tenancy (app) | **Helper de servidor** (`lib/tenant/desde-request.ts`) resuelve subdominio → tenant leyendo el `Host`; extensión de Prisma fuerza filtro por `tenant_id` | Sin `middleware.ts`: el middleware de Next no puede consultar Postgres, así que tendría que pasarle el resultado a la app por un header — y un header del que la app deduce qué tenant servir es superficie de suplantación que no compra nada, porque el `Host` la app ya lo lee directo |
 | Multi-tenancy (datos) | **Row Level Security de Postgres** como segunda capa de defensa | Si algún query se olvida el filtro, la base igual protege el dato |
 | Modularidad por rubro | **Monolito modular**: `modules/<nombre>/` con schema, rutas, UI y jobs propios, más un registry; activación por fila en `TenantModule` | Un rubro nuevo no toca infraestructura ni suma un deploy; las tablas de cada módulo viven en el mismo Postgres y heredan el mismo RLS |
@@ -116,7 +116,7 @@ El deploy frena `arandano-dev` desde el arranque —antes del build, no antes de
 - **Expand/contract**: ninguna columna se borra ni se renombra en el mismo deploy que deja de usarla. Primero se deploya el código que no la usa, y el drop viene en un deploy posterior. Es lo que mantiene el rollback siempre posible.
 - `pg_dump` inmediatamente antes de cada migración, además del backup nocturno.
 
-**El deploy es un comando con gate.** `deploy.sh` encadena: working tree limpio → migraciones no destructivas → schema sincronizado con las migraciones (y, contra prod, el `Caddyfile` de `/srv/arandano/prod` idéntico al del repo — al rutear el gate por `localhost:443` el proxy perdió la cobertura *accidental* que tenía cuando el healthcheck entraba por el `:80`, y esa comparación más la del `308` de más abajo son lo único que la reemplaza) → tests → typecheck → frenar `arandano-dev` → build tageado → ensayo de la migración contra `arandano-stage` → smoke tests contra `arandano-stage` → `migrate status` contra prod, en las dos direcciones → backup → `migrate deploy` → `setup-db-roles.sh` contra el objetivo (el `EXECUTE` de las funciones se otorga por nombre, no por default privilege, así que esta corrida post-migración es la que lo aplica — Task 5c) → alta del tenant canario contra el objetivo, tolerando que ya exista (Task 6: el check de tenant del healthcheck necesita un canario al que apuntar, y sin este paso sólo existía contra la base efímera de stage) → promoción de la imagen (`--no-deps`) → healthcheck con comparación de SHA, más —contra prod— la comprobación de que el `:80` sigue devolviendo `308` y no la app (el archivo puede coincidir y Caddy seguir sirviendo la config vieja: `cp` sin `reload`) → tag de git pusheado a `origin`, con rollback automático a la imagen anterior si falla la promoción o el healthcheck. El chequeo de schema va temprano, en el preflight, y no después del build: corre con el `npx prisma` del propio repo, así que no necesita ninguna imagen construida todavía. El ensayo en stage va **antes** de tocar producción: la migración se prueba sobre una base virgen antes que sobre la de clientes. Corrido con `--objetivo=ensayo` (`docs/runbook-stacks.md`), el mismo script ensaya la secuencia completa contra un stack descartable, sin crear ni pushear tag. Sin pasos manuales que se puedan saltear un martes a las 11 de la noche.
+**El deploy es un comando con gate.** `deploy.sh` encadena: `BETTER_AUTH_SECRET` presente en el `.env` del objetivo (junto con el token del healthcheck, lo primero que se resuelve, antes de tocar nada — sin este chequeo el resto del gate no lo detecta: el healthcheck no mira autenticación y los smoke tests corren contra `arandano-stage`, que lleva el secreto inline en su compose y no en un `.env`; faltar la variable en producción hubiera dejado el gate entero en verde con toda página de tenant en 500, hallazgo de la review de Task 11) → working tree limpio → migraciones no destructivas → schema sincronizado con las migraciones (y, contra prod, el `Caddyfile` de `/srv/arandano/prod` idéntico al del repo — al rutear el gate por `localhost:443` el proxy perdió la cobertura *accidental* que tenía cuando el healthcheck entraba por el `:80`, y esa comparación más la del `308` de más abajo son lo único que la reemplaza) → tests → typecheck → frenar `arandano-dev` → build tageado → ensayo de la migración contra `arandano-stage` → smoke tests contra `arandano-stage` → `migrate status` contra prod, en las dos direcciones → backup → `migrate deploy` → `setup-db-roles.sh` contra el objetivo (el `EXECUTE` de las funciones se otorga por nombre, no por default privilege, así que esta corrida post-migración es la que lo aplica — Task 5c) → alta del tenant canario contra el objetivo, tolerando que ya exista (Task 6: el check de tenant del healthcheck necesita un canario al que apuntar, y sin este paso sólo existía contra la base efímera de stage) → promoción de la imagen (`--no-deps`) → healthcheck con comparación de SHA, más —contra prod— la comprobación de que el `:80` sigue devolviendo `308` y no la app (el archivo puede coincidir y Caddy seguir sirviendo la config vieja: `cp` sin `reload`) → tag de git pusheado a `origin`, con rollback automático a la imagen anterior si falla la promoción o el healthcheck. El chequeo de schema va temprano, en el preflight, y no después del build: corre con el `npx prisma` del propio repo, así que no necesita ninguna imagen construida todavía. El ensayo en stage va **antes** de tocar producción: la migración se prueba sobre una base virgen antes que sobre la de clientes. Corrido con `--objetivo=ensayo` (`docs/runbook-stacks.md`), el mismo script ensaya la secuencia completa contra un stack descartable, sin crear ni pushear tag. Sin pasos manuales que se puedan saltear un martes a las 11 de la noche.
 
 **Cada deploy exitoso deja un tag de git.** La imagen ya va tageada con el SHA, pero el SHA no se lee ni se ordena: el tag es el índice humano de qué estuvo en producción y cuándo.
 
@@ -187,6 +187,7 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 - **Segundo VPS para desarrollo o staging**: descartado. Dev y producción conviven en la misma máquina de forma permanente; staging es la promoción del mismo artefacto, no otro servidor.
 - **Postgres administrado (Supabase) en lugar del Postgres propio**: evaluado el 2026-08-06 y **pospuesto**, no descartado para siempre. A favor pesaban la durabilidad de los datos de clientes (hoy un incidente de disco cuesta hasta 24 h, que es el intervalo del backup nocturno) y liberar los 1536 MiB que reserva prod. En contra: es un ciclo entero de spec, plan e implementación que rehace backups, `verify-infra.sh`, los tres compose y `setup-db-roles.sh` sin entregar una sola feature, y el beneficio principal es proporcional a datos de clientes que todavía no existen. Se decidió seguir con Postgres propio para el MVP. **Lo que hace reconsiderarlo**: que haya clientes reales facturando adentro. **Lo que NO lo bloquea**: el schema, el modelo de RLS y el `tenant_id` son independientes del proveedor, y el camino de migración es `pg_dump` → `pg_restore`, que ya está escrito y verificado — así que mudarse sigue siendo barato después. **Mitigación mientras tanto**: subir la frecuencia del backup, que ataca el 80 % del riesgo con un cambio chico sobre un script probado.
 - **SQLite en dev con Postgres en producción**: descartado. Dejaría el aislamiento entre tenants probado en ningún lado salvo producción: SQLite no tiene RLS (se caen `test/rls.test.ts` y `test/rls-cobertura.test.ts`), no tiene roles (`arandano_owner` / `arandano_app`, los `GRANT` y los default privileges), y no tiene GUCs de sesión, que es el mecanismo con el que `lib/tenant/prisma.ts` ata el cliente al tenant. Además Prisma lleva un historial de migraciones por provider, así que el SQL que corre en prod no se ejecutaría nunca en dev — exactamente el modo de falla del bloqueante 9.
+- **Clerk** (autenticación gestionada como tercero): evaluado en el ciclo de autenticación (2026-08-10) y descartado. Resuelve bien lo aburrido —login, contraseñas, sesiones, todo listo—, pero pone un tercero en el camino de cobrar: si Clerk tiene un incidente, un local no puede abrir el punto de venta aunque Postgres y el resto de la app estén sanos. Cobra por organización activa, US$1 por tenant por mes pasadas las primeras 100, contra comercios argentinos que facturan en pesos — el costo escala justo con lo que más queremos escalar. Y no ahorra la parte difícil: el chequeo de "esta persona pertenece al tenant de este `Host`" sigue siendo código nuestro sobre RLS de todos modos, con o sin Clerk; y si su cookie se setea en `.arandano.app`, ese chequeo pasa de importante a load-bearing, porque la sesión sería válida en todos los subdominios por diseño. Se prefirió Better Auth: self-hosted, en el propio Postgres, con el mismo `tenant_id`. Ver `docs/superpowers/specs/2026-08-10-autenticacion-design.md`.
 
 ## Riesgos conocidos
 
@@ -311,13 +312,11 @@ Y del producto:
   `docs/superpowers/specs/2026-08-07-diagrama-schema-design.md`.
 - Definir el schema del módulo de órdenes de trabajo (`OrdenDeTrabajo` y sus estados), en `modules/ordenes-de-trabajo/`, con el mismo `tenant_id` y las mismas policies de RLS.
 - Definir el registry de módulos y los puntos de extensión del núcleo: navegación, tipos de artículo, `crearVentaDesde`, movimientos de stock, intents del bot, jobs de pg-boss, vistas del catálogo público y datos demo.
-- **Inicializar shadcn/ui, que hoy está a medias.** El CLI ya está en
-  `devDependencies` (`shadcn` 4.16.1), pero **nunca se corrió**: no hay Tailwind,
-  ni `components.json`, ni las variables de tema en `app/globals.css`. O sea que
-  la dependencia está y la infraestructura no, que es el peor de los dos estados
-  — parece resuelto y no lo está. Adoptarlo de verdad implica sumar Tailwind
-  (shadcn 4.x apunta a Tailwind v4) y correr el init. Va en el primer ciclo que
-  construya interfaz, no antes: hoy la app no tiene ni una pantalla.
+- ~~Inicializar shadcn/ui, que hoy está a medias.~~ **Hecho** (2026-08-10, en
+  el ciclo de autenticación): Tailwind v4 sumado, `components.json` armado y
+  las variables de tema en `app/globals.css`, con los cinco componentes que
+  usa la pantalla de login. Fue el primer ciclo que construyó interfaz, que
+  es lo que este ítem pedía esperar.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~
@@ -326,7 +325,12 @@ Y del producto:
   Postgres — ver `docs/superpowers/specs/2026-08-08-resolucion-tenant-design.md`.
   Incluye el alta de tenant (`npm run tenant:crear`) y el check de aislamiento
   del healthcheck.
-- Configurar Auth.js.
+- ~~Configurar Auth.js.~~ **Hecho** (2026-08-10), con Better Auth y no con
+  Auth.js — ver la fila *Autenticación* de la tabla de stack más arriba y
+  *Opciones evaluadas y descartadas* para el porqué. Usuario y contraseña por
+  tenant, guard de sesión en el núcleo, alta/reseteo/baja de usuarios sin
+  dejar nunca un local sin dueño. Ver
+  `docs/superpowers/specs/2026-08-10-autenticacion-design.md`.
 - Configurar `pg-boss` para las tareas en background (seguimientos automáticos, pedido de reseñas, webhooks del bot).
 - Aislar la integración con la Cloud API de Meta (WhatsApp/Instagram) en su propio módulo.
 - Aislar la emisión de facturas ARCA (`afip.js`) detrás de una interfaz propia.
@@ -355,6 +359,25 @@ Y del producto:
    destructivas.~~ **Hecho** (2026-08-06). Ver
    `docs/superpowers/specs/2026-08-06-deploy-design.md` y la sección *Deploy y
    rollback* de `docs/runbook-stacks.md`.
+4. ~~**`npm run usuario:clave` estaba roto: el único camino para darle una
+   contraseña a un dueño no llegaba a ejecutarse.**~~ **Hecho** (2026-08-10,
+   Task 11). Hallazgo de la verificación manual de esta task: el comando
+   salía con `ERR_MODULE_NOT_FOUND` antes de tocar la base — `node` pelado no
+   resuelve el alias `@/` (`lib/auth/para-tenant.ts`), y un nivel más adentro
+   el cliente de Prisma generado usa imports relativos sin extensión
+   (`importFileExtension = ""` en `prisma/schema.prisma`, load-bearing para
+   Next y a propósito sin tocar), que tampoco resuelven bajo Node ESM nativo.
+   La salida no fue tocar esa configuración de Prisma: los dos comandos
+   operativos (`tenant:crear`, `usuario:clave`) corren ahora con **`tsx`**
+   como runner (`devDependency` nueva), que resuelve alias de `tsconfig.json`
+   e imports sin extensión sin pelearle a nada. **La lección, no sólo el
+   parche**: `definirClave` (la función) estaba probada bajo vitest, que
+   resuelve `@/` con su propio `resolve.alias` — nadie había corrido alguna
+   vez el BINARIO con el runner real. Se sumaron tests que sí lo hacen
+   (`scripts/definir-clave.binario.test.ts`, `scripts/crear-tenant.test.ts`):
+   spawnean el comando como proceso hijo contra la base efímera y comprueban
+   el efecto (la clave sirve para entrar de verdad), no sólo el código de
+   salida. Detalle completo en `docs/runbook-stacks.md`.
 
 ### Bloqueantes antes del cutover de DNS
 

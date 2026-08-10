@@ -18,6 +18,8 @@ Tailscale, nunca en internet. Ver *Deploy y rollback* más abajo.
 - **`arandano-dev` se frena antes de que arranque el BUILD**, no antes de stage. La memoria no cierra de otra forma: prod (3200 MiB) + dev (2304) + el build (2048) + ~1.1 GB de sistema ≈ 8.5 GB sobre una caja de 7.6 GB. Con dev abajo el pico queda en ~7.5 GB, que es el número que documenta el presupuesto. Como el build es el primer paso del deploy y stage viene después, frenar dev al principio también cubre la regla vieja de que dev y stage no corren juntos (sus límites de CPU sumados pasan de un core: dev 0.75 + 0.25, stage 0.5 + 0.25). Se vuelve a levantar `arandano-dev` recién al terminar el deploy. `scripts/deploy.sh` ya hace esta secuencia solo, en su paso 6/18 y en el trap de limpieza — ver *Deploy y rollback* más abajo.
 - Producción no se edita: se corre una imagen. Nada de editores en `/srv/arandano/prod/` — ese directorio sólo tiene `docker-compose.yml`, `.env`, el `Caddyfile` y los volúmenes, sin código fuente.
 - **El `.env` de cada stack necesita `ARANDANO_SALUD_TOKEN`** (generado con `openssl rand -hex 32`), además de las credenciales de la base: sin él `/api/health` responde sólo el veredicto, el gate no recibe `info.sha` y `deploy.sh` **aborta antes de buildear**. Es requisito duro desde el cutover, no una opción — quien reconstruya `/srv/arandano/prod` o `/srv/arandano/ensayo` tiene que ponerlo en el `.env` nuevo. Rotarlo: ver *Rotar el token del healthcheck* más abajo.
+- **El `.env` de cada stack necesita `BETTER_AUTH_SECRET`** (generado con `openssl rand -hex 32`), desde el ciclo de autenticación: es con lo que Better Auth firma las cookies de sesión (`lib/auth/para-tenant.ts`). Distinto por stack, como toda credencial — si dev y prod compartieran el secreto, una cookie fabricada en dev valdría contra los datos de clientes. En dev va en `.env.dev`; en stage va inline en `docker/compose.stage.yml` (Postgres efímero, mismo criterio que sus otras credenciales inline); en ensayo y en prod llega por el `.env` de cada uno, igual que `ARANDANO_SALUD_TOKEN` — quien reconstruya `/srv/arandano/prod` o `/srv/arandano/ensayo` tiene que ponerlo ahí. `scripts/verify-infra.sh env` comprueba que exista en dev y en prod, y que no coincidan, pero esa suite no la corre `deploy.sh` — el requisito duro es el preflight de abajo. `deploy.sh` **aborta antes de buildear** si falta en el `.env` del objetivo (`secreto_auth_presente`, junto a `token_salud` — mismo momento, mismo motivo). Es requisito duro porque, sin este chequeo, nada más del gate lo detecta: el healthcheck mira Postgres, el rol y el tenant, no autenticación, y los smoke tests corren contra `arandano-stage`, que lo lleva inline en su compose y no en un `.env` — un `/srv/arandano/prod/.env` sin la línea hubiera promovido y tageado una release con TODAS las páginas de tenant en 500 (Better Auth tira error al construir cualquier instancia por tenant sin el secreto). Hallazgo de la review de Task 11 sobre el gate que la propia task había armado — la misma clase de trampa que ya describen los *Bloqueantes antes del cutover de DNS* de `CLAUDE.md`.
+- **`PUERTO_PUBLICO` es el puerto con el que el navegador llega a cada stack**, y Better Auth lo necesita para armar su `baseURL` (`lib/auth/origen.ts`). Vale `3000` en dev, `3001` en stage y `3002` en ensayo — el mismo puerto que cada uno publica en `ports` — y en **producción queda SIN DEFINIR a propósito**: 443 es implícito en `https://`, y ponerle un default ahí rompería el `baseURL` de prod en silencio. Va directo en el `environment:` de cada `docker/compose.*.yml`, no en ningún `.env` — no es una credencial, es topología del stack.
 - Buildear siempre con el presupuesto de recursos puesto (ver la sección de abajo — el comando importa, las banderas "obvias" no hacen nada):
 
   ```bash
@@ -508,8 +510,119 @@ DOMINIO_BASE=dev.arandano.app \
     --modulos=ORDENES_DE_TRABAJO --duenio=flor@ejemplo.com --duenio-nombre="Flor"
 ```
 
-El dueño se crea sin credenciales: `users` todavía no tiene columna de
-contraseña. Eso llega con el ciclo de autenticación.
+El dueño se crea sin contraseña: `tenant:crear` corre como `arandano_owner`,
+con `pg` pelado, y no tiene de dónde sacar un hash en el formato correcto que
+Better Auth después pueda verificar. Definirla es el paso siguiente.
+
+### Definir la contraseña de un usuario
+
+`npm run usuario:clave` es el que lo hace — corre como la aplicación
+(`DATABASE_URL`, o sea `arandano_app`) y pasa por la API de Better Auth, así
+que también pasa por RLS. Es además el recupero del dueño: mientras no haya
+proveedor de mail, no hay otro camino para resetear una contraseña olvidada
+más que correr este mismo comando de nuevo.
+
+```bash
+DATABASE_URL="$(grep -m1 ^DATABASE_URL .env.dev | cut -d= -f2- | sed 's/@postgres:5432/@100.64.81.63:5433/')" \
+BETTER_AUTH_SECRET="$(grep -m1 BETTER_AUTH_SECRET .env.dev | cut -d= -f2-)" \
+DOMINIO_BASE=dev.arandano.app \
+  npm run usuario:clave -- --subdominio=flor --email=flor@ejemplo.com
+```
+
+Sin `--clave`, genera una al azar y la imprime junto con la URL de login.
+**La contraseña se imprime una sola vez y no se guarda en ningún lado** — es
+el único momento en que existe en texto plano. Si se pierde, el camino no es
+buscarla: es correr el comando de nuevo.
+
+#### En producción (y en ensayo), desde la imagen de migración
+
+El bloque de arriba es el de **dev**, y en producción no sirve: el Postgres de
+prod **no publica puertos**, así que desde el host no se le llega, y el
+workspace del repo no es lo que corre ahí (`/srv/arandano/prod/` no tiene
+código). El único camino es el mismo que ya usa `deploy.sh` para el alta del
+canario: correr el comando **adentro de `arandano-migrate:<sha>`**, enganchado
+a la red del stack.
+
+```bash
+# El SHA que está corriendo, leído del contenedor mismo: la imagen de
+# migración se buildea con el mismo tag que la de la app.
+SHA=$(docker inspect --format '{{.Config.Image}}' arandano-prod-app-1 | cut -d: -f2)
+docker run --rm --network arandano-prod_default \
+  -e DATABASE_URL="$(grep -m1 ^DATABASE_URL /srv/arandano/prod/.env | cut -d= -f2-)" \
+  -e BETTER_AUTH_SECRET="$(grep -m1 ^BETTER_AUTH_SECRET /srv/arandano/prod/.env | cut -d= -f2-)" \
+  -e DOMINIO_BASE=arandano.app \
+  --entrypoint npx "arandano-migrate:$SHA" \
+  tsx scripts/definir-clave.mts --subdominio=flor --email=flor@ejemplo.com
+```
+
+`--entrypoint npx` porque el ENTRYPOINT de esa imagen es `npx prisma` (mismo
+patrón que los pasos 8 y 14 de `deploy.sh`), y `DATABASE_URL` —no
+`MIGRATE_DATABASE_URL`— porque este comando corre **como la aplicación**, o sea
+pasando por RLS. El host de la URL que hay en `/srv/arandano/prod/.env` ya es
+el nombre del servicio (`@postgres:5432`), que es exactamente lo que resuelve
+desde adentro de esa red: acá no hay que reescribirlo como en dev.
+
+**Esto recién funciona desde el ciclo de autenticación.** La etapa `migrate`
+del Dockerfile no corría `prisma generate` y `.dockerignore` excluye
+`generated`, así que la imagen que el deploy ya usaba para `crear-tenant.mts`
+—que evita Prisma a propósito— **no podía correr `definir-clave.mts`**, que sí
+lo arrastra vía `lib/db.ts`. Es el hallazgo de Task 11 una capa más afuera: el
+comando andaba para quien escribe el código y no para quien opera el producto,
+incluido el **tenant canario** que el deploy crea en producción y que
+CLAUDE.md manda verificar a mano después de cada deploy. El arreglo es un
+`RUN npx prisma generate` en esa etapa, y está verificado del modo en que hay
+que verificar estas cosas: buildeando la imagen y corriendo el comando adentro,
+contra una base con las migraciones aplicadas, hasta comprobar que la clave
+que puso **entra de verdad** por la misma API que usa el login.
+
+**Corre con `tsx`, no con `node` pelado — y esto no es un detalle menor.**
+`tenant:crear` y `usuario:clave` (`package.json`) invocan
+`tsx scripts/<archivo>.mts` desde el ciclo de autenticación (Task 11).
+Hasta esa task, los dos corrían con
+`node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON`, y `usuario:clave`
+**no llegaba a ejecutarse nunca**: `lib/auth/para-tenant.ts` importa
+`@/lib/tenant/prisma` con el alias de `tsconfig.json`, que `node` pelado no
+resuelve — sale con `ERR_MODULE_NOT_FOUND` antes de tocar la base, para
+CUALQUIER invocación. Reescribir esa línea a una ruta relativa con extensión
+no alcanzaba: un nivel más adentro, el cliente de Prisma generado
+(`generated/prisma/client.ts`) usa imports relativos SIN extensión
+(`./enums`, `./internal/class`) — válidos para un bundler
+(webpack/turbopack/Vite, que es como corren tanto Next como `vitest`) pero
+inválidos para la resolución ESM nativa de Node. Ésa es la razón de
+`importFileExtension = ""` en `prisma/schema.prisma`: es **load-bearing para
+la aplicación** (el comentario del propio schema lo dice) y no es la pieza
+que había que tocar. `tenant:crear` nunca tuvo este problema porque
+deliberadamente evita Prisma y usa `pg` pelado (ver el comentario de
+cabecera de `scripts/crear-tenant.mts`); `definir-clave.mts` necesita la API
+de Better Auth para calcular el hash con el algoritmo correcto, así que no
+podía evitar el mismo camino. La salida fue sumar `tsx` (`devDependency`) como
+runner de los dos: resuelve los `paths` de `tsconfig.json` y los imports sin
+extensión sin pelearle a la configuración de Prisma. Se evaluó `vite-node`
+como alternativa —reutilizaría la misma resolución que ya usa `vitest.config.mts`—
+y se descartó: sin un `--config` explícito no resuelve el alias tampoco, y
+apuntándolo al `vitest.config.mts` del repo el binario corre pero no hace
+NADA — el guard `import.meta.url === file://${process.argv[1]}` que los dos
+scripts usan para saber que los invocaron como programa (y no como módulo
+importado por un test) nunca se cumple bajo `vite-node`, así que sale con
+código 0 sin haber tocado la base. `tsx` no tiene ninguno de los dos
+problemas, sin configuración adicional.
+
+**La lección, no sólo el parche.** `definirClave` (la función) está probada
+bajo vitest en `test/auth.test.ts` desde que existe, y vitest resuelve `@/`
+con su propio `resolve.alias` (`vitest.config.mts`) — así que esa cobertura
+nunca podía notar que el BINARIO, invocado con el runner real, no llegaba a
+ejecutarse. Nadie lo había corrido como comando hasta la verificación manual
+de Task 11. Por eso ahora hay un test que sí lo hace, por cada uno de los dos
+scripts: `scripts/definir-clave.binario.test.ts` y la sección "el binario"
+de `scripts/crear-tenant.test.ts` spawnean el comando real
+(`npx tsx scripts/<archivo>.mts ...`) como proceso hijo contra la base
+efímera de test, y comprueban el efecto — que la clave puesta por el binario
+sirve para entrar de verdad, con la misma API que usa el login — y no sólo
+que el proceso salió con código 0. Cada uno suma además el camino de error:
+un usuario o un subdominio que no existe tiene que salir con código distinto
+de cero y un mensaje legible en `stderr`, nunca un stack trace de resolución
+de módulos — que es exactamente el síntoma que este hallazgo tenía y que
+antes no hacía fallar ningún test.
 
 ### El tenant canario
 

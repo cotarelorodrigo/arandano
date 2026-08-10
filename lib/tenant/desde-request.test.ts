@@ -37,6 +37,7 @@ describe('tenantDelRequest', () => {
     expect(await correr()).toEqual({
       tipo: 'tenant',
       tenant: { id: 'abc', nombre: 'Flor', estado: 'ACTIVO' },
+      subdominio: 'flor',
     })
     expect(resolverTenant).toHaveBeenCalledWith('flor')
   })

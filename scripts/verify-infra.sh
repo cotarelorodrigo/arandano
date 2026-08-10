@@ -212,6 +212,30 @@ suite_network() {
   fi
   [[ -n "$ca_tmp" ]] && rm -f "$ca_tmp"
   check_eq "el certificado de localhost valida contra la CA interna" "0" "$verifico"
+
+  # La imagen propia tiene que existir Y traer el módulo. Lo segundo es lo que
+  # vale: una imagen buildeada sin el plugin se ve idéntica a una buena, y la
+  # diferencia recién aparece al renovar — 60 días después, sin nadie mirando.
+  local imagen_caddy modulos
+  imagen_caddy=$(grep -oE 'arandano-caddy:[0-9.]+-hetzner' docker/compose.prod.yml | head -1)
+  check_ne "compose.prod.yml nombra la imagen propia de Caddy" "" "$imagen_caddy"
+
+  modulos=0
+  if [[ -n "$imagen_caddy" ]]; then
+    modulos=$(docker run --rm "$imagen_caddy" caddy list-modules 2>/dev/null \
+      | grep -c '^dns.providers.hetzner$') || modulos=0
+  fi
+  check_eq "la imagen de Caddy trae dns.providers.hetzner" "1" "$modulos"
+
+  # El tag vive en dos archivos —el script que la buildea y el compose que la
+  # corre— y no hay forma de derivar uno del otro sin parsear bash. Si se
+  # desincronizan, producción levanta una imagen vieja y nada lo dice: el
+  # síntoma sería una renovación que falla dentro de dos meses.
+  local version_script tag_esperado
+  version_script=$(grep -oE '^readonly CADDY_VERSION=[0-9.]+' scripts/build-caddy.sh | cut -d= -f2)
+  tag_esperado="arandano-caddy:${version_script}-hetzner"
+  check_eq "el tag del compose coincide con el que produce build-caddy.sh" \
+    "$tag_esperado" "$imagen_caddy"
 }
 
 suite_limits() {
@@ -310,6 +334,31 @@ suite_env() {
   dev_url=$(docker exec arandano-dev-app-1 printenv DATABASE_URL 2>/dev/null || echo NA-dev)
   prod_url=$(docker exec arandano-prod-app-1 printenv DATABASE_URL 2>/dev/null || echo NA-prod)
   check_ne "dev y prod no comparten DATABASE_URL" "$dev_url" "$prod_url"
+
+  # Es el secreto con el que se firman las sesiones. Compartido entre dev y
+  # prod, una cookie fabricada en dev valdría contra los datos de clientes.
+  local secreto_dev secreto_prod
+  secreto_dev=$(docker exec arandano-dev-app-1 printenv BETTER_AUTH_SECRET 2>/dev/null || echo '')
+  secreto_prod=$(docker exec arandano-prod-app-1 printenv BETTER_AUTH_SECRET 2>/dev/null || echo '')
+
+  # La presencia se chequea aparte y ANTES de compararlos: dos vacíos son
+  # distintos de nada y check_ne los daría por buenos, que es exactamente el
+  # falso verde que este caso existe para evitar.
+  check_cmd "dev tiene BETTER_AUTH_SECRET" test -n "$secreto_dev"
+  check_cmd "prod tiene BETTER_AUTH_SECRET" test -n "$secreto_prod"
+  # El check_ne de acá abajo queda CONDICIONADO a que los dos de arriba hayan
+  # pasado — no alcanza con haberlos corrido antes. Sin esta condición,
+  # "prod tiene BETTER_AUTH_SECRET" salía ✗ (correcto) pero "dev y prod no
+  # comparten BETTER_AUTH_SECRET" salía ✓ igual, porque check_ne compara
+  # "$secreto_dev" contra la cadena vacía y son distintos — un ✓ verde justo
+  # al lado de un ✗, en la línea donde le cae el ojo al operador que sólo mira
+  # colores. Hallazgo de la review de Task 11 contra la salida real de esta
+  # misma suite.
+  if [[ -n "$secreto_dev" && -n "$secreto_prod" ]]; then
+    check_ne "dev y prod no comparten BETTER_AUTH_SECRET" "$secreto_dev" "$secreto_prod"
+  else
+    bad "dev y prod no comparten BETTER_AUTH_SECRET (no se puede comparar: falta alguno de los dos arriba)"
+  fi
 
   # Y que cada app sepa contra qué base debe estar hablando: es lo que
   # convierte el check de postgres en una prueba de identidad y no sólo de

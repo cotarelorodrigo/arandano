@@ -110,6 +110,11 @@ caso_home_responde() {
 # request llega con la IP:puerto del stack, que es un dominio ajeno y responde
 # 404. No es un workaround del test — es el mismo camino que hace un cliente.
 #
+# Contra /login y no contra /: desde el ciclo de autenticación, / exige sesión
+# y redirige (caso_home_exige_sesion, más abajo, cubre esa rama). /login es
+# ahora la página de tenant que se puede pedir sin credenciales, y muestra el
+# nombre del local exactamente por esto.
+#
 # grep -F contra "testid>nombre" y no sólo contra el testid suelto: una
 # regresión que renderizara un tenant hardcodeado o el tenant equivocado
 # hubiera dejado pasar igual un chequeo que sólo mirara que EL ATRIBUTO está
@@ -117,8 +122,28 @@ caso_home_responde() {
 # hardcodeado acá, para no mantener dos copias del mismo literal que
 # `deploy.sh` ya usa al dar de alta el canario de stage.
 caso_tenant_resuelve() {
-  curl -fsS --max-time 10 -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/" \
+  curl -fsS --max-time 10 -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/login" \
     | grep -qF "data-testid=\"tenant-nombre\">${NOMBRE_CANARIO}"
+}
+
+# Sin sesión, la home de un tenant no puede servir la aplicación: tiene que
+# mandar al login. Si esto devolviera 200, el guard no estaría puesto — y
+# sería indistinguible de que sí lo está, porque la página renderiza igual.
+caso_home_exige_sesion() {
+  local destino
+  destino=$(curl -s -o /dev/null --max-time 10 -w '%{redirect_url}' \
+    -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/")
+  [[ "$destino" == */login ]]
+}
+
+# El ápex no tiene login, y no puede delatar nada distinto de una ruta que no
+# existe. CLAUDE.md ya tenía anotado que los casos de login entran acá cuando
+# exista el login; éste y el de arriba son los primeros.
+caso_login_no_existe_en_apex() {
+  local code
+  code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' \
+    -H "Host: ${DOMINIO_BASE}" "$URL_BASE/login")
+  [[ "$code" == "404" ]]
 }
 
 caso_subdominio_inexistente_404() {
@@ -141,13 +166,17 @@ caso_host_ajeno_404() {
 # renderizar dinámicamente; esto verifica que la respuesta que sale por el cable
 # lo diga, que es lo único que una cache intermedia va a mirar.
 #
+# Contra /login y no contra /, por el mismo motivo que caso_tenant_resuelve:
+# sobre una redirección esto mediría los headers del 307, no los de una página
+# de tenant.
+#
 # La aserción es "no es cacheable públicamente" y no una comparación literal
 # contra el Cache-Control que emite Next hoy: lo que importa es la propiedad, y
 # atarse al texto exacto convierte un cambio de wording de Next en un deploy
 # rollbackeado sin ninguna regresión real.
 caso_tenant_no_cacheable() {
   local cc
-  cc=$(curl -sI --max-time 10 -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/" \
+  cc=$(curl -sI --max-time 10 -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/login" \
        | tr -d '\r' | grep -i '^cache-control:' | head -1)
   [[ -n "$cc" ]] \
     && ! grep -qiE 'public|s-maxage' <<<"$cc" \
@@ -162,7 +191,9 @@ for caso in \
   caso_rol_sin_privilegios \
   caso_check_tenant \
   caso_home_responde \
+  caso_home_exige_sesion \
   caso_tenant_resuelve \
+  caso_login_no_existe_en_apex \
   caso_subdominio_inexistente_404 \
   caso_host_ajeno_404 \
   caso_tenant_no_cacheable

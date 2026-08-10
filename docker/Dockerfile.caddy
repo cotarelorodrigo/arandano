@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1
+
+# La versión NO se escribe acá: llega por --build-arg desde
+# scripts/build-caddy.sh, que es su único dueño. Repetirla en los dos lugares es
+# la forma de que un día el tag diga 2.11.4 sobre un binario 2.12.0.
+#
+# Va antes del primer FROM porque las dos etapas la usan en su línea `FROM`, y
+# un ARG global es lo único que se puede interpolar ahí.
+ARG CADDY_VERSION
+
+# La imagen oficial `-builder` trae xcaddy y la cadena de Go ya armadas. Es el
+# patrón que documenta el propio proyecto de Caddy para compilar módulos.
+FROM caddy:${CADDY_VERSION}-builder AS builder
+
+# El `/v2` NO es opcional: `caddy-dns/hetzner` sin sufijo resuelve a v1.0.0, que
+# habla contra `dns.hetzner.com/api/v1` — la API vieja de Hetzner DNS, que ya
+# está de baja (hoy responde 301 hacia console.hetzner.com, nada útil). Con v1
+# compilado adentro, el síntoma no es un build que falla: es una emisión que
+# falla y parece un problema de token o de permisos, porque el módulo llama a
+# un endpoint que ya no contesta. La zona real y el token del dueño sólo
+# funcionan contra la API nueva (`api.hetzner.cloud/v1`), que es la que habla
+# `caddy-dns/hetzner/v2`.
+RUN xcaddy build --with github.com/caddy-dns/hetzner/v2
+
+# El runtime tiene que ser la MISMA versión que el builder. Un binario compilado
+# contra una y corriendo sobre otra arranca y falla de formas raras.
+FROM caddy:${CADDY_VERSION}-alpine
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy

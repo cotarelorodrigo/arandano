@@ -603,5 +603,33 @@ check_eq "sólo-en-repo (pendiente normal) no se reporta como drift" \
 check_eq "base virgen (nada aplicado) contra un repo con una migración: nada sobrante" \
   "" "$(migraciones_sobrantes '' '20260804205911_inicial')"
 
+printf '\n\033[1msecreto_auth_presente\033[0m\n'
+# Sin Docker: sólo lee un .env de un directorio temporal, igual que
+# token_salud lee el suyo — la diferencia entre las dos es la única razón por
+# la que ÉSTA sí tiene test unitario y token_salud no (ver el comentario de
+# ambas en deploy-comun.sh).
+DIR_CON_SECRETO="$(mktemp -d)"
+DIR_SIN_SECRETO="$(mktemp -d)"
+DIR_SECRETO_VACIO="$(mktemp -d)"
+DIR_SIN_ENV="$(mktemp -d)"
+trap 'rm -rf "$DIR_SOLO_PERL" "$DIR_SIN_PERL" "$DIR_SIN_GREP" "$DIR_PERL_MUDO" "$DIR_CON_SECRETO" "$DIR_SIN_SECRETO" "$DIR_SECRETO_VACIO" "$DIR_SIN_ENV"' EXIT
+
+printf 'BETTER_AUTH_SECRET=algo-largo-y-random\n' > "$DIR_CON_SECRETO/.env"
+check_true "con la variable presente y no vacía" secreto_auth_presente "$DIR_CON_SECRETO"
+
+printf 'OTRA_COSA=x\n' > "$DIR_SIN_SECRETO/.env"
+check_false "sin la variable" secreto_auth_presente "$DIR_SIN_SECRETO"
+
+# El caso real que motiva el chequeo separado de presencia (mismo espíritu
+# que el falso verde de check_ne en verify-infra.sh, Task 11): una línea
+# `BETTER_AUTH_SECRET=` sin valor no es lo mismo que la variable ausente, y
+# los dos tienen que fallar igual.
+printf 'BETTER_AUTH_SECRET=\n' > "$DIR_SECRETO_VACIO/.env"
+check_false "con la variable vacía" secreto_auth_presente "$DIR_SECRETO_VACIO"
+
+# Sin .env en absoluto: el `|| true` de adentro no deja que esto reviente el
+# script, y el resultado es el mismo que "sin la variable".
+check_false "sin .env en absoluto" secreto_auth_presente "$DIR_SIN_ENV"
+
 printf '\n%d ok, %d fallan\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]

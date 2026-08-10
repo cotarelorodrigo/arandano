@@ -99,6 +99,18 @@ if [[ "$URL_SALUD" == https://* ]]; then
   extraer_ca_caddy "$DIR" "$CA_SALUD"
 fi
 
+# BETTER_AUTH_SECRET, mismo momento y mismo motivo que TOKEN_SALUD arriba —
+# ver secreto_auth_presente (deploy-comun.sh) para por qué ningún otro paso
+# del gate detecta esto: ni el healthcheck (Postgres, rol, tenant, no
+# autenticación) ni los smoke tests (corren contra stage, que lo lleva
+# inline en su compose y no en un .env). Sin este chequeo, faltar la
+# variable en $DIR/.env promueve una imagen donde TODAS las páginas de
+# tenant dan 500, con el gate entero en verde y taggeado como release buena.
+if ! secreto_auth_presente "$DIR"; then
+  error "falta BETTER_AUTH_SECRET en $DIR/.env — sin él, Better Auth tira error al construir cualquier instancia por tenant y toda página de tenant da 500"
+  exit 1
+fi
+
 # Un solo deploy a la vez. A diferencia de backup.sh, que ante un lock tomado se
 # saltea la corrida y sale con 0, acá se ABORTA: saltearse un deploy en silencio
 # y devolver éxito es cómo alguien termina creyendo que promovió algo que nunca
@@ -617,7 +629,19 @@ scripts/setup-db-roles.sh \
 # hace que todo deploy sano se cuelgue esperando un healthcheck que nunca va a
 # dar verde, con un mensaje que habla del canario y no del orden.
 #
-# --entrypoint node porque el ENTRYPOINT de la imagen es `npx prisma`.
+# --entrypoint npx porque el ENTRYPOINT de la imagen es `npx prisma`, y
+# `tsx` —no `node` pelado— por el mismo motivo que `package.json` invoca los
+# dos comandos operativos así desde Task 11: `node` no resuelve el alias `@/`
+# ni los imports sin extensión del cliente de Prisma generado.
+# `crear-tenant.mts` no los usa hoy (evita Prisma a propósito, ver su
+# comentario de cabecera), pero el CALL SITE tiene que arrancar igual que
+# `npm run tenant:crear` para que un `@/` agregado mañana no encuentre su
+# primera falla acá — en el paso 8, DESPUÉS del backup, `migrate deploy` y
+# `setup-db-roles.sh` contra el objetivo — en vez de en `npm test`. Esto
+# necesita `tsconfig.json` copiado en la etapa `migrate` del Dockerfile
+# (`tsx` lo lee para resolver el alias); sin ese `COPY`, unificar el runner
+# acá sería medio arreglo — verificado buildeando la etapa y corriendo el
+# comando adentro, ver el reporte de Task 11.
 #
 # NOMBRE_CANARIO_STAGE en una variable, y no un literal repetido: el paso 9
 # (smoke tests) le pasa a `caso_tenant_resuelve` el nombre que tiene que
@@ -629,8 +653,8 @@ NOMBRE_CANARIO_STAGE="Canario de stage"
 docker run --rm --network arandano-stage_default \
   -e MIGRATE_DATABASE_URL="postgres://arandano_owner:efimero-owner@postgres:5432/arandano_stage" \
   -e DOMINIO_BASE="stage.arandano.app" \
-  --entrypoint node "arandano-migrate:$SHA" \
-  --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/crear-tenant.mts \
+  --entrypoint npx "arandano-migrate:$SHA" \
+  tsx scripts/crear-tenant.mts \
   --subdominio=canario \
   --nombre="$NOMBRE_CANARIO_STAGE" \
   --modulos=ORDENES_DE_TRABAJO \
@@ -960,18 +984,20 @@ fi
 # exacto. Borrarla o renombrarla a mano convierte la app en un 503 y
 # despierta al uptime check externo (ver docs/runbook-stacks.md).
 #
-# --entrypoint node porque el ENTRYPOINT de la imagen es `npx prisma` (mismo
-# patrón que el alta de stage, paso 8). MIGRATE_DATABASE_URL y RED_OBJETIVO
-# ya están armados más arriba (paso 10 y el guard de IMAGE_TAG), con las
-# mismas credenciales vigentes que usó `migrate deploy` en el paso 12.
+# --entrypoint npx con `tsx` porque el ENTRYPOINT de la imagen es `npx prisma`
+# (mismo patrón que el alta de stage, paso 8 — ver el comentario largo de ahí
+# sobre por qué `tsx` y no `node` pelado, y sobre `tsconfig.json` en la etapa
+# `migrate`). MIGRATE_DATABASE_URL y RED_OBJETIVO ya están armados más arriba
+# (paso 10 y el guard de IMAGE_TAG), con las mismas credenciales vigentes que
+# usó `migrate deploy` en el paso 12.
 log "paso 14/18: alta del canario contra $OBJETIVO (tolerando que ya exista)"
 salida_canario=""
 rc_canario=0
 salida_canario=$(docker run --rm --network "$RED_OBJETIVO" \
     -e MIGRATE_DATABASE_URL="$MIGRATE_DATABASE_URL" \
     -e DOMINIO_BASE="$DOMINIO_BASE_CANARIO" \
-    --entrypoint node "arandano-migrate:$SHA" \
-    --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/crear-tenant.mts \
+    --entrypoint npx "arandano-migrate:$SHA" \
+    tsx scripts/crear-tenant.mts \
     --subdominio=canario \
     --nombre="$NOMBRE_CANARIO" \
     --modulos=ORDENES_DE_TRABAJO \

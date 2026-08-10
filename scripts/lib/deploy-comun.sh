@@ -483,6 +483,35 @@ token_salud() {
   printf '%s' "$token"
 }
 
+# Si BETTER_AUTH_SECRET está definida y no vacía en el .env del objetivo.
+#
+# Sin esta variable, Better Auth tira error al construir cualquier instancia
+# por tenant (lib/auth/para-tenant.ts) — o sea que TODAS las páginas de
+# tenant dan 500 en producción — y nada más del gate lo detecta: el
+# healthcheck mira Postgres, el rol de conexión y el tenant canario, no
+# autenticación; los smoke tests corren contra `arandano-stage`, que lleva el
+# secreto INLINE en su compose (efímero, no en un `.env`), así que nunca
+# ejercitan el camino de "falta en el .env real". Un deploy así promovería,
+# tagearía y dejaría el gate en verde con el sitio roto para cualquier
+# cliente.
+#
+# Mismo patrón que token_salud (arriba): subshell para no filtrar las
+# credenciales de la base del `.env` al proceso principal, y a diferencia de
+# esa función, ésta sólo informa presencia/ausencia — deploy.sh no necesita
+# el VALOR del secreto en ningún momento, sólo que exista donde el contenedor
+# lo va a leer.
+secreto_auth_presente() {
+  local dir="$1" secreto
+  secreto=$(
+    set -a
+    # shellcheck disable=SC1091
+    . "$dir/.env" 2>/dev/null || true
+    set +a
+    printf '%s' "${BETTER_AUTH_SECRET:-}"
+  )
+  [[ -n "$secreto" ]]
+}
+
 # La raíz de la CA interna de Caddy, del volumen del stack.
 #
 # Se valida el certificado en vez de usar `curl -k` porque es lo único que hace

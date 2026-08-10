@@ -14,6 +14,22 @@
 
 ```mermaid
 erDiagram
+  accounts {
+    uuid id PK
+    uuid tenant_id FK
+    uuid user_id FK
+    text account_id
+    text provider_id
+    text access_token "opcional"
+    text refresh_token "opcional"
+    text id_token "opcional"
+    timestamptz(3) access_token_expira_en "opcional"
+    timestamptz(3) refresh_token_expira_en "opcional"
+    text scope "opcional"
+    text password "opcional"
+    timestamptz(3) creado_en
+    timestamptz(3) actualizado_en
+  }
   articulos {
     uuid id PK
     uuid tenant_id FK "único junto a sku"
@@ -55,6 +71,17 @@ erDiagram
     decimal(12,4) cotizacion
     timestamptz(3) creado_en
   }
+  sessions {
+    uuid id PK
+    uuid tenant_id FK
+    uuid user_id FK
+    text token UK
+    timestamptz(3) expira_en
+    text ip "opcional"
+    text user_agent "opcional"
+    timestamptz(3) creado_en
+    timestamptz(3) actualizado_en
+  }
   tenant_modules {
     uuid tenant_id PK, FK
     modulo modulo PK
@@ -75,6 +102,9 @@ erDiagram
     text nombre
     text email "único junto a tenant_id"
     rol_usuario rol
+    boolean email_verificado
+    text imagen "opcional"
+    timestamptz(3) desactivado_en "opcional"
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
@@ -98,19 +128,33 @@ erDiagram
     uuid anulada_por_id FK "opcional"
     timestamptz(3) creado_en
   }
+  verifications {
+    uuid id PK
+    uuid tenant_id FK
+    text identifier
+    text value
+    timestamptz(3) expira_en
+    timestamptz(3) creado_en
+    timestamptz(3) actualizado_en
+  }
   articulos ||--o{ movimientos_stock : "ON DELETE RESTRICT"
   articulos ||--o{ venta_items : "ON DELETE RESTRICT"
   clientes |o--o{ ventas : "ON DELETE RESTRICT"
+  tenants ||--o{ accounts : "ON DELETE CASCADE"
   tenants ||--o{ articulos : "ON DELETE CASCADE"
   tenants ||--o{ clientes : "ON DELETE CASCADE"
   tenants ||--o{ movimientos_stock : "ON DELETE CASCADE"
   tenants ||--o{ pagos : "ON DELETE CASCADE"
+  tenants ||--o{ sessions : "ON DELETE CASCADE"
   tenants ||--o{ tenant_modules : "ON DELETE CASCADE"
   tenants ||--o{ users : "ON DELETE CASCADE"
   tenants ||--o{ venta_items : "ON DELETE CASCADE"
   tenants ||--o{ ventas : "ON DELETE CASCADE"
+  tenants ||--o{ verifications : "ON DELETE CASCADE"
   users |o--o{ ventas : "ON DELETE RESTRICT"
+  users ||--o{ accounts : "ON DELETE CASCADE"
   users ||--o{ movimientos_stock : "ON DELETE RESTRICT"
+  users ||--o{ sessions : "ON DELETE CASCADE"
   users ||--o{ ventas : "ON DELETE RESTRICT"
   ventas |o--o{ movimientos_stock : "ON DELETE RESTRICT"
   ventas ||--o{ pagos : "ON DELETE CASCADE"
@@ -129,9 +173,12 @@ erDiagram
 
 ## Índices no únicos
 
+- **accounts**: `accounts_tenant_id_user_id_idx` sobre (`tenant_id`, `user_id`)
 - **clientes**: `clientes_tenant_id_idx` sobre (`tenant_id`)
 - **movimientos_stock**: `movimientos_stock_tenant_id_articulo_id_idx` sobre (`tenant_id`, `articulo_id`)
 - **movimientos_stock**: `movimientos_stock_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
 - **pagos**: `pagos_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
+- **sessions**: `sessions_tenant_id_user_id_idx` sobre (`tenant_id`, `user_id`)
 - **venta_items**: `venta_items_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
 - **ventas**: `ventas_tenant_id_creado_en_idx` sobre (`tenant_id`, `creado_en`)
+- **verifications**: `verifications_tenant_id_identifier_idx` sobre (`tenant_id`, `identifier`)

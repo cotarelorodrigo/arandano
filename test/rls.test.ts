@@ -279,4 +279,89 @@ describe('aislamiento por RLS', () => {
       ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
     })
   })
+
+  // Las tres tablas de Better Auth, probadas por COMPORTAMIENTO y no sólo por
+  // forma, igual que las de ventas más arriba: guardan tokens de sesión y
+  // hashes de contraseña, así que son las últimas que deberían quedar cubiertas
+  // sólo por test/rls-cobertura.test.ts (que verifica que la policy EXISTA, no
+  // que compare contra la columna correcta).
+  describe('las tablas de autenticación', () => {
+    const TABLAS_AUTH = ['sessions', 'accounts', 'verifications'] as const
+    let usuarioB: string
+
+    beforeAll(async () => {
+      // sessions.user_id y accounts.user_id son FK a users: la fila necesita
+      // un usuario del mismo tenant. verifications no tiene esa FK.
+      const u = await owner.query(
+        `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, 'Usuario de B', 'auth-b@ejemplo.com', 'EMPLEADO', now(), now())
+         RETURNING id`,
+        [tenantB],
+      )
+      usuarioB = u.rows[0].id
+
+      await owner.query(
+        `INSERT INTO sessions (id, tenant_id, user_id, token, expira_en, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, $2, 'token-de-b', now() + interval '1 day', now(), now())`,
+        [tenantB, usuarioB],
+      )
+      await owner.query(
+        `INSERT INTO accounts (id, tenant_id, user_id, account_id, provider_id, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, $2, 'cuenta-de-b', 'credential', now(), now())`,
+        [tenantB, usuarioB],
+      )
+      await owner.query(
+        `INSERT INTO verifications (id, tenant_id, identifier, value, expira_en, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, 'verificacion-de-b', 'valor', now() + interval '1 day', now(), now())`,
+        [tenantB],
+      )
+    })
+
+    for (const tabla of TABLAS_AUTH) {
+      it(`${tabla}: el otro tenant no ve la fila, y su dueño sí`, async () => {
+        const { rows: deA } = await comoTenant(tenantA, `SELECT 1 FROM ${tabla}`)
+        expect(deA, `${tabla} filtró filas de otro tenant`).toHaveLength(0)
+
+        // La mitad que falta, igual que en los otros bloques: sin ella, una
+        // tabla vacía para todos (policy que compara la columna que no es, o
+        // filas que nunca se insertaron) daría 0 y el test quedaría verde sin
+        // haber probado ningún aislamiento.
+        const { rows: deB } = await comoTenant(tenantB, `SELECT 1 FROM ${tabla}`)
+        expect(deB, `${tabla} no es legible por su propio tenant`).toHaveLength(1)
+      })
+    }
+
+    it('sessions: rechaza insertar con el tenant_id de otro', async () => {
+      await expect(
+        comoTenant(
+          tenantA,
+          `INSERT INTO sessions (id, tenant_id, user_id, token, expira_en, creado_en, actualizado_en)
+           VALUES (gen_random_uuid(), $1, $2, 'token-infiltrado', now() + interval '1 day', now(), now())`,
+          [tenantB, usuarioB],
+        ),
+      ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+    })
+
+    it('accounts: rechaza insertar con el tenant_id de otro', async () => {
+      await expect(
+        comoTenant(
+          tenantA,
+          `INSERT INTO accounts (id, tenant_id, user_id, account_id, provider_id, creado_en, actualizado_en)
+           VALUES (gen_random_uuid(), $1, $2, 'cuenta-infiltrada', 'credential', now(), now())`,
+          [tenantB, usuarioB],
+        ),
+      ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+    })
+
+    it('verifications: rechaza insertar con el tenant_id de otro', async () => {
+      await expect(
+        comoTenant(
+          tenantA,
+          `INSERT INTO verifications (id, tenant_id, identifier, value, expira_en, creado_en, actualizado_en)
+           VALUES (gen_random_uuid(), $1, 'verificacion-infiltrada', 'valor', now() + interval '1 day', now(), now())`,
+          [tenantB],
+        ),
+      ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+    })
+  })
 })

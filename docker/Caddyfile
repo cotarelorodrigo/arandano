@@ -44,9 +44,14 @@ localhost:443 {
 	reverse_proxy app:3000
 }
 
-# Sólo redirección, nunca reverse_proxy. Este puerto existe para resolver el
-# desafío HTTP de ACME y para empujar a todo el mundo a TLS; no para servir la
-# app.
+# Sólo redirección, nunca reverse_proxy. Este puerto existe únicamente para
+# empujar a todo el mundo a TLS.
+#
+# Ya NO sirve para el desafío de ACME: desde el cutover, los certificados se
+# emiten por DNS-01 —Caddy escribe un TXT en la zona de Hetzner— porque un
+# wildcard no se puede emitir de otra forma. El :80 podría cerrarse por
+# completo; se deja abierto porque un cliente que tipea el dominio sin "https"
+# tiene que llegar igual.
 #
 # 308 y no el 302 que Caddy usa por default: es permanente y preserva el
 # método, así que un POST a http:// no se degrada en silencio a GET.
@@ -63,4 +68,31 @@ localhost:443 {
 # es lo que rompía producción — ver el spec del cutover.
 :80 {
 	redir https://{host}{uri} 308
+}
+
+# El dominio real. Un site block NUEVO y no un reemplazo de localhost:443: ese
+# otro es por donde el gate del deploy verifica producción, y pisarlo dejaría
+# todo el tráfico de clientes rechazado con "no certificate available" — que del
+# lado del cliente es indistinguible de un TLS roto.
+#
+# El wildcard cubre a todos los tenants: flor.arandano.app funciona sin emitir
+# nada ni tocar el DNS por cada cliente nuevo, que es lo que sostiene la promesa
+# del alta instantánea.
+#
+# El emisor es el de producción de Let's Encrypt (el default de Caddy). La
+# primera emisión se hizo contra el staging para validar módulo, token,
+# permisos y propagación sin gastar intentos del límite real; ese rodeo está
+# documentado en el spec del cutover y conviene repetirlo ante cualquier cambio
+# de esta configuración.
+arandano.app, *.arandano.app {
+	tls {
+		dns hetzner {env.HETZNER_DNS_TOKEN}
+		# 30s es el valor que documenta el propio módulo como arreglo de un
+		# problema conocido: el DNS de Hetzner propaga los TXT con lentitud y
+		# sin esto el primer intento falla. Se arranca acá y no más alto a
+		# propósito — emitir contra staging existe justamente para que este
+		# número se pueda ajustar sin que un fallo cueste nada.
+		propagation_delay 30s
+	}
+	reverse_proxy app:3000
 }

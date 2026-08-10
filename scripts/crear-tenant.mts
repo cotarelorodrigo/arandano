@@ -90,7 +90,15 @@ export function parsearArgumentos(argv: string[]): ResultadoArgs {
       subdominio,
       nombre: crudos.get('--nombre')!,
       modulos,
-      duenio: crudos.get('--duenio')!,
+      // Better Auth normaliza a minúsculas TANTO al guardar como al buscar
+      // (ver internal-adapter.mjs: createUser y findUserByEmail hacen
+      // email.toLowerCase() de los dos lados). Este INSERT es el único punto
+      // de todo el sistema que escribe la columna `email` sin pasar por
+      // Better Auth — sin este normalizado, un alta con `--duenio=Flor@...`
+      // deja una fila que ni `usuario:clave` ni el login van a poder
+      // encontrar nunca, porque la comparación en la base es sensible a
+      // mayúsculas y sólo el lado de la búsqueda se lowercasea.
+      duenio: crudos.get('--duenio')!.toLowerCase(),
       duenioNombre: crudos.get('--duenio-nombre')!,
     },
   }
@@ -131,8 +139,9 @@ async function crear(args: ArgsAlta): Promise<void> {
       )
     }
 
-    // Sin credenciales: `users` no tiene columna de contraseña todavía. Eso es
-    // trabajo del ciclo de autenticación, que va a necesitar su propia migración.
+    // Sin credenciales: el hash lo produce Better Auth, y este script corre como
+    // arandano_owner con `pg` pelado. La contraseña se define después, con
+    // `npm run usuario:clave` — ver el aviso que se imprime al terminar.
     await cliente.query(
       `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
        VALUES (gen_random_uuid(), $1, $2, $3, 'DUENO', now(), now())`,
@@ -145,8 +154,13 @@ async function crear(args: ArgsAlta): Promise<void> {
     console.log(`tenant creado: ${args.nombre}`)
     console.log(`  id:      ${tenantId}`)
     console.log(`  url:     https://${args.subdominio}.${dominio}/`)
-    console.log(`  dueño:   ${args.duenioNombre} <${args.duenio}> (sin credenciales todavía)`)
+    console.log(`  dueño:   ${args.duenioNombre} <${args.duenio}>`)
     console.log(`  módulos: ${args.modulos.length ? args.modulos.join(', ') : '(ninguno)'}`)
+    console.log('')
+    console.log('FALTA la contraseña del dueño. Sin ella no puede entrar:')
+    console.log(
+      `  npm run usuario:clave -- --subdominio=${args.subdominio} --email=${args.duenio}`,
+    )
   } catch (err) {
     await cliente.query('ROLLBACK')
     // El @unique de la columna es la defensa real contra el duplicado; acá sólo
