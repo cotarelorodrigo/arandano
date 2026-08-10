@@ -35,7 +35,7 @@ Un certificado wildcard **sólo** se emite por el desafío DNS-01, y DNS-01 exig
 que Caddy escriba un registro TXT en la zona **por API, solo, en cada
 renovación** — cada 60 días, para siempre.
 
-Hetzner DNS tiene el módulo `caddy-dns/hetzner`. DonWeb no tiene ninguno. Dejar
+Hetzner DNS tiene el módulo `caddy-dns/hetzner/v2`. DonWeb no tiene ninguno. Dejar
 el DNS en DonWeb convertiría cada renovación en un trámite manual, y un
 certificado que depende de que alguien se acuerde cada dos meses es un
 certificado que un día vence un domingo.
@@ -66,7 +66,7 @@ de Caddy:
 ARG CADDY_VERSION
 
 FROM caddy:${CADDY_VERSION}-builder AS builder
-RUN xcaddy build --with github.com/caddy-dns/hetzner
+RUN xcaddy build --with github.com/caddy-dns/hetzner/v2
 
 FROM caddy:${CADDY_VERSION}-alpine
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
@@ -74,6 +74,29 @@ COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 
 Verificado que las dos etiquetas existen para la versión que corre hoy
 (`2.11.4-builder` y `2.11.4-alpine`).
+
+**El `/v2` no es opcional, y su ausencia no se ve hasta que es cara.**
+`caddy-dns/hetzner` sin sufijo resuelve a `v1.0.0`, que llama a
+`dns.hetzner.com/api/v1` — la API vieja de Hetzner DNS. Hetzner movió el DNS a
+la Cloud Console y esa API ya está de baja: medido desde este servidor el
+2026-08-10, responde `301` hacia `console.hetzner.com` y nada más. La zona
+`arandano.app` y el token del dueño existen sólo contra la API nueva
+(`api.hetzner.cloud/v1`, con `Authorization: Bearer`), que es la que habla el
+módulo v2.
+
+Lo que hace que esto merezca un párrafo y no una nota al pie es **cómo falla**.
+Con v1 compilado adentro, el build sale con 0 y el guard de
+`scripts/build-caddy.sh` sigue viendo `dns.providers.hetzner` registrado, porque
+el ID del módulo de Caddy no cambió entre las dos versiones del paquete Go —
+sólo cambió la ruta de import y, con ella, contra qué endpoint habla. O sea que
+la imagen mala es indistinguible de la buena hasta el intento real de emitir el
+wildcard, donde el síntoma —una validación DNS-01 que nunca completa— se lee
+igual que un token inválido o un permiso faltante. Y ahí el diagnóstico se va a
+buscar a la cuenta de Hetzner, que es donde no está el problema, gastando
+intentos contra el límite de 5 validaciones fallidas por hora de Let's Encrypt.
+
+La verificación que sí lo distingue es la versión compilada, no el ID del
+módulo: `caddy build-info | grep -i hetzner` tiene que decir `v2`.
 
 Las dos versiones se fijan **explícitas y coincidentes**. Un `builder` y un
 runtime de versiones distintas producen un binario que arranca y falla raro.
@@ -224,10 +247,16 @@ sitio caído y una hora de espera por delante.
   renovación; en régimen Caddy sigue siendo un proxy. Si la emisión muriera por
   memoria, el síntoma sería un contenedor reiniciándose durante el paso 4, y ahí
   se sube.
-- **El token es una credencial con poder sobre la zona entera.** Quien lo tenga
-  puede reescribir el DNS de `arandano.app` — incluido apuntarlo a otro
-  servidor. Vive en el mismo archivo 0600 que las credenciales de la base y
-  hereda su exposición: un compromiso de root ya las tenía todas.
+- **El token es una credencial con poder sobre la cuenta entera, no sobre una
+  zona.** Una versión anterior de este spec decía "sobre la zona entera", y
+  entendía de menos: los tokens de la Cloud API de Hetzner se emiten a nivel de
+  proyecto y no se pueden acotar a `arandano.app`. Quien lo tenga puede
+  reescribir el DNS de cualquier zona del proyecto — incluido apuntar
+  `arandano.app` a otro servidor — y alcanza el resto de la API de Cloud que el
+  proyecto exponga. Vive en el mismo archivo 0600 que las credenciales de la
+  base y hereda su exposición: un compromiso de root ya las tenía todas. Lo que
+  sí acota el daño es tener el dominio en un proyecto de Hetzner propio, sin
+  otros recursos adentro.
 
 ## Fuera de alcance
 

@@ -4,9 +4,9 @@
 
 **Goal:** Que `arandano.app` y cualquier subdominio de tenant se sirvan con un certificado wildcard emitido y renovado solo, y que el gate del deploy detecte si eso deja de funcionar.
 
-**Architecture:** Una imagen propia de Caddy —construida con `xcaddy` y el módulo `caddy-dns/hetzner`, tageada por versión y no por SHA de git— reemplaza a `caddy:2-alpine`. Un site block nuevo para el dominio real emite `*.arandano.app` por DNS-01, escribiendo registros TXT en la zona de Hetzner con un token que sólo ese contenedor recibe. La primera emisión va contra el staging de Let's Encrypt para validar la cadena sin gastar intentos del límite real, y recién después entran los dos chequeos que hoy le faltan al gate.
+**Architecture:** Una imagen propia de Caddy —construida con `xcaddy` y el módulo `caddy-dns/hetzner/v2`, tageada por versión y no por SHA de git— reemplaza a `caddy:2-alpine`. Un site block nuevo para el dominio real emite `*.arandano.app` por DNS-01, escribiendo registros TXT en la zona de Hetzner con un token que sólo ese contenedor recibe. La primera emisión va contra el staging de Let's Encrypt para validar la cadena sin gastar intentos del límite real, y recién después entran los dos chequeos que hoy le faltan al gate.
 
-**Tech Stack:** Caddy 2.11.4 con `xcaddy`, `caddy-dns/hetzner`, ACME DNS-01, Let's Encrypt (staging y producción), Docker Compose, bash.
+**Tech Stack:** Caddy 2.11.4 con `xcaddy`, `caddy-dns/hetzner/v2` (el sufijo importa: v1 habla una API dada de baja), ACME DNS-01, Let's Encrypt (staging y producción), Docker Compose, bash.
 
 **Spec:** `docs/superpowers/specs/2026-08-09-cutover-wildcard-design.md`
 
@@ -85,7 +85,15 @@ ARG CADDY_VERSION
 # La imagen oficial `-builder` trae xcaddy y la cadena de Go ya armadas. Es el
 # patrón que documenta el propio proyecto de Caddy para compilar módulos.
 FROM caddy:${CADDY_VERSION}-builder AS builder
-RUN xcaddy build --with github.com/caddy-dns/hetzner
+
+# El `/v2` NO es opcional: sin sufijo, `caddy-dns/hetzner` resuelve a v1.0.0, que
+# habla contra `dns.hetzner.com/api/v1` — la API vieja de Hetzner DNS, ya dada de
+# baja (responde 301 hacia console.hetzner.com). La zona real y el token del
+# dueño sólo existen contra la API nueva (`api.hetzner.cloud/v1`), que es la que
+# habla el módulo v2. Con v1 adentro el build sale con 0 y el guard del Step 2
+# sigue pasando —el ID del módulo no cambió entre las dos versiones—, así que el
+# error recién aparece en el Step de emisión y parece un token mal configurado.
+RUN xcaddy build --with github.com/caddy-dns/hetzner/v2
 
 # El runtime tiene que ser la MISMA versión que el builder. Un binario compilado
 # contra una y corriendo sobre otra arranca y falla de formas raras.
