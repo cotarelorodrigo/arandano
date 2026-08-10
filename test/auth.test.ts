@@ -185,3 +185,40 @@ describe('el aislamiento roto se detecta (Step 6)', () => {
     }
   })
 })
+
+describe('la sesión de un usuario desactivado', () => {
+  it('deja de valer en el request siguiente', async () => {
+    const auth = authParaTenant(tenantA, ORIGEN)
+
+    const r = await auth.api.signInEmail({
+      body: { email: MAIL, password: CLAVE_A },
+      asResponse: true,
+    })
+    const cookie = r.headers.get('set-cookie')!.split(';')[0]
+    const cabeceras = new Headers({ cookie })
+
+    // Con la sesión viva, Better Auth la devuelve.
+    const antes = await auth.api.getSession({ headers: cabeceras })
+    expect(antes?.user).toBeTruthy()
+
+    await owner.query(
+      'UPDATE users SET desactivado_en = now() WHERE tenant_id = $1 AND email = $2',
+      [tenantA, MAIL],
+    )
+
+    // Better Auth NO sabe nada de desactivación: la sesión le sigue pareciendo
+    // válida. Ésa es exactamente la razón por la que el guard existe, y por la
+    // que el chequeo va en cada request y no sólo al entrar: si se hiciera sólo
+    // al entrar, echar a un empleado no tendría efecto hasta que se le venciera
+    // la sesión.
+    const despues = await auth.api.getSession({ headers: cabeceras })
+    expect(despues?.user, 'Better Auth ya no devuelve la sesión: el test no prueba nada')
+      .toBeTruthy()
+    expect((despues!.user as { desactivadoEn?: unknown }).desactivadoEn).toBeTruthy()
+
+    await owner.query(
+      'UPDATE users SET desactivado_en = NULL WHERE tenant_id = $1 AND email = $2',
+      [tenantA, MAIL],
+    )
+  })
+})
