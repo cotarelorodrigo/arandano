@@ -32,6 +32,9 @@ export default defineConfig({
     // parte de este presupuesto.
     hookTimeout: 120_000,
     testTimeout: 30_000,
+    // Better Auth exige un secreto para firmar. En los tests no protege nada
+    // real, pero sin él la construcción de la instancia falla.
+    env: { BETTER_AUTH_SECRET: 'secreto-solo-para-tests-sin-valor-real' },
   },
   resolve: {
     alias: { '@': path.resolve(import.meta.dirname, '.') },
