@@ -61,6 +61,20 @@ export async function definirClave(args: ArgsClave): Promise<void> {
     throw new Error(`no existe un usuario con el mail ${args.email} en ese tenant`)
   }
 
+  // ctx.password.hash no valida longitud por su cuenta —eso lo hacen los
+  // endpoints (signUpEmail, /reset-password) antes de llamarlo—, y acá se
+  // llama directo, así que el chequeo se repite a mano. Sin esto, el script
+  // podría dejar una clave más corta que minPasswordLength, una que
+  // funcionaría para entrar pero violaría la política que el resto del
+  // sistema sí hace cumplir.
+  const { minPasswordLength, maxPasswordLength } = ctx.password.config
+  if (args.clave.length < minPasswordLength) {
+    throw new Error(`la clave necesita al menos ${minPasswordLength} caracteres`)
+  }
+  if (args.clave.length > maxPasswordLength) {
+    throw new Error(`la clave no puede superar los ${maxPasswordLength} caracteres`)
+  }
+
   // El hash lo produce Better Auth, nunca código nuestro: es la regla que este
   // ciclo no negocia, para que el algoritmo quede decidido en un solo lugar.
   const hash = await ctx.password.hash(args.clave)

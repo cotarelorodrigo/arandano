@@ -234,6 +234,38 @@ describe('definir-clave', () => {
     })
     expect(r.status).toBe(200)
   })
+
+  /**
+   * `ctx.password.hash` no valida longitud por su cuenta —eso lo hacen los
+   * endpoints de Better Auth ANTES de llamarlo (ver password.mjs)—, y
+   * `definirClave` lo llama directo. Sin este chequeo propio, el script
+   * dejaría pasar una clave más corta que `minPasswordLength` (8, ver
+   * OPCIONES_BASE) que después funcionaría para entrar igual: una política
+   * que el resto del sistema exige y este único camino se saltearía.
+   *
+   * Usa un usuario PROPIO (no MAIL/tenantB) para no depender de qué clave
+   * dejó el test de arriba, que la reemplaza y no la restaura.
+   */
+  it('rechaza una clave más corta que la política mínima', async () => {
+    const { definirClave } = await import('@/scripts/definir-clave.mts')
+
+    const mail = 'clave-corta@ejemplo.test'
+    const claveOriginal = 'clave-larga-de-sobra'
+    await authParaTenant(tenantA, ORIGEN).api.signUpEmail({
+      body: { email: mail, password: claveOriginal, name: 'Clave corta' },
+    })
+
+    await expect(
+      definirClave({ tenantId: tenantA, email: mail, clave: 'corta', origen: ORIGEN }),
+    ).rejects.toThrow(/al menos/)
+
+    // Y no queda a mitad de camino: la clave original se mantiene sirviendo.
+    const r = await authParaTenant(tenantA, ORIGEN).api.signInEmail({
+      body: { email: mail, password: claveOriginal },
+      asResponse: true,
+    })
+    expect(r.status).toBe(200)
+  })
 })
 
 describe('la sesión de un usuario desactivado', () => {
