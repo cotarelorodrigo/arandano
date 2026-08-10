@@ -20,7 +20,16 @@ const GENERICO = 'Mail o contraseña incorrectos.'
 const DEMASIADOS = 'Demasiados intentos. Esperá un minuto y volvé a probar.'
 
 export async function entrar(_estado: EstadoLogin, datos: FormData): Promise<EstadoLogin> {
-  const email = String(datos.get('email') ?? '').trim()
+  // Minúsculas acá arriba, una sola vez, y no sólo por prolijidad: Better Auth
+  // normaliza el mail internamente antes de buscar, así que `signInEmail`
+  // autentica perfecto a quien escribe `Flor@Ejemplo.com`, pero la consulta de
+  // más abajo —la nuestra, contra una columna String con comparación sensible
+  // a mayúsculas— no encontraba esa fila, se salteaba el chequeo de
+  // desactivación y mandaba a la persona a `/`, donde el guard la rebotaba a
+  // /login sin decirle por qué. Es la misma invariante que ya rige en el alta
+  // de tenants y en el alta de empleados; lo que faltaba era que llegara hasta
+  // este camino.
+  const email = String(datos.get('email') ?? '').trim().toLowerCase()
   const clave = String(datos.get('clave') ?? '')
   if (!email || !clave) return { error: GENERICO }
 

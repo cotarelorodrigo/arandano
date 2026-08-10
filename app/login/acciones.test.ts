@@ -92,6 +92,45 @@ describe('entrar: el mensaje no distingue mail inexistente de contraseña incorr
   })
 })
 
+describe('el aviso de usuario desactivado', () => {
+  /**
+   * `signInEmail` normaliza el mail a minúsculas por su cuenta, así que un
+   * empleado desactivado que escribe `Flor@Ejemplo.com` SE AUTENTICA igual. Lo
+   * que se rompía era el chequeo de desactivación de acá abajo: consultaba con
+   * el input crudo contra una columna sensible a mayúsculas, no encontraba
+   * nada, y la persona terminaba en `/` — donde el guard la rebota a /login
+   * sin explicación, con su fila de sesión sin borrar.
+   *
+   * Por eso el test usa una variante en mayúsculas: con el mail tal cual está
+   * guardado, pasa igual con el bug puesto.
+   */
+  it('sale igual con el mail escrito en mayúsculas', async () => {
+    const mail = 'desactivado@ejemplo.test'
+    const origen = await origenDelRequest(estado.subdominio)
+    await authParaTenant(estado.tenantId, origen).api.signUpEmail({
+      body: { email: mail, password: CLAVE_REAL, name: 'Desactivado' },
+    })
+    await owner.query(
+      'UPDATE users SET desactivado_en = now() WHERE tenant_id = $1 AND email = $2',
+      [estado.tenantId, mail],
+    )
+
+    const r = await entrar({ error: null }, formulario('Desactivado@Ejemplo.TEST', CLAVE_REAL))
+
+    expect(r.error).toBe('Tu usuario está desactivado. Pedile al dueño que lo reactive.')
+
+    // Y la sesión que el login alcanzó a crear no queda viva: es la otra mitad
+    // del hallazgo — con el chequeo salteado, nadie la borraba.
+    const { rows } = await owner.query(
+      `SELECT count(*)::int n FROM sessions s
+        JOIN users u ON u.id = s.user_id
+       WHERE u.tenant_id = $1 AND u.email = $2`,
+      [estado.tenantId, mail],
+    )
+    expect(rows[0].n, 'quedó una sesión viva de alguien desactivado').toBe(0)
+  })
+})
+
 describe('el freno de fuerza bruta', () => {
   /**
    * Test de COMPORTAMIENTO, no de configuración. `lib/auth/opciones.test.ts`
