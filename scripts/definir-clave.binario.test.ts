@@ -94,7 +94,7 @@ describe('el binario (npx tsx scripts/definir-clave.mts)', () => {
     }
   }, 30_000)
 
-  it('con un usuario inexistente, sale con código distinto de 0 y un mensaje legible en stderr, no un stack trace', async () => {
+  it('con un usuario inexistente, sale con código distinto de 0, un mensaje legible en stderr, y sin stack trace de resolución de módulos', async () => {
     const owner = new Client({ connectionString: urlOwner() })
     await owner.connect()
     try {
@@ -109,25 +109,37 @@ describe('el binario (npx tsx scripts/definir-clave.mts)', () => {
         '--clave=algo-largo-123',
       ]
 
-      await expect(ejecutar('npx', argumentos, { env: envDelProceso() })).rejects.toMatchObject({
-        code: 1,
-        stderr: expect.stringContaining('no existe un usuario con el mail'),
-      })
-
-      // El caso puntual que este ciclo encontró: el comando podía morir
-      // ANTES de llegar a este mensaje, con un stack trace de
-      // ERR_MODULE_NOT_FOUND en vez de un error legible — para CUALQUIER
-      // invocación, no sólo ésta. Sin esta aserción, un stack trace que por
-      // casualidad también trajera el string de arriba en algún lado (no es
-      // el caso hoy, pero no hay que confiar en eso) pasaría igual.
+      // Una sola corrida para las tres aserciones: el binario es un proceso
+      // hijo real de varios segundos, y lanzarlo dos veces para afirmar tres
+      // cosas sobre LA MISMA falla duplicaba ese costo dentro del gate sin
+      // sumar cobertura (hallazgo de la review de Task 11).
+      let error: { code?: number; stderr?: string } | undefined
       try {
         await ejecutar('npx', argumentos, { env: envDelProceso() })
-        expect.unreachable('tenía que fallar: el usuario no existe')
       } catch (e) {
-        const err = e as { stderr: string }
-        expect(err.stderr).not.toContain('ERR_MODULE_NOT_FOUND')
-        expect(err.stderr).not.toContain(' at ')
+        error = e as { code?: number; stderr?: string }
       }
+
+      // Si el comando NO tiró, esto tiene que fallar el test de forma
+      // legible, sin quedar atrapado en ningún catch de más arriba: antes,
+      // esta comprobación vivía como `expect.unreachable()` DENTRO del
+      // `try` cuyo `catch` hacía las aserciones — si algún día el mock se
+      // rompiera y el comando saliera 0, ese `catch` se habría tragado la
+      // falla de `expect.unreachable()` y la habría reportado como si fuera
+      // otra cosa.
+      if (!error) {
+        throw new Error('tenía que fallar: el usuario no existe, y el comando salió con código 0')
+      }
+
+      expect(error.code).toBe(1)
+      expect(error.stderr).toContain('no existe un usuario con el mail')
+
+      // El caso puntual que este ciclo encontró: el comando podía morir
+      // ANTES de llegar al mensaje de arriba, con un stack trace de
+      // ERR_MODULE_NOT_FOUND en vez de un error legible — para CUALQUIER
+      // invocación, no sólo ésta.
+      expect(error.stderr).not.toContain('ERR_MODULE_NOT_FOUND')
+      expect(error.stderr).not.toContain(' at ')
     } finally {
       await owner.end()
     }

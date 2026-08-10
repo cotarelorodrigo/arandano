@@ -36,6 +36,16 @@ COPY prisma ./prisma
 COPY scripts ./scripts
 COPY lib ./lib
 
+# `tsconfig.json` es lo que `tsx` (deploy.sh, pasos 8 y 14: `--entrypoint npx
+# ... tsx scripts/crear-tenant.mts`) lee para resolver el alias `@/` — sin
+# este archivo, `tsx` adentro de esta imagen resuelve los imports SIN
+# extensión del cliente de Prisma generado (por eso funcionaría igual hoy,
+# que `crear-tenant.mts` no usa `@/`) pero NO resuelve `@/` — la misma media
+# solución que dejaba `node` pelado antes de Task 11, sólo que un `@/` nuevo
+# recién se notaría en el deploy, no en `npm test`. Verificado buildeando
+# esta etapa y corriendo el script adentro (ver `docs/runbook-stacks.md`).
+COPY tsconfig.json ./
+
 ARG GIT_SHA
 RUN test -n "$GIT_SHA" || { \
     echo "ERROR: falta --build-arg GIT_SHA=\$(git rev-parse --short HEAD)."; \

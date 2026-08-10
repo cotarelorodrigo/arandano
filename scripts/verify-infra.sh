@@ -346,7 +346,19 @@ suite_env() {
   # falso verde que este caso existe para evitar.
   check_cmd "dev tiene BETTER_AUTH_SECRET" test -n "$secreto_dev"
   check_cmd "prod tiene BETTER_AUTH_SECRET" test -n "$secreto_prod"
-  check_ne "dev y prod no comparten BETTER_AUTH_SECRET" "$secreto_dev" "$secreto_prod"
+  # El check_ne de acá abajo queda CONDICIONADO a que los dos de arriba hayan
+  # pasado — no alcanza con haberlos corrido antes. Sin esta condición,
+  # "prod tiene BETTER_AUTH_SECRET" salía ✗ (correcto) pero "dev y prod no
+  # comparten BETTER_AUTH_SECRET" salía ✓ igual, porque check_ne compara
+  # "$secreto_dev" contra la cadena vacía y son distintos — un ✓ verde justo
+  # al lado de un ✗, en la línea donde le cae el ojo al operador que sólo mira
+  # colores. Hallazgo de la review de Task 11 contra la salida real de esta
+  # misma suite.
+  if [[ -n "$secreto_dev" && -n "$secreto_prod" ]]; then
+    check_ne "dev y prod no comparten BETTER_AUTH_SECRET" "$secreto_dev" "$secreto_prod"
+  else
+    bad "dev y prod no comparten BETTER_AUTH_SECRET (no se puede comparar: falta alguno de los dos arriba)"
+  fi
 
   # Y que cada app sepa contra qué base debe estar hablando: es lo que
   # convierte el check de postgres en una prueba de identidad y no sólo de

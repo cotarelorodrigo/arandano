@@ -86,10 +86,19 @@ describe('parsearArgumentos', () => {
  * El binario real, no la función exportada — mismo motivo que
  * scripts/definir-clave.test.ts (Task 11). Éste sí funcionaba con `node`
  * pelado (evita Prisma a propósito, ver el comentario de cabecera del
- * script), pero nunca se había ejercitado como proceso tampoco: comparte el
- * runner (`tsx`) con `usuario:clave` desde este mismo ciclo, y dos comandos
- * operativos con dos formas de arrancar es la clase de diferencia que le
- * cuesta una noche a quien no se acuerde cuál era cuál.
+ * script), pero nunca se había ejercitado como proceso tampoco.
+ *
+ * Comparte el runner (`tsx`) con `usuario:clave` en TODOS los call sites, no
+ * sólo en `package.json`: también en los dos `docker run --entrypoint` de
+ * `scripts/deploy.sh` (pasos 8 y 14), que hasta esta misma corrección seguían
+ * en `node` pelado — la review de Task 11 lo marcó como el mismo bug un
+ * archivo más allá, verificado buildeando la etapa `migrate` del Dockerfile
+ * (que necesitó sumar `tsconfig.json` al `COPY`, sin el cual `tsx` resuelve
+ * los imports sin extensión pero NO el alias `@/`) y corriendo el comando
+ * adentro. Dos comandos operativos con formas de arrancar distintas entre sí
+ * — o el mismo comando arrancando distinto según quién lo invoque — es la
+ * clase de diferencia que le cuesta una noche a quien no se acuerde cuál era
+ * cuál.
  */
 describe('el binario (npx tsx scripts/crear-tenant.mts)', () => {
   const envDelProceso = () => ({ ...process.env, MIGRATE_DATABASE_URL: urlOwner() })
@@ -128,7 +137,7 @@ describe('el binario (npx tsx scripts/crear-tenant.mts)', () => {
     }
   }, 30_000)
 
-  it('con un subdominio repetido, sale con código distinto de 0 y un mensaje legible en stderr, no un stack trace', async () => {
+  it('con un subdominio repetido, sale con código distinto de 0, un mensaje legible en stderr, y sin stack trace de resolución de módulos', async () => {
     const owner = new Client({ connectionString: urlOwner() })
     await owner.connect()
     try {
@@ -141,15 +150,37 @@ describe('el binario (npx tsx scripts/crear-tenant.mts)', () => {
         '--duenio=original@ejemplo.test',
         '--duenio-nombre=Original',
       ]
+      // Esta primera corrida no es el duplicado del comentario de más abajo
+      // sobre "una sola corrida por falla" (scripts/definir-clave.binario.test.ts):
+      // ACÁ las dos invocaciones tienen un propósito distinto cada una — la
+      // primera arma la precondición (el subdominio ya existe), la segunda es
+      // la que efectivamente se está probando.
       await ejecutar('npx', argumentos, { env: envDelProceso() })
 
       // La segunda alta con el mismo subdominio choca contra el @unique de
       // verdad: es un fallo que sólo puede pasar tocando la base, no algo
       // que el parseo de argumentos ya hubiera atajado.
-      await expect(ejecutar('npx', argumentos, { env: envDelProceso() })).rejects.toMatchObject({
-        code: 1,
-        stderr: expect.stringContaining(`ya existe un tenant con el subdominio "${subdominio}"`),
-      })
+      let error: { code?: number; stderr?: string } | undefined
+      try {
+        await ejecutar('npx', argumentos, { env: envDelProceso() })
+      } catch (e) {
+        error = e as { code?: number; stderr?: string }
+      }
+      if (!error) {
+        throw new Error('tenía que fallar: el subdominio ya existe, y el comando salió con código 0')
+      }
+
+      expect(error.code).toBe(1)
+      expect(error.stderr).toContain(`ya existe un tenant con el subdominio "${subdominio}"`)
+
+      // Mismo motivo que scripts/definir-clave.binario.test.ts: el runbook
+      // documenta esta propiedad para los DOS binarios operativos, así que
+      // los DOS tests la aseguran — no sólo el que originalmente encontró el
+      // bug. Es justo el archivo donde la review de Task 11 señaló que el
+      // mismo bug podía repetirse "un archivo más allá" si `crear-tenant.mts`
+      // ganara un `@/` mañana.
+      expect(error.stderr).not.toContain('ERR_MODULE_NOT_FOUND')
+      expect(error.stderr).not.toContain(' at ')
     } finally {
       await owner.end()
     }
