@@ -1705,9 +1705,16 @@ export async function crearEmpleado(entrada: EntradaCrearEmpleado): Promise<{ id
 
   const db = prismaParaTenant(entrada.tenantId)
 
+  // Minúsculas SIEMPRE, y no por prolijidad: Better Auth busca por
+  // `email.toLowerCase()`, y la columna es un String común con comparación
+  // sensible a mayúsculas. Una fila guardada como `Juan@X.com` no la encuentra
+  // nunca ni el login ni `usuario:clave`. Es el bug que la Task 6 encontró en
+  // el alta de tenants; acá sería el mismo, con empleados.
+  const email = entrada.email.trim().toLowerCase()
+
   // El @@unique([tenantId, email]) es la defensa real; esto sólo traduce a algo
   // legible en vez de dejar salir el error crudo.
-  const yaEsta = await db.user.findFirst({ where: { email: entrada.email } })
+  const yaEsta = await db.user.findFirst({ where: { email } })
   if (yaEsta) {
     throw new ErrorDeUsuario('MAIL_REPETIDO', `ya hay alguien con el mail ${entrada.email} en este local`)
   }
@@ -1717,7 +1724,7 @@ export async function crearEmpleado(entrada: EntradaCrearEmpleado): Promise<{ id
   let id: string
   try {
     const alta = await auth.api.signUpEmail({
-      body: { email: entrada.email, password: entrada.clave, name: entrada.nombre },
+      body: { email, password: entrada.clave, name: entrada.nombre },
     })
     id = alta.user.id
   } catch (e) {
