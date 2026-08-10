@@ -36,6 +36,22 @@ COPY prisma ./prisma
 COPY scripts ./scripts
 COPY lib ./lib
 
+# El cliente de Prisma generado. Esta etapa no lo tenía, y `.dockerignore`
+# excluye `generated` a propósito (es artefacto del host, no del build), así
+# que `definir-clave.mts` —que lo arrastra vía lib/db.ts— no podía correr acá
+# adentro. El síntoma era el peor de esta familia: el comando funciona para
+# quien escribe el código y no para quien opera el producto, incluido el
+# tenant canario que el deploy crea en producción y que hay que verificar a
+# mano después de cada deploy. Como el Postgres de prod no publica puertos,
+# esta imagen es el ÚNICO lugar desde donde se le llega.
+#
+# Va después de COPY lib porque `prisma generate` escribe en /app/generated/
+# (output del generador, ver prisma/schema.prisma) y no depende de scripts/ ni
+# de lib/; el orden acá sólo decide qué capa se invalida primero. `generate` no
+# se conecta a nada, así que no necesita MIGRATE_DATABASE_URL (ver
+# prisma.config.ts).
+RUN npx prisma generate
+
 # `tsconfig.json` es lo que `tsx` (deploy.sh, pasos 8 y 14: `--entrypoint npx
 # ... tsx scripts/crear-tenant.mts`) lee para resolver el alias `@/` — sin
 # este archivo, `tsx` adentro de esta imagen resuelve los imports SIN

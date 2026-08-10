@@ -534,6 +534,47 @@ Sin `--clave`, genera una al azar y la imprime junto con la URL de login.
 el único momento en que existe en texto plano. Si se pierde, el camino no es
 buscarla: es correr el comando de nuevo.
 
+#### En producción (y en ensayo), desde la imagen de migración
+
+El bloque de arriba es el de **dev**, y en producción no sirve: el Postgres de
+prod **no publica puertos**, así que desde el host no se le llega, y el
+workspace del repo no es lo que corre ahí (`/srv/arandano/prod/` no tiene
+código). El único camino es el mismo que ya usa `deploy.sh` para el alta del
+canario: correr el comando **adentro de `arandano-migrate:<sha>`**, enganchado
+a la red del stack.
+
+```bash
+# El SHA que está corriendo, leído del contenedor mismo: la imagen de
+# migración se buildea con el mismo tag que la de la app.
+SHA=$(docker inspect --format '{{.Config.Image}}' arandano-prod-app-1 | cut -d: -f2)
+docker run --rm --network arandano-prod_default \
+  -e DATABASE_URL="$(grep -m1 ^DATABASE_URL /srv/arandano/prod/.env | cut -d= -f2-)" \
+  -e BETTER_AUTH_SECRET="$(grep -m1 ^BETTER_AUTH_SECRET /srv/arandano/prod/.env | cut -d= -f2-)" \
+  -e DOMINIO_BASE=arandano.app \
+  --entrypoint npx "arandano-migrate:$SHA" \
+  tsx scripts/definir-clave.mts --subdominio=flor --email=flor@ejemplo.com
+```
+
+`--entrypoint npx` porque el ENTRYPOINT de esa imagen es `npx prisma` (mismo
+patrón que los pasos 8 y 14 de `deploy.sh`), y `DATABASE_URL` —no
+`MIGRATE_DATABASE_URL`— porque este comando corre **como la aplicación**, o sea
+pasando por RLS. El host de la URL que hay en `/srv/arandano/prod/.env` ya es
+el nombre del servicio (`@postgres:5432`), que es exactamente lo que resuelve
+desde adentro de esa red: acá no hay que reescribirlo como en dev.
+
+**Esto recién funciona desde el ciclo de autenticación.** La etapa `migrate`
+del Dockerfile no corría `prisma generate` y `.dockerignore` excluye
+`generated`, así que la imagen que el deploy ya usaba para `crear-tenant.mts`
+—que evita Prisma a propósito— **no podía correr `definir-clave.mts`**, que sí
+lo arrastra vía `lib/db.ts`. Es el hallazgo de Task 11 una capa más afuera: el
+comando andaba para quien escribe el código y no para quien opera el producto,
+incluido el **tenant canario** que el deploy crea en producción y que
+CLAUDE.md manda verificar a mano después de cada deploy. El arreglo es un
+`RUN npx prisma generate` en esa etapa, y está verificado del modo en que hay
+que verificar estas cosas: buildeando la imagen y corriendo el comando adentro,
+contra una base con las migraciones aplicadas, hasta comprobar que la clave
+que puso **entra de verdad** por la misma API que usa el login.
+
 **Corre con `tsx`, no con `node` pelado — y esto no es un detalle menor.**
 `tenant:crear` y `usuario:clave` (`package.json`) invocan
 `tsx scripts/<archivo>.mts` desde el ciclo de autenticación (Task 11).
