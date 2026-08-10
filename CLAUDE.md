@@ -359,20 +359,25 @@ Y del producto:
    destructivas.~~ **Hecho** (2026-08-06). Ver
    `docs/superpowers/specs/2026-08-06-deploy-design.md` y la sección *Deploy y
    rollback* de `docs/runbook-stacks.md`.
-4. **`npm run usuario:clave` está roto, y es el único camino para darle una
-   contraseña a un dueño.** Hallazgo de la verificación manual de Task 11
-   (2026-08-10): el comando documentado en *Definir la contraseña de un
-   usuario* de `docs/runbook-stacks.md` sale con `ERR_MODULE_NOT_FOUND` antes
-   de tocar la base — `node` pelado no resuelve el alias `@/`
-   (`lib/auth/para-tenant.ts`), y un nivel más adentro el cliente de Prisma
-   generado usa imports relativos sin extensión, que tampoco resuelven bajo
-   Node ESM nativo. Sin arreglarlo, **no hay forma de poner en producción la
-   contraseña del dueño de un tenant nuevo** — el alta queda a mitad de
-   camino. El resto del ciclo (guard, login, RBAC) está verificado y sano;
-   el detalle completo, por qué `tenant:crear` no tiene este problema, y por
-   qué ningún test existente lo agarra, están en el runbook. Bloquea el
-   primer tenant real, no el deploy en sí — el gate y el resto de esta task
-   están al día igual.
+4. ~~**`npm run usuario:clave` estaba roto: el único camino para darle una
+   contraseña a un dueño no llegaba a ejecutarse.**~~ **Hecho** (2026-08-10,
+   Task 11). Hallazgo de la verificación manual de esta task: el comando
+   salía con `ERR_MODULE_NOT_FOUND` antes de tocar la base — `node` pelado no
+   resuelve el alias `@/` (`lib/auth/para-tenant.ts`), y un nivel más adentro
+   el cliente de Prisma generado usa imports relativos sin extensión
+   (`importFileExtension = ""` en `prisma/schema.prisma`, load-bearing para
+   Next y a propósito sin tocar), que tampoco resuelven bajo Node ESM nativo.
+   La salida no fue tocar esa configuración de Prisma: los dos comandos
+   operativos (`tenant:crear`, `usuario:clave`) corren ahora con **`tsx`**
+   como runner (`devDependency` nueva), que resuelve alias de `tsconfig.json`
+   e imports sin extensión sin pelearle a nada. **La lección, no sólo el
+   parche**: `definirClave` (la función) estaba probada bajo vitest, que
+   resuelve `@/` con su propio `resolve.alias` — nadie había corrido alguna
+   vez el BINARIO con el runner real. Se sumaron tests que sí lo hacen
+   (`scripts/definir-clave.binario.test.ts`, `scripts/crear-tenant.test.ts`):
+   spawnean el comando como proceso hijo contra la base efímera y comprueban
+   el efecto (la clave sirve para entrar de verdad), no sólo el código de
+   salida. Detalle completo en `docs/runbook-stacks.md`.
 
 ### Bloqueantes antes del cutover de DNS
 

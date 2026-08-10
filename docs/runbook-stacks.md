@@ -516,11 +516,11 @@ Better Auth después pueda verificar. Definirla es el paso siguiente.
 
 ### Definir la contraseña de un usuario
 
-`npm run usuario:clave` es el que está pensado para hacerlo — corre como la
-aplicación (`DATABASE_URL`, o sea `arandano_app`) y pasa por la API de Better
-Auth, así que también pasa por RLS. Es además el recupero del dueño: mientras
-no haya proveedor de mail, no hay otro camino para resetear una contraseña
-olvidada más que correr este mismo comando de nuevo.
+`npm run usuario:clave` es el que lo hace — corre como la aplicación
+(`DATABASE_URL`, o sea `arandano_app`) y pasa por la API de Better Auth, así
+que también pasa por RLS. Es además el recupero del dueño: mientras no haya
+proveedor de mail, no hay otro camino para resetear una contraseña olvidada
+más que correr este mismo comando de nuevo.
 
 ```bash
 DATABASE_URL="$(grep -m1 ^DATABASE_URL .env.dev | cut -d= -f2- | sed 's/@postgres:5432/@100.64.81.63:5433/')" \
@@ -534,28 +534,54 @@ Sin `--clave`, genera una al azar y la imprime junto con la URL de login.
 el único momento en que existe en texto plano. Si se pierde, el camino no es
 buscarla: es correr el comando de nuevo.
 
-**ROTO hoy (hallazgo de Task 11, sin arreglar todavía).** El comando de
-arriba, tal cual está escrito el código, **no llega a ejecutarse**: `node`
-pelado no resuelve el alias `@/` (`lib/auth/para-tenant.ts` importa
-`@/lib/tenant/prisma`) y sale con `ERR_MODULE_NOT_FOUND` antes de tocar la
-base — ni siquiera llega a necesitar la reescritura de `DATABASE_URL` de
-arriba. Arreglar sólo esa línea no alcanza: un nivel más adentro, el cliente
-de Prisma generado (`generated/prisma/client.ts`) usa imports relativos SIN
-extensión (`./enums`, `./internal/class`), válidos para un bundler
-(webpack/turbopack/Vite, que es como corre tanto Next como `vitest`) pero
-inválidos para la resolución ESM nativa de Node — así que ni reescribiendo el
-alias a una ruta relativa con `.ts` este comando llega a funcionar. `npm run
-tenant:crear` (más arriba) no tiene este problema porque deliberadamente evita
-Prisma y usa `pg` pelado (ver el comentario de cabecera de
-`scripts/crear-tenant.mts`); `definir-clave.mts` necesita la API de Better
-Auth para calcular el hash con el algoritmo correcto, así que no puede evitar
-el mismo camino. Ningún test lo cubre porque los tests existentes ejercitan
-`definirClave` (la función) bajo vitest — que sí resuelve `@/` — o
-`parsearArgumentosCLI` (pura), nunca el binario completo invocado con `node`.
-Que el guard, el login y el RBAC funcionan bien está verificado (Task 11 lo
-probó por HTTP contra `arandano-dev` con una clave puesta a mano, sin pasar
-por este comando); lo que está roto es específicamente este punto de entrada.
-Hace falta una task de seguimiento.
+**Corre con `tsx`, no con `node` pelado — y esto no es un detalle menor.**
+`tenant:crear` y `usuario:clave` (`package.json`) invocan
+`tsx scripts/<archivo>.mts` desde el ciclo de autenticación (Task 11).
+Hasta esa task, los dos corrían con
+`node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON`, y `usuario:clave`
+**no llegaba a ejecutarse nunca**: `lib/auth/para-tenant.ts` importa
+`@/lib/tenant/prisma` con el alias de `tsconfig.json`, que `node` pelado no
+resuelve — sale con `ERR_MODULE_NOT_FOUND` antes de tocar la base, para
+CUALQUIER invocación. Reescribir esa línea a una ruta relativa con extensión
+no alcanzaba: un nivel más adentro, el cliente de Prisma generado
+(`generated/prisma/client.ts`) usa imports relativos SIN extensión
+(`./enums`, `./internal/class`) — válidos para un bundler
+(webpack/turbopack/Vite, que es como corren tanto Next como `vitest`) pero
+inválidos para la resolución ESM nativa de Node. Ésa es la razón de
+`importFileExtension = ""` en `prisma/schema.prisma`: es **load-bearing para
+la aplicación** (el comentario del propio schema lo dice) y no es la pieza
+que había que tocar. `tenant:crear` nunca tuvo este problema porque
+deliberadamente evita Prisma y usa `pg` pelado (ver el comentario de
+cabecera de `scripts/crear-tenant.mts`); `definir-clave.mts` necesita la API
+de Better Auth para calcular el hash con el algoritmo correcto, así que no
+podía evitar el mismo camino. La salida fue sumar `tsx` (`devDependency`) como
+runner de los dos: resuelve los `paths` de `tsconfig.json` y los imports sin
+extensión sin pelearle a la configuración de Prisma. Se evaluó `vite-node`
+como alternativa —reutilizaría la misma resolución que ya usa `vitest.config.mts`—
+y se descartó: sin un `--config` explícito no resuelve el alias tampoco, y
+apuntándolo al `vitest.config.mts` del repo el binario corre pero no hace
+NADA — el guard `import.meta.url === file://${process.argv[1]}` que los dos
+scripts usan para saber que los invocaron como programa (y no como módulo
+importado por un test) nunca se cumple bajo `vite-node`, así que sale con
+código 0 sin haber tocado la base. `tsx` no tiene ninguno de los dos
+problemas, sin configuración adicional.
+
+**La lección, no sólo el parche.** `definirClave` (la función) está probada
+bajo vitest en `test/auth.test.ts` desde que existe, y vitest resuelve `@/`
+con su propio `resolve.alias` (`vitest.config.mts`) — así que esa cobertura
+nunca podía notar que el BINARIO, invocado con el runner real, no llegaba a
+ejecutarse. Nadie lo había corrido como comando hasta la verificación manual
+de Task 11. Por eso ahora hay un test que sí lo hace, por cada uno de los dos
+scripts: `scripts/definir-clave.binario.test.ts` y la sección "el binario"
+de `scripts/crear-tenant.test.ts` spawnean el comando real
+(`npx tsx scripts/<archivo>.mts ...`) como proceso hijo contra la base
+efímera de test, y comprueban el efecto — que la clave puesta por el binario
+sirve para entrar de verdad, con la misma API que usa el login — y no sólo
+que el proceso salió con código 0. Cada uno suma además el camino de error:
+un usuario o un subdominio que no existe tiene que salir con código distinto
+de cero y un mensaje legible en `stderr`, nunca un stack trace de resolución
+de módulos — que es exactamente el síntoma que este hallazgo tenía y que
+antes no hacía fallar ningún test.
 
 ### El tenant canario
 

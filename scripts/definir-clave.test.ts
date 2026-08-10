@@ -38,3 +38,17 @@ describe('parsearArgumentosCLI', () => {
     if (!r.ok) expect(r.motivo).toContain('--email')
   })
 })
+
+// El binario real (spawneado como proceso, contra la base efímera) vive en
+// scripts/definir-clave.binario.test.ts, en su propio archivo y no acá.
+// No es sólo prolijidad: este archivo importa `./definir-clave.mts` de forma
+// ESTÁTICA arriba, y ese módulo arrastra `../lib/db.ts` (para `pool.end()`),
+// que arma su Pool de `pg` UNA SOLA VEZ, al importarse, leyendo
+// `process.env.DATABASE_URL` — igual que documenta el comentario de
+// lib/db.ts sobre el singleton. Compartir el archivo hubiera dejado ese
+// import estático evaluar `lib/db.ts` ANTES de que el test del binario
+// pudiera fijar `DATABASE_URL` a la base efímera, y el Pool cacheado habría
+// quedado apuntando a ninguna parte (ECONNREFUSED) para el resto del
+// archivo. Es el mismo motivo que test/auth.test.ts y
+// app/login/acciones.test.ts ya documentan con imports de sólo-tipo más
+// dynamic import en `beforeAll`.
