@@ -1151,6 +1151,27 @@ if [[ "$OBJETIVO" == prod ]]; then
     rollback_y_salir "el :80 de $OBJETIVO devolvió $codigo_80 y no 308: Caddy no está sirviendo el Caddyfile del repo (¿falta el reload?), y la app puede estar saliendo en texto plano"
   fi
   log "  :80 redirige (308), no sirve la app"
+
+  # El certificado que ven los clientes NO es el que valida el poll de arriba.
+  # `URL_SALUD` entra por localhost:443 con la CA interna; este caso entra por el
+  # hostname real con las CA públicas. Sin él, el wildcard puede no
+  # aprovisionarse, el gate seguir en verde, y todo cliente recibir el
+  # "no certificate available" que el Caddyfile describe como indistinguible de
+  # un TLS roto.
+  #
+  # `--resolve` y no DNS real: lo que se prueba es que Caddy sirve ese hostname
+  # con un certificado aceptable, que es cosa nuestra. Depender de la
+  # propagación del DNS público metería una causa ajena adentro del gate.
+  #
+  # Sin `--cacert` a propósito: valida contra las CA del sistema, igual que un
+  # navegador.
+  codigo_real=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+    --resolve "arandano.app:443:127.0.0.1" \
+    https://arandano.app/api/health 2>/dev/null) || codigo_real=000
+  if [[ "$codigo_real" != 200 ]]; then
+    rollback_y_salir "el dominio real devolvió $codigo_real por HTTPS: el certificado del wildcard no valida contra las CA públicas o Caddy no está sirviendo ese hostname — un cliente vería un TLS roto"
+  fi
+  log "  el dominio real responde con un certificado que un cliente acepta"
 fi
 
 # ---------------------------------------------------------------------------

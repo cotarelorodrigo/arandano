@@ -236,6 +236,26 @@ suite_network() {
   tag_esperado="arandano-caddy:${version_script}-hetzner"
   check_eq "el tag del compose coincide con el que produce build-caddy.sh" \
     "$tag_esperado" "$imagen_caddy"
+
+  # El certificado del dominio real, validado contra las CA PÚBLICAS y no contra
+  # la interna. Es el que cierra la trampa que el Caddyfile ya advierte: el check
+  # de `localhost` de más arriba valida el certificado interno, y eso se acredita
+  # como "el gate detecta un certificado sin emitir" — cierto antes del cutover y
+  # falso justo cuando importa.
+  local verifico_real
+  verifico_real=$(curl -s -o /dev/null -w '%{ssl_verify_result}' --max-time 10 \
+    --resolve "arandano.app:443:127.0.0.1" \
+    https://arandano.app/api/health 2>/dev/null) || verifico_real=99
+  check_eq "el certificado del dominio real valida contra las CA públicas" "0" "$verifico_real"
+
+  # El wildcard, no el apex. Son el mismo certificado, pero un site block mal
+  # escrito puede servir uno y no el otro — y el subdominio es el que usan los
+  # clientes.
+  local verifico_wildcard
+  verifico_wildcard=$(curl -s -o /dev/null -w '%{ssl_verify_result}' --max-time 10 \
+    --resolve "canario.arandano.app:443:127.0.0.1" \
+    https://canario.arandano.app/ 2>/dev/null) || verifico_wildcard=99
+  check_eq "el certificado cubre un subdominio de tenant" "0" "$verifico_wildcard"
 }
 
 suite_limits() {
