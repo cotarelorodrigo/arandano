@@ -6,6 +6,15 @@ vi.mock('@/lib/tenant/desde-request', () => ({
   tenantDelRequest: () => tenantDelRequest(),
 }))
 
+// exigirSesion se mockea acá y no se deja correr de verdad: su implementación
+// real depende de headers(), de authParaTenant y de Postgres, que son detalle
+// de otro módulo (ver lib/auth/sesion.test.ts). Lo único que a esta página le
+// importa es: sin sesión redirige, con sesión trae un usuario.
+const exigirSesion = vi.fn()
+vi.mock('@/lib/auth/sesion', () => ({
+  exigirSesion: () => exigirSesion(),
+}))
+
 const notFound = vi.fn(() => {
   throw new Error('NEXT_NOT_FOUND')
 })
@@ -26,6 +35,7 @@ describe('página raíz', () => {
   beforeEach(() => {
     vi.resetModules()
     tenantDelRequest.mockReset()
+    exigirSesion.mockReset()
     notFound.mockClear()
     forbidden.mockClear()
   })
@@ -33,20 +43,24 @@ describe('página raíz', () => {
   it('404 para un dominio ajeno', async () => {
     tenantDelRequest.mockResolvedValue({ tipo: 'ajeno' })
     await expect(render()).rejects.toThrow('NEXT_NOT_FOUND')
+    expect(exigirSesion).not.toHaveBeenCalled()
   })
 
   it('404 para un subdominio reservado', async () => {
     tenantDelRequest.mockResolvedValue({ tipo: 'reservado', subdominio: 'admin' })
     await expect(render()).rejects.toThrow('NEXT_NOT_FOUND')
+    expect(exigirSesion).not.toHaveBeenCalled()
   })
 
   it('404 para un subdominio inexistente', async () => {
     tenantDelRequest.mockResolvedValue({ tipo: 'inexistente', subdominio: 'nadie' })
     await expect(render()).rejects.toThrow('NEXT_NOT_FOUND')
+    expect(exigirSesion).not.toHaveBeenCalled()
   })
 
   // 403 y no 404, deliberadamente: son mensajes distintos para situaciones
-  // distintas.
+  // distintas. Y antes de exigirSesion: un tenant suspendido no llega ni a
+  // preguntar si hay sesión.
   it('403 para un tenant suspendido', async () => {
     tenantDelRequest.mockResolvedValue({
       tipo: 'tenant',
@@ -54,22 +68,61 @@ describe('página raíz', () => {
     })
     await expect(render()).rejects.toThrow('NEXT_FORBIDDEN')
     expect(notFound).not.toHaveBeenCalled()
+    expect(exigirSesion).not.toHaveBeenCalled()
   })
 
-  // toBeTruthy() no alcanza acá: cualquier elemento JSX es truthy, así que un
-  // tenant hardcodeado o el equivocado hubiera pasado igual. Se afirma sobre
-  // el HTML que realmente sale — el mismo criterio que usa caso_tenant_resuelve
-  // en scripts/smoke.sh — para distinguir de verdad PaginaTenant de PaginaApex
-  // y confirmar que el nombre que se ve es el del tenant resuelto.
-  it('un tenant en TRIAL resuelve como cualquier otro, con su propio nombre', async () => {
+  // Con el guard puesto, un tenant sin sesión ya no renderiza nada de la home:
+  // exigirSesion() es quien decide, y en la realidad redirige a /login (ver
+  // lib/auth/sesion.ts). Acá se simula esa redirección con el mismo patrón que
+  // notFound/forbidden más arriba, porque a esta página sólo le importa que
+  // delega en exigirSesion antes de renderizar, no cómo exigirSesion redirige.
+  it('sin sesión, / delega en exigirSesion (que redirige a /login)', async () => {
     tenantDelRequest.mockResolvedValue({
       tipo: 'tenant',
       tenant: { id: 'x', nombre: 'Flor', estado: 'TRIAL' },
     })
+    exigirSesion.mockImplementation(() => {
+      throw new Error('NEXT_REDIRECT:/login')
+    })
+    await expect(render()).rejects.toThrow('NEXT_REDIRECT:/login')
+    expect(notFound).not.toHaveBeenCalled()
+    expect(forbidden).not.toHaveBeenCalled()
+  })
+
+  // toBeTruthy() no alcanza acá: cualquier elemento JSX es truthy, así que un
+  // tenant hardcodeado o el equivocado hubiera pasado igual. Se afirma sobre
+  // el HTML que realmente sale, para distinguir de verdad PaginaTenant de
+  // PaginaApex y confirmar que el nombre que se ve es el del tenant resuelto
+  // y el usuario el de la sesión — no el testid `tenant-nombre`, que se mudó
+  // a la pantalla de login (app/login/formulario.tsx) junto con el guard.
+  it('con sesión, un tenant en TRIAL resuelve con su nombre y el usuario logueado', async () => {
+    tenantDelRequest.mockResolvedValue({
+      tipo: 'tenant',
+      tenant: { id: 'x', nombre: 'Flor', estado: 'TRIAL' },
+    })
+    exigirSesion.mockResolvedValue({
+      usuario: { id: 'u1', nombre: 'Ana', email: 'ana@flor.com', rol: 'EMPLEADO' },
+    })
     const elemento = await render()
     const html = renderToStaticMarkup(elemento)
-    expect(html).toContain('data-testid="tenant-nombre">Flor')
-    expect(html).toContain('data-testid="tenant-estado">TRIAL')
+    expect(html).toContain('Flor')
+    expect(html).toContain('data-testid="usuario-nombre"')
+    expect(html).toContain('Hola, Ana')
+    // Empleado, no dueño: sin el link a /usuarios.
+    expect(html).not.toContain('/usuarios')
+  })
+
+  it('un dueño ve el link a /usuarios; un empleado no', async () => {
+    tenantDelRequest.mockResolvedValue({
+      tipo: 'tenant',
+      tenant: { id: 'x', nombre: 'Flor', estado: 'TRIAL' },
+    })
+    exigirSesion.mockResolvedValue({
+      usuario: { id: 'u1', nombre: 'Ana', email: 'ana@flor.com', rol: 'DUENO' },
+    })
+    const elemento = await render()
+    const html = renderToStaticMarkup(elemento)
+    expect(html).toContain('/usuarios')
   })
 
   // Mismo criterio que caso_home_responde en scripts/smoke.sh tras el fix de
@@ -82,7 +135,8 @@ describe('página raíz', () => {
     const elemento = await render()
     expect(notFound).not.toHaveBeenCalled()
     expect(forbidden).not.toHaveBeenCalled()
+    expect(exigirSesion).not.toHaveBeenCalled()
     const html = renderToStaticMarkup(elemento)
-    expect(html).not.toContain('data-testid="tenant-nombre"')
+    expect(html).not.toContain('data-testid="usuario-nombre"')
   })
 })

@@ -1,5 +1,6 @@
 import { notFound, forbidden } from 'next/navigation'
 import { tenantDelRequest } from '@/lib/tenant/desde-request'
+import { exigirSesion } from '@/lib/auth/sesion'
 import type { TenantResuelto } from '@/lib/tenant/resolver'
 
 // Redundante con el headers() de tenantDelRequest, que ya obliga a render
@@ -23,16 +24,24 @@ function Contexto() {
   )
 }
 
-function PaginaTenant({ tenant }: { tenant: TenantResuelto }) {
+function PaginaTenant({
+  tenant,
+  usuario,
+}: {
+  tenant: TenantResuelto
+  usuario: { nombre: string; rol: 'DUENO' | 'EMPLEADO' }
+}) {
   return (
-    <main style={estilo}>
-      <h1>{tenant.nombre}</h1>
-      <dl>
-        <dt>Tenant</dt>
-        <dd data-testid="tenant-nombre">{tenant.nombre}</dd>
-        <dt>Estado</dt>
-        <dd data-testid="tenant-estado">{tenant.estado}</dd>
-      </dl>
+    <main className="p-6">
+      <h1 className="mb-2 text-xl font-medium">{tenant.nombre}</h1>
+      <p className="mb-6 text-sm text-muted-foreground" data-testid="usuario-nombre">
+        Hola, {usuario.nombre}.
+      </p>
+      {usuario.rol === 'DUENO' && (
+        <a className="underline" href="/usuarios">
+          Usuarios
+        </a>
+      )}
       <Contexto />
     </main>
   )
@@ -59,5 +68,10 @@ export default async function Home() {
   if (resolucion.tipo !== 'tenant') notFound()
   if (resolucion.tenant.estado === 'SUSPENDIDO') forbidden()
 
-  return <PaginaTenant tenant={resolucion.tenant} />
+  // `/` no puede vivir bajo (app): el ápex entra por la misma ruta y no tiene
+  // sesión. Por eso el guard se llama acá a mano, y por eso esta página está en
+  // la lista blanca de test/rutas-con-guard.test.ts con esa razón escrita.
+  const sesion = await exigirSesion()
+
+  return <PaginaTenant tenant={resolucion.tenant} usuario={sesion.usuario} />
 }
