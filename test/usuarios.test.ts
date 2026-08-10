@@ -105,12 +105,34 @@ describe('desactivar', () => {
     expect(rows[0].desactivado_en).toBeNull()
   })
 
-  it('no se puede desactivar al último dueño activo', async () => {
+  it('no se puede desactivar al último dueño activo, y no toca nada al rechazar', async () => {
     // Sin esta regla, un local queda sin nadie que pueda administrar usuarios,
     // y el único arreglo es un comando en el servidor.
+    //
+    // Sesión propia del dueño para poder afirmar después que sigue viva: sin
+    // login previo no habría nada que este test pudiera distinguir de "las
+    // maté igual, no había ninguna".
+    await authParaTenant(tenantId, ORIGEN).api.signInEmail({
+      body: { email: 'duenia@ejemplo.test', password: CLAVE }, asResponse: true,
+    })
+    const sesionesAntes = await owner.query('SELECT count(*)::int n FROM sessions WHERE user_id = $1', [duenioId])
+    expect(sesionesAntes.rows[0].n).toBeGreaterThan(0)
+
     await expect(
       administrar.desactivar({ tenantId, usuarioId: duenioId }),
     ).rejects.toMatchObject({ codigo: 'ULTIMO_DUENO' })
+
+    // No basta con que rechace: la guarda tiene que frenar ANTES de escribir
+    // nada. Un refactor que moviera el chequeo después del UPDATE (o del
+    // borrado de sesiones) seguiría rechazando el llamado — el `expect` de
+    // arriba seguiría en verde — mientras deja al dueño desactivado o sin
+    // sesión igual. Estas dos aserciones son las que atraparían esa
+    // regresión.
+    const { rows } = await owner.query('SELECT desactivado_en FROM users WHERE id = $1', [duenioId])
+    expect(rows[0].desactivado_en).toBeNull()
+
+    const sesionesDespues = await owner.query('SELECT count(*)::int n FROM sessions WHERE user_id = $1', [duenioId])
+    expect(sesionesDespues.rows[0].n).toBe(sesionesAntes.rows[0].n)
   })
 
   it('desactivar mata las sesiones abiertas de esa persona', async () => {
@@ -128,6 +150,45 @@ describe('desactivar', () => {
 
     const despues = await owner.query('SELECT count(*)::int n FROM sessions WHERE user_id = $1', [id])
     expect(despues.rows[0].n).toBe(0)
+  })
+
+  // Bajo READ COMMITTED, un `count()` sin lock no alcanza: dos transacciones
+  // concurrentes leerían el mismo snapshot (2 dueños activos), las dos
+  // pasarían el chequeo, y las dos escribirían — el local se queda sin
+  // ninguno, porque cada una actualiza una fila distinta y no hay conflicto
+  // de escritura que las frene. Este test SOLAPA las dos desactivaciones —lo
+  // que un doble click, o dos personas administrando a la vez, produce—; en
+  // secuencia (llamando una y esperando a que termine antes de la otra) nunca
+  // ejercitaría la ventana entre leer y decidir, y daría verde con o sin el
+  // FOR UPDATE. Mismo patrón que "dos anulaciones simultáneas compensan una
+  // sola vez" en test/ventas.test.ts.
+  it('desactivar a los dos únicos dueños en simultáneo deja exactamente uno activo', async () => {
+    const { id: otroDuenio } = await administrar.crearEmpleado({
+      tenantId, origen: ORIGEN,
+      nombre: 'El otro dueño', email: 'otrodueno@ejemplo.test', clave: CLAVE, rol: 'DUENO',
+    })
+
+    const resultados = await Promise.allSettled([
+      administrar.desactivar({ tenantId, usuarioId: duenioId }),
+      administrar.desactivar({ tenantId, usuarioId: otroDuenio }),
+    ])
+
+    // La que pierde la carrera queda protegida por el MISMO guard que ya
+    // prueba el test de arriba — no por suerte de que Postgres la haya
+    // corrido después. Exactamente una de las dos tiene que rechazar.
+    const rechazados = resultados.filter(
+      (r): r is PromiseRejectedResult => r.status === 'rejected',
+    )
+    expect(rechazados).toHaveLength(1)
+    expect(rechazados[0].reason).toMatchObject({ codigo: 'ULTIMO_DUENO' })
+
+    // El valor exacto (ni cero ni dos) es justamente el síntoma de la carrera
+    // sin el lock: sobre ese bug, esta cuenta daba 0.
+    const { rows } = await owner.query(
+      'SELECT count(*)::int n FROM users WHERE id = ANY($1) AND desactivado_en IS NULL',
+      [[duenioId, otroDuenio]],
+    )
+    expect(rows[0].n, 'el local se quedó sin dueños activos, o con los dos').toBe(1)
   })
 })
 
@@ -167,5 +228,34 @@ describe('resetear la clave', () => {
       body: { email: 'olvido@ejemplo.test', password: CLAVE }, asResponse: true,
     }).catch(() => ({ status: 401 }))
     expect(conVieja.status).not.toBe(200)
+  })
+
+  /**
+   * El motivo entero de la rama `createAccount` de `resetearClave`: un usuario
+   * nacido sin fila en `accounts` — el mismo caso que motiva
+   * `scripts/definir-clave.mts`, ahí con `crear-tenant.mts` insertando al
+   * dueño con SQL pelado. El test de arriba corre sobre alguien dado de alta
+   * con `crearEmpleado`, que YA pasó por `signUpEmail` y por lo tanto ya tiene
+   * credencial: no ejercita esta rama. Este test recrea la fila "cruda" a
+   * mano, mismo INSERT que usa el script (y que ya usan test/auth.test.ts y
+   * test/rls.test.ts para lo mismo).
+   */
+  it('define la PRIMERA contraseña de alguien sin fila en accounts', async () => {
+    const { rows } = await owner.query(
+      `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Sin credencial', 'sincredencial@ejemplo.test', 'EMPLEADO', now(), now())
+       RETURNING id`,
+      [tenantId],
+    )
+    const id: string = rows[0].id
+
+    const primera = 'primera-clave-larga'
+    await administrar.resetearClave({ tenantId, origen: ORIGEN, usuarioId: id, clave: primera })
+
+    const r = await authParaTenant(tenantId, ORIGEN).api.signInEmail({
+      body: { email: 'sincredencial@ejemplo.test', password: primera },
+      asResponse: true,
+    })
+    expect(r.status).toBe(200)
   })
 })
