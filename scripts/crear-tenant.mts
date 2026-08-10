@@ -90,7 +90,15 @@ export function parsearArgumentos(argv: string[]): ResultadoArgs {
       subdominio,
       nombre: crudos.get('--nombre')!,
       modulos,
-      duenio: crudos.get('--duenio')!,
+      // Better Auth normaliza a minúsculas TANTO al guardar como al buscar
+      // (ver internal-adapter.mjs: createUser y findUserByEmail hacen
+      // email.toLowerCase() de los dos lados). Este INSERT es el único punto
+      // de todo el sistema que escribe la columna `email` sin pasar por
+      // Better Auth — sin este normalizado, un alta con `--duenio=Flor@...`
+      // deja una fila que ni `usuario:clave` ni el login van a poder
+      // encontrar nunca, porque la comparación en la base es sensible a
+      // mayúsculas y sólo el lado de la búsqueda se lowercasea.
+      duenio: crudos.get('--duenio')!.toLowerCase(),
       duenioNombre: crudos.get('--duenio-nombre')!,
     },
   }

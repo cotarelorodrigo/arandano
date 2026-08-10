@@ -193,9 +193,18 @@ describe('definir-clave', () => {
     const nueva = 'clave-nueva-del-script'
     await definirClave({ tenantId: tenantB, email: MAIL, clave: nueva, origen: ORIGEN })
 
-    expect(await entrar(tenantB, nueva)).toBe(200)
-    // Y la vieja deja de servir: definir una clave la REEMPLAZA.
-    expect(await entrar(tenantB, CLAVE_B)).not.toBe(200)
+    // El restore va en `finally`, misma convención que los describes vecinos
+    // de arriba ("el aislamiento roto se detecta" y "la sesión de un usuario
+    // desactivado"): sin esto, CLAVE_B queda muerta para el resto del
+    // archivo, y que nada se rompa depende de qué test corra después — hoy
+    // "funciona" sólo porque el describe siguiente no vuelve a usar CLAVE_B.
+    try {
+      expect(await entrar(tenantB, nueva)).toBe(200)
+      // Y la vieja deja de servir: definir una clave la REEMPLAZA.
+      expect(await entrar(tenantB, CLAVE_B)).not.toBe(200)
+    } finally {
+      await definirClave({ tenantId: tenantB, email: MAIL, clave: CLAVE_B, origen: ORIGEN })
+    }
   })
 
   it('falla claro si el usuario no existe en ese tenant', async () => {
@@ -203,6 +212,60 @@ describe('definir-clave', () => {
     await expect(
       definirClave({ tenantId: tenantA, email: 'nadie@ejemplo.test', clave: 'x'.repeat(10), origen: ORIGEN }),
     ).rejects.toThrow(/no existe/)
+  })
+
+  /**
+   * El test de arriba usa un mail que no existe en NINGÚN tenant, así que
+   * pasaría igual con un cliente sin atar al tenant (Prisma pelado, sin
+   * `prismaParaTenant`). La prueba fuerte del scoping es ésta: un usuario que
+   * SÍ existe, pero en el OTRO tenant, tiene que dar el mismo "no existe" —
+   * si `ctx.internalAdapter.findUserByEmail` no estuviera acotado por RLS al
+   * tenant que arma `authParaTenant`, encontraría la fila de A igual estando
+   * parado en B.
+   */
+  it('no encuentra un usuario que sólo existe en el OTRO tenant', async () => {
+    const { definirClave } = await import('@/scripts/definir-clave.mts')
+
+    const mailSoloEnA = 'solo-en-a@ejemplo.test'
+    await authParaTenant(tenantA, ORIGEN).api.signUpEmail({
+      body: { email: mailSoloEnA, password: 'clave-de-sobra-en-a', name: 'Sólo en A' },
+    })
+
+    await expect(
+      definirClave({ tenantId: tenantB, email: mailSoloEnA, clave: 'x'.repeat(10), origen: ORIGEN }),
+    ).rejects.toThrow(/no existe/)
+  })
+
+  /**
+   * `crear-tenant.mts` ahora normaliza el mail del dueño a minúsculas antes
+   * de insertarlo (ver su `parsearArgumentos`), pero un operador puede
+   * tipear `--email=Duenio@Ejemplo.com` acá igual, con otra letra que la que
+   * quedó guardada. Better Auth busca SIEMPRE en minúsculas
+   * (`findUserByEmail`, `internal-adapter.mjs`), así que la fila —guardada en
+   * minúsculas— tiene que encontrarse sin importar con qué mayúsculas la
+   * pida quien corre el comando.
+   */
+  it('encuentra al usuario sin importar las mayúsculas con que se pida el mail', async () => {
+    const { definirClave } = await import('@/scripts/definir-clave.mts')
+
+    const mailNormalizado = 'duenio-mayus@ejemplo.test'
+    await authParaTenant(tenantA, ORIGEN).api.signUpEmail({
+      body: { email: mailNormalizado, password: 'clave-original-de-sobra', name: 'Dueño mayus' },
+    })
+
+    const nueva = 'clave-puesta-con-mayusculas'
+    await definirClave({
+      tenantId: tenantA,
+      email: 'Duenio-Mayus@Ejemplo.TEST',
+      clave: nueva,
+      origen: ORIGEN,
+    })
+
+    const r = await authParaTenant(tenantA, ORIGEN).api.signInEmail({
+      body: { email: mailNormalizado, password: nueva },
+      asResponse: true,
+    })
+    expect(r.status).toBe(200)
   })
 
   /**

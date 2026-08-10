@@ -20,6 +20,21 @@ describe('parsearArgumentos', () => {
     }
   })
 
+  it('normaliza el mail del dueño a minúsculas', () => {
+    // Better Auth guarda y busca el mail en minúsculas SIEMPRE (ver el
+    // comentario en parsearArgumentos). Este INSERT es SQL pelado y es el
+    // único punto que podría dejar una fila mixed-case que después ni
+    // `usuario:clave` ni el login puedan encontrar.
+    const r = parsearArgumentos([
+      '--subdominio=flor',
+      '--nombre=Flor Celulares',
+      '--duenio=Flor@Ejemplo.COM',
+      '--duenio-nombre=Flor',
+    ])
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.args.duenio).toBe('flor@ejemplo.com')
+  })
+
   it('parsea varios módulos separados por coma', () => {
     const r = parsearArgumentos([...BASE, '--modulos=ORDENES_DE_TRABAJO,TURNOS'])
     expect(r.ok).toBe(true)

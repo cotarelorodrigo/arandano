@@ -54,11 +54,22 @@ export async function definirClave(args: ArgsClave): Promise<void> {
   const auth = authParaTenant(args.tenantId, args.origen)
   const ctx = await auth.$context
 
-  const encontrado = await ctx.internalAdapter.findUserByEmail(args.email, {
+  // Better Auth normaliza el mail a minúsculas TANTO al guardar como al
+  // buscar (internal-adapter.mjs: createUser y findUserByEmail hacen las dos
+  // el mismo email.toLowerCase()), así que findUserByEmail ya lo hace por su
+  // cuenta con lo que le llegue acá — este toLowerCase() no cambia a qué fila
+  // llega la búsqueda hoy. Se deja explícito igual: la corrección real está
+  // en que la fila QUEDE guardada en minúsculas (crear-tenant.mts, el único
+  // punto de todo el sistema que escribe `users.email` sin pasar por Better
+  // Auth), y este toLowerCase() documenta esa dependencia en vez de dejarla
+  // implícita adentro de una librería que no es nuestra.
+  const email = args.email.toLowerCase()
+
+  const encontrado = await ctx.internalAdapter.findUserByEmail(email, {
     includeAccounts: true,
   })
   if (!encontrado) {
-    throw new Error(`no existe un usuario con el mail ${args.email} en ese tenant`)
+    throw new Error(`no existe un usuario con el mail ${email} en ese tenant`)
   }
 
   // ctx.password.hash no valida longitud por su cuenta —eso lo hacen los
@@ -98,27 +109,57 @@ export async function definirClave(args: ArgsClave): Promise<void> {
   }
 }
 
-// Sólo corre cuando se lo invoca como programa, para que el test pueda importar
-// definirClave sin ejecutar nada.
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+export type ArgsCLI = {
+  subdominio: string
+  email: string
+  clave?: string
+}
+
+export type ResultadoArgsCLI = { ok: true; args: ArgsCLI } | { ok: false; motivo: string }
+
+const CONOCIDOS_CLI = new Set(['--subdominio', '--email', '--clave'])
+
+/**
+ * Separado de `ejecutar` por la misma razón que `crear-tenant.mts` separa
+ * `parsearArgumentos` de `crear`: es puro, no toca la red, y el test puede
+ * ejercitarlo sin Postgres.
+ *
+ * Un flag desconocido es un ERROR y no algo que se ignora en silencio — acá
+ * el riesgo es peor que en el alta de tenant: un `--clve=` mal tipeado (en
+ * vez de `--clave=`) haría que el script generara una clave al azar SIN
+ * avisar, y el operador se iría creyendo que la clave que tipeó es la que
+ * quedó puesta. Para un comando cuyo trabajo entero es fijar una contraseña,
+ * ese es exactamente el peor momento para fallar callado.
+ */
+export function parsearArgumentosCLI(argv: string[]): ResultadoArgsCLI {
   const crudos = new Map<string, string>()
-  for (const arg of process.argv.slice(2)) {
+
+  for (const arg of argv) {
     const i = arg.indexOf('=')
-    if (i === -1) { console.error(`error: ${arg} necesita un valor`); process.exit(2) }
-    crudos.set(arg.slice(0, i), arg.slice(i + 1))
+    const clave = i === -1 ? arg : arg.slice(0, i)
+    if (!CONOCIDOS_CLI.has(clave)) {
+      return { ok: false, motivo: `argumento desconocido: ${clave}` }
+    }
+    if (i === -1) return { ok: false, motivo: `${clave} necesita un valor: ${clave}=algo` }
+    crudos.set(clave, arg.slice(i + 1))
   }
 
   const subdominio = crudos.get('--subdominio')
   const email = crudos.get('--email')
   if (!subdominio || !email) {
-    console.error('uso: npm run usuario:clave -- --subdominio=flor --email=flor@ejemplo.com [--clave=…]')
-    process.exit(2)
+    return { ok: false, motivo: 'faltan --subdominio y/o --email' }
   }
 
-  const { rows } = await pool.query('SELECT id, nombre FROM resolver_tenant($1)', [subdominio])
-  if (!rows[0]) { console.error(`error: no existe el tenant "${subdominio}"`); process.exit(1) }
+  return { ok: true, args: { subdominio, email, clave: crudos.get('--clave') } }
+}
 
-  const clave = crudos.get('--clave') ?? generarClave()
+async function ejecutar(args: ArgsCLI): Promise<void> {
+  const { rows } = await pool.query('SELECT id, nombre FROM resolver_tenant($1)', [args.subdominio])
+  if (!rows[0]) {
+    throw new Error(`no existe el tenant "${args.subdominio}"`)
+  }
+
+  const clave = args.clave ?? generarClave()
   const dominio = process.env.DOMINIO_BASE ?? 'arandano.app'
   // El origen acá sólo alimenta el `baseURL` de Better Auth y la clave del
   // caché de `authParaTenant` — no hay navegador de por medio en un script de
@@ -127,19 +168,39 @@ if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
   // que es un origen distinto; esa función es de servidor (usa
   // `next/headers`) y por eso no se puede llamar directo desde acá.
   const puerto = process.env.PUERTO_PUBLICO
-  const origen = `https://${subdominio}.${dominio}${puerto ? `:${puerto}` : ''}`
+  const origen = `https://${args.subdominio}.${dominio}${puerto ? `:${puerto}` : ''}`
 
   await definirClave({
     tenantId: rows[0].id,
-    email,
+    email: args.email,
     clave,
     origen,
   })
 
-  console.log(`contraseña definida para ${email} en ${rows[0].nombre}`)
+  console.log(`contraseña definida para ${args.email} en ${rows[0].nombre}`)
   // Se imprime una sola vez y no se guarda en ningún lado: es el único momento
   // en que existe en texto plano.
   console.log(`  clave: ${clave}`)
-  console.log(`  url:   https://${subdominio}.${dominio}/login`)
+  console.log(`  url:   https://${args.subdominio}.${dominio}/login`)
   await pool.end()
+}
+
+// Sólo corre cuando se lo invoca como programa, para que el test pueda
+// importar definirClave (y parsearArgumentosCLI) sin ejecutar nada.
+if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+  const resultado = parsearArgumentosCLI(process.argv.slice(2))
+  if (!resultado.ok) {
+    console.error(`error: ${resultado.motivo}`)
+    console.error('\nuso: npm run usuario:clave -- --subdominio=flor --email=flor@ejemplo.com [--clave=…]')
+    process.exit(2)
+  }
+
+  // Mismo patrón que crear-tenant.mts: sin este .catch(), un error de
+  // definirClave (tenant inexistente, usuario inexistente, clave corta) le
+  // llega al operador como un stack trace de unhandled rejection en vez del
+  // mensaje en castellano que el error ya trae, y pool.end() nunca corre.
+  await ejecutar(resultado.args).catch((err: unknown) => {
+    console.error(`error: ${err instanceof Error ? err.message : String(err)}`)
+    process.exit(1)
+  })
 }
