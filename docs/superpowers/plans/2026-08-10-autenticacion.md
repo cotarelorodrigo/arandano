@@ -90,8 +90,11 @@ En `prisma/schema.prisma`, dentro de `model User`, después de `rol`:
   // siempre en false y nadie la lee: requireEmailVerification va apagado porque
   // en este ciclo no hay proveedor de mail.
   emailVerified Boolean  @default(false) @map("email_verificado")
-  // Idem: parte del core de Better Auth, sin uso todavía.
-  imagen        String?
+  // Idem: parte del core de Better Auth, sin uso todavía. El campo lleva el
+  // nombre que la librería espera (`image`) y la columna sigue en español: así
+  // no hace falta una entrada de mapeo por campo, que es todo el motivo de esta
+  // convención. Mismo criterio que `emailVerified` acá arriba.
+  image         String?   @map("imagen")
   // Dar de baja a un empleado NO puede ser borrar la fila: ventas.usuario_id es
   // una FK con onDelete: Restrict, así que la fila de quien vendió algo alguna
   // vez es indestructible por diseño. Se desactiva.

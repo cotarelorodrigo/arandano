@@ -165,7 +165,7 @@ Migración **aditiva**, tres columnas:
 | Columna | Por qué |
 |---|---|
 | `email_verificado Boolean @default(false)` | Better Auth la exige en su schema core. Queda siempre en `false` y nadie la lee: `requireEmailVerification` va apagado porque en este ciclo no hay proveedor de mail |
-| `imagen String?` | Idem, parte del core. Nullable y sin uso |
+| `image String? @map("imagen")` | Idem, parte del core. Nullable y sin uso. El **campo** lleva el nombre que Better Auth exige y la **columna** sigue en español: la regla es que los campos del core de la librería conservan su nombre, para no necesitar una entrada de mapeo por cada uno |
 | `desactivado_en Timestamptz(3)?` | **No existía y hace falta.** Dar de baja a un empleado no puede ser borrar la fila: `ventas.usuario_id` es una FK con `onDelete: Restrict`, así que la fila de quien vendió algo alguna vez es indestructible por diseño |
 
 `rol` se declara como `additionalField` con `input: false`, para que nadie se
