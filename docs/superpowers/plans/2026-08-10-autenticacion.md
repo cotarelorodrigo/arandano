@@ -748,7 +748,7 @@ git commit -m "feat(auth): una instancia por tenant, con la búsqueda por mail a
 - Consumes: `authParaTenant` (Task 3), `tenantDelRequest`.
 - Produces:
   - `ResolucionTenant` con `{ tipo: 'tenant'; tenant: TenantResuelto; subdominio: string }`
-  - `origenDelRequest(): Promise<string>`
+  - `origenDelRequest(subdominio: string): Promise<string>`
 
 - [ ] **Step 1: Sumar el `subdominio` a la resolución**
 
@@ -788,19 +788,43 @@ Crear `lib/auth/origen.ts`:
 import { headers } from 'next/headers'
 
 /**
- * El `baseURL` que Better Auth necesita, derivado del request.
+ * El `baseURL` que Better Auth necesita.
  *
- * No se arma con DOMINIO_BASE: en dev la aplicación se sirve por la IP de
- * Tailscale y por http, así que un baseURL construido a mano quedaría mintiendo
- * justo en el entorno donde se prueba. El Host es lo que el navegador realmente
- * pidió, y `x-forwarded-proto` lo pone Caddy en producción.
+ * NUNCA se arma con el header `Host`, y ése es el punto entero de esta función.
+ * `subdominioDeHost` descarta el puerto para resolver el tenant, así que
+ * `flor.arandano.app:9999` resuelve igual a `flor` — pero el Host crudo conserva
+ * ese puerto, y este string entra en la clave del caché de `authParaTenant`. Con
+ * el Host crudo, alguien puede pedir el mismo local con miles de puertos,
+ * generar miles de claves, desalojar las instancias de OTROS locales, y con eso
+ * reiniciarles el contador del rate limit del login — que vive en memoria
+ * adentro de cada instancia y es el único freno contra la fuerza bruta.
+ *
+ * Por eso las tres partes salen de algo acotado: el subdominio ya resuelto
+ * contra la base, `DOMINIO_BASE` y `PUERTO_PUBLICO` de la configuración del
+ * stack, y el protocolo de una lista blanca de dos valores. El resultado es que
+ * un tenant tiene exactamente dos orígenes posibles.
+ *
+ * El protocolo va por lista blanca y no por el valor crudo porque en dev la
+ * aplicación se publica directo en la IP de Tailscale, sin Caddy delante: ahí
+ * cualquiera puede mandar `x-forwarded-proto: loquesea` y volver a abrir el
+ * mismo agujero, mudado del puerto al protocolo.
+ *
+ * `PUERTO_PUBLICO` existe porque Better Auth compara el header `Origin` contra
+ * este valor con igualdad exacta. En dev se navega con `:3000` y sin el puerto
+ * el login quedaría rechazado. En producción va SIN DEFINIR: 443 es implícito
+ * en `https://`, y ponerle un default rompería el baseURL de prod en silencio.
  */
-export async function origenDelRequest(): Promise<string> {
-  const h = await headers()
-  const host = h.get('host')
-  if (!host) throw new Error('request sin Host: no se puede derivar el baseURL')
-  const protocolo = h.get('x-forwarded-proto') ?? 'http'
-  return `${protocolo}://${host}`
+export async function origenDelRequest(subdominio: string): Promise<string> {
+  const dominioBase = process.env.DOMINIO_BASE
+  if (!dominioBase) throw new Error('DOMINIO_BASE no está definida')
+
+  const crudo = (await headers()).get('x-forwarded-proto')
+  const protocolo = crudo === 'https' ? 'https' : 'http'
+
+  const puertoPublico = process.env.PUERTO_PUBLICO
+  const puerto = puertoPublico ? `:${puertoPublico}` : ''
+
+  return `${protocolo}://${subdominio}.${dominioBase}${puerto}`
 }
 ```
 
