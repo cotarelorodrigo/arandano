@@ -298,7 +298,10 @@ describe('opciones de Better Auth', () => {
   it('las cookies NO cruzan subdominios', () => {
     // Prenderlo haría válida en otro.arandano.app la cookie de flor.arandano.app.
     // RLS igual lo atajaría, pero una sola capa en el aislamiento es poca.
-    expect(OPCIONES_BASE.advanced?.crossSubDomainCookies?.enabled).not.toBe(true)
+    // toBe(false) y no not.toBe(true): la segunda pasa también con undefined,
+    // o sea que pasaría igual con la configuración borrada — no distinguiría
+    // "lo desactivamos a propósito" de "nos olvidamos".
+    expect(OPCIONES_BASE.advanced?.crossSubDomainCookies?.enabled).toBe(false)
   })
 
   it('el rate limit del login es más duro que el general', () => {
