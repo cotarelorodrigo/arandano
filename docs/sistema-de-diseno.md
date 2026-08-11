@@ -30,18 +30,18 @@ un error se destaque de verdad.
 | `--card-foreground` | `oklch(0.145 0 0)` |
 | `--popover` | `oklch(1 0 0)` |
 | `--popover-foreground` | `oklch(0.145 0 0)` |
-| `--primary` | `oklch(0.205 0 0)` |
+| `--primary` | `oklch(0.37 0.10 287)` |
 | `--primary-foreground` | `oklch(0.985 0 0)` |
 | `--secondary` | `oklch(0.97 0 0)` |
 | `--secondary-foreground` | `oklch(0.205 0 0)` |
 | `--muted` | `oklch(0.97 0 0)` |
-| `--muted-foreground` | `oklch(0.556 0 0)` |
-| `--accent` | `oklch(0.97 0 0)` |
-| `--accent-foreground` | `oklch(0.205 0 0)` |
+| `--muted-foreground` | `oklch(0.547 0 0)` |
+| `--accent` | `oklch(0.955 0.012 287)` |
+| `--accent-foreground` | `oklch(0.37 0.10 287)` |
 | `--destructive` | `oklch(0.577 0.245 27.325)` |
 | `--border` | `oklch(0.922 0 0)` |
 | `--input` | `oklch(0.922 0 0)` |
-| `--ring` | `oklch(0.708 0 0)` |
+| `--ring` | `oklch(0.37 0.10 287)` |
 | `--radius` | `0.625rem` |
 
 <!-- tokens:fin -->
@@ -49,6 +49,52 @@ un error se destaque de verdad.
 Los marcadores de arriba y abajo no son decoración: el parser del test busca la
 tabla entre ellos, porque este documento tiene otras tablas y agarrar "la
 primera" se rompe el día que alguien reordene secciones.
+
+### Dónde entra el arándano
+
+| Token | Hex | Dónde se ve |
+|---|---|---|
+| `--primary` | `#3d3571` | Botón de acción, links |
+| `--ring` | `#3d3571` | Anillo de foco — lo más visible al operar con teclado |
+| `--accent` | `#efeff8` | Fila seleccionada, hover. Único neutral tintado |
+
+El hue es **287** en los tres. Lo que los distingue es croma y luminosidad, no
+tono: es un solo color de marca visto a tres distancias.
+
+### Contraste
+
+Medido convirtiendo `oklch` → sRGB lineal → luminancia relativa → ratio WCAG
+2.1. No estimado a ojo.
+
+| Par | Ratio | Mínimo | |
+|---|---|---|---|
+| texto sobre fondo | 19.12 | 4.5 | ok |
+| texto sobre `muted` | 17.53 | 4.5 | ok |
+| `muted-foreground` sobre fondo | 4.91 | 4.5 | ok |
+| `muted-foreground` sobre `muted` | 4.50 | 4.5 | ok |
+| blanco sobre `primary` | 10.33 | 4.5 | ok |
+| `primary` sobre fondo | 10.79 | 4.5 | ok |
+| `primary` sobre `accent` | 9.44 | 4.5 | ok |
+| blanco sobre `destructive` | 4.56 | 4.5 | ok |
+| `destructive` sobre fondo | 4.76 | 4.5 | ok |
+| **borde de `--input` sobre fondo** | **1.27** | **3.0** | **no llega — excepción, abajo** |
+
+Al medir aparecieron **dos defectos que ya venían del default de shadcn**, no de
+esta paleta:
+
+1. **`--muted-foreground` sobre `--muted` daba 4.34**, abajo del mínimo para
+   texto: el gris secundario sobre el fondo gris, o sea un subtítulo adentro de
+   una card. **Corregido** — `0.556` → `0.547` lo deja en 4.50 exacto y en 4.91
+   sobre blanco. El cambio es imperceptible a ojo.
+
+2. **El borde de `--input` sobre blanco da 1.27**, contra los 3:1 que pide WCAG
+   1.4.11 para el borde de un control. **Aceptado como excepción, no corregido.**
+   Llevarlo a `oklch(0.669 0 0)` cerraría el hueco pero cambia visiblemente todo
+   campo de la aplicación, y se eligió conservar el look liviano. Lo mitiga que
+   todo campo lleva `<Label>` asociado y anillo de foco de marca, así que el
+   borde no es el único indicio de que ahí hay un input. **Revisar** si aparece
+   un reporte real de gente que no encuentra los campos, o ante una auditoría de
+   accesibilidad formal.
 
 ## Tipografía
 
