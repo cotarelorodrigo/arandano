@@ -2,19 +2,19 @@ import { Prisma } from '@/generated/prisma/client'
 import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import { excedeEscala, ESCALA_CANTIDAD, ESCALA_DINERO } from '@/lib/ventas/totales'
 import { exigirUsuario } from '@/lib/ventas/pertenencia'
-import { traducirErrorDeBase } from '@/lib/ventas/errores'
-import { ErrorDeInventario } from './errores'
+import { ErrorDeInventario, traducirErrorDeBase } from './errores'
 
 type Decimal = Prisma.Decimal
 
 /**
  * El artículo, validado para mover stock.
  *
- * Devuelve la fila porque `corregirStock` necesita el stock del momento y
- * leerlo dos veces sería pedirle a Postgres lo mismo con el lock ya tomado.
+ * Interna del módulo, no exportada: la Task 4 (`articulos.ts`) escribe su
+ * propio camino de alta, que crea el artículo y no lo busca.
  *
- * Exportado a nivel de módulo y no público: la Task 4 (`articulos.ts`) escribe
- * su propio camino de alta, que crea el artículo y no lo busca.
+ * Devuelve la fila porque `corregirStock` necesita el stock del momento, y ya
+ * lo tiene acá adentro de la misma transacción: no hay motivo para pedírselo
+ * a Postgres una segunda vez.
  */
 async function exigirArticuloConStock(tx: ClienteTx, articuloId: string) {
   const articulo = await tx.articulo.findUnique({ where: { id: articuloId } })

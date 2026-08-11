@@ -3,6 +3,7 @@ import { Client } from 'pg'
 import { Prisma } from '@/generated/prisma/client'
 import { urlOwner, urlApp } from './postgres-efimero'
 import { crearTenant } from './datos'
+import { ErrorDeInventario } from '@/lib/inventario/errores'
 
 // Import DINÁMICO de todo lo que arrastre lib/db.ts: ese módulo construye su
 // Pool AL IMPORTARSE, leyendo DATABASE_URL, que no está seteada globalmente.
@@ -86,6 +87,15 @@ describe('ajustarStock', () => {
     })
 
     expect(await stockDe(remera)).toBe(antes.plus(25).toString())
+
+    const mov = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.movimientoStock.findFirst({
+        where: { articuloId: remera, motivo: 'INGRESO' },
+        orderBy: { creadoEn: 'desc' },
+      }),
+    )
+    expect(mov?.nota).toBe('compra al proveedor')
+    expect(mov?.ventaId).toBeNull()
   })
 
   it('un ajuste negativo devuelve a cero un stock negativo', async () => {
@@ -134,6 +144,15 @@ describe('ajustarStock', () => {
     await expect(
       ajustarStock({ tenantId, articuloId: remera, delta: d('1.0005'), motivo: 'INGRESO', usuarioId }),
     ).rejects.toMatchObject({ codigo: 'ESCALA_EXCEDIDA' })
+  })
+
+  // El cambio de comportamiento de este ciclo: antes esta función dejaba
+  // mover el stock de un servicio, creando un número que después nadie
+  // descuenta. Ahora el chequeo vive en el helper compartido.
+  it('rechaza mover el stock de un servicio', async () => {
+    await expect(
+      ajustarStock({ tenantId, articuloId: servicio, delta: d('1'), motivo: 'INGRESO', usuarioId }),
+    ).rejects.toMatchObject({ codigo: 'SERVICIO_SIN_STOCK' })
   })
 })
 
@@ -200,6 +219,17 @@ describe('ingresarStock', () => {
     await expect(
       ingresarStock({ tenantId, articuloId: servicio, cantidad: d('1'), usuarioId }),
     ).rejects.toMatchObject({ codigo: 'SERVICIO_SIN_STOCK' })
+  })
+
+  // El único fallo que no se puede anticipar con una validación previa. Tiene
+  // que salir como ErrorDeInventario y no como ErrorDeVenta: la pantalla filtra
+  // por esa clase, y un error de otra le llega como 500.
+  it('un desborde de la columna sale como error de inventario', async () => {
+    const promesa = ingresarStock({
+      tenantId, articuloId: remera, cantidad: d('999999999999'), usuarioId,
+    })
+    await expect(promesa).rejects.toMatchObject({ codigo: 'FUERA_DE_RANGO' })
+    await expect(promesa).rejects.toBeInstanceOf(ErrorDeInventario)
   })
 })
 

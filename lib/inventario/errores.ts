@@ -1,3 +1,5 @@
+import { Prisma } from '@/generated/prisma/client'
+
 export type CodigoErrorDeInventario =
   | 'ARTICULO_INEXISTENTE'
   // Lo tira `exigirUsuario` (lib/ventas/pertenencia.ts) y lo hace con
@@ -23,6 +25,14 @@ export type CodigoErrorDeInventario =
   | 'PRECIO_INVALIDO'
   | 'SKU_REPETIDO'
   | 'SKU_VACIO'
+  // Lo tira `traducirErrorDeBase` de acá abajo ante el desborde numérico de
+  // Postgres. Es el único fallo de la base que el motor NO puede anticipar con
+  // una validación previa: el stock se escribe con un UPDATE relativo
+  // (`stock = stock + delta`) a propósito, así que el valor de partida sólo se
+  // conoce adentro de la transacción y ya con el lock tomado. Leerlo antes para
+  // validarlo sería exactamente la carrera que el UPDATE relativo existe para
+  // evitar.
+  | 'FUERA_DE_RANGO'
 
 /**
  * Con código y no sólo con mensaje: la pantalla tiene que poder distinguir
@@ -37,4 +47,28 @@ export class ErrorDeInventario extends Error {
     super(mensaje)
     this.name = 'ErrorDeInventario'
   }
+}
+
+/**
+ * Traduce a `ErrorDeInventario` el desborde numérico de Postgres.
+ *
+ * Propio y no el de `lib/ventas/errores.ts`, que hace lo mismo pero devuelve un
+ * `ErrorDeVenta`: la pantalla de inventario filtra por `ErrorDeInventario` para
+ * decidir qué mostrar, así que un error de otra clase le llega como un 500 en
+ * vez de como un cartel que la persona puede corregir tipeando distinto.
+ *
+ * Devuelve el error tal cual si no lo reconoce: envolver lo que no se entiende
+ * es perder el diagnóstico.
+ */
+export function traducirErrorDeBase(e: unknown): unknown {
+  // P2020 = "Value out of range for the type". Adentro trae el 22003
+  // (`numeric field overflow`) de Postgres.
+  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2020') {
+    return new ErrorDeInventario(
+      'FUERA_DE_RANGO',
+      'un valor no entra en la columna que lo guarda: revisá la cantidad o el ' +
+        'stock resultante',
+    )
+  }
+  return e
 }
