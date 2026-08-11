@@ -8,8 +8,9 @@
 # Un caso por función, y la lista abajo. Sumar un caso es agregar una función y
 # un renglón. Hoy cubre /api/health, las pantallas sin credenciales, un login
 # real contra /api/auth/sign-in/email y —con esa sesión— cada pantalla de
-# app/(app)/**/page.tsx más /. Lo que falta (venta, factura, orden de trabajo,
-# catálogo público) entra cuando exista ese código.
+# app/(app)/**/page.tsx más /, y el login POR LA PANTALLA, que es lo único que
+# ejercita el redirect de un server action. Lo que falta (venta, factura, orden
+# de trabajo, catálogo público) entra cuando exista ese código.
 #
 # ok/bad/PASS/FAIL van inline y NO se sourcean desde scripts/tests/lib-asserts.sh,
 # a propósito: ese archivo se declara a sí mismo compartido entre los
@@ -260,6 +261,64 @@ caso_login_devuelve_sesion() {
   [[ -n "$COOKIE_SESION" ]]
 }
 
+# El login POR LA PANTALLA, no por la API — el único caso que ejercita el
+# redirect de un server action.
+#
+# POR QUÉ EXISTE. caso_login_devuelve_sesion entra por
+# /api/auth/sign-in/email, que es un endpoint común y corriente: nunca pasa
+# por app/login/acciones.ts ni por el redirect('/') del final. Y ese redirect
+# tiene una vuelta propia: Next no renderiza el destino en el mismo request,
+# hace un `fetch()` HTTP contra sí mismo (`createRedirectRenderResult`) y
+# devuelve ESE render incrustado en la respuesta del action. Como es un fetch
+# de verdad, el `Host` que le llega al destino es `localhost:3000` y el
+# hostname del navegador viaja sólo en `x-forwarded-host` — que es por lo que
+# lib/tenant/desde-request.ts lo lee primero. Con la versión que sólo miraba
+# `host`, entrar dejaba la URL en `/` mostrando el 404 de Next y un F5 lo
+# arreglaba: verde en todo el gate, roto para el primer cliente que entrara.
+#
+# SIN header Origin, por el mismo motivo que el login de arriba: Next deja
+# pasar un action sin Origin (loguea un warning), y mandarlo obligaría a
+# armarlo EXACTAMENTE igual al de la conexión —esquema y puerto incluidos— o
+# el chequeo CSRF aborta el action y este caso daría rojo hablando de otra cosa.
+#
+# LOS TRES CAMPOS son el formato con el que React serializa los argumentos de
+# un action invocado desde el cliente (`encodeReply`): `0` lleva los argumentos
+# con la FormData por referencia, y sus entradas van aparte con prefijo `_1_`.
+# Es formato interno de React: si un día una actualización lo cambia, este caso
+# se va a poner rojo con la acción devolviendo el estado de error en vez de un
+# 303. Es el precio de cubrir el camino de verdad, y el rojo apunta acá.
+caso_login_por_la_pantalla() {
+  local html id respuesta codigo cuerpo
+  html=$(curl -s --max-time 15 -H "Host: ${HOST_CANARIO}" "$URL_BASE/login") || return 1
+  # El id del action sale del HTML que sirve la propia imagen: hardcodearlo
+  # sería fijar un hash que cambia en cada build.
+  id=$(grep -o 'name="\$ACTION_[0-9]*:0"[^>]*value="{&quot;id&quot;:&quot;[a-f0-9]*' <<<"$html" \
+    | sed 's/.*&quot;//' | head -1)
+  [[ -n "$id" ]] || return 1
+
+  respuesta=$(curl -s --max-time 15 -w $'\n%{http_code}' \
+    -H "Host: ${HOST_CANARIO}" \
+    -H "Next-Action: ${id}" \
+    -F "_1_email=${MAIL_CANARIO}" \
+    -F "_1_clave=${CLAVE_CANARIO}" \
+    -F '0=[{"error":null},"$K1"]' \
+    "$URL_BASE/login" 2>/dev/null) || return 1
+  codigo="${respuesta##*$'\n'}"
+  cuerpo="${respuesta%$'\n'*}"
+
+  # 303 y no 200: un 200 es el action devolviendo { error } sin redirigir, o
+  # sea que el login falló o que el encoding de arriba dejó de valer.
+  [[ "$codigo" == "303" ]] || return 1
+  # El nombre del local prueba que el render incrustado resolvió el tenant
+  # —era exactamente lo que fallaba—, y usuario-nombre prueba que además es la
+  # home autenticada y no la pantalla de login: /login lleva el MISMO marcador
+  # tenant-nombre (ver app/login/formulario.tsx), así que sin este segundo
+  # grep un rebote al login pasaría en verde. Es la misma trampa por la que el
+  # barrido de pantallas corre sin `-L`.
+  grep -qF "\"tenant-nombre\",\"children\":\"${NOMBRE_CANARIO}\"" <<<"$cuerpo" &&
+    grep -qF 'usuario-nombre' <<<"$cuerpo"
+}
+
 # Cada pantalla de la aplicación, con la sesión de verdad.
 #
 # 200 NO alcanza: Next devuelve 200 sirviendo un not-found. El marcador es el
@@ -346,7 +405,8 @@ for caso in \
   caso_subdominio_inexistente_404 \
   caso_host_ajeno_404 \
   caso_tenant_no_cacheable \
-  caso_login_devuelve_sesion
+  caso_login_devuelve_sesion \
+  caso_login_por_la_pantalla
 do
   if "$caso"; then ok "$caso"; else bad "$caso"; fi
 done
