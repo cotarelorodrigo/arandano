@@ -76,7 +76,9 @@ describe('tenantDelRequest', () => {
   // action-handler.js) hacia el origen con el que arrancó el servidor, y
   // devuelve ese render incrustado en la respuesta del action. Como es un
   // fetch de verdad, el `Host` que llega a ese render es el del destino
-  // —`localhost:3000`—, y el hostname que pidió el navegador sobrevive
+  // —el interno del propio servidor: `localhost:3000` medido en dev, y en
+  // producción lo que diga HOSTNAME, que en la imagen es `0.0.0.0`—, y el
+  // hostname que pidió el navegador sobrevive
   // ÚNICAMENTE en `x-forwarded-host`.
   //
   // Leyendo sólo `host`, ese render resolvía 'ajeno' y `app/page.tsx` contestaba
@@ -105,6 +107,31 @@ describe('tenantDelRequest', () => {
     resolverTenant.mockResolvedValue({ id: 'abc', nombre: 'Flor', estado: 'ACTIVO' })
 
     expect(await correr()).toMatchObject({ tipo: 'tenant', subdominio: 'flor' })
+  })
+
+  // Un header presente pero vacío: `Headers.get()` devuelve '' y no null, así
+  // que con `??` se tomaba por un hostname y TODA página daba 404 sin que el
+  // fallback a `host` llegara a correr. Medido contra un build de producción.
+  it('cae a host cuando x-forwarded-host viene vacío', async () => {
+    getHeader.mockImplementation((n: string) =>
+      n === 'x-forwarded-host' ? '' : 'flor.arandano.app',
+    )
+    resolverTenant.mockResolvedValue({ id: 'abc', nombre: 'Flor', estado: 'ACTIVO' })
+
+    expect(await correr()).toMatchObject({ tipo: 'tenant', subdominio: 'flor' })
+  })
+
+  // Dos proxies encadenados unen sus valores con ", ". La primera es la que
+  // pidió el navegador; el valor entero no es un hostname y daba 404. Es la
+  // misma normalización que hace Next para su chequeo CSRF de server actions.
+  it('toma el primer valor cuando x-forwarded-host trae una cadena de proxies', async () => {
+    getHeader.mockImplementation((n: string) =>
+      n === 'x-forwarded-host' ? 'flor.arandano.app, arandano.app' : 'localhost:3000',
+    )
+    resolverTenant.mockResolvedValue({ id: 'abc', nombre: 'Flor', estado: 'ACTIVO' })
+
+    expect(await correr()).toMatchObject({ tipo: 'tenant', subdominio: 'flor' })
+    expect(resolverTenant).toHaveBeenCalledWith('flor')
   })
 
   // Sin DOMINIO_BASE no se puede decidir nada, y adivinar sería peor: un

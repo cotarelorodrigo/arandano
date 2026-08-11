@@ -270,7 +270,8 @@ caso_login_devuelve_sesion() {
 # tiene una vuelta propia: Next no renderiza el destino en el mismo request,
 # hace un `fetch()` HTTP contra sí mismo (`createRedirectRenderResult`) y
 # devuelve ESE render incrustado en la respuesta del action. Como es un fetch
-# de verdad, el `Host` que le llega al destino es `localhost:3000` y el
+# de verdad, el `Host` que le llega al destino es el interno del propio
+# servidor (`localhost:3000` en dev, lo que diga HOSTNAME en producción) y el
 # hostname del navegador viaja sólo en `x-forwarded-host` — que es por lo que
 # lib/tenant/desde-request.ts lo lee primero. Con la versión que sólo miraba
 # `host`, entrar dejaba la URL en `/` mostrando el 404 de Next y un F5 lo
