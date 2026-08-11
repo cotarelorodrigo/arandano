@@ -13,12 +13,18 @@ const FUERA_DEL_GRUPO: Record<string, string> = {
   'app/forbidden.tsx': 'la renderiza Next ante forbidden(); no es una ruta navegable',
 }
 
+// Las cuatro extensiones que Next resuelve, no sólo .tsx: una página escrita
+// como page.ts es una ruta igual de navegable, y si este check no la ve se
+// queda sin guard en silencio. Es el mismo supuesto —y el mismo fail-open— que
+// el find de scripts/lib/rutas-comun.sh, que la barre para el smoke.
+const ES_PAGINA = /^(page|forbidden|unauthorized)\.(tsx|ts|jsx|js)$/
+
 function paginas(dir: string, acumulado: string[] = []): string[] {
   for (const entrada of readdirSync(dir)) {
     const completo = path.join(dir, entrada)
     if (statSync(completo).isDirectory()) {
       paginas(completo, acumulado)
-    } else if (entrada === 'page.tsx' || entrada === 'forbidden.tsx') {
+    } else if (ES_PAGINA.test(entrada)) {
       acumulado.push(completo)
     }
   }

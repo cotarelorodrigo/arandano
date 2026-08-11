@@ -6,9 +6,10 @@
 # otro stack. Nunca contra producción con datos de clientes: acá se escribe.
 #
 # Un caso por función, y la lista abajo. Sumar un caso es agregar una función y
-# un renglón — eso importa porque hoy sólo existen /api/health y /, y la lista
-# de verdad (login, venta, factura, orden de trabajo, catálogo) llega cuando
-# exista ese código.
+# un renglón. Hoy cubre /api/health, las pantallas sin credenciales, un login
+# real contra /api/auth/sign-in/email y —con esa sesión— cada pantalla de
+# app/(app)/**/page.tsx más /. Lo que falta (venta, factura, orden de trabajo,
+# catálogo público) entra cuando exista ese código.
 #
 # ok/bad/PASS/FAIL van inline y NO se sourcean desde scripts/tests/lib-asserts.sh,
 # a propósito: ese archivo se declara a sí mismo compartido entre los
@@ -22,6 +23,8 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source scripts/lib/deploy-comun.sh
+source scripts/lib/rutas-comun.sh
+source scripts/lib/cookie-sesion.sh
 
 URL_BASE="${1:-}"
 SHA_ESPERADO="${2:-}"
@@ -31,8 +34,13 @@ SUBDOMINIO_CANARIO="${4:-}"
 # verificar que ALGÚN tenant salió en el cuerpo, no que fue el canario. Un
 # nombre hardcodeado o el de otro tenant hubiera pasado igual.
 NOMBRE_CANARIO="${5:-}"
-if [[ -z "$URL_BASE" || -z "$SHA_ESPERADO" || -z "$DOMINIO_BASE" || -z "$SUBDOMINIO_CANARIO" || -z "$NOMBRE_CANARIO" ]]; then
-  echo "uso: smoke.sh <url_base> <sha_esperado> <dominio_base> <subdominio_canario> <nombre_canario>" >&2
+# El mail, por argumento y no como literal acá: deploy.sh lo tiene en
+# MAIL_CANARIO y es el MISMO con el que le define la clave al canario de stage
+# en el paso 8. Repetirlo acá sería mantener dos copias que fallan cerrado pero
+# con un mensaje que habla de otra cosa ("el login se rompió").
+MAIL_CANARIO="${6:-}"
+if [[ -z "$URL_BASE" || -z "$SHA_ESPERADO" || -z "$DOMINIO_BASE" || -z "$SUBDOMINIO_CANARIO" || -z "$NOMBRE_CANARIO" || -z "$MAIL_CANARIO" ]]; then
+  echo "uso: smoke.sh <url_base> <sha_esperado> <dominio_base> <subdominio_canario> <nombre_canario> <mail_canario>" >&2
   exit 2
 fi
 
@@ -40,6 +48,10 @@ PASS=0
 FAIL=0
 ok()  { printf '  \033[32m✓\033[0m %s\n' "$1"; PASS=$((PASS + 1)); }
 bad() { printf '  \033[31m✗\033[0m %s\n' "$1"; FAIL=$((FAIL + 1)); }
+# Ni ok ni bad: no toca ningún contador. Sólo se usa para lo que no se pudo
+# ejercitar porque ya falló algo río arriba, y ese algo ya sumó su propio rojo —
+# así el gate sigue frenando sin que el renglón omitido finja un verde.
+omit() { printf '  \033[33m–\033[0m %s\n' "$1"; }
 
 # Una sola llamada al healthcheck, reusada por varios casos: cada request es un
 # ida y vuelta a Postgres con un pool de máximo 5, y golpearlo cuatro veces
@@ -121,9 +133,20 @@ caso_home_responde() {
 # presente. El nombre viene por argumento (Task 7, hallazgo de review) y no
 # hardcodeado acá, para no mantener dos copias del mismo literal que
 # `deploy.sh` ya usa al dar de alta el canario de stage.
+#
+# El cuerpo se captura ANTES de greppearlo, y no `curl | grep -qF`: `grep -q`
+# sale apenas encuentra el match, le manda SIGPIPE al curl que todavía está
+# escribiendo, y bajo `set -o pipefail` la función devuelve 141 CON el marcador
+# presente en el cuerpo. Es la misma carrera que documenta
+# scripts/lib/cookie-sesion.sh, y acá el retorno de la pipeline ES el retorno de
+# la función, así que no hay nada que la absorba. Hoy no muerde porque /login es
+# chica, pero eso crece con cada componente que se le sume — o sea que el gate
+# se volvería intermitente sin que nadie tocara esta línea.
 caso_tenant_resuelve() {
-  curl -fsS --max-time 10 -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/login" \
-    | grep -qF "data-testid=\"tenant-nombre\">${NOMBRE_CANARIO}"
+  local cuerpo
+  cuerpo=$(curl -fsS --max-time 10 \
+    -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/login") || return 1
+  grep -qF "data-testid=\"tenant-nombre\">${NOMBRE_CANARIO}" <<<"$cuerpo"
 }
 
 # Sin sesión, la home de un tenant no puede servir la aplicación: tiene que
@@ -174,6 +197,12 @@ caso_host_ajeno_404() {
 # contra el Cache-Control que emite Next hoy: lo que importa es la propiedad, y
 # atarse al texto exacto convierte un cambio de wording de Next en un deploy
 # rollbackeado sin ninguna regresión real.
+#
+# El `head -1` de acá abajo sí es seguro, a diferencia del de la extracción de la
+# cookie: el código de salida de la pipeline se descarta —la decisión se toma
+# después, mirando `$cc`— así que un 141 por SIGPIPE no puede volver rojo un caso
+# sano. Queda anotado para que nadie lo "arregle" ni copie el patrón a un lugar
+# donde el retorno de la pipeline sí sea el del caso.
 caso_tenant_no_cacheable() {
   local cc
   cc=$(curl -sI --max-time 10 -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/login" \
@@ -182,6 +211,126 @@ caso_tenant_no_cacheable() {
     && ! grep -qiE 'public|s-maxage' <<<"$cc" \
     && grep -qiE 'no-store|private' <<<"$cc"
 }
+
+# --- La aplicación, con una sesión de verdad -------------------------------
+#
+# Todo lo de arriba mira pantallas que se sirven SIN credenciales. Hasta acá,
+# ninguna pantalla de la aplicación se abría nunca antes de que la abriera un
+# cliente: el 2026-08-10 se promovió una imagen con /usuarios rota y las cuatro
+# etapas del gate en verde, porque el defecto era de runtime y nadie pedía esa
+# URL. Ver docs/superpowers/specs/2026-08-10-smoke-autenticado-design.md.
+
+# La clave la define deploy.sh en el paso 8, con definir-clave.mts adentro de la
+# imagen de migración. Literal duplicado ahí y acá, igual que efimero-salud:
+# base efímera que nace vacía en cada corrida, y stack que sólo escucha en la IP
+# de Tailscale. Si alguna de esas dos condiciones deja de valer, esto deja de
+# ser aceptable.
+CLAVE_CANARIO=efimero-clave-canario
+HOST_CANARIO="${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}"
+
+# Sin header Origin y sin Cookie, a propósito: el chequeo de origen de Better
+# Auth se saltea cuando el request no trae Cookie (ver lib/auth/opciones.ts,
+# donde eso está documentado como el agujero que disabledPaths vino a tapar).
+# Mandar un Origin acá sólo agregaría una forma de equivocarse — tendría que ser
+# EXACTAMENTE el que arma lib/auth/origen.ts para este stack, con PUERTO_PUBLICO
+# incluido, y no el de la URL de la conexión.
+#
+# El login se hace UNA sola vez y la cookie se reusa: /sign-in/email tiene un
+# rate limit de 5 por minuto (opciones.ts), así que un login por pantalla
+# empezaría a dar 429 en cuanto haya seis pantallas — y esa falla se leería como
+# una regresión de la aplicación.
+#
+# La respuesta se captura APARTE de la extracción, y no en una sola pipeline con
+# el curl adentro: así el código de salida del curl se lee solo, sin mezclarse
+# con el de la extracción — que fue exactamente cómo un SIGPIPE río arriba
+# terminó borrando una cookie válida (ver scripts/lib/cookie-sesion.sh, que
+# lleva la historia completa y los tests que la cubren).
+RESPUESTA_LOGIN=$(curl -s -i --max-time 15 \
+  -H "Host: ${HOST_CANARIO}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"${MAIL_CANARIO}\",\"password\":\"${CLAVE_CANARIO}\"}" \
+  "$URL_BASE/api/auth/sign-in/email" 2>/dev/null) || RESPUESTA_LOGIN=""
+
+COOKIE_SESION=$(printf '%s\n' "$RESPUESTA_LOGIN" | cookie_de_sesion) || COOKIE_SESION=""
+
+# Su propio caso, y no un chequeo silencioso adentro de los de abajo: si el
+# login se rompe, esto tiene que decir "el login se rompió" una vez, y no
+# hacer fallar N pantallas con un mensaje que habla de la pantalla equivocada.
+caso_login_devuelve_sesion() {
+  [[ -n "$COOKIE_SESION" ]]
+}
+
+# Cada pantalla de la aplicación, con la sesión de verdad.
+#
+# 200 NO alcanza: Next devuelve 200 sirviendo un not-found. El marcador es el
+# nombre del local — el mismo valor que el paso 8 acaba de escribir en la base,
+# y el mismo argumento que ya usa caso_tenant_resuelve.
+#
+# QUÉ CUBRE ESTO, EXACTAMENTE. Para `/` el marcador lo emite la página
+# (app/page.tsx), así que la aserción prueba que la PÁGINA renderizó. Para las
+# rutas de (app) lo emite el layout (app/(app)/layout.tsx), así que prueba que
+# el layout renderizó y que la página no tiró: una página que devuelva
+# contenido vacío sin lanzar excepción pasa en verde. Hoy alcanza porque
+# notFound() y las excepciones no manejadas caen en el boundary de la RAÍZ, que
+# no renderiza el layout de (app) — de ahí el rojo. Pero un `error.tsx` o un
+# `not-found.tsx` DENTRO de (app) se montarían adentro de ese layout: el
+# marcador saldría igual, con 200, y este barrido se volvería verde sobre una
+# pantalla rota. No existe ninguno de los dos hoy, y test/boundaries-app.test.ts
+# falla si alguien agrega uno, justamente para que esa decisión no se tome sin
+# mirar esta línea.
+#
+# NO se busca el texto del 404 en el cuerpo, y esto costó una tarde: Next
+# incluye el boundary de "not found" en el payload de TODA página, incluidas
+# las que funcionan. Un chequeo así da rojo siempre.
+#
+# Sin `-L`, y no por casualidad: app/login/formulario.tsx lleva el MISMO
+# marcador, así que con redirects habilitados cualquier ruta que rebotara a
+# /login pasaría en verde. Una redirección tiene que ser rojo acá.
+caso_pantalla() {
+  local ruta="$1" respuesta codigo cuerpo
+  # Redundante con el `if` que decide si el barrido corre, y a propósito: sin
+  # esto, llamar a caso_pantalla desde otro lado pediría la ruta SIN cookie y un
+  # 200 anónimo se leería como pantalla sana. Falla cerrado por su cuenta.
+  [[ -n "$COOKIE_SESION" ]] || return 1
+  respuesta=$(curl -s --max-time 15 -w $'\n%{http_code}' \
+    -H "Host: ${HOST_CANARIO}" \
+    -H "Cookie: ${COOKIE_SESION}" \
+    "${URL_BASE}${ruta}" 2>/dev/null) || return 1
+  codigo="${respuesta##*$'\n'}"
+  cuerpo="${respuesta%$'\n'*}"
+  [[ "$codigo" == "200" ]] || return 1
+  grep -qF "data-testid=\"tenant-nombre\">${NOMBRE_CANARIO}" <<<"$cuerpo"
+}
+
+# La lista sale del sistema de archivos, no de acá: ver scripts/lib/rutas-comun.sh.
+# Si la derivación falla —cero páginas, o una ruta con parámetro sin declarar—
+# el smoke entero corta acá, antes de reportar ningún verde.
+RUTAS_APP_CRUDAS=$(rutas_autenticadas 'app/(app)') || {
+  printf '\n\033[31mno se pudo derivar la lista de rutas autenticadas\033[0m\n' >&2
+  exit 1
+}
+# `/` primero, y a mano: no vive bajo (app) —el ápex llega por esa misma ruta y
+# no tiene sesión— pero para un tenant es una pantalla autenticada, porque llama
+# a exigirSesion() por su cuenta. Es la misma excepción, con la misma razón, que
+# declara FUERA_DEL_GRUPO en test/rutas-con-guard.test.ts.
+#
+# El bucle y no `mapfile`: si TODAS las páginas del grupo estuvieran declaradas
+# en RUTAS_SIN_SMOKE, la salida sería un string vacío y `mapfile` dejaría un
+# elemento vacío que se pediría como "$URL_BASE" pelado — o sea `/` otra vez,
+# reportado con un nombre que no dice nada.
+#
+# Si algún día `/` se mudara bajo (app), esta línea tiene que salir: quedarían
+# dos casos `pantalla /`, los dos verdes, y el segundo no probaría nada.
+#
+# La lista sale del ÁRBOL DE TRABAJO, no de la imagen que se está por promover.
+# Contra el gate son lo mismo, porque el paso 1 exige working tree limpio y el
+# build sale de ese mismo commit. Corrido a mano desde otro checkout, en cambio,
+# este barrido puede pedir rutas que la imagen no tiene: eso es un rojo honesto,
+# pero habla del checkout y no de la imagen.
+RUTAS_APP=('/')
+while IFS= read -r ruta_derivada; do
+  [[ -n "$ruta_derivada" ]] && RUTAS_APP+=("$ruta_derivada")
+done <<<"$RUTAS_APP_CRUDAS"
 
 printf '\n\033[1mSmoke: %s\033[0m\n' "$URL_BASE"
 for caso in \
@@ -196,10 +345,30 @@ for caso in \
   caso_login_no_existe_en_apex \
   caso_subdominio_inexistente_404 \
   caso_host_ajeno_404 \
-  caso_tenant_no_cacheable
+  caso_tenant_no_cacheable \
+  caso_login_devuelve_sesion
 do
   if "$caso"; then ok "$caso"; else bad "$caso"; fi
 done
+
+# Un caso por pantalla, con su ruta en el nombre: cuando esto falla, el renglón
+# rojo ya dice cuál pantalla, sin abrir un log.
+#
+# Sin sesión el barrido no corre, y eso es deliberado: cada pantalla daría rojo
+# por la misma causa única —el login— y el abanico esconde el diagnóstico atrás
+# de N renglones que hablan de la pantalla equivocada. Ya pasó: el runbook
+# documenta el flake del SIGPIPE como "TRES rojos… y a primera vista parecía que
+# el login se había roto", y el ruido crece con cada pantalla que se agregue.
+#
+# No afloja el gate: caso_login_devuelve_sesion ya sumó su rojo unas líneas más
+# arriba, así que FAIL ya es distinto de cero y el smoke igual sale con 1.
+if [[ -n "$COOKIE_SESION" ]]; then
+  for ruta in "${RUTAS_APP[@]}"; do
+    if caso_pantalla "$ruta"; then ok "pantalla ${ruta}"; else bad "pantalla ${ruta}"; fi
+  done
+else
+  omit "$((${#RUTAS_APP[@]})) pantallas omitidas: sin sesión (ver caso_login_devuelve_sesion)"
+fi
 
 printf '\n%d ok, %d fallan\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]

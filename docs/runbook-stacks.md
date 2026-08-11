@@ -253,7 +253,16 @@ sólo con `--objetivo=prod`— el `Caddyfile` de `/srv/arandano/prod` idéntico 
 del repo → `npm test` →
 typecheck y lint → frenar `arandano-dev` → build de `arandano-app` y
 `arandano-migrate` tageados con el SHA → levantar `arandano-stage` y ensayar
-la migración → smoke tests contra stage → migraciones del repo == migraciones
+la migración, dar de alta al canario de stage y —al final del paso 8, después
+del alta— definirle contraseña con `definir-clave.mts` (mail
+`canario@arandano.app`, clave `efimero-clave-canario`; corre como
+`arandano_app`, o sea por RLS, igual que el login real) → smoke tests contra
+stage, que en el paso 9 entran por `/api/auth/sign-in/email` con esas mismas
+credenciales y, con la cookie que devuelve, abren un `caso_pantalla` por cada
+ruta derivada de `app/(app)/**/page.tsx` (más `/`, a mano), asertando 200 y el
+nombre del local en el cuerpo — una ruta nueva con segmento dinámico (`[id]`)
+hace fallar el gate hasta declararla en `RUTAS_SIN_SMOKE`
+(`scripts/lib/rutas-comun.sh`), con su razón escrita → migraciones del repo == migraciones
 del objetivo, en las dos direcciones → backup pre-migración → `migrate
 deploy` contra el objetivo → `setup-db-roles.sh` contra el objetivo (el
 EXECUTE de las funciones se otorga por nombre, y esta corrida post-migración
@@ -307,6 +316,78 @@ código sano) como el uptime check externo. Si algún día hace falta borrar o
 renombrar el canario a propósito, hacerlo en el mismo deploy que actualiza
 `TENANT_CANARIO_SUBDOMINIO` en los `docker/compose.*.yml` — nunca por
 separado.
+
+**El smoke autenticado sí atrapa lo que lo motivó — probado, no asumido
+(2026-08-11).** El defecto real del 2026-08-10 fue un `/usuarios` roto en
+runtime que `npm test`, `tsc`, `eslint` y `npm run build` dejaron pasar los
+cuatro en verde. Para probar que el paso 9 lo frena de verdad, se reintrodujo
+a propósito un `throw new Error(...)` como primera línea del componente de
+`app/(app)/usuarios/page.tsx`, en una rama descartable (`prueba-del-smoke`,
+nunca mergeada), y se corrió `deploy.sh --objetivo=ensayo` contra ese commit.
+El gate llegó al paso 9 y frenó ahí, antes de tocar `migrate deploy`, el backup
+o la promoción. Los pasos 1 a 8 pasaron todos: `npm test` en verde, typecheck y
+lint en verde, y el build compiló sin una advertencia — que es exactamente lo
+que hace a esta clase de defecto peligrosa. El paso 9 salió así:
+
+```
+  ✓ caso_login_devuelve_sesion
+  ✓ pantalla /
+  ✗ pantalla /usuarios
+
+14 ok, 1 fallan
+```
+
+Un solo renglón rojo, el de la pantalla rota, y con el nombre de la ruta
+adentro: no hay que abrir un log para saber qué se rompió. Después del paso 9
+el script no corrió ningún paso más — se verificó contando los renglones
+`paso 1X/18` en la salida, y son cero.
+
+**Y de paso apareció un gate intermitente, que era peor que el defecto que
+buscábamos.** En la mayoría de las corridas de este ensayo el paso 9 salió con
+TRES rojos en vez de uno —`caso_login_devuelve_sesion`, `pantalla /` y
+`pantalla /usuarios` juntos— y a primera vista parecía que el login se había
+roto. No era eso: capturando la respuesta cruda del `curl` a
+`/api/auth/sign-in/email` se vio que el login contestaba 200 con un
+`Set-Cookie` válido en TODAS las corridas, incluidas las que reportaban el caso
+rojo.
+
+La causa era un `SIGPIPE` en la cadena que extraía la cookie. Bajo
+`set -o pipefail`, cualquier etapa que corte la lectura antes de tiempo le manda
+`SIGPIPE` al escritor de arriba, y la pipeline entera reporta 141 aunque la
+última etapa ya haya impreso la cookie correcta — con lo cual el
+`|| COOKIE_SESION=""` pisaba un valor bueno con uno vacío. Mordió **dos veces**,
+con las dos formas que uno escribiría sin pensar: primero `… | grep | head -1`
+(head corta a grep), y después `… | grep -m1 | sed` (grep -m1 corta a `tr`, y a
+`curl` detrás). La segunda entró justamente como arreglo de la primera. Medido:
+`yes x | tr x y | grep -m1 y` deja `PIPESTATUS` en `141 141 0`.
+
+Lo que lo hacía peligroso no era romper, sino **romper a veces**: es una carrera
+contra el tamaño del cuerpo de la respuesta, así que la misma imagen daba verde
+en una corrida y rojo en la siguiente. Un gate intermitente da rojo sobre código
+sano, y la reacción natural —volver a correrlo hasta que pase— es exactamente
+cómo un gate deja de ser un gate.
+
+La extracción vive ahora en `scripts/lib/cookie-sesion.sh`, donde ninguna etapa
+corta temprano (nada de `-m1`, `head`, `q` de sed ni `exit` de awk) y el "no
+hubo cookie" se decide mirando el contenido y no el código de salida de la
+pipeline, que dependía de las opciones de shell de quien llamara.
+`scripts/tests/test-cookie-sesion.sh` lo cubre, y el caso que importa es el del
+cuerpo de 400 KB: es el único que reproduce la carrera, y con la forma vieja
+falla con `esperado: 0, obtenido: 141`.
+
+**Y el abanico que hizo difícil ese diagnóstico ya no puede volver a pasar.** Si
+el login no devuelve cookie, el barrido no corre: sale un solo renglón amarillo
+—`– N pantallas omitidas: sin sesión (ver caso_login_devuelve_sesion)`— en vez
+de un rojo por pantalla que hable de la pantalla equivocada. No afloja el gate,
+porque el rojo del login ya dejó el contador de fallas distinto de cero; y el
+ruido que evita crecía con cada pantalla nueva, que es lo que lo hacía peor con
+el tiempo. La corrección salió de la review de la rama (2026-08-11), junto con
+tres fail-open del andamiaje nuevo: el cable trampa de `<Suspense>` miraba sólo
+`app/(app)/layout.tsx` y no el resto del grupo, `forbidden.tsx` y
+`unauthorized.tsx` faltaban en la lista de boundaries —y no son hipotéticos acá,
+`next.config.ts` habilita `experimental.authInterrupts`—, y la derivación de
+rutas buscaba sólo `page.tsx`, así que una pantalla escrita como `page.ts` era
+una ruta autenticada viva que nadie barría, sin error ni exención que declarar.
 
 **Tres zonas de fallo.** Hasta `migrate deploy` inclusive, una falla aborta y no
 hay nada que revertir: producción sigue con su imagen anterior, y si la

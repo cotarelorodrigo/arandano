@@ -13,7 +13,17 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
   return (
     <div className="flex min-h-full flex-col">
       <header className="flex items-center justify-between border-b px-6 py-3">
-        <span className="font-medium">{sesion.tenant.nombre}</span>
+        {/* data-testid, y no una clase ni el texto suelto: es el marcador que
+            scripts/smoke.sh busca en CADA pantalla autenticada para distinguir
+            una página de verdad de un 200 vacío (Next devuelve 200 sirviendo un
+            not-found). Borrarlo hace fallar todos los casos de pantalla del
+            gate a la vez. El mismo atributo, con el mismo nombre, está en
+            app/login/formulario.tsx y en app/page.tsx — esta última porque `/`
+            es pantalla de tenant pero NO vive bajo (app), así que no hereda
+            este layout y tiene que ponerlo por su cuenta. */}
+        <span className="font-medium" data-testid="tenant-nombre">
+          {sesion.tenant.nombre}
+        </span>
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">
             {sesion.usuario.nombre} · {sesion.usuario.rol === 'DUENO' ? 'Dueño' : 'Empleado'}

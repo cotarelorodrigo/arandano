@@ -34,7 +34,7 @@ El layout de `app/(app)/` renderiza el nombre del local en su encabezado pero **
 - Consumes: nada de otras tasks.
 - Produces: el atributo `data-testid="tenant-nombre"` en el encabezado de toda pantalla bajo `app/(app)/`. La Task 3 lo busca desde bash con `grep -F 'data-testid="tenant-nombre">'`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Crear `app/(app)/layout.test.tsx`:
 
@@ -87,12 +87,12 @@ describe('layout de la aplicación', () => {
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run 'app/(app)/layout.test.tsx'`
 Expected: el primer caso FALLA (el markup trae `<span class="font-medium">Local de prueba` sin el atributo); el segundo PASA. Si fallan los dos, el problema es el render y no el marcador — arreglarlo antes de seguir.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 En `app/(app)/layout.tsx`, reemplazar la línea del `<span>`:
 
@@ -108,17 +108,17 @@ En `app/(app)/layout.tsx`, reemplazar la línea del `<span>`:
         </span>
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run 'app/(app)/layout.test.tsx'`
 Expected: 2 passed.
 
-- [ ] **Step 5: Full gate**
+- [x] **Step 5: Full gate**
 
 Run: `npm test && npx tsc --noEmit && npm run lint`
 Expected: todo verde. En particular `test/rutas-con-guard.test.ts` y `test/use-server.test.ts` siguen pasando.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add "app/(app)/layout.tsx" "app/(app)/layout.test.tsx"
@@ -147,7 +147,7 @@ La lista de pantallas sale del sistema de archivos, no de una lista a mano. Vive
 
   La Task 3 los usa desde `scripts/smoke.sh` con `source scripts/lib/rutas-comun.sh`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Crear `scripts/tests/test-rutas-comun.sh`:
 
@@ -214,12 +214,12 @@ printf '\n%d ok, %d fallan\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bash scripts/tests/test-rutas-comun.sh`
 Expected: FALLA en el `source scripts/lib/rutas-comun.sh` con "No such file or directory". Ése es el rojo correcto para este paso.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Crear `scripts/lib/rutas-comun.sh`:
 
@@ -307,22 +307,22 @@ rutas_autenticadas() {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bash scripts/tests/test-rutas-comun.sh`
 Expected: `6 ok, 0 fallan`.
 
-- [ ] **Step 5: Verificar contra el árbol real**
+- [x] **Step 5: Verificar contra el árbol real**
 
 Run: `bash -c 'source scripts/lib/rutas-comun.sh && rutas_autenticadas "app/(app)"'`
 Expected: exactamente `/usuarios`. Si sale algo más, o nada, pará: la Task 3 depende de esta salida.
 
-- [ ] **Step 6: Full gate**
+- [x] **Step 6: Full gate**
 
 Run: `npm test`
 Expected: `correr-todos.sh` levanta el archivo nuevo por glob (no hay lista que tocar) y pasa, y vitest sigue verde.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add scripts/lib/rutas-comun.sh scripts/tests/test-rutas-comun.sh
@@ -351,7 +351,7 @@ La clave del canario de stage (paso 8 de `deploy.sh`) y los casos autenticados (
 - Consumes: `data-testid="tenant-nombre"` (Task 1); `rutas_autenticadas` y `RUTAS_SIN_SMOKE` (Task 2).
 - Produces: el caso `caso_login_devuelve_sesion` y un caso `pantalla <ruta>` por cada ruta derivada, en el paso 9 del gate.
 
-- [ ] **Step 1: La clave del canario, en `deploy.sh`**
+- [x] **Step 1: La clave del canario, en `deploy.sh`**
 
 Insertar **inmediatamente después** del bloque `docker run … tsx scripts/crear-tenant.mts … --duenio-nombre="Canario"` y **antes** del comentario de `--wait`:
 
@@ -386,7 +386,7 @@ docker run --rm --network arandano-stage_default \
   --clave=efimero-clave-canario
 ```
 
-- [ ] **Step 2: El login y el barrido, en `smoke.sh`**
+- [x] **Step 2: El login y el barrido, en `smoke.sh`**
 
 Sourcear la librería nueva junto a la que ya se sourcea, arriba del todo:
 
@@ -487,7 +487,7 @@ while IFS= read -r ruta_derivada; do
 done <<<"$RUTAS_APP_CRUDAS"
 ```
 
-- [ ] **Step 3: Sumar los casos a la corrida**
+- [x] **Step 3: Sumar los casos a la corrida**
 
 Agregar `caso_login_devuelve_sesion` al final de la lista del `for caso in …` que ya existe, y **después** de ese bucle —antes del `printf` del resumen— agregar el barrido:
 
@@ -499,25 +499,25 @@ for ruta in "${RUTAS_APP[@]}"; do
 done
 ```
 
-- [ ] **Step 4: Sintaxis, antes de gastar un ensayo**
+- [x] **Step 4: Sintaxis, antes de gastar un ensayo**
 
 Run: `bash -n scripts/smoke.sh && bash -n scripts/deploy.sh && npm test`
 Expected: sin salida de `bash -n`, y `npm test` verde.
 
-- [ ] **Step 5: El ensayo completo**
+- [x] **Step 5: El ensayo completo**
 
 Run: `./scripts/deploy.sh --objetivo=ensayo`
 Expected: el paso 9 imprime `✓ caso_login_devuelve_sesion`, `✓ pantalla /` y `✓ pantalla /usuarios` junto a los 12 casos que ya existían, y el deploy sigue hasta el final sin crear ni pushear tag.
 
 Si `caso_login_devuelve_sesion` falla, mirá primero la salida del paso 8: `definir-clave.mts` imprime `contraseña definida para …` cuando funciona. Si imprimió eso y el login igual no devuelve cookie, el sospechoso es el chequeo de origen — probá el mismo `curl` a mano agregando `-H "Origin: http://canario.stage.arandano.app:3001"`.
 
-- [ ] **Step 6: Documentar**
+- [x] **Step 6: Documentar**
 
 En `docs/runbook-stacks.md`, sección *Deploy y rollback*, sumar al paso 8 la corrida de `definir-clave.mts` y al paso 9 el barrido autenticado, nombrando: qué mail y qué clave usa el canario de stage, que la lista sale de `app/(app)/**/page.tsx`, y que una ruta con parámetro nueva hace fallar el gate hasta declararla en `RUTAS_SIN_SMOKE`.
 
 En `CLAUDE.md`, punto 3 de *Cómo se manejan los cambios una vez en producción*, reemplazar la enumeración de smoke tests (que hoy termina en "y la home respondiendo") para que incluya el login real y el barrido de pantallas, y dejar la frase que ya está sobre los casos que llegan cuando exista ese código.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add scripts/deploy.sh scripts/smoke.sh docs/runbook-stacks.md CLAUDE.md
@@ -544,13 +544,13 @@ Un smoke que corre y da verde no prueba que atrape nada. Esta task es la única 
 - Consumes: todo lo de las Tasks 1–3.
 - Produces: la evidencia. No hay código.
 
-- [ ] **Step 1: Elegir un defecto que ningún chequeo estático agarre**
+- [x] **Step 1: Elegir un defecto que ningún chequeo estático agarre**
 
 `export { INICIAL }` —el defecto real del 2026-08-10— **ya no sirve** para esta prueba: `test/use-server.test.ts` lo agarra en el paso 4 y el deploy nunca llega a stage, así que no diría nada sobre el smoke.
 
 El defecto tiene que ser de runtime puro: un `throw` adentro del componente de servidor. `app/(app)/usuarios/page.tsx` tiene `dynamic = 'force-dynamic'` heredado del layout, así que `next build` no la prerenderiza y el build queda verde.
 
-- [ ] **Step 2: Introducirlo en una rama descartable**
+- [x] **Step 2: Introducirlo en una rama descartable**
 
 ```bash
 git switch -c prueba-del-smoke
@@ -568,7 +568,7 @@ git commit -am "test: defecto a propósito para probar el smoke (se revierte)"
 
 El commit es obligatorio, no prolijidad: el paso 1 de `deploy.sh` rechaza un working tree sucio.
 
-- [ ] **Step 3: Correr el gate y verificar que FRENA**
+- [x] **Step 3: Correr el gate y verificar que FRENA**
 
 Run: `./scripts/deploy.sh --objetivo=ensayo`
 Expected: el gate llega al **paso 9** y falla ahí con `✗ pantalla /usuarios`, mientras `✓ pantalla /` y `✓ caso_login_devuelve_sesion` siguen en verde. El deploy corta antes del paso 10, sin backup, sin `migrate deploy`, sin promoción y sin tag.
@@ -576,7 +576,7 @@ Expected: el gate llega al **paso 9** y falla ahí con `✗ pantalla /usuarios`,
 Si el gate frena **antes** del paso 9, este ensayo no probó nada sobre el smoke: anotá en qué paso frenó y elegí otro defecto que ese paso no vea.
 Si el gate **pasa entero**, el smoke es decorativo. Pará, no revierta nada todavía, y diagnosticá — es exactamente el hallazgo que esta task existe para producir.
 
-- [ ] **Step 4: Revertir**
+- [x] **Step 4: Revertir**
 
 ```bash
 git switch main
@@ -585,11 +585,11 @@ git status --short
 ```
 Expected: sin salida. Verificá además que `app/(app)/usuarios/page.tsx` no tenga el `throw`.
 
-- [ ] **Step 5: Dejar la evidencia escrita**
+- [x] **Step 5: Dejar la evidencia escrita**
 
 En `docs/runbook-stacks.md`, sección *Deploy y rollback*, sumar un párrafo corto con: la fecha, el defecto usado, en qué paso frenó el gate y cuál fue el renglón rojo exacto. Un smoke sin esta prueba escrita es un smoke del que dentro de tres meses nadie va a saber si alguna vez atrapó algo.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docs/runbook-stacks.md
