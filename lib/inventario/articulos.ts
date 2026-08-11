@@ -107,16 +107,25 @@ async function proximoSku(tx: ClienteTx, tenantId: string): Promise<string> {
  * rompe en silencio si algún día cambia cómo Postgres o Prisma arman esa
  * frase.
  *
- * `campos === undefined` deja pasar como SKU_REPETIDO: falla ABIERTO a
- * propósito. Postgres suprime el `DETAIL` (y con él, `fields`) cuando el rol
- * que corre la query no tiene SELECT sobre la tabla — es la contracara del
- * rol de aplicación restringido que pide CLAUDE.md, así que en este stack
- * `fields` puede faltar en la práctica, no sólo en la teoría. Y `articulos`
- * tiene UNA sola unicidad (`@@unique([tenantId, sku])`) y
- * `movimientos_stock` ninguna: adentro de esta transacción, un P2002 no
- * puede ser otra cosa. El chequeo de columnas queda como red para cuando
- * aparezca la segunda unicidad — preferible dejarla pasar como SKU_REPETIDO
- * hoy antes que dejarla salir cruda como 500 el día que `fields` falte.
+ * Bajo `arandano_app` —el único rol con el que `lib/db.ts` conecta, acá y en
+ * producción— `cause.constraint.fields` está SIEMPRE ausente. No es un borde:
+ * es la rama que corre en todos los casos, en este deploy. La causa es RLS,
+ * no los `GRANT`: `arandano_app` sí tiene `SELECT` sobre `articulos`
+ * (`scripts/setup-db-roles.sh` se lo otorga sobre todas las tablas), pero
+ * Postgres retiene el `DETAIL` del error —y con él, `fields`— cuando la
+ * policy de RLS aplica al rol que corre la consulta. Comprobado en vivo
+ * contra `arandano-dev-postgres-1`: el mismo INSERT duplicado como
+ * `arandano_app` no trae ningún `DETAIL` ni con `VERBOSITY verbose`; como
+ * superusuario con `BYPASSRLS` sí lo trae.
+ *
+ * Así que lo que sostiene esta función, hoy, es sólo el argumento de la
+ * unicidad única: `articulos` tiene UNA sola (`@@unique([tenantId, sku])`) y
+ * `movimientos_stock` ninguna, así que adentro de esta transacción un P2002
+ * no puede ser otra cosa que el SKU. El chequeo de `campos` queda como red
+ * LATENTE, no activa: para el día que aparezca una segunda unicidad en
+ * `Articulo`, o que esto corra bajo un rol no sujeto a RLS —una migración,
+ * un script de mantenimiento—, donde `fields` sí puede llegar poblado y
+ * discriminar de verdad.
  */
 function esSkuRepetido(e: unknown): boolean {
   if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== 'P2002') return false
