@@ -47,12 +47,32 @@ function exigirPrecio(precio: Decimal): void {
 }
 
 /**
- * El correlativo del SKU, incrementado dentro de la transacción.
+ * El correlativo del SKU. Un `UPDATE … RETURNING` y no un `count()` de
+ * artículos: contar les daría el mismo número a dos altas concurrentes, y con
+ * `desactivadoEn` en juego llegaría a repetir uno ya usado.
  *
- * Un `UPDATE … RETURNING` y no un `count()` de artículos: contar les daría el
- * mismo número a dos altas concurrentes, y con `desactivadoEn` en juego
- * llegaría a repetir uno ya usado. Es el mismo mecanismo —y la misma razón—
- * que `proximoNumero` en lib/ventas/crear.ts.
+ * **A propósito distinto de `proximoNumero` (lib/ventas/crear.ts), aunque el
+ * `UPDATE … RETURNING` se vea igual.** `proximoNumero` corre DENTRO de la
+ * transacción que crea la venta, y ahí eso es lo correcto: si la venta falla,
+ * todo se deshace junto, número incluido, y `Venta.numero` nunca tiene
+ * huecos — CLAUDE.md lo pide así porque la gente dice "la venta 123" por
+ * teléfono. Acá, en cambio, el llamador (`crearArticulo`) ejecuta esta
+ * función en SU PROPIA transacción, separada de la que hace el `INSERT` del
+ * artículo, y la comitea antes de intentarlo. Es a propósito: si el `UPDATE`
+ * viviera adentro de la transacción del `INSERT`, un choque de unicidad
+ * abortaría las dos sentencias juntas —el avance del contador incluido— y el
+ * reintento de `crearArticulo` volvería a pedir el mismo número para
+ * siempre, en un bucle que no converge.
+ *
+ * La consecuencia que compra esa separación: **la secuencia de SKU puede
+ * tener huecos.** Un número que ya comiteó se pierde igual si el alta falla
+ * después por otra razón —un `USUARIO_INEXISTENTE`, un desborde, una
+ * conexión caída—, porque para entonces ya no hay vuelta atrás posible sobre
+ * el contador. Eso es aceptable acá y no en `proximoNumero` por lo que es
+ * cada número: el SKU es un código opaco que nadie cuenta ni nombra por
+ * teléfono, así que un hueco no cuesta nada; el número de venta si.
+ * Armonizar las dos funciones —hacia cualquiera de los dos lados— rompe una
+ * de las dos garantías.
  */
 async function proximoSku(tx: ClienteTx, tenantId: string): Promise<string> {
   const filas = await tx.$queryRaw<{ proximo: number }[]>`
@@ -74,28 +94,36 @@ async function proximoSku(tx: ClienteTx, tenantId: string): Promise<string> {
 /**
  * Si el error es la unicidad de `(tenant_id, sku)` y no otra cosa.
  *
- * `lib/db.ts` conecta SIEMPRE por `@prisma/adapter-pg` (acá y en producción:
- * no hay otro motor). Con ese adapter, Prisma NO arma `meta.target` con los
- * nombres de columna como hace el motor nativo — sólo reenvía el texto crudo
- * de Postgres en `meta.driverAdapterError.cause.originalMessage`. Ahí sí
- * viaja el nombre de la constraint, y Postgres lo arma solo a partir de
- * `@@unique([tenantId, sku])`: `articulos_tenant_id_sku_key`. Buscar ESE
- * nombre —y no `meta.target`, que acá siempre viene vacío— es lo que evita
- * que cualquier otra unicidad futura de `Articulo` se lea como un choque de
- * SKU.
+ * `meta.target` NUNCA se puebla acá: `lib/db.ts` conecta SIEMPRE por
+ * `@prisma/adapter-pg` (este archivo y producción, no hay otro motor), y con
+ * ese adapter Prisma 7 arma el `meta` de un error del adapter como
+ * `{ driverAdapterError }`, no con `target` como hace el motor nativo.
+ *
+ * El equivalente estructurado SÍ existe, un nivel más adentro: para `23505`
+ * (unique_violation), `@prisma/adapter-pg` parsea el `DETAIL` que manda
+ * Postgres y arma `cause.constraint = { fields: [...] }` con los nombres de
+ * columna — el mismo dato que `meta.target`, a otra profundidad. Leer eso, y
+ * no rasguñar un nombre de índice del mensaje de texto, es lo que no se
+ * rompe en silencio si algún día cambia cómo Postgres o Prisma arman esa
+ * frase.
+ *
+ * `campos === undefined` deja pasar como SKU_REPETIDO: falla ABIERTO a
+ * propósito. Postgres suprime el `DETAIL` (y con él, `fields`) cuando el rol
+ * que corre la query no tiene SELECT sobre la tabla — es la contracara del
+ * rol de aplicación restringido que pide CLAUDE.md, así que en este stack
+ * `fields` puede faltar en la práctica, no sólo en la teoría. Y `articulos`
+ * tiene UNA sola unicidad (`@@unique([tenantId, sku])`) y
+ * `movimientos_stock` ninguna: adentro de esta transacción, un P2002 no
+ * puede ser otra cosa. El chequeo de columnas queda como red para cuando
+ * aparezca la segunda unicidad — preferible dejarla pasar como SKU_REPETIDO
+ * hoy antes que dejarla salir cruda como 500 el día que `fields` falte.
  */
 function esSkuRepetido(e: unknown): boolean {
   if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== 'P2002') return false
-  const meta = e.meta as
-    | { driverAdapterError?: { cause?: { originalMessage?: string } }; target?: unknown }
-    | undefined
-  const mensajeCrudo = meta?.driverAdapterError?.cause?.originalMessage ?? ''
-  return (
-    mensajeCrudo.includes('articulos_tenant_id_sku_key') ||
-    // Por si algún día vuelve a poblarse `target` (otro adapter, otra
-    // versión de Prisma): cubre las dos formas sin duplicar el chequeo.
-    JSON.stringify(meta?.target ?? '').includes('sku')
-  )
+  const campos = (
+    e.meta as { driverAdapterError?: { cause?: { constraint?: { fields?: string[] } } } } | undefined
+  )?.driverAdapterError?.cause?.constraint?.fields
+  return campos === undefined || campos.includes('sku')
 }
 
 /**
