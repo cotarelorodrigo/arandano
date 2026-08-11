@@ -13,6 +13,11 @@ export type CodigoErrorDeVenta =
   | 'PAGOS_NO_CIERRAN'
   | 'VENTA_INEXISTENTE'
   | 'FUERA_DE_RANGO'
+  // Distinto de ARTICULO_INEXISTENTE a propósito: para el que está cobrando son
+  // dos situaciones con salidas distintas. "No existe" se resuelve buscando de
+  // nuevo; "está desactivado" se resuelve reactivándolo desde inventario. Un
+  // mensaje que no las distinga manda a la persona al lugar equivocado.
+  | 'ARTICULO_DESACTIVADO'
 
 /**
  * Con código y no sólo con mensaje: la UI que venga después tiene que poder

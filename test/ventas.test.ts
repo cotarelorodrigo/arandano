@@ -695,3 +695,89 @@ describe('anularVenta', () => {
     expect(movs[0].delta.toString()).toBe('2')
   })
 })
+
+describe('idempotencia del cobro', () => {
+  it('la misma clave dos veces crea UNA venta y descuenta el stock UNA vez', async () => {
+    const antes = new Prisma.Decimal(await stockDe(remera))
+    const clave = `clave-${Date.now()}`
+    const entrada = {
+      tenantId,
+      usuarioId,
+      claveIdempotencia: clave,
+      items: [{ articuloId: remera, cantidad: d('2') }],
+      pagos: [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, monto: d('2000'), cotizacion: d('1') }],
+    }
+
+    const primera = await crearVenta(entrada)
+    // La MISMA llamada de verdad, no una simulación: es el doble click.
+    const segunda = await crearVenta(entrada)
+
+    expect(segunda.id, 'creó una venta nueva en vez de devolver la que existía').toBe(primera.id)
+    expect(segunda.numero).toBe(primera.numero)
+
+    // Lo que de verdad importa: el stock se movió una sola vez.
+    expect(await stockDe(remera)).toBe(antes.minus(2).toString())
+
+    const cuantas = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.venta.count({ where: { claveIdempotencia: clave } }),
+    )
+    expect(cuantas).toBe(1)
+  })
+
+  it('sin clave, dos llamadas iguales crean dos ventas: el motor no adivina', async () => {
+    const entrada = {
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, monto: d('1000'), cotizacion: d('1') }],
+    }
+    const a = await crearVenta(entrada)
+    const b = await crearVenta(entrada)
+    expect(b.id).not.toBe(a.id)
+  })
+
+  it('claves distintas son ventas distintas', async () => {
+    const base = {
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, monto: d('1000'), cotizacion: d('1') }],
+    }
+    const a = await crearVenta({ ...base, claveIdempotencia: `a-${Date.now()}` })
+    const b = await crearVenta({ ...base, claveIdempotencia: `b-${Date.now()}` })
+    expect(b.id).not.toBe(a.id)
+  })
+})
+
+describe('un artículo desactivado no se puede vender', () => {
+  it('se rechaza con su propio código, distinto de inexistente', async () => {
+    const propio = await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, desactivado_en, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'OFF-1', 'Discontinuado', 'PRODUCTO', 500.00, 10, now(), now(), now())
+       RETURNING id`,
+      [tenantId],
+    )
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: [{ articuloId: propio.rows[0].id, cantidad: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('500'), cotizacion: d('1') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'ARTICULO_DESACTIVADO' })
+  })
+
+  it('y sigue distinguiéndose de uno que no existe', async () => {
+    // Los dos códigos mandan a la persona a lugares distintos: uno a buscar de
+    // nuevo, el otro a reactivarlo desde inventario. Si esta distinción se
+    // pierde, el mensaje de la pantalla miente.
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: [{ articuloId: '00000000-0000-7000-8000-000000000000', cantidad: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('500'), cotizacion: d('1') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
+  })
+})
