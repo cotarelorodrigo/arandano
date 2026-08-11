@@ -317,6 +317,39 @@ renombrar el canario a propósito, hacerlo en el mismo deploy que actualiza
 `TENANT_CANARIO_SUBDOMINIO` en los `docker/compose.*.yml` — nunca por
 separado.
 
+**El smoke autenticado sí atrapa lo que lo motivó — probado, no asumido
+(2026-08-11).** El defecto real del 2026-08-10 fue un `/usuarios` roto en
+runtime que `npm test`, `tsc`, `eslint` y `npm run build` dejaron pasar los
+cuatro en verde. Para probar que el paso 9 lo frena de verdad, se reintrodujo
+a propósito un `throw new Error(...)` como primera línea del componente de
+`app/(app)/usuarios/page.tsx`, en una rama descartable (`prueba-del-smoke`,
+nunca mergeada), y se corrió `deploy.sh --objetivo=ensayo` contra ese commit.
+El gate llegó al paso 9 y frenó ahí, antes de tocar `migrate deploy`, el
+backup o la promoción, con el renglón `✗ pantalla /usuarios` en rojo —
+confirmado con `caso_login_devuelve_sesion` y `pantalla /` en verde en una
+corrida limpia.
+
+Un hallazgo lateral, no del propio defecto: en la mayoría de las corridas de
+este ensayo, el paso 9 salió con TRES rojos en vez de uno —
+`caso_login_devuelve_sesion`, `pantalla /` y `pantalla /usuarios` juntos— y a
+primera vista parecía que el login se había roto. No era eso: capturando la
+respuesta cruda del `curl` a `/api/auth/sign-in/email` se vio que el login
+contestaba 200 con un `Set-Cookie` válido en TODAS las corridas, incluidas las
+que reportaban el caso rojo. La causa es un `SIGPIPE` en la cadena `curl | tr
+-d '\r' | grep -i -m1 '...' | sed ... | cut ...` de `scripts/smoke.sh`: bajo
+`set -o pipefail`, si `grep -m1` encuentra su match y cierra la lectura antes
+de que `tr` (y por lo tanto `curl`) terminen de escribir, el escritor recibe
+`SIGPIPE` y el pipeline reporta un exit code no-cero aunque `cut` ya haya
+producido la cookie correcta — el `|| COOKIE_SESION=""` de esa línea pisa
+entonces un valor válido con uno vacío. Es la misma familia de bug que el
+comentario de esa línea ya documentaba para `head` (por eso se eligió
+`grep -m1` en vez de `head -1`), pero la protección no alcanza a `tr`, que
+sigue expuesto exactamente al mismo mecanismo. No se tocó el script para
+corregirlo — esta task es evidencia, no código — pero queda anotado acá
+porque el síntoma (login "roto" en el paso 9) es indistinguible a simple
+vista de un login roto de verdad, y sin esta nota el próximo que lo vea va a
+perder el mismo rato re-diagnosticándolo.
+
 **Tres zonas de fallo.** Hasta `migrate deploy` inclusive, una falla aborta y no
 hay nada que revertir: producción sigue con su imagen anterior, y si la
 migración llegó a correr, el schema nuevo con el código viejo es un estado
