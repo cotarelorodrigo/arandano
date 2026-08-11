@@ -1,0 +1,46 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { renderToStaticMarkup } from 'react-dom/server'
+
+// Mismo patrón que app/page.test.tsx: exigirSesion depende de headers(), de
+// authParaTenant y de Postgres, que son detalle de otro módulo
+// (lib/auth/sesion.test.ts). Acá sólo importa qué renderiza el layout con una
+// sesión dada.
+const exigirSesion = vi.fn()
+vi.mock('@/lib/auth/sesion', () => ({
+  exigirSesion: () => exigirSesion(),
+}))
+
+// La server action del botón "Salir" no se ejercita acá: es un archivo
+// 'use server' y su contrato ya lo fija test/use-server.test.ts.
+vi.mock('./acciones', () => ({ salir: vi.fn() }))
+
+async function render() {
+  const { default: LayoutApp } = await import('@/app/(app)/layout')
+  const elemento = await LayoutApp({ children: <p>contenido</p> })
+  return renderToStaticMarkup(elemento)
+}
+
+describe('layout de la aplicación', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    exigirSesion.mockReset()
+    exigirSesion.mockResolvedValue({
+      tenant: { id: 'un-id', nombre: 'Local de prueba', estado: 'ACTIVO' },
+      usuario: { id: 'otro-id', nombre: 'Quien sea', rol: 'DUENO' },
+      subdominio: 'prueba',
+    })
+  })
+
+  // El marcador que usa el smoke autenticado (scripts/smoke.sh) para
+  // distinguir una pantalla de verdad de un 200 cualquiera. Si esto se rompe,
+  // TODOS los casos de pantalla del gate fallan a la vez.
+  it('marca el nombre del local con data-testid, para el smoke autenticado', async () => {
+    const html = await render()
+    expect(html).toContain('data-testid="tenant-nombre">Local de prueba')
+  })
+
+  it('renderiza el contenido de adentro', async () => {
+    const html = await render()
+    expect(html).toContain('contenido')
+  })
+})
