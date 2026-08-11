@@ -1077,6 +1077,36 @@ git add lib/inventario/ lib/ventas/anular.ts lib/ventas/errores.ts test/inventar
 git commit -m "feat(inventario): ingreso de mercadería y corrección por conteo"
 ```
 
+#### Ajustes hechos durante la ejecución (2026-08-11)
+
+Los bloques de código de arriba son los del plan original. La review de esta
+task encontró cuatro cosas y el humano falló que se cerraran, así que el código
+commiteado difiere en estos puntos — la fuente de verdad es el código:
+
+1. **`lib/inventario/errores.ts` tiene su propio `traducirErrorDeBase`**, que
+   mapea el `P2020` de Prisma a `ErrorDeInventario('FUERA_DE_RANGO')`, y
+   `'FUERA_DE_RANGO'` entra en `CodigoErrorDeInventario`. `stock.ts` importa ése
+   y no el de `lib/ventas/errores.ts`. El motivo: una cantidad que desborda la
+   columna salía como `ErrorDeVenta`, y los server actions de la Task 5 filtran
+   con `e instanceof ErrorDeInventario` — o sea que un tipeo largo en el
+   formulario de ingreso habría tirado la pantalla abajo con un 500 en vez de
+   mostrar un cartel corregible. Sumar el código al union no alcanzaba: la
+   clase es lo que la pantalla mira.
+2. **`'un ingreso suma y queda registrado con su nota'` volvió a assertear
+   `nota` y `ventaId`.** Al mudar el `describe` desde `test/ventas.test.ts`, el
+   plan había perdido las dos aserciones y el nombre del test prometía un
+   comportamiento que el test no verificaba.
+3. **Se sumó el caso de `ajustarStock` contra un `SERVICIO`.** Es la única de
+   las tres funciones cuyo comportamiento este ciclo cambia a propósito, y era
+   la única sin ese caso.
+4. **El JSDoc de `exigirArticuloConStock` decía dos cosas falsas** —que estaba
+   exportada, y que releer sería consultar "con el lock ya tomado", cuando
+   `findUnique` no toma ningún lock de fila—. En un código cuya regla es que el
+   comentario lleva el porqué, un porqué falso es peor que ninguno.
+
+`test/inventario.test.ts` termina con **19** tests, no 18: el plan contaba mal
+—su propio código daba 17— y este round sumó dos.
+
 ---
 
 ### Task 4: El alta y la edición de artículos
