@@ -253,7 +253,16 @@ sólo con `--objetivo=prod`— el `Caddyfile` de `/srv/arandano/prod` idéntico 
 del repo → `npm test` →
 typecheck y lint → frenar `arandano-dev` → build de `arandano-app` y
 `arandano-migrate` tageados con el SHA → levantar `arandano-stage` y ensayar
-la migración → smoke tests contra stage → migraciones del repo == migraciones
+la migración, dar de alta al canario de stage y —al final del paso 8, después
+del alta— definirle contraseña con `definir-clave.mts` (mail
+`canario@arandano.app`, clave `efimero-clave-canario`; corre como
+`arandano_app`, o sea por RLS, igual que el login real) → smoke tests contra
+stage, que en el paso 9 entran por `/api/auth/sign-in/email` con esas mismas
+credenciales y, con la cookie de sesión que devuelve, piden cada pantalla
+derivada de `app/(app)/**/page.tsx` (más `/`, a mano) más un `caso_pantalla`
+por ruta que asierta 200 y el nombre del local en el cuerpo — una ruta nueva
+con segmento dinámico (`[id]`) hace fallar el gate hasta declararla en
+`RUTAS_SIN_SMOKE` (`scripts/lib/rutas-comun.sh`), con su razón escrita → migraciones del repo == migraciones
 del objetivo, en las dos direcciones → backup pre-migración → `migrate
 deploy` contra el objetivo → `setup-db-roles.sh` contra el objetivo (el
 EXECUTE de las funciones se otorga por nombre, y esta corrida post-migración

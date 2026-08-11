@@ -661,6 +661,35 @@ docker run --rm --network arandano-stage_default \
   --duenio=canario@arandano.app \
   --duenio-nombre="Canario"
 
+# La contraseña del canario de stage. Sin esto, el smoke autenticado del paso 9
+# no tiene con qué entrar: `crear-tenant.mts` crea al dueño pero no le define
+# credencial —no puede, corre con `pg` pelado y el hash lo produce Better Auth,
+# que es la regla que mantiene el algoritmo decidido en un solo lugar.
+#
+# DATABASE_URL y no MIGRATE_DATABASE_URL, a propósito: definir-clave.mts corre
+# como `arandano_app`, así que todo pasa por la API de Better Auth y por lo
+# tanto por RLS. Es exactamente el camino que va a recorrer el login del paso 9.
+# El EXECUTE sobre resolver_tenant, que este script necesita, lo dejó puesto la
+# segunda corrida de setup-db-roles.sh de unas líneas más arriba.
+#
+# EL ORDEN IMPORTA, igual que con el alta: va DESPUÉS de crear el canario
+# (obvio) y ANTES de `up -d --wait app`. Es el último momento en que la base se
+# toca antes de que el healthcheck del compose empiece a mirarla.
+#
+# El literal de la clave está DUPLICADO en scripts/smoke.sh, igual que
+# efimero-salud y efimero-app, y es aceptable por lo mismo Y SÓLO POR LO MISMO:
+# esta base es efímera, nace vacía en cada corrida y nunca ve datos de clientes,
+# y el stack sólo escucha en la IP de Tailscale. Si alguna de esas dos
+# condiciones deja de valer, esto deja de ser aceptable.
+docker run --rm --network arandano-stage_default \
+  -e DATABASE_URL="postgres://arandano_app:efimero-app@postgres:5432/arandano_stage" \
+  -e DOMINIO_BASE="stage.arandano.app" \
+  --entrypoint npx "arandano-migrate:$SHA" \
+  tsx scripts/definir-clave.mts \
+  --subdominio=canario \
+  --email=canario@arandano.app \
+  --clave=efimero-clave-canario
+
 # --wait espera al healthcheck del compose, no a que el contenedor arranque:
 # sin eso el smoke test correría contra un Next todavía levantando, y las
 # fallas intermitentes del gate se leen como bugs del código.

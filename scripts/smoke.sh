@@ -22,6 +22,7 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source scripts/lib/deploy-comun.sh
+source scripts/lib/rutas-comun.sh
 
 URL_BASE="${1:-}"
 SHA_ESPERADO="${2:-}"
@@ -183,6 +184,94 @@ caso_tenant_no_cacheable() {
     && grep -qiE 'no-store|private' <<<"$cc"
 }
 
+# --- La aplicación, con una sesión de verdad -------------------------------
+#
+# Todo lo de arriba mira pantallas que se sirven SIN credenciales. Hasta acá,
+# ninguna pantalla de la aplicación se abría nunca antes de que la abriera un
+# cliente: el 2026-08-10 se promovió una imagen con /usuarios rota y las cuatro
+# etapas del gate en verde, porque el defecto era de runtime y nadie pedía esa
+# URL. Ver docs/superpowers/specs/2026-08-10-smoke-autenticado-design.md.
+
+# La clave la define deploy.sh en el paso 8, con definir-clave.mts adentro de la
+# imagen de migración. Literal duplicado ahí y acá, igual que efimero-salud:
+# base efímera que nace vacía en cada corrida, y stack que sólo escucha en la IP
+# de Tailscale. Si alguna de esas dos condiciones deja de valer, esto deja de
+# ser aceptable.
+CLAVE_CANARIO=efimero-clave-canario
+MAIL_CANARIO=canario@arandano.app
+HOST_CANARIO="${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}"
+
+# Sin header Origin y sin Cookie, a propósito: el chequeo de origen de Better
+# Auth se saltea cuando el request no trae Cookie (ver lib/auth/opciones.ts,
+# donde eso está documentado como el agujero que disabledPaths vino a tapar).
+# Mandar un Origin acá sólo agregaría una forma de equivocarse — tendría que ser
+# EXACTAMENTE el que arma lib/auth/origen.ts para este stack, con PUERTO_PUBLICO
+# incluido, y no el de la URL de la conexión.
+#
+# El login se hace UNA sola vez y la cookie se reusa: /sign-in/email tiene un
+# rate limit de 5 por minuto (opciones.ts), así que un login por pantalla
+# empezaría a dar 429 en cuanto haya seis pantallas — y esa falla se leería como
+# una regresión de la aplicación.
+COOKIE_SESION=$(curl -s -i --max-time 15 \
+  -H "Host: ${HOST_CANARIO}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"${MAIL_CANARIO}\",\"password\":\"${CLAVE_CANARIO}\"}" \
+  "$URL_BASE/api/auth/sign-in/email" 2>/dev/null \
+  | tr -d '\r' | grep -i '^set-cookie:' | head -1 \
+  | sed 's/^[Ss]et-[Cc]ookie: *//' | cut -d';' -f1) || COOKIE_SESION=""
+
+# Su propio caso, y no un chequeo silencioso adentro de los de abajo: si el
+# login se rompe, esto tiene que decir "el login se rompió" una vez, y no
+# hacer fallar N pantallas con un mensaje que habla de la pantalla equivocada.
+caso_login_devuelve_sesion() {
+  [[ -n "$COOKIE_SESION" ]]
+}
+
+# Cada pantalla de la aplicación, con la sesión de verdad.
+#
+# 200 NO alcanza: Next devuelve 200 sirviendo un not-found, y un error.tsx
+# futuro también. El marcador es el nombre del local, que el layout de (app)
+# renderiza en su encabezado (app/(app)/layout.tsx) — el mismo valor que el
+# paso 8 acaba de escribir en la base, y el mismo argumento que ya usa
+# caso_tenant_resuelve.
+#
+# NO se busca el texto del 404 en el cuerpo, y esto costó una tarde: Next
+# incluye el boundary de "not found" en el payload de TODA página, incluidas
+# las que funcionan. Un chequeo así da rojo siempre.
+caso_pantalla() {
+  local ruta="$1" respuesta codigo cuerpo
+  [[ -n "$COOKIE_SESION" ]] || return 1
+  respuesta=$(curl -s --max-time 15 -w $'\n%{http_code}' \
+    -H "Host: ${HOST_CANARIO}" \
+    -H "Cookie: ${COOKIE_SESION}" \
+    "${URL_BASE}${ruta}" 2>/dev/null) || return 1
+  codigo="${respuesta##*$'\n'}"
+  cuerpo="${respuesta%$'\n'*}"
+  [[ "$codigo" == "200" ]] || return 1
+  grep -qF "data-testid=\"tenant-nombre\">${NOMBRE_CANARIO}" <<<"$cuerpo"
+}
+
+# La lista sale del sistema de archivos, no de acá: ver scripts/lib/rutas-comun.sh.
+# Si la derivación falla —cero páginas, o una ruta con parámetro sin declarar—
+# el smoke entero corta acá, antes de reportar ningún verde.
+RUTAS_APP_CRUDAS=$(rutas_autenticadas 'app/(app)') || {
+  printf '\n\033[31mno se pudo derivar la lista de rutas autenticadas\033[0m\n' >&2
+  exit 1
+}
+# `/` primero, y a mano: no vive bajo (app) —el ápex llega por esa misma ruta y
+# no tiene sesión— pero para un tenant es una pantalla autenticada, porque llama
+# a exigirSesion() por su cuenta. Es la misma excepción, con la misma razón, que
+# declara FUERA_DEL_GRUPO en test/rutas-con-guard.test.ts.
+#
+# El bucle y no `mapfile`: si TODAS las páginas del grupo estuvieran declaradas
+# en RUTAS_SIN_SMOKE, la salida sería un string vacío y `mapfile` dejaría un
+# elemento vacío que se pediría como "$URL_BASE" pelado — o sea `/` otra vez,
+# reportado con un nombre que no dice nada.
+RUTAS_APP=('/')
+while IFS= read -r ruta_derivada; do
+  [[ -n "$ruta_derivada" ]] && RUTAS_APP+=("$ruta_derivada")
+done <<<"$RUTAS_APP_CRUDAS"
+
 printf '\n\033[1mSmoke: %s\033[0m\n' "$URL_BASE"
 for caso in \
   caso_health_responde \
@@ -196,9 +285,16 @@ for caso in \
   caso_login_no_existe_en_apex \
   caso_subdominio_inexistente_404 \
   caso_host_ajeno_404 \
-  caso_tenant_no_cacheable
+  caso_tenant_no_cacheable \
+  caso_login_devuelve_sesion
 do
   if "$caso"; then ok "$caso"; else bad "$caso"; fi
+done
+
+# Un caso por pantalla, con su ruta en el nombre: cuando esto falla, el renglón
+# rojo ya dice cuál pantalla, sin abrir un log.
+for ruta in "${RUTAS_APP[@]}"; do
+  if caso_pantalla "$ruta"; then ok "pantalla ${ruta}"; else bad "pantalla ${ruta}"; fi
 done
 
 printf '\n%d ok, %d fallan\n' "$PASS" "$FAIL"
