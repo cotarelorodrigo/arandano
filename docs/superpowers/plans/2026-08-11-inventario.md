@@ -35,6 +35,7 @@ El spec dice que `ajustarStock` se muda "con su firma intacta". Se muda con su *
 | Archivo | Responsabilidad |
 |---|---|
 | `lib/formato/numeros.ts` *(nuevo)* | Parsear un número escrito por una persona. Puro, sin base de datos. |
+| `lib/formato/mostrar.ts` *(nuevo)* | Formatear plata, cantidades y fechas para mostrarlas. **Sin `'use client'`**, y ése es el punto: ver la Task 6. |
 | `lib/formato/numeros.test.ts` *(nuevo)* | Sus tests. Corren sin Docker. |
 | `prisma/schema.prisma` *(modificado)* | Las tres columnas nuevas. |
 | `prisma/migrations/<ts>_inventario/migration.sql` *(nuevo)* | La migración. Sin bloque de RLS: no hay tablas nuevas. |
@@ -2145,11 +2146,64 @@ git commit -m "feat(inventario): server actions con el rol reexigido en cada una
 
 **Interfaces:**
 - Consumes: las actions de la Task 5; `prismaParaTenant` de `@/lib/tenant/prisma`; `exigirSesion`/`exigirDuenio` de `@/lib/auth/sesion`; los componentes de `@/components/ui/`.
-- Produces: `formatearPrecio`, `formatearCantidad` y `FormularioDeAlta`, que la Task 7 reutiliza desde `./formularios`.
+- Produces: `formatearPrecio`, `formatearCantidad` y `formatearFecha` en `lib/formato/mostrar.ts` (módulo de SERVIDOR), y `FormularioDeAlta` en `./formularios` (`'use client'`). La Task 7 reutiliza los cuatro.
 
 **El barrido del smoke las levanta solas.** `scripts/lib/rutas-comun.sh` deriva las rutas del sistema de archivos, así que `/inventario` y `/inventario/nuevo` entran sin tocar nada. El usuario del canario es `DUENO` (`scripts/crear-tenant.mts:147`), así que `/inventario/nuevo` responde 200 en el gate.
 
-- [ ] **Step 1: Escribir los formularios**
+- [ ] **Step 1: Escribir los formateadores, en su propio módulo**
+
+**Van en `lib/formato/mostrar.ts` y NO adentro de `formularios.tsx`, y el motivo
+es mecánico, no de gusto:** `formularios.tsx` lleva `'use client'`, y Next
+convierte **todo** export de un módulo cliente en una referencia de cliente. Un
+componente de servidor —`page.tsx`— que importe de ahí una función común no
+recibe la función: recibe un proxy, y llamarlo en el servidor explota. Los
+formateadores los usan las tres pantallas, que son de servidor.
+
+Van en `lib/formato/` al lado de `numeros.ts`, que resuelve el camino inverso
+—texto de una persona → `Decimal`— por la misma razón: la pantalla de ventas del
+ciclo que viene los necesita igual.
+
+```ts
+// lib/formato/mostrar.ts
+
+// Sin 'use client': lo importan componentes de SERVIDOR. Ver el porqué largo en
+// el plan — un export de un módulo cliente llega al servidor como proxy.
+
+const PESOS = new Intl.NumberFormat('es-AR', {
+  style: 'currency',
+  currency: 'ARS',
+  minimumFractionDigits: 2,
+})
+
+/** Recibe el `toString()` de un `Decimal`, no un `number`: la conversión a
+ *  flotante pasa una sola vez y acá, donde el valor ya sólo se va a mirar. */
+export function formatearPrecio(v: string): string {
+  return PESOS.format(Number(v))
+}
+
+// Hasta 3 decimales pero sin ceros de relleno: "4" y no "4,000". Medio kilo de
+// harina necesita los decimales; una unidad no tiene por qué mostrarlos.
+const CANTIDAD = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 })
+
+export function formatearCantidad(v: string): string {
+  return CANTIDAD.format(Number(v))
+}
+
+// El servidor está en Ashburn. Sin declarar el huso, un movimiento de las 22:00
+// de Buenos Aires aparecería con fecha del día siguiente, y el historial de un
+// cierre de jornada quedaría partido en dos días.
+const FECHA = new Intl.DateTimeFormat('es-AR', {
+  dateStyle: 'short',
+  timeStyle: 'short',
+  timeZone: 'America/Argentina/Buenos_Aires',
+})
+
+export function formatearFecha(v: Date): string {
+  return FECHA.format(v)
+}
+```
+
+- [ ] **Step 2: Escribir los formularios**
 
 ```tsx
 // app/(app)/inventario/formularios.tsx
@@ -2174,24 +2228,6 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 // Acá y no en acciones.ts: aquel archivo es 'use server' y sólo puede exportar
 // funciones async. Mismo lugar que en usuarios y en login.
 const INICIAL: EstadoInventario = { error: null, aviso: null }
-
-// Los dos formateadores viven acá y se exportan porque las tres pantallas
-// muestran los mismos números y una segunda copia se desincroniza.
-const PESOS = new Intl.NumberFormat('es-AR', {
-  style: 'currency',
-  currency: 'ARS',
-  minimumFractionDigits: 2,
-})
-export function formatearPrecio(v: string): string {
-  return PESOS.format(Number(v))
-}
-
-// Hasta 3 decimales pero sin ceros de relleno: "4" y no "4,000". Medio kilo de
-// harina necesita los decimales; una unidad no tiene por qué mostrarlos.
-const CANTIDAD = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 })
-export function formatearCantidad(v: string): string {
-  return CANTIDAD.format(Number(v))
-}
 
 function Resultado({ estado }: { estado: EstadoInventario }) {
   if (estado.error) {
@@ -2287,7 +2323,7 @@ export function FormularioDeAlta() {
 
 (Los formularios del detalle —`FormularioDeEdicion`, `MoverStock`, `AccionesDeArticulo`— se agregan a este mismo archivo en la Task 7.)
 
-- [ ] **Step 2: Escribir la pantalla de alta**
+- [ ] **Step 3: Escribir la pantalla de alta**
 
 ```tsx
 // app/(app)/inventario/nuevo/page.tsx
@@ -2314,7 +2350,7 @@ export default async function ArticuloNuevo() {
 }
 ```
 
-- [ ] **Step 3: Escribir el listado**
+- [ ] **Step 4: Escribir el listado**
 
 ```tsx
 // app/(app)/inventario/page.tsx
@@ -2323,7 +2359,7 @@ import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { formatearPrecio, formatearCantidad } from './formularios'
+import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
 
 export const dynamic = 'force-dynamic'
 
@@ -2489,7 +2525,7 @@ export default async function Inventario({
 }
 ```
 
-- [ ] **Step 4: Escribir el componente de navegación**
+- [ ] **Step 5: Escribir el componente de navegación**
 
 **Un componente compartido y no un `<nav>` inline en el layout, y el motivo es estructural:** `/` **no vive bajo `(app)`** — está en la lista blanca de `test/rutas-con-guard.test.ts` porque el ápex entra por esa misma ruta sin sesión. O sea que la home **no hereda el layout** y no heredaría la nav. Dejar los enlaces sólo en el layout deja huérfana justamente la pantalla donde el usuario aterriza después de entrar.
 
@@ -2530,7 +2566,7 @@ export function Navegacion({ rol }: { rol: RolUsuario }) {
 }
 ```
 
-- [ ] **Step 5: Colgarlo del layout y de la home**
+- [ ] **Step 6: Colgarlo del layout y de la home**
 
 En `app/(app)/layout.tsx`, importar `Navegacion` de `@/components/navegacion` e insertar `<Navegacion rol={sesion.usuario.rol} />` entre el `<span data-testid="tenant-nombre">` y el `<div>` de la derecha. El `<span data-testid="tenant-nombre">` **no se toca**: `scripts/smoke.sh` lo busca en cada pantalla autenticada.
 
@@ -2552,14 +2588,14 @@ por:
 
 `app/page.test.tsx:126` —"un dueño ve el link a /usuarios; un empleado no"— **tiene que seguir pasando sin tocarlo**: el componente filtra por rol igual que el bloque que reemplaza. Si ese test se pone rojo, el filtro quedó mal.
 
-- [ ] **Step 6: Verificar que el barrido levanta las dos rutas**
+- [ ] **Step 7: Verificar que el barrido levanta las dos rutas**
 
 ```bash
 bash -c 'source scripts/lib/rutas-comun.sh && rutas_autenticadas "app/(app)"'
 ```
 Expected: imprime `/inventario`, `/inventario/nuevo` y `/usuarios`. Todavía no `[id]` — esa pantalla llega en la Task 7.
 
-- [ ] **Step 7: Verificar el guard, el typecheck y el lint**
+- [ ] **Step 8: Verificar el guard, el typecheck y el lint**
 
 ```bash
 npx vitest run test/rutas-con-guard.test.ts test/boundaries-app.test.ts
@@ -2568,10 +2604,10 @@ npm run lint
 ```
 Expected: PASS los tres. `rutas-con-guard` tiene que pasar **sin** sumar entradas a `FUERA_DEL_GRUPO`: las dos pantallas nuevas viven bajo `(app)`.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add "app/(app)/inventario/" components/navegacion.tsx "app/(app)/layout.tsx" app/page.tsx
+git add "app/(app)/inventario/" lib/formato/mostrar.ts components/navegacion.tsx "app/(app)/layout.tsx" app/page.tsx
 git commit -m "feat(inventario): listado con buscador, alta de artículo y navegación"
 ```
 
@@ -2764,26 +2800,12 @@ import { notFound } from 'next/navigation'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import {
-  FormularioDeEdicion,
-  AccionesDeArticulo,
-  MoverStock,
-  formatearPrecio,
-  formatearCantidad,
-} from '../formularios'
+import { FormularioDeEdicion, AccionesDeArticulo, MoverStock } from '../formularios'
+import { formatearPrecio, formatearCantidad, formatearFecha } from '@/lib/formato/mostrar'
 
 export const dynamic = 'force-dynamic'
 
 const MOVIMIENTOS_VISIBLES = 50
-
-// El servidor está en Ashburn. Sin declarar el huso, un movimiento de las 22:00
-// de Buenos Aires aparecería con fecha del día siguiente y el historial de un
-// cierre de jornada quedaría partido en dos días.
-const FECHA = new Intl.DateTimeFormat('es-AR', {
-  dateStyle: 'short',
-  timeStyle: 'short',
-  timeZone: 'America/Argentina/Buenos_Aires',
-})
 
 const NOMBRE_DE_MOTIVO: Record<string, string> = {
   VENTA: 'Venta',
@@ -2892,7 +2914,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
             <tbody>
               {movimientos.map((m) => (
                 <tr key={m.id} className="border-b">
-                  <td className="py-2">{FECHA.format(m.creadoEn)}</td>
+                  <td className="py-2">{formatearFecha(m.creadoEn)}</td>
                   <td>{NOMBRE_DE_MOTIVO[m.motivo] ?? m.motivo}</td>
                   <td
                     className={`text-right tabular-nums ${
