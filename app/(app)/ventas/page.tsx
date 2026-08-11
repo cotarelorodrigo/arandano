@@ -29,6 +29,22 @@ function inicioDelDia(fecha: string): Date {
   return new Date(`${fecha}T00:00:00-03:00`)
 }
 
+const ES_FECHA = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * La fecha del query string, o hoy.
+ *
+ * Chequea el `Date` construido y no sólo la forma de los dígitos: `2026-13-45`
+ * pasa cualquier regex de `\d{4}-\d{2}-\d{2}` y después da un `Invalid Date`
+ * que Prisma rechaza sin que nadie lo atrape — un 500 servido desde algo que
+ * alguien tipeó en la barra de direcciones. Es el mismo criterio que el clamp
+ * de `?p`: lo malformado cae al default, no explota.
+ */
+function fechaOhoy(valor: string | undefined, hoy: string): string {
+  if (!valor || !ES_FECHA.test(valor)) return hoy
+  return Number.isNaN(inicioDelDia(valor).getTime()) ? hoy : valor
+}
+
 export default async function Ventas({
   searchParams,
 }: {
@@ -38,12 +54,11 @@ export default async function Ventas({
   const { desde, hasta, p = '1' } = await searchParams
 
   const hoy = hoyEnArgentina()
-  const ES_FECHA = /^\d{4}-\d{2}-\d{2}$/
   // Una fecha malformada cae en hoy en vez de romper el `new Date`, igual que
   // el clamp de `?p` del listado de inventario: un query string escrito a mano
   // no puede servir un 500.
-  const dDesde = desde && ES_FECHA.test(desde) ? desde : hoy
-  const dHasta = hasta && ES_FECHA.test(hasta) ? hasta : hoy
+  const dDesde = fechaOhoy(desde, hoy)
+  const dHasta = fechaOhoy(hasta, hoy)
   const pagina = Math.min(Math.max(1, Math.trunc(Number(p)) || 1), PAGINA_MAXIMA)
 
   const donde = {
