@@ -147,17 +147,22 @@ export async function ingresarMercaderia(
 ): Promise<EstadoInventario> {
   try {
     const articuloId = texto(datos, 'articuloId')
-    const cantidad = aDecimal(texto(datos, 'cantidad'), 'la cantidad')
-    await conSesion((tenantId, usuarioId) =>
-      ingresarStock({
+    // El parseo va ADENTRO del closure, no antes: `conSesion` es lo que
+    // dispara `exigirSesion()`, y un `aDecimal` que tire primero haría que un
+    // llamador sin sesión reciba un error de formato en vez del redirect al
+    // login. El guard no puede depender de que lo que mandaron sea válido.
+    const cantidad = await conSesion(async (tenantId, usuarioId) => {
+      const cantidad = aDecimal(texto(datos, 'cantidad'), 'la cantidad')
+      await ingresarStock({
         tenantId,
         articuloId,
         cantidad,
         usuarioId,
         costoUnitario: aDecimalOpcional(texto(datos, 'costoUnitario'), 'el costo'),
         nota: texto(datos, 'nota') || undefined,
-      }),
-    )
+      })
+      return cantidad
+    })
     revalidatePath('/inventario')
     revalidatePath(`/inventario/${articuloId}`)
     return { error: null, aviso: `Ingresaron ${cantidad.toString()} unidades.` }
@@ -172,16 +177,19 @@ export async function corregirPorConteo(
 ): Promise<EstadoInventario> {
   try {
     const articuloId = texto(datos, 'articuloId')
-    const stockContado = aDecimal(texto(datos, 'stockContado'), 'el conteo')
-    await conSesion((tenantId, usuarioId) =>
-      corregirStock({
+    // Mismo motivo que en ingresarMercaderia: el parseo va adentro del
+    // closure para que un input inválido no se adelante al guard.
+    const stockContado = await conSesion(async (tenantId, usuarioId) => {
+      const stockContado = aDecimal(texto(datos, 'stockContado'), 'el conteo')
+      await corregirStock({
         tenantId,
         articuloId,
         stockContado,
         usuarioId,
         nota: texto(datos, 'nota') || undefined,
-      }),
-    )
+      })
+      return stockContado
+    })
     revalidatePath('/inventario')
     revalidatePath(`/inventario/${articuloId}`)
     return { error: null, aviso: `El stock quedó en ${stockContado.toString()}.` }

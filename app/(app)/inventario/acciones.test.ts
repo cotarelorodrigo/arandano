@@ -115,6 +115,22 @@ async function cookieDe(email: string): Promise<string> {
   return cookie.split(';')[0]
 }
 
+let contadorSku = 0
+
+/** Un artículo propio por test: evita que los casos de guardar/dar de baja/
+ *  reactivar/corregir se pisen entre sí o con `articuloId`, que ya usan otros
+ *  casos de este describe. */
+async function crearArticuloDePrueba(nombre: string, stock = '0'): Promise<string> {
+  contadorSku += 1
+  const { rows } = await owner.query(
+    `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, creado_en, actualizado_en)
+     VALUES (gen_random_uuid(), $1, $2, $3, 'PRODUCTO', 1000.00, $4, now(), now())
+     RETURNING id`,
+    [estado.tenantId, `ACC-TEST-${contadorSku}`, nombre, stock],
+  )
+  return rows[0].id
+}
+
 describe('el rol de cada action de inventario', () => {
   it('un EMPLEADO no puede dar de alta, editar, ni desactivar', async () => {
     estado.cookie = cookieEmpleado
@@ -160,6 +176,41 @@ describe('el rol de cada action de inventario', () => {
     await expect(ingresarMercaderia(INICIAL, datos)).rejects.toThrow('REDIRECT')
   })
 
+  // El input inválido no puede adelantarse al guard: si `aDecimal` tirara
+  // antes de `exigirSesion()`, un llamador sin sesión recibiría un cartel rojo
+  // en vez de irse al login.
+  it('sin sesión, un input inválido igual manda al login', async () => {
+    estado.cookie = ''
+    const datos = new FormData()
+    datos.set('articuloId', articuloId)
+    datos.set('cantidad', 'abc')
+    await expect(ingresarMercaderia(INICIAL, datos)).rejects.toThrow('REDIRECT')
+  })
+
+  it('un EMPLEADO corrige el conteo: el stock queda en lo contado y firmado', async () => {
+    estado.cookie = cookieEmpleado
+    const id = await crearArticuloDePrueba('Para corregir', '10')
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('stockContado', '7')
+    const r = await corregirPorConteo(INICIAL, datos)
+    expect(r.error).toBeNull()
+
+    const { rows } = await owner.query(
+      `SELECT stock FROM articulos WHERE id = $1`,
+      [id],
+    )
+    expect(new Prisma.Decimal(rows[0].stock).toString()).toBe('7')
+
+    const movimiento = await owner.query(
+      `SELECT usuario_id, delta FROM movimientos_stock WHERE articulo_id = $1
+        ORDER BY creado_en DESC LIMIT 1`,
+      [id],
+    )
+    expect(movimiento.rows[0].usuario_id).toBe(empleadoId)
+    expect(new Prisma.Decimal(movimiento.rows[0].delta).toString()).toBe('-3')
+  })
+
   it('un DUEÑO da de alta y el aviso trae el código generado', async () => {
     estado.cookie = cookieDuenio
     const datos = new FormData()
@@ -196,5 +247,61 @@ describe('el rol de cada action de inventario', () => {
     datos.set('precio', '850.000')
     const r = await altaArticulo(INICIAL, datos)
     expect(r.error).toMatch(/no se entiende/)
+  })
+
+  // Las cuatro actions de dueño hasta acá sólo se probaron rechazando al rol
+  // equivocado (o, para altaArticulo, dando de alta). Falta el camino feliz de
+  // las otras tres: que la DUEÑA efectivamente hace lo suyo. Se verifica
+  // leyendo la base con `owner`, no confiando en el `aviso` de la action.
+  it('un DUEÑO guarda los cambios de un artículo', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Antes de editar')
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('nombre', 'Después de editar')
+    datos.set('sku', 'ACC-EDITADO')
+    datos.set('precio', '2500')
+    const r = await guardarArticulo(INICIAL, datos)
+    expect(r.error).toBeNull()
+
+    const { rows } = await owner.query(
+      `SELECT nombre, sku, precio FROM articulos WHERE id = $1`,
+      [id],
+    )
+    expect(rows[0].nombre).toBe('Después de editar')
+    expect(rows[0].sku).toBe('ACC-EDITADO')
+    expect(new Prisma.Decimal(rows[0].precio).toString()).toBe('2500')
+  })
+
+  it('un DUEÑO desactiva un artículo', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Para desactivar')
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    const r = await bajaArticulo(INICIAL, datos)
+    expect(r.error).toBeNull()
+
+    const { rows } = await owner.query(
+      `SELECT desactivado_en FROM articulos WHERE id = $1`,
+      [id],
+    )
+    expect(rows[0].desactivado_en).not.toBeNull()
+  })
+
+  it('un DUEÑO reactiva un artículo desactivado', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Para reactivar')
+    await owner.query(`UPDATE articulos SET desactivado_en = now() WHERE id = $1`, [id])
+
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    const r = await reactivarArticuloAccion(INICIAL, datos)
+    expect(r.error).toBeNull()
+
+    const { rows } = await owner.query(
+      `SELECT desactivado_en FROM articulos WHERE id = $1`,
+      [id],
+    )
+    expect(rows[0].desactivado_en).toBeNull()
   })
 })
