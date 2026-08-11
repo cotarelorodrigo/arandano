@@ -51,7 +51,9 @@ export async function tenantDelRequest(): Promise<ResolucionTenant> {
   // (`createRedirectRenderResult`, en su action-handler) hacia el origen con el
   // que arrancó el servidor, y devuelve ese render incrustado en la respuesta
   // de la action. Al ser un fetch de verdad, el `Host` que le llega a ese
-  // render es el del destino —`localhost:3000`— y el hostname que pidió el
+  // render es el interno del propio servidor —`localhost:3000` medido en dev;
+  // en producción sale de HOSTNAME, que en la imagen es `0.0.0.0`— y el
+  // hostname que pidió el
   // navegador viaja sólo en `x-forwarded-host`. Leyendo `host`, ese render daba
   // 'ajeno' y `app/page.tsx` contestaba notFound(): entrar al login dejaba la
   // URL en `/` mostrando el 404 de Next, y un F5 lo arreglaba porque un GET
@@ -68,7 +70,20 @@ export async function tenantDelRequest(): Promise<ResolucionTenant> {
   //
   // El fallback a `host` casi no corre: Next completa `x-forwarded-host` con el
   // `host` en cada request que entra. Está para no depender de ese detalle.
-  const host = cabeceras.get('x-forwarded-host') ?? cabeceras.get('host')
+  //
+  // `||` y no `??`, y la primera de la lista y no el valor entero: es la misma
+  // normalización que hace Next para su propio chequeo CSRF de server actions
+  // (`parseHostHeader`), y sin ella el header gana en dos formas en las que no
+  // dice nada útil. `Headers.get()` devuelve '' cuando el header viene presente
+  // pero vacío —con `??` eso se toma por un hostname y TODA página da 404, sin
+  // que el fallback llegue a correr—, y devuelve los valores unidos por ", "
+  // cuando viene repetido, que es lo que arma una cadena de dos proxies.
+  // Medido contra un build de producción: las dos formas daban 404 donde el
+  // mismo request sin el header daba 200. Hoy no muerde detrás de Caddy, que
+  // escribe el header él mismo; muerde si algún día se pone un CDN adelante, y
+  // ahí la falla se leería como un bug de resolución de tenant.
+  const reenviado = cabeceras.get('x-forwarded-host')?.split(',')[0]?.trim()
+  const host = reenviado || cabeceras.get('host')
   const analizado = subdominioDeHost(host, dominioBase)
   if (analizado.tipo !== 'tenant') return analizado
 
