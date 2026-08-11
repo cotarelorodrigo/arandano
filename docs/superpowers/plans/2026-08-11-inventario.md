@@ -2132,6 +2132,25 @@ git add "app/(app)/inventario/acciones.ts" "app/(app)/inventario/acciones.test.t
 git commit -m "feat(inventario): server actions con el rol reexigido en cada una"
 ```
 
+#### Ajustes hechos durante la ejecución (2026-08-11)
+
+El código de arriba es el del plan original. La review encontró tres cosas y las
+tres se cerraron; la fuente de verdad es el código commiteado:
+
+1. **El guard corría después de parsear el formulario.** En `ingresarMercaderia`
+   y `corregirPorConteo`, el `aDecimal(...)` se ejecutaba **antes** de la línea
+   que llama a `conSesion(...)`, que es la que dispara `exigirSesion()`. O sea
+   que alguien sin sesión mandando `cantidad: "abc"` recibía un cartel rojo en
+   vez de irse al login. El parseo pasó adentro del closure, devolviendo el
+   valor que el aviso necesita, igual que ya hacían las cuatro actions de dueño.
+2. **`corregirPorConteo` no tenía ni un test.** Ahora tiene su caso de punta a
+   punta: un empleado corrigiendo un conteo, con el stock resultante y la firma
+   del movimiento asserteados contra la base.
+3. **Tres actions de dueño sólo se probaban rechazando a un empleado.**
+   `guardarArticulo`, `bajaArticulo` y `reactivarArticuloAccion` tienen ahora su
+   camino feliz, verificado leyendo la base con el cliente `owner` y no
+   confiando en el aviso que devuelve la action.
+
 ---
 
 ### Task 6: El listado, el alta y la navegación
@@ -3044,3 +3063,27 @@ Del spec, repetido acá para que no se lea como olvido:
 - **Multi-sucursal.** Sigue rigiendo por omisión "un tenant por local"; `Articulo.stock` sigue siendo un escalar.
 - **Reserva de stock.** Ya estaba fuera de alcance en el motor y sigue estándolo.
 - **Tokens de color nuevos.** El ámbar de "stock bajo" que `docs/sistema-de-diseno.md` reserva entra con la feature de umbral que lo necesite, no antes.
+
+
+---
+
+## Deuda anotada al cerrar el ciclo
+
+La review final de la rama triageó cada una de estas y dictaminó que **ninguna
+bloquea el merge**. Quedan escritas acá y no en un archivo efímero para que
+existan cuando alguien las busque.
+
+| Dónde | Qué | Por qué se difiere |
+|---|---|---|
+| `lib/inventario/stock.ts` | Dos `corregirStock` concurrentes sobre el mismo artículo duplican la corrección: la lectura no toma lock y bajo READ COMMITTED las dos calculan el mismo delta. | Necesita dos conteos simultáneos del mismo artículo en un local. La invariante igual se sostiene y el historial append-only explica el resultado. |
+| `lib/inventario/articulos.ts` | La transacción del contador de SKU queda fuera del `try`, o sea fuera del borde de `traducirErrorDeBase`. | Sólo `TENANT_INEXISTENTE` es alcanzable ahí, y ése ya lleva `codigo`. |
+| `lib/inventario/articulos.ts` | El contador avanza antes de `exigirUsuario`: un alta rechazada por usuario ajeno quema un número. | Los huecos en la secuencia de SKU ya son una propiedad aceptada y documentada. |
+| `lib/inventario/articulos.ts` | El alta duplica el par movimiento + `increment` en vez de reusar `aplicarMovimiento` de `stock.ts`. | Son dos lugares en un mismo módulo que tienen que mantener juntas las dos escrituras. Vale colapsarlos, no bloquea. |
+| `lib/inventario/articulos.ts` | `desactivarArticulo` sobre uno ya inactivo pisa la fecha; `editarArticulo` edita uno desactivado. Ninguna de las dos está especificada. | Las dos son inofensivas. Conviene decidirlas por escrito, no frenar por ellas. |
+| `test/inventario.test.ts` | Ningún test agota `INTENTOS_SKU` ni encadena dos colisiones seguidas. | El camino de una colisión sí está cubierto; agotar cinco pide un fixture rebuscado. |
+| `app/(app)/inventario/page.tsx` | El buscador no escapa `%` ni `_`, así que buscar `50%` se comporta como comodín. Y `?p=9999` sobre un catálogo lleno muestra el texto de "todavía no cargaste nada". | Cosméticas las dos. |
+| `app/(app)/inventario/` | Dos `<nav>` en la misma página sin `aria-label` que los distinga, y los `<th>` sin `scope="col"`. | Deuda de accesibilidad real. Conviene juntarla con la UI de ventas, que trae más tablas, en vez de resolverla de a una. |
+| `app/(app)/inventario/formularios.tsx` | `AccionesDeArticulo` intercambia la función de `useActionState` según el prop; el estado local no se resetea, así que el aviso anterior queda visible un render. | Es correcto en React 19, y el prop recién cambia después de una acción exitosa, así que el aviso que queda es el que corresponde. |
+| `app/(app)/inventario/[id]/page.tsx` | `NOMBRE_DE_MOTIVO` tipado `Record<string, string>` y no contra el enum; el bloque de Editar no tiene `<h2>` propio. | El `?? m.motivo` degrada a mostrar el enum crudo, no rompe. |
+| `lib/inventario/` | El alta no es idempotente: un doble submit crea dos artículos y quema dos números de SKU. | Es la misma clase que la nota de idempotencia de `crearVenta` que CLAUDE.md ya lleva en sus decisiones abiertas. Ahora que hay un formulario de verdad, entra ahí. |
+| `prisma/schema.prisma`, `lib/formato/numeros.test.ts` | Alineación de `prisma format` despareja en el bloque `MovimientoStock`; un `it()` que dice "distinja" en vez de "distinga". | Ningún gate las chequea. |
