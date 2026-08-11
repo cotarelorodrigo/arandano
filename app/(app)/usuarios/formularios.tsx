@@ -62,7 +62,12 @@ export function AltaDeEmpleado() {
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="rol">Rol</Label>
-            <select id="rol" name="rol" className="h-9 rounded-md border px-3 text-sm">
+            {/* h-8 y no h-9: son los 32 px que docs/sistema-de-diseno.md declara
+                para input y botón, y que ya traen los componentes de shadcn. Un
+                select de 36 px al lado de un Input de 32 se ve desalineado, y el
+                paso 9 está fuera del subconjunto de la escala que el documento
+                habilita. */}
+            <select id="rol" name="rol" className="h-8 rounded-md border px-3 text-sm">
               <option value="EMPLEADO">Empleado</option>
               <option value="DUENO">Dueño</option>
             </select>

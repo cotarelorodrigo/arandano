@@ -230,9 +230,13 @@ export function ratios(): Resultado[] {
       nombre: nombreDelPar(p),
       ratio,
       minimo: p.minimo,
-      // Redondeado a dos decimales antes de comparar: es lo que se publica en
-      // el documento, y un par que da 4.4996 no puede figurar como 4.50 "ok".
-      llega: Number(ratio.toFixed(2)) >= p.minimo,
+      // Sin redondear antes de comparar, y esto costó un hallazgo: con
+      // `Number(ratio.toFixed(2)) >= minimo`, un par que da 4.4996 se publicaba
+      // como 4.50 y pasaba, mientras el comentario de acá afirmaba lo contrario.
+      // El documento sigue publicando el valor redondeado —es lo legible—, pero
+      // el veredicto se decide sobre el número entero, que es el lado que falla
+      // cerrado.
+      llega: ratio >= p.minimo,
     }
   })
 }
