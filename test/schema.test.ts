@@ -74,6 +74,48 @@ describe('la migración inicial', () => {
   })
 })
 
+describe('la migración de inventario', () => {
+  it('guarda el costo del movimiento como numeric(12,2) nullable', async () => {
+    const { rows } = await cliente.query(
+      `SELECT data_type, numeric_precision, numeric_scale, is_nullable
+         FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='movimientos_stock'
+          AND column_name='costo_unitario'`,
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0].data_type).toBe('numeric')
+    expect(rows[0].numeric_precision).toBe(12)
+    expect(rows[0].numeric_scale).toBe(2)
+    // Nullable a propósito: los movimientos que no son un ingreso no tienen
+    // costo, y los que ya existían tampoco.
+    expect(rows[0].is_nullable).toBe('YES')
+  })
+
+  it('guarda la desactivación del artículo como timestamptz nullable', async () => {
+    const { rows } = await cliente.query(
+      `SELECT data_type, is_nullable FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='articulos'
+          AND column_name='desactivado_en'`,
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0].data_type).toBe('timestamp with time zone')
+    expect(rows[0].is_nullable).toBe('YES')
+  })
+
+  it('arranca el correlativo del SKU en 1 para todo tenant', async () => {
+    const { rows } = await cliente.query(
+      `SELECT column_default, is_nullable FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='tenants'
+          AND column_name='proximo_sku_articulo'`,
+    )
+    expect(rows).toHaveLength(1)
+    // Con default y NOT NULL: un tenant que ya existía tiene que quedar en 1,
+    // no en null, o la primera alta de ese local explota.
+    expect(rows[0].column_default).toBe('1')
+    expect(rows[0].is_nullable).toBe('NO')
+  })
+})
+
 async function crearTenantCrudo(subdominio: string): Promise<string> {
   const { rows } = await cliente.query(
     `INSERT INTO tenants (id, subdominio, nombre, estado, creado_en, actualizado_en)

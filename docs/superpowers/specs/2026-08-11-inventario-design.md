@@ -347,6 +347,12 @@ lo busca en cada pantalla autenticada para distinguir una página de verdad de u
 Explícito, para que no se lea como olvido:
 
 - **La UI de ventas.** Es la pieza 5 y el ciclo siguiente.
+  **Y se lleva un requisito de este ciclo**: el buscador de artículos de esa
+  pantalla tiene que filtrar `desactivadoEn: null`, y `crearVenta` tiene que
+  rechazar un artículo desactivado. Hoy no lo hace —resuelve por
+  `{ id: { in: … } }` sin filtro— y es inofensivo sólo porque no hay pantalla
+  de ventas todavía. Escrito acá y no como "cuando exista", que es la forma de
+  que a nadie le trope.
 - **Clientes.** No hay pantalla de clientes; la venta la va a necesitar y entra
   con ella.
 - **Costo promedio, valorización del inventario y márgenes.** El costo se

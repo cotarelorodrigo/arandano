@@ -38,6 +38,7 @@ erDiagram
     tipo_articulo tipo
     decimal(12,2) precio
     decimal(12,3) stock
+    timestamptz(3) desactivado_en "opcional"
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
@@ -55,6 +56,7 @@ erDiagram
     uuid tenant_id FK
     uuid articulo_id FK
     decimal(12,3) delta
+    decimal(12,2) costo_unitario "opcional"
     motivo_movimiento motivo
     uuid venta_id FK "opcional"
     uuid usuario_id FK
@@ -93,6 +95,7 @@ erDiagram
     text nombre
     estado_tenant estado
     integer proximo_numero_venta
+    integer proximo_sku_articulo
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }

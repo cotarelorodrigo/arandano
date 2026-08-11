@@ -35,6 +35,7 @@ El spec dice que `ajustarStock` se muda "con su firma intacta". Se muda con su *
 | Archivo | Responsabilidad |
 |---|---|
 | `lib/formato/numeros.ts` *(nuevo)* | Parsear un número escrito por una persona. Puro, sin base de datos. |
+| `lib/formato/mostrar.ts` *(nuevo)* | Formatear plata, cantidades y fechas para mostrarlas. **Sin `'use client'`**, y ése es el punto: ver la Task 6. |
 | `lib/formato/numeros.test.ts` *(nuevo)* | Sus tests. Corren sin Docker. |
 | `prisma/schema.prisma` *(modificado)* | Las tres columnas nuevas. |
 | `prisma/migrations/<ts>_inventario/migration.sql` *(nuevo)* | La migración. Sin bloque de RLS: no hay tablas nuevas. |
@@ -51,7 +52,8 @@ El spec dice que `ajustarStock` se muda "con su firma intacta". Se muda con su *
 | `app/(app)/inventario/page.tsx` *(nuevo)* | El listado. |
 | `app/(app)/inventario/nuevo/page.tsx` *(nuevo)* | El alta. |
 | `app/(app)/inventario/[id]/page.tsx` *(nuevo)* | El detalle. |
-| `app/(app)/layout.tsx` *(modificado)* | La navegación. |
+| `components/navegacion.tsx` *(nuevo)* | Los enlaces, en un solo lugar. Lo usan el layout y la home. |
+| `app/(app)/layout.tsx` *(modificado)* | Cuelga la navegación. |
 | `app/page.tsx` *(modificado)* | Se le saca el `<a>` suelto a `/usuarios`. |
 | `scripts/lib/rutas-comun.sh` *(modificado)* | La primera entrada de `RUTAS_SIN_SMOKE`. |
 | `test/schema.test.ts` *(modificado)* | Las tres columnas nuevas, con su tipo. |
@@ -114,6 +116,27 @@ describe('aDecimal', () => {
     )
     expect(() => aDecimal('850,000', 'el precio')).toThrowError(
       expect.objectContaining({ codigo: 'NUMERO_AMBIGUO' }),
+    )
+  })
+
+  // Dos o más separadores no son ambiguos: un decimal de verdad nunca lleva
+  // dos. Y es el rango de precios de este vertical — un celular de un millón y
+  // medio se escribe así.
+  it('acepta los miles sin decimales', () => {
+    expect(aDecimal('1.500.000', 'el precio').toString()).toBe('1500000')
+    expect(aDecimal('12.345.678', 'el precio').toString()).toBe('12345678')
+  })
+
+  it('un solo separador sigue siendo ambiguo, que es el punto del módulo', () => {
+    expect(() => aDecimal('850.000', 'el precio')).toThrowError(
+      expect.objectContaining({ codigo: 'NUMERO_AMBIGUO' }),
+    )
+  })
+
+  // Mezclar convenciones es donde se hace daño: no se acepta.
+  it('rechaza los miles a la yanqui', () => {
+    expect(() => aDecimal('1,500,000', 'el precio')).toThrowError(
+      expect.objectContaining({ codigo: 'NUMERO_INVALIDO' }),
     )
   })
 
@@ -191,6 +214,12 @@ const SOLO_DIGITOS = /^\d+$/
 // El formato argentino completo: miles con punto y decimales con coma. No es
 // ambiguo porque las dos marcas están presentes y cada una dice qué es.
 const MILES_Y_DECIMALES = /^\d{1,3}(?:\.\d{3})+,\d+$/
+// Miles sin decimales: `1.500.000`. Dos o más separadores NO son ambiguos —un
+// decimal de verdad nunca lleva dos—, así que acá no hay nada que adivinar. Un
+// solo separador sí lo es, y ese caso lo sigue rechazando `UN_SEPARADOR`.
+// `{2,}` y no `+`: con `+`, `850.000` (un solo grupo) matchearía acá y se
+// tragaría el chequeo de ambigüedad de más abajo.
+const SOLO_MILES = /^\d{1,3}(?:\.\d{3}){2,}$/
 const UN_SEPARADOR = /^(\d+)[.,](\d+)$/
 
 /**
@@ -220,6 +249,9 @@ export function aDecimal(texto: string, campo: string): Prisma.Decimal {
   if (MILES_Y_DECIMALES.test(limpio)) {
     return new Prisma.Decimal(limpio.replaceAll('.', '').replace(',', '.'))
   }
+  if (SOLO_MILES.test(limpio)) {
+    return new Prisma.Decimal(limpio.replaceAll('.', ''))
+  }
 
   const partido = UN_SEPARADOR.exec(limpio)
   if (partido) {
@@ -246,7 +278,7 @@ export function aDecimalOpcional(texto: string, campo: string): Prisma.Decimal |
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run lib/formato/numeros.test.ts`
-Expected: PASS, 13 tests.
+Expected: PASS, 16 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1046,6 +1078,36 @@ git add lib/inventario/ lib/ventas/anular.ts lib/ventas/errores.ts test/inventar
 git commit -m "feat(inventario): ingreso de mercadería y corrección por conteo"
 ```
 
+#### Ajustes hechos durante la ejecución (2026-08-11)
+
+Los bloques de código de arriba son los del plan original. La review de esta
+task encontró cuatro cosas y el humano falló que se cerraran, así que el código
+commiteado difiere en estos puntos — la fuente de verdad es el código:
+
+1. **`lib/inventario/errores.ts` tiene su propio `traducirErrorDeBase`**, que
+   mapea el `P2020` de Prisma a `ErrorDeInventario('FUERA_DE_RANGO')`, y
+   `'FUERA_DE_RANGO'` entra en `CodigoErrorDeInventario`. `stock.ts` importa ése
+   y no el de `lib/ventas/errores.ts`. El motivo: una cantidad que desborda la
+   columna salía como `ErrorDeVenta`, y los server actions de la Task 5 filtran
+   con `e instanceof ErrorDeInventario` — o sea que un tipeo largo en el
+   formulario de ingreso habría tirado la pantalla abajo con un 500 en vez de
+   mostrar un cartel corregible. Sumar el código al union no alcanzaba: la
+   clase es lo que la pantalla mira.
+2. **`'un ingreso suma y queda registrado con su nota'` volvió a assertear
+   `nota` y `ventaId`.** Al mudar el `describe` desde `test/ventas.test.ts`, el
+   plan había perdido las dos aserciones y el nombre del test prometía un
+   comportamiento que el test no verificaba.
+3. **Se sumó el caso de `ajustarStock` contra un `SERVICIO`.** Es la única de
+   las tres funciones cuyo comportamiento este ciclo cambia a propósito, y era
+   la única sin ese caso.
+4. **El JSDoc de `exigirArticuloConStock` decía dos cosas falsas** —que estaba
+   exportada, y que releer sería consultar "con el lock ya tomado", cuando
+   `findUnique` no toma ningún lock de fila—. En un código cuya regla es que el
+   comentario lleva el porqué, un porqué falso es peor que ninguno.
+
+`test/inventario.test.ts` termina con **19** tests, no 18: el plan contaba mal
+—su propio código daba 17— y este round sumó dos.
+
 ---
 
 ### Task 4: El alta y la edición de artículos
@@ -1590,6 +1652,50 @@ git add lib/inventario/articulos.ts test/inventario.test.ts
 git commit -m "feat(inventario): alta, edición y baja de artículos con SKU autogenerado"
 ```
 
+#### Ajustes hechos durante la ejecución (2026-08-11)
+
+El código de arriba es el del plan original. La ejecución encontró **un bug real
+del plan** y dos cosas más; la fuente de verdad es el código commiteado:
+
+1. **El bucle de reintento del SKU, tal como el plan lo escribió, nunca
+   converge.** El `UPDATE` del contador corre adentro de la misma transacción
+   que después falla por unicidad, y Postgres rollbackea la transacción
+   **entera** — incluido ese `UPDATE`. O sea que cada reintento volvía a pedir
+   el mismo número: `A-0001` cinco veces seguidas, confirmado con logs. El plan
+   acertó en que el reintento va afuera de la transacción y erró en dejar el
+   contador adentro. `proximoSku` pasó a correr en **su propia transacción
+   comiteada**.
+
+   **La consecuencia se acepta a conciencia: la secuencia de SKU puede tener
+   huecos**, porque el contador comitea antes del insert y toda alta que falle
+   después quema un número. Para un SKU está bien —es un código opaco que nadie
+   cuenta— y para `Venta.numero` estaría mal, porque la gente dice "la venta
+   123" por teléfono. Por eso `proximoNumero` de `lib/ventas/crear.ts`
+   **no** cambia y **no** debe armonizarse con éste: no tiene el defecto,
+   justamente porque no reintenta, y ahí el rollback del contador es lo que se
+   quiere.
+
+2. **`e.meta.target` no se puebla nunca con `@prisma/adapter-pg`.** Prisma 7
+   arma el meta de los errores del adapter como `{ driverAdapterError }`, así
+   que el chequeo que el plan escribió no habría discriminado nada. El
+   discriminador es `cause.constraint.fields`, **fallando abierto** cuando el
+   campo falta.
+
+   Y falta siempre: bajo `arandano_app` —el único rol con el que la app se
+   conecta— Postgres retiene el `DETAIL` del error porque la policy de RLS
+   aplica al rol que consulta. No es por los `GRANT`: `arandano_app` tiene
+   `SELECT`. Así que lo que sostiene la corrección es que `articulos` tiene una
+   sola unicidad y `movimientos_stock` ninguna: adentro de esa transacción un
+   `P2002` no puede ser otra cosa.
+
+3. **`crearArticulo` y `editarArticulo` pasan por el `traducirErrorDeBase` de
+   `lib/inventario/errores.ts`**, por el mismo motivo que `stock.ts` (ver los
+   ajustes de la Task 3): un precio o un stock inicial que desborda su columna
+   salía como error crudo de Prisma, y los server actions filtran por
+   `instanceof ErrorDeInventario`.
+
+`test/inventario.test.ts` termina con **36** tests.
+
 ---
 
 ### Task 5: Los server actions
@@ -2026,6 +2132,25 @@ git add "app/(app)/inventario/acciones.ts" "app/(app)/inventario/acciones.test.t
 git commit -m "feat(inventario): server actions con el rol reexigido en cada una"
 ```
 
+#### Ajustes hechos durante la ejecución (2026-08-11)
+
+El código de arriba es el del plan original. La review encontró tres cosas y las
+tres se cerraron; la fuente de verdad es el código commiteado:
+
+1. **El guard corría después de parsear el formulario.** En `ingresarMercaderia`
+   y `corregirPorConteo`, el `aDecimal(...)` se ejecutaba **antes** de la línea
+   que llama a `conSesion(...)`, que es la que dispara `exigirSesion()`. O sea
+   que alguien sin sesión mandando `cantidad: "abc"` recibía un cartel rojo en
+   vez de irse al login. El parseo pasó adentro del closure, devolviendo el
+   valor que el aviso necesita, igual que ya hacían las cuatro actions de dueño.
+2. **`corregirPorConteo` no tenía ni un test.** Ahora tiene su caso de punta a
+   punta: un empleado corrigiendo un conteo, con el stock resultante y la firma
+   del movimiento asserteados contra la base.
+3. **Tres actions de dueño sólo se probaban rechazando a un empleado.**
+   `guardarArticulo`, `bajaArticulo` y `reactivarArticuloAccion` tienen ahora su
+   camino feliz, verificado leyendo la base con el cliente `owner` y no
+   confiando en el aviso que devuelve la action.
+
 ---
 
 ### Task 6: El listado, el alta y la navegación
@@ -2034,16 +2159,70 @@ git commit -m "feat(inventario): server actions con el rol reexigido en cada una
 - Create: `app/(app)/inventario/page.tsx`
 - Create: `app/(app)/inventario/nuevo/page.tsx`
 - Create: `app/(app)/inventario/formularios.tsx`
+- Create: `components/navegacion.tsx`
 - Modify: `app/(app)/layout.tsx`
 - Modify: `app/page.tsx`
 
 **Interfaces:**
 - Consumes: las actions de la Task 5; `prismaParaTenant` de `@/lib/tenant/prisma`; `exigirSesion`/`exigirDuenio` de `@/lib/auth/sesion`; los componentes de `@/components/ui/`.
-- Produces: `formatearPrecio`, `formatearCantidad` y `FormularioDeAlta`, que la Task 7 reutiliza desde `./formularios`.
+- Produces: `formatearPrecio`, `formatearCantidad` y `formatearFecha` en `lib/formato/mostrar.ts` (módulo de SERVIDOR), y `FormularioDeAlta` en `./formularios` (`'use client'`). La Task 7 reutiliza los cuatro.
 
 **El barrido del smoke las levanta solas.** `scripts/lib/rutas-comun.sh` deriva las rutas del sistema de archivos, así que `/inventario` y `/inventario/nuevo` entran sin tocar nada. El usuario del canario es `DUENO` (`scripts/crear-tenant.mts:147`), así que `/inventario/nuevo` responde 200 en el gate.
 
-- [ ] **Step 1: Escribir los formularios**
+- [ ] **Step 1: Escribir los formateadores, en su propio módulo**
+
+**Van en `lib/formato/mostrar.ts` y NO adentro de `formularios.tsx`, y el motivo
+es mecánico, no de gusto:** `formularios.tsx` lleva `'use client'`, y Next
+convierte **todo** export de un módulo cliente en una referencia de cliente. Un
+componente de servidor —`page.tsx`— que importe de ahí una función común no
+recibe la función: recibe un proxy, y llamarlo en el servidor explota. Los
+formateadores los usan las tres pantallas, que son de servidor.
+
+Van en `lib/formato/` al lado de `numeros.ts`, que resuelve el camino inverso
+—texto de una persona → `Decimal`— por la misma razón: la pantalla de ventas del
+ciclo que viene los necesita igual.
+
+```ts
+// lib/formato/mostrar.ts
+
+// Sin 'use client': lo importan componentes de SERVIDOR. Ver el porqué largo en
+// el plan — un export de un módulo cliente llega al servidor como proxy.
+
+const PESOS = new Intl.NumberFormat('es-AR', {
+  style: 'currency',
+  currency: 'ARS',
+  minimumFractionDigits: 2,
+})
+
+/** Recibe el `toString()` de un `Decimal`, no un `number`: la conversión a
+ *  flotante pasa una sola vez y acá, donde el valor ya sólo se va a mirar. */
+export function formatearPrecio(v: string): string {
+  return PESOS.format(Number(v))
+}
+
+// Hasta 3 decimales pero sin ceros de relleno: "4" y no "4,000". Medio kilo de
+// harina necesita los decimales; una unidad no tiene por qué mostrarlos.
+const CANTIDAD = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 })
+
+export function formatearCantidad(v: string): string {
+  return CANTIDAD.format(Number(v))
+}
+
+// El servidor está en Ashburn. Sin declarar el huso, un movimiento de las 22:00
+// de Buenos Aires aparecería con fecha del día siguiente, y el historial de un
+// cierre de jornada quedaría partido en dos días.
+const FECHA = new Intl.DateTimeFormat('es-AR', {
+  dateStyle: 'short',
+  timeStyle: 'short',
+  timeZone: 'America/Argentina/Buenos_Aires',
+})
+
+export function formatearFecha(v: Date): string {
+  return FECHA.format(v)
+}
+```
+
+- [ ] **Step 2: Escribir los formularios**
 
 ```tsx
 // app/(app)/inventario/formularios.tsx
@@ -2068,24 +2247,6 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 // Acá y no en acciones.ts: aquel archivo es 'use server' y sólo puede exportar
 // funciones async. Mismo lugar que en usuarios y en login.
 const INICIAL: EstadoInventario = { error: null, aviso: null }
-
-// Los dos formateadores viven acá y se exportan porque las tres pantallas
-// muestran los mismos números y una segunda copia se desincroniza.
-const PESOS = new Intl.NumberFormat('es-AR', {
-  style: 'currency',
-  currency: 'ARS',
-  minimumFractionDigits: 2,
-})
-export function formatearPrecio(v: string): string {
-  return PESOS.format(Number(v))
-}
-
-// Hasta 3 decimales pero sin ceros de relleno: "4" y no "4,000". Medio kilo de
-// harina necesita los decimales; una unidad no tiene por qué mostrarlos.
-const CANTIDAD = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 })
-export function formatearCantidad(v: string): string {
-  return CANTIDAD.format(Number(v))
-}
 
 function Resultado({ estado }: { estado: EstadoInventario }) {
   if (estado.error) {
@@ -2181,7 +2342,7 @@ export function FormularioDeAlta() {
 
 (Los formularios del detalle —`FormularioDeEdicion`, `MoverStock`, `AccionesDeArticulo`— se agregan a este mismo archivo en la Task 7.)
 
-- [ ] **Step 2: Escribir la pantalla de alta**
+- [ ] **Step 3: Escribir la pantalla de alta**
 
 ```tsx
 // app/(app)/inventario/nuevo/page.tsx
@@ -2208,7 +2369,7 @@ export default async function ArticuloNuevo() {
 }
 ```
 
-- [ ] **Step 3: Escribir el listado**
+- [ ] **Step 4: Escribir el listado**
 
 ```tsx
 // app/(app)/inventario/page.tsx
@@ -2217,7 +2378,7 @@ import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { formatearPrecio, formatearCantidad } from './formularios'
+import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
 
 export const dynamic = 'force-dynamic'
 
@@ -2383,30 +2544,52 @@ export default async function Inventario({
 }
 ```
 
-- [ ] **Step 4: Poner la navegación en el layout**
+- [ ] **Step 5: Escribir el componente de navegación**
 
-En `app/(app)/layout.tsx`, entre el `<span data-testid="tenant-nombre">` y el `<div>` de la derecha, insertar:
+**Un componente compartido y no un `<nav>` inline en el layout, y el motivo es estructural:** `/` **no vive bajo `(app)`** — está en la lista blanca de `test/rutas-con-guard.test.ts` porque el ápex entra por esa misma ruta sin sesión. O sea que la home **no hereda el layout** y no heredaría la nav. Dejar los enlaces sólo en el layout deja huérfana justamente la pantalla donde el usuario aterriza después de entrar.
 
 ```tsx
-        {/* Los enlaces viven acá, en un solo lugar y no repartidos por las
-            pantallas. Sin registry de módulos todavía: CLAUDE.md promete la
-            navegación como punto de extensión del núcleo, y ese punto se
-            diseña bien cuando exista Órdenes de Trabajo para tironear de él.
-            Tenerlos centralizados es lo que hace barato ese refactor. */}
-        <nav className="flex items-center gap-4 text-sm">
-          <a href="/" className="hover:underline">Inicio</a>
-          <a href="/inventario" className="hover:underline">Inventario</a>
-          {sesion.usuario.rol === 'DUENO' && (
-            <a href="/usuarios" className="hover:underline">Usuarios</a>
-          )}
-        </nav>
+// components/navegacion.tsx
+import type { RolUsuario } from '@/lib/auth/sesion'
+
+/**
+ * Los enlaces de la aplicación, en un solo lugar.
+ *
+ * Lo usan DOS consumidores y por eso vive en components/ y no adentro de
+ * `app/(app)/`: el layout del grupo, y `app/page.tsx`, que no puede estar bajo
+ * ese grupo —el ápex entra por la misma ruta y no tiene sesión— y por lo tanto
+ * no hereda su layout. Dos listas de enlaces se desincronizan en cuanto
+ * aparezca la cuarta sección.
+ *
+ * Sin registry de módulos todavía: CLAUDE.md promete la navegación como punto
+ * de extensión del núcleo, y ese punto se diseña bien cuando exista Órdenes de
+ * Trabajo para tironear de él. Tenerlos centralizados acá es lo que hace barato
+ * ese refactor.
+ */
+export function Navegacion({ rol }: { rol: RolUsuario }) {
+  return (
+    <nav className="flex items-center gap-4 text-sm">
+      <a href="/" className="hover:underline">
+        Inicio
+      </a>
+      <a href="/inventario" className="hover:underline">
+        Inventario
+      </a>
+      {rol === 'DUENO' && (
+        <a href="/usuarios" className="hover:underline">
+          Usuarios
+        </a>
+      )}
+    </nav>
+  )
+}
 ```
 
-El `<span data-testid="tenant-nombre">` **no se toca**: `scripts/smoke.sh` lo busca en cada pantalla autenticada.
+- [ ] **Step 6: Colgarlo del layout y de la home**
 
-- [ ] **Step 5: Sacar el `<a>` suelto de la home**
+En `app/(app)/layout.tsx`, importar `Navegacion` de `@/components/navegacion` e insertar `<Navegacion rol={sesion.usuario.rol} />` entre el `<span data-testid="tenant-nombre">` y el `<div>` de la derecha. El `<span data-testid="tenant-nombre">` **no se toca**: `scripts/smoke.sh` lo busca en cada pantalla autenticada.
 
-En `app/page.tsx`, borrar el bloque:
+En `app/page.tsx`, reemplazar el bloque del `<a>` suelto:
 
 ```tsx
       {usuario.rol === 'DUENO' && (
@@ -2416,16 +2599,22 @@ En `app/page.tsx`, borrar el bloque:
       )}
 ```
 
-Queda cubierto por la nav del layout. `PaginaTenant` deja de usar `usuario.rol`, pero `usuario` sigue en uso por el saludo de arriba, así que la firma no cambia.
+por:
 
-- [ ] **Step 6: Verificar que el barrido levanta las dos rutas**
+```tsx
+      <Navegacion rol={usuario.rol} />
+```
+
+`app/page.test.tsx:126` —"un dueño ve el link a /usuarios; un empleado no"— **tiene que seguir pasando sin tocarlo**: el componente filtra por rol igual que el bloque que reemplaza. Si ese test se pone rojo, el filtro quedó mal.
+
+- [ ] **Step 7: Verificar que el barrido levanta las dos rutas**
 
 ```bash
 bash -c 'source scripts/lib/rutas-comun.sh && rutas_autenticadas "app/(app)"'
 ```
 Expected: imprime `/inventario`, `/inventario/nuevo` y `/usuarios`. Todavía no `[id]` — esa pantalla llega en la Task 7.
 
-- [ ] **Step 7: Verificar el guard, el typecheck y el lint**
+- [ ] **Step 8: Verificar el guard, el typecheck y el lint**
 
 ```bash
 npx vitest run test/rutas-con-guard.test.ts test/boundaries-app.test.ts
@@ -2434,10 +2623,10 @@ npm run lint
 ```
 Expected: PASS los tres. `rutas-con-guard` tiene que pasar **sin** sumar entradas a `FUERA_DEL_GRUPO`: las dos pantallas nuevas viven bajo `(app)`.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add "app/(app)/inventario/" "app/(app)/layout.tsx" app/page.tsx
+git add "app/(app)/inventario/" lib/formato/mostrar.ts components/navegacion.tsx "app/(app)/layout.tsx" app/page.tsx
 git commit -m "feat(inventario): listado con buscador, alta de artículo y navegación"
 ```
 
@@ -2630,26 +2819,12 @@ import { notFound } from 'next/navigation'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import {
-  FormularioDeEdicion,
-  AccionesDeArticulo,
-  MoverStock,
-  formatearPrecio,
-  formatearCantidad,
-} from '../formularios'
+import { FormularioDeEdicion, AccionesDeArticulo, MoverStock } from '../formularios'
+import { formatearPrecio, formatearCantidad, formatearFecha } from '@/lib/formato/mostrar'
 
 export const dynamic = 'force-dynamic'
 
 const MOVIMIENTOS_VISIBLES = 50
-
-// El servidor está en Ashburn. Sin declarar el huso, un movimiento de las 22:00
-// de Buenos Aires aparecería con fecha del día siguiente y el historial de un
-// cierre de jornada quedaría partido en dos días.
-const FECHA = new Intl.DateTimeFormat('es-AR', {
-  dateStyle: 'short',
-  timeStyle: 'short',
-  timeZone: 'America/Argentina/Buenos_Aires',
-})
 
 const NOMBRE_DE_MOTIVO: Record<string, string> = {
   VENTA: 'Venta',
@@ -2758,7 +2933,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
             <tbody>
               {movimientos.map((m) => (
                 <tr key={m.id} className="border-b">
-                  <td className="py-2">{FECHA.format(m.creadoEn)}</td>
+                  <td className="py-2">{formatearFecha(m.creadoEn)}</td>
                   <td>{NOMBRE_DE_MOTIVO[m.motivo] ?? m.motivo}</td>
                   <td
                     className={`text-right tabular-nums ${
@@ -2888,3 +3063,27 @@ Del spec, repetido acá para que no se lea como olvido:
 - **Multi-sucursal.** Sigue rigiendo por omisión "un tenant por local"; `Articulo.stock` sigue siendo un escalar.
 - **Reserva de stock.** Ya estaba fuera de alcance en el motor y sigue estándolo.
 - **Tokens de color nuevos.** El ámbar de "stock bajo" que `docs/sistema-de-diseno.md` reserva entra con la feature de umbral que lo necesite, no antes.
+
+
+---
+
+## Deuda anotada al cerrar el ciclo
+
+La review final de la rama triageó cada una de estas y dictaminó que **ninguna
+bloquea el merge**. Quedan escritas acá y no en un archivo efímero para que
+existan cuando alguien las busque.
+
+| Dónde | Qué | Por qué se difiere |
+|---|---|---|
+| `lib/inventario/stock.ts` | Dos `corregirStock` concurrentes sobre el mismo artículo duplican la corrección: la lectura no toma lock y bajo READ COMMITTED las dos calculan el mismo delta. | Necesita dos conteos simultáneos del mismo artículo en un local. La invariante igual se sostiene y el historial append-only explica el resultado. |
+| `lib/inventario/articulos.ts` | La transacción del contador de SKU queda fuera del `try`, o sea fuera del borde de `traducirErrorDeBase`. | Sólo `TENANT_INEXISTENTE` es alcanzable ahí, y ése ya lleva `codigo`. |
+| `lib/inventario/articulos.ts` | El contador avanza antes de `exigirUsuario`: un alta rechazada por usuario ajeno quema un número. | Los huecos en la secuencia de SKU ya son una propiedad aceptada y documentada. |
+| `lib/inventario/articulos.ts` | El alta duplica el par movimiento + `increment` en vez de reusar `aplicarMovimiento` de `stock.ts`. | Son dos lugares en un mismo módulo que tienen que mantener juntas las dos escrituras. Vale colapsarlos, no bloquea. |
+| `lib/inventario/articulos.ts` | `desactivarArticulo` sobre uno ya inactivo pisa la fecha; `editarArticulo` edita uno desactivado. Ninguna de las dos está especificada. | Las dos son inofensivas. Conviene decidirlas por escrito, no frenar por ellas. |
+| `test/inventario.test.ts` | Ningún test agota `INTENTOS_SKU` ni encadena dos colisiones seguidas. | El camino de una colisión sí está cubierto; agotar cinco pide un fixture rebuscado. |
+| `app/(app)/inventario/page.tsx` | El buscador no escapa `%` ni `_`, así que buscar `50%` se comporta como comodín. Y `?p=9999` sobre un catálogo lleno muestra el texto de "todavía no cargaste nada". | Cosméticas las dos. |
+| `app/(app)/inventario/` | Dos `<nav>` en la misma página sin `aria-label` que los distinga, y los `<th>` sin `scope="col"`. | Deuda de accesibilidad real. Conviene juntarla con la UI de ventas, que trae más tablas, en vez de resolverla de a una. |
+| `app/(app)/inventario/formularios.tsx` | `AccionesDeArticulo` intercambia la función de `useActionState` según el prop; el estado local no se resetea, así que el aviso anterior queda visible un render. | Es correcto en React 19, y el prop recién cambia después de una acción exitosa, así que el aviso que queda es el que corresponde. |
+| `app/(app)/inventario/[id]/page.tsx` | `NOMBRE_DE_MOTIVO` tipado `Record<string, string>` y no contra el enum; el bloque de Editar no tiene `<h2>` propio. | El `?? m.motivo` degrada a mostrar el enum crudo, no rompe. |
+| `lib/inventario/` | El alta no es idempotente: un doble submit crea dos artículos y quema dos números de SKU. | Es la misma clase que la nota de idempotencia de `crearVenta` que CLAUDE.md ya lleva en sus decisiones abiertas. Ahora que hay un formulario de verdad, entra ahí. |
+| `prisma/schema.prisma`, `lib/formato/numeros.test.ts` | Alineación de `prisma format` despareja en el bloque `MovimientoStock`; un `it()` que dice "distinja" en vez de "distinga". | Ningún gate las chequea. |

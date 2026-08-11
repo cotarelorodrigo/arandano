@@ -204,19 +204,32 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 ## Decisiones abiertas del modelo de datos
 
 Las levantó el review final del motor de stock y ventas (2026-08-09). Ninguna es
-un defecto de lo construido: son decisiones que hoy están tomadas **por omisión**,
-y las tres se vuelven más caras con cada mes que pasa.
+un defecto de lo construido: son decisiones que hoy están tomadas **por omisión**.
+Dos ya se cerraron (el costo del movimiento y los huecos de SKU); las dos que
+quedan abiertas se siguen encareciendo con cada mes que pasa.
 
-- **El costo del movimiento no se puede backfillear. Es la única puerta de una
-  sola dirección de esta lista.** El costo que un reporte de margen necesita es el
-  del **momento del movimiento**, no el actual: si un artículo se compró a 100 y
-  hoy vale 180, la venta de marzo se midió contra 100. `MovimientoStock` no lo
-  guarda, y no hay dato del cual reconstruirlo. Todo movimiento creado desde hoy
-  hasta el día que exista esa columna queda sin costo **para siempre**. Cerrarla
-  cuesta una columna nullable `costoUnitario Decimal(12,2)?` en una migración
-  aditiva, sin código que la use todavía. Decidirlo a conciencia: si la respuesta
-  es "no vamos a hacer reportes de margen", está bien — pero que sea una respuesta
-  y no un olvido.
+- ~~**El costo del movimiento no se puede backfillear.**~~ **Cerrada**
+  (2026-08-11, ciclo de inventario). `MovimientoStock.costoUnitario
+  Decimal(12,2)?` existe y el ingreso de mercadería lo captura, opcional. Se
+  cerró en el ciclo que construyó la pantalla que conoce ese número —el
+  momento en que alguien tiene la factura del proveedor en la mano— y no
+  después, que es lo que la volvía una puerta de una sola dirección. **Nadie
+  la lee todavía**: no hay reportes de margen ni costo promedio, y eso sigue
+  siendo su propio ciclo. Lo que cambió es que el dato dejó de tirarse.
+- **La secuencia de SKU puede tener huecos, y es a propósito.** Decidido en el
+  mismo ciclo (2026-08-11). `Tenant.proximoSkuArticulo` se incrementa en **su
+  propia transacción comiteada**, separada de la que inserta el artículo, y no
+  es una prolijidad: con el `UPDATE` adentro de la transacción del alta, un
+  choque de unicidad la rollbackeaba entera —contador incluido—, así que cada
+  reintento volvía a pedir el mismo número y el bucle no convergía nunca. Al
+  comitear aparte, toda alta que falle después quema un número.
+
+  **Es exactamente la decisión inversa a la de `Venta.numero`, y las dos están
+  bien.** Un SKU es un código opaco que nadie recita: un hueco no se ve. El
+  número de venta se dice por teléfono, así que ahí el hueco es el problema y el
+  rollback del contador es lo que se quiere — por eso `proximoNumero` en
+  `lib/ventas/crear.ts` **no** cambia y **no** hay que armonizarlo con éste. No
+  tiene el defecto, justamente porque no reintenta.
 - **Stock por sucursal: hoy el default es "un tenant por local", sin que esté
   escrito.** Este documento vende sucursales como límite de plan, pero
   `Articulo.stock` es un escalar: no hay dónde poner la sucursal. Multi-sucursal
@@ -355,6 +368,13 @@ Y del producto:
   el botón se ve azul-violeta y no negro, o si el foco se distingue; esa
   verificación a ojo sobre el login de un tenant sigue pendiente de una
   persona, y está anotada como tal al final del documento.
+- ~~Construir la UI de inventario.~~ **Hecho** (2026-08-11). Listado con
+  buscador y paginación, alta con SKU autogenerado y stock inicial que nace
+  como movimiento, ingreso de mercadería con su costo, corrección por conteo
+  —el delta lo calcula el servidor adentro de la transacción, contra el stock
+  del momento— e historial por artículo. Baja lógica con `Articulo.desactivadoEn`.
+  Ver `docs/superpowers/specs/2026-08-11-inventario-design.md`. **Queda para el
+  ciclo siguiente**: la UI de ventas, y con ella la pantalla de clientes.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~
