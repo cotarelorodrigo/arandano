@@ -1,11 +1,15 @@
 'use client'
 
 import { useActionState, useState } from 'react'
-// Sólo altaArticulo por ahora: guardarArticulo, bajaArticulo,
-// reactivarArticuloAccion, ingresarMercaderia y corregirPorConteo los suma la
-// Task 7 junto con los componentes que los usan (FormularioDeEdicion,
-// MoverStock, AccionesDeArticulo) en este mismo archivo.
-import { altaArticulo, type EstadoInventario } from './acciones'
+import {
+  altaArticulo,
+  guardarArticulo,
+  bajaArticulo,
+  reactivarArticuloAccion,
+  ingresarMercaderia,
+  corregirPorConteo,
+  type EstadoInventario,
+} from './acciones'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -104,5 +108,145 @@ export function FormularioDeAlta() {
         </form>
       </CardContent>
     </Card>
+  )
+}
+
+/** Editar. Sólo se monta para un dueño; la action lo reexige igual. */
+export function FormularioDeEdicion({
+  articuloId,
+  nombre,
+  sku,
+  precio,
+}: {
+  articuloId: string
+  nombre: string
+  sku: string
+  precio: string
+}) {
+  const [estado, accion, pendiente] = useActionState(guardarArticulo, INICIAL)
+
+  return (
+    <Card className="max-w-md">
+      <CardHeader>
+        <CardTitle>Editar</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form action={accion} className="flex flex-col gap-4">
+          <input type="hidden" name="articuloId" value={articuloId} />
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="e-nombre">Nombre</Label>
+            <Input id="e-nombre" name="nombre" defaultValue={nombre} required />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="e-sku">Código</Label>
+            <Input id="e-sku" name="sku" defaultValue={sku} required />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="e-precio">Precio</Label>
+            <Input id="e-precio" name="precio" inputMode="decimal" defaultValue={precio} required />
+          </div>
+          {/* El tipo no está y no es un olvido: pasar un PRODUCTO con stock y
+              movimientos a SERVICIO deja stock huérfano que el motor ya no
+              descuenta ni explica. Un artículo mal cargado se desactiva y se
+              crea de nuevo. */}
+          <Resultado estado={estado} />
+          <Button type="submit" disabled={pendiente}>
+            {pendiente ? 'Guardando…' : 'Guardar'}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  )
+}
+
+/** Desactivar o reactivar. Un form y no un onClick, igual que el botón de
+ *  salir del layout: así funciona sin JavaScript. */
+export function AccionesDeArticulo({
+  articuloId,
+  desactivado,
+}: {
+  articuloId: string
+  desactivado: boolean
+}) {
+  const [estado, accion, pendiente] = useActionState(
+    desactivado ? reactivarArticuloAccion : bajaArticulo,
+    INICIAL,
+  )
+
+  return (
+    <form action={accion} className="mt-4 flex max-w-md flex-col gap-3">
+      <input type="hidden" name="articuloId" value={articuloId} />
+      <Resultado estado={estado} />
+      <Button type="submit" variant={desactivado ? 'secondary' : 'destructive'} disabled={pendiente}>
+        {desactivado ? 'Reactivar artículo' : 'Desactivar artículo'}
+      </Button>
+    </form>
+  )
+}
+
+/**
+ * Las dos formas de mover stock, una al lado de la otra.
+ *
+ * El conteo pide CUÁNTO HAY, no cuánto falta: el delta lo calcula el servidor
+ * adentro de la transacción, contra el stock de ese momento. Pedirlo acá
+ * obligaría a restar en el navegador contra un número que puede tener un
+ * minuto y una venta de antigüedad.
+ */
+export function MoverStock({ articuloId }: { articuloId: string }) {
+  const [ingreso, accionIngreso, ingresando] = useActionState(ingresarMercaderia, INICIAL)
+  const [conteo, accionConteo, contando] = useActionState(corregirPorConteo, INICIAL)
+
+  return (
+    <div className="flex flex-col gap-4 md:flex-row">
+      <Card className="flex-1">
+        <CardHeader>
+          <CardTitle>Ingresar mercadería</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form action={accionIngreso} className="flex flex-col gap-4">
+            <input type="hidden" name="articuloId" value={articuloId} />
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="i-cantidad">Cantidad que entra</Label>
+              <Input id="i-cantidad" name="cantidad" inputMode="decimal" required />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="i-costo">Costo unitario (opcional)</Label>
+              <Input id="i-costo" name="costoUnitario" inputMode="decimal" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="i-nota">Nota (opcional)</Label>
+              <Input id="i-nota" name="nota" placeholder="Factura, proveedor…" />
+            </div>
+            <Resultado estado={ingreso} />
+            <Button type="submit" disabled={ingresando}>
+              {ingresando ? 'Ingresando…' : 'Ingresar'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card className="flex-1">
+        <CardHeader>
+          <CardTitle>Corregir por conteo</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form action={accionConteo} className="flex flex-col gap-4">
+            <input type="hidden" name="articuloId" value={articuloId} />
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="c-contado">Cuánto hay realmente</Label>
+              <Input id="c-contado" name="stockContado" inputMode="decimal" required />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="c-nota">Nota (opcional)</Label>
+              <Input id="c-nota" name="nota" placeholder="Conteo del lunes…" />
+            </div>
+            <Resultado estado={conteo} />
+            <Button type="submit" variant="secondary" disabled={contando}>
+              {contando ? 'Corrigiendo…' : 'Corregir'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
   )
 }
