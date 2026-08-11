@@ -80,5 +80,26 @@ check_true "la misma ruta, con razón escrita, pasa" \
 rm -rf "$RAIZ/(app)/ventas"
 unset 'RUTAS_SIN_SMOKE[/ventas/[id]]'
 
+# --- Next resuelve page.js, page.jsx, page.ts y page.tsx, no sólo la última.
+# Una página escrita en cualquiera de las otras tres es una ruta autenticada
+# igual de viva, y si el find no la levanta no hay error ni exención que
+# declarar: sólo una pantalla menos barrida, en silencio. Es fail-open en el
+# único mecanismo cuyo punto entero es no llevar una lista a mano.
+mkdir -p "$RAIZ/(app)/arqueo" "$RAIZ/(app)/turnos" "$RAIZ/(app)/stock"
+touch "$RAIZ/(app)/arqueo/page.ts" \
+      "$RAIZ/(app)/turnos/page.js" \
+      "$RAIZ/(app)/stock/page.jsx"
+salida=$(rutas_autenticadas "$RAIZ/(app)")
+check_eq "también deriva page.ts, page.js y page.jsx" \
+  $'/arqueo\n/caja\n/margen\n/stock\n/turnos\n/usuarios' "$salida"
+
+# Y sigue sin levantar lo que no es una página, ahora que el patrón es más
+# ancho: `pagen.tsx` y `page.test.tsx` son los dos vecinos más plausibles.
+touch "$RAIZ/(app)/arqueo/pagen.tsx" "$RAIZ/(app)/arqueo/page.test.tsx"
+salida=$(rutas_autenticadas "$RAIZ/(app)")
+check_eq "un vecino parecido a page.<ext> no produce ruta" \
+  $'/arqueo\n/caja\n/margen\n/stock\n/turnos\n/usuarios' "$salida"
+rm -rf "$RAIZ/(app)/arqueo" "$RAIZ/(app)/turnos" "$RAIZ/(app)/stock"
+
 printf '\n%d ok, %d fallan\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]

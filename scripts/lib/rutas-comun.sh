@@ -39,7 +39,10 @@ rutas_autenticadas() {
   while IFS= read -r archivo; do
     encontradas=$((encontradas + 1))
     ruta="${archivo#"$raiz"}"
-    ruta="${ruta%/page.tsx}"
+    # Se saca el último segmento entero y no un `%/page.tsx`: el archivo puede
+    # ser page.tsx, .ts, .jsx o .js, y atar esto a una extensión es la mitad del
+    # mismo fail-open que el find de más abajo.
+    ruta="${ruta%/*}"
 
     # Los segmentos entre paréntesis son grupos de rutas: organizan carpetas y
     # NO aparecen en la URL. Se sacan segmento por segmento porque puede haber
@@ -72,7 +75,15 @@ rutas_autenticadas() {
     fi
 
     rutas+=("$ruta")
-  done < <(find "$raiz" -name page.tsx | sort)
+  # Las CUATRO extensiones que Next resuelve como página, no sólo .tsx: una
+  # página escrita como page.ts —un componente de servidor que redirige, por
+  # ejemplo— es una ruta autenticada igual de viva, y si el find no la levanta
+  # no hay error ni exención que declarar, sólo una pantalla menos barrida.
+  # Nombres explícitos y no `-name 'page.*'`: ese patrón se llevaría puesto
+  # page.test.tsx y cualquier otro vecino.
+  done < <(find "$raiz" \
+    \( -name page.tsx -o -name page.ts -o -name page.jsx -o -name page.js \) \
+    | sort)
 
   if [[ "$encontradas" -eq 0 ]]; then
     printf 'no se encontró ninguna page.tsx bajo %s\n' "$raiz" >&2

@@ -35,15 +35,20 @@ import path from 'node:path'
  * actualizar el comentario de caso_pantalla en scripts/smoke.sh. Falla para
  * forzar esa decisión en vez de dejar que el gate se apague en silencio.
  *
- * `not-found.tsx` queda en la lista aunque hoy sea redundante —`notFound()`
- * responde 404 y el `[[ "$codigo" == "200" ]]` de caso_pantalla ya lo corta—
- * porque cuesta un string y no depende de que ese chequeo siga ahí.
+ * `not-found.tsx`, `forbidden.tsx` y `unauthorized.tsx` quedan en la lista
+ * aunque hoy sean redundantes —los tres responden con un código que no es 200 y
+ * el `[[ "$codigo" == "200" ]]` de caso_pantalla ya los corta— porque cuestan un
+ * string y no dependen de que ese chequeo siga ahí. Los dos últimos no son
+ * hipotéticos en este repo: `next.config.ts` habilita `experimental.
+ * authInterrupts` y `app/forbidden.tsx` ya existe, así que son idioms vivos.
  */
 const BOUNDARIES_QUE_TAPAN_EL_MARCADOR = [
   'error.tsx',
   'not-found.tsx',
   'global-error.tsx',
   'loading.tsx',
+  'forbidden.tsx',
+  'unauthorized.tsx',
 ]
 
 const GRUPO = path.join('app', '(app)')
@@ -84,24 +89,33 @@ describe('boundaries dentro de app/(app)', () => {
     expect(encontrados).toContain(path.join(GRUPO, 'layout.tsx'))
   })
 
-  it('el layout no envuelve a la página en un límite de Suspense', () => {
+  it('ningún archivo del grupo envuelve contenido en un límite de Suspense', () => {
     // La otra mitad del mismo agujero, y la que un chequeo por NOMBRE DE
     // ARCHIVO no puede ver: un <Suspense> escrito a mano alrededor de
     // {children} hace exactamente lo mismo que loading.tsx — el shell con el
     // marcador se flushea con 200 antes de que la página resuelva.
+    //
+    // TODO el grupo y no sólo el layout: un <Suspense> DENTRO de una página
+    // deja el encabezado —y el marcador— por encima del límite, así que React
+    // flushea el shell con 200 y, si el subárbol suspendido tira, caso_pantalla
+    // ve 200 + marcador y reporta la pantalla en verde. Es el mismo agujero que
+    // loading.tsx, un directorio más abajo.
     //
     // Lo que este regex NO agarra, escrito para que nadie le confíe de más:
     // un import con alias (`import { Suspense as S }`). Un `<Suspense/>`
     // autocerrado tampoco matchea, pero ése no envuelve nada, así que no
     // reproduce el bug. Un comentario que mencione <Suspense> da falso
     // positivo — molesto, pero falla en la dirección segura.
-    const layout = readFileSync(path.join(GRUPO, 'layout.tsx'), 'utf8')
+    const conSuspense = encontrados
+      .filter((f) => /\.(tsx|jsx|ts|js)$/.test(f))
+      .filter((f) => /<Suspense[\s>]/.test(readFileSync(f, 'utf8')))
     expect(
-      layout,
-      'app/(app)/layout.tsx envuelve a la página en un límite de Suspense, así que ' +
-        'el marcador data-testid="tenant-nombre" se flushea con 200 aunque la página ' +
-        'falle, y el barrido de scripts/smoke.sh se vuelve verde sobre una pantalla ' +
-        'rota. Mudá el marcador del layout a cada page.tsx antes de hacer esto.',
-    ).not.toMatch(/<Suspense[\s>]/)
+      conSuspense,
+      `estos archivos de app/(app)/ envuelven contenido en un límite de Suspense, así ` +
+        `que el marcador data-testid="tenant-nombre" se flushea con 200 aunque lo de ` +
+        `adentro falle, y el barrido de scripts/smoke.sh se vuelve verde sobre una ` +
+        `pantalla rota: ${conSuspense.join(', ')}. Mudá el marcador a cada page.tsx, ` +
+        `adentro del límite, antes de hacer esto.`,
+    ).toEqual([])
   })
 })
