@@ -214,18 +214,28 @@ modo de falla que importa: un parser que no encuentra filas no puede devolver
 un Map vacío y darse por satisfecho. Revertido con `git checkout
 docs/sistema-de-diseno.md`.
 
-**El contraste.** `scripts/contraste.mts` calcula los diez ratios WCAG de la
-tabla de arriba desde los tokens reales de `app/globals.css` —oklch → sRGB
-lineal → luminancia → ratio—, no los transcribe a mano; se corre suelto con
-`npm run contraste`. `test/contraste.test.ts` compara esa salida contra la
-tabla del documento y forma parte de `npm test`. La review de la Task 5, que
-escribió este mecanismo, ya verificó que atrapa los tres modos de falla que
-importan: una tabla desactualizada (los cuatro ratios que se corrigieron al
-escribir este script no correspondían a los tokens que estaban en el CSS),
-un token que empeora un par por debajo de su mínimo, y una excepción de
-`EXCEPCIONES` que ya no corresponde porque el par en cuestión pasa su umbral.
-No se re-corrió acá — la evidencia de esos tres casos vive en esa review, no
-en este documento.
+**El contraste.** La tabla de arriba se escribió a mano y se desincronizó: la
+review de la Task 3 encontró que cuatro de los diez ratios no correspondían a
+los tokens que estaban en `app/globals.css`, y se corrigieron a mano en ese
+mismo ciclo (commit `3d57397`). Corregir los números no arreglaba la causa
+—seguían siendo transcriptos—, así que la Task 5 sumó `scripts/contraste.mts`,
+que calcula los diez ratios WCAG desde los tokens reales de `app/globals.css`
+—oklch → sRGB lineal → luminancia → ratio— en vez de copiarlos a mano; se
+corre suelto con `npm run contraste`. `test/contraste.test.ts` compara esa
+salida contra la tabla del documento y forma parte de `npm test`.
+
+Lo que la review de la Task 5 verificó del mecanismo nuevo, mutando el
+documento y el CSS durante la review y confirmando cada rojo (no se re-corrió
+acá — la evidencia vive en esa review):
+
+- Cambiar un ratio de la tabla del documento da rojo en `el documento declara
+  el ratio que el cálculo produce`.
+- Bajar `--muted-foreground` a `oklch(0.70 0 0)` da rojo en `cada par llega a
+  su mínimo, o está exceptuado con su razón escrita` — el par contra
+  `--background` cae a 2.67.
+- Declarar en `EXCEPCIONES` una excepción para un par que sí llega a su
+  mínimo da rojo en `no hay excepciones de más`.
+- Vaciar la tabla de contraste falla cerrado.
 
 **Verificación visual — pendiente.** El Step 3 de esta task pide mirar el
 login de un tenant real y juzgar a ojo si el botón **Entrar** es azul-violeta
