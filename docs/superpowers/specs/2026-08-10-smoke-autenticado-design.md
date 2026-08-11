@@ -132,8 +132,20 @@ recibe por argumento — el mismo valor que usa `caso_tenant_resuelve`, y el mis
 que el paso 8 acaba de escribir en la base. Hay que sumarle el
 `data-testid="tenant-nombre"` al layout, que hoy no lo tiene.
 
-Un 200 pelado no alcanza: Next puede devolver 200 sirviendo un `not-found`, y un
-error de servidor manejado por un `error.tsx` futuro también daría 200.
+Un 200 pelado no alcanza: Next puede devolver 200 sirviendo un `not-found`.
+
+**Corrección posterior a la implementación** (review de la Task 3). Este párrafo
+decía además que el marcador cubría "un error de servidor manejado por un
+`error.tsx` futuro", y eso es falso para las rutas de `(app)`. Un boundary de
+segmento se monta *adentro* del layout de su segmento: si mañana existiera
+`app/(app)/error.tsx`, el layout —y el marcador con él— se renderizaría igual,
+con 200, y el barrido daría verde sobre una pantalla rota. Hoy funciona porque
+no hay ningún boundary así y todo sube al de la raíz, que no renderiza el layout
+de `(app)`. O sea: para `/` el marcador prueba que la **página** renderizó
+(vive en `app/page.tsx`), y para las rutas de `(app)` prueba que el **layout**
+renderizó y que la página no tiró. `test/boundaries-app.test.ts` falla si
+alguien agrega uno de esos boundaries, para que la decisión de mudar el marcador
+del layout a cada página se tome ahí y no se descubra en producción.
 
 **Lo que no se puede usar como marcador de falla, y hay que dejarlo escrito
 porque ya costó una tarde**: buscar el texto del 404 en el cuerpo. Next incluye

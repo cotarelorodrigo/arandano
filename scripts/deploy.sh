@@ -681,9 +681,18 @@ docker run --rm --network arandano-stage_default \
 # esta base es efímera, nace vacía en cada corrida y nunca ve datos de clientes,
 # y el stack sólo escucha en la IP de Tailscale. Si alguna de esas dos
 # condiciones deja de valer, esto deja de ser aceptable.
+#
+# BETTER_AUTH_SECRET va aunque el hash de la contraseña no lo use (Better Auth
+# hashea con scrypt): `definir-clave.mts` construye una instancia por tenant vía
+# authParaTenant, y el paso 1 de este mismo script afirma que sin esa variable
+# Better Auth tira error al construir cualquier instancia. Que hoy no explote
+# depende de un detalle interno de la librería que no está escrito en ningún
+# lado; el mismo valor que usa docker/compose.stage.yml cuesta una línea y saca
+# la dependencia de ese detalle.
 docker run --rm --network arandano-stage_default \
   -e DATABASE_URL="postgres://arandano_app:efimero-app@postgres:5432/arandano_stage" \
   -e DOMINIO_BASE="stage.arandano.app" \
+  -e BETTER_AUTH_SECRET="efimero-secreto-no-persiste" \
   --entrypoint npx "arandano-migrate:$SHA" \
   tsx scripts/definir-clave.mts \
   --subdominio=canario \

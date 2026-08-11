@@ -212,12 +212,28 @@ HOST_CANARIO="${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}"
 # rate limit de 5 por minuto (opciones.ts), así que un login por pantalla
 # empezaría a dar 429 en cuanto haya seis pantallas — y esa falla se leería como
 # una regresión de la aplicación.
+#
+# Se busca la cookie POR NOMBRE (`session_token=`) y no "la primera
+# Set-Cookie". Hoy sale una sola —`session.cookieCache` no está configurado y
+# `crossSubDomainCookies` está apagado (opciones.ts)—, pero nada de eso está
+# pinneado: el día que se prenda el cookie cache, un `head -1` se quedaría con
+# `session_data` y TODAS las pantallas se pondrían rojas con un mensaje que
+# habla de la aplicación. Y al revés: sin filtrar por nombre, un login FALLIDO
+# que devuelva cualquier Set-Cookie dejaría verde a caso_login_devuelve_sesion
+# y mandaría el rojo a las N pantallas, que es justo lo contrario de lo que ese
+# caso promete. El `[^;]*` acota la búsqueda al par nombre=valor, para que un
+# atributo posterior no cuente; `session_token` y no el nombre completo, para
+# no atarse al prefijo `better-auth.` que la librería puede renombrar.
+#
+# `grep -m1` y no `| head -1`: bajo `set -o pipefail`, head cerrando el pipe
+# antes de que grep termine de escribir hace salir la pipeline en 141, y el
+# `|| COOKIE_SESION=""` pisaría una cookie válida.
 COOKIE_SESION=$(curl -s -i --max-time 15 \
   -H "Host: ${HOST_CANARIO}" \
   -H 'Content-Type: application/json' \
   -d "{\"email\":\"${MAIL_CANARIO}\",\"password\":\"${CLAVE_CANARIO}\"}" \
   "$URL_BASE/api/auth/sign-in/email" 2>/dev/null \
-  | tr -d '\r' | grep -i '^set-cookie:' | head -1 \
+  | tr -d '\r' | grep -i -m1 '^set-cookie: *[^;]*session_token=' \
   | sed 's/^[Ss]et-[Cc]ookie: *//' | cut -d';' -f1) || COOKIE_SESION=""
 
 # Su propio caso, y no un chequeo silencioso adentro de los de abajo: si el
@@ -229,15 +245,30 @@ caso_login_devuelve_sesion() {
 
 # Cada pantalla de la aplicación, con la sesión de verdad.
 #
-# 200 NO alcanza: Next devuelve 200 sirviendo un not-found, y un error.tsx
-# futuro también. El marcador es el nombre del local, que el layout de (app)
-# renderiza en su encabezado (app/(app)/layout.tsx) — el mismo valor que el
-# paso 8 acaba de escribir en la base, y el mismo argumento que ya usa
-# caso_tenant_resuelve.
+# 200 NO alcanza: Next devuelve 200 sirviendo un not-found. El marcador es el
+# nombre del local — el mismo valor que el paso 8 acaba de escribir en la base,
+# y el mismo argumento que ya usa caso_tenant_resuelve.
+#
+# QUÉ CUBRE ESTO, EXACTAMENTE. Para `/` el marcador lo emite la página
+# (app/page.tsx), así que la aserción prueba que la PÁGINA renderizó. Para las
+# rutas de (app) lo emite el layout (app/(app)/layout.tsx), así que prueba que
+# el layout renderizó y que la página no tiró: una página que devuelva
+# contenido vacío sin lanzar excepción pasa en verde. Hoy alcanza porque
+# notFound() y las excepciones no manejadas caen en el boundary de la RAÍZ, que
+# no renderiza el layout de (app) — de ahí el rojo. Pero un `error.tsx` o un
+# `not-found.tsx` DENTRO de (app) se montarían adentro de ese layout: el
+# marcador saldría igual, con 200, y este barrido se volvería verde sobre una
+# pantalla rota. No existe ninguno de los dos hoy, y test/boundaries-app.test.ts
+# falla si alguien agrega uno, justamente para que esa decisión no se tome sin
+# mirar esta línea.
 #
 # NO se busca el texto del 404 en el cuerpo, y esto costó una tarde: Next
 # incluye el boundary de "not found" en el payload de TODA página, incluidas
 # las que funcionan. Un chequeo así da rojo siempre.
+#
+# Sin `-L`, y no por casualidad: app/login/formulario.tsx lleva el MISMO
+# marcador, así que con redirects habilitados cualquier ruta que rebotara a
+# /login pasaría en verde. Una redirección tiene que ser rojo acá.
 caso_pantalla() {
   local ruta="$1" respuesta codigo cuerpo
   [[ -n "$COOKIE_SESION" ]] || return 1
@@ -267,6 +298,15 @@ RUTAS_APP_CRUDAS=$(rutas_autenticadas 'app/(app)') || {
 # en RUTAS_SIN_SMOKE, la salida sería un string vacío y `mapfile` dejaría un
 # elemento vacío que se pediría como "$URL_BASE" pelado — o sea `/` otra vez,
 # reportado con un nombre que no dice nada.
+#
+# Si algún día `/` se mudara bajo (app), esta línea tiene que salir: quedarían
+# dos casos `pantalla /`, los dos verdes, y el segundo no probaría nada.
+#
+# La lista sale del ÁRBOL DE TRABAJO, no de la imagen que se está por promover.
+# Contra el gate son lo mismo, porque el paso 1 exige working tree limpio y el
+# build sale de ese mismo commit. Corrido a mano desde otro checkout, en cambio,
+# este barrido puede pedir rutas que la imagen no tiene: eso es un rojo honesto,
+# pero habla del checkout y no de la imagen.
 RUTAS_APP=('/')
 while IFS= read -r ruta_derivada; do
   [[ -n "$ruta_derivada" ]] && RUTAS_APP+=("$ruta_derivada")
