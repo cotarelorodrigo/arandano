@@ -1,6 +1,4 @@
-import { Prisma } from '@/generated/prisma/client'
 import { enTransaccionDeTenant } from '@/lib/tenant/transaccion'
-import { excedeEscala, ESCALA_CANTIDAD } from './totales'
 import { exigirUsuario } from './pertenencia'
 import { ErrorDeVenta, traducirErrorDeBase } from './errores'
 
@@ -96,65 +94,6 @@ export async function anularVenta(entrada: {
           data: { stock: { increment: m.delta.negated() } },
         })
       }
-    })
-  } catch (e) {
-    throw traducirErrorDeBase(e)
-  }
-}
-
-/**
- * El ingreso de mercadería y la corrección de inventario: lo que devuelve a cero
- * un stock negativo. No tiene venta asociada.
- */
-export async function ajustarStock(entrada: {
-  tenantId: string
-  articuloId: string
-  delta: Prisma.Decimal
-  motivo: 'AJUSTE' | 'INGRESO'
-  usuarioId: string
-  nota?: string
-}): Promise<void> {
-  const { tenantId, articuloId, delta, motivo, usuarioId, nota } = entrada
-
-  // El tipo de `motivo` sólo protege a los llamadores tipados. Uno que venga de
-  // un body JSON ya parseado pasa `'VENTA'` sin que TypeScript se entere, y crea
-  // un movimiento con motivo VENTA y `ventaId` null: eso rompe la invariante
-  // sobre la que está construido el filtro de `anularVenta`
-  // (`{ ventaId, motivo: 'VENTA' }`), que da por hecho que todo movimiento
-  // VENTA pertenece a una venta. Dos líneas acá valen más que descubrirlo el día
-  // que una compensación no encuentre lo que tiene que compensar.
-  if (motivo !== 'AJUSTE' && motivo !== 'INGRESO') {
-    throw new ErrorDeVenta(
-      'MOTIVO_INVALIDO',
-      `ajustarStock sólo acepta AJUSTE o INGRESO, no ${motivo}`,
-    )
-  }
-  if (excedeEscala(delta, ESCALA_CANTIDAD)) {
-    throw new ErrorDeVenta(
-      'ESCALA_EXCEDIDA',
-      `el delta tiene a lo sumo ${ESCALA_CANTIDAD} decimales`,
-    )
-  }
-
-  try {
-    await enTransaccionDeTenant(tenantId, async (tx) => {
-      await exigirUsuario(tx, usuarioId)
-
-      const articulo = await tx.articulo.findUnique({ where: { id: articuloId } })
-      if (!articulo) {
-        throw new ErrorDeVenta(
-          'ARTICULO_INEXISTENTE',
-          `el artículo ${articuloId} no existe en este tenant`,
-        )
-      }
-
-      await tx.movimientoStock.create({
-        data: { tenantId, articuloId, delta, motivo, usuarioId, nota },
-      })
-      await tx.articulo.update({
-        where: { id: articuloId },
-        data: { stock: { increment: delta } },
-      })
     })
   } catch (e) {
     throw traducirErrorDeBase(e)

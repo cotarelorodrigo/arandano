@@ -14,7 +14,7 @@ import { crearTenant } from './datos'
 let enTransaccionDeTenant: typeof import('@/lib/tenant/transaccion').enTransaccionDeTenant
 let crearVenta: typeof import('@/lib/ventas/crear').crearVenta
 let anularVenta: typeof import('@/lib/ventas/anular').anularVenta
-let ajustarStock: typeof import('@/lib/ventas/anular').ajustarStock
+let ajustarStock: typeof import('@/lib/inventario/stock').ajustarStock
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -42,7 +42,8 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
   ;({ crearVenta } = await import('@/lib/ventas/crear'))
-  ;({ anularVenta, ajustarStock } = await import('@/lib/ventas/anular'))
+  ;({ anularVenta } = await import('@/lib/ventas/anular'))
+  ;({ ajustarStock } = await import('@/lib/inventario/stock'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -692,105 +693,5 @@ describe('anularVenta', () => {
     )
     expect(movs).toHaveLength(1)
     expect(movs[0].delta.toString()).toBe('2')
-  })
-})
-
-describe('ajustarStock', () => {
-  it('un ingreso suma y queda registrado con su nota', async () => {
-    const antes = new Prisma.Decimal(await stockDe(remera))
-
-    await ajustarStock({
-      tenantId,
-      articuloId: remera,
-      delta: d('25'),
-      motivo: 'INGRESO',
-      usuarioId,
-      nota: 'compra al proveedor',
-    })
-
-    expect(new Prisma.Decimal(await stockDe(remera)).toString()).toBe(
-      antes.plus(25).toString(),
-    )
-    const mov = await enTransaccionDeTenant(tenantId, async (tx) =>
-      tx.movimientoStock.findFirstOrThrow({
-        where: { articuloId: remera, motivo: 'INGRESO' },
-        orderBy: { creadoEn: 'desc' },
-      }),
-    )
-    expect(mov.nota).toBe('compra al proveedor')
-    expect(mov.ventaId).toBeNull()
-  })
-
-  it('un ajuste negativo devuelve a cero un stock negativo', async () => {
-    await owner.query(`UPDATE articulos SET stock = -5 WHERE id = $1`, [remera])
-
-    await ajustarStock({
-      tenantId,
-      articuloId: remera,
-      delta: d('5'),
-      motivo: 'AJUSTE',
-      usuarioId,
-      nota: 'corrección de inventario',
-    })
-
-    expect(await stockDe(remera)).toBe('0')
-  })
-
-  it('rechaza un artículo que no existe', async () => {
-    await expect(
-      ajustarStock({
-        tenantId,
-        articuloId: '00000000-0000-7000-8000-000000000000',
-        delta: d('1'),
-        motivo: 'AJUSTE',
-        usuarioId,
-      }),
-    ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
-  })
-
-  it('rechaza un usuarioId de otro tenant', async () => {
-    await expect(
-      ajustarStock({
-        tenantId,
-        articuloId: remera,
-        delta: d('1'),
-        motivo: 'AJUSTE',
-        usuarioId: usuarioAjeno,
-      }),
-    ).rejects.toMatchObject({ codigo: 'USUARIO_INEXISTENTE' })
-  })
-
-  // El tipo de `motivo` sólo protege a los llamadores tipados. Un body JSON ya
-  // parseado pasa 'VENTA' sin que TypeScript se entere, y eso crearía un
-  // movimiento VENTA con `ventaId` null — rompiendo la invariante sobre la que
-  // está construido el filtro de `anularVenta`. El `as never` de acá es
-  // deliberado: emula al llamador sin tipos, que es el único que puede hacerlo.
-  it('rechaza un motivo que no le corresponde, como VENTA', async () => {
-    await expect(
-      ajustarStock({
-        tenantId,
-        articuloId: remera,
-        delta: d('1'),
-        motivo: 'VENTA' as never,
-        usuarioId,
-      }),
-    ).rejects.toMatchObject({ codigo: 'MOTIVO_INVALIDO' })
-
-    const movs = await enTransaccionDeTenant(tenantId, async (tx) =>
-      tx.movimientoStock.findMany({ where: { articuloId: remera, motivo: 'VENTA', ventaId: null } }),
-    )
-    expect(movs, 'quedó un movimiento VENTA sin venta asociada').toHaveLength(0)
-  })
-
-  it('rechaza un delta con más decimales de los que la columna guarda', async () => {
-    await expect(
-      ajustarStock({
-        tenantId,
-        articuloId: remera,
-        delta: d('1.0005'),
-        motivo: 'INGRESO',
-        usuarioId,
-      }),
-    ).rejects.toMatchObject({ codigo: 'ESCALA_EXCEDIDA' })
   })
 })
