@@ -1,4 +1,3 @@
-// app/(app)/vender/acciones.ts
 'use server'
 
 import { revalidatePath } from 'next/cache'
