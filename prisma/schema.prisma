@@ -85,6 +85,12 @@ model Tenant {
   // milisegundo) y a cambio no hay huecos ni números repetidos, que es lo que
   // hace que "la venta 123" sirva para hablar por teléfono.
   proximoNumeroVenta Int          @default(1) @map("proximo_numero_venta")
+  // El correlativo del SKU autogenerado, por tenant y con el mismo mecanismo
+  // que `proximoNumeroVenta`: un UPDATE … RETURNING dentro de la transacción
+  // del alta. Contar artículos daría el mismo A-0007 a dos altas simultáneas,
+  // y con `desactivadoEn` en juego llegaría a repetir uno ya usado apenas
+  // alguien dé de baja algo.
+  proximoSkuArticulo Int          @default(1) @map("proximo_sku_articulo")
   creadoEn           DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn      DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
@@ -189,6 +195,11 @@ model Articulo {
   // actualiza con UPDATE relativo en la misma transacción que el movimiento, y
   // `test/ventas.test.ts` prueba que la suma cierra.
   stock         Decimal      @default(0) @db.Decimal(12, 3)
+  // Un artículo que se deja de vender NO se borra: la FK de movimientos_stock
+  // y la de venta_items son Restrict a propósito —borrarlo se llevaría la
+  // historia de lo que se vendió—, así que se desactiva. Mismo campo y mismo
+  // sentido que User.desactivadoEn, que ya sienta el precedente.
+  desactivadoEn DateTime?    @map("desactivado_en") @db.Timestamptz(3)
   creadoEn      DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
@@ -210,6 +221,17 @@ model MovimientoStock {
   articuloId String           @map("articulo_id") @db.Uuid
   // Con signo: negativo descuenta, positivo ingresa.
   delta      Decimal          @db.Decimal(12, 3)
+  // El costo del momento, no el actual. Es la única puerta de una sola
+  // dirección que tenía el modelo: si un artículo se compró a 100 y hoy vale
+  // 180, la venta de marzo se midió contra 100, y sin esta columna no hay dato
+  // del cual reconstruirlo — todo movimiento creado antes de que exista queda
+  // sin costo para siempre.
+  //
+  // Nullable y sin lector: NADIE la lee todavía. No hay reportes de margen ni
+  // costo promedio, y este ciclo no los construye. Sólo el ingreso de
+  // mercadería la escribe, y también ahí es opcional. Queda null en las ventas,
+  // en las anulaciones y en las correcciones por conteo.
+  costoUnitario Decimal?         @map("costo_unitario") @db.Decimal(12, 2)
   motivo     MotivoMovimiento
   // Null en AJUSTE e INGRESO, que no vienen de una venta.
   ventaId    String?          @map("venta_id") @db.Uuid
