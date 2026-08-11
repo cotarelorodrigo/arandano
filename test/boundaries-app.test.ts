@@ -89,6 +89,12 @@ describe('boundaries dentro de app/(app)', () => {
     // ARCHIVO no puede ver: un <Suspense> escrito a mano alrededor de
     // {children} hace exactamente lo mismo que loading.tsx — el shell con el
     // marcador se flushea con 200 antes de que la página resuelva.
+    //
+    // Lo que este regex NO agarra, escrito para que nadie le confíe de más:
+    // un import con alias (`import { Suspense as S }`). Un `<Suspense/>`
+    // autocerrado tampoco matchea, pero ése no envuelve nada, así que no
+    // reproduce el bug. Un comentario que mencione <Suspense> da falso
+    // positivo — molesto, pero falla en la dirección segura.
     const layout = readFileSync(path.join(GRUPO, 'layout.tsx'), 'utf8')
     expect(
       layout,
