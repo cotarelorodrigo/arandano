@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { Button } from '@/components/ui/button'
 import { Navegacion } from '@/components/navegacion'
@@ -21,10 +22,18 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
             gate a la vez. El mismo atributo, con el mismo nombre, está en
             app/login/formulario.tsx y en app/page.tsx — esta última porque `/`
             es pantalla de tenant pero NO vive bajo (app), así que no hereda
-            este layout y tiene que ponerlo por su cuenta. */}
-        <span className="font-medium" data-testid="tenant-nombre">
-          {sesion.tenant.nombre}
-        </span>
+            este layout y tiene que ponerlo por su cuenta.
+
+            El nombre del local enlaza a la home, ahora que "Inicio" salió de
+            la navegación. El Link ENVUELVE al span en vez de llevar el
+            data-testid él mismo: scripts/smoke.sh busca el atributo con el
+            `>` pegado, y moverlo (o agregar algo después) rompe ese grep para
+            toda pantalla autenticada del gate. */}
+        <Link href="/" className="hover:underline">
+          <span className="font-medium" data-testid="tenant-nombre">
+            {sesion.tenant.nombre}
+          </span>
+        </Link>
         <Navegacion rol={sesion.usuario.rol} />
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">
