@@ -68,16 +68,18 @@ Medido convirtiendo `oklch` → sRGB lineal → luminancia relativa → ratio WC
 
 | Par | Ratio | Mínimo | |
 |---|---|---|---|
-| texto sobre fondo | 19.12 | 4.5 | ok |
-| texto sobre `muted` | 17.53 | 4.5 | ok |
+| texto sobre fondo | 19.79 | 4.5 | ok |
+| texto sobre `muted` | 18.15 | 4.5 | ok |
 | `muted-foreground` sobre fondo | 4.91 | 4.5 | ok |
-| `muted-foreground` sobre `muted` | 4.50 | 4.5 | ok |
-| blanco sobre `primary` | 10.33 | 4.5 | ok |
+| `muted-foreground` sobre `muted` | 4.51 | 4.5 | ok |
+| `--primary-foreground` sobre `--primary` | 10.33 | 4.5 | ok |
 | `primary` sobre fondo | 10.79 | 4.5 | ok |
 | `primary` sobre `accent` | 9.44 | 4.5 | ok |
-| blanco sobre `destructive` | 4.56 | 4.5 | ok |
+| `--primary-foreground` sobre `--destructive` | 4.56 | 4.5 | ok |
 | `destructive` sobre fondo | 4.76 | 4.5 | ok |
-| **borde de `--input` sobre fondo** | **1.27** | **3.0** | **no llega — excepción, abajo** |
+| **borde de `--input` sobre fondo** | **1.26** | **3.0** | **no llega — excepción, abajo** |
+
+Cada par de la tabla nombra los **tokens** involucrados, no colores genéricos: `--primary-foreground` es `oklch(0.985 0 0)`, distinto de "blanco puro", así que sus ratios difieren del que podría calcularse contra un 1.0.
 
 Al medir aparecieron **dos defectos que ya venían del default de shadcn**, no de
 esta paleta:
