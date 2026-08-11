@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { cobrar, buscarArticulos, type EstadoCobro } from './acciones'
 import type { ArticuloVendible } from '@/lib/ventas/buscar'
 import {
-  aCentavos, aMilesimas, deCentavos, deMilesimas, subtotalEnCentavos, totalEnCentavos,
+  aCentavos, aDiezMilesimas, aMilesimas, deCentavos, deMilesimas, subtotalEnCentavos,
+  totalDePagosEnCentavos, totalEnCentavos,
 } from '@/lib/ventas/centavos'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
 import { Button } from '@/components/ui/button'
@@ -28,6 +29,17 @@ type Linea = {
   cantidad: string
 }
 
+type Pago = {
+  medio: 'EFECTIVO' | 'TRANSFERENCIA' | 'TARJETA_DEBITO' | 'TARJETA_CREDITO'
+  moneda: 'ARS' | 'USD'
+  monto: string
+  cotizacion: string
+  // Sólo UI: con cuánto paga el cliente, para calcular el vuelto. NO se manda
+  // al servidor y NO se guarda — el pago que entra a la caja es el monto, no
+  // lo que el cliente apoyó sobre el mostrador.
+  recibido: string
+}
+
 /**
  * Lo que la persona tipeó, en milésimas.
  *
@@ -43,7 +55,7 @@ function cantidadEnMilesimas(texto: string): number {
   return aMilesimas(texto.trim().replace(',', '.') || '0')
 }
 
-export function PuntoDeVenta() {
+export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string | null }) {
   const [estado, accion, cobrando] = useActionState(cobrar, INICIAL)
   const [lineas, setLineas] = useState<Linea[]>([])
   const [busqueda, setBusqueda] = useState('')
@@ -54,6 +66,11 @@ export function PuntoDeVenta() {
   // La última venta ya procesada por la limpieza de abajo, para no repetirla
   // en cada render.
   const [ventaProcesada, setVentaProcesada] = useState<string | null>(null)
+  const [pagos, setPagos] = useState<Pago[]>([])
+  // El último total que los pagos ya reflejaron, para el ajuste de más abajo:
+  // sin esto, "seguir el total" se repetiría en cada render y pisaría un monto
+  // que la persona ya tocó a mano.
+  const [totalReflejado, setTotalReflejado] = useState<number | null>(null)
   const buscador = useRef<HTMLInputElement>(null)
   // La búsqueda vigente, para que la respuesta de una búsqueda vieja no pueda
   // pisar la de una más nueva: `clearTimeout` cancela el TIMER si `busqueda`
@@ -90,16 +107,52 @@ export function PuntoDeVenta() {
     return () => clearTimeout(t)
   }, [busqueda])
 
-  // Al cobrar bien: carrito vacío y clave nueva, calculado durante el render
-  // en vez de en un efecto — es el patrón que React documenta para "ajustar
-  // estado cuando cambia otro estado" (comparar contra la última venta ya
-  // procesada), y el único que este lint acepta para un setState síncrono.
+  const enCentavos = lineas.map((l) => ({
+    cantidadMilesimas: cantidadEnMilesimas(l.cantidad),
+    precioCentavos: aCentavos(l.precio),
+  }))
+  const totalCentavos = totalEnCentavos(enCentavos)
+  const hayLineaInvalida = enCentavos.some((l) => Number.isNaN(l.cantidadMilesimas))
+  const hayCarrito = lineas.length > 0 && totalCentavos > 0 && !hayLineaInvalida
+
+  // Cuando el carrito cambia y hay un solo pago en pesos, se le sigue el
+  // total: el caso del 90% es cobrar todo junto y no tener que retocar el
+  // monto cada vez que se agrega un artículo. Con dos pagos, o con uno en
+  // dólares, se deja de tocar — ahí la persona ya decidió cómo reparte.
+  // Ajuste durante el render (no un efecto) por la misma razón que el bloque
+  // de `ventaProcesada` de abajo: comparar contra `totalReflejado`, que este
+  // mismo bloque actualiza, es lo que hace que el segundo render no vuelva a
+  // dispararlo.
+  if (totalCentavos !== totalReflejado) {
+    setTotalReflejado(totalCentavos)
+    setPagos((previos) => {
+      if (previos.length === 0) {
+        return [
+          { medio: 'EFECTIVO', moneda: 'ARS', monto: deCentavos(totalCentavos), cotizacion: '1', recibido: '' },
+        ]
+      }
+      if (previos.length === 1 && previos[0].moneda === 'ARS') {
+        return [{ ...previos[0], monto: deCentavos(totalCentavos) }]
+      }
+      return previos
+    })
+  }
+
+  // Al cobrar bien: carrito vacío, pagos vacíos y clave nueva, calculado
+  // durante el render en vez de en un efecto — es el patrón que React
+  // documenta para "ajustar estado cuando cambia otro estado" (comparar
+  // contra la última venta ya procesada), y el único que este lint acepta
+  // para un setState síncrono.
   if (estado.venta && estado.venta.id !== ventaProcesada) {
     setVentaProcesada(estado.venta.id)
     setLineas([])
     setBusqueda('')
     setResultados([])
     setClave(crypto.randomUUID())
+    // Pagos vacíos y no la fila fija de antes: el ajuste de arriba la vuelve
+    // a poner en el próximo render, ya por el total de la venta siguiente
+    // (0 hasta que se agregue el primer artículo).
+    setPagos([])
   }
 
   // El foco sí necesita un efecto de verdad: tocar el DOM sólo puede pasar
@@ -204,13 +257,24 @@ export function PuntoDeVenta() {
     }
   }
 
-  const enCentavos = lineas.map((l) => ({
-    cantidadMilesimas: cantidadEnMilesimas(l.cantidad),
-    precioCentavos: aCentavos(l.precio),
-  }))
-  const totalCentavos = totalEnCentavos(enCentavos)
-  const hayLineaInvalida = enCentavos.some((l) => Number.isNaN(l.cantidadMilesimas))
-  const hayCarrito = lineas.length > 0 && totalCentavos > 0 && !hayLineaInvalida
+  function cambiarPago(i: number, cambio: Partial<Pago>) {
+    setPagos((previos) => previos.map((p, j) => (j === i ? { ...p, ...cambio } : p)))
+  }
+
+  // `totalDePagosEnCentavos` y NO `totalEnCentavos`: la cotización se guarda
+  // con CUATRO decimales, así que tiene su propia conversión. Convertirla con
+  // `aMilesimas` truncaría el cuarto —`1234,5678` a `1234,567`— y sobre un
+  // pago grande eso mueve el total lo suficiente como para que la pantalla
+  // diga que cierra y el motor rechace con PAGOS_NO_CIERRAN. La Task 3 dejó
+  // las dos funciones separadas justamente por esto.
+  const pagadoCentavos = totalDePagosEnCentavos(
+    pagos.map((p) => ({
+      montoCentavos: aCentavos(p.monto || '0'),
+      cotizacionDiezMilesimas: aDiezMilesimas(p.cotizacion || '0'),
+    })),
+  )
+  const faltanCentavos = totalCentavos - pagadoCentavos
+  const cierra = hayCarrito && faltanCentavos === 0
 
   return (
     <div className="flex flex-col gap-6 md:flex-row">
@@ -348,19 +412,133 @@ export function PuntoDeVenta() {
                 lineas.map((l) => ({ articuloId: l.articuloId, cantidad: l.cantidad })),
               )}
             />
-            {/* Un solo pago, en efectivo y por el total: el caso del 90%. La
-                Task 7 lo convierte en una lista editable. */}
+            <div className="flex flex-col gap-3">
+              {pagos.map((p, i) => (
+                <div key={i} className="flex flex-col gap-2 rounded-md border p-3">
+                  <div className="flex gap-2">
+                    <select
+                      aria-label={`Medio del pago ${i + 1}`}
+                      className="h-8 flex-1 rounded-md border px-3 text-sm"
+                      value={p.medio}
+                      onChange={(e) => cambiarPago(i, { medio: e.target.value as Pago['medio'] })}
+                    >
+                      <option value="EFECTIVO">Efectivo</option>
+                      <option value="TRANSFERENCIA">Transferencia</option>
+                      <option value="TARJETA_DEBITO">Débito</option>
+                      <option value="TARJETA_CREDITO">Crédito</option>
+                    </select>
+                    <select
+                      aria-label={`Moneda del pago ${i + 1}`}
+                      className="h-8 w-24 rounded-md border px-3 text-sm"
+                      value={p.moneda}
+                      onChange={(e) => {
+                        const moneda = e.target.value as Pago['moneda']
+                        cambiarPago(i, {
+                          moneda,
+                          // Un pago en pesos lleva cotización 1 SIEMPRE; uno en
+                          // dólares arranca con la última que usó el local.
+                          cotizacion: moneda === 'ARS' ? '1' : (cotizacionInicial ?? '1'),
+                        })
+                      }}
+                    >
+                      <option value="ARS">$</option>
+                      <option value="USD">US$</option>
+                    </select>
+                  </div>
+                  <Input
+                    inputMode="decimal"
+                    aria-label={`Monto del pago ${i + 1}`}
+                    className="text-right tabular-nums"
+                    value={p.monto}
+                    onChange={(e) => cambiarPago(i, { monto: e.target.value })}
+                  />
+                  {p.moneda === 'USD' && (
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor={`cot-${i}`}>Cotización</Label>
+                      <Input
+                        id={`cot-${i}`}
+                        inputMode="decimal"
+                        className="text-right tabular-nums"
+                        value={p.cotizacion}
+                        onChange={(e) => cambiarPago(i, { cotizacion: e.target.value })}
+                      />
+                    </div>
+                  )}
+                  {p.medio === 'EFECTIVO' && (
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor={`rec-${i}`}>Con cuánto paga (opcional)</Label>
+                      <Input
+                        id={`rec-${i}`}
+                        inputMode="decimal"
+                        className="text-right tabular-nums"
+                        value={p.recibido}
+                        onChange={(e) => cambiarPago(i, { recibido: e.target.value })}
+                      />
+                      {p.recibido.trim() !== '' &&
+                        aCentavos(p.recibido) > aCentavos(p.monto || '0') && (
+                          <p className="text-sm tabular-nums">
+                            Vuelto:{' '}
+                            {formatearPrecio(
+                              deCentavos(aCentavos(p.recibido) - aCentavos(p.monto || '0')),
+                            )}
+                          </p>
+                        )}
+                    </div>
+                  )}
+                  {pagos.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPagos((p2) => p2.filter((_, j) => j !== i))}
+                    >
+                      Quitar pago
+                    </Button>
+                  )}
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  setPagos((p) => [
+                    ...p,
+                    {
+                      medio: 'EFECTIVO',
+                      moneda: 'ARS',
+                      monto: deCentavos(Math.max(0, faltanCentavos)),
+                      cotizacion: '1',
+                      recibido: '',
+                    },
+                  ])
+                }
+              >
+                Agregar pago
+              </Button>
+            </div>
+
+            {faltanCentavos !== 0 && hayCarrito && (
+              <p className="text-sm tabular-nums text-destructive">
+                {faltanCentavos > 0
+                  ? `Faltan ${formatearPrecio(deCentavos(faltanCentavos))}`
+                  : `Sobran ${formatearPrecio(deCentavos(-faltanCentavos))}`}
+              </p>
+            )}
+
             <input
               type="hidden"
               name="pagos"
-              value={JSON.stringify([
-                {
-                  medio: 'EFECTIVO',
-                  moneda: 'ARS',
-                  monto: deCentavos(totalCentavos),
-                  cotizacion: '1',
-                },
-              ])}
+              value={JSON.stringify(
+                // `recibido` NO viaja: es una ayuda de pantalla para calcular
+                // el vuelto, y lo que entra a la caja es el monto.
+                pagos.map((p) => ({
+                  medio: p.medio,
+                  moneda: p.moneda,
+                  monto: p.monto,
+                  cotizacion: p.cotizacion,
+                })),
+              )}
             />
 
             {estado.error && (
@@ -383,7 +561,7 @@ export function PuntoDeVenta() {
               </Alert>
             )}
 
-            <Button type="submit" disabled={!hayCarrito || cobrando}>
+            <Button type="submit" disabled={!cierra || cobrando}>
               {cobrando ? 'Cobrando…' : 'Cobrar'}
             </Button>
           </form>
