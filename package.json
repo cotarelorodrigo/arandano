@@ -11,6 +11,7 @@
     "generate": "prisma generate",
     "tenant:crear": "tsx scripts/crear-tenant.mts",
     "usuario:clave": "tsx scripts/definir-clave.mts",
+    "contraste": "tsx scripts/contraste.mts",
     "pretest": "npm run generate",
     "prebuild": "npm run generate"
   },

@@ -61,7 +61,7 @@ foco (`ring`) y selección/hover (`accent`). El resto queda gris neutro puro.
 | `--ring` | `oklch(0.37 0.10 287)` | `#3d3571` | El foco pasa de gris a marca |
 | `--accent` | `oklch(0.955 0.012 287)` | `#efeff8` | Único neutral tintado: filas seleccionadas y hover |
 | `--accent-foreground` | `oklch(0.37 0.10 287)` | `#3d3571` | |
-| `--muted-foreground` | `oklch(0.547 0 0)` | `#717171` | Baja de `0.556`. Cierra un par de contraste |
+| `--muted-foreground` | `oklch(0.535 0 0)` | `#6d6d6d` | Baja de `0.556`. Cierra dos pares de contraste |
 | Todo lo demás | sin cambio | | `background`, `foreground`, `card`, `popover`, `secondary`, `muted`, `border`, `input`, `destructive`, `radius` |
 
 **El hue es 287 en los tres.** Lo que los distingue es croma y luminosidad, no
@@ -69,31 +69,41 @@ tono: es un solo color de marca visto a tres distancias.
 
 ### Contraste, calculado y no estimado
 
-Los pares se midieron convirtiendo `oklch` → sRGB lineal → luminancia relativa →
-ratio WCAG 2.1, no a ojo.
+Los pares se miden convirtiendo `oklch` → sRGB lineal → **el byte que se pinta**
+→ luminancia relativa → ratio WCAG 2.1, no a ojo. El redondeo a 8 bits es lo que
+hace que el número coincida con el de axe y Lighthouse; los pares con opacidad se
+componen sobre el color de abajo, en bytes, que es donde compone el navegador.
+
+**Cada fila nombra sus dos tokens**, y no "blanco" o "texto": `--primary-foreground`
+es `oklch(0.985 0 0)` y no blanco puro, y esa etiqueta suelta ya hizo equivocarse
+a un reviewer. La tabla viva —la que el gate compara contra el cálculo— es la de
+`docs/sistema-de-diseno.md`; ésta es la foto del momento en que se aprobó.
 
 | Par | Ratio | Mínimo | |
 |---|---|---|---|
-| texto sobre fondo | 19.12 | 4.5 | ok |
-| texto sobre `muted` | 17.53 | 4.5 | ok |
-| `muted-foreground` sobre fondo | 4.91 | 4.5 | ok |
-| `muted-foreground` sobre `muted` | 4.50 | 4.5 | ok |
-| blanco sobre `primary` | 10.33 | 4.5 | ok |
-| `primary` sobre fondo | 10.79 | 4.5 | ok |
-| `primary` sobre `accent` | 9.44 | 4.5 | ok |
-| blanco sobre `destructive` | 4.56 | 4.5 | ok |
-| `destructive` sobre fondo | 4.76 | 4.5 | ok |
-| **borde de `--input` sobre fondo** | **1.27** | **3.0** | **no llega — excepción aceptada, ver abajo** |
+| `--foreground` sobre `--background` | 19.80 | 4.5 | ok |
+| `--foreground` sobre `--muted` | 18.16 | 4.5 | ok |
+| `--muted-foreground` sobre `--background` | 5.17 | 4.5 | ok |
+| `--muted-foreground` sobre `--muted` | 4.75 | 4.5 | ok |
+| `--muted-foreground` sobre `--accent` | 4.53 | 4.5 | ok |
+| `--primary-foreground` sobre `--primary` | 10.34 | 4.5 | ok |
+| `--primary-foreground` sobre `--primary/80` | 5.76 | 4.5 | ok |
+| `--primary` sobre `--background` | 10.79 | 4.5 | ok |
+| `--primary` sobre `--accent` | 9.44 | 4.5 | ok |
+| `--primary-foreground` sobre `--destructive` | 4.57 | 4.5 | ok |
+| `--destructive` sobre `--background` | 4.77 | 4.5 | ok |
+| `--destructive/90` sobre `--card` | 4.54 | 4.5 | ok |
+| **`--input` sobre `--background`** | **1.26** | **3.0** | **no llega — excepción aceptada, ver abajo** |
 
 **Dos defectos que ya existen hoy**, heredados del default de shadcn y no
 introducidos por esta paleta:
 
-1. **`muted-foreground` sobre `muted` daba 4.34**, abajo del mínimo de 4.5 para
+1. **`muted-foreground` sobre `muted` daba 4.35**, abajo del mínimo de 4.5 para
    texto — el gris secundario sobre el fondo gris, o sea un subtítulo adentro de
-   una card. **Se corrige**: `0.556` → `0.547` lo deja en 4.50 exacto y en 4.91
-   sobre blanco. El cambio es imperceptible a ojo.
+   una card. **Se corrige**: `0.556` → `0.535` lo deja en 4.75 y en 5.17 sobre
+   blanco. El cambio es imperceptible a ojo.
 
-2. **`--input` sobre blanco da 1.27**, contra los 3:1 que pide WCAG 1.4.11 para
+2. **`--input` sobre blanco da 1.26**, contra los 3:1 que pide WCAG 1.4.11 para
    el borde de un control. **Se acepta y queda escrito como excepción.** Llevarlo
    a `oklch(0.669 0 0)` cerraría el hueco, pero cambia visiblemente el aspecto de
    todo campo de la aplicación, y se decidió conservar el look liviano. Es una
@@ -144,6 +154,13 @@ La densidad media, en números:
 | Input y botón | 32 px (`h-8`) — lo que ya traen los componentes |
 | Padding de card | 24 px |
 | Gutter de página | 24 px |
+
+**Corregido al implementar:** dos de esos cuatro números eran aspiracionales y el
+código decía otra cosa — la card de shadcn trae 16 px (`--card-spacing`) y la
+única tabla que existe mide 36 px (`py-2`). Se decidió describir el código en vez
+de rediseñar componentes copiados, y el subconjunto de la escala pasó a regir
+sólo el código propio, porque los componentes de `components/ui/` traen medios
+pasos adentro. Los números que valen están en `docs/sistema-de-diseno.md`.
 
 `--radius: 0.625rem` **sin cambio**, con la escala derivada de 7 pasos que ya
 está en `@theme inline`. No hay razón de marca para moverla.
