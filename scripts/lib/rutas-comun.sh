@@ -76,6 +76,6 @@ rutas_autenticadas() {
   fi
 
   if [[ "${#rutas[@]}" -gt 0 ]]; then
-    printf '%s\n' "${rutas[@]}"
+    printf '%s\n' "${rutas[@]}" | sort
   fi
 }

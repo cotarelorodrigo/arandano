@@ -56,5 +56,12 @@ salida=$(rutas_autenticadas "$RAIZ/(app)")
 check_eq "una ruta declarada se saltea, y las demás siguen" \
   $'/caja\n/margen\n/usuarios' "$salida"
 
+# --- El ordenamiento es invariante al locale.
+# LC_ALL=C cambia el orden de sort(): las rutas deben estar ordenadas después de
+# la derivación, no antes. De lo contrario, (reportes)/margen queda al principio.
+salida_c=$(LC_ALL=C rutas_autenticadas "$RAIZ/(app)")
+check_eq "el ordenamiento es invariante al locale LC_ALL=C" \
+  $'/caja\n/margen\n/usuarios' "$salida_c"
+
 printf '\n%d ok, %d fallan\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]
