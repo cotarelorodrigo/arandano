@@ -616,6 +616,332 @@ también da rojo, que es el modo de falla que importa."
 
 ---
 
+### Task 5: El contraste, calculado y no transcripto
+
+**Sumada al ciclo el 2026-08-11**, después de que la review de la Task 3 encontrara cuatro ratios mal en una tabla que el propio documento presenta como "medido, no estimado a ojo". Corregir los números no impide que vuelva a pasar: estaban pegados a mano, y esa es la causa. Esta task le da a los ratios el mismo trato que ya tienen los tokens.
+
+**Se ejecuta ANTES de la Task 4**, para que la evidencia y el cierre de `CLAUDE.md` de esa task cubran también esto.
+
+**Files:**
+- Create: `scripts/contraste.mts`
+- Create: `test/contraste.test.ts`
+- Modify: `docs/sistema-de-diseno.md` (marcadores y forma canónica de las filas)
+- Modify: `package.json` (un script)
+
+**Interfaces:**
+- Consumes: el `:root` de `app/globals.css` que dejó la Task 3, y la sección "Contraste" del documento que dejó su fix.
+- Produces: `scripts/contraste.mts` exporta `PARES`, `EXCEPCIONES`, `tokensDelCss()` y `ratios()`. La Task 4 no los usa; nadie más depende de ellos.
+
+- [ ] **Step 1: Normalizar las filas de la tabla del documento**
+
+Para que un parser pueda leerlas, las diez filas tienen que nombrar sus dos tokens con la misma forma. En `docs/sistema-de-diseno.md`, sección "Contraste", envolver la tabla en marcadores y dejar las filas así:
+
+```markdown
+<!-- contraste:inicio -->
+
+| Par | Ratio | Mínimo | |
+|---|---|---|---|
+| `--foreground` sobre `--background` | 19.79 | 4.5 | ok |
+| `--foreground` sobre `--muted` | 18.15 | 4.5 | ok |
+| `--muted-foreground` sobre `--background` | 4.91 | 4.5 | ok |
+| `--muted-foreground` sobre `--muted` | 4.51 | 4.5 | ok |
+| `--primary-foreground` sobre `--primary` | 10.33 | 4.5 | ok |
+| `--primary` sobre `--background` | 10.79 | 4.5 | ok |
+| `--primary` sobre `--accent` | 9.44 | 4.5 | ok |
+| `--primary-foreground` sobre `--destructive` | 4.56 | 4.5 | ok |
+| `--destructive` sobre `--background` | 4.76 | 4.5 | ok |
+| `--input` sobre `--background` | 1.26 | 3.0 | **excepción declarada** |
+
+<!-- contraste:fin -->
+```
+
+La línea aclaratoria que ya existe debajo de la tabla —la que dice que cada par nombra tokens y no colores genéricos— se conserva.
+
+- [ ] **Step 2: Escribir el test que falla**
+
+Crear `test/contraste.test.ts`:
+
+```ts
+import { describe, it, expect, beforeAll } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { PARES, EXCEPCIONES, nombreDelPar, ratios } from '@/scripts/contraste.mts'
+
+const DOC = 'docs/sistema-de-diseno.md'
+const INICIO = '<!-- contraste:inicio -->'
+const FIN = '<!-- contraste:fin -->'
+
+/** Los ratios que DECLARA la tabla de contraste del documento. */
+function ratiosDelDoc(): Map<string, number> {
+  const texto = readFileSync(DOC, 'utf8')
+  const desde = texto.indexOf(INICIO)
+  const hasta = texto.indexOf(FIN)
+  if (desde === -1 || hasta === -1 || hasta < desde) {
+    throw new Error(`${DOC} no tiene los marcadores ${INICIO} … ${FIN}`)
+  }
+  const filas = new Map<string, number>()
+  for (const linea of texto.slice(desde, hasta).split('\n')) {
+    const m = linea.match(
+      /^\|\s*`(--[a-z-]+)`\s+sobre\s+`(--[a-z-]+)`\s*\|\s*([\d.]+)\s*\|/,
+    )
+    if (m) filas.set(`${m[1]} sobre ${m[2]}`, Number(m[3]))
+  }
+  return filas
+}
+
+describe('el contraste de la paleta', () => {
+  let calculados: ReturnType<typeof ratios>
+  let doc: Map<string, number>
+
+  beforeAll(() => {
+    calculados = ratios()
+    doc = ratiosDelDoc()
+  })
+
+  // Las dos mitades que hacen que esto no sea decorativo: una lista vacía y una
+  // tabla vacía dan cero comparaciones, y cero comparaciones no fallan nunca.
+  it('hay pares declarados', () => {
+    expect(PARES.length).toBeGreaterThan(0)
+  })
+
+  it('la tabla del documento no está vacía', () => {
+    expect(
+      doc.size,
+      `no se parseó ninguna fila de la tabla de contraste de ${DOC}`,
+    ).toBeGreaterThan(0)
+  })
+
+  it('cada par llega a su mínimo, o está exceptuado con su razón escrita', () => {
+    for (const r of calculados) {
+      if (r.llega) continue
+      const razon = EXCEPCIONES[r.nombre]
+      expect(
+        razon,
+        `${r.nombre} da ${r.ratio.toFixed(2)} contra un mínimo de ${r.minimo}, y no ` +
+          `está en EXCEPCIONES (scripts/contraste.mts). Una excepción de ` +
+          `accesibilidad sin razón escrita no es revisable: o se corrige el token, ` +
+          `o se declara por qué se acepta.`,
+      ).toBeTruthy()
+    }
+  })
+
+  it('no hay excepciones de más', () => {
+    // Una excepción que ya no hace falta es una deuda que quedó cobrando sin
+    // que nadie se entere de que se pagó.
+    const fallan = new Set(calculados.filter((r) => !r.llega).map((r) => r.nombre))
+    const sobran = Object.keys(EXCEPCIONES).filter((n) => !fallan.has(n))
+    expect(
+      sobran,
+      `estas excepciones ya no corresponden porque el par pasa el mínimo: ` +
+        `${sobran.join(', ')}. Borralas de EXCEPCIONES.`,
+    ).toEqual([])
+  })
+
+  it('el documento declara el ratio que el cálculo produce', () => {
+    for (const r of calculados) {
+      expect(
+        doc.get(r.nombre),
+        `${DOC} declara ${doc.get(r.nombre) ?? 'nada'} para ${r.nombre}, y el ` +
+          `cálculo sobre los tokens reales da ${r.ratio.toFixed(2)}. La tabla se ` +
+          `presenta como medida: no se transcribe a mano.`,
+      ).toBe(Number(r.ratio.toFixed(2)))
+    }
+  })
+
+  it('el documento no declara pares que el cálculo no cubre', () => {
+    const nombres = new Set(calculados.map((r) => r.nombre))
+    const sobran = [...doc.keys()].filter((n) => !nombres.has(n))
+    expect(sobran, `filas sin par correspondiente en PARES: ${sobran.join(', ')}`).toEqual(
+      [],
+    )
+  })
+})
+```
+
+- [ ] **Step 3: Correr el test y verificar que falla**
+
+Run: `npx vitest run test/contraste.test.ts`
+Expected: FALLA al resolver el import de `@/scripts/contraste.mts`, que todavía no existe. Ése es el rojo correcto.
+
+- [ ] **Step 4: Escribir el script**
+
+Crear `scripts/contraste.mts`:
+
+```ts
+/**
+ * Los ratios de contraste WCAG 2.1 de la paleta, calculados desde los tokens
+ * REALES de app/globals.css.
+ *
+ * Existe porque la tabla del documento se escribió a mano una vez y se
+ * desincronizó: cuatro de diez ratios no correspondían a los tokens que estaban
+ * en el CSS, en una sección cuya propia prosa dice "medido, no estimado a ojo".
+ * Corregir los números no arreglaba la causa. test/contraste.test.ts compara
+ * esta salida contra la tabla, así que ahora "medido" es una afirmación que el
+ * gate sostiene.
+ *
+ * Correr a mano: `npm run contraste`.
+ */
+import { readFileSync } from 'node:fs'
+
+const CSS = 'app/globals.css'
+
+export type Par = { texto: string; fondo: string; minimo: number }
+
+/**
+ * Los pares que importan, con el mínimo que les corresponde.
+ *
+ * 4.5 es el mínimo de WCAG 2.1 para texto normal (1.4.3). El 3.0 del borde de
+ * un control sale de 1.4.11, que es otra regla: no habla de texto sino de qué
+ * hace falta para identificar un componente.
+ */
+export const PARES: Par[] = [
+  { texto: '--foreground', fondo: '--background', minimo: 4.5 },
+  { texto: '--foreground', fondo: '--muted', minimo: 4.5 },
+  { texto: '--muted-foreground', fondo: '--background', minimo: 4.5 },
+  { texto: '--muted-foreground', fondo: '--muted', minimo: 4.5 },
+  { texto: '--primary-foreground', fondo: '--primary', minimo: 4.5 },
+  { texto: '--primary', fondo: '--background', minimo: 4.5 },
+  { texto: '--primary', fondo: '--accent', minimo: 4.5 },
+  { texto: '--primary-foreground', fondo: '--destructive', minimo: 4.5 },
+  { texto: '--destructive', fondo: '--background', minimo: 4.5 },
+  { texto: '--input', fondo: '--background', minimo: 3.0 },
+]
+
+/**
+ * Los pares que NO llegan a su mínimo y se aceptan igual, cada uno con su razón.
+ *
+ * Escrita a mano a propósito: una excepción de accesibilidad tiene que ser una
+ * decisión visible en el diff, no algo que el script deduzca solo. Mismo patrón
+ * que RUTAS_SIN_SMOKE en scripts/lib/rutas-comun.sh y SIN_TENANT_ID en
+ * test/rls-cobertura.test.ts.
+ */
+export const EXCEPCIONES: Record<string, string> = {
+  '--input sobre --background':
+    'el borde de un control pide 3:1 (WCAG 1.4.11) y da 1.26. Se conserva el look ' +
+    'liviano de shadcn a conciencia: todo campo lleva <Label> asociado y anillo de ' +
+    'foco de marca, así que el borde no es el único indicio de que ahí hay un input. ' +
+    'Revisar ante un reporte real de gente que no encuentra los campos, o ante una ' +
+    'auditoría de accesibilidad formal.',
+}
+
+export const nombreDelPar = (p: Par) => `${p.texto} sobre ${p.fondo}`
+
+/** Los tokens del bloque :root, tal como están en el CSS. */
+export function tokensDelCss(): Map<string, string> {
+  const texto = readFileSync(CSS, 'utf8')
+  const bloque = texto.match(/^:root\s*\{([\s\S]*?)^\}/m)
+  if (!bloque) throw new Error(`${CSS} no tiene un bloque :root que se pueda leer`)
+  const tokens = new Map<string, string>()
+  for (const linea of bloque[1].split('\n')) {
+    const m = linea.match(/^\s*(--[a-z0-9-]+)\s*:\s*([^;]+);/)
+    if (m) tokens.set(m[1], m[2].trim())
+  }
+  return tokens
+}
+
+/** oklch(L C H) → sRGB lineal. */
+function aRgbLineal(valor: string): [number, number, number] {
+  const m = valor.match(/^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)$/)
+  if (!m) throw new Error(`no es un color oklch de tres componentes: ${valor}`)
+  const [L, C, H] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  const h = (H * Math.PI) / 180
+  const a = C * Math.cos(h)
+  const b = C * Math.sin(h)
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3
+  const mm = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3
+  return [
+    4.0767416621 * l - 3.3077115913 * mm + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * mm - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * mm + 1.707614701 * s,
+  ]
+}
+
+/** Luminancia relativa (WCAG 2.1), sobre los componentes lineales clampeados. */
+function luminancia(valor: string): number {
+  const [r, g, b] = aRgbLineal(valor).map((v) => Math.min(1, Math.max(0, v)))
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+export type Resultado = {
+  nombre: string
+  ratio: number
+  minimo: number
+  llega: boolean
+}
+
+export function ratios(): Resultado[] {
+  const tokens = tokensDelCss()
+  return PARES.map((p) => {
+    for (const t of [p.texto, p.fondo]) {
+      if (!tokens.has(t)) throw new Error(`${CSS} no define ${t}, que PARES nombra`)
+    }
+    const a = luminancia(tokens.get(p.texto)!)
+    const b = luminancia(tokens.get(p.fondo)!)
+    const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+    return {
+      nombre: nombreDelPar(p),
+      ratio,
+      minimo: p.minimo,
+      // Redondeado a dos decimales antes de comparar: es lo que se publica en
+      // el documento, y un par que da 4.4996 no puede figurar como 4.50 "ok".
+      llega: Number(ratio.toFixed(2)) >= p.minimo,
+    }
+  })
+}
+
+// Sólo cuando se corre como comando, no cuando lo importa el test.
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop()!)) {
+  let fallan = 0
+  for (const r of ratios()) {
+    const exceptuado = !r.llega && EXCEPCIONES[r.nombre]
+    if (!r.llega && !exceptuado) fallan++
+    const estado = r.llega ? 'ok' : exceptuado ? 'excepción declarada' : 'NO LLEGA'
+    console.log(
+      `${r.nombre.padEnd(46)} ${r.ratio.toFixed(2).padStart(6)}  (mín ${r.minimo})  ${estado}`,
+    )
+  }
+  process.exit(fallan === 0 ? 0 : 1)
+}
+```
+
+- [ ] **Step 5: Sumar el comando a package.json**
+
+En `"scripts"`, después de `"usuario:clave"`:
+
+```json
+    "contraste": "tsx scripts/contraste.mts",
+```
+
+- [ ] **Step 6: Correr el test y verificar que pasa**
+
+Run: `npx vitest run test/contraste.test.ts`
+Expected: 6 passed.
+
+Run: `npm run contraste`
+Expected: diez líneas, nueve `ok` y `--input sobre --background` con `excepción declarada`, y código de salida 0.
+
+- [ ] **Step 7: Gate completo**
+
+Run: `npm test && npx tsc --noEmit && npm run lint`
+Expected: todo verde.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add scripts/contraste.mts test/contraste.test.ts docs/sistema-de-diseno.md package.json
+git commit -m "feat(a11y): calcular el contraste en vez de transcribirlo
+
+La tabla del documento decía 'medido, no estimado a ojo' y tenía cuatro de
+diez ratios que no correspondían a los tokens del CSS. Corregir los números
+no arreglaba la causa: estaban pegados a mano.
+
+Ahora el cálculo sale de los tokens reales y el test compara la tabla contra
+él. La excepción de --input pasa de ser una nota en un .md a una entrada con
+razón escrita que el gate conoce: el día que se cierre, sobra y el test lo dice."
+```
+
+---
+
 ## Self-Review
 
 **Cobertura del spec**
