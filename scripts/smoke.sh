@@ -48,6 +48,10 @@ PASS=0
 FAIL=0
 ok()  { printf '  \033[32m✓\033[0m %s\n' "$1"; PASS=$((PASS + 1)); }
 bad() { printf '  \033[31m✗\033[0m %s\n' "$1"; FAIL=$((FAIL + 1)); }
+# Ni ok ni bad: no toca ningún contador. Sólo se usa para lo que no se pudo
+# ejercitar porque ya falló algo río arriba, y ese algo ya sumó su propio rojo —
+# así el gate sigue frenando sin que el renglón omitido finja un verde.
+omit() { printf '  \033[33m–\033[0m %s\n' "$1"; }
 
 # Una sola llamada al healthcheck, reusada por varios casos: cada request es un
 # ida y vuelta a Postgres con un pool de máximo 5, y golpearlo cuatro veces
@@ -284,6 +288,9 @@ caso_login_devuelve_sesion() {
 # /login pasaría en verde. Una redirección tiene que ser rojo acá.
 caso_pantalla() {
   local ruta="$1" respuesta codigo cuerpo
+  # Redundante con el `if` que decide si el barrido corre, y a propósito: sin
+  # esto, llamar a caso_pantalla desde otro lado pediría la ruta SIN cookie y un
+  # 200 anónimo se leería como pantalla sana. Falla cerrado por su cuenta.
   [[ -n "$COOKIE_SESION" ]] || return 1
   respuesta=$(curl -s --max-time 15 -w $'\n%{http_code}' \
     -H "Host: ${HOST_CANARIO}" \
@@ -346,9 +353,22 @@ done
 
 # Un caso por pantalla, con su ruta en el nombre: cuando esto falla, el renglón
 # rojo ya dice cuál pantalla, sin abrir un log.
-for ruta in "${RUTAS_APP[@]}"; do
-  if caso_pantalla "$ruta"; then ok "pantalla ${ruta}"; else bad "pantalla ${ruta}"; fi
-done
+#
+# Sin sesión el barrido no corre, y eso es deliberado: cada pantalla daría rojo
+# por la misma causa única —el login— y el abanico esconde el diagnóstico atrás
+# de N renglones que hablan de la pantalla equivocada. Ya pasó: el runbook
+# documenta el flake del SIGPIPE como "TRES rojos… y a primera vista parecía que
+# el login se había roto", y el ruido crece con cada pantalla que se agregue.
+#
+# No afloja el gate: caso_login_devuelve_sesion ya sumó su rojo unas líneas más
+# arriba, así que FAIL ya es distinto de cero y el smoke igual sale con 1.
+if [[ -n "$COOKIE_SESION" ]]; then
+  for ruta in "${RUTAS_APP[@]}"; do
+    if caso_pantalla "$ruta"; then ok "pantalla ${ruta}"; else bad "pantalla ${ruta}"; fi
+  done
+else
+  omit "$((${#RUTAS_APP[@]})) pantallas omitidas: sin sesión (ver caso_login_devuelve_sesion)"
+fi
 
 printf '\n%d ok, %d fallan\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]
