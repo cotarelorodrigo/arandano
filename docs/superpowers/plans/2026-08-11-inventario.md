@@ -51,7 +51,8 @@ El spec dice que `ajustarStock` se muda "con su firma intacta". Se muda con su *
 | `app/(app)/inventario/page.tsx` *(nuevo)* | El listado. |
 | `app/(app)/inventario/nuevo/page.tsx` *(nuevo)* | El alta. |
 | `app/(app)/inventario/[id]/page.tsx` *(nuevo)* | El detalle. |
-| `app/(app)/layout.tsx` *(modificado)* | La navegación. |
+| `components/navegacion.tsx` *(nuevo)* | Los enlaces, en un solo lugar. Lo usan el layout y la home. |
+| `app/(app)/layout.tsx` *(modificado)* | Cuelga la navegación. |
 | `app/page.tsx` *(modificado)* | Se le saca el `<a>` suelto a `/usuarios`. |
 | `scripts/lib/rutas-comun.sh` *(modificado)* | La primera entrada de `RUTAS_SIN_SMOKE`. |
 | `test/schema.test.ts` *(modificado)* | Las tres columnas nuevas, con su tipo. |
@@ -2034,6 +2035,7 @@ git commit -m "feat(inventario): server actions con el rol reexigido en cada una
 - Create: `app/(app)/inventario/page.tsx`
 - Create: `app/(app)/inventario/nuevo/page.tsx`
 - Create: `app/(app)/inventario/formularios.tsx`
+- Create: `components/navegacion.tsx`
 - Modify: `app/(app)/layout.tsx`
 - Modify: `app/page.tsx`
 
@@ -2383,30 +2385,52 @@ export default async function Inventario({
 }
 ```
 
-- [ ] **Step 4: Poner la navegación en el layout**
+- [ ] **Step 4: Escribir el componente de navegación**
 
-En `app/(app)/layout.tsx`, entre el `<span data-testid="tenant-nombre">` y el `<div>` de la derecha, insertar:
+**Un componente compartido y no un `<nav>` inline en el layout, y el motivo es estructural:** `/` **no vive bajo `(app)`** — está en la lista blanca de `test/rutas-con-guard.test.ts` porque el ápex entra por esa misma ruta sin sesión. O sea que la home **no hereda el layout** y no heredaría la nav. Dejar los enlaces sólo en el layout deja huérfana justamente la pantalla donde el usuario aterriza después de entrar.
 
 ```tsx
-        {/* Los enlaces viven acá, en un solo lugar y no repartidos por las
-            pantallas. Sin registry de módulos todavía: CLAUDE.md promete la
-            navegación como punto de extensión del núcleo, y ese punto se
-            diseña bien cuando exista Órdenes de Trabajo para tironear de él.
-            Tenerlos centralizados es lo que hace barato ese refactor. */}
-        <nav className="flex items-center gap-4 text-sm">
-          <a href="/" className="hover:underline">Inicio</a>
-          <a href="/inventario" className="hover:underline">Inventario</a>
-          {sesion.usuario.rol === 'DUENO' && (
-            <a href="/usuarios" className="hover:underline">Usuarios</a>
-          )}
-        </nav>
+// components/navegacion.tsx
+import type { RolUsuario } from '@/lib/auth/sesion'
+
+/**
+ * Los enlaces de la aplicación, en un solo lugar.
+ *
+ * Lo usan DOS consumidores y por eso vive en components/ y no adentro de
+ * `app/(app)/`: el layout del grupo, y `app/page.tsx`, que no puede estar bajo
+ * ese grupo —el ápex entra por la misma ruta y no tiene sesión— y por lo tanto
+ * no hereda su layout. Dos listas de enlaces se desincronizan en cuanto
+ * aparezca la cuarta sección.
+ *
+ * Sin registry de módulos todavía: CLAUDE.md promete la navegación como punto
+ * de extensión del núcleo, y ese punto se diseña bien cuando exista Órdenes de
+ * Trabajo para tironear de él. Tenerlos centralizados acá es lo que hace barato
+ * ese refactor.
+ */
+export function Navegacion({ rol }: { rol: RolUsuario }) {
+  return (
+    <nav className="flex items-center gap-4 text-sm">
+      <a href="/" className="hover:underline">
+        Inicio
+      </a>
+      <a href="/inventario" className="hover:underline">
+        Inventario
+      </a>
+      {rol === 'DUENO' && (
+        <a href="/usuarios" className="hover:underline">
+          Usuarios
+        </a>
+      )}
+    </nav>
+  )
+}
 ```
 
-El `<span data-testid="tenant-nombre">` **no se toca**: `scripts/smoke.sh` lo busca en cada pantalla autenticada.
+- [ ] **Step 5: Colgarlo del layout y de la home**
 
-- [ ] **Step 5: Sacar el `<a>` suelto de la home**
+En `app/(app)/layout.tsx`, importar `Navegacion` de `@/components/navegacion` e insertar `<Navegacion rol={sesion.usuario.rol} />` entre el `<span data-testid="tenant-nombre">` y el `<div>` de la derecha. El `<span data-testid="tenant-nombre">` **no se toca**: `scripts/smoke.sh` lo busca en cada pantalla autenticada.
 
-En `app/page.tsx`, borrar el bloque:
+En `app/page.tsx`, reemplazar el bloque del `<a>` suelto:
 
 ```tsx
       {usuario.rol === 'DUENO' && (
@@ -2416,7 +2440,13 @@ En `app/page.tsx`, borrar el bloque:
       )}
 ```
 
-Queda cubierto por la nav del layout. `PaginaTenant` deja de usar `usuario.rol`, pero `usuario` sigue en uso por el saludo de arriba, así que la firma no cambia.
+por:
+
+```tsx
+      <Navegacion rol={usuario.rol} />
+```
+
+`app/page.test.tsx:126` —"un dueño ve el link a /usuarios; un empleado no"— **tiene que seguir pasando sin tocarlo**: el componente filtra por rol igual que el bloque que reemplaza. Si ese test se pone rojo, el filtro quedó mal.
 
 - [ ] **Step 6: Verificar que el barrido levanta las dos rutas**
 
@@ -2437,7 +2467,7 @@ Expected: PASS los tres. `rutas-con-guard` tiene que pasar **sin** sumar entrada
 - [ ] **Step 8: Commit**
 
 ```bash
-git add "app/(app)/inventario/" "app/(app)/layout.tsx" app/page.tsx
+git add "app/(app)/inventario/" components/navegacion.tsx "app/(app)/layout.tsx" app/page.tsx
 git commit -m "feat(inventario): listado con buscador, alta de artículo y navegación"
 ```
 
