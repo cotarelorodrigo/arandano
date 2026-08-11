@@ -324,19 +324,25 @@ Y del producto:
   las variables de tema en `app/globals.css`, con los cinco componentes que
   usa la pantalla de login. Fue el primer ciclo que construyó interfaz, que
   es lo que este ítem pedía esperar.
-- **Definir el sistema de diseño, en su propio archivo.** Hoy la aplicación usa
-  la paleta neutra que trae shadcn por defecto: no tiene marca, y ninguna
-  decisión de color, tipografía o espaciado está escrita en ningún lado. La
-  referencia es **el color de un arándano** — el azul-violeta profundo de la
-  fruta, con el gris pálido de su "bloom" como secundario natural. El archivo
-  tiene que ser la fuente de verdad de los tokens que ya viven en
-  `app/globals.css`, no un documento paralelo que se desincronice: si declara un
-  color, ése es el que está en el CSS.
-
-  Va **antes** del ABM de artículos y del punto de venta, no después: son las
-  pantallas que van a fijar el lenguaje visual del producto, y rehacerlas es más
-  caro que decidir la paleta primero. Hoy sólo existen el login y la de usuarios,
-  así que es el momento más barato que va a haber.
+- ~~Definir el sistema de diseño, en su propio archivo.~~ **Hecho**
+  (2026-08-11). `docs/sistema-de-diseno.md`: la referencia es **el color de un
+  arándano** — el azul-violeta profundo de la fruta, con el gris pálido de su
+  "bloom" como secundario natural, entrando sólo en acciones, foco y
+  selección. Es la fuente de verdad de los tokens de `app/globals.css`, y
+  `test/sistema-de-diseno.test.ts` lo ata a ese archivo **en las dos
+  direcciones**: todo token del documento existe en el CSS con el mismo valor,
+  y todo token del CSS está documentado — un color que sólo viva en uno de los
+  dos archivos rompe el build. El contraste no se transcribe a mano:
+  `scripts/contraste.mts` lo calcula desde los tokens reales (oklch → sRGB
+  lineal → luminancia → ratio WCAG) y `test/contraste.test.ts` compara esa
+  salida contra la tabla del documento. La única excepción de accesibilidad
+  —el borde de `--input` da 1.26 contra los 3:1 que pide WCAG 1.4.11— está
+  declarada en `EXCEPCIONES` con su razón por escrito, y el mismo test
+  rechaza tanto una excepción sin razón como una que ya no corresponda. El
+  modo oscuro se borró en el mismo ciclo: definía 28 variables y nada
+  aplicaba la clase `.dark`. La evidencia de que el mecanismo atrapa de
+  verdad —cuatro defectos metidos a mano y revertidos, uno por vez, más la
+  tabla vacía— vive en la sección *Cómo se verifica* del propio documento.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

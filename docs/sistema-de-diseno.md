@@ -175,3 +175,72 @@ mano en un componente:
 - **Advertencia** (stock bajo, presupuesto por vencer): hue 85.
 
 En los dos casos: medir el contraste antes de fijarlo, no estimarlo a ojo.
+
+## Cómo se verifica
+
+Un test que corre y da verde no prueba que atrape nada. Antes de dar este
+documento por cerrado se metieron a mano los defectos que el mecanismo tiene
+que detectar, uno por vez, revirtiendo cada uno antes del siguiente, para
+comprobar que el rojo es el esperado y no otro. Quedan anotados acá para que
+dentro de tres meses alguien pueda saber si esto atrapó algo alguna vez, sin
+tener que repetir el ejercicio.
+
+**`test/sistema-de-diseno.test.ts`** corre la comparación de tokens entre
+`app/globals.css` y la tabla normativa de este documento, en las dos
+direcciones. Se corre con `npx vitest run test/sistema-de-diseno.test.ts`, y
+forma parte de `npm test`.
+
+Los cuatro defectos del gate, cada uno introducido sólo en el archivo que dice
+la columna, corrido, anotado y revertido antes del siguiente:
+
+| # | Defecto | Dónde | Caso que falló (y sólo ése) |
+|---|---|---|---|
+| 1 | `--ring` a `oklch(0.5 0 0)` | sólo `app/globals.css` | `todo token del documento existe en el CSS, con el mismo valor` — *"docs/sistema-de-diseno.md declara --ring: oklch(0.37 0.10 287), y app/globals.css tiene oklch(0.5 0 0)"* |
+| 2 | `--ring` a `oklch(0.5 0 0)` | sólo `docs/sistema-de-diseno.md` | el mismo caso, en el sentido inverso — *"docs/sistema-de-diseno.md declara --ring: oklch(0.5 0 0), y app/globals.css tiene oklch(0.37 0.10 287)"* |
+| 3 | `--inventado: oklch(0.5 0 0);` agregado a `:root` | sólo `app/globals.css` | `todo token del CSS está documentado` — *"app/globals.css define tokens que docs/sistema-de-diseno.md no declara: --inventado"* |
+| 4 | `.dark { --background: oklch(0 0 0); }` pegado al final | sólo `app/globals.css` | `no hay bloque .dark` — *"volvió el bloque .dark a app/globals.css"* |
+
+En los cuatro casos falló exactamente el renglón esperado y ningún otro; el
+resto de la suite (6 de 7 tests) siguió en verde. Después de cada uno,
+`git status --short` volvió a dar vacío antes de seguir con el siguiente.
+
+**La tabla vacía.** Se borraron a mano las 19 filas de la tabla normativa,
+entre `<!-- tokens:inicio -->` y `<!-- tokens:fin -->`, dejando sólo el
+encabezado. El resultado no fue verde: fallaron dos casos a la vez, `la tabla
+del documento no está vacía` (0 tokens parseados) y `todo token del CSS está
+documentado`, esta vez con los 19 nombres del CSS completos —sin nada contra
+qué compararlos, cualquier token del CSS cuenta como "no documentado". Es el
+modo de falla que importa: un parser que no encuentra filas no puede devolver
+un Map vacío y darse por satisfecho. Revertido con `git checkout
+docs/sistema-de-diseno.md`.
+
+**El contraste.** `scripts/contraste.mts` calcula los diez ratios WCAG de la
+tabla de arriba desde los tokens reales de `app/globals.css` —oklch → sRGB
+lineal → luminancia → ratio—, no los transcribe a mano; se corre suelto con
+`npm run contraste`. `test/contraste.test.ts` compara esa salida contra la
+tabla del documento y forma parte de `npm test`. La review de la Task 5, que
+escribió este mecanismo, ya verificó que atrapa los tres modos de falla que
+importan: una tabla desactualizada (los cuatro ratios que se corrigieron al
+escribir este script no correspondían a los tokens que estaban en el CSS),
+un token que empeora un par por debajo de su mínimo, y una excepción de
+`EXCEPCIONES` que ya no corresponde porque el par en cuestión pasa su umbral.
+No se re-corrió acá — la evidencia de esos tres casos vive en esa review, no
+en este documento.
+
+**Verificación visual — pendiente.** El Step 3 de esta task pide mirar el
+login de un tenant real y juzgar a ojo si el botón **Entrar** es azul-violeta
+y no negro, si el anillo de foco es del mismo azul-violeta y no gris, y si el
+texto secundario bajo el título del local se lee cómodo sobre la card. Ningún
+test automatizado puede responder eso. Lo que sí se comprobó mecánicamente:
+con el stack de dev levantado (`docker compose -f docker/compose.dev.yml up -d
+--wait`) y sirviendo en `http://100.64.81.63:3000`, el bundle de CSS que
+manda al navegador (`/_next/static/chunks/app_globals_*.css`) lleva el token
+nuevo — transformado por el build (Lightning CSS/Tailwind v4 baja `oklch(0.37
+0.10 287)` a `#3d3571` como fallback y a `lab(25.5499% 16.7471 -34.1581)`
+dentro de `@supports (color: lab(0% 0 0))`), pero el mismo color en los tres
+lugares donde `--primary` y `--ring` aparecen, coincidente con el hex que ya
+documenta la sección *Dónde entra el arándano*. Queda pendiente que una
+persona abra `http://100.64.81.63:3000` (sólo por Tailscale) con el login de
+un tenant y confirme las tres cosas a ojo.
+
+**2026-08-11.**
