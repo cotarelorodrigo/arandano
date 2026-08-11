@@ -70,5 +70,22 @@ export function traducirErrorDeBase(e: unknown): unknown {
         'stock resultante',
     )
   }
+  // P2007 ("Data validation error") y P2023 ("Inconsistent column data") son
+  // las dos formas en que Postgres rechaza un `articuloId` que no tiene forma
+  // de uuid antes de que la fila se busque: `findUnique` lo tira directo, y
+  // `updateMany` (editarArticulo, desactivarArticulo, reactivarArticulo) lo
+  // tira con el otro código para el mismo motivo. Se traducen a
+  // ARTICULO_INEXISTENTE y no a un código nuevo, a propósito: un id que no es
+  // uuid no puede nombrar ninguna fila, así que "no existe" es la respuesta
+  // honesta, y es la MISMA que recibe un id bien formado de otro tenant. El
+  // llamador no puede actuar distinto ante "escribiste cualquier cosa" que
+  // ante "ese artículo no es tuyo" — inventar una distinción filtraría qué ids
+  // tienen forma válida, información que no le sirve a nadie del otro lado.
+  if (
+    e instanceof Prisma.PrismaClientKnownRequestError &&
+    (e.code === 'P2007' || e.code === 'P2023')
+  ) {
+    return new ErrorDeInventario('ARTICULO_INEXISTENTE', 'el artículo no existe en este tenant')
+  }
   return e
 }

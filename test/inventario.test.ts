@@ -238,6 +238,19 @@ describe('ingresarStock', () => {
     await expect(promesa).rejects.toMatchObject({ codigo: 'FUERA_DE_RANGO' })
     await expect(promesa).rejects.toBeInstanceOf(ErrorDeInventario)
   })
+
+  // Un id que no es uuid no puede nombrar ninguna fila, así que la respuesta
+  // honesta es la misma que para uno de otro tenant. Sin esta traducción,
+  // Prisma tira P2007 crudo y la pantalla que filtra por ErrorDeInventario lo
+  // relanza como 500 — desde algo que alguien escribió a mano. Pasa por acá y
+  // no antes: con `usuarioId` válido, `exigirUsuario` no ataja el camino, así
+  // que lo que se ejercita es exactamente el `findUnique` de
+  // `exigirArticuloConStock`.
+  it('un id malformado sale como artículo inexistente, no como error crudo', async () => {
+    await expect(
+      ingresarStock({ tenantId, articuloId: 'no-es-uuid', cantidad: d('1'), usuarioId }),
+    ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
+  })
 })
 
 describe('corregirStock', () => {
@@ -540,6 +553,20 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
         articuloId: '00000000-0000-7000-8000-000000000000',
         nombre: 'X', sku: 'X-1', precio: d('1'),
       }),
+    ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
+  })
+
+  // Mismo caso que en `ingresarStock`, pero por el otro camino: acá la
+  // consulta es `updateMany`, no `findUnique`, y Postgres la rechaza con el
+  // mismo P2007 antes de que el `count === 0` de más arriba tenga chance de
+  // correr. `desactivarArticulo` y `reactivarArticulo` comparten el mismo
+  // `marcarBaja`, así que un solo caso alcanza para las tres funciones.
+  it('un id malformado sale como artículo inexistente en editarArticulo y en desactivarArticulo', async () => {
+    await expect(
+      editarArticulo({ tenantId, articuloId: 'no-es-uuid', nombre: 'X', sku: 'X-1', precio: d('1') }),
+    ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
+    await expect(
+      desactivarArticulo({ tenantId, articuloId: 'no-es-uuid' }),
     ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
   })
 })

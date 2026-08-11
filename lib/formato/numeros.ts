@@ -28,6 +28,14 @@ const MILES_Y_DECIMALES = /^\d{1,3}(?:\.\d{3})+,\d+$/
 // `UN_SEPARADOR` más abajo.
 const SOLO_MILES = /^\d{1,3}(?:\.\d{3}){2,}$/
 const UN_SEPARADOR = /^(\d+)[.,](\d+)$/
+// Un separador seguido de tres dígitos sólo es ambiguo si lo que está a la
+// izquierda puede ser un grupo de miles: uno a tres dígitos que no arranquen en
+// cero. `850.000` lo es y se rechaza; `0,125` —125 gramos— no lo es, porque
+// nadie escribe `0.125` queriendo decir 125, y `1234,567` tampoco, porque un
+// grupo de miles no tiene cuatro dígitos. Sin este recorte, una cantidad con
+// tres decimales era INENTRABLE, y tres decimales es exactamente lo que
+// `Decimal(12,3)` existe para guardar.
+const PUEDE_SER_MILES = /^[1-9]\d{0,2}$/
 
 /**
  * El texto de un campo, convertido a `Decimal`.
@@ -63,7 +71,7 @@ export function aDecimal(texto: string, campo: string): Prisma.Decimal {
   const partido = UN_SEPARADOR.exec(limpio)
   if (partido) {
     const [, entera, decimales] = partido
-    if (decimales.length === 3) {
+    if (decimales.length === 3 && PUEDE_SER_MILES.test(entera)) {
       throw new ErrorDeFormato(
         'NUMERO_AMBIGUO',
         `no se entiende cuánto es "${texto}" en ${campo}: escribilo como ` +

@@ -10,6 +10,12 @@ export const dynamic = 'force-dynamic'
 
 const MOVIMIENTOS_VISIBLES = 50
 
+// `notFound()` y no un 500: `/inventario/foo` es algo que alguien escribe en la
+// barra de direcciones, y la respuesta correcta es la misma que para un id de
+// otro tenant — no existe. Sin esto, Prisma rechaza el valor con P2007 y la
+// pantalla se cae. Es el mismo criterio que el clamp de `?p` en el listado.
+const ES_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 const NOMBRE_DE_MOTIVO: Record<string, string> = {
   VENTA: 'Venta',
   ANULACION_VENTA: 'Anulación de venta',
@@ -20,6 +26,7 @@ const NOMBRE_DE_MOTIVO: Record<string, string> = {
 export default async function DetalleDeArticulo({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion()
   const { id } = await params
+  if (!ES_UUID.test(id)) notFound()
 
   const prisma = prismaParaTenant(sesion.tenant.id)
   const articulo = await prisma.articulo.findUnique({ where: { id } })
@@ -56,7 +63,8 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
       {articulo.desactivadoEn && (
         <Alert className="mb-6 max-w-md">
           <AlertDescription>
-            Este artículo está desactivado: no aparece en el listado ni se puede vender.
+            Este artículo está desactivado: no aparece en el listado ni se ofrece para
+            operaciones nuevas.
           </AlertDescription>
         </Alert>
       )}

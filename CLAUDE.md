@@ -204,8 +204,9 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 ## Decisiones abiertas del modelo de datos
 
 Las levantó el review final del motor de stock y ventas (2026-08-09). Ninguna es
-un defecto de lo construido: son decisiones que hoy están tomadas **por omisión**,
-y las tres se vuelven más caras con cada mes que pasa.
+un defecto de lo construido: son decisiones que hoy están tomadas **por omisión**.
+Dos ya se cerraron (el costo del movimiento y los huecos de SKU); las dos que
+quedan abiertas se siguen encareciendo con cada mes que pasa.
 
 - ~~**El costo del movimiento no se puede backfillear.**~~ **Cerrada**
   (2026-08-11, ciclo de inventario). `MovimientoStock.costoUnitario

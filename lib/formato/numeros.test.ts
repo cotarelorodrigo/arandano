@@ -79,6 +79,22 @@ describe('aDecimal', () => {
       expect.objectContaining({ codigo: 'NUMERO_INVALIDO' }),
     )
   })
+
+  // Tres decimales tiene que poder escribirse: `Decimal(12,3)` existe porque
+  // medio kilo de harina no es un entero. Sólo es ambiguo si la parte entera
+  // puede ser un grupo de miles.
+  it('acepta tres decimales cuando la parte entera no puede ser miles', () => {
+    expect(aDecimal('0,125', 'la cantidad').toString()).toBe('0.125')
+    expect(aDecimal('1234,567', 'la cantidad').toString()).toBe('1234.567')
+  })
+
+  it('y los sigue rechazando cuando sí puede serlo', () => {
+    for (const ambiguo of ['850.000', '850,000', '1.500', '12,345']) {
+      expect(() => aDecimal(ambiguo, 'el precio'), `aceptó "${ambiguo}"`).toThrowError(
+        expect.objectContaining({ codigo: 'NUMERO_AMBIGUO' }),
+      )
+    }
+  })
 })
 
 describe('aDecimalOpcional', () => {

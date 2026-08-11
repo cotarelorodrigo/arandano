@@ -302,18 +302,27 @@ export async function editarArticulo(entrada: {
 }
 
 async function marcarBaja(tenantId: string, articuloId: string, valor: Date | null): Promise<void> {
-  await enTransaccionDeTenant(tenantId, async (tx) => {
-    const { count } = await tx.articulo.updateMany({
-      where: { id: articuloId },
-      data: { desactivadoEn: valor },
+  try {
+    await enTransaccionDeTenant(tenantId, async (tx) => {
+      const { count } = await tx.articulo.updateMany({
+        where: { id: articuloId },
+        data: { desactivadoEn: valor },
+      })
+      if (count === 0) {
+        throw new ErrorDeInventario(
+          'ARTICULO_INEXISTENTE',
+          `el artículo ${articuloId} no existe en este tenant`,
+        )
+      }
     })
-    if (count === 0) {
-      throw new ErrorDeInventario(
-        'ARTICULO_INEXISTENTE',
-        `el artículo ${articuloId} no existe en este tenant`,
-      )
-    }
-  })
+  } catch (e) {
+    // Sin este catch, un articuloId sin forma de uuid (bajaArticulo y
+    // reactivarArticuloAccion lo leen crudo del FormData) tira P2007 crudo:
+    // el `updateMany` de arriba nunca llega a devolver `count`, así que el
+    // ARTICULO_INEXISTENTE de este mismo bloque no lo atrapa. Mismo caso que
+    // editarArticulo, un poco más abajo.
+    throw traducirErrorDeBase(e)
+  }
 }
 
 /** El artículo deja de ofrecerse. Su historial y sus ventas quedan intactos:
