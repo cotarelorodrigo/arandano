@@ -6,9 +6,10 @@
 # otro stack. Nunca contra producción con datos de clientes: acá se escribe.
 #
 # Un caso por función, y la lista abajo. Sumar un caso es agregar una función y
-# un renglón — eso importa porque hoy sólo existen /api/health y /, y la lista
-# de verdad (login, venta, factura, orden de trabajo, catálogo) llega cuando
-# exista ese código.
+# un renglón. Hoy cubre /api/health, las pantallas sin credenciales, un login
+# real contra /api/auth/sign-in/email y —con esa sesión— cada pantalla de
+# app/(app)/**/page.tsx más /. Lo que falta (venta, factura, orden de trabajo,
+# catálogo público) entra cuando exista ese código.
 #
 # ok/bad/PASS/FAIL van inline y NO se sourcean desde scripts/tests/lib-asserts.sh,
 # a propósito: ese archivo se declara a sí mismo compartido entre los
@@ -33,8 +34,13 @@ SUBDOMINIO_CANARIO="${4:-}"
 # verificar que ALGÚN tenant salió en el cuerpo, no que fue el canario. Un
 # nombre hardcodeado o el de otro tenant hubiera pasado igual.
 NOMBRE_CANARIO="${5:-}"
-if [[ -z "$URL_BASE" || -z "$SHA_ESPERADO" || -z "$DOMINIO_BASE" || -z "$SUBDOMINIO_CANARIO" || -z "$NOMBRE_CANARIO" ]]; then
-  echo "uso: smoke.sh <url_base> <sha_esperado> <dominio_base> <subdominio_canario> <nombre_canario>" >&2
+# El mail, por argumento y no como literal acá: deploy.sh lo tiene en
+# MAIL_CANARIO y es el MISMO con el que le define la clave al canario de stage
+# en el paso 8. Repetirlo acá sería mantener dos copias que fallan cerrado pero
+# con un mensaje que habla de otra cosa ("el login se rompió").
+MAIL_CANARIO="${6:-}"
+if [[ -z "$URL_BASE" || -z "$SHA_ESPERADO" || -z "$DOMINIO_BASE" || -z "$SUBDOMINIO_CANARIO" || -z "$NOMBRE_CANARIO" || -z "$MAIL_CANARIO" ]]; then
+  echo "uso: smoke.sh <url_base> <sha_esperado> <dominio_base> <subdominio_canario> <nombre_canario> <mail_canario>" >&2
   exit 2
 fi
 
@@ -123,9 +129,20 @@ caso_home_responde() {
 # presente. El nombre viene por argumento (Task 7, hallazgo de review) y no
 # hardcodeado acá, para no mantener dos copias del mismo literal que
 # `deploy.sh` ya usa al dar de alta el canario de stage.
+#
+# El cuerpo se captura ANTES de greppearlo, y no `curl | grep -qF`: `grep -q`
+# sale apenas encuentra el match, le manda SIGPIPE al curl que todavía está
+# escribiendo, y bajo `set -o pipefail` la función devuelve 141 CON el marcador
+# presente en el cuerpo. Es la misma carrera que documenta
+# scripts/lib/cookie-sesion.sh, y acá el retorno de la pipeline ES el retorno de
+# la función, así que no hay nada que la absorba. Hoy no muerde porque /login es
+# chica, pero eso crece con cada componente que se le sume — o sea que el gate
+# se volvería intermitente sin que nadie tocara esta línea.
 caso_tenant_resuelve() {
-  curl -fsS --max-time 10 -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/login" \
-    | grep -qF "data-testid=\"tenant-nombre\">${NOMBRE_CANARIO}"
+  local cuerpo
+  cuerpo=$(curl -fsS --max-time 10 \
+    -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/login") || return 1
+  grep -qF "data-testid=\"tenant-nombre\">${NOMBRE_CANARIO}" <<<"$cuerpo"
 }
 
 # Sin sesión, la home de un tenant no puede servir la aplicación: tiene que
@@ -176,6 +193,12 @@ caso_host_ajeno_404() {
 # contra el Cache-Control que emite Next hoy: lo que importa es la propiedad, y
 # atarse al texto exacto convierte un cambio de wording de Next en un deploy
 # rollbackeado sin ninguna regresión real.
+#
+# El `head -1` de acá abajo sí es seguro, a diferencia del de la extracción de la
+# cookie: el código de salida de la pipeline se descarta —la decisión se toma
+# después, mirando `$cc`— así que un 141 por SIGPIPE no puede volver rojo un caso
+# sano. Queda anotado para que nadie lo "arregle" ni copie el patrón a un lugar
+# donde el retorno de la pipeline sí sea el del caso.
 caso_tenant_no_cacheable() {
   local cc
   cc=$(curl -sI --max-time 10 -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/login" \
@@ -199,7 +222,6 @@ caso_tenant_no_cacheable() {
 # de Tailscale. Si alguna de esas dos condiciones deja de valer, esto deja de
 # ser aceptable.
 CLAVE_CANARIO=efimero-clave-canario
-MAIL_CANARIO=canario@arandano.app
 HOST_CANARIO="${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}"
 
 # Sin header Origin y sin Cookie, a propósito: el chequeo de origen de Better

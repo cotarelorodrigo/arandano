@@ -139,6 +139,15 @@ DEV_FRENADA=false
 SOMBRA=arandano-deploy-sombra
 SOMBRA_ACTIVA=false
 
+# El mail del dueño del canario, en una variable por el mismo motivo que
+# NOMBRE_CANARIO_STAGE (paso 8): estaba repetido como literal en cuatro lugares
+# —el alta de stage, la definición de su clave, el alta contra el objetivo real
+# y el login del paso 9, este último en OTRO archivo—, y cuatro literales
+# idénticos son cuatro literales que un día se editan tres. Falla cerrado si se
+# desincronizan (el login daría rojo), pero el rojo diría "el login se rompió" y
+# no "cambiaste el mail en un lado solo", que es media noche de diferencia.
+MAIL_CANARIO=canario@arandano.app
+
 # Corre pase lo que pase, y preserva el código de salida original: si lo
 # pisáramos con el del último comando de limpieza, un deploy fallido podría
 # reportar éxito.
@@ -658,7 +667,7 @@ docker run --rm --network arandano-stage_default \
   --subdominio=canario \
   --nombre="$NOMBRE_CANARIO_STAGE" \
   --modulos=ORDENES_DE_TRABAJO \
-  --duenio=canario@arandano.app \
+  --duenio="$MAIL_CANARIO" \
   --duenio-nombre="Canario"
 
 # La contraseña del canario de stage. Sin esto, el smoke autenticado del paso 9
@@ -696,7 +705,7 @@ docker run --rm --network arandano-stage_default \
   --entrypoint npx "arandano-migrate:$SHA" \
   tsx scripts/definir-clave.mts \
   --subdominio=canario \
-  --email=canario@arandano.app \
+  --email="$MAIL_CANARIO" \
   --clave=efimero-clave-canario
 
 # --wait espera al healthcheck del compose, no a que el contenedor arranque:
@@ -721,7 +730,8 @@ log "paso 9/18: smoke tests contra stage"
 # docker/compose.stage.yml, igual que efimero-app y efimero-owner — es un
 # stack efímero que nunca ve datos de clientes.
 ARANDANO_SALUD_TOKEN=efimero-salud \
-  scripts/smoke.sh "http://${url_stage}" "$SHA" "stage.arandano.app" "canario" "$NOMBRE_CANARIO_STAGE"
+  scripts/smoke.sh "http://${url_stage}" "$SHA" "stage.arandano.app" "canario" \
+    "$NOMBRE_CANARIO_STAGE" "$MAIL_CANARIO"
 
 IMAGE_TAG="$SHA" docker compose -f docker/compose.stage.yml down -v
 log "ensayo en stage ok"
@@ -1039,7 +1049,7 @@ salida_canario=$(docker run --rm --network "$RED_OBJETIVO" \
     --subdominio=canario \
     --nombre="$NOMBRE_CANARIO" \
     --modulos=ORDENES_DE_TRABAJO \
-    --duenio=canario@arandano.app \
+    --duenio="$MAIL_CANARIO" \
     --duenio-nombre="Canario" 2>&1) || rc_canario=$?
 printf '%s\n' "$salida_canario"
 if [[ "$rc_canario" -ne 0 ]]; then

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readdirSync, statSync } from 'node:fs'
+import { readdirSync, statSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 /**
@@ -13,19 +13,38 @@ import path from 'node:path'
  * suben hasta el boundary de la RAÍZ, que no renderiza el layout de (app), así
  * que el marcador NO sale y el caso da rojo — que es lo que queremos.
  *
- * Un `error.tsx` o un `not-found.tsx` DENTRO de (app) rompe eso: un boundary de
- * segmento se monta ADENTRO del layout de su segmento, así que el layout —y el
- * marcador con él— se renderizarían igual, con 200. El barrido pasaría en verde
- * sobre una pantalla rota, que es exactamente el modo de falla que este ciclo
- * existe para cerrar (el 2026-08-10 se promovió /usuarios roto con los cuatro
- * chequeos del gate en verde).
+ * Lo que rompe eso NO es "boundaries de error": es CUALQUIER COSA QUE PONGA UN
+ * LÍMITE POR ENCIMA DE LA PÁGINA, porque entonces el layout se renderiza aunque
+ * la página falle. Hay dos formas de conseguirlo y las dos importan:
+ *
+ * - `error.tsx` / `not-found.tsx` dentro de (app): un boundary de segmento se
+ *   monta ADENTRO del layout de su segmento, así que el layout —y el marcador—
+ *   salen igual, con 200.
+ * - **`loading.tsx` dentro de (app)**, que es el más probable de todos: envuelve
+ *   `{children}` en un `<Suspense>`, y con streaming Next flushea el shell
+ *   —layout y marcador incluidos— con **200** apenas resuelve el layout. Si la
+ *   página tira DESPUÉS, el status ya salió. Es el caso peor: se agrega por UX,
+ *   sin ninguna relación mental con el gate.
+ *
+ * El barrido pasaría en verde sobre una pantalla rota, que es exactamente el
+ * modo de falla que este ciclo existe para cerrar (el 2026-08-10 se promovió
+ * /usuarios roto con los cuatro chequeos del gate en verde).
  *
  * Este test NO dice "no agregues boundaries". Dice: si agregás uno, el marcador
  * tiene que dejar de vivir en el layout y pasar a cada página, y hay que
  * actualizar el comentario de caso_pantalla en scripts/smoke.sh. Falla para
  * forzar esa decisión en vez de dejar que el gate se apague en silencio.
+ *
+ * `not-found.tsx` queda en la lista aunque hoy sea redundante —`notFound()`
+ * responde 404 y el `[[ "$codigo" == "200" ]]` de caso_pantalla ya lo corta—
+ * porque cuesta un string y no depende de que ese chequeo siga ahí.
  */
-const BOUNDARIES_QUE_TAPAN_EL_MARCADOR = ['error.tsx', 'not-found.tsx', 'global-error.tsx']
+const BOUNDARIES_QUE_TAPAN_EL_MARCADOR = [
+  'error.tsx',
+  'not-found.tsx',
+  'global-error.tsx',
+  'loading.tsx',
+]
 
 const GRUPO = path.join('app', '(app)')
 
@@ -63,5 +82,20 @@ describe('boundaries dentro de app/(app)', () => {
     // Sin esto, borrar app/(app)/layout.tsx dejaría el test de arriba en verde
     // (cero boundaries) mientras el barrido entero se queda sin marcador.
     expect(encontrados).toContain(path.join(GRUPO, 'layout.tsx'))
+  })
+
+  it('el layout no envuelve a la página en un límite de Suspense', () => {
+    // La otra mitad del mismo agujero, y la que un chequeo por NOMBRE DE
+    // ARCHIVO no puede ver: un <Suspense> escrito a mano alrededor de
+    // {children} hace exactamente lo mismo que loading.tsx — el shell con el
+    // marcador se flushea con 200 antes de que la página resuelva.
+    const layout = readFileSync(path.join(GRUPO, 'layout.tsx'), 'utf8')
+    expect(
+      layout,
+      'app/(app)/layout.tsx envuelve a la página en un límite de Suspense, así que ' +
+        'el marcador data-testid="tenant-nombre" se flushea con 200 aunque la página ' +
+        'falle, y el barrido de scripts/smoke.sh se vuelve verde sobre una pantalla ' +
+        'rota. Mudá el marcador del layout a cada page.tsx antes de hacer esto.',
+    ).not.toMatch(/<Suspense[\s>]/)
   })
 })

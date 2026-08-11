@@ -63,5 +63,22 @@ salida_c=$(LC_ALL=C rutas_autenticadas "$RAIZ/(app)")
 check_eq "el ordenamiento es invariante al locale LC_ALL=C" \
   $'/caja\n/margen\n/usuarios' "$salida_c"
 
+# Una exención sin razón escrita no es una exención revisable: tiene que fallar
+# igual que una ruta con parámetro sin declarar.
+mkdir -p "$RAIZ/(app)/ventas/[id]"
+: > "$RAIZ/(app)/ventas/[id]/page.tsx"
+RUTAS_SIN_SMOKE['/ventas/[id]']=''
+check_false "una ruta declarada con razón vacía falla" \
+  rutas_autenticadas "$RAIZ/(app)"
+RUTAS_SIN_SMOKE['/ventas/[id]']='no hay id válido sin sembrar datos'
+# Envuelta para que la lista de rutas no se mezcle con los ✓ del reporte: acá
+# sólo importa el código de salida, y la salida en sí ya la cubren los casos de
+# arriba con check_eq.
+rutas_sin_imprimir() { rutas_autenticadas "$1" >/dev/null; }
+check_true "la misma ruta, con razón escrita, pasa" \
+  rutas_sin_imprimir "$RAIZ/(app)"
+rm -rf "$RAIZ/(app)/ventas"
+unset 'RUTAS_SIN_SMOKE[/ventas/[id]]'
+
 printf '\n%d ok, %d fallan\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]

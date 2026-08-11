@@ -49,6 +49,12 @@
 # hubo cookie. scripts/tests/test-cookie-sesion.sh cubre el caso del cuerpo
 # grande, que es el único que reproduce la carrera.
 #
+# El `sed` borra `^[^:]*: *` y no `^[Ss]et-[Cc]ookie: *`: el `grep -i` de arriba
+# acepta CUALQUIER capitalización, así que un `SET-COOKIE:` de un proxy futuro
+# pasaría el grep y después el sed no imprimiría nada. Falla cerrado (login en
+# rojo con el login sano), pero cerrarlo es gratis y la línea ya viene filtrada
+# por el grep, así que `[^:]*` no puede agarrar otro header.
+#
 # El "no hubo cookie" se decide mirando el CONTENIDO y no el código de salida de
 # la pipeline, a propósito: delegarlo en el `pipefail` de quien llama haría que
 # la función fallara o no según las opciones de shell del caller — sourceada
@@ -59,7 +65,7 @@ cookie_de_sesion() {
   local cookie
   cookie=$(tr -d '\r' \
     | grep -i '^set-cookie: *[^;]*session_token=' \
-    | sed -n '1s/^[Ss]et-[Cc]ookie: *//p' \
+    | sed -n '1s/^[^:]*: *//p' \
     | cut -d';' -f1) || true
   [[ -n "$cookie" ]] || return 1
   printf '%s\n' "$cookie"

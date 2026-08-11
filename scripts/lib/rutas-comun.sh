@@ -58,8 +58,12 @@ rutas_autenticadas() {
     fi
 
     if [[ "$ruta" == *'['* ]]; then
-      if [[ -z "${RUTAS_SIN_SMOKE[$ruta]+declarada}" ]]; then
-        printf 'ruta con parámetro sin declarar: %s\n' "$ruta" >&2
+      # `:-` y no `+declarada`: la segunda forma sólo mira que la CLAVE exista,
+      # así que `RUTAS_SIN_SMOKE['/ventas/[id]']=''` pasaba igual y el comentario
+      # de la lista prometía "con su razón escrita". Una exención sin razón es
+      # justo la que nadie puede revisar después.
+      if [[ -z "${RUTAS_SIN_SMOKE[$ruta]:-}" ]]; then
+        printf 'ruta con parámetro sin declarar (o declarada sin razón): %s\n' "$ruta" >&2
         printf '  No se puede pedir a ciegas. Si es correcto no cubrirla, declarala en\n' >&2
         printf '  RUTAS_SIN_SMOKE (scripts/lib/rutas-comun.sh) con su razón escrita.\n' >&2
         return 1
