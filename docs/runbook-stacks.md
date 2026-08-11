@@ -329,26 +329,38 @@ backup o la promoción, con el renglón `✗ pantalla /usuarios` en rojo —
 confirmado con `caso_login_devuelve_sesion` y `pantalla /` en verde en una
 corrida limpia.
 
-Un hallazgo lateral, no del propio defecto: en la mayoría de las corridas de
-este ensayo, el paso 9 salió con TRES rojos en vez de uno —
-`caso_login_devuelve_sesion`, `pantalla /` y `pantalla /usuarios` juntos— y a
-primera vista parecía que el login se había roto. No era eso: capturando la
-respuesta cruda del `curl` a `/api/auth/sign-in/email` se vio que el login
-contestaba 200 con un `Set-Cookie` válido en TODAS las corridas, incluidas las
-que reportaban el caso rojo. La causa es un `SIGPIPE` en la cadena `curl | tr
--d '\r' | grep -i -m1 '...' | sed ... | cut ...` de `scripts/smoke.sh`: bajo
-`set -o pipefail`, si `grep -m1` encuentra su match y cierra la lectura antes
-de que `tr` (y por lo tanto `curl`) terminen de escribir, el escritor recibe
-`SIGPIPE` y el pipeline reporta un exit code no-cero aunque `cut` ya haya
-producido la cookie correcta — el `|| COOKIE_SESION=""` de esa línea pisa
-entonces un valor válido con uno vacío. Es la misma familia de bug que el
-comentario de esa línea ya documentaba para `head` (por eso se eligió
-`grep -m1` en vez de `head -1`), pero la protección no alcanza a `tr`, que
-sigue expuesto exactamente al mismo mecanismo. No se tocó el script para
-corregirlo — esta task es evidencia, no código — pero queda anotado acá
-porque el síntoma (login "roto" en el paso 9) es indistinguible a simple
-vista de un login roto de verdad, y sin esta nota el próximo que lo vea va a
-perder el mismo rato re-diagnosticándolo.
+**Y de paso apareció un gate intermitente, que era peor que el defecto que
+buscábamos.** En la mayoría de las corridas de este ensayo el paso 9 salió con
+TRES rojos en vez de uno —`caso_login_devuelve_sesion`, `pantalla /` y
+`pantalla /usuarios` juntos— y a primera vista parecía que el login se había
+roto. No era eso: capturando la respuesta cruda del `curl` a
+`/api/auth/sign-in/email` se vio que el login contestaba 200 con un
+`Set-Cookie` válido en TODAS las corridas, incluidas las que reportaban el caso
+rojo.
+
+La causa era un `SIGPIPE` en la cadena que extraía la cookie. Bajo
+`set -o pipefail`, cualquier etapa que corte la lectura antes de tiempo le manda
+`SIGPIPE` al escritor de arriba, y la pipeline entera reporta 141 aunque la
+última etapa ya haya impreso la cookie correcta — con lo cual el
+`|| COOKIE_SESION=""` pisaba un valor bueno con uno vacío. Mordió **dos veces**,
+con las dos formas que uno escribiría sin pensar: primero `… | grep | head -1`
+(head corta a grep), y después `… | grep -m1 | sed` (grep -m1 corta a `tr`, y a
+`curl` detrás). La segunda entró justamente como arreglo de la primera. Medido:
+`yes x | tr x y | grep -m1 y` deja `PIPESTATUS` en `141 141 0`.
+
+Lo que lo hacía peligroso no era romper, sino **romper a veces**: es una carrera
+contra el tamaño del cuerpo de la respuesta, así que la misma imagen daba verde
+en una corrida y rojo en la siguiente. Un gate intermitente da rojo sobre código
+sano, y la reacción natural —volver a correrlo hasta que pase— es exactamente
+cómo un gate deja de ser un gate.
+
+La extracción vive ahora en `scripts/lib/cookie-sesion.sh`, donde ninguna etapa
+corta temprano (nada de `-m1`, `head`, `q` de sed ni `exit` de awk) y el "no
+hubo cookie" se decide mirando el contenido y no el código de salida de la
+pipeline, que dependía de las opciones de shell de quien llamara.
+`scripts/tests/test-cookie-sesion.sh` lo cubre, y el caso que importa es el del
+cuerpo de 400 KB: es el único que reproduce la carrera, y con la forma vieja
+falla con `esperado: 0, obtenido: 141`.
 
 **Tres zonas de fallo.** Hasta `migrate deploy` inclusive, una falla aborta y no
 hay nada que revertir: producción sigue con su imagen anterior, y si la

@@ -23,6 +23,7 @@ set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source scripts/lib/deploy-comun.sh
 source scripts/lib/rutas-comun.sh
+source scripts/lib/cookie-sesion.sh
 
 URL_BASE="${1:-}"
 SHA_ESPERADO="${2:-}"
@@ -213,28 +214,18 @@ HOST_CANARIO="${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}"
 # empezaría a dar 429 en cuanto haya seis pantallas — y esa falla se leería como
 # una regresión de la aplicación.
 #
-# Se busca la cookie POR NOMBRE (`session_token=`) y no "la primera
-# Set-Cookie". Hoy sale una sola —`session.cookieCache` no está configurado y
-# `crossSubDomainCookies` está apagado (opciones.ts)—, pero nada de eso está
-# pinneado: el día que se prenda el cookie cache, un `head -1` se quedaría con
-# `session_data` y TODAS las pantallas se pondrían rojas con un mensaje que
-# habla de la aplicación. Y al revés: sin filtrar por nombre, un login FALLIDO
-# que devuelva cualquier Set-Cookie dejaría verde a caso_login_devuelve_sesion
-# y mandaría el rojo a las N pantallas, que es justo lo contrario de lo que ese
-# caso promete. El `[^;]*` acota la búsqueda al par nombre=valor, para que un
-# atributo posterior no cuente; `session_token` y no el nombre completo, para
-# no atarse al prefijo `better-auth.` que la librería puede renombrar.
-#
-# `grep -m1` y no `| head -1`: bajo `set -o pipefail`, head cerrando el pipe
-# antes de que grep termine de escribir hace salir la pipeline en 141, y el
-# `|| COOKIE_SESION=""` pisaría una cookie válida.
-COOKIE_SESION=$(curl -s -i --max-time 15 \
+# La respuesta se captura APARTE de la extracción, y no en una sola pipeline con
+# el curl adentro: así el código de salida del curl se lee solo, sin mezclarse
+# con el de la extracción — que fue exactamente cómo un SIGPIPE río arriba
+# terminó borrando una cookie válida (ver scripts/lib/cookie-sesion.sh, que
+# lleva la historia completa y los tests que la cubren).
+RESPUESTA_LOGIN=$(curl -s -i --max-time 15 \
   -H "Host: ${HOST_CANARIO}" \
   -H 'Content-Type: application/json' \
   -d "{\"email\":\"${MAIL_CANARIO}\",\"password\":\"${CLAVE_CANARIO}\"}" \
-  "$URL_BASE/api/auth/sign-in/email" 2>/dev/null \
-  | tr -d '\r' | grep -i -m1 '^set-cookie: *[^;]*session_token=' \
-  | sed 's/^[Ss]et-[Cc]ookie: *//' | cut -d';' -f1) || COOKIE_SESION=""
+  "$URL_BASE/api/auth/sign-in/email" 2>/dev/null) || RESPUESTA_LOGIN=""
+
+COOKIE_SESION=$(printf '%s\n' "$RESPUESTA_LOGIN" | cookie_de_sesion) || COOKIE_SESION=""
 
 # Su propio caso, y no un chequeo silencioso adentro de los de abajo: si el
 # login se rompe, esto tiene que decir "el login se rompió" una vez, y no
