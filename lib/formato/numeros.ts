@@ -22,6 +22,11 @@ const SOLO_DIGITOS = /^\d+$/
 // El formato argentino completo: miles con punto y decimales con coma. No es
 // ambiguo porque las dos marcas están presentes y cada una dice qué es.
 const MILES_Y_DECIMALES = /^\d{1,3}(?:\.\d{3})+,\d+$/
+// Miles sin decimales: `1.500.000`. Dos o más separadores NO son ambiguos
+// —un decimal de verdad nunca lleva dos—, así que acá no hay nada que
+// adivinar. Un solo separador sí lo es, y ese caso lo sigue rechazando
+// `UN_SEPARADOR` más abajo.
+const SOLO_MILES = /^\d{1,3}(?:\.\d{3}){2,}$/
 const UN_SEPARADOR = /^(\d+)[.,](\d+)$/
 
 /**
@@ -50,6 +55,9 @@ export function aDecimal(texto: string, campo: string): Prisma.Decimal {
   }
   if (MILES_Y_DECIMALES.test(limpio)) {
     return new Prisma.Decimal(limpio.replaceAll('.', '').replace(',', '.'))
+  }
+  if (SOLO_MILES.test(limpio)) {
+    return new Prisma.Decimal(limpio.replaceAll('.', ''))
   }
 
   const partido = UN_SEPARADOR.exec(limpio)

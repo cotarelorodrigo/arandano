@@ -55,8 +55,29 @@ describe('aDecimal', () => {
     expect(() => aDecimal('abc', 'el precio')).toThrowError(/el precio/)
   })
 
-  it('es un ErrorDeFormato, para que el llamador lo distinga de un bug', () => {
+  it('es un ErrorDeFormato, para que el llamador lo distinja de un bug', () => {
     expect(() => aDecimal('abc', 'el precio')).toThrowError(ErrorDeFormato)
+  })
+
+  // Dos o más separadores no son ambiguos: un decimal de verdad nunca lleva
+  // dos. Y es el rango de precios de este vertical — un celular de un millón
+  // y medio se escribe así.
+  it('acepta los miles sin decimales', () => {
+    expect(aDecimal('1.500.000', 'el precio').toString()).toBe('1500000')
+    expect(aDecimal('12.345.678', 'el precio').toString()).toBe('12345678')
+  })
+
+  it('un solo separador sigue siendo ambiguo, que es el punto del módulo', () => {
+    expect(() => aDecimal('850.000', 'el precio')).toThrowError(
+      expect.objectContaining({ codigo: 'NUMERO_AMBIGUO' }),
+    )
+  })
+
+  // Mezclar convenciones es donde se hace daño: no se acepta.
+  it('rechaza los miles a la yanqui', () => {
+    expect(() => aDecimal('1,500,000', 'el precio')).toThrowError(
+      expect.objectContaining({ codigo: 'NUMERO_INVALIDO' }),
+    )
   })
 })
 
