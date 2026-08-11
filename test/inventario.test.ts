@@ -12,6 +12,10 @@ let enTransaccionDeTenant: typeof import('@/lib/tenant/transaccion').enTransacci
 let ajustarStock: typeof import('@/lib/inventario/stock').ajustarStock
 let ingresarStock: typeof import('@/lib/inventario/stock').ingresarStock
 let corregirStock: typeof import('@/lib/inventario/stock').corregirStock
+let crearArticulo: typeof import('@/lib/inventario/articulos').crearArticulo
+let editarArticulo: typeof import('@/lib/inventario/articulos').editarArticulo
+let desactivarArticulo: typeof import('@/lib/inventario/articulos').desactivarArticulo
+let reactivarArticulo: typeof import('@/lib/inventario/articulos').reactivarArticulo
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -32,6 +36,9 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
   ;({ ajustarStock, ingresarStock, corregirStock } = await import('@/lib/inventario/stock'))
+  ;({ crearArticulo, editarArticulo, desactivarArticulo, reactivarArticulo } = await import(
+    '@/lib/inventario/articulos'
+  ))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -310,5 +317,229 @@ describe('la invariante del stock', () => {
       [articuloId],
     )
     expect(await stockDe(articuloId)).toBe(new Prisma.Decimal(rows[0].suma).toString())
+  })
+})
+
+describe('crearArticulo', () => {
+  it('autogenera el SKU correlativo cuando no se escribe uno', async () => {
+    const uno = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Vidrio templado', tipo: 'PRODUCTO', precio: d('3500'),
+    })
+    const dos = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Funda silicona', tipo: 'PRODUCTO', precio: d('2800'),
+    })
+
+    expect(uno.sku).toMatch(/^A-\d{4}$/)
+    // Correlativo de verdad: el segundo es el siguiente, no otro al azar.
+    const n = (sku: string) => Number(sku.slice(2))
+    expect(n(dos.sku)).toBe(n(uno.sku) + 1)
+  })
+
+  it('respeta el SKU que se escribe a mano', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Cargador 20W', tipo: 'PRODUCTO', precio: d('9000'),
+      sku: '7798123456789',
+    })
+    expect(a.sku).toBe('7798123456789')
+  })
+
+  it('rechaza un SKU ya usado en vez de inventar otro', async () => {
+    await crearArticulo({
+      tenantId, usuarioId, nombre: 'Auricular', tipo: 'PRODUCTO', precio: d('12000'), sku: 'AUR-1',
+    })
+    await expect(
+      crearArticulo({
+        tenantId, usuarioId, nombre: 'Otro auricular', tipo: 'PRODUCTO', precio: d('13000'), sku: 'AUR-1',
+      }),
+    ).rejects.toMatchObject({ codigo: 'SKU_REPETIDO' })
+  })
+
+  // El borde real: alguien tipeó a mano un código con la forma del
+  // autogenerado. La unicidad de la base lo atrapa y el alta sigue de largo
+  // con el siguiente número, en vez de fallarle a quien no hizo nada malo.
+  it('salta el correlativo si alguien ya tipeó ese código a mano', async () => {
+    const proximo = await owner.query(
+      `SELECT proximo_sku_articulo AS n FROM tenants WHERE id = $1`, [tenantId],
+    )
+    const ocupado = `A-${String(proximo.rows[0].n).padStart(4, '0')}`
+    await crearArticulo({
+      tenantId, usuarioId, nombre: 'Ocupa el correlativo', tipo: 'PRODUCTO', precio: d('100'),
+      sku: ocupado,
+    })
+
+    const siguiente = await crearArticulo({
+      tenantId, usuarioId, nombre: 'El que sigue', tipo: 'PRODUCTO', precio: d('100'),
+    })
+    expect(siguiente.sku).not.toBe(ocupado)
+    expect(siguiente.sku).toMatch(/^A-\d{4}$/)
+  })
+
+  it('el stock inicial nace como movimiento, no como número suelto', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Pantalla A52', tipo: 'PRODUCTO', precio: d('85000'),
+      stockInicial: d('4'), costoUnitario: d('52000'),
+    })
+
+    expect(await stockDe(a.id)).toBe('4')
+
+    const movs = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.movimientoStock.findMany({ where: { articuloId: a.id } }),
+    )
+    expect(movs).toHaveLength(1)
+    expect(movs[0].motivo).toBe('INGRESO')
+    expect(movs[0].delta.toString()).toBe('4')
+    expect(movs[0].costoUnitario?.toString()).toBe('52000')
+  })
+
+  it('sin stock inicial no escribe ningún movimiento', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Sin stock todavía', tipo: 'PRODUCTO', precio: d('1000'),
+    })
+    const movs = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.movimientoStock.findMany({ where: { articuloId: a.id } }),
+    )
+    expect(movs).toHaveLength(0)
+    expect(await stockDe(a.id)).toBe('0')
+  })
+
+  it('rechaza stock inicial en un servicio', async () => {
+    await expect(
+      crearArticulo({
+        tenantId, usuarioId, nombre: 'Reparación', tipo: 'SERVICIO', precio: d('15000'),
+        stockInicial: d('3'),
+      }),
+    ).rejects.toMatchObject({ codigo: 'SERVICIO_SIN_STOCK' })
+  })
+
+  it('crea un servicio sin stock, que es lo normal', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Cambio de módulo', tipo: 'SERVICIO', precio: d('18000'),
+    })
+    expect(await stockDe(a.id)).toBe('0')
+  })
+
+  it('rechaza un nombre vacío y un precio inválido', async () => {
+    await expect(
+      crearArticulo({ tenantId, usuarioId, nombre: '   ', tipo: 'PRODUCTO', precio: d('100') }),
+    ).rejects.toMatchObject({ codigo: 'NOMBRE_VACIO' })
+    await expect(
+      crearArticulo({ tenantId, usuarioId, nombre: 'X', tipo: 'PRODUCTO', precio: d('-1') }),
+    ).rejects.toMatchObject({ codigo: 'PRECIO_INVALIDO' })
+    await expect(
+      crearArticulo({ tenantId, usuarioId, nombre: 'X', tipo: 'PRODUCTO', precio: d('1.005') }),
+    ).rejects.toMatchObject({ codigo: 'ESCALA_EXCEDIDA' })
+  })
+
+  it('no deja crear con el usuario de otro tenant', async () => {
+    await expect(
+      crearArticulo({
+        tenantId, usuarioId: usuarioAjeno, nombre: 'Ajeno', tipo: 'PRODUCTO', precio: d('100'),
+      }),
+    ).rejects.toMatchObject({ codigo: 'USUARIO_INEXISTENTE' })
+  })
+
+  it('el mismo SKU puede existir en dos negocios distintos', async () => {
+    await crearArticulo({
+      tenantId, usuarioId, nombre: 'Compartido', tipo: 'PRODUCTO', precio: d('100'), sku: 'DUP-1',
+    })
+    const ajeno = await owner.query(
+      `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Dueño otro', 'd@otro.test', 'DUENO', now(), now())
+       RETURNING id`,
+      [otroTenantId],
+    )
+    await expect(
+      crearArticulo({
+        tenantId: otroTenantId, usuarioId: ajeno.rows[0].id, nombre: 'Compartido',
+        tipo: 'PRODUCTO', precio: d('100'), sku: 'DUP-1',
+      }),
+    ).resolves.toMatchObject({ sku: 'DUP-1' })
+  })
+
+  // El mismo desborde que ya cubre `ingresarStock` en test/inventario.test.ts,
+  // pero disparado por el `increment` del stock inicial en el alta: el precio
+  // y el stock inicial validan escala pero no magnitud, así que un valor
+  // desmedido pasa la validación y sólo Postgres lo frena con P2020. Tiene que
+  // traducirse a `ErrorDeInventario`, no llegar como 500: la pantalla de
+  // inventario filtra por esa clase para decidir qué mostrar.
+  it('un desborde del stock inicial sale como error de inventario, no como 500', async () => {
+    const promesa = crearArticulo({
+      tenantId, usuarioId, nombre: 'Desborde', tipo: 'PRODUCTO', precio: d('100'),
+      stockInicial: d('999999999999'),
+    })
+    await expect(promesa).rejects.toMatchObject({ codigo: 'FUERA_DE_RANGO' })
+    await expect(promesa).rejects.toBeInstanceOf(ErrorDeInventario)
+  })
+})
+
+describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
+  it('cambia nombre, SKU y precio', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Nombre viejo', tipo: 'PRODUCTO', precio: d('100'),
+    })
+    await editarArticulo({
+      tenantId, articuloId: a.id, nombre: 'Nombre nuevo', sku: 'NUE-1', precio: d('250.75'),
+    })
+
+    const { rows } = await owner.query(
+      `SELECT nombre, sku, precio, tipo FROM articulos WHERE id = $1`, [a.id],
+    )
+    expect(rows[0].nombre).toBe('Nombre nuevo')
+    expect(rows[0].sku).toBe('NUE-1')
+    expect(new Prisma.Decimal(rows[0].precio).toString()).toBe('250.75')
+    // El tipo NO se edita: cambiarlo dejaría stock huérfano que el motor de
+    // ventas ya no descuenta ni explica. No hay parámetro para hacerlo.
+    expect(rows[0].tipo).toBe('PRODUCTO')
+  })
+
+  it('rechaza mover el SKU a uno ya usado', async () => {
+    await crearArticulo({
+      tenantId, usuarioId, nombre: 'Ocupa', tipo: 'PRODUCTO', precio: d('100'), sku: 'OCU-1',
+    })
+    const otro = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Quiere ocupar', tipo: 'PRODUCTO', precio: d('100'),
+    })
+    await expect(
+      editarArticulo({ tenantId, articuloId: otro.id, nombre: 'Quiere ocupar', sku: 'OCU-1', precio: d('100') }),
+    ).rejects.toMatchObject({ codigo: 'SKU_REPETIDO' })
+  })
+
+  it('rechaza un SKU vacío: la columna es obligatoria', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Con sku', tipo: 'PRODUCTO', precio: d('100'),
+    })
+    await expect(
+      editarArticulo({ tenantId, articuloId: a.id, nombre: 'Con sku', sku: '  ', precio: d('100') }),
+    ).rejects.toMatchObject({ codigo: 'SKU_VACIO' })
+  })
+
+  it('desactiva y reactiva sin tocar el historial', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Discontinuado', tipo: 'PRODUCTO', precio: d('100'),
+      stockInicial: d('2'),
+    })
+
+    await desactivarArticulo({ tenantId, articuloId: a.id })
+    const baja = await owner.query(`SELECT desactivado_en FROM articulos WHERE id = $1`, [a.id])
+    expect(baja.rows[0].desactivado_en).not.toBeNull()
+
+    const movs = await owner.query(
+      `SELECT count(*)::int AS n FROM movimientos_stock WHERE articulo_id = $1`, [a.id],
+    )
+    expect(movs.rows[0].n, 'la baja se llevó puesto el historial').toBe(1)
+
+    await reactivarArticulo({ tenantId, articuloId: a.id })
+    const alta = await owner.query(`SELECT desactivado_en FROM articulos WHERE id = $1`, [a.id])
+    expect(alta.rows[0].desactivado_en).toBeNull()
+  })
+
+  it('rechaza editar un artículo que no existe en este tenant', async () => {
+    await expect(
+      editarArticulo({
+        tenantId,
+        articuloId: '00000000-0000-7000-8000-000000000000',
+        nombre: 'X', sku: 'X-1', precio: d('1'),
+      }),
+    ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
   })
 })
