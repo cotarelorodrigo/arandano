@@ -1651,6 +1651,50 @@ git add lib/inventario/articulos.ts test/inventario.test.ts
 git commit -m "feat(inventario): alta, edición y baja de artículos con SKU autogenerado"
 ```
 
+#### Ajustes hechos durante la ejecución (2026-08-11)
+
+El código de arriba es el del plan original. La ejecución encontró **un bug real
+del plan** y dos cosas más; la fuente de verdad es el código commiteado:
+
+1. **El bucle de reintento del SKU, tal como el plan lo escribió, nunca
+   converge.** El `UPDATE` del contador corre adentro de la misma transacción
+   que después falla por unicidad, y Postgres rollbackea la transacción
+   **entera** — incluido ese `UPDATE`. O sea que cada reintento volvía a pedir
+   el mismo número: `A-0001` cinco veces seguidas, confirmado con logs. El plan
+   acertó en que el reintento va afuera de la transacción y erró en dejar el
+   contador adentro. `proximoSku` pasó a correr en **su propia transacción
+   comiteada**.
+
+   **La consecuencia se acepta a conciencia: la secuencia de SKU puede tener
+   huecos**, porque el contador comitea antes del insert y toda alta que falle
+   después quema un número. Para un SKU está bien —es un código opaco que nadie
+   cuenta— y para `Venta.numero` estaría mal, porque la gente dice "la venta
+   123" por teléfono. Por eso `proximoNumero` de `lib/ventas/crear.ts`
+   **no** cambia y **no** debe armonizarse con éste: no tiene el defecto,
+   justamente porque no reintenta, y ahí el rollback del contador es lo que se
+   quiere.
+
+2. **`e.meta.target` no se puebla nunca con `@prisma/adapter-pg`.** Prisma 7
+   arma el meta de los errores del adapter como `{ driverAdapterError }`, así
+   que el chequeo que el plan escribió no habría discriminado nada. El
+   discriminador es `cause.constraint.fields`, **fallando abierto** cuando el
+   campo falta.
+
+   Y falta siempre: bajo `arandano_app` —el único rol con el que la app se
+   conecta— Postgres retiene el `DETAIL` del error porque la policy de RLS
+   aplica al rol que consulta. No es por los `GRANT`: `arandano_app` tiene
+   `SELECT`. Así que lo que sostiene la corrección es que `articulos` tiene una
+   sola unicidad y `movimientos_stock` ninguna: adentro de esa transacción un
+   `P2002` no puede ser otra cosa.
+
+3. **`crearArticulo` y `editarArticulo` pasan por el `traducirErrorDeBase` de
+   `lib/inventario/errores.ts`**, por el mismo motivo que `stock.ts` (ver los
+   ajustes de la Task 3): un precio o un stock inicial que desborda su columna
+   salía como error crudo de Prisma, y los server actions filtran por
+   `instanceof ErrorDeInventario`.
+
+`test/inventario.test.ts` termina con **36** tests.
+
 ---
 
 ### Task 5: Los server actions
