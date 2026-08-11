@@ -118,6 +118,27 @@ describe('aDecimal', () => {
     )
   })
 
+  // Dos o más separadores no son ambiguos: un decimal de verdad nunca lleva
+  // dos. Y es el rango de precios de este vertical — un celular de un millón y
+  // medio se escribe así.
+  it('acepta los miles sin decimales', () => {
+    expect(aDecimal('1.500.000', 'el precio').toString()).toBe('1500000')
+    expect(aDecimal('12.345.678', 'el precio').toString()).toBe('12345678')
+  })
+
+  it('un solo separador sigue siendo ambiguo, que es el punto del módulo', () => {
+    expect(() => aDecimal('850.000', 'el precio')).toThrowError(
+      expect.objectContaining({ codigo: 'NUMERO_AMBIGUO' }),
+    )
+  })
+
+  // Mezclar convenciones es donde se hace daño: no se acepta.
+  it('rechaza los miles a la yanqui', () => {
+    expect(() => aDecimal('1,500,000', 'el precio')).toThrowError(
+      expect.objectContaining({ codigo: 'NUMERO_INVALIDO' }),
+    )
+  })
+
   it('dos decimales no son ambiguos', () => {
     expect(aDecimal('850.00', 'el precio').toString()).toBe('850')
   })
@@ -192,6 +213,12 @@ const SOLO_DIGITOS = /^\d+$/
 // El formato argentino completo: miles con punto y decimales con coma. No es
 // ambiguo porque las dos marcas están presentes y cada una dice qué es.
 const MILES_Y_DECIMALES = /^\d{1,3}(?:\.\d{3})+,\d+$/
+// Miles sin decimales: `1.500.000`. Dos o más separadores NO son ambiguos —un
+// decimal de verdad nunca lleva dos—, así que acá no hay nada que adivinar. Un
+// solo separador sí lo es, y ese caso lo sigue rechazando `UN_SEPARADOR`.
+// `{2,}` y no `+`: con `+`, `850.000` (un solo grupo) matchearía acá y se
+// tragaría el chequeo de ambigüedad de más abajo.
+const SOLO_MILES = /^\d{1,3}(?:\.\d{3}){2,}$/
 const UN_SEPARADOR = /^(\d+)[.,](\d+)$/
 
 /**
@@ -221,6 +248,9 @@ export function aDecimal(texto: string, campo: string): Prisma.Decimal {
   if (MILES_Y_DECIMALES.test(limpio)) {
     return new Prisma.Decimal(limpio.replaceAll('.', '').replace(',', '.'))
   }
+  if (SOLO_MILES.test(limpio)) {
+    return new Prisma.Decimal(limpio.replaceAll('.', ''))
+  }
 
   const partido = UN_SEPARADOR.exec(limpio)
   if (partido) {
@@ -247,7 +277,7 @@ export function aDecimalOpcional(texto: string, campo: string): Prisma.Decimal |
 - [ ] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run lib/formato/numeros.test.ts`
-Expected: PASS, 13 tests.
+Expected: PASS, 16 tests.
 
 - [ ] **Step 5: Commit**
 
