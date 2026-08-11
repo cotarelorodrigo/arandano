@@ -375,6 +375,20 @@ pipeline, que dependía de las opciones de shell de quien llamara.
 cuerpo de 400 KB: es el único que reproduce la carrera, y con la forma vieja
 falla con `esperado: 0, obtenido: 141`.
 
+**Y el abanico que hizo difícil ese diagnóstico ya no puede volver a pasar.** Si
+el login no devuelve cookie, el barrido no corre: sale un solo renglón amarillo
+—`– N pantallas omitidas: sin sesión (ver caso_login_devuelve_sesion)`— en vez
+de un rojo por pantalla que hable de la pantalla equivocada. No afloja el gate,
+porque el rojo del login ya dejó el contador de fallas distinto de cero; y el
+ruido que evita crecía con cada pantalla nueva, que es lo que lo hacía peor con
+el tiempo. La corrección salió de la review de la rama (2026-08-11), junto con
+tres fail-open del andamiaje nuevo: el cable trampa de `<Suspense>` miraba sólo
+`app/(app)/layout.tsx` y no el resto del grupo, `forbidden.tsx` y
+`unauthorized.tsx` faltaban en la lista de boundaries —y no son hipotéticos acá,
+`next.config.ts` habilita `experimental.authInterrupts`—, y la derivación de
+rutas buscaba sólo `page.tsx`, así que una pantalla escrita como `page.ts` era
+una ruta autenticada viva que nadie barría, sin error ni exención que declarar.
+
 **Tres zonas de fallo.** Hasta `migrate deploy` inclusive, una falla aborta y no
 hay nada que revertir: producción sigue con su imagen anterior, y si la
 migración llegó a correr, el schema nuevo con el código viejo es un estado
