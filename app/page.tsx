@@ -2,6 +2,7 @@ import { notFound, forbidden } from 'next/navigation'
 import { tenantDelRequest } from '@/lib/tenant/desde-request'
 import { exigirSesion } from '@/lib/auth/sesion'
 import type { TenantResuelto } from '@/lib/tenant/resolver'
+import { Navegacion } from '@/components/navegacion'
 
 // Redundante con el headers() de tenantDelRequest, que ya obliga a render
 // dinámico, y puesto igual: si algún día esta página deja de resolver tenant,
@@ -47,11 +48,7 @@ function PaginaTenant({
       <p className="mb-6 text-sm text-muted-foreground" data-testid="usuario-nombre">
         Hola, {usuario.nombre}.
       </p>
-      {usuario.rol === 'DUENO' && (
-        <a className="underline" href="/usuarios">
-          Usuarios
-        </a>
-      )}
+      <Navegacion rol={usuario.rol} />
       <Contexto />
     </main>
   )

@@ -1,5 +1,6 @@
 import { exigirSesion } from '@/lib/auth/sesion'
 import { Button } from '@/components/ui/button'
+import { Navegacion } from '@/components/navegacion'
 import { salir } from './acciones'
 
 // Todas las pantallas de adentro heredan este guard: una ruta nueva bajo (app)
@@ -24,6 +25,7 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
         <span className="font-medium" data-testid="tenant-nombre">
           {sesion.tenant.nombre}
         </span>
+        <Navegacion rol={sesion.usuario.rol} />
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">
             {sesion.usuario.nombre} · {sesion.usuario.rol === 'DUENO' ? 'Dueño' : 'Empleado'}
