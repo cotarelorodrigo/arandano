@@ -65,6 +65,10 @@ export function PuntoDeVenta() {
   useEffect(() => {
     busquedaVigente.current = busqueda
   })
+  // Guarda de reentrada para el Enter del buscador. Sin estado a propósito:
+  // no hay que re-renderizar por esto, y un ref no entra en las reglas de
+  // set-state que este archivo ya tuvo que esquivar.
+  const consultando = useRef(false)
 
   // Buscar mientras se tipea, con un respiro para no pegarle al servidor en
   // cada tecla. 200ms es lo que separa "tipeando" de "terminó de tipear". El
@@ -156,24 +160,48 @@ export function PuntoDeVenta() {
 
   async function alTeclearEnBuscador(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return
+    // ANTES del primer await, siempre: después de un await ya no tiene
+    // efecto, y es un modo de falla que no se ve leyendo por encima.
     e.preventDefault()
+
     const texto = busqueda.trim()
     if (texto === '') return
 
-    // Se CONSULTA en vez de leerse de `resultados`: un lector de código de
-    // barras tipea y manda Enter en mucho menos que los 200ms del debounce,
-    // así que al momento del Enter `resultados` todavía no tiene nada de
-    // este scan —y puede tener lo de una búsqueda anterior—. Leerlo perdía
-    // el scan en silencio, o peor, agregaba el artículo equivocado a una
-    // venta en curso.
-    const encontrados = await buscarArticulos(texto)
+    // Un Enter mientras otro está consultando se descarta. Cuando el handler
+    // era sincrónico esto no hacía falta: el segundo Enter encontraba el
+    // cuadro ya vacío (`agregar` lo vacía) y salía por el early-return de
+    // arriba. Ahora el cuadro recién se vacía cuando la consulta resuelve,
+    // así que sin esta guarda un doble golpe —o el key-repeat— suma la
+    // cantidad dos veces por una sola intención, sin nada visible que lo
+    // delate: es cobrar de más en un mostrador.
+    if (consultando.current) return
+    consultando.current = true
+    try {
+      // Se CONSULTA en vez de leerse de `resultados`: un lector de código de
+      // barras tipea y manda Enter en mucho menos que los 200ms del
+      // debounce, así que al momento del Enter `resultados` todavía no tiene
+      // nada de este scan —y puede tener lo de una búsqueda anterior—.
+      // Leerlo perdía el scan en silencio, o peor, agregaba el artículo
+      // equivocado a una venta en curso.
+      const encontrados = await buscarArticulos(texto)
 
-    // Coincidencia EXACTA de código primero: eso es lo que manda un lector.
-    // Si no la hay, el primer resultado, que es lo que espera quien busca
-    // por nombre.
-    const exacto = encontrados.find((a) => a.sku.toLowerCase() === texto.toLowerCase())
-    const elegido = exacto ?? encontrados[0]
-    if (elegido) agregar(elegido)
+      // Si mientras se consultaba la persona siguió tipeando, este Enter ya
+      // no describe lo que hay en el cuadro: se descarta entero. Agregar
+      // igual sumaría un artículo que ya no se pidió Y le borraría lo que
+      // está escribiendo, porque `agregar` limpia el buscador.
+      if (busquedaVigente.current.trim() !== texto) return
+
+      // Coincidencia EXACTA de código primero: eso es lo que manda un
+      // lector. Si no la hay, el primer resultado, que es lo que espera
+      // quien busca por nombre.
+      const exacto = encontrados.find((a) => a.sku.toLowerCase() === texto.toLowerCase())
+      const elegido = exacto ?? encontrados[0]
+      if (elegido) agregar(elegido)
+    } finally {
+      // En `finally` y no al final del try: si la consulta falla, el
+      // buscador tiene que quedar usable igual, no trabado para siempre.
+      consultando.current = false
+    }
   }
 
   const enCentavos = lineas.map((l) => ({
