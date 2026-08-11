@@ -122,8 +122,9 @@ erDiagram
   }
   ventas {
     uuid id PK
-    uuid tenant_id FK "único junto a numero"
+    uuid tenant_id FK "único junto a numero; único junto a clave_idempotencia"
     integer numero "único junto a tenant_id"
+    text clave_idempotencia "opcional; único junto a tenant_id"
     uuid cliente_id FK "opcional"
     uuid usuario_id FK
     decimal(12,2) total

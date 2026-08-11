@@ -125,3 +125,52 @@ async function crearTenantCrudo(subdominio: string): Promise<string> {
   )
   return rows[0].id
 }
+
+describe('la migración de idempotencia de la venta', () => {
+  it('guarda la clave como columna nullable', async () => {
+    const { rows } = await cliente.query(
+      `SELECT is_nullable FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='ventas'
+          AND column_name='clave_idempotencia'`,
+    )
+    expect(rows).toHaveLength(1)
+    // Nullable a propósito: en Postgres el índice único de abajo deja pasar
+    // varios NULL, así que un llamador sin clave no choca contra nada.
+    expect(rows[0].is_nullable).toBe('YES')
+  })
+
+  it('la unicidad es POR TENANT y no global', async () => {
+    const { rows } = await cliente.query(
+      `SELECT indexdef FROM pg_indexes
+        WHERE schemaname='public' AND tablename='ventas'
+          AND indexdef ILIKE '%clave_idempotencia%'`,
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0].indexdef).toMatch(/UNIQUE/)
+    // Sin tenant_id en el índice, la clave de un negocio bloquearía la de otro.
+    expect(rows[0].indexdef).toMatch(/tenant_id/)
+  })
+
+  it('deja convivir varias ventas sin clave en el mismo tenant', async () => {
+    // La razón por la que la columna es nullable, ejercitada: dos NULL no
+    // chocan. Si esto falla, la columna quedó NOT NULL o el índice está mal.
+    const t = await crearTenantCrudo(`idem-${Date.now()}`)
+    const u = await cliente.query(
+      `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'V', 'v@idem.test', 'EMPLEADO', now(), now())
+       RETURNING id`,
+      [t],
+    )
+    for (const numero of [1, 2]) {
+      await cliente.query(
+        `INSERT INTO ventas (id, tenant_id, numero, usuario_id, total, creado_en)
+         VALUES (gen_random_uuid(), $1, $2, $3, 100.00, now())`,
+        [t, numero, u.rows[0].id],
+      )
+    }
+    const { rows } = await cliente.query(
+      `SELECT count(*)::int AS n FROM ventas WHERE tenant_id = $1`, [t],
+    )
+    expect(rows[0].n).toBe(2)
+  })
+})
