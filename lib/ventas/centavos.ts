@@ -59,6 +59,13 @@ export function deCentavos(centavos: number): string {
   return `${signo}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`
 }
 
+/** Milésimas a texto, que es como la cantidad viaja al servidor. */
+export function deMilesimas(milesimas: number): string {
+  const signo = milesimas < 0 ? '-' : ''
+  const abs = Math.abs(milesimas)
+  return `${signo}${Math.floor(abs / 1000)}.${String(abs % 1000).padStart(3, '0')}`
+}
+
 /**
  * cantidad × precio, redondeado a centavos.
  *

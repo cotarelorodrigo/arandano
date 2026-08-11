@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Prisma } from '@/generated/prisma/client'
 import {
-  aCentavos, aMilesimas, aDiezMilesimas, deCentavos,
+  aCentavos, aMilesimas, aDiezMilesimas, deCentavos, deMilesimas,
   subtotalEnCentavos, totalEnCentavos,
   pesosDePagoEnCentavos, totalDePagosEnCentavos,
 } from './centavos'
@@ -33,6 +33,12 @@ describe('conversión a enteros', () => {
     expect(deCentavos(150050)).toBe('1500.50')
     expect(deCentavos(5)).toBe('0.05')
     expect(deCentavos(0)).toBe('0.00')
+  })
+
+  it('vuelve a texto con tres decimales, que es la escala de la cantidad', () => {
+    expect(deMilesimas(1000)).toBe('1.000')
+    expect(deMilesimas(1118)).toBe('1.118')
+    expect(deMilesimas(500)).toBe('0.500')
   })
 })
 
