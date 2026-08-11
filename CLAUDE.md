@@ -215,6 +215,20 @@ y las tres se vuelven más caras con cada mes que pasa.
   después, que es lo que la volvía una puerta de una sola dirección. **Nadie
   la lee todavía**: no hay reportes de margen ni costo promedio, y eso sigue
   siendo su propio ciclo. Lo que cambió es que el dato dejó de tirarse.
+- **La secuencia de SKU puede tener huecos, y es a propósito.** Decidido en el
+  mismo ciclo (2026-08-11). `Tenant.proximoSkuArticulo` se incrementa en **su
+  propia transacción comiteada**, separada de la que inserta el artículo, y no
+  es una prolijidad: con el `UPDATE` adentro de la transacción del alta, un
+  choque de unicidad la rollbackeaba entera —contador incluido—, así que cada
+  reintento volvía a pedir el mismo número y el bucle no convergía nunca. Al
+  comitear aparte, toda alta que falle después quema un número.
+
+  **Es exactamente la decisión inversa a la de `Venta.numero`, y las dos están
+  bien.** Un SKU es un código opaco que nadie recita: un hueco no se ve. El
+  número de venta se dice por teléfono, así que ahí el hueco es el problema y el
+  rollback del contador es lo que se quiere — por eso `proximoNumero` en
+  `lib/ventas/crear.ts` **no** cambia y **no** hay que armonizarlo con éste. No
+  tiene el defecto, justamente porque no reintenta.
 - **Stock por sucursal: hoy el default es "un tenant por local", sin que esté
   escrito.** Este documento vende sucursales como límite de plan, pero
   `Articulo.stock` es un escalar: no hay dónde poner la sucursal. Multi-sucursal
