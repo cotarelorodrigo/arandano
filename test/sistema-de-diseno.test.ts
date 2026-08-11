@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
+// Una sola implementación del parser del :root, no dos idénticas. Estaba
+// copiada acá y en el script, y la copia no es gratis: el arreglo que las obliga
+// a exigir un único :root de primer nivel habría que hacerlo en dos lugares, y
+// el día que alguien toque uno solo, el otro sigue midiendo la paleta vieja sin
+// decir nada.
+import { tokensDelCss } from '@/scripts/contraste.mts'
 
 const CSS = 'app/globals.css'
 
@@ -30,6 +36,17 @@ describe('el CSS no arrastra tokens muertos', () => {
         'se activan por prefers-color-scheme sobre una paleta que no tiene ' +
         'ningún token oscuro definido.',
     ).toMatch(/@custom-variant\s+dark\s+\(&:is\(\.dark \*\)\)/)
+  })
+
+  it('hay un solo bloque :root, y de primer nivel', () => {
+    // El cable trampa que faltaba, y el más filoso de los cuatro: en CSS gana
+    // el último, así que un segundo `:root` al final del archivo —o uno adentro
+    // de `@media (prefers-color-scheme: dark)`— es la paleta que el usuario ve.
+    // El parser viejo agarraba el primero con un regex y todo el mecanismo
+    // quedaba ciego: 13 casos en verde con la aplicación sirviendo otros
+    // colores, y el modo oscuro que este ciclo declara cerrado volviendo por
+    // esa puerta. El mensaje lo trae el throw de tokensDelCss().
+    expect(() => tokensDelCss()).not.toThrow()
   })
 
   it('no quedan tokens de sidebar ni de gráficos', () => {
@@ -72,19 +89,6 @@ function tokensDelDoc(): Map<string, string> {
   const tokens = new Map<string, string>()
   for (const linea of texto.slice(desde, hasta).split('\n')) {
     const m = linea.match(/^\|\s*`(--[a-z0-9-]+)`\s*\|\s*`([^`]+)`\s*\|/)
-    if (m) tokens.set(m[1], m[2].trim())
-  }
-  return tokens
-}
-
-/** Los tokens que DEFINE el bloque :root de globals.css. */
-function tokensDelCss(): Map<string, string> {
-  const texto = readFileSync(CSS, 'utf8')
-  const bloque = texto.match(/^:root\s*\{([\s\S]*?)^\}/m)
-  if (!bloque) throw new Error(`${CSS} no tiene un bloque :root que se pueda leer`)
-  const tokens = new Map<string, string>()
-  for (const linea of bloque[1].split('\n')) {
-    const m = linea.match(/^\s*(--[a-z0-9-]+)\s*:\s*([^;]+);/)
     if (m) tokens.set(m[1], m[2].trim())
   }
   return tokens

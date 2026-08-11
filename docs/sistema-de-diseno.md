@@ -35,7 +35,7 @@ un error se destaque de verdad.
 | `--secondary` | `oklch(0.97 0 0)` |
 | `--secondary-foreground` | `oklch(0.205 0 0)` |
 | `--muted` | `oklch(0.97 0 0)` |
-| `--muted-foreground` | `oklch(0.547 0 0)` |
+| `--muted-foreground` | `oklch(0.535 0 0)` |
 | `--accent` | `oklch(0.955 0.012 287)` |
 | `--accent-foreground` | `oklch(0.37 0.10 287)` |
 | `--destructive` | `oklch(0.577 0.245 27.325)` |
@@ -63,37 +63,57 @@ tono: es un solo color de marca visto a tres distancias.
 
 ### Contraste
 
-Medido convirtiendo `oklch` → sRGB lineal → luminancia relativa → ratio WCAG
-2.1. No estimado a ojo.
+Medido convirtiendo `oklch` → sRGB lineal → **el byte que se pinta** →
+luminancia relativa → ratio WCAG 2.1. No estimado a ojo, y no en continuo: el
+redondeo a 8 bits es lo que hace que estos números sean los mismos que reportan
+axe y Lighthouse. La diferencia no es cosmética — medido en continuo,
+`--muted-foreground` sobre `--muted` daba 4.51 y pasaba; sobre los bytes reales
+daba 4.48 y no llegaba.
+
+**Los pares con opacidad cuentan como pares.** Un `hover:bg-primary/80` no es
+`--primary`: es otro color, y puede caerse del mínimo sin que ningún par opaco
+se entere. La composición se hace sobre los bytes, que es donde compone el
+navegador — mezclar en lineal da otros números (y haría que `rgba(0,0,0,.5)`
+sobre blanco fuera `#bcbcbc` en vez del `#808080` que todos conocemos).
 
 <!-- contraste:inicio -->
 
 | Par | Ratio | Mínimo | |
 |---|---|---|---|
-| `--foreground` sobre `--background` | 19.79 | 4.5 | ok |
-| `--foreground` sobre `--muted` | 18.15 | 4.5 | ok |
-| `--muted-foreground` sobre `--background` | 4.91 | 4.5 | ok |
-| `--muted-foreground` sobre `--muted` | 4.51 | 4.5 | ok |
-| `--primary-foreground` sobre `--primary` | 10.33 | 4.5 | ok |
+| `--foreground` sobre `--background` | 19.80 | 4.5 | ok |
+| `--foreground` sobre `--muted` | 18.16 | 4.5 | ok |
+| `--muted-foreground` sobre `--background` | 5.17 | 4.5 | ok |
+| `--muted-foreground` sobre `--muted` | 4.75 | 4.5 | ok |
+| `--muted-foreground` sobre `--accent` | 4.53 | 4.5 | ok |
+| `--primary-foreground` sobre `--primary` | 10.34 | 4.5 | ok |
+| `--primary-foreground` sobre `--primary/80` | 5.76 | 4.5 | ok |
 | `--primary` sobre `--background` | 10.79 | 4.5 | ok |
 | `--primary` sobre `--accent` | 9.44 | 4.5 | ok |
-| `--primary-foreground` sobre `--destructive` | 4.56 | 4.5 | ok |
-| `--destructive` sobre `--background` | 4.76 | 4.5 | ok |
+| `--primary-foreground` sobre `--destructive` | 4.57 | 4.5 | ok |
+| `--destructive` sobre `--background` | 4.77 | 4.5 | ok |
+| `--destructive/90` sobre `--card` | 4.54 | 4.5 | ok |
 | `--input` sobre `--background` | 1.26 | 3.0 | **excepción declarada** |
 
 <!-- contraste:fin -->
 
-Cada par de la tabla nombra los **tokens** involucrados, no colores genéricos: `--primary-foreground` es `oklch(0.985 0 0)`, distinto de "blanco puro", así que sus ratios difieren del que podría calcularse contra un 1.0.
+Cada par de la tabla nombra los **tokens** involucrados, no colores genéricos: `--primary-foreground` es `oklch(0.985 0 0)`, distinto de "blanco puro", así que sus ratios difieren del que podría calcularse contra un 1.0. El `/NN` es la opacidad con la que ese token aparece en un componente: `--primary/80` es el hover del botón de acción (`components/ui/button.tsx`) y `--destructive/90` es la descripción de un error (`components/ui/alert.tsx`).
+
+**El par más justo es `--muted-foreground` sobre `--accent`, con 4.53.** Es el
+que fija cuánto más se puede oscurecer `--accent` sin romper nada, y por eso
+está medido: la fila seleccionada de las pantallas que vienen es exactamente
+donde ese par se va a ver.
 
 Al medir aparecieron **dos defectos que ya venían del default de shadcn**, no de
 esta paleta:
 
-1. **`--muted-foreground` sobre `--muted` daba 4.34**, abajo del mínimo para
+1. **`--muted-foreground` sobre `--muted` daba 4.35**, abajo del mínimo para
    texto: el gris secundario sobre el fondo gris, o sea un subtítulo adentro de
-   una card. **Corregido** — `0.556` → `0.547` lo deja en 4.50 exacto y en 4.91
-   sobre blanco. El cambio es imperceptible a ojo.
+   una card. **Corregido** — `0.556` → `0.535` lo deja en 4.75, y en 5.17 sobre
+   blanco. Un primer intento con `0.547` daba 4.51 medido en continuo pero 4.48
+   sobre los bytes reales: no alcanzaba, y de paso mostró que 0.01 de holgura no
+   es holgura. El cambio es imperceptible a ojo.
 
-2. **El borde de `--input` sobre blanco da 1.27**, contra los 3:1 que pide WCAG
+2. **El borde de `--input` sobre blanco da 1.26**, contra los 3:1 que pide WCAG
    1.4.11 para el borde de un control. **Aceptado como excepción, no corregido.**
    Llevarlo a `oklch(0.669 0 0)` cerraría el hueco pero cambia visiblemente todo
    campo de la aplicación, y se eligió conservar el look liviano. Lo mitiga que
@@ -135,19 +155,33 @@ Dos reglas que **no son estéticas**:
 
 La escala de 4 px de Tailwind, con un **subconjunto habilitado**: los pasos `1,
 2, 3, 4, 6, 8, 12` — o sea 4, 8, 12, 16, 24, 32 y 48 px. Un valor fuera de esa
-lista es señal de que el layout está mal, no de que falte un token.
+lista, **en el código que escribimos nosotros** —pantallas y layouts de `app/`—,
+es señal de que el layout está mal, no de que falte un token.
 
-La densidad es **media**, y en números:
+El recorte importa y no es una escapatoria: los componentes copiados de shadcn
+que viven en `components/ui/` traen medios pasos adentro (`gap-1.5`, `px-2.5`,
+`gap-0.5`, `translate-y-0.5`) y hasta un `pr-18`. **No se les pelea**, por el
+mismo motivo por el que se adoptan sus 32 px de alto: son decisiones internas de
+un componente que funciona, y tocarlas es pelearle a la librería para nada. La
+regla gobierna la composición de pantallas, que es donde un espaciado
+inventado sí se nota.
+
+La densidad es **media**, y en números — todos verificados contra el código, no
+aspiracionales:
 
 | Elemento | Medida |
 |---|---|
-| Fila de tabla | 40 px (`py-2.5`) |
+| Fila de tabla | 36 px (`py-2` sobre `text-sm`) |
 | Input y botón | 32 px (`h-8`) |
-| Padding de card | 24 px |
-| Gutter de página | 24 px |
+| Padding de card | 16 px (`--card-spacing`, 12 px con `size="sm"`) |
+| Gutter de página | 24 px (`p-6`) |
 
-Los 32 px de input y botón no son una elección nueva: es lo que ya traen los
-componentes de shadcn copiados al repo. Adoptarlos es no pelearles.
+Los 32 px de input y botón, y los 16 de la card, no son una elección nueva: es
+lo que ya traen los componentes de shadcn copiados al repo. Adoptarlos es no
+pelearles. Los 36 px de la fila salen de `py-2` sobre `text-sm`, que es lo que
+usa `app/(app)/usuarios/page.tsx`, la única tabla que existe hoy; subirla a 40
+pediría `py-2.5`, o sea justo un medio paso de los que la regla de arriba deja
+afuera del código propio.
 
 `--radius: 0.625rem`, con la escala derivada de 7 pasos que vive en
 `@theme inline`. No hay razón de marca para moverla.
@@ -219,8 +253,9 @@ review de la Task 3 encontró que cuatro de los diez ratios no correspondían a
 los tokens que estaban en `app/globals.css`, y se corrigieron a mano en ese
 mismo ciclo (commit `3d57397`). Corregir los números no arreglaba la causa
 —seguían siendo transcriptos—, así que la Task 5 sumó `scripts/contraste.mts`,
-que calcula los diez ratios WCAG desde los tokens reales de `app/globals.css`
-—oklch → sRGB lineal → luminancia → ratio— en vez de copiarlos a mano; se
+que calcula los ratios WCAG desde los tokens reales de `app/globals.css`
+—oklch → sRGB lineal → luminancia → ratio, en continuo, que es lo que la review
+final corrigió dos párrafos más abajo— en vez de copiarlos a mano; se
 corre suelto con `npm run contraste`. `test/contraste.test.ts` compara esa
 salida contra la tabla del documento y forma parte de `npm test`.
 
@@ -236,6 +271,49 @@ acá — la evidencia vive en esa review):
 - Declarar en `EXCEPCIONES` una excepción para un par que sí llega a su
   mínimo da rojo en `no hay excepciones de más`.
 - Vaciar la tabla de contraste falla cerrado.
+
+**El agujero que la review final encontró: un segundo `:root`.** Los dos parsers
+—el del test y el del script— buscaban el bloque con `/^:root\s*\{…/m`, que
+matchea **el primero**. En CSS gana el último, así que agregar al final de
+`app/globals.css`
+
+```css
+:root { --primary: oklch(0.6 0.3 30); --inventado: oklch(0.5 0 0); }
+```
+
+dejaba los 13 casos **en verde** con la aplicación sirviendo un naranja como
+color de acción y un token que ningún documento declaraba. Un
+`@media (prefers-color-scheme: dark) { :root { … } }` pasaba igual de entero: el
+modo oscuro que este documento declara cerrado volvía por la puerta de al lado.
+El parser vive ahora en un solo lugar —`tokensDelCss()` en
+`scripts/contraste.mts`, importado por el test— y exige **un** `:root`, **de
+primer nivel**. Verificado por efecto, revirtiendo cada mutación antes de la
+siguiente:
+
+| Mutación en `app/globals.css` | Resultado |
+|---|---|
+| El `:root` de arriba pegado al final | rojo en `hay un solo bloque :root, y de primer nivel` — *"app/globals.css tiene 2 bloques :root y tiene que tener exactamente 1…"* |
+| `@media (prefers-color-scheme: dark) { :root { --background: oklch(0.145 0 0); } }` al final | el mismo rojo, más los 4 casos de `el documento y el CSS declaran lo mismo` y los 6 de `test/contraste.test.ts`, que dependen del mismo parser |
+| El único `:root` envuelto en un `@media` | rojo en el mismo caso, por la otra rama — *"app/globals.css tiene el bloque :root anidado adentro de otra regla…"* |
+
+**El contraste se medía en continuo, y los navegadores miden sobre 8 bits.** El
+cálculo llegaba a la luminancia desde los componentes lineales, sin pasar por el
+byte que efectivamente se pinta. Con eso `--muted-foreground` sobre `--muted`
+daba 4.51 y figuraba "ok"; sobre `#6d6d6d` contra `#f5f5f5`, que son los bytes
+reales, daba 4.48 y no llegaba. Se agregó la cuantización a 8 bits —que es lo
+que hacen axe y Lighthouse— y `--muted-foreground` bajó a `oklch(0.535 0 0)`,
+que deja 4.75 y 5.17 en vez de 0.01 de margen.
+
+**Los estados con transparencia entraron a la tabla.** `PARES` sólo cubría pares
+opacos, así que el hover del botón **Entrar** (`hover:bg-primary/80`) y la
+descripción de un error de login (`text-destructive/90`) no los miraba nadie.
+Ahora se componen sobre el color de abajo y se miden como cualquier otro par.
+**Sobre los bytes, que es donde compone el navegador**: mezclar en sRGB lineal
+da otros números —3.49 y 3.46 para esos dos, contra los 5.76 y 4.54 reales— y
+también haría que `rgba(0,0,0,.5)` sobre blanco fuera `#bcbcbc` en vez del
+`#808080` que cualquiera reconoce. Los dos llegan al mínimo sin tocar ningún
+componente; el que no llegaba era `--muted-foreground` sobre `--accent` (4.15
+con el gris de shadcn, 4.27 con `0.547`), y lo cerró el mismo cambio a `0.535`.
 
 **Verificación visual — pendiente.** El Step 3 de esta task pide mirar el
 login de un tenant real y juzgar a ojo si el botón **Entrar** es azul-violeta

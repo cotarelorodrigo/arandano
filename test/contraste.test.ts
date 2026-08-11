@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { PARES, EXCEPCIONES, nombreDelPar, ratios } from '@/scripts/contraste.mts'
+import { PARES, EXCEPCIONES, ratios } from '@/scripts/contraste.mts'
 
 const DOC = 'docs/sistema-de-diseno.md'
 const INICIO = '<!-- contraste:inicio -->'
@@ -16,8 +16,10 @@ function ratiosDelDoc(): Map<string, number> {
   }
   const filas = new Map<string, number>()
   for (const linea of texto.slice(desde, hasta).split('\n')) {
+    // El `/NN` opcional es la opacidad: `--primary/80` y `--primary` son
+    // colores distintos y filas distintas, porque el usuario mira los dos.
     const m = linea.match(
-      /^\|\s*`(--[a-z-]+)`\s+sobre\s+`(--[a-z-]+)`\s*\|\s*([\d.]+)\s*\|/,
+      /^\|\s*`(--[a-z-]+(?:\/\d+)?)`\s+sobre\s+`(--[a-z-]+(?:\/\d+)?)`\s*\|\s*([\d.]+)\s*\|/,
     )
     if (m) filas.set(`${m[1]} sobre ${m[2]}`, Number(m[3]))
   }
