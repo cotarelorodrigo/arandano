@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll } from 'vitest'
 import { readFileSync } from 'node:fs'
 
 const CSS = 'app/globals.css'
@@ -91,8 +91,18 @@ function tokensDelCss(): Map<string, string> {
 }
 
 describe('el documento y el CSS declaran lo mismo', () => {
-  const doc = tokensDelDoc()
-  const css = tokensDelCss()
+  // En un beforeAll y no en el cuerpo del describe: un .md faltante o
+  // ilegible tiene que tumbar sólo estos 4 casos, no la collection del
+  // archivo entero. Con las llamadas acá arriba, ese throw se llevaba puesto
+  // el describe anterior (Task 1) — los 3 cables trampa del CSS dejaban de
+  // correr, ni en verde ni en rojo, en vez de seguir cuidando lo suyo.
+  let doc: Map<string, string>
+  let css: Map<string, string>
+
+  beforeAll(() => {
+    doc = tokensDelDoc()
+    css = tokensDelCss()
+  })
 
   // Las dos mitades que hacen que esto no sea decorativo. Un parser que no
   // encuentra nada devuelve un Map vacío, y dos Maps vacíos son iguales: el
