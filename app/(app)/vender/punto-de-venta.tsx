@@ -55,6 +55,26 @@ function cantidadEnMilesimas(texto: string): number {
   return aMilesimas(texto.trim().replace(',', '.') || '0')
 }
 
+/**
+ * Lo que la persona tipeó como plata (monto o recibido), en centavos.
+ *
+ * Mismo motivo que `cantidadEnMilesimas`: `aCentavos` parte sólo por punto y
+ * la pantalla MUESTRA la plata con coma (`formatearPrecio`), así que sin esto
+ * alguien escribe el separador que la interfaz le acaba de mostrar y el pago
+ * entero se vuelve NaN. El servidor sí acepta la coma (`aDecimal`), así que
+ * esto alinea al cliente con él y no al revés.
+ *
+ * Devuelve NaN si no es un número — el llamador lo trata.
+ */
+function dineroEnCentavos(texto: string): number {
+  return aCentavos(texto.trim().replace(',', '.') || '0')
+}
+
+/** Lo que la persona tipeó como cotización, en diezmilésimas. Mismo motivo. */
+function cotizacionEnDiezMilesimas(texto: string): number {
+  return aDiezMilesimas(texto.trim().replace(',', '.') || '0')
+}
+
 export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string | null }) {
   const [estado, accion, cobrando] = useActionState(cobrar, INICIAL)
   const [lineas, setLineas] = useState<Linea[]>([])
@@ -123,7 +143,16 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   // de `ventaProcesada` de abajo: comparar contra `totalReflejado`, que este
   // mismo bloque actualiza, es lo que hace que el segundo render no vuelva a
   // dispararlo.
-  if (totalCentavos !== totalReflejado) {
+  //
+  // Una cantidad a medio tipear deja `totalCentavos` en NaN, y `NaN !==
+  // NaN` es siempre verdadero: sin este `!Number.isNaN`, la guarda nunca
+  // cerraría y `setPagos` seguiría devolviendo un array y un objeto nuevos en
+  // cada pasada —aunque `setTotalReflejado(NaN)` sí frene por el bail-out de
+  // React, `Object.is(NaN, NaN)` es `true`— hasta "Too many re-renders",
+  // perdiendo la venta en curso. Mientras la línea sea inválida los pagos se
+  // quedan con el último total bueno; el botón ya está apagado por
+  // `hayLineaInvalida`, así que no hace falta nada más.
+  if (!Number.isNaN(totalCentavos) && totalCentavos !== totalReflejado) {
     setTotalReflejado(totalCentavos)
     setPagos((previos) => {
       if (previos.length === 0) {
@@ -269,8 +298,8 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   // las dos funciones separadas justamente por esto.
   const pagadoCentavos = totalDePagosEnCentavos(
     pagos.map((p) => ({
-      montoCentavos: aCentavos(p.monto || '0'),
-      cotizacionDiezMilesimas: aDiezMilesimas(p.cotizacion || '0'),
+      montoCentavos: dineroEnCentavos(p.monto),
+      cotizacionDiezMilesimas: cotizacionEnDiezMilesimas(p.cotizacion),
     })),
   )
   const faltanCentavos = totalCentavos - pagadoCentavos
@@ -414,88 +443,15 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
             />
             <div className="flex flex-col gap-3">
               {pagos.map((p, i) => (
-                <div key={i} className="flex flex-col gap-2 rounded-md border p-3">
-                  <div className="flex gap-2">
-                    <select
-                      aria-label={`Medio del pago ${i + 1}`}
-                      className="h-8 flex-1 rounded-md border px-3 text-sm"
-                      value={p.medio}
-                      onChange={(e) => cambiarPago(i, { medio: e.target.value as Pago['medio'] })}
-                    >
-                      <option value="EFECTIVO">Efectivo</option>
-                      <option value="TRANSFERENCIA">Transferencia</option>
-                      <option value="TARJETA_DEBITO">Débito</option>
-                      <option value="TARJETA_CREDITO">Crédito</option>
-                    </select>
-                    <select
-                      aria-label={`Moneda del pago ${i + 1}`}
-                      className="h-8 w-24 rounded-md border px-3 text-sm"
-                      value={p.moneda}
-                      onChange={(e) => {
-                        const moneda = e.target.value as Pago['moneda']
-                        cambiarPago(i, {
-                          moneda,
-                          // Un pago en pesos lleva cotización 1 SIEMPRE; uno en
-                          // dólares arranca con la última que usó el local.
-                          cotizacion: moneda === 'ARS' ? '1' : (cotizacionInicial ?? '1'),
-                        })
-                      }}
-                    >
-                      <option value="ARS">$</option>
-                      <option value="USD">US$</option>
-                    </select>
-                  </div>
-                  <Input
-                    inputMode="decimal"
-                    aria-label={`Monto del pago ${i + 1}`}
-                    className="text-right tabular-nums"
-                    value={p.monto}
-                    onChange={(e) => cambiarPago(i, { monto: e.target.value })}
-                  />
-                  {p.moneda === 'USD' && (
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor={`cot-${i}`}>Cotización</Label>
-                      <Input
-                        id={`cot-${i}`}
-                        inputMode="decimal"
-                        className="text-right tabular-nums"
-                        value={p.cotizacion}
-                        onChange={(e) => cambiarPago(i, { cotizacion: e.target.value })}
-                      />
-                    </div>
-                  )}
-                  {p.medio === 'EFECTIVO' && (
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor={`rec-${i}`}>Con cuánto paga (opcional)</Label>
-                      <Input
-                        id={`rec-${i}`}
-                        inputMode="decimal"
-                        className="text-right tabular-nums"
-                        value={p.recibido}
-                        onChange={(e) => cambiarPago(i, { recibido: e.target.value })}
-                      />
-                      {p.recibido.trim() !== '' &&
-                        aCentavos(p.recibido) > aCentavos(p.monto || '0') && (
-                          <p className="text-sm tabular-nums">
-                            Vuelto:{' '}
-                            {formatearPrecio(
-                              deCentavos(aCentavos(p.recibido) - aCentavos(p.monto || '0')),
-                            )}
-                          </p>
-                        )}
-                    </div>
-                  )}
-                  {pagos.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setPagos((p2) => p2.filter((_, j) => j !== i))}
-                    >
-                      Quitar pago
-                    </Button>
-                  )}
-                </div>
+                <FilaDePago
+                  key={i}
+                  pago={p}
+                  indice={i}
+                  cotizacionInicial={cotizacionInicial}
+                  onCambiar={(cambio) => cambiarPago(i, cambio)}
+                  onQuitar={() => setPagos((p2) => p2.filter((_, j) => j !== i))}
+                  puedeQuitar={pagos.length > 1}
+                />
               ))}
               <Button
                 type="button"
@@ -518,8 +474,16 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
               </Button>
             </div>
 
-            {faltanCentavos !== 0 && hayCarrito && (
-              <p className="text-sm tabular-nums text-destructive">
+            {/* `!Number.isNaN` primero: un monto a medio tipear (una coma de
+                más, una letra) deja `faltanCentavos` en NaN, y `faltanCentavos
+                > 0` da falso ahí, así que sin esta guarda se cae a la rama de
+                "Sobran" y se imprime "Sobran $ NaN" — un cartel sin sentido
+                para un estado que ya deja el botón apagado. `role="status"`
+                porque el cartel aparece y cambia de texto sin que nadie lo
+                mire, y es la única pista de por qué el botón sigue
+                apagado. */}
+            {!Number.isNaN(faltanCentavos) && faltanCentavos !== 0 && hayCarrito && (
+              <p role="status" className="text-sm tabular-nums text-destructive">
                 {faltanCentavos > 0
                   ? `Faltan ${formatearPrecio(deCentavos(faltanCentavos))}`
                   : `Sobran ${formatearPrecio(deCentavos(-faltanCentavos))}`}
@@ -567,6 +531,123 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
           </form>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+/**
+ * Una fila del formulario de pago: medio, moneda, monto, cotización (sólo si
+ * es USD) y el campo de vuelto (sólo si es efectivo en pesos).
+ *
+ * Extraída de adentro del `pagos.map` de `PuntoDeVenta`: ese mapeo por sí
+ * solo eran ~110 líneas de JSX inline en un componente que ya era el más
+ * grande del proyecto, y fue justo ahí donde se escondió el bug de "Too many
+ * re-renders" del primer round de review — el tamaño del bloque es lo que lo
+ * hizo difícil de mirar. Es una mudanza sin cambio de comportamiento
+ * respecto de lo que había antes de esta extracción.
+ */
+function FilaDePago({
+  pago,
+  indice,
+  cotizacionInicial,
+  onCambiar,
+  onQuitar,
+  puedeQuitar,
+}: {
+  pago: Pago
+  indice: number
+  cotizacionInicial: string | null
+  onCambiar: (cambio: Partial<Pago>) => void
+  onQuitar: () => void
+  puedeQuitar: boolean
+}) {
+  // El vuelto sólo tiene sentido calculado en pesos: `formatearPrecio` está
+  // cableado a ARS, así que un vuelto en dólares saldría formateado como si
+  // fueran pesos (US$20 de vuelto se leería "$ 20,00"). En dólares el vuelto
+  // no se calcula así de todos modos, así que el campo directamente no se
+  // ofrece.
+  const mostrarVuelto = pago.medio === 'EFECTIVO' && pago.moneda === 'ARS'
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border p-3">
+      <div className="flex gap-2">
+        <select
+          aria-label={`Medio del pago ${indice + 1}`}
+          className="h-8 flex-1 rounded-md border px-3 text-sm"
+          value={pago.medio}
+          onChange={(e) => onCambiar({ medio: e.target.value as Pago['medio'] })}
+        >
+          <option value="EFECTIVO">Efectivo</option>
+          <option value="TRANSFERENCIA">Transferencia</option>
+          <option value="TARJETA_DEBITO">Débito</option>
+          <option value="TARJETA_CREDITO">Crédito</option>
+        </select>
+        <select
+          aria-label={`Moneda del pago ${indice + 1}`}
+          className="h-8 w-24 rounded-md border px-3 text-sm"
+          value={pago.moneda}
+          onChange={(e) => {
+            const moneda = e.target.value as Pago['moneda']
+            onCambiar({
+              moneda,
+              // Un pago en pesos lleva cotización 1 SIEMPRE; uno en dólares
+              // arranca con la última que usó el local.
+              cotizacion: moneda === 'ARS' ? '1' : (cotizacionInicial ?? '1'),
+            })
+          }}
+        >
+          <option value="ARS">$</option>
+          <option value="USD">US$</option>
+        </select>
+      </div>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor={`monto-${indice}`}>Monto</Label>
+        <Input
+          id={`monto-${indice}`}
+          inputMode="decimal"
+          className="text-right tabular-nums"
+          value={pago.monto}
+          onChange={(e) => onCambiar({ monto: e.target.value })}
+        />
+      </div>
+      {pago.moneda === 'USD' && (
+        <div className="flex flex-col gap-2">
+          <Label htmlFor={`cot-${indice}`}>Cotización</Label>
+          <Input
+            id={`cot-${indice}`}
+            inputMode="decimal"
+            className="text-right tabular-nums"
+            value={pago.cotizacion}
+            onChange={(e) => onCambiar({ cotizacion: e.target.value })}
+          />
+        </div>
+      )}
+      {mostrarVuelto && (
+        <div className="flex flex-col gap-2">
+          <Label htmlFor={`rec-${indice}`}>Con cuánto paga (opcional)</Label>
+          <Input
+            id={`rec-${indice}`}
+            inputMode="decimal"
+            className="text-right tabular-nums"
+            value={pago.recibido}
+            onChange={(e) => onCambiar({ recibido: e.target.value })}
+          />
+          {pago.recibido.trim() !== '' &&
+            dineroEnCentavos(pago.recibido) > dineroEnCentavos(pago.monto) && (
+              <p className="text-sm tabular-nums">
+                Vuelto:{' '}
+                {formatearPrecio(
+                  deCentavos(dineroEnCentavos(pago.recibido) - dineroEnCentavos(pago.monto)),
+                )}
+              </p>
+            )}
+        </div>
+      )}
+      {puedeQuitar && (
+        <Button type="button" variant="ghost" size="sm" onClick={onQuitar}>
+          Quitar pago
+        </Button>
+      )}
     </div>
   )
 }
