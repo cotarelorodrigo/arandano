@@ -93,8 +93,15 @@ describe('página raíz', () => {
   // tenant hardcodeado o el equivocado hubiera pasado igual. Se afirma sobre
   // el HTML que realmente sale, para distinguir de verdad PaginaTenant de
   // PaginaApex y confirmar que el nombre que se ve es el del tenant resuelto
-  // y el usuario el de la sesión — no el testid `tenant-nombre`, que se mudó
-  // a la pantalla de login (app/login/formulario.tsx) junto con el guard.
+  // y el usuario el de la sesión.
+  //
+  // `tenant-nombre` se había mudado a la pantalla de login en el ciclo de
+  // autenticación y volvió acá con el smoke autenticado: `/` es una pantalla
+  // de tenant que NO vive bajo (app) —el ápex entra por la misma ruta y no
+  // tiene sesión—, así que no hereda el marcador de app/(app)/layout.tsx y
+  // tiene que ponerlo por su cuenta o el barrido de scripts/smoke.sh no la
+  // puede distinguir de un 200 vacío. La rama del ápex sigue sin marcador, y
+  // eso lo cuida caso_home_responde.
   it('con sesión, un tenant en TRIAL resuelve con su nombre y el usuario logueado', async () => {
     tenantDelRequest.mockResolvedValue({
       tipo: 'tenant',
@@ -106,6 +113,10 @@ describe('página raíz', () => {
     const elemento = await render()
     const html = renderToStaticMarkup(elemento)
     expect(html).toContain('Flor')
+    // Con el `>` pegado al nombre, igual que lo busca scripts/smoke.sh: el
+    // atributo tiene que quedar ÚLTIMO en el JSX, porque React emite los
+    // atributos en el orden en que están escritos.
+    expect(html).toContain('data-testid="tenant-nombre">Flor')
     expect(html).toContain('data-testid="usuario-nombre"')
     expect(html).toContain('Hola, Ana')
     // Empleado, no dueño: sin el link a /usuarios.

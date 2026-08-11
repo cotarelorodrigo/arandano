@@ -18,7 +18,9 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
             una página de verdad de un 200 vacío (Next devuelve 200 sirviendo un
             not-found). Borrarlo hace fallar todos los casos de pantalla del
             gate a la vez. El mismo atributo, con el mismo nombre, está en
-            app/login/formulario.tsx. */}
+            app/login/formulario.tsx y en app/page.tsx — esta última porque `/`
+            es pantalla de tenant pero NO vive bajo (app), así que no hereda
+            este layout y tiene que ponerlo por su cuenta. */}
         <span className="font-medium" data-testid="tenant-nombre">
           {sesion.tenant.nombre}
         </span>

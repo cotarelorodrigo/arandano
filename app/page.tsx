@@ -33,7 +33,17 @@ function PaginaTenant({
 }) {
   return (
     <main className="p-6">
-      <h1 className="mb-2 text-xl font-medium">{tenant.nombre}</h1>
+      {/* El mismo marcador que app/(app)/layout.tsx, y acá hace falta ponerlo
+          a mano: `/` no puede vivir bajo (app) —ver el comentario de Home— así
+          que no hereda ese layout. Sin esto, `pantalla /` del barrido de
+          scripts/smoke.sh no tiene con qué distinguir esta página de un 200
+          vacío, y falla aunque la home esté sana. El atributo va ÚLTIMO: React
+          emite los atributos en el orden del JSX y el grep busca el `>` pegado
+          al nombre. La rama del ápex (PaginaApex) NO lo lleva, a propósito:
+          caso_home_responde comprueba justamente que ahí no aparezca. */}
+      <h1 className="mb-2 text-xl font-medium" data-testid="tenant-nombre">
+        {tenant.nombre}
+      </h1>
       <p className="mb-6 text-sm text-muted-foreground" data-testid="usuario-nombre">
         Hola, {usuario.nombre}.
       </p>
