@@ -326,16 +326,24 @@ Y del producto:
   es lo que este ítem pedía esperar.
 - ~~Definir el sistema de diseño, en su propio archivo.~~ **Hecho**
   (2026-08-11). `docs/sistema-de-diseno.md`: la referencia es **el color de un
-  arándano** — el azul-violeta profundo de la fruta, con el gris pálido de su
-  "bloom" como secundario natural, entrando sólo en acciones, foco y
-  selección. Es la fuente de verdad de los tokens de `app/globals.css`, y
+  arándano** — el azul-violeta profundo de la fruta, entrando sólo en acciones
+  (`--primary`), foco (`--ring`) y selección (`--accent`). El gris pálido del
+  "bloom" no quedó en `--secondary`, que sigue en croma 0 como todo el resto de
+  los neutros: el único token tintado es `--accent`, y ese tinte —hue 287,
+  croma 0.012— es el que hace las veces de bloom. Es la fuente de verdad de los tokens de `app/globals.css`, y
   `test/sistema-de-diseno.test.ts` lo ata a ese archivo **en las dos
   direcciones**: todo token del documento existe en el CSS con el mismo valor,
   y todo token del CSS está documentado — un color que sólo viva en uno de los
   dos archivos rompe el build. El contraste no se transcribe a mano:
   `scripts/contraste.mts` lo calcula desde los tokens reales (oklch → sRGB
-  lineal → luminancia → ratio WCAG) y `test/contraste.test.ts` compara esa
-  salida contra la tabla del documento. La única excepción de accesibilidad
+  lineal → el byte que se pinta → luminancia → ratio WCAG) y
+  `test/contraste.test.ts` compara esa salida contra la tabla del documento. El
+  redondeo a 8 bits no es un detalle: es lo que hace que el número sea el mismo
+  que reporta axe, y midiendo en continuo un par pasaba con 4.51 cuando sobre
+  los bytes reales daba 4.48. Los pares con opacidad —el hover del botón de
+  acción, la descripción de un error— se componen sobre el color de abajo y se
+  miden como cualquier otro, porque son los que el usuario efectivamente mira.
+  La única excepción de accesibilidad
   —el borde de `--input` da 1.26 contra los 3:1 que pide WCAG 1.4.11— está
   declarada en `EXCEPCIONES` con su razón por escrito, y el mismo test
   rechaza tanto una excepción sin razón como una que ya no corresponda. El
@@ -343,6 +351,10 @@ Y del producto:
   aplicaba la clase `.dark`. La evidencia de que el mecanismo atrapa de
   verdad —cuatro defectos metidos a mano y revertidos, uno por vez, más la
   tabla vacía— vive en la sección *Cómo se verifica* del propio documento.
+  **Lo que todavía no pasó: mirar la aplicación.** Ningún test puede juzgar si
+  el botón se ve azul-violeta y no negro, o si el foco se distingue; esa
+  verificación a ojo sobre el login de un tenant sigue pendiente de una
+  persona, y está anotada como tal al final del documento.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~
