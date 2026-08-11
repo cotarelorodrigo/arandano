@@ -18,7 +18,13 @@ export default async function Inventario({
   const { q = '', p = '1', inactivos } = await searchParams
 
   const busqueda = q.trim()
-  const pagina = Math.max(1, Number(p) || 1)
+  // Truncado y con techo, no sólo `Math.max`: `?p=2.3` daría un `skip` con
+  // decimales y `?p=1e300` uno fuera del rango de un Int, y Prisma rechaza los
+  // dos con un error que nadie atrapa — o sea un 500 servido desde un query
+  // string escrito a mano. El techo es holgado a propósito: una página más allá
+  // de los datos simplemente no muestra nada, que es la respuesta correcta.
+  const PAGINA_MAXIMA = 1_000_000
+  const pagina = Math.min(Math.max(1, Math.trunc(Number(p)) || 1), PAGINA_MAXIMA)
   const verInactivos = inactivos === '1'
 
   const prisma = prismaParaTenant(sesion.tenant.id)

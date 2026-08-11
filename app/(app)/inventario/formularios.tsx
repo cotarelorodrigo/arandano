@@ -1,15 +1,11 @@
 'use client'
 
 import { useActionState, useState } from 'react'
-import {
-  altaArticulo,
-  guardarArticulo,
-  bajaArticulo,
-  reactivarArticuloAccion,
-  ingresarMercaderia,
-  corregirPorConteo,
-  type EstadoInventario,
-} from './acciones'
+// Sólo altaArticulo por ahora: guardarArticulo, bajaArticulo,
+// reactivarArticuloAccion, ingresarMercaderia y corregirPorConteo los suma la
+// Task 7 junto con los componentes que los usan (FormularioDeEdicion,
+// MoverStock, AccionesDeArticulo) en este mismo archivo.
+import { altaArticulo, type EstadoInventario } from './acciones'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
