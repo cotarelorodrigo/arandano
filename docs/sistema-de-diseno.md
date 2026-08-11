@@ -66,18 +66,22 @@ tono: es un solo color de marca visto a tres distancias.
 Medido convirtiendo `oklch` → sRGB lineal → luminancia relativa → ratio WCAG
 2.1. No estimado a ojo.
 
+<!-- contraste:inicio -->
+
 | Par | Ratio | Mínimo | |
 |---|---|---|---|
-| texto sobre fondo | 19.79 | 4.5 | ok |
-| texto sobre `muted` | 18.15 | 4.5 | ok |
-| `muted-foreground` sobre fondo | 4.91 | 4.5 | ok |
-| `muted-foreground` sobre `muted` | 4.51 | 4.5 | ok |
+| `--foreground` sobre `--background` | 19.79 | 4.5 | ok |
+| `--foreground` sobre `--muted` | 18.15 | 4.5 | ok |
+| `--muted-foreground` sobre `--background` | 4.91 | 4.5 | ok |
+| `--muted-foreground` sobre `--muted` | 4.51 | 4.5 | ok |
 | `--primary-foreground` sobre `--primary` | 10.33 | 4.5 | ok |
-| `primary` sobre fondo | 10.79 | 4.5 | ok |
-| `primary` sobre `accent` | 9.44 | 4.5 | ok |
+| `--primary` sobre `--background` | 10.79 | 4.5 | ok |
+| `--primary` sobre `--accent` | 9.44 | 4.5 | ok |
 | `--primary-foreground` sobre `--destructive` | 4.56 | 4.5 | ok |
-| `destructive` sobre fondo | 4.76 | 4.5 | ok |
-| **borde de `--input` sobre fondo** | **1.26** | **3.0** | **no llega — excepción, abajo** |
+| `--destructive` sobre `--background` | 4.76 | 4.5 | ok |
+| `--input` sobre `--background` | 1.26 | 3.0 | **excepción declarada** |
+
+<!-- contraste:fin -->
 
 Cada par de la tabla nombra los **tokens** involucrados, no colores genéricos: `--primary-foreground` es `oklch(0.985 0 0)`, distinto de "blanco puro", así que sus ratios difieren del que podría calcularse contra un 1.0.
 
