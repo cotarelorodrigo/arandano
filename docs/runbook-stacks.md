@@ -324,10 +324,23 @@ cuatro en verde. Para probar que el paso 9 lo frena de verdad, se reintrodujo
 a propósito un `throw new Error(...)` como primera línea del componente de
 `app/(app)/usuarios/page.tsx`, en una rama descartable (`prueba-del-smoke`,
 nunca mergeada), y se corrió `deploy.sh --objetivo=ensayo` contra ese commit.
-El gate llegó al paso 9 y frenó ahí, antes de tocar `migrate deploy`, el
-backup o la promoción, con el renglón `✗ pantalla /usuarios` en rojo —
-confirmado con `caso_login_devuelve_sesion` y `pantalla /` en verde en una
-corrida limpia.
+El gate llegó al paso 9 y frenó ahí, antes de tocar `migrate deploy`, el backup
+o la promoción. Los pasos 1 a 8 pasaron todos: `npm test` en verde, typecheck y
+lint en verde, y el build compiló sin una advertencia — que es exactamente lo
+que hace a esta clase de defecto peligrosa. El paso 9 salió así:
+
+```
+  ✓ caso_login_devuelve_sesion
+  ✓ pantalla /
+  ✗ pantalla /usuarios
+
+14 ok, 1 fallan
+```
+
+Un solo renglón rojo, el de la pantalla rota, y con el nombre de la ruta
+adentro: no hay que abrir un log para saber qué se rompió. Después del paso 9
+el script no corrió ningún paso más — se verificó contando los renglones
+`paso 1X/18` en la salida, y son cero.
 
 **Y de paso apareció un gate intermitente, que era peor que el defecto que
 buscábamos.** En la mayoría de las corridas de este ensayo el paso 9 salió con
