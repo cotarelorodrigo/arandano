@@ -161,9 +161,9 @@ esta paleta:
 No es un default que quedó: es una decisión. Cero bytes, cero salto de fuente al
 cargar, y se ve nativa en el Windows del mostrador igual que en el Android del
 dueño. **Sigue siendo la pila del cuerpo de toda la aplicación**: títulos,
-tablas, botones y texto corrido no la abandonan en ninguna pantalla, incluido
-el punto de venta. Dos roles salen de ella, los dos hacia Archivo: el cartel
-—el nombre del local—, que desde el ciclo del cartel paga Archivo también en
+botones y texto corrido no la abandonan en ninguna pantalla; dos roles salen
+hacia Archivo: el cartel —el nombre del local—, que desde el ciclo del cartel
+paga Archivo también en
 el header de la aplicación y no sólo en el login, y el importe —la plata—, que
 desde este ciclo paga Archivo en `/vender`: ahí los importes de la tabla y de
 la lista de resultados, los campos de monto, cotización y recibido del
