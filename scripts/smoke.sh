@@ -331,18 +331,16 @@ caso_login_por_la_pantalla() {
 # nombre del local — el mismo valor que el paso 8 acaba de escribir en la base,
 # y el mismo argumento que ya usa caso_tenant_resuelve.
 #
-# QUÉ CUBRE ESTO, EXACTAMENTE. Para `/` el marcador lo emite la página
-# (app/page.tsx), así que la aserción prueba que la PÁGINA renderizó. Para las
-# rutas de (app) lo emite el layout (app/(app)/layout.tsx), así que prueba que
-# el layout renderizó y que la página no tiró: una página que devuelva
-# contenido vacío sin lanzar excepción pasa en verde. Hoy alcanza porque
-# notFound() y las excepciones no manejadas caen en el boundary de la RAÍZ, que
-# no renderiza el layout de (app) — de ahí el rojo. Pero un `error.tsx` o un
-# `not-found.tsx` DENTRO de (app) se montarían adentro de ese layout: el
-# marcador saldría igual, con 200, y este barrido se volvería verde sobre una
-# pantalla rota. No existe ninguno de los dos hoy, y test/boundaries-app.test.ts
-# falla si alguien agrega uno, justamente para que esa decisión no se tome sin
-# mirar esta línea.
+# QUÉ CUBRE ESTO, EXACTAMENTE. El marcador lo emite el layout del grupo
+# (app/(app)/layout.tsx), así que la aserción prueba que ESE layout renderizó y
+# que la página no tiró: una página que devuelva contenido vacío sin lanzar
+# excepción pasa en verde. Hoy alcanza porque notFound() y las excepciones no
+# manejadas caen en el boundary de la RAÍZ, que no renderiza el layout de (app)
+# — de ahí el rojo. Pero un `error.tsx` o un `not-found.tsx` DENTRO de (app) se
+# montarían adentro de ese layout: el marcador saldría igual, con 200, y este
+# barrido se volvería verde sobre una pantalla rota. No existe ninguno de los
+# dos hoy, y test/boundaries-app.test.ts falla si alguien agrega uno,
+# justamente para que esa decisión no se tome sin mirar esta línea.
 #
 # NO se busca el texto del 404 en el cuerpo, y esto costó una tarde: Next
 # incluye el boundary de "not found" en el payload de TODA página, incluidas
