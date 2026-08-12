@@ -5,8 +5,8 @@ import Link from 'next/link'
 import { cobrar, buscarArticulos, type EstadoCobro } from './acciones'
 import type { ArticuloVendible } from '@/lib/ventas/buscar'
 import {
-  aCentavos, aDiezMilesimas, aMilesimas, deCentavos, deMilesimas, subtotalEnCentavos,
-  totalDePagosEnCentavos, totalEnCentavos,
+  aCentavos, aMilesimas, cantidadEnMilesimas, cotizacionEnDiezMilesimas, deCentavos,
+  deMilesimas, dineroEnCentavos, subtotalEnCentavos, totalDePagosEnCentavos, totalEnCentavos,
 } from '@/lib/ventas/centavos'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
 import { Button } from '@/components/ui/button'
@@ -41,48 +41,43 @@ type Pago = {
 }
 
 /**
- * Lo que la persona tipeó, en milésimas.
+ * Qué carrito es éste, para la clave de idempotencia.
  *
- * Normaliza la coma a punto porque `aMilesimas` sólo parte por punto y la
- * pantalla MUESTRA las cantidades con coma (`formatearCantidad`): sin esto,
- * alguien tipea el separador que la interfaz le acabó de mostrar y el total
- * entero se vuelve NaN. El servidor sí acepta la coma (`aDecimal`), así que
- * esto alinea al cliente con él y no al revés.
- *
- * Devuelve NaN si no es un número — el llamador lo trata.
+ * Artículos y cantidades, que es lo que define la venta; el orden cuenta, y
+ * está bien que cuente: reordenar es un cambio del carrito como cualquier otro
+ * y lo único que provoca es una clave nueva.
  */
-function cantidadEnMilesimas(texto: string): number {
-  return aMilesimas(texto.trim().replace(',', '.') || '0')
+function firmaDelCarrito(lineas: Linea[]): string {
+  return JSON.stringify(lineas.map((l) => [l.articuloId, l.cantidad]))
 }
 
-/**
- * Lo que la persona tipeó como plata (monto o recibido), en centavos.
- *
- * Mismo motivo que `cantidadEnMilesimas`: `aCentavos` parte sólo por punto y
- * la pantalla MUESTRA la plata con coma (`formatearPrecio`), así que sin esto
- * alguien escribe el separador que la interfaz le acaba de mostrar y el pago
- * entero se vuelve NaN. El servidor sí acepta la coma (`aDecimal`), así que
- * esto alinea al cliente con él y no al revés.
- *
- * Devuelve NaN si no es un número — el llamador lo trata.
- */
-function dineroEnCentavos(texto: string): number {
-  return aCentavos(texto.trim().replace(',', '.') || '0')
-}
-
-/** Lo que la persona tipeó como cotización, en diezmilésimas. Mismo motivo. */
-function cotizacionEnDiezMilesimas(texto: string): number {
-  return aDiezMilesimas(texto.trim().replace(',', '.') || '0')
-}
+// La firma del carrito vacío, que es con lo que arranca la pantalla. Como
+// constante y no calculada al vuelo: es el valor inicial del estado, y tiene
+// que ser el MISMO en el render del servidor y en el del navegador.
+const CARRITO_VACIO = firmaDelCarrito([])
 
 export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string | null }) {
   const [estado, accion, cobrando] = useActionState(cobrar, INICIAL)
   const [lineas, setLineas] = useState<Linea[]>([])
   const [busqueda, setBusqueda] = useState('')
   const [resultados, setResultados] = useState<ArticuloVendible[]>([])
-  // Una clave por venta. Se renueva al cobrar bien, así que la venta siguiente
-  // es otra; mientras tanto, todo reintento del mismo carrito manda la misma.
-  const [clave, setClave] = useState(() => crypto.randomUUID())
+  // Una clave por CARRITO, no por formulario: se renueva cuando cambia lo que
+  // se está vendiendo (ver el ajuste de más abajo). Atarla a la vida del
+  // componente —renovarla sólo al cobrar bien— tenía un modo de falla que es
+  // el espejo del que la clave existe para evitar: si la respuesta del cobro
+  // se pierde en el camino, quien cobra no ve el cartel de éxito, agrega el
+  // artículo que faltaba y vuelve a apretar Cobrar con la misma clave; el
+  // motor devuelve la venta ANTERIOR, la pantalla dice "cobrada" y el artículo
+  // agregado no se cobró ni se descontó del stock. Un carrito distinto es una
+  // venta distinta. El doble click y el F5 no cambian el carrito, así que
+  // siguen cubiertos.
+  //
+  // Arranca vacía —y no con un uuid— para que el render del servidor y el del
+  // navegador coincidan: `crypto.randomUUID()` en el estado inicial daba dos
+  // valores distintos. Con el carrito vacío no hay nada que cobrar, así que
+  // una clave vacía nunca llega a enviarse.
+  const [clave, setClave] = useState('')
+  const [carritoReflejado, setCarritoReflejado] = useState(CARRITO_VACIO)
   // La última venta ya procesada por la limpieza de abajo, para no repetirla
   // en cada render.
   const [ventaProcesada, setVentaProcesada] = useState<string | null>(null)
@@ -132,8 +127,25 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
     precioCentavos: aCentavos(l.precio),
   }))
   const totalCentavos = totalEnCentavos(enCentavos)
+  // NaN cubre las tres formas de estar mal, porque `cantidadEnMilesimas`
+  // devuelve NaN para todas: no es un número, la gramática lo considera
+  // ambiguo, o el campo quedó VACÍO. El vacío importa aparte: antes contaba
+  // como cero, la línea pasaba por buena, Cobrar se encendía y el servidor
+  // rechazaba la venta entera con "falta la cantidad".
   const hayLineaInvalida = enCentavos.some((l) => Number.isNaN(l.cantidadMilesimas))
   const hayCarrito = lineas.length > 0 && totalCentavos > 0 && !hayLineaInvalida
+
+  // Clave nueva en cuanto el carrito deja de ser el que la clave describe.
+  // Ajuste durante el render, con la misma forma que los dos bloques de abajo:
+  // se compara contra lo último reflejado y ese mismo estado se actualiza acá,
+  // así que el render siguiente ya no entra y no hay ciclo.
+  const firmaActual = firmaDelCarrito(lineas)
+  if (firmaActual !== carritoReflejado) {
+    setCarritoReflejado(firmaActual)
+    // Sin carrito no hay venta que identificar, y una clave sin usar gastada
+    // en cada limpieza no molesta a nadie pero tampoco sirve.
+    setClave(lineas.length === 0 ? '' : crypto.randomUUID())
+  }
 
   // Cuando el carrito cambia y hay un solo pago en pesos, se le sigue el
   // total: el caso del 90% es cobrar todo junto y no tener que retocar el
@@ -167,7 +179,8 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
     })
   }
 
-  // Al cobrar bien: carrito vacío, pagos vacíos y clave nueva, calculado
+  // Al cobrar bien: carrito vacío y pagos vacíos (la clave se renueva sola,
+  // por el ajuste de la firma de más arriba), calculado
   // durante el render en vez de en un efecto — es el patrón que React
   // documenta para "ajustar estado cuando cambia otro estado" (comparar
   // contra la última venta ya procesada), y el único que este lint acepta
@@ -177,7 +190,9 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
     setLineas([])
     setBusqueda('')
     setResultados([])
-    setClave(crypto.randomUUID())
+    // La clave no se toca acá: vaciar el carrito ya la renueva por el ajuste
+    // de arriba, y tenerla en un solo lugar es lo que evita que las dos
+    // reglas se contradigan.
     // Pagos vacíos y no la fila fija de antes: el ajuste de arriba la vuelve
     // a poner en el próximo render, ya por el total de la venta siguiente
     // (0 hasta que se agregue el primer artículo).

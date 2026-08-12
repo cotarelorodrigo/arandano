@@ -335,6 +335,13 @@ model Pago {
   venta  Venta  @relation(fields: [ventaId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, ventaId])
+  // La última cotización en dólares del local, que el punto de venta pide en
+  // CADA carga de /vender (`ultimaCotizacionUsd`). Sin este índice esa consulta
+  // es un scan de todos los pagos de la tabla compartida más un sort, sobre la
+  // pantalla más caliente del sistema. Se agrega ahora, con la tabla vacía, por
+  // el mismo motivo que el índice de idempotencia: crearlo después es un
+  // bloqueo sobre datos de clientes.
+  @@index([tenantId, moneda, creadoEn])
   @@map("pagos")
 }
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import { Client } from 'pg'
 import { urlOwner, urlApp } from '@/test/postgres-efimero'
 import { crearTenant } from '@/test/datos'
+import { aCentavos, deCentavos, deMilesimas } from '@/lib/ventas/centavos'
 
 const estado = vi.hoisted(() => ({ tenantId: '', subdominio: '', cookie: '' }))
 
@@ -170,6 +171,32 @@ describe('cobrar', () => {
     ]))
     const r = await cobrar(INICIAL, datos)
     expect(r.error).toMatch(/medio de pago desconocido/)
+  })
+
+  // No llega desde la pantalla —los ids salen del buscador—, pero sí desde un
+  // POST armado a mano, y sin el guard Prisma tiraba un error sin `codigo` que
+  // `traducir` relanza: un 500 donde correspondía un error de dominio.
+  it('un articuloId que no es uuid vuelve como error, no como 500', async () => {
+    estado.cookie = cookieEmpleado
+    const datos = formulario({ clave: `uuid-${Date.now()}` })
+    datos.set('items', JSON.stringify([{ articuloId: 'no-es-un-uuid', cantidad: '1' }]))
+    const r = await cobrar(INICIAL, datos)
+    expect(r.error).toMatch(/no existe el artículo/)
+  })
+
+  // La cantidad que el punto de venta escribe solo al sumar unidades. Antes de
+  // esta tanda `deMilesimas` emitía "2.000" y ESTE caso volvía como
+  // NUMERO_AMBIGUO: la venta entera se caía por pasar dos veces el lector.
+  it('dos unidades de la forma en que la pantalla las escribe se cobran', async () => {
+    estado.cookie = cookieEmpleado
+    const datos = formulario({ clave: `dos-${Date.now()}` })
+    datos.set('items', JSON.stringify([{ articuloId, cantidad: deMilesimas(2000) }]))
+    datos.set('pagos', JSON.stringify([
+      { medio: 'EFECTIVO', moneda: 'ARS', monto: deCentavos(aCentavos(precioArticulo) * 2), cotizacion: '1' },
+    ]))
+    const r = await cobrar(INICIAL, datos)
+    expect(r.error).toBeNull()
+    expect(r.venta?.numero).toBeGreaterThan(0)
   })
 
   it('los pagos que no cierran vuelven como error entendible', async () => {

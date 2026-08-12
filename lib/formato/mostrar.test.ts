@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatearPrecio, formatearCantidad, formatearFecha } from './mostrar'
+import { formatearPrecio, formatearDolares, formatearCantidad, formatearFecha } from './mostrar'
 
 // Puro: sin Docker, sin base. `Intl` alcanza y corre en cualquier Node.
 
@@ -12,6 +12,17 @@ describe('formatearPrecio', () => {
     // como pesos y que el número esté entero.
     expect(salida).toMatch(/\$/)
     expect(salida).toContain('1.500,50')
+  })
+})
+
+describe('formatearDolares', () => {
+  // El detalle de venta anteponía "US$ " a mano a un formateador que ya emite
+  // el `$` de pesos, y salía "US$ $ 0,80". Un solo símbolo, y de dólares.
+  it('lleva un solo símbolo, y es el de dólares', () => {
+    const salida = formatearDolares('0.8')
+    expect(salida).toContain('0,80')
+    expect(salida).toMatch(/US\$/)
+    expect(salida).not.toMatch(/\$.*\$/)
   })
 })
 

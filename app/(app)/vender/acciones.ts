@@ -17,6 +17,7 @@ export type EstadoCobro = {
 
 const MEDIOS = ['EFECTIVO', 'TRANSFERENCIA', 'TARJETA_DEBITO', 'TARJETA_CREDITO'] as const
 const MONEDAS = ['ARS', 'USD'] as const
+const ES_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** Los errores que la persona puede corregir tipeando distinto se muestran; el
  *  resto se relanza, para que un bug de verdad llegue al log y no se aplane en
@@ -54,8 +55,18 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
 
     const items = listaDeJson(datos, 'items').map((crudo) => {
       const i = crudo as { articuloId?: unknown; cantidad?: unknown }
+      const articuloId = String(i.articuloId ?? '')
+      // El mismo guard que el detalle de venta y el de artículo. Desde la
+      // pantalla no llega otra cosa —los ids salen del buscador—, pero un POST
+      // armado a mano sí, y Prisma rechaza un uuid mal formado con un código
+      // que `traducirErrorDeBase` no traduce: no sería `ErrorDeVenta` ni
+      // `ErrorDeFormato`, así que saldría por `traducir` como un 500 en vez de
+      // como el error de dominio que corresponde.
+      if (!ES_UUID.test(articuloId)) {
+        throw new ErrorDeVenta('ARTICULO_INEXISTENTE', `no existe el artículo ${articuloId}`)
+      }
       return {
-        articuloId: String(i.articuloId ?? ''),
+        articuloId,
         cantidad: aDecimal(String(i.cantidad ?? ''), 'la cantidad'),
       }
     })

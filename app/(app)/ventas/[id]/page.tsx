@@ -3,7 +3,9 @@ import { notFound } from 'next/navigation'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { formatearPrecio, formatearCantidad, formatearFecha } from '@/lib/formato/mostrar'
+import {
+  formatearPrecio, formatearDolares, formatearCantidad, formatearFecha,
+} from '@/lib/formato/mostrar'
 import { AnularVenta } from '../formularios'
 
 export const dynamic = 'force-dynamic'
@@ -105,9 +107,15 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
                     </span>
                   )}
                 </td>
+                {/* Cada moneda con su formateador: `formatearPrecio` ya emite
+                    el `$` de pesos, así que anteponerle "US$ " a mano daba
+                    "US$ $ 0,80". La cotización de al lado sí va en pesos —una
+                    cotización es cuántos pesos vale un dólar—, y por eso sigue
+                    con `formatearPrecio`. */}
                 <td className="text-right tabular-nums">
-                  {p.moneda === 'USD' ? 'US$ ' : ''}
-                  {formatearPrecio(p.monto.toString())}
+                  {p.moneda === 'USD'
+                    ? formatearDolares(p.monto.toString())
+                    : formatearPrecio(p.monto.toString())}
                 </td>
                 <td className="text-right tabular-nums">
                   {formatearPrecio(p.monto.mul(p.cotizacion).toFixed(2))}

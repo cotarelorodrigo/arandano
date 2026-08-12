@@ -13,6 +13,23 @@ export function formatearPrecio(v: string): string {
   return PESOS.format(Number(v))
 }
 
+const DOLARES = new Intl.NumberFormat('es-AR', {
+  style: 'currency',
+  currency: 'USD',
+  minimumFractionDigits: 2,
+})
+
+/**
+ * Un monto en dólares, con su propio símbolo.
+ *
+ * Existe porque `formatearPrecio` está cableado a ARS y ya emite `$`: anteponerle
+ * a mano un "US$ " daba `US$ $ 0,80`. El valor era correcto y el cartel se leía
+ * roto, que en una pantalla de plata es suficiente para desconfiar del número.
+ */
+export function formatearDolares(v: string): string {
+  return DOLARES.format(Number(v))
+}
+
 // Hasta 3 decimales pero sin ceros de relleno: "4" y no "4,000". Medio kilo de
 // harina necesita los decimales; una unidad no tiene por qué mostrarlos.
 const CANTIDAD = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 })

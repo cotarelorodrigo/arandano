@@ -18,8 +18,12 @@
  * motor va a rechazar con PAGOS_NO_CIERRAN. `centavos.test.ts` compara las dos
  * aritméticas caso por caso justamente para que no se separen.
  *
- * Este archivo NO importa Prisma: lo importa un componente cliente.
+ * Este archivo NO importa Prisma: lo importa un componente cliente. Sí importa
+ * `lib/formato/gramatica.ts`, que tampoco lo importa y existe justamente para
+ * que las dos puntas lean un número tipeado con las MISMAS reglas.
  */
+
+import { aDecimalCanonico, ErrorDeFormato } from '@/lib/formato/gramatica'
 
 const DECIMALES_DINERO = 2
 const DECIMALES_CANTIDAD = 3
@@ -52,18 +56,90 @@ export function aDiezMilesimas(texto: string): number {
   return aEntero(texto, DECIMALES_COTIZACION)
 }
 
-/** Centavos a texto con dos decimales, que es como la columna lo guarda. */
+/**
+ * Lo que la persona TIPEÓ, en la escala pedida, o NaN si la gramática lo
+ * rechaza.
+ *
+ * Las tres funciones de abajo son la puerta por la que entra todo texto de la
+ * pantalla de venta, y pasan por `aDecimalCanonico` —la misma gramática que
+ * usa el server action— en vez de por una normalización propia. La versión
+ * anterior sólo cambiaba la primera coma por punto y partía por punto: leía
+ * `1.500,50` como uno con cincuenta cuando el servidor lo lee como mil
+ * quinientos, y aceptaba `850.000` como ochocientos cincuenta que el servidor
+ * rechaza por ambiguo. La pantalla MUESTRA la plata con punto de miles y coma
+ * decimal, así que esas dos formas son exactamente las que alguien retipea.
+ *
+ * NaN y no 0 cuando no se entiende —incluido el campo VACÍO—: un cero silencioso
+ * es una línea que la pantalla da por buena, deja habilitar Cobrar y el motor
+ * rechaza entera. El llamador trata el NaN.
+ */
+function tipeadoEnEscala(texto: string, escala: (canonico: string) => number): number {
+  try {
+    return escala(aDecimalCanonico(texto, 'el número'))
+  } catch (e) {
+    // Sólo lo que la gramática entiende como entrada inválida se aplana en
+    // NaN; cualquier otra cosa es un bug y tiene que llegar arriba.
+    if (e instanceof ErrorDeFormato) return NaN
+    throw e
+  }
+}
+
+/** Lo que se tipeó como cantidad, en milésimas. NaN si no se entiende. */
+export function cantidadEnMilesimas(texto: string): number {
+  return tipeadoEnEscala(texto, aMilesimas)
+}
+
+/** Lo que se tipeó como plata (monto o recibido), en centavos. NaN si no. */
+export function dineroEnCentavos(texto: string): number {
+  return tipeadoEnEscala(texto, aCentavos)
+}
+
+/** Lo que se tipeó como cotización, en diezmilésimas. NaN si no. */
+export function cotizacionEnDiezMilesimas(texto: string): number {
+  return tipeadoEnEscala(texto, aDiezMilesimas)
+}
+
+/**
+ * Centavos a texto con dos decimales, que es como la columna lo guarda.
+ *
+ * Los dos decimales se pueden dejar rellenos porque DOS decimales nunca son
+ * ambiguos para la gramática (`lib/formato/gramatica.ts` sólo duda con
+ * exactamente tres), así que `1500.50` vuelve a entrar al campo de monto y el
+ * servidor lo lee igual. `deMilesimas`, que sí emitía tres, no tenía esa
+ * suerte — ver ahí.
+ */
 export function deCentavos(centavos: number): string {
   const signo = centavos < 0 ? '-' : ''
   const abs = Math.abs(centavos)
   return `${signo}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`
 }
 
-/** Milésimas a texto, que es como la cantidad viaja al servidor. */
+/**
+ * Milésimas a texto, que es como la cantidad vuelve al campo y viaja al
+ * servidor.
+ *
+ * **Sin ceros de relleno a la derecha**: `2000` sale `"2"` y no `"2.000"`. No
+ * es cosmética. Lo que esta función devuelve se escribe en el campo de cantidad
+ * y se manda tal cual al server action, que lo parsea con la gramática — y esa
+ * gramática RECHAZA `"2.000"` por ambiguo, porque un punto seguido de tres
+ * dígitos es tan probablemente miles como decimales. Con el relleno, sumar una
+ * unidad a una línea ya cargada —pasar dos veces el lector por el mismo código,
+ * el gesto más común de un mostrador— dejaba el carrito en un estado que la
+ * pantalla mostraba bien y el servidor rechazaba entero, pidiendo escribir
+ * "sin separador de miles" un número que nadie tipeó. Además `2.000` se lee
+ * como dos mil en Argentina, así que el campo también mentía antes de enviar.
+ *
+ * Queda un residuo conocido: `1125` sale `"1.125"`, que la gramática sigue
+ * considerando ambiguo (y `1,125` también). No hay forma de escribir mil
+ * ciento veinticinco milésimas que la gramática acepte; es raro y no está en
+ * el camino que se rompía, así que se deja anotado y no resuelto acá.
+ */
 export function deMilesimas(milesimas: number): string {
   const signo = milesimas < 0 ? '-' : ''
   const abs = Math.abs(milesimas)
-  return `${signo}${Math.floor(abs / 1000)}.${String(abs % 1000).padStart(3, '0')}`
+  const fraccion = String(abs % 1000).padStart(3, '0').replace(/0+$/, '')
+  const entera = Math.floor(abs / 1000)
+  return fraccion === '' ? `${signo}${entera}` : `${signo}${entera}.${fraccion}`
 }
 
 /**
