@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { Client } from 'pg'
 import { urlOwner, urlApp } from '@/test/postgres-efimero'
 import { crearTenant } from '@/test/datos'
@@ -89,6 +89,73 @@ describe('entrar: el mensaje no distingue mail inexistente de contraseña incorr
     expect(porMailInexistente.error).toBe('Mail o contraseña incorrectos.')
     expect(porClaveIncorrecta.error).toBe('Mail o contraseña incorrectos.')
     expect(porMailInexistente.error).toBe(porClaveIncorrecta.error)
+  })
+})
+
+describe('el mail vuelve en el estado; la contraseña nunca', () => {
+  /**
+   * React 19 resetea los inputs no controlados de un `<form action>` cuando la
+   * action termina, así que un error de login vaciaba LOS DOS campos: quien se
+   * equivocaba una letra de la contraseña tenía que volver a escribir también
+   * el mail. En un mostrador, con un cliente esperando, eso es fricción real.
+   *
+   * La contraseña NO vuelve, y no es un olvido: el estado de una action viaja
+   * al cliente en la carga RSC, así que devolverla la escribiría en el HTML.
+   * Vaciar el campo de contraseña ante un error es además lo que corresponde.
+   *
+   * Tenant propio por test, por el mismo motivo que documenta el freno de
+   * fuerza bruta más abajo: el contador de intentos se lleva por `(tenant, ip)`
+   * y en test todas las llamadas comparten IP. Estos casos fallan el login a
+   * propósito —es de lo que se tratan—, así que sobre el tenant compartido le
+   * quemarían el bucket a cualquier test que venga después. Ya pasó al
+   * escribirlos: el caso del usuario desactivado empezó a recibir "Demasiados
+   * intentos".
+   */
+  const previo = { tenantId: '', subdominio: '' }
+
+  beforeEach(async () => {
+    previo.tenantId = estado.tenantId
+    previo.subdominio = estado.subdominio
+    const subdominio = `login-eco-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    estado.tenantId = await crearTenant(owner, subdominio)
+    estado.subdominio = subdominio
+  })
+
+  afterEach(() => {
+    estado.tenantId = previo.tenantId
+    estado.subdominio = previo.subdominio
+  })
+
+  it('un login fallido devuelve el mail intentado', async () => {
+    const r = await entrar({ error: null }, formulario(MAIL_EXISTENTE, 'clave-equivocada'))
+
+    expect(r.error).toBe('Mail o contraseña incorrectos.')
+    expect(r.email).toBe(MAIL_EXISTENTE)
+  })
+
+  it('el mail vuelve normalizado, que es el que la próxima vez se va a autenticar', async () => {
+    const r = await entrar(
+      { error: null },
+      formulario(`  ${MAIL_EXISTENTE.toUpperCase()}  `, 'clave-equivocada'),
+    )
+
+    expect(r.email).toBe(MAIL_EXISTENTE)
+  })
+
+  it('ningún camino de error devuelve la contraseña, en ninguna clave del estado', async () => {
+    // Contra el objeto entero y no contra `r.clave`: el modo de falla que
+    // importa es que alguien sume un campo nuevo —`datos`, `intento`— y meta
+    // la contraseña adentro sin darse cuenta de que eso la publica.
+    const casos = [
+      formulario(MAIL_EXISTENTE, 'clave-equivocada'),
+      formulario('no-existe@ejemplo.test', 'otra-clave-secreta'),
+      formulario('', ''),
+    ]
+    for (const datos of casos) {
+      const r = await entrar({ error: null }, datos)
+      expect(JSON.stringify(r)).not.toContain('clave-equivocada')
+      expect(JSON.stringify(r)).not.toContain('otra-clave-secreta')
+    }
   })
 })
 
