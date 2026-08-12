@@ -28,16 +28,18 @@ describe('el punto de venta', () => {
     expect(html).toMatch(/class="[^"]*total[^"]*"[^>]*>[^<]*0,00/)
   })
 
-  // El tratamiento de display de la plata. A diferencia del cartel de
-  // app/(app)/layout.test.tsx (sin `composes`), acá el harness SÍ procesa el
-  // CSS module, y `estilos.total` compone `estilos.importe` — pero el
-  // resultado en el HTML es un único hash por clase (p. ej. "_total_f2d38c"),
-  // sin conservar el nombre "importe" en el string. Comprobado corriendo el
-  // import de components/importe.module.css bajo este mismo runner: el
-  // `composes` no aparece en el className renderizado. Por eso este caso mira
-  // el FUENTE en vez del HTML — sigue atrapando que el pie deje de usar
-  // `estilos.total` en un refactor, que es lo único que el nombre del caso
-  // promete.
+  // El tratamiento de display de la plata. `vitest.config.mts` no setea
+  // `css`, así que rige el default `css: false`: acá el harness NO procesa el
+  // CSS module, e importar components/importe.module.css devuelve un Proxy
+  // que fabrica un className del tipo "_total_f2d38c" para CUALQUIER
+  // propiedad que se le pida, exista la clase o no — el nombre "importe" que
+  // `estilos.total` compone vía `composes` tampoco sobrevive a eso. Por eso
+  // este caso mira el FUENTE en vez del HTML: es lo único que sigue
+  // atrapando que el pie deje de usar `estilos.total` en un refactor, que es
+  // lo único que el nombre del caso promete. Ese mismo agujero —un Proxy que
+  // no distingue una clase real de una inventada— es exactamente lo que
+  // test/tipografia.test.ts tapa del otro lado, leyendo el TEXTO del CSS para
+  // comprobar que `.importe` y `.total` existen de verdad.
   it('el total lleva el tratamiento de importe', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8').replace(/\s+/g, '')
     expect(fuente).toContain('estilos.total}')
@@ -52,6 +54,9 @@ describe('el punto de venta', () => {
   // FilaDePago (Monto, Cotización, Recibido) y los tests siguen en verde.
   // Por eso, igual que el caso del total, mira el FUENTE: cuenta cuántas
   // veces aparece `estilos.importe}` en vez de contar en el HTML renderizado.
+  // Es un conteo, no una ubicación: si los siete `estilos.importe}` se
+  // movieran al elemento equivocado (o se duplicaran en uno y faltaran en
+  // otro) sin cambiar el total, este caso seguiría en verde.
   it('el rol importe cubre las columnas de plata y los campos de monto', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8').replace(/\s+/g, '')
     const apariciones = [...fuente.matchAll(/estilos\.importe\}/g)].length

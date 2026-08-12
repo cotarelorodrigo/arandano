@@ -593,8 +593,8 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
 // componente y comportamiento (popover, navegación por teclado propia) fuera
 // del alcance visual de este ciclo — ver docs/sistema-de-diseno.md, sección
 // *Espaciado y radio*, la excepción de los medios pasos copiados de
-// components/ui/. `h-8` y el ancho quedan afuera: el alto es común a los dos
-// selects, pero el ancho no (`flex-1` el de medio, `w-24` el de moneda).
+// components/ui/. El ancho queda afuera (`flex-1` el de medio, `w-24` el de
+// moneda); `h-8` entra, porque el alto sí es común a los dos selects.
 const CLASES_SELECT_COMO_INPUT =
   'h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm'
 

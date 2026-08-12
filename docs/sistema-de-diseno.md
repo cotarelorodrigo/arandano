@@ -166,9 +166,9 @@ el punto de venta. Dos roles salen de ella, los dos hacia Archivo: el cartel
 —el nombre del local—, que desde el ciclo del cartel paga Archivo también en
 el header de la aplicación y no sólo en el login, y el importe —la plata—, que
 desde este ciclo paga Archivo en `/vender`: ahí los importes de la tabla y de
-la lista de resultados, y los campos de monto, cotización y recibido del
-formulario de cobro, van en Archivo y no en la pila del sistema (ver *La cara
-de display: Archivo* más abajo).
+la lista de resultados, los campos de monto, cotización y recibido del
+formulario de cobro, y el aviso de vuelto, van en Archivo y no en la pila del
+sistema (ver *La cara de display: Archivo* más abajo).
 
 `--font-heading: var(--font-sans)`: los títulos usan la misma familia.
 
@@ -233,9 +233,10 @@ repartidos en tres módulos CSS.
 Aires. **Se usa para dos roles**, y los dos están en la tabla de arriba: el
 nombre del local (`font-stretch: 112%`) y el importe del punto de venta
 (`85%`). Los distingue el eje de ancho, no la familia. Ningún otro rol la usa:
-títulos, tablas y botones siguen en la pila del sistema, y los campos también
-—salvo los de plata en `/vender` (monto, cotización, recibido), que llevan el
-rol Importe igual que cualquier otra columna de plata.
+títulos, tablas —salvo las columnas de plata de `/vender`— y botones siguen en
+la pila del sistema, y los campos también —salvo los de plata en `/vender`
+(monto, cotización, recibido), que llevan el rol Importe igual que cualquier
+otra columna de plata.
 
 **Por qué ésa.** Tiene eje de ancho variable (`wdth`, 62–125), y ése es el
 motivo entero de la elección: un local argentino tiene el nombre pintado a lo
