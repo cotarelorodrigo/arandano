@@ -27,6 +27,8 @@ const TOTAL = '105000'
 const EN_PESOS = '55000'
 const EN_DOLARES = '50'
 const COTIZACION = '1000'
+// 50 USD × $1.000 de cotización = $50.000 en pesos
+const EN_DOLARES_EN_PESOS = '50000'
 
 export function Retrato() {
   return (
@@ -73,10 +75,12 @@ export function Retrato() {
             <span className="text-muted-foreground">
               Efectivo {formatearDolares(EN_DOLARES)} a {formatearPrecio(COTIZACION)}
             </span>
-            <span className="tabular-nums">{formatearPrecio(EN_PESOS)}</span>
+            <span className="tabular-nums">{formatearPrecio(EN_DOLARES_EN_PESOS)}</span>
           </div>
         </div>
       </CardContent>
     </Card>
   )
 }
+
+export { TOTAL, EN_PESOS, EN_DOLARES, COTIZACION, EN_DOLARES_EN_PESOS }
