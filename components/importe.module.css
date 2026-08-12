@@ -1,0 +1,38 @@
+/*
+ * El importe: la plata del punto de venta.
+ *
+ * QUÉ ES. El otro extremo del eje de ancho de Archivo. El cartel es el nombre
+ * pintado a lo ancho del frente del local (112%); esto es el número angosto que
+ * sale impreso en la cinta de la registradora (85%). Una sola cara, dos roles,
+ * distinguidos por el eje que motivó elegir la fuente.
+ *
+ * POR QUÉ UN MÓDULO CSS Y NO UNA UTILIDAD DE TAILWIND. Igual que el cartel: el
+ * @theme de app/globals.css es `inline`, así que var(--font-display) no
+ * existiría fuera de una clase de Tailwind, y además de la familia este rol
+ * necesita font-stretch propio. --font-archivo, en cambio, la emite next/font
+ * sobre el <html> y se puede usar directo. Ver docs/sistema-de-diseno.md.
+ *
+ * POR QUÉ font-variant-numeric VIVE ACÁ y no como la utilidad `tabular-nums`.
+ * "Números tabulares y alineados a la derecha" es una regla explícitamente NO
+ * estética del sistema de diseño: sin cifras tabulares las columnas bailan y
+ * comparar dos precios de un vistazo deja de funcionar. Adentro del módulo, el
+ * rol no puede perderla en un refactor de clases. `text-right` sí queda como
+ * utilidad, porque es alineación de columna y no propiedad del rol.
+ *
+ * POR QUÉ 40 PX EL TOTAL. Es lo que lo hace legible del otro lado del
+ * mostrador. Supera al cartel de 24 px, y eso está declarado como enmienda con
+ * su límite en docs/sistema-de-diseno.md: el cartel es lo más grande del SHELL;
+ * el contenido puede pesar más cuando el contenido es el punto.
+ */
+.importe {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  font-stretch: 85%;
+  font-variant-numeric: tabular-nums;
+}
+
+.total {
+  composes: importe;
+  font-weight: 600;
+  font-size: 2.5rem;
+  line-height: 1;
+}
