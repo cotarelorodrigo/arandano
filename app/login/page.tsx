@@ -22,7 +22,7 @@ export default async function Login() {
           "Arándano" chico arriba. Quien entra acá labura en su negocio, no en
           nuestra plataforma — el cartel es del local y la marca firma abajo. */}
       <section
-        className={`${estilos.pano} relative flex flex-col justify-end overflow-hidden p-8 md:w-7/12 md:p-12`}
+        className={`${estilos.pano} relative flex flex-col overflow-hidden p-8 md:p-12`}
       >
         <div className={estilos.persiana} aria-hidden="true" />
         <p className={`${estilos.arandano} mb-3`}>Arándano</p>
@@ -37,7 +37,11 @@ export default async function Login() {
         </h1>
       </section>
 
-      <div className="flex flex-1 items-center justify-center p-6 md:p-12">
+      {/* Arriba en el teléfono, centrado en escritorio. Centrarlo también en el
+          teléfono dejaba medio metro de blanco entre el cartel y el campo de
+          mail; en escritorio, en cambio, el centrado es lo que le da al
+          formulario el mismo eje vertical que el cartel. */}
+      <div className="flex flex-1 items-start justify-center p-6 md:items-center md:p-12">
         <FormularioLogin />
       </div>
     </main>

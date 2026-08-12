@@ -20,8 +20,24 @@
  * exactamente lo que el sistema de diseño existe para impedir.
  */
 
+/*
+ * El paño ocupa la mitad exacta en escritorio, y el ancho vive acá y no en una
+ * utilidad de Tailwind porque es una proporción del diseño, no un layout
+ * genérico. La primera versión le daba 7/12 y anclaba el cartel abajo: sobre
+ * 1440×900 eso dejaba 840×900 de color plano con una línea de texto en una
+ * esquina — se veía sin terminar, no espacioso. Centrado y a la mitad, el
+ * cartel comparte eje vertical con el formulario y el paño se lee como lo que
+ * es, la cara del local.
+ */
 .pano {
   background-color: var(--marca);
+  justify-content: center;
+}
+
+@media (min-width: 768px) {
+  .pano {
+    width: 50%;
+  }
 }
 
 .persiana {
@@ -96,7 +112,12 @@
   font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   font-weight: 600;
   font-stretch: 112%;
-  font-size: clamp(2.25rem, 5.5vw, 3.75rem);
+  /* Grande de verdad. A 3.75rem el nombre quedaba chico dentro del paño y la
+     pantalla parecía a medio hacer; el max-width en em lo hace envolver a dos
+     o tres líneas, que es como se escribe un nombre largo en un frente y no
+     como se escribe un título de aplicación. */
+  font-size: clamp(2.5rem, 7vw, 5.5rem);
+  max-width: 7em;
   line-height: 1.02;
   letter-spacing: -0.022em;
   text-wrap: balance;
