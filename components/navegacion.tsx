@@ -51,6 +51,11 @@ export function Navegacion({ rol }: { rol: RolUsuario }) {
        dibujaba dos líneas paralelas. Es lo que la hace leer como una pestaña
        apoyada en el riel.
 
+       Este -1 px no es un paso de la escala de espaciado (docs/sistema-de-
+       diseno.md, sección "Espaciado y radio"): no sale de elegir un punto de
+       esa lista, sale de medir el border-b de 1 px que tiene que tapar. Por
+       eso está exceptuado ahí en vez de ser una violación sin documentar.
+
        overflow-x-auto: hoy sobra lugar con cuatro pestañas, pero este archivo
        es el punto de extensión que CLAUDE.md promete para el registry de
        módulos — cuando Órdenes de Trabajo sume las suyas, o en un teléfono, sin

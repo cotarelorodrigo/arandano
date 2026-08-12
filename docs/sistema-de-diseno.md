@@ -245,6 +245,17 @@ La escala de 4 px de Tailwind, con un **subconjunto habilitado**: los pasos `1,
 lista, **en el código que escribimos nosotros** —pantallas y layouts de `app/`—,
 es señal de que el layout está mal, no de que falte un token.
 
+Excepción, y es angosta: un solape de hairline atado al ancho de un borde no
+es un paso de espaciado y no cae bajo esta regla. `-mb-px` en el riel de
+pestañas de `components/navegacion.tsx` es el caso — solapa el `border-b` de
+1 px del `<header>` para que el subrayado de 2 px de la pestaña activa se
+apoye en el riel en vez de dibujar una segunda línea un pixel más arriba. El
+−1 px ahí no sale de elegir un punto de la escala: sale de medir el borde que
+hay que tapar, exactamente como `border-b-2` tampoco sale de la escala de
+espaciado y nadie lo llamaría una violación. El límite es ese y no más: cubre
+un solape de 1 px derivado de un borde real, no una puerta para colar
+cualquier valor que no esté en la lista.
+
 El recorte importa y no es una escapatoria: los componentes copiados de shadcn
 que viven en `components/ui/` traen medios pasos adentro (`gap-1.5`, `px-2.5`,
 `gap-0.5`, `translate-y-0.5`) y hasta un `pr-18`. **No se les pelea**, por el
