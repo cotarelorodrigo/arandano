@@ -8,7 +8,24 @@ import { claveDeIntento, loginBloqueado, registrarLoginFallido } from '@/lib/aut
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 
-export type EstadoLogin = { error: string | null }
+export type EstadoLogin = {
+  error: string | null
+  /**
+   * El mail que se acaba de intentar, para volver a pintarlo en el campo.
+   *
+   * React 19 resetea los inputs no controlados de un `<form action>` cuando la
+   * action termina, así que sin esto un error vaciaba LOS DOS campos y quien
+   * erraba una letra de la contraseña tenía que reescribir también el mail.
+   *
+   * **Acá NO va la contraseña, y no es un olvido.** El estado de una action
+   * viaja al cliente en la carga RSC: devolverla la escribiría en el HTML de
+   * la página. Vaciar el campo de contraseña ante un error es además lo que
+   * corresponde. `acciones.test.ts` lo cuida serializando el estado entero y
+   * buscando la clave adentro, así que un campo nuevo que la arrastre se cae
+   * solo.
+   */
+  email?: string
+}
 
 /**
  * Un solo mensaje para "no existe ese mail" y para "la contraseña está mal".
@@ -31,12 +48,19 @@ export async function entrar(_estado: EstadoLogin, datos: FormData): Promise<Est
   // este camino.
   const email = String(datos.get('email') ?? '').trim().toLowerCase()
   const clave = String(datos.get('clave') ?? '')
-  if (!email || !clave) return { error: GENERICO }
+
+  // Todo camino de error sale por acá, y por eso el mail vuelve siempre sin
+  // que haya que acordarse en cada `return`: un return suelto que se olvide de
+  // devolverlo deja el campo vacío otra vez, que es justo el defecto que este
+  // eco existe para arreglar.
+  const falla = (error: string): EstadoLogin => ({ error, email })
+
+  if (!email || !clave) return falla(GENERICO)
 
   const resolucion = await tenantDelRequest()
-  if (resolucion.tipo !== 'tenant') return { error: GENERICO }
+  if (resolucion.tipo !== 'tenant') return falla(GENERICO)
   if (resolucion.tenant.estado === 'SUSPENDIDO') {
-    return { error: 'Esta cuenta está suspendida.' }
+    return falla('Esta cuenta está suspendida.')
   }
 
   const origen = await origenDelRequest(resolucion.subdominio)
@@ -50,7 +74,7 @@ export async function entrar(_estado: EstadoLogin, datos: FormData): Promise<Est
   // scrypt.
   const cabeceras = await headers()
   const limite = claveDeIntento(resolucion.tenant.id, cabeceras)
-  if (loginBloqueado(limite)) return { error: DEMASIADOS }
+  if (loginBloqueado(limite)) return falla(DEMASIADOS)
 
   // SIN asResponse: el plugin nextCookies() de authParaTenant es el que escribe
   // la cookie en la respuesta de la action. Con asResponse habría que propagar
@@ -68,7 +92,7 @@ export async function entrar(_estado: EstadoLogin, datos: FormData): Promise<Est
     // sería un login SIN freno. Si lo que falla es la base, el login está roto
     // igual y contarlo no le saca nada a nadie.
     registrarLoginFallido(limite)
-    return { error: GENERICO }
+    return falla(GENERICO)
   }
 
   // Recién acá, con la contraseña ya validada, se puede decir que la cuenta está
@@ -86,7 +110,7 @@ export async function entrar(_estado: EstadoLogin, datos: FormData): Promise<Est
     // siguiente (ver lib/auth/sesion.ts). Pero es lo que explica ver, en la
     // pestaña de red, un Set-Cookie en la misma respuesta que este error.
     await db.session.deleteMany({ where: { userId: usuario.id } })
-    return { error: 'Tu usuario está desactivado. Pedile al dueño que lo reactive.' }
+    return falla('Tu usuario está desactivado. Pedile al dueño que lo reactive.')
   }
 
   // redirect() tira una excepción de control de Next, así que va FUERA del

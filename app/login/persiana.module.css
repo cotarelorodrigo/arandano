@@ -1,0 +1,133 @@
+/*
+ * La persiana: el paño de la pantalla de login y el único gesto de marca del
+ * producto.
+ *
+ * QUÉ ES. Un local argentino abre subiendo la persiana, y esta pantalla es la
+ * única de la aplicación que se mira al empezar el día en vez de durante el
+ * día. El paño arranda cerrado —acanalado, como el metal— y sube una sola vez
+ * al cargar, dejando a la vista el nombre del local. Después de eso no vuelve
+ * a pasar nada: lo que queda es un campo plano con el cartel.
+ *
+ * POR QUÉ NO ES DECORACIÓN. docs/sistema-de-diseno.md dice que el arándano
+ * entra en tres lugares —acciones, foco, selección— y que todo lo demás es
+ * gris. Esa regla existe por una razón escrita: "lo que menos cansa en una
+ * pantalla que se mira ocho horas". El login se mira ocho segundos, así que la
+ * razón no aplica acá, y la excepción está declarada en el documento junto con
+ * su motivo. Ninguna otra pantalla usa --marca.
+ *
+ * NINGÚN COLOR CRUDO. El brillo y el surco salen de tokens con color-mix, no
+ * de rgba() inventados: un color que no está escrito en ningún lado es
+ * exactamente lo que el sistema de diseño existe para impedir.
+ */
+
+/*
+ * El paño ocupa la mitad exacta en escritorio, y el ancho vive acá y no en una
+ * utilidad de Tailwind porque es una proporción del diseño, no un layout
+ * genérico. La primera versión le daba 7/12 y anclaba el cartel abajo: sobre
+ * 1440×900 eso dejaba 840×900 de color plano con una línea de texto en una
+ * esquina — se veía sin terminar, no espacioso. Centrado y a la mitad, el
+ * cartel comparte eje vertical con el formulario y el paño se lee como lo que
+ * es, la cara del local.
+ */
+.pano {
+  background-color: var(--marca);
+  justify-content: center;
+}
+
+@media (min-width: 768px) {
+  .pano {
+    width: 50%;
+  }
+}
+
+.persiana {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+
+  --brillo: color-mix(in srgb, var(--primary-foreground) 7%, transparent);
+  --surco: color-mix(in srgb, var(--foreground) 26%, transparent);
+
+  /* Un poco más oscuro que el paño de atrás: si fueran el mismo color, el
+     movimiento no se leería como un objeto que sube sino como un parpadeo. */
+  background-color: color-mix(in srgb, var(--foreground) 9%, var(--marca));
+  background-image: repeating-linear-gradient(
+    180deg,
+    var(--brillo) 0px,
+    var(--brillo) 1px,
+    transparent 2px,
+    var(--surco) 10px,
+    var(--surco) 12px,
+    var(--brillo) 13px
+  );
+
+  transform-origin: top;
+  /* `both` es lo que la deja cerrada durante el delay: sin eso, el primer
+     cuadro muestra el cartel y recién después baja la persiana para subirla. */
+  animation: subir 680ms cubic-bezier(0.4, 0, 0.2, 1) 140ms both;
+}
+
+/* El travesaño de abajo. Toda persiana tiene uno, más pesado que el resto del
+   paño, y es el detalle que hace que esto se lea como una persiana y no como
+   un degradado a rayas. */
+.persiana::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 4px;
+  background-color: color-mix(in srgb, var(--primary-foreground) 16%, transparent);
+}
+
+@keyframes subir {
+  from {
+    transform: translateY(0) scaleY(1);
+  }
+  /* El scaleY es el enrollado: el paño no se va entero hacia arriba, se junta
+     contra el eje mientras sube. */
+  to {
+    transform: translateY(-100%) scaleY(0.55);
+  }
+}
+
+.arandano {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  /* 7.69:1 sobre --marca, medido en scripts/contraste.mts. */
+  color: color-mix(in srgb, var(--primary-foreground) 70%, transparent);
+}
+
+/*
+ * El cartel. Archivo en su eje expandido: un local tiene el nombre pintado a
+ * lo ancho del frente, y ese ancho es la razón por la que hay una fuente
+ * propia en el repo (ver app/layout.tsx).
+ *
+ * --font-archivo lo define next/font/local sobre el <html>. No se usa
+ * var(--font-display) porque el @theme de Tailwind es `inline`: inyecta el
+ * valor en las utilidades en vez de emitir la variable, así que fuera de una
+ * clase de Tailwind no existe.
+ */
+.nombre {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  font-stretch: 112%;
+  /* Grande de verdad. A 3.75rem el nombre quedaba chico dentro del paño y la
+     pantalla parecía a medio hacer; el max-width en em lo hace envolver a dos
+     o tres líneas, que es como se escribe un nombre largo en un frente y no
+     como se escribe un título de aplicación. */
+  font-size: clamp(2.5rem, 7vw, 5.5rem);
+  max-width: 7em;
+  line-height: 1.02;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+  color: var(--primary-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Sin animación no hay nada que la persiana aporte: sería un paño opaco
+     tapando el cartel para siempre. Se saca entera y queda el campo plano. */
+  .persiana {
+    display: none;
+  }
+}

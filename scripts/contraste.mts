@@ -50,6 +50,12 @@ export const PARES: Par[] = [
   { texto: '--primary-foreground', fondo: '--primary', minimo: 4.5 },
   // El hover del botón de acción — el "Entrar" del login (components/ui/button.tsx).
   { texto: '--primary-foreground', fondo: '--primary', alfaFondo: 0.8, minimo: 4.5 },
+  // El paño de la persiana del login. El nombre del local va opaco; el
+  // subdominio arriba va al 70%, y esa opacidad es justamente la que ningún
+  // par opaco vigila — es texto chico sobre un fondo oscuro, o sea el caso
+  // donde una opacidad "que se ve bien" se cae del mínimo sin avisar.
+  { texto: '--primary-foreground', fondo: '--marca', minimo: 4.5 },
+  { texto: '--primary-foreground', fondo: '--marca', alfaTexto: 0.7, minimo: 4.5 },
   { texto: '--primary', fondo: '--background', minimo: 4.5 },
   { texto: '--primary', fondo: '--accent', minimo: 4.5 },
   { texto: '--primary-foreground', fondo: '--destructive', minimo: 4.5 },
