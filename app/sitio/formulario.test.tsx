@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { Formulario } from './formulario'
+import { Formulario, PantallaDeGracias } from './formulario'
 
 // El action no se ejercita acá —tiene su propio archivo, contra la base—: lo
 // que este test cuida es el contrato del FORMULARIO con el action, que es el
@@ -8,6 +8,13 @@ import { Formulario } from './formulario'
 vi.mock('./acciones', () => ({ enviarLead: vi.fn() }))
 
 const html = (whatsapp = '5491155555555') => renderToStaticMarkup(<Formulario whatsapp={whatsapp} />)
+
+// PantallaDeGracias es la rama de estado.enviado === true, a la que
+// renderToStaticMarkup no puede llegar renderizando <Formulario> (no hay
+// jsdom ni testing-library en este repo para disparar la transición de
+// useActionState) — por eso se afirma directamente sobre el componente
+// exportado, que es la razón por la que existe separado.
+const gracias = (whatsapp: string) => renderToStaticMarkup(<PantallaDeGracias whatsapp={whatsapp} />)
 
 describe('formulario de la landing', () => {
   it('emite los cinco campos con los nombres que el action lee', () => {
@@ -41,6 +48,17 @@ describe('formulario de la landing', () => {
   // mandaría a la nada. Sin whatsapp, el link no se dibuja en ningún lado.
   it('sin whatsapp, no hay link a wa.me', () => {
     expect(html('')).not.toContain('wa.me')
+  })
+
+  // Fix de review de la Task 6: el caso de arriba sólo cubre el pie del
+  // formulario (estado.enviado === false). La pantalla de gracias es la otra
+  // mitad del ruling, y necesita su propio par de casos.
+  it('la pantalla de gracias, con whatsapp, sí trae el wa.me', () => {
+    expect(gracias('5491155555555')).toContain('https://wa.me/5491155555555')
+  })
+
+  it('la pantalla de gracias, sin whatsapp, no trae el wa.me', () => {
+    expect(gracias('')).not.toContain('wa.me')
   })
 
   it('todos los campos visibles tienen su etiqueta asociada', () => {

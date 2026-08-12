@@ -13,6 +13,38 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 // inventario y ventas; test/use-server.test.ts lo fija.
 const INICIAL: EstadoLead = { error: null, enviado: false }
 
+/**
+ * La pantalla de gracias, sin hooks y exportada aparte.
+ *
+ * Sólo se llega acá después de que `useActionState` transicionó a
+ * `enviado: true`, y este repo no tiene jsdom ni testing-library — el único
+ * método de render de los tests es `renderToStaticMarkup`, que no puede
+ * disparar esa transición. Sin este componente separado, la supresión del
+ * link a `wa.me` con `whatsapp` vacío (ruling del controlador, Task 6) no
+ * tendría forma de afirmarse: quedaría código que nadie ejercita, y una
+ * regresión que volviera a mostrar el link ahí pasaría en verde.
+ */
+export function PantallaDeGracias({ whatsapp }: { whatsapp: string }) {
+  return (
+    <div className="space-y-2">
+      <p className="font-medium">Listo, lo recibimos.</p>
+      <p className="text-sm text-muted-foreground">
+        Te escribimos a la brevedad.
+        {whatsapp ? (
+          <>
+            {' '}
+            Si querés apurarlo,{' '}
+            <a className="text-primary underline" href={`https://wa.me/${whatsapp}`}>
+              mandanos un WhatsApp
+            </a>
+            .
+          </>
+        ) : null}
+      </p>
+    </div>
+  )
+}
+
 export function Formulario({ whatsapp }: { whatsapp: string }) {
   const [estado, accion, enviando] = useActionState(enviarLead, INICIAL)
 
@@ -20,22 +52,7 @@ export function Formulario({ whatsapp }: { whatsapp: string }) {
     <Card>
       <CardContent>
         {estado.enviado ? (
-          <div className="space-y-2">
-            <p className="font-medium">Listo, lo recibimos.</p>
-            <p className="text-sm text-muted-foreground">
-              Te escribimos a la brevedad.
-              {whatsapp ? (
-                <>
-                  {' '}
-                  Si querés apurarlo,{' '}
-                  <a className="text-primary underline" href={`https://wa.me/${whatsapp}`}>
-                    mandanos un WhatsApp
-                  </a>
-                  .
-                </>
-              ) : null}
-            </p>
-          </div>
+          <PantallaDeGracias whatsapp={whatsapp} />
         ) : (
           <form action={accion} className="space-y-4">
             {estado.error ? (
