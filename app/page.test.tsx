@@ -32,6 +32,10 @@ vi.mock('next/navigation', () => ({
   redirect: (destino: string) => redirect(destino),
 }))
 
+// El formulario de la landing importa el action, y bajo vitest no hay
+// servidor de Next para ejecutarlo.
+vi.mock('@/app/sitio/acciones', () => ({ enviarLead: vi.fn() }))
+
 async function render() {
   const { default: Home } = await import('@/app/page')
   return Home()
@@ -117,7 +121,8 @@ describe('página raíz', () => {
   // cuerpo tiene que estar libre de los testids de una página de tenant. Un
   // apex que por error resolviera a un tenant hubiera pasado la aserción
   // vieja igual.
-  it('el apex no es 404 ni tenant', async () => {
+  it('el apex renderiza la landing', async () => {
+    process.env.DOMINIO_BASE = 'arandano.app'
     tenantDelRequest.mockResolvedValue({ tipo: 'apex' })
     const elemento = await render()
     expect(notFound).not.toHaveBeenCalled()
@@ -125,6 +130,7 @@ describe('página raíz', () => {
     expect(exigirSesion).not.toHaveBeenCalled()
     expect(redirect).not.toHaveBeenCalled()
     const html = renderToStaticMarkup(elemento)
+    expect(html).toContain('Abrís, vendés, cerrás la caja.')
     expect(html).not.toContain('data-testid="tenant-nombre"')
   })
 })

@@ -7,7 +7,7 @@ import { Formulario } from './formulario'
 // que se rompe en silencio si alguien renombra un campo.
 vi.mock('./acciones', () => ({ enviarLead: vi.fn() }))
 
-const html = () => renderToStaticMarkup(<Formulario whatsapp="5491155555555" />)
+const html = (whatsapp = '5491155555555') => renderToStaticMarkup(<Formulario whatsapp={whatsapp} />)
 
 describe('formulario de la landing', () => {
   it('emite los cinco campos con los nombres que el action lee', () => {
@@ -35,6 +35,12 @@ describe('formulario de la landing', () => {
 
   it('ofrece el WhatsApp como salida directa', () => {
     expect(html()).toContain('https://wa.me/5491155555555')
+  })
+
+  // Ruling del controlador (Task 6): sin número real todavía, un wa.me vacío
+  // mandaría a la nada. Sin whatsapp, el link no se dibuja en ningún lado.
+  it('sin whatsapp, no hay link a wa.me', () => {
+    expect(html('')).not.toContain('wa.me')
   })
 
   it('todos los campos visibles tienen su etiqueta asociada', () => {

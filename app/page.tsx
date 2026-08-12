@@ -1,7 +1,7 @@
 import { notFound, forbidden, redirect } from 'next/navigation'
 import { tenantDelRequest } from '@/lib/tenant/desde-request'
 import { exigirSesion } from '@/lib/auth/sesion'
-import { Contexto } from '@/components/contexto'
+import { Landing } from '@/app/sitio/landing'
 
 // Redundante con el headers() de tenantDelRequest, que ya obliga a render
 // dinámico, y puesto igual: si algún día esta página deja de resolver tenant,
@@ -9,16 +9,17 @@ import { Contexto } from '@/components/contexto'
 // servida a otro tenant es una fuga de datos entre clientes.
 export const dynamic = 'force-dynamic'
 
-const estilo = { fontFamily: 'system-ui, sans-serif', padding: '3rem' }
-
 function PaginaApex() {
-  return (
-    <main style={estilo}>
-      <h1>Arándano</h1>
-      <p>Acá va a vivir el sitio público. Cada negocio entra por su subdominio.</p>
-      <Contexto />
-    </main>
-  )
+  // DOMINIO_BASE ya es obligatoria: tenantDelRequest() tira si falta, y este
+  // render ocurre después de esa llamada. El `!` no esconde un caso posible.
+  const dominio = process.env.DOMINIO_BASE!
+
+  // Sin default: un wa.me con un número vacío manda a la nada, y un número
+  // inventado manda al WhatsApp de un desconocido. Si falta, la landing sale
+  // sin el link.
+  const whatsapp = process.env.WHATSAPP_CONTACTO ?? ''
+
+  return <Landing dominio={dominio} whatsapp={whatsapp} />
 }
 
 /**

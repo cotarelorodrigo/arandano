@@ -23,11 +23,17 @@ export function Formulario({ whatsapp }: { whatsapp: string }) {
           <div className="space-y-2">
             <p className="font-medium">Listo, lo recibimos.</p>
             <p className="text-sm text-muted-foreground">
-              Te escribimos a la brevedad. Si querés apurarlo,{' '}
-              <a className="text-primary underline" href={`https://wa.me/${whatsapp}`}>
-                mandanos un WhatsApp
-              </a>
-              .
+              Te escribimos a la brevedad.
+              {whatsapp ? (
+                <>
+                  {' '}
+                  Si querés apurarlo,{' '}
+                  <a className="text-primary underline" href={`https://wa.me/${whatsapp}`}>
+                    mandanos un WhatsApp
+                  </a>
+                  .
+                </>
+              ) : null}
             </p>
           </div>
         ) : (
@@ -81,13 +87,18 @@ export function Formulario({ whatsapp }: { whatsapp: string }) {
             {/* Gris de texto secundario y NO estilos.firma: esa clase es
                 --primary-foreground al 70%, o sea casi blanco. Se ve sobre el
                 paño de --marca y desaparece sobre esta Card blanca. La firma de
-                marca vive en la franja, no acá adentro. */}
-            <p className="pt-2 text-center text-xs text-muted-foreground">
-              o escribinos por{' '}
-              <a className="text-primary underline" href={`https://wa.me/${whatsapp}`}>
-                WhatsApp
-              </a>
-            </p>
+                marca vive en la franja, no acá adentro.
+
+                Sólo se dibuja con whatsapp presente: sin número real todavía
+                (ver docker/compose.*.yml), un wa.me vacío apuntaría a la nada. */}
+            {whatsapp ? (
+              <p className="pt-2 text-center text-xs text-muted-foreground">
+                o escribinos por{' '}
+                <a className="text-primary underline" href={`https://wa.me/${whatsapp}`}>
+                  WhatsApp
+                </a>
+              </p>
+            ) : null}
           </form>
         )}
       </CardContent>
