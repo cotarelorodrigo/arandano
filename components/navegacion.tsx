@@ -46,7 +46,16 @@ export function Navegacion({ rol }: { rol: RolUsuario }) {
   const ruta = usePathname()
 
   return (
-    <nav className="flex items-center gap-1 text-sm">
+    /* -mb-px: el subrayado de 2 px de la pestaña activa se SOLAPA con el borde
+       inferior del <header> en vez de quedar un pixel arriba, que es lo que
+       dibujaba dos líneas paralelas. Es lo que la hace leer como una pestaña
+       apoyada en el riel.
+
+       overflow-x-auto: hoy sobra lugar con cuatro pestañas, pero este archivo
+       es el punto de extensión que CLAUDE.md promete para el registry de
+       módulos — cuando Órdenes de Trabajo sume las suyas, o en un teléfono, sin
+       esto se rompe. Ahora sale gratis. */
+    <nav className="-mb-px flex items-center gap-1 overflow-x-auto text-sm">
       {PESTANAS.filter((p) => !p.soloDueno || rol === 'DUENO').map((p) => {
         const activa = estaActiva(p.href, ruta)
         return (
@@ -57,10 +66,21 @@ export function Navegacion({ rol }: { rol: RolUsuario }) {
             // subrayado solo no le dice nada a quien no ve la pantalla.
             aria-current={activa ? 'page' : undefined}
             className={cn(
-              'border-b-2 px-3 py-2 font-medium transition-colors',
+              'shrink-0 rounded-sm border-b-2 px-3 py-2 transition-colors outline-none',
+              // El anillo va INSET, y el motivo es mecánico: overflow-x-auto
+              // computa el eje de bloque a `auto` también, así que un anillo
+              // dibujado por fuera de la caja se recortaría arriba y abajo y
+              // podría sacar una barra de scroll vertical. Uno interior no lo
+              // toca el overflow.
+              'focus-visible:inset-ring-3 focus-visible:inset-ring-ring/50',
               activa
-                ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
+                // El peso hace la mitad del trabajo: así el subrayado no tiene
+                // que hacerlo todo, y de paso la pestaña activa y el anillo de
+                // foco no se confunden, porque no comparten forma (una barra
+                // recta abajo contra un halo alrededor del texto). Los dos son
+                // --primary; lo que los distingue es la forma, no el color.
+                ? 'border-primary font-semibold text-foreground'
+                : 'border-transparent font-medium text-muted-foreground hover:text-foreground',
             )}
           >
             {p.texto}
