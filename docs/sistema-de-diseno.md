@@ -36,9 +36,15 @@ la vista, que es justo lo que la contención compra. `--marca` es más oscuro
 "material". El hue sigue siendo **287**, igual que los otros tres: es el mismo
 arándano a una cuarta distancia, no un color nuevo.
 
-**Dónde NO se usa**: en ninguna otra pantalla. Si aparece una segunda, esta
-sección deja de describir una excepción y hay que volver a discutir la regla,
-no estirar la excepción en silencio.
+**Dónde se usa, y en ningún otro lado**: las **superficies de marca** — la
+pantalla de login (`app/login/persiana.module.css`) y la franja de cierre del
+sitio público (`app/sitio/cierre.module.css`). **Nunca la aplicación.** La razón
+es la misma de arriba y no cambió: la contención existe porque una pantalla de
+trabajo se mira ocho horas, y ni el login ni una landing se miran ocho horas.
+
+Si aparece una **tercera** superficie de marca, esta sección deja de describir
+una excepción angosta: ahí se vuelve a discutir la regla, en vez de estirarla
+una vez más en silencio.
 
 ## Los tokens
 
@@ -80,7 +86,7 @@ primera" se rompe el día que alguien reordene secciones.
 | `--primary` | `#3d3571` | Botón de acción, links |
 | `--ring` | `#3d3571` | Anillo de foco — lo más visible al operar con teclado |
 | `--accent` | `#efeff8` | Fila seleccionada, hover. Único neutral tintado |
-| `--marca` | `#271f52` | El paño de la persiana del login, y nada más |
+| `--marca` | `#271f52` | El paño de la persiana del login y la franja de cierre de la landing |
 
 El hue es **287** en los cuatro. Lo que los distingue es croma y luminosidad, no
 tono: es un solo color de marca visto a cuatro distancias.
