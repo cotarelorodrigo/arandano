@@ -93,4 +93,19 @@ describe('Navegacion', () => {
       expect(html).toContain(`href="${href}"`)
     }
   })
+
+  // Frágil a propósito, y por eso va con su motivo escrito: las pestañas no
+  // tenían focus-visible y quedaban con el outline del navegador, sobre un
+  // producto que se opera con teclado en un mostrador. Esta aserción es lo
+  // único que impide que el anillo desaparezca en un refactor de estilos sin
+  // que nada se queje. Si cambia el nombre de la utilidad de Tailwind, se
+  // actualiza acá: ése es el costo y se paga.
+  it('cada pestaña lleva anillo de foco propio', async () => {
+    const html = await render('DUENO', '/vender')
+    const pestanas = html.match(/<a[^>]*>/g) ?? []
+    expect(pestanas).toHaveLength(4)
+    for (const pestana of pestanas) {
+      expect(pestana).toContain('focus-visible:inset-ring-3')
+    }
+  })
 })

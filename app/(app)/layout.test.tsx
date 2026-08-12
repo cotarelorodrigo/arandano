@@ -44,6 +44,22 @@ describe('layout de la aplicación', () => {
     expect(html).toContain('data-testid="tenant-nombre">Local de prueba')
   })
 
+  // El cartel recorta y guarda el nombre completo en title: un nombre largo en
+  // 360 px de ancho no puede empujar el botón Salir fuera de la pantalla.
+  it('el cartel guarda el nombre completo en title', async () => {
+    const html = await render()
+    expect(html).toContain('title="Local de prueba"')
+  })
+
+  // Frágil a propósito, y va con su motivo: es lo único que impide que el
+  // tratamiento de display desaparezca en un refactor de estilos sin que nada
+  // se queje. Vitest resuelve los módulos CSS devolviendo el nombre de la
+  // clase, así que `estilos.cartel` llega al HTML como "cartel".
+  it('el nombre del local lleva el tratamiento de cartel', async () => {
+    const html = await render()
+    expect(html).toMatch(/class="[^"]*cartel/)
+  })
+
   // Se mudó acá desde app/page.tsx en el ciclo del home. Gana cobertura al
   // mudarse: deja de probarse en UNA pantalla y pasa a probarse en todas las
   // autenticadas, porque el barrido del gate lo busca en cada una.
@@ -53,10 +69,15 @@ describe('layout de la aplicación', () => {
     expect(html).toContain('Quien sea')
   })
 
-  it('muestra el stack y la imagen desplegada', async () => {
+  // Mira ORDEN en el documento y no clases ni estilos: es la forma no frágil
+  // de afirmar que el stack y el sha bajaron al pie. Compartían fila con las
+  // pestañas siendo un artefacto de deploy, y sin este caso alguien los
+  // devuelve al header y la suite queda verde.
+  it('muestra el stack y la imagen desplegada, al pie y no en el header', async () => {
     const html = await render()
     expect(html).toContain('data-testid="stack"')
     expect(html).toContain('data-testid="sha"')
+    expect(html.indexOf('contenido')).toBeLessThan(html.indexOf('data-testid="stack"'))
   })
 
   it('renderiza la navegación', async () => {

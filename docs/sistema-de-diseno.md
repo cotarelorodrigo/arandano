@@ -119,6 +119,7 @@ sobre blanco fuera `#bcbcbc` en vez del `#808080` que todos conocemos).
 | `--destructive` sobre `--background` | 4.77 | 4.5 | ok |
 | `--destructive/90` sobre `--card` | 4.54 | 4.5 | ok |
 | `--input` sobre `--background` | 1.26 | 3.0 | **excepción declarada** |
+| `--ring` sobre `--background` | 10.79 | 3.0 | ok |
 
 <!-- contraste:fin -->
 
@@ -159,10 +160,32 @@ esta paleta:
 
 No es un default que quedó: es una decisión. Cero bytes, cero salto de fuente al
 cargar, y se ve nativa en el Windows del mostrador igual que en el Android del
-dueño. **Sigue siendo la pila de toda la aplicación**, incluido el punto de
-venta.
+dueño. **Sigue siendo la pila del cuerpo de toda la aplicación**, incluido el
+punto de venta: títulos, tablas, botones, campos y texto corrido no la
+abandonan en ninguna pantalla. El único rol que sale de ella es el cartel
+—el nombre del local—, que desde este ciclo paga Archivo también en el header
+de la aplicación y no sólo en el login (ver *La cara de display: Archivo* más
+abajo).
 
 `--font-heading: var(--font-sans)`: los títulos usan la misma familia.
+
+### La escala
+
+Los roles, con su cara y su tamaño. Un texto que no encaja en ninguno de estos
+cuatro es señal de que falta una decisión, no de que falte un tamaño.
+
+| Rol | Cara | Tamaño | Peso y ancho |
+|---|---|---|---|
+| **Cartel** — nombre del local | Archivo | 24 px | 600, `font-stretch: 112%`, tracking −0.01em |
+| Título de pantalla (`h1`) | sistema | 20 px | 500 |
+| Pestaña de navegación | sistema | 14 px | 500; activa 600 |
+| Identidad, meta, pie | sistema | 12 px | 400, `--muted-foreground` |
+
+**El cartel pesa más que el título de la pantalla, y es la decisión.** El nombre
+del local es lo más grande de la aplicación: siempre estás adentro de tu local,
+y `Inventario` es sólo dónde estás parado. Es la misma jerarquía que declara el
+login —el negocio del cliente es el héroe, la plataforma no firma—, sostenida
+las ocho horas en vez de los ocho segundos.
 
 ### La cara de display: Archivo
 
@@ -170,8 +193,9 @@ Lo que el párrafo de arriba anticipaba —*"adoptar una fuente propia más adel
 es aditivo y barato"*— pasó, y en un solo lugar.
 
 **Archivo**, de [Omnibus-Type](https://www.omnibus-type.com/), foundry de Buenos
-Aires. Se usa para **una cosa**: el nombre del local en la pantalla de login.
-Ninguna otra pantalla la carga.
+Aires. Se usa para **una cosa**: el nombre del local. Esa cosa se ve en dos
+lugares y en dos tamaños — el cartel del login y el del header de la
+aplicación (`components/cartel.module.css`). Ningún otro rol la usa.
 
 **Por qué ésa.** Tiene eje de ancho variable (`wdth`, 62–125), y ése es el
 motivo entero de la elección: un local argentino tiene el nombre pintado a lo
@@ -187,7 +211,7 @@ no es lo que la justifica, pero tampoco es un accidente.
 | Subset | Sólo `latin` (U+0000–00FF y algunos más) |
 | Origen | `app/fuentes/archivo-latin-var.woff2`, servido desde el propio dominio |
 | Carga | `next/font/local` con `display: swap` y preload |
-| Dónde pesa | En el login. No en el punto de venta ni en inventario |
+| Dónde pesa | En toda pantalla. En la sesión normal viene cacheada del login, pero una sesión con cookie viva entra derecho a `/vender` y ahí paga los 90 KB |
 
 El subset `latin` cubre el español entero —ñ, acentos, `¿`, `¡`—. Un nombre de
 local con un carácter afuera de ese rango cae en la pila del sistema **para ese
@@ -226,6 +250,17 @@ La escala de 4 px de Tailwind, con un **subconjunto habilitado**: los pasos `1,
 lista, **en el código que escribimos nosotros** —pantallas y layouts de `app/`—,
 es señal de que el layout está mal, no de que falte un token.
 
+Excepción, y es angosta: un solape de hairline atado al ancho de un borde no
+es un paso de espaciado y no cae bajo esta regla. `-mb-px` en el riel de
+pestañas de `components/navegacion.tsx` es el caso — solapa el `border-b` de
+1 px del `<header>` para que el subrayado de 2 px de la pestaña activa se
+apoye en el riel en vez de dibujar una segunda línea un pixel más arriba. El
+−1 px ahí no sale de elegir un punto de la escala: sale de medir el borde que
+hay que tapar, exactamente como `border-b-2` tampoco sale de la escala de
+espaciado y nadie lo llamaría una violación. El límite es ese y no más: cubre
+un solape de 1 px derivado de un borde real, no una puerta para colar
+cualquier valor que no esté en la lista.
+
 El recorte importa y no es una escapatoria: los componentes copiados de shadcn
 que viven en `components/ui/` traen medios pasos adentro (`gap-1.5`, `px-2.5`,
 `gap-0.5`, `translate-y-0.5`) y hasta un `pr-18`. **No se les pelea**, por el
@@ -250,6 +285,13 @@ pelearles. Los 36 px de la fila salen de `py-2` sobre `text-sm`, que es lo que
 usa `app/(app)/usuarios/page.tsx`, la única tabla que existe hoy; subirla a 40
 pediría `py-2.5`, o sea justo un medio paso de los que la regla de arriba deja
 afuera del código propio.
+
+**El eje izquierdo del shell.** Cartel, pestañas y contenido arrancan todos en
+el mismo gutter de 24 px (`px-6` en `app/(app)/layout.tsx`, `p-6` en cada
+pantalla). Hoy coinciden porque cada pantalla eligió lo mismo por su cuenta;
+queda escrito para que la próxima no invente otro y parta la columna. El pie
+comparte el mismo `px-6`, pero su contenido es `text-right`: la caja arranca en
+ese gutter izquierdo, el texto cierra contra el derecho.
 
 `--radius: 0.625rem`, con la escala derivada de 7 pasos que vive en
 `@theme inline`. No hay razón de marca para moverla.

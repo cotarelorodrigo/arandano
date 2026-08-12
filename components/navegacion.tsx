@@ -46,7 +46,21 @@ export function Navegacion({ rol }: { rol: RolUsuario }) {
   const ruta = usePathname()
 
   return (
-    <nav className="flex items-center gap-1 text-sm">
+    /* -mb-px: el subrayado de 2 px de la pestaña activa se SOLAPA con el borde
+       inferior del <header> en vez de quedar un pixel arriba, que es lo que
+       dibujaba dos líneas paralelas. Es lo que la hace leer como una pestaña
+       apoyada en el riel.
+
+       Este -1 px no es un paso de la escala de espaciado (docs/sistema-de-
+       diseno.md, sección "Espaciado y radio"): no sale de elegir un punto de
+       esa lista, sale de medir el border-b de 1 px que tiene que tapar. Por
+       eso está exceptuado ahí en vez de ser una violación sin documentar.
+
+       overflow-x-auto: hoy sobra lugar con cuatro pestañas, pero este archivo
+       es el punto de extensión que CLAUDE.md promete para el registry de
+       módulos — cuando Órdenes de Trabajo sume las suyas, o en un teléfono, sin
+       esto se rompe. Ahora sale gratis. */
+    <nav className="-mb-px flex items-center gap-1 overflow-x-auto text-sm">
       {PESTANAS.filter((p) => !p.soloDueno || rol === 'DUENO').map((p) => {
         const activa = estaActiva(p.href, ruta)
         return (
@@ -57,10 +71,30 @@ export function Navegacion({ rol }: { rol: RolUsuario }) {
             // subrayado solo no le dice nada a quien no ve la pantalla.
             aria-current={activa ? 'page' : undefined}
             className={cn(
-              'border-b-2 px-3 py-2 font-medium transition-colors',
+              'shrink-0 rounded-t-sm border-b-2 px-3 py-2 transition-colors outline-none',
+              // El anillo va INSET, y el motivo es mecánico: overflow-x-auto
+              // computa el eje de bloque a `auto` también, así que un anillo
+              // dibujado por fuera de la caja se recortaría arriba y abajo y
+              // podría sacar una barra de scroll vertical. Uno interior no lo
+              // toca el overflow.
+              //
+              // Y va OPACO (--ring, sin el /50 que usan botón e input): esos
+              // otros controles acompañan el halo translúcido con un borde
+              // sólido que también identifica el control (focus-visible:border-
+              // ring), y acá no hay ese segundo indicador. Sin él, --ring/50
+              // sobre --background da 2.70:1 — abajo del 3:1 que WCAG 1.4.11
+              // pide para un indicador no textual. Opaco, el mismo par da
+              // 10.79:1 (scripts/contraste.mts). Es el foco del elemento que
+              // más se opera con teclado en el producto: no se le resigna nada.
+              'focus-visible:inset-ring-3 focus-visible:inset-ring-ring',
               activa
-                ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
+                // El peso hace la mitad del trabajo: así el subrayado no tiene
+                // que hacerlo todo, y de paso la pestaña activa y el anillo de
+                // foco no se confunden, porque no comparten forma (una barra
+                // recta abajo contra un halo alrededor del texto). Los dos son
+                // --primary; lo que los distingue es la forma, no el color.
+                ? 'border-primary font-semibold text-foreground'
+                : 'border-transparent font-medium text-muted-foreground hover:text-foreground',
             )}
           >
             {p.texto}

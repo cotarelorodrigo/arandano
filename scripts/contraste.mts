@@ -64,6 +64,11 @@ export const PARES: Par[] = [
   // (components/ui/alert.tsx).
   { texto: '--destructive', fondo: '--card', alfaTexto: 0.9, minimo: 4.5 },
   { texto: '--input', fondo: '--background', minimo: 3.0 },
+  // El anillo de foco de las pestañas de navegación (components/navegacion.tsx),
+  // opaco desde la revisión final de "el cartel en el shell". Mismo mínimo que
+  // el borde de --input y por la misma regla (WCAG 1.4.11): no es texto, es lo
+  // que identifica un control.
+  { texto: '--ring', fondo: '--background', minimo: 3.0 },
 ]
 
 /**
