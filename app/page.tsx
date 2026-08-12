@@ -1,7 +1,35 @@
+import type { Metadata } from 'next'
 import { notFound, forbidden, redirect } from 'next/navigation'
 import { tenantDelRequest } from '@/lib/tenant/desde-request'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { Landing } from '@/app/sitio/landing'
+
+const TITULO = 'Arándano — el sistema para tu negocio'
+const DESCRIPCION =
+  'Ventas, stock, caja en pesos y dólares, facturación y un bot que atiende por WhatsApp. ' +
+  'Para cualquier negocio argentino, en un solo lugar.'
+
+/**
+ * El ápex se indexa; una página de tenant NO.
+ *
+ * Un local no quiere su punto de venta en Google, y hasta este ciclo nada lo
+ * impedía. Se decide acá y no en un robots.txt porque un robots.txt sería el
+ * mismo archivo para el ápex y para todos los subdominios — justamente la
+ * distinción que hay que hacer. `test/indexacion.test.ts` lo fija.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const resolucion = await tenantDelRequest()
+
+  if (resolucion.tipo !== 'apex') {
+    return { robots: { index: false, follow: false } }
+  }
+
+  return {
+    title: TITULO,
+    description: DESCRIPCION,
+    openGraph: { title: TITULO, description: DESCRIPCION, type: 'website' },
+  }
+}
 
 // Redundante con el headers() de tenantDelRequest, que ya obliga a render
 // dinámico, y puesto igual: si algún día esta página deja de resolver tenant,
