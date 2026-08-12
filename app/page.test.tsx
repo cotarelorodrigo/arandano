@@ -9,7 +9,9 @@ vi.mock('@/lib/tenant/desde-request', () => ({
 // exigirSesion se mockea acá y no se deja correr de verdad: su implementación
 // real depende de headers(), de authParaTenant y de Postgres, que son detalle
 // de otro módulo (ver lib/auth/sesion.test.ts). Lo único que a esta página le
-// importa es: sin sesión redirige, con sesión trae un usuario.
+// importa es: sin sesión redirige, con sesión sigue de largo hacia /vender —
+// el resultado de exigirSesion() ni se lee, así que a esta página le alcanza
+// con que la promesa resuelva.
 const exigirSesion = vi.fn()
 vi.mock('@/lib/auth/sesion', () => ({
   exigirSesion: () => exigirSesion(),
@@ -21,9 +23,13 @@ const notFound = vi.fn(() => {
 const forbidden = vi.fn(() => {
   throw new Error('NEXT_FORBIDDEN')
 })
+const redirect = vi.fn((destino: string) => {
+  throw new Error(`NEXT_REDIRECT:${destino}`)
+})
 vi.mock('next/navigation', () => ({
   notFound: () => notFound(),
   forbidden: () => forbidden(),
+  redirect: (destino: string) => redirect(destino),
 }))
 
 async function render() {
@@ -38,6 +44,7 @@ describe('página raíz', () => {
     exigirSesion.mockReset()
     notFound.mockClear()
     forbidden.mockClear()
+    redirect.mockClear()
   })
 
   it('404 para un dominio ajeno', async () => {
@@ -59,8 +66,9 @@ describe('página raíz', () => {
   })
 
   // 403 y no 404, deliberadamente: son mensajes distintos para situaciones
-  // distintas. Y antes de exigirSesion: un tenant suspendido no llega ni a
-  // preguntar si hay sesión.
+  // distintas. Y antes de exigirSesion Y antes del redirect: un tenant
+  // suspendido no llega ni a preguntar si hay sesión, y no puede terminar en
+  // /vender para que otra cosa lo rebote sin decir por qué.
   it('403 para un tenant suspendido', async () => {
     tenantDelRequest.mockResolvedValue({
       tipo: 'tenant',
@@ -69,6 +77,7 @@ describe('página raíz', () => {
     await expect(render()).rejects.toThrow('NEXT_FORBIDDEN')
     expect(notFound).not.toHaveBeenCalled()
     expect(exigirSesion).not.toHaveBeenCalled()
+    expect(redirect).not.toHaveBeenCalled()
   })
 
   // Con el guard puesto, un tenant sin sesión ya no renderiza nada de la home:
@@ -89,51 +98,18 @@ describe('página raíz', () => {
     expect(forbidden).not.toHaveBeenCalled()
   })
 
-  // toBeTruthy() no alcanza acá: cualquier elemento JSX es truthy, así que un
-  // tenant hardcodeado o el equivocado hubiera pasado igual. Se afirma sobre
-  // el HTML que realmente sale, para distinguir de verdad PaginaTenant de
-  // PaginaApex y confirmar que el nombre que se ve es el del tenant resuelto
-  // y el usuario el de la sesión.
-  //
-  // `tenant-nombre` se había mudado a la pantalla de login en el ciclo de
-  // autenticación y volvió acá con el smoke autenticado: `/` es una pantalla
-  // de tenant que NO vive bajo (app) —el ápex entra por la misma ruta y no
-  // tiene sesión—, así que no hereda el marcador de app/(app)/layout.tsx y
-  // tiene que ponerlo por su cuenta o el barrido de scripts/smoke.sh no la
-  // puede distinguir de un 200 vacío. La rama del ápex sigue sin marcador, y
-  // eso lo cuida caso_home_responde.
-  it('con sesión, un tenant en TRIAL resuelve con su nombre y el usuario logueado', async () => {
+  // El home dejó de ser una pantalla: es la aplicación abierta en la pestaña
+  // por defecto. Lo que se afirma es el DESTINO, que es el contrato entero.
+  it('con sesión, un tenant va a /vender', async () => {
     tenantDelRequest.mockResolvedValue({
       tipo: 'tenant',
       tenant: { id: 'x', nombre: 'Flor', estado: 'TRIAL' },
     })
-    exigirSesion.mockResolvedValue({
-      usuario: { id: 'u1', nombre: 'Ana', email: 'ana@flor.com', rol: 'EMPLEADO' },
-    })
-    const elemento = await render()
-    const html = renderToStaticMarkup(elemento)
-    expect(html).toContain('Flor')
-    // Con el `>` pegado al nombre, igual que lo busca scripts/smoke.sh: el
-    // atributo tiene que quedar ÚLTIMO en el JSX, porque React emite los
-    // atributos en el orden en que están escritos.
-    expect(html).toContain('data-testid="tenant-nombre">Flor')
-    expect(html).toContain('data-testid="usuario-nombre"')
-    expect(html).toContain('Hola, Ana')
-    // Empleado, no dueño: sin el link a /usuarios.
-    expect(html).not.toContain('/usuarios')
-  })
-
-  it('un dueño ve el link a /usuarios; un empleado no', async () => {
-    tenantDelRequest.mockResolvedValue({
-      tipo: 'tenant',
-      tenant: { id: 'x', nombre: 'Flor', estado: 'TRIAL' },
-    })
-    exigirSesion.mockResolvedValue({
-      usuario: { id: 'u1', nombre: 'Ana', email: 'ana@flor.com', rol: 'DUENO' },
-    })
-    const elemento = await render()
-    const html = renderToStaticMarkup(elemento)
-    expect(html).toContain('/usuarios')
+    // Home() no lee nada de lo que devuelve exigirSesion(); sólo importa que
+    // la promesa resuelva.
+    exigirSesion.mockResolvedValue(undefined)
+    await expect(render()).rejects.toThrow('NEXT_REDIRECT:/vender')
+    expect(redirect).toHaveBeenCalledWith('/vender')
   })
 
   // Mismo criterio que caso_home_responde en scripts/smoke.sh tras el fix de
@@ -147,7 +123,8 @@ describe('página raíz', () => {
     expect(notFound).not.toHaveBeenCalled()
     expect(forbidden).not.toHaveBeenCalled()
     expect(exigirSesion).not.toHaveBeenCalled()
+    expect(redirect).not.toHaveBeenCalled()
     const html = renderToStaticMarkup(elemento)
-    expect(html).not.toContain('data-testid="usuario-nombre"')
+    expect(html).not.toContain('data-testid="tenant-nombre"')
   })
 })

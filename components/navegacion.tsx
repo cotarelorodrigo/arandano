@@ -1,46 +1,72 @@
+'use client'
+
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import type { RolUsuario } from '@/lib/auth/sesion'
+import { cn } from '@/lib/utils'
+
+// Las pestañas de la aplicación, en un solo lugar.
+type Pestana = { href: string; texto: string; soloDueno?: boolean }
+
+const PESTANAS: Pestana[] = [
+  { href: '/vender', texto: 'Vender' },
+  { href: '/ventas', texto: 'Ventas' },
+  { href: '/inventario', texto: 'Inventario' },
+  { href: '/usuarios', texto: 'Usuarios', soloDueno: true },
+]
 
 /**
- * Los enlaces de la aplicación, en un solo lugar.
+ * Por PREFIJO y no por igualdad: /ventas/<id> tiene que dejar Ventas
+ * subrayado, o entrar al detalle de una venta apagaría toda la navegación.
  *
- * Lo usan DOS consumidores y por eso vive en components/ y no adentro de
- * `app/(app)/`: el layout del grupo, y `app/page.tsx`, que no puede estar bajo
- * ese grupo —el ápex entra por la misma ruta y no tiene sesión— y por lo tanto
- * no hereda su layout. Dos listas de enlaces se desincronizan en cuanto
- * aparezca la quinta sección.
+ * La barra del segundo caso no es cosmética: sin ella, `/vender-mayorista`
+ * activaría Vender. Y es también lo que mantiene separados /vender y /ventas,
+ * que se parecen lo suficiente como para tentar a alguien a comparar por los
+ * primeros caracteres.
+ */
+export function estaActiva(href: string, ruta: string): boolean {
+  return ruta === href || ruta.startsWith(`${href}/`)
+}
+
+/**
+ * Es componente de CLIENTE desde el ciclo del home: la pestaña activa sale de
+ * usePathname(), y un layout de servidor no puede saber en qué ruta está. No
+ * cuesta nada sin JavaScript — Next renderiza los componentes de cliente en el
+ * servidor para el HTML inicial, así que el subrayado sale correcto en la
+ * primera carga, y cada navegación sin JS es una carga completa que vuelve a
+ * salir correcta.
  *
- * Cuatro secciones, sin "Inicio": el nombre del local en el header ya enlaza
- * a la home (ver app/(app)/layout.tsx), así que un link más al mismo destino
- * era redundante.
- *
- * Sin registry de módulos todavía: CLAUDE.md promete la navegación como punto
- * de extensión del núcleo, y ese punto se diseña bien cuando exista Órdenes de
- * Trabajo para tironear de él. Tenerlos centralizados acá es lo que hace barato
- * ese refactor.
+ * Vivía acá porque tenía dos consumidores (el layout del grupo y app/page.tsx).
+ * Desde que `/` redirige a /vender le quedó uno solo, y se queda igual por dos
+ * motivos nuevos: es 'use client' —el layout no lo es— y es el punto de
+ * extensión que CLAUDE.md promete para el registry de módulos. Cuando exista
+ * Órdenes de Trabajo, sus pestañas entran por esta lista.
  */
 export function Navegacion({ rol }: { rol: RolUsuario }) {
+  const ruta = usePathname()
+
   return (
-    <nav className="flex items-center gap-4 text-sm">
-      {/* Link y no <a>: son rutas internas de Next, y el `href="/"` con <a>
-          dispara @next/next/no-html-link-for-pages (esta regla sí detecta la
-          ruta raíz aunque no navegue bien las agrupadas bajo (app), que es por
-          qué el resto del código de este ciclo ya usa Link en vez de <a> para
-          links internos — ver app/(app)/inventario/page.tsx y nuevo/page.tsx). */}
-      <Link href="/vender" className="hover:underline">
-        Vender
-      </Link>
-      <Link href="/ventas" className="hover:underline">
-        Ventas
-      </Link>
-      <Link href="/inventario" className="hover:underline">
-        Inventario
-      </Link>
-      {rol === 'DUENO' && (
-        <Link href="/usuarios" className="hover:underline">
-          Usuarios
-        </Link>
-      )}
+    <nav className="flex items-center gap-1 text-sm">
+      {PESTANAS.filter((p) => !p.soloDueno || rol === 'DUENO').map((p) => {
+        const activa = estaActiva(p.href, ruta)
+        return (
+          <Link
+            key={p.href}
+            href={p.href}
+            // aria-current es lo que anuncia un lector de pantalla; el
+            // subrayado solo no le dice nada a quien no ve la pantalla.
+            aria-current={activa ? 'page' : undefined}
+            className={cn(
+              'border-b-2 px-3 py-2 font-medium transition-colors',
+              activa
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {p.texto}
+          </Link>
+        )
+      })}
     </nav>
   )
 }

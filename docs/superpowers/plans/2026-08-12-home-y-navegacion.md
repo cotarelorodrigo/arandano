@@ -52,7 +52,11 @@ async function render(rol: 'DUENO' | 'EMPLEADO', ruta: string) {
   return renderToStaticMarkup(<Navegacion rol={rol} />)
 }
 
-async function estaActiva() {
+// Import dinámico y no de arriba: el archivo usa vi.resetModules() en cada
+// beforeEach, así que un import de módulo quedaría apuntando a una instancia
+// vieja. El nombre del helper NO es `estaActiva` a propósito — llamar
+// `(await estaActiva())(...)` se lee pésimo y esconde qué se está probando.
+async function traerEstaActiva() {
   return (await import('@/components/navegacion')).estaActiva
 }
 
@@ -63,13 +67,14 @@ describe('estaActiva', () => {
   })
 
   it('la ruta exacta activa la pestaña', async () => {
-    expect((await estaActiva())('/vender', '/vender')).toBe(true)
+    const activa = await traerEstaActiva()
+    expect(activa('/vender', '/vender')).toBe(true)
   })
 
   // Sin esto, entrar al detalle de una venta apagaría toda la navegación y
   // parecería un bug.
   it('una ruta de detalle activa su pestaña', async () => {
-    const activa = await estaActiva()
+    const activa = await traerEstaActiva()
     expect(activa('/ventas', '/ventas/abc-123')).toBe(true)
     expect(activa('/inventario', '/inventario/nuevo')).toBe(true)
   })
@@ -77,13 +82,14 @@ describe('estaActiva', () => {
   // El caso que justifica la barra en el prefijo: /vender y /ventas se
   // parecen lo suficiente como para que alguien "arregle" esto algún día.
   it('/ventas NO activa Vender, ni al revés', async () => {
-    const activa = await estaActiva()
+    const activa = await traerEstaActiva()
     expect(activa('/vender', '/ventas')).toBe(false)
     expect(activa('/ventas', '/vender')).toBe(false)
   })
 
   it('un hermano con prefijo parecido no activa', async () => {
-    expect((await estaActiva())('/vender', '/vender-mayorista')).toBe(false)
+    const activa = await traerEstaActiva()
+    expect(activa('/vender', '/vender-mayorista')).toBe(false)
   })
 })
 

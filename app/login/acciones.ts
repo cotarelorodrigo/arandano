@@ -115,5 +115,8 @@ export async function entrar(_estado: EstadoLogin, datos: FormData): Promise<Est
 
   // redirect() tira una excepción de control de Next, así que va FUERA del
   // try: adentro, el catch la tomaría por un login fallido.
-  redirect('/')
+  //
+  // A /vender y no a `/`: `/` sólo redirige acá, así que pasar por ahí era un
+  // salto de servidor de más en cada login.
+  redirect('/vender')
 }

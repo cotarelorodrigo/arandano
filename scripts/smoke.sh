@@ -8,9 +8,11 @@
 # Un caso por función, y la lista abajo. Sumar un caso es agregar una función y
 # un renglón. Hoy cubre /api/health, las pantallas sin credenciales, un login
 # real contra /api/auth/sign-in/email y —con esa sesión— cada pantalla de
-# app/(app)/**/page.tsx más /, y el login POR LA PANTALLA, que es lo único que
-# ejercita el redirect de un server action. Lo que falta (venta, factura, orden
-# de trabajo, catálogo público) entra cuando exista ese código.
+# app/(app)/**/page.tsx, caso_home_redirige_a_vender (/ ya no es una pantalla
+# propia, así que lo que se cubre es el redirect), y el login POR LA PANTALLA,
+# que es lo único que ejercita el redirect de un server action. Lo que falta
+# (venta, factura, orden de trabajo, catálogo público) entra cuando exista ese
+# código.
 #
 # ok/bad/PASS/FAIL van inline y NO se sourcean desde scripts/tests/lib-asserts.sh,
 # a propósito: ese archivo se declara a sí mismo compartido entre los
@@ -160,6 +162,18 @@ caso_home_exige_sesion() {
   [[ "$destino" == */login ]]
 }
 
+# El home es la aplicación abierta en la pestaña por defecto, así que `/` con
+# sesión tiene que mandar a /vender. Se afirma el DESTINO y no sólo que hubo
+# un redirect: un rebote a /login también sería un redirect, y significaría
+# que el guard se rompió.
+caso_home_redirige_a_vender() {
+  local destino
+  destino=$(curl -s -o /dev/null --max-time 10 -w '%{redirect_url}' \
+    -H "Cookie: ${COOKIE_SESION}" \
+    -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/")
+  [[ "$destino" == */vender ]]
+}
+
 # El ápex no tiene login, y no puede delatar nada distinto de una ruta que no
 # existe. CLAUDE.md ya tenía anotado que los casos de login entran acá cuando
 # exista el login; éste y el de arriba son los primeros.
@@ -266,16 +280,9 @@ caso_login_devuelve_sesion() {
 #
 # POR QUÉ EXISTE. caso_login_devuelve_sesion entra por
 # /api/auth/sign-in/email, que es un endpoint común y corriente: nunca pasa
-# por app/login/acciones.ts ni por el redirect('/') del final. Y ese redirect
-# tiene una vuelta propia: Next no renderiza el destino en el mismo request,
-# hace un `fetch()` HTTP contra sí mismo (`createRedirectRenderResult`) y
-# devuelve ESE render incrustado en la respuesta del action. Como es un fetch
-# de verdad, el `Host` que le llega al destino es el interno del propio
-# servidor (`localhost:3000` en dev, lo que diga HOSTNAME en producción) y el
-# hostname del navegador viaja sólo en `x-forwarded-host` — que es por lo que
-# lib/tenant/desde-request.ts lo lee primero. Con la versión que sólo miraba
-# `host`, entrar dejaba la URL en `/` mostrando el 404 de Next y un F5 lo
-# arreglaba: verde en todo el gate, roto para el primer cliente que entrara.
+# por app/login/acciones.ts ni por el redirect('/vender') del final. Y ese
+# redirect es lo único que ejercita el camino que Next resuelve con un
+# fetch() contra sí mismo.
 #
 # SIN header Origin, por el mismo motivo que el login de arriba: Next deja
 # pasar un action sin Origin (loguea un warning), y mandarlo obligaría a
@@ -310,6 +317,10 @@ caso_login_por_la_pantalla() {
   # 303 y no 200: un 200 es el action devolviendo { error } sin redirigir, o
   # sea que el login falló o que el encoding de arriba dejó de valer.
   [[ "$codigo" == "303" ]] || return 1
+  # OJO al diagnosticar un rojo acá: el cuerpo trae el render incrustado del
+  # DESTINO del redirect, y desde este ciclo el destino es /vender —que
+  # consulta la base— y no / —que era estático—. Un /vender roto pinta este
+  # caso de rojo diciendo "login por la pantalla" y no habla del punto de venta.
   # El nombre del local prueba que el render incrustado resolvió el tenant
   # —era exactamente lo que fallaba—, y usuario-nombre prueba que además es la
   # home autenticada y no la pantalla de login: /login lleva el MISMO marcador
@@ -326,18 +337,16 @@ caso_login_por_la_pantalla() {
 # nombre del local — el mismo valor que el paso 8 acaba de escribir en la base,
 # y el mismo argumento que ya usa caso_tenant_resuelve.
 #
-# QUÉ CUBRE ESTO, EXACTAMENTE. Para `/` el marcador lo emite la página
-# (app/page.tsx), así que la aserción prueba que la PÁGINA renderizó. Para las
-# rutas de (app) lo emite el layout (app/(app)/layout.tsx), así que prueba que
-# el layout renderizó y que la página no tiró: una página que devuelva
-# contenido vacío sin lanzar excepción pasa en verde. Hoy alcanza porque
-# notFound() y las excepciones no manejadas caen en el boundary de la RAÍZ, que
-# no renderiza el layout de (app) — de ahí el rojo. Pero un `error.tsx` o un
-# `not-found.tsx` DENTRO de (app) se montarían adentro de ese layout: el
-# marcador saldría igual, con 200, y este barrido se volvería verde sobre una
-# pantalla rota. No existe ninguno de los dos hoy, y test/boundaries-app.test.ts
-# falla si alguien agrega uno, justamente para que esa decisión no se tome sin
-# mirar esta línea.
+# QUÉ CUBRE ESTO, EXACTAMENTE. El marcador lo emite el layout del grupo
+# (app/(app)/layout.tsx), así que la aserción prueba que ESE layout renderizó y
+# que la página no tiró: una página que devuelva contenido vacío sin lanzar
+# excepción pasa en verde. Hoy alcanza porque notFound() y las excepciones no
+# manejadas caen en el boundary de la RAÍZ, que no renderiza el layout de (app)
+# — de ahí el rojo. Pero un `error.tsx` o un `not-found.tsx` DENTRO de (app) se
+# montarían adentro de ese layout: el marcador saldría igual, con 200, y este
+# barrido se volvería verde sobre una pantalla rota. No existe ninguno de los
+# dos hoy, y test/boundaries-app.test.ts falla si alguien agrega uno,
+# justamente para que esa decisión no se tome sin mirar esta línea.
 #
 # NO se busca el texto del 404 en el cuerpo, y esto costó una tarde: Next
 # incluye el boundary de "not found" en el payload de TODA página, incluidas
@@ -369,25 +378,22 @@ RUTAS_APP_CRUDAS=$(rutas_autenticadas 'app/(app)') || {
   printf '\n\033[31mno se pudo derivar la lista de rutas autenticadas\033[0m\n' >&2
   exit 1
 }
-# `/` primero, y a mano: no vive bajo (app) —el ápex llega por esa misma ruta y
-# no tiene sesión— pero para un tenant es una pantalla autenticada, porque llama
-# a exigirSesion() por su cuenta. Es la misma excepción, con la misma razón, que
-# declara FUERA_DEL_GRUPO en test/rutas-con-guard.test.ts.
-#
 # El bucle y no `mapfile`: si TODAS las páginas del grupo estuvieran declaradas
 # en RUTAS_SIN_SMOKE, la salida sería un string vacío y `mapfile` dejaría un
-# elemento vacío que se pediría como "$URL_BASE" pelado — o sea `/` otra vez,
-# reportado con un nombre que no dice nada.
-#
-# Si algún día `/` se mudara bajo (app), esta línea tiene que salir: quedarían
-# dos casos `pantalla /`, los dos verdes, y el segundo no probaría nada.
+# elemento vacío que se pediría como "$URL_BASE" pelado — o sea `/` pedido sin
+# ruta, reportado con un nombre que no dice nada.
 #
 # La lista sale del ÁRBOL DE TRABAJO, no de la imagen que se está por promover.
 # Contra el gate son lo mismo, porque el paso 1 exige working tree limpio y el
 # build sale de ese mismo commit. Corrido a mano desde otro checkout, en cambio,
 # este barrido puede pedir rutas que la imagen no tiene: eso es un rojo honesto,
 # pero habla del checkout y no de la imagen.
-RUTAS_APP=('/')
+#
+# `/` NO va acá desde que redirige a /vender: el barrido abre cada ruta sin
+# `-L` y exige 200. Su contrato lo fija caso_home_redirige_a_vender, que es
+# una aserción más fuerte que la vieja —"algo renderizó con el nombre del
+# local"— porque nombra el destino.
+RUTAS_APP=()
 while IFS= read -r ruta_derivada; do
   [[ -n "$ruta_derivada" ]] && RUTAS_APP+=("$ruta_derivada")
 done <<<"$RUTAS_APP_CRUDAS"
@@ -424,11 +430,14 @@ done
 # No afloja el gate: caso_login_devuelve_sesion ya sumó su rojo unas líneas más
 # arriba, así que FAIL ya es distinto de cero y el smoke igual sale con 1.
 if [[ -n "$COOKIE_SESION" ]]; then
+  if caso_home_redirige_a_vender; then ok "/ manda a /vender"; else bad "/ manda a /vender"; fi
   for ruta in "${RUTAS_APP[@]}"; do
     if caso_pantalla "$ruta"; then ok "pantalla ${ruta}"; else bad "pantalla ${ruta}"; fi
   done
 else
-  omit "$((${#RUTAS_APP[@]})) pantallas omitidas: sin sesión (ver caso_login_devuelve_sesion)"
+  # +1: sin sesión tampoco corre caso_home_redirige_a_vender, no sólo el
+  # barrido de RUTAS_APP — el conteo tiene que incluirlo o miente de menos.
+  omit "$((${#RUTAS_APP[@]} + 1)) chequeos omitidos: sin sesión (ver caso_login_devuelve_sesion)"
 fi
 
 printf '\n%d ok, %d fallan\n' "$PASS" "$FAIL"

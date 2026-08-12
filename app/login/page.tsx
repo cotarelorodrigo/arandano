@@ -13,8 +13,9 @@ export default async function Login() {
   if (resolucion.tipo !== 'tenant') notFound()
   if (resolucion.tenant.estado === 'SUSPENDIDO') forbidden()
 
-  // Ya logueado, esta pantalla no tiene sentido.
-  if (await sesionActual()) redirect('/')
+  // Ya logueado, esta pantalla no tiene sentido. Directo a /vender y no a /:
+  // desde que / redirige a /vender, pasar por ahí sería un salto de más.
+  if (await sesionActual()) redirect('/vender')
 
   return (
     <main className="flex min-h-full flex-col md:flex-row">
