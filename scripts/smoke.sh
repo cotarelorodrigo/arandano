@@ -160,6 +160,18 @@ caso_home_exige_sesion() {
   [[ "$destino" == */login ]]
 }
 
+# El home es la aplicación abierta en la pestaña por defecto, así que `/` con
+# sesión tiene que mandar a /vender. Se afirma el DESTINO y no sólo que hubo
+# un redirect: un rebote a /login también sería un redirect, y significaría
+# que el guard se rompió.
+caso_home_redirige_a_vender() {
+  local destino
+  destino=$(curl -s -o /dev/null --max-time 10 -w '%{redirect_url}' \
+    -b "$COOKIE_SESION" \
+    -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/")
+  [[ "$destino" == */vender ]]
+}
+
 # El ápex no tiene login, y no puede delatar nada distinto de una ruta que no
 # existe. CLAUDE.md ya tenía anotado que los casos de login entran acá cuando
 # exista el login; éste y el de arriba son los primeros.
@@ -266,16 +278,9 @@ caso_login_devuelve_sesion() {
 #
 # POR QUÉ EXISTE. caso_login_devuelve_sesion entra por
 # /api/auth/sign-in/email, que es un endpoint común y corriente: nunca pasa
-# por app/login/acciones.ts ni por el redirect('/') del final. Y ese redirect
-# tiene una vuelta propia: Next no renderiza el destino en el mismo request,
-# hace un `fetch()` HTTP contra sí mismo (`createRedirectRenderResult`) y
-# devuelve ESE render incrustado en la respuesta del action. Como es un fetch
-# de verdad, el `Host` que le llega al destino es el interno del propio
-# servidor (`localhost:3000` en dev, lo que diga HOSTNAME en producción) y el
-# hostname del navegador viaja sólo en `x-forwarded-host` — que es por lo que
-# lib/tenant/desde-request.ts lo lee primero. Con la versión que sólo miraba
-# `host`, entrar dejaba la URL en `/` mostrando el 404 de Next y un F5 lo
-# arreglaba: verde en todo el gate, roto para el primer cliente que entrara.
+# por app/login/acciones.ts ni por el redirect('/vender') del final. Y ese
+# redirect es lo único que ejercita el camino que Next resuelve con un
+# fetch() contra sí mismo.
 #
 # SIN header Origin, por el mismo motivo que el login de arriba: Next deja
 # pasar un action sin Origin (loguea un warning), y mandarlo obligaría a
@@ -369,25 +374,22 @@ RUTAS_APP_CRUDAS=$(rutas_autenticadas 'app/(app)') || {
   printf '\n\033[31mno se pudo derivar la lista de rutas autenticadas\033[0m\n' >&2
   exit 1
 }
-# `/` primero, y a mano: no vive bajo (app) —el ápex llega por esa misma ruta y
-# no tiene sesión— pero para un tenant es una pantalla autenticada, porque llama
-# a exigirSesion() por su cuenta. Es la misma excepción, con la misma razón, que
-# declara FUERA_DEL_GRUPO en test/rutas-con-guard.test.ts.
-#
 # El bucle y no `mapfile`: si TODAS las páginas del grupo estuvieran declaradas
 # en RUTAS_SIN_SMOKE, la salida sería un string vacío y `mapfile` dejaría un
-# elemento vacío que se pediría como "$URL_BASE" pelado — o sea `/` otra vez,
-# reportado con un nombre que no dice nada.
-#
-# Si algún día `/` se mudara bajo (app), esta línea tiene que salir: quedarían
-# dos casos `pantalla /`, los dos verdes, y el segundo no probaría nada.
+# elemento vacío que se pediría como "$URL_BASE" pelado — o sea `/` pedido sin
+# ruta, reportado con un nombre que no dice nada.
 #
 # La lista sale del ÁRBOL DE TRABAJO, no de la imagen que se está por promover.
 # Contra el gate son lo mismo, porque el paso 1 exige working tree limpio y el
 # build sale de ese mismo commit. Corrido a mano desde otro checkout, en cambio,
 # este barrido puede pedir rutas que la imagen no tiene: eso es un rojo honesto,
 # pero habla del checkout y no de la imagen.
-RUTAS_APP=('/')
+#
+# `/` NO va acá desde que redirige a /vender: el barrido abre cada ruta sin
+# `-L` y exige 200. Su contrato lo fija caso_home_redirige_a_vender, que es
+# una aserción más fuerte que la vieja —"algo renderizó con el nombre del
+# local"— porque nombra el destino.
+RUTAS_APP=()
 while IFS= read -r ruta_derivada; do
   [[ -n "$ruta_derivada" ]] && RUTAS_APP+=("$ruta_derivada")
 done <<<"$RUTAS_APP_CRUDAS"
@@ -424,6 +426,7 @@ done
 # No afloja el gate: caso_login_devuelve_sesion ya sumó su rojo unas líneas más
 # arriba, así que FAIL ya es distinto de cero y el smoke igual sale con 1.
 if [[ -n "$COOKIE_SESION" ]]; then
+  if caso_home_redirige_a_vender; then ok "/ manda a /vender"; else bad "/ manda a /vender"; fi
   for ruta in "${RUTAS_APP[@]}"; do
     if caso_pantalla "$ruta"; then ok "pantalla ${ruta}"; else bad "pantalla ${ruta}"; fi
   done
