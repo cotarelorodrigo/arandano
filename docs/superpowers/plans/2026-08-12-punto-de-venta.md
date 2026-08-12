@@ -73,9 +73,9 @@ describe('el eje de ancho de Archivo está activado', () => {
     ).toContain('prop:"font-stretch",value:"62%125%"')
   })
 })
-
-export { compacto }
 ```
+
+`compacto` queda local a este archivo: exportarla desde un test para que otro test la importe es dependencia entre suites, y hoy no la necesita nadie más.
 
 - [ ] **Step 2: Correrlo y ver que pasa (todavía no falla)**
 
@@ -482,17 +482,10 @@ Agregar al `describe` del Step 1:
     expect(await render()).toMatch(/class="[^"]*importe/)
   })
 
-  // Una sola vez en pantalla. Antes estaba dos veces —la card de cobro y el
-  // pie— y en ninguna de las dos mandaba.
-  it('el total no está también en la columna de cobro', async () => {
-    const html = await render()
-    const veces = [...html.matchAll(/class="[^"]*total[^"]*"/g)].length
-    expect(veces, `el total aparece ${veces} veces y tiene que aparecer 1`).toBe(1)
-  })
 ```
 
 Run: `npx vitest run "app/(app)/vender/punto-de-venta.test.tsx"`
-Expected: FAIL en los tres casos nuevos — todavía no existe el pie.
+Expected: FAIL en los dos casos nuevos — todavía no existe el pie.
 
 - [ ] **Step 3: Importar el módulo en la pantalla**
 
@@ -611,9 +604,9 @@ El `<tbody>` vacío con encabezado y pie a la vista **es** el estado vacío que 
 - [ ] **Step 7: Correr los tests**
 
 Run: `npx vitest run "app/(app)/vender/punto-de-venta.test.tsx"`
-Expected: FAIL todavía en `el total no está también en la columna de cobro` — ese lo cierra la Task 4. Los otros tres, PASS.
+Expected: PASS, los tres casos.
 
-Si molesta tener un rojo entre tasks, mover ese caso a la Task 4. **No** se cierra acá adelantando el cambio de la card: son dos regiones distintas del archivo y dos revisiones distintas.
+En este punto el total está **dos veces** en pantalla —el pie nuevo y el que sigue en la card de cobro—, y eso es correcto: sacarlo de la card es la Task 4, que es otra región del archivo y otra revisión. El caso que lo exige vive allá, para que esta task no cierre con un rojo a propósito.
 
 - [ ] **Step 8: Escribir la enmienda de la regla**
 
@@ -673,10 +666,22 @@ El total sale de la card —pasa a estar una sola vez en pantalla—, la card no
 - Consumes: `estilos.importe` de `components/importe.module.css`, ya importado por la Task 3.
 - Produces: nada.
 
-- [ ] **Step 1: Ver el rojo que quedó abierto**
+- [ ] **Step 1: Escribir el test que falla**
+
+Agregar al `describe` de `app/(app)/vender/punto-de-venta.test.tsx`:
+
+```tsx
+  // Una sola vez en pantalla. Antes estaba dos veces —la card de cobro y el
+  // pie de la cinta— y en ninguna de las dos mandaba.
+  it('el total no está también en la columna de cobro', async () => {
+    const html = await render()
+    const veces = [...html.matchAll(/class="[^"]*total[^"]*"/g)].length
+    expect(veces, `el total aparece ${veces} veces y tiene que aparecer 1`).toBe(1)
+  })
+```
 
 Run: `npx vitest run "app/(app)/vender/punto-de-venta.test.tsx"`
-Expected: FAIL en `el total no está también en la columna de cobro`, con el mensaje que dice que aparece 2 veces.
+Expected: FAIL con el mensaje que dice que aparece 2 veces.
 
 - [ ] **Step 2: Sacar el total de la card y renombrar el título**
 
