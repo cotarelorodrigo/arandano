@@ -474,11 +474,12 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
 
       <Card className="md:w-80">
         <CardHeader>
-          <CardTitle>Cobrar</CardTitle>
+          {/* "Cobro" y no "Cobrar": el botón de abajo dice Cobrar, y una acción
+              tiene un solo nombre en todo el flujo. La card nombra la zona, el
+              botón nombra lo que pasa al apretarlo. */}
+          <CardTitle>Cobro</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="mb-4 text-2xl tabular-nums">{formatearPrecio(deCentavos(totalCentavos))}</p>
-
           <form action={accion} className="flex flex-col gap-4">
             <input type="hidden" name="clave" value={clave} />
             <input
@@ -620,7 +621,7 @@ function FilaDePago({
       <div className="flex gap-2">
         <select
           aria-label={`Medio del pago ${indice + 1}`}
-          className="h-8 flex-1 rounded-md border px-3 text-sm"
+          className="h-8 flex-1 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
           value={pago.medio}
           onChange={(e) => onCambiar({ medio: e.target.value as Pago['medio'] })}
         >
@@ -631,7 +632,7 @@ function FilaDePago({
         </select>
         <select
           aria-label={`Moneda del pago ${indice + 1}`}
-          className="h-8 w-24 rounded-md border px-3 text-sm"
+          className="h-8 w-24 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
           value={pago.moneda}
           onChange={(e) => {
             const moneda = e.target.value as Pago['moneda']
@@ -652,7 +653,7 @@ function FilaDePago({
         <Input
           id={`monto-${indice}`}
           inputMode="decimal"
-          className="text-right tabular-nums"
+          className={`${estilos.importe} text-right`}
           value={pago.monto}
           onChange={(e) => onCambiar({ monto: e.target.value })}
         />
@@ -663,7 +664,7 @@ function FilaDePago({
           <Input
             id={`cot-${indice}`}
             inputMode="decimal"
-            className="text-right tabular-nums"
+            className={`${estilos.importe} text-right`}
             value={pago.cotizacion}
             onChange={(e) => onCambiar({ cotizacion: e.target.value })}
           />
@@ -675,13 +676,13 @@ function FilaDePago({
           <Input
             id={`rec-${indice}`}
             inputMode="decimal"
-            className="text-right tabular-nums"
+            className={`${estilos.importe} text-right`}
             value={pago.recibido}
             onChange={(e) => onCambiar({ recibido: e.target.value })}
           />
           {pago.recibido.trim() !== '' &&
             dineroEnCentavos(pago.recibido) > dineroEnCentavos(pago.monto) && (
-              <p className="text-sm tabular-nums">
+              <p className={`${estilos.importe} text-sm`}>
                 Vuelto:{' '}
                 {formatearPrecio(
                   deCentavos(dineroEnCentavos(pago.recibido) - dineroEnCentavos(pago.monto)),

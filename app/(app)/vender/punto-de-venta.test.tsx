@@ -42,4 +42,12 @@ describe('el punto de venta', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8').replace(/\s+/g, '')
     expect(fuente).toContain('estilos.total}')
   })
+
+  // Una sola vez en pantalla. Antes estaba dos veces —la card de cobro y el
+  // pie de la cinta— y en ninguna de las dos mandaba.
+  it('el total no está también en la columna de cobro', async () => {
+    const html = await render()
+    const veces = [...html.matchAll(/class="[^"]*total[^"]*"/g)].length
+    expect(veces, `el total aparece ${veces} veces y tiene que aparecer 1`).toBe(1)
+  })
 })
