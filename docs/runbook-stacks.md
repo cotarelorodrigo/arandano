@@ -829,3 +829,41 @@ de `tenants` y con uno inventado devuelva 0.
 **La fila del canario es dato de producción load-bearing, no un dato de
 prueba descartable.** Detalle completo, y por qué no se puede borrar ni
 renombrar por fuera de un deploy, en *Deploy y rollback* más arriba.
+
+### Los leads de la landing
+
+Se leen con `npm run leads` (opcional `--limite=N`, default 20). Corre como
+`arandano_owner` y no como la aplicación, y no es una comodidad: `arandano_app`
+tiene `REVOKE SELECT` sobre `leads` (`scripts/setup-db-roles.sh`), porque esa
+tabla no tiene `tenant_id` y por lo tanto no la protege ninguna policy de RLS.
+
+Contra **dev**, con el mismo reescrito de host que usa el resto de este
+runbook (`docker/compose.dev.yml`, servicio `postgres`, publicado en
+`100.64.81.63:5433`):
+
+```bash
+MIGRATE_DATABASE_URL="$(grep -m1 MIGRATE_DATABASE_URL .env.dev | cut -d= -f2- | sed 's/@postgres:5432/@100.64.81.63:5433/')" \
+  npm run leads
+```
+
+**Contra producción NO hay un `sed` equivalente**: `docker/compose.prod.yml`
+no publica ningún puerto para el servicio `postgres` (a diferencia de dev), así
+que desde el host no hay ninguna dirección a la que reescribir la URL. Es la
+misma restricción que ya documenta *Definir la contraseña de un usuario* más
+arriba, y la salida es la misma: correr el script **adentro de la imagen
+`arandano-migrate:<sha>`**, enganchada a la red del stack, con
+`MIGRATE_DATABASE_URL` —la del owner, no `DATABASE_URL`— tal cual sale del
+`.env` del objetivo, sin reescribir el host: ya apunta al nombre del servicio
+(`@postgres:5432`), que es justo lo que resuelve desde adentro de esa red.
+
+```bash
+SHA=$(docker inspect --format '{{.Config.Image}}' arandano-prod-app-1 | cut -d: -f2)
+docker run --rm --network arandano-prod_default \
+  -e MIGRATE_DATABASE_URL="$(grep -m1 MIGRATE_DATABASE_URL /srv/arandano/prod/.env | cut -d= -f2-)" \
+  --entrypoint npx "arandano-migrate:$SHA" \
+  tsx scripts/leads.mts --limite=20
+```
+
+El aviso de que llegó uno lo emite `lib/leads/notificar.ts`, que hoy escribe un
+log estructurado con el prefijo `[lead]`. Mientras no exista la Cloud API de
+Meta, ése es el lugar donde mirar — o directamente este comando.
