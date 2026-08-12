@@ -24,6 +24,7 @@
 # primera sea una decisión y no un olvido.
 declare -A RUTAS_SIN_SMOKE=(
   ['/inventario/[id]']='no hay de dónde sacar un id de artículo válido sin sembrar datos, y sembrarlos convertiría el smoke en una suite de fixtures. Lo que esta pantalla usa —el guard de sesión, prismaParaTenant, las actions— ya está cubierto por /inventario, por app/(app)/inventario/acciones.test.ts y por test/inventario.test.ts.'
+  ['/ventas/[id]']='no hay de dónde sacar un id de venta válido sin cobrar una en el gate, y cobrar convertiría el smoke en una suite de fixtures. Lo que esta pantalla usa —el guard, prismaParaTenant, la action de anular— ya está cubierto por /ventas, por app/(app)/ventas/acciones.test.ts y por test/ventas.test.ts.'
 )
 
 # Imprime una ruta por línea, ordenadas.

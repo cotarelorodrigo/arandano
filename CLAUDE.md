@@ -251,13 +251,18 @@ quedan abiertas se siguen encareciendo con cada mes que pasa.
   **con el módulo de Órdenes de Trabajo en la mano**, que es el próximo. El cambio
   en sí es aditivo; lo caro es elegir mal y descubrirlo con tres módulos escritos.
 
-Dos más chicas, del mismo review y del mismo momento: `Venta.numero` es el
-correlativo **interno** y no sirve como número fiscal —ARCA va a necesitar punto
-de venta y tipo de comprobante—, y `crearVenta` **no es idempotente**: un doble
-submit crea dos ventas y descuenta el stock dos veces. Es correcto que el motor
-sea así, pero la UI va a necesitar una clave de idempotencia, y el lugar barato
-para ponerla es un `@@unique([tenantId, claveIdempotencia])` sobre `ventas` —
-migración aditiva, y conviene decidirla antes de que haya ventas cargadas.
+Y una que era de ese mismo review quedó cerrada: **`crearVenta` ya es
+idempotente** (2026-08-11, ciclo de la UI de ventas). `Venta.claveIdempotencia`
+con `@@unique([tenantId, claveIdempotencia])`: el punto de venta genera una
+clave por venta, y si el mismo submit llega dos veces —doble click, F5 sobre el
+POST, reintento de red— la segunda devuelve la venta que ya existe en vez de
+cobrar dos veces y descontar el stock dos veces. Se cerró en el ciclo que
+construyó el botón, y con la tabla todavía vacía, que es cuando la migración
+era más barata.
+
+Sigue abierta la otra: **`Venta.numero` es el correlativo interno y no sirve
+como número fiscal** — ARCA va a necesitar punto de venta y tipo de
+comprobante, y eso es su propio ciclo.
 
 ## Roadmap de producto
 
@@ -375,6 +380,13 @@ Y del producto:
   del momento— e historial por artículo. Baja lógica con `Articulo.desactivadoEn`.
   Ver `docs/superpowers/specs/2026-08-11-inventario-design.md`. **Queda para el
   ciclo siguiente**: la UI de ventas, y con ella la pantalla de clientes.
+- ~~Construir la UI de ventas.~~ **Hecho** (2026-08-11). Punto de venta con
+  buscador —que habilita el lector de código de barras sin código propio—,
+  carrito, pagos partidos en pesos y dólares con su cotización, cálculo del
+  vuelto, listado por período y detalle con anulación restringida al dueño.
+  Cobrar es idempotente. Ver
+  `docs/superpowers/specs/2026-08-11-ventas-design.md`. **Queda para el ciclo
+  siguiente**: la caja (apertura, cierre y arqueo), que es la pieza 6.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

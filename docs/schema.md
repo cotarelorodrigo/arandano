@@ -122,8 +122,9 @@ erDiagram
   }
   ventas {
     uuid id PK
-    uuid tenant_id FK "único junto a numero"
+    uuid tenant_id FK "único junto a numero; único junto a clave_idempotencia"
     integer numero "único junto a tenant_id"
+    text clave_idempotencia "opcional; único junto a tenant_id"
     uuid cliente_id FK "opcional"
     uuid usuario_id FK
     decimal(12,2) total
@@ -180,6 +181,7 @@ erDiagram
 - **clientes**: `clientes_tenant_id_idx` sobre (`tenant_id`)
 - **movimientos_stock**: `movimientos_stock_tenant_id_articulo_id_idx` sobre (`tenant_id`, `articulo_id`)
 - **movimientos_stock**: `movimientos_stock_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
+- **pagos**: `pagos_tenant_id_moneda_creado_en_idx` sobre (`tenant_id`, `moneda`, `creado_en`)
 - **pagos**: `pagos_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
 - **sessions**: `sessions_tenant_id_user_id_idx` sobre (`tenant_id`, `user_id`)
 - **venta_items**: `venta_items_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)

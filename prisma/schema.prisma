@@ -255,6 +255,16 @@ model Venta {
   id           String    @id @default(uuid(7)) @db.Uuid
   tenantId     String    @map("tenant_id") @db.Uuid
   numero       Int
+  // La clave que hace idempotente al cobro. La genera el punto de venta una vez
+  // por venta y la manda escondida; si el mismo submit llega dos veces —doble
+  // click, F5 sobre el POST, reintento de red— la segunda choca contra el
+  // índice único de abajo y `crearVenta` devuelve la venta que ya existe en vez
+  // de crear otra y descontar el stock dos veces.
+  //
+  // Nullable porque en Postgres un índice único deja pasar varios NULL: un
+  // llamador que no la necesita —un test, un script— no tiene que inventarse
+  // una.
+  claveIdempotencia String?   @map("clave_idempotencia")
   // Opcional: la venta de mostrador, sin cliente identificado, es la mayoría de
   // las ventas de un local.
   clienteId    String?   @map("cliente_id") @db.Uuid
@@ -278,6 +288,7 @@ model Venta {
   movimientos MovimientoStock[]
 
   @@unique([tenantId, numero])
+  @@unique([tenantId, claveIdempotencia])
   @@index([tenantId, creadoEn])
   @@map("ventas")
 }
@@ -324,6 +335,13 @@ model Pago {
   venta  Venta  @relation(fields: [ventaId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, ventaId])
+  // La última cotización en dólares del local, que el punto de venta pide en
+  // CADA carga de /vender (`ultimaCotizacionUsd`). Sin este índice esa consulta
+  // es un scan de todos los pagos de la tabla compartida más un sort, sobre la
+  // pantalla más caliente del sistema. Se agrega ahora, con la tabla vacía, por
+  // el mismo motivo que el índice de idempotencia: crearlo después es un
+  // bloqueo sobre datos de clientes.
+  @@index([tenantId, moneda, creadoEn])
   @@map("pagos")
 }
 

@@ -15,6 +15,8 @@ let enTransaccionDeTenant: typeof import('@/lib/tenant/transaccion').enTransacci
 let crearVenta: typeof import('@/lib/ventas/crear').crearVenta
 let anularVenta: typeof import('@/lib/ventas/anular').anularVenta
 let ajustarStock: typeof import('@/lib/inventario/stock').ajustarStock
+let buscarArticulosVendibles: typeof import('@/lib/ventas/buscar').buscarArticulosVendibles
+let ultimaCotizacionUsd: typeof import('@/lib/ventas/buscar').ultimaCotizacionUsd
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -44,6 +46,7 @@ beforeAll(async () => {
   ;({ crearVenta } = await import('@/lib/ventas/crear'))
   ;({ anularVenta } = await import('@/lib/ventas/anular'))
   ;({ ajustarStock } = await import('@/lib/inventario/stock'))
+  ;({ buscarArticulosVendibles, ultimaCotizacionUsd } = await import('@/lib/ventas/buscar'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -693,5 +696,158 @@ describe('anularVenta', () => {
     )
     expect(movs).toHaveLength(1)
     expect(movs[0].delta.toString()).toBe('2')
+  })
+})
+
+describe('idempotencia del cobro', () => {
+  it('la misma clave dos veces crea UNA venta y descuenta el stock UNA vez', async () => {
+    const antes = new Prisma.Decimal(await stockDe(remera))
+    const clave = `clave-${Date.now()}`
+    const entrada = {
+      tenantId,
+      usuarioId,
+      claveIdempotencia: clave,
+      items: [{ articuloId: remera, cantidad: d('2') }],
+      pagos: [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, monto: d('2000'), cotizacion: d('1') }],
+    }
+
+    const primera = await crearVenta(entrada)
+    // La MISMA llamada de verdad, no una simulación: es el doble click.
+    const segunda = await crearVenta(entrada)
+
+    expect(segunda.id, 'creó una venta nueva en vez de devolver la que existía').toBe(primera.id)
+    expect(segunda.numero).toBe(primera.numero)
+
+    // Lo que de verdad importa: el stock se movió una sola vez.
+    expect(await stockDe(remera)).toBe(antes.minus(2).toString())
+
+    const cuantas = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.venta.count({ where: { claveIdempotencia: clave } }),
+    )
+    expect(cuantas).toBe(1)
+  })
+
+  it('sin clave, dos llamadas iguales crean dos ventas: el motor no adivina', async () => {
+    const entrada = {
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, monto: d('1000'), cotizacion: d('1') }],
+    }
+    const a = await crearVenta(entrada)
+    const b = await crearVenta(entrada)
+    expect(b.id).not.toBe(a.id)
+  })
+
+  it('claves distintas son ventas distintas', async () => {
+    const base = {
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, monto: d('1000'), cotizacion: d('1') }],
+    }
+    const a = await crearVenta({ ...base, claveIdempotencia: `a-${Date.now()}` })
+    const b = await crearVenta({ ...base, claveIdempotencia: `b-${Date.now()}` })
+    expect(b.id).not.toBe(a.id)
+  })
+})
+
+describe('un artículo desactivado no se puede vender', () => {
+  it('se rechaza con su propio código, distinto de inexistente', async () => {
+    const propio = await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, desactivado_en, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'OFF-1', 'Discontinuado', 'PRODUCTO', 500.00, 10, now(), now(), now())
+       RETURNING id`,
+      [tenantId],
+    )
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: [{ articuloId: propio.rows[0].id, cantidad: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('500'), cotizacion: d('1') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'ARTICULO_DESACTIVADO' })
+  })
+
+  it('y sigue distinguiéndose de uno que no existe', async () => {
+    // Los dos códigos mandan a la persona a lugares distintos: uno a buscar de
+    // nuevo, el otro a reactivarlo desde inventario. Si esta distinción se
+    // pierde, el mensaje de la pantalla miente.
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: [{ articuloId: '00000000-0000-7000-8000-000000000000', cantidad: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('500'), cotizacion: d('1') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
+  })
+})
+
+describe('buscarArticulosVendibles', () => {
+  it('encuentra por nombre y por código, sin distinguir mayúsculas', async () => {
+    const porNombre = await buscarArticulosVendibles(tenantId, 'reme')
+    expect(porNombre.map((a) => a.id)).toContain(remera)
+    const porSku = await buscarArticulosVendibles(tenantId, 'rem-1')
+    expect(porSku.map((a) => a.id)).toContain(remera)
+  })
+
+  it('no ofrece un artículo desactivado', async () => {
+    const off = await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, desactivado_en, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'BUS-OFF', 'Buscable apagado', 'PRODUCTO', 100.00, 5, now(), now(), now())
+       RETURNING id`,
+      [tenantId],
+    )
+    const r = await buscarArticulosVendibles(tenantId, 'Buscable apagado')
+    expect(r.map((a) => a.id), 'ofreció un artículo desactivado').not.toContain(off.rows[0].id)
+  })
+
+  it('no cruza tenants', async () => {
+    await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'AJENO-1', 'Remera ajena', 'PRODUCTO', 100.00, 5, now(), now())`,
+      [otroTenantId],
+    )
+    const r = await buscarArticulosVendibles(tenantId, 'Remera ajena')
+    expect(r).toHaveLength(0)
+  })
+
+  it('devuelve la plata como string, no como Decimal', async () => {
+    const [uno] = await buscarArticulosVendibles(tenantId, 'rem-1')
+    expect(typeof uno.precio).toBe('string')
+    expect(typeof uno.stock).toBe('string')
+  })
+
+  it('un texto vacío no devuelve el catálogo entero', async () => {
+    // Sin este guard, el primer foco en el buscador traería todo.
+    expect(await buscarArticulosVendibles(tenantId, '   ')).toHaveLength(0)
+  })
+})
+
+describe('ultimaCotizacionUsd', () => {
+  it('es null cuando el local nunca cobró en dólares', async () => {
+    const virgen = await crearTenant(owner, `sin-usd-${Date.now()}`)
+    expect(await ultimaCotizacionUsd(virgen)).toBeNull()
+  })
+
+  it('devuelve la del último pago en dólares y no la de otro tenant', async () => {
+    // `remera` cuesta 1000, así que una unidad son $1000 de total. US$ 0,80 a
+    // 1250 dan exactamente eso: los pagos TIENEN que cerrar contra el total o
+    // el motor rechaza la venta, y el test estaría probando otra cosa.
+    await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'USD', monto: d('0.8'), cotizacion: d('1250') }],
+    })
+    // Sin ceros de cola, no '1250.0000': el `Decimal` de Prisma normaliza al
+    // convertir a string, tal como ya lo prueba "congela el precio" más
+    // arriba con `precioUnitario` (Decimal(12,2), guarda 1000.00 y da '1000').
+    // La suposición original de este test —que el toString conserva la
+    // escala de la columna— no vale para el `Decimal` de Prisma.
+    expect(await ultimaCotizacionUsd(tenantId)).toBe('1250')
+    expect(await ultimaCotizacionUsd(otroTenantId)).toBeNull()
   })
 })
