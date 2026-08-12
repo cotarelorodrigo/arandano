@@ -164,14 +164,33 @@ venta.
 
 `--font-heading: var(--font-sans)`: los títulos usan la misma familia.
 
+### La escala
+
+Los roles, con su cara y su tamaño. Un texto que no encaja en ninguno de estos
+cuatro es señal de que falta una decisión, no de que falte un tamaño.
+
+| Rol | Cara | Tamaño | Peso y ancho |
+|---|---|---|---|
+| **Cartel** — nombre del local | Archivo | 24 px | 600, `font-stretch: 112%`, tracking −0.01em |
+| Título de pantalla (`h1`) | sistema | 20 px | 500 |
+| Pestaña de navegación | sistema | 14 px | 500; activa 600 |
+| Identidad, meta, pie | sistema | 12 px | 400, `--muted-foreground` |
+
+**El cartel pesa más que el título de la pantalla, y es la decisión.** El nombre
+del local es lo más grande de la aplicación: siempre estás adentro de tu local,
+y `Inventario` es sólo dónde estás parado. Es la misma jerarquía que declara el
+login —el negocio del cliente es el héroe, la plataforma no firma—, sostenida
+las ocho horas en vez de los ocho segundos.
+
 ### La cara de display: Archivo
 
 Lo que el párrafo de arriba anticipaba —*"adoptar una fuente propia más adelante
 es aditivo y barato"*— pasó, y en un solo lugar.
 
 **Archivo**, de [Omnibus-Type](https://www.omnibus-type.com/), foundry de Buenos
-Aires. Se usa para **una cosa**: el nombre del local en la pantalla de login.
-Ninguna otra pantalla la carga.
+Aires. Se usa para **una cosa**: el nombre del local. Esa cosa se ve en dos
+lugares y en dos tamaños — el cartel del login y el del header de la
+aplicación (`components/cartel.module.css`). Ningún otro rol la usa.
 
 **Por qué ésa.** Tiene eje de ancho variable (`wdth`, 62–125), y ése es el
 motivo entero de la elección: un local argentino tiene el nombre pintado a lo
@@ -187,7 +206,7 @@ no es lo que la justifica, pero tampoco es un accidente.
 | Subset | Sólo `latin` (U+0000–00FF y algunos más) |
 | Origen | `app/fuentes/archivo-latin-var.woff2`, servido desde el propio dominio |
 | Carga | `next/font/local` con `display: swap` y preload |
-| Dónde pesa | En el login. No en el punto de venta ni en inventario |
+| Dónde pesa | En toda pantalla. En la sesión normal viene cacheada del login, pero una sesión con cookie viva entra derecho a `/vender` y ahí paga los 90 KB |
 
 El subset `latin` cubre el español entero —ñ, acentos, `¿`, `¡`—. Un nombre de
 local con un carácter afuera de ese rango cae en la pila del sistema **para ese

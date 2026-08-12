@@ -26,13 +26,15 @@
      y la tipografía caía en el default del navegador en vez de en la pila de
      fuentes del sistema. */
   --font-heading: var(--font-sans);
-  /* No hay --font-display ni --color-marca acá, y es a propósito: la cara de
-     display y el paño de la persiana los usa una sola pantalla, desde
-     app/login/persiana.module.css, con var(--font-archivo) y var(--marca)
-     directo. Un token en @theme que ninguna utilidad de Tailwind referencia es
-     un token muerto, que es lo que el caso "no quedan tokens de sidebar ni de
-     gráficos" de test/sistema-de-diseno.test.ts existe para evitar. Si una
-     segunda pantalla los necesita, ahí entran acá. */
+  /* No hay --font-display ni --color-marca acá, y sigue siendo a propósito.
+     --color-marca lo usa una sola pantalla, el login. --font-display lo usan
+     DOS —el cartel del login y el del header de la aplicación— y aun así no
+     entra: los dos lo consumen desde un módulo CSS con var(--font-archivo)
+     directo, porque además de la familia necesitan font-stretch y tracking
+     propios, o sea que ninguna utilidad de Tailwind lo referenciaría igual. Un
+     token en @theme que ninguna utilidad referencia es un token muerto, que es
+     lo que el caso "no quedan tokens de sidebar ni de gráficos" de
+     test/sistema-de-diseno.test.ts existe para evitar. */
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
