@@ -45,13 +45,19 @@ trap 'rm -rf "$RAIZ" "$VACIO"' EXIT
 check_false "un directorio sin páginas falla" rutas_autenticadas "$VACIO"
 
 # --- Una ruta con parámetro sin declarar falla.
-mkdir -p "$RAIZ/(app)/ventas/[id]"
-touch "$RAIZ/(app)/ventas/[id]/page.tsx"
+#
+# Un path que la aplicación no va a tener nunca, y eso es el punto: este caso
+# prueba que una ruta con parámetro SIN DECLARAR falla, así que si el fixture
+# usara un path que algún día se declara de verdad en RUTAS_SIN_SMOKE —como le
+# pasó a /ventas/[id] cuando llegó la pantalla de detalle—, el caso pasaría por
+# la razón equivocada y nadie se enteraría de que dejó de probar nada.
+mkdir -p "$RAIZ/(app)/ruta-que-no-existe/[id]"
+touch "$RAIZ/(app)/ruta-que-no-existe/[id]/page.tsx"
 check_false "una ruta con parámetro sin declarar falla" \
   rutas_autenticadas "$RAIZ/(app)"
 
 # --- Declarada, se saltea y el resto sigue saliendo.
-RUTAS_SIN_SMOKE['/ventas/[id]']='no hay de dónde sacar un id sin sembrar datos'
+RUTAS_SIN_SMOKE['/ruta-que-no-existe/[id]']='no hay de dónde sacar un id sin sembrar datos'
 salida=$(rutas_autenticadas "$RAIZ/(app)")
 check_eq "una ruta declarada se saltea, y las demás siguen" \
   $'/caja\n/margen\n/usuarios' "$salida"
@@ -65,20 +71,20 @@ check_eq "el ordenamiento es invariante al locale LC_ALL=C" \
 
 # Una exención sin razón escrita no es una exención revisable: tiene que fallar
 # igual que una ruta con parámetro sin declarar.
-mkdir -p "$RAIZ/(app)/ventas/[id]"
-: > "$RAIZ/(app)/ventas/[id]/page.tsx"
-RUTAS_SIN_SMOKE['/ventas/[id]']=''
+mkdir -p "$RAIZ/(app)/ruta-que-no-existe/[id]"
+: > "$RAIZ/(app)/ruta-que-no-existe/[id]/page.tsx"
+RUTAS_SIN_SMOKE['/ruta-que-no-existe/[id]']=''
 check_false "una ruta declarada con razón vacía falla" \
   rutas_autenticadas "$RAIZ/(app)"
-RUTAS_SIN_SMOKE['/ventas/[id]']='no hay id válido sin sembrar datos'
+RUTAS_SIN_SMOKE['/ruta-que-no-existe/[id]']='no hay id válido sin sembrar datos'
 # Envuelta para que la lista de rutas no se mezcle con los ✓ del reporte: acá
 # sólo importa el código de salida, y la salida en sí ya la cubren los casos de
 # arriba con check_eq.
 rutas_sin_imprimir() { rutas_autenticadas "$1" >/dev/null; }
 check_true "la misma ruta, con razón escrita, pasa" \
   rutas_sin_imprimir "$RAIZ/(app)"
-rm -rf "$RAIZ/(app)/ventas"
-unset 'RUTAS_SIN_SMOKE[/ventas/[id]]'
+rm -rf "$RAIZ/(app)/ruta-que-no-existe"
+unset 'RUTAS_SIN_SMOKE[/ruta-que-no-existe/[id]]'
 
 # --- Next resuelve page.js, page.jsx, page.ts y page.tsx, no sólo la última.
 # Una página escrita en cualquiera de las otras tres es una ruta autenticada
