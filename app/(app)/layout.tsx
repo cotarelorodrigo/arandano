@@ -62,12 +62,20 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
             </form>
           </div>
         </div>
-        <div className="flex items-center justify-between px-6">
+        <div className="px-6">
           <Navegacion rol={sesion.usuario.rol} />
-          <Contexto className="text-xs text-muted-foreground" />
         </div>
       </header>
       <div className="flex-1">{children}</div>
+      {/* El stack y el sha son la verificación humana más barata que hay
+          después de un deploy, y tienen que seguir a la vista — pero son un
+          artefacto de deploy, no navegación. Compartían fila con las pestañas
+          siendo el segundo bloque más ancho del header; acá informan sin
+          competir. Los data-testid viajan intactos: los mira
+          app/(app)/layout.test.tsx. */}
+      <footer className="px-6 py-3">
+        <Contexto className="text-right text-xs text-muted-foreground" />
+      </footer>
     </div>
   )
 }

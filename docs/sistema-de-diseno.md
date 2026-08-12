@@ -281,6 +281,11 @@ usa `app/(app)/usuarios/page.tsx`, la única tabla que existe hoy; subirla a 40
 pediría `py-2.5`, o sea justo un medio paso de los que la regla de arriba deja
 afuera del código propio.
 
+**El eje izquierdo del shell.** Cartel, pestañas, contenido y pie arrancan
+todos en el mismo gutter de 24 px (`px-6` en `app/(app)/layout.tsx`, `p-6` en
+cada pantalla). Hoy coinciden porque cada pantalla eligió lo mismo por su
+cuenta; queda escrito para que la próxima no invente otro y parta la columna.
+
 `--radius: 0.625rem`, con la escala derivada de 7 pasos que vive en
 `@theme inline`. No hay razón de marca para moverla.
 

@@ -69,10 +69,15 @@ describe('layout de la aplicación', () => {
     expect(html).toContain('Quien sea')
   })
 
-  it('muestra el stack y la imagen desplegada', async () => {
+  // Mira ORDEN en el documento y no clases ni estilos: es la forma no frágil
+  // de afirmar que el stack y el sha bajaron al pie. Compartían fila con las
+  // pestañas siendo un artefacto de deploy, y sin este caso alguien los
+  // devuelve al header y la suite queda verde.
+  it('muestra el stack y la imagen desplegada, al pie y no en el header', async () => {
     const html = await render()
     expect(html).toContain('data-testid="stack"')
     expect(html).toContain('data-testid="sha"')
+    expect(html.indexOf('contenido')).toBeLessThan(html.indexOf('data-testid="stack"'))
   })
 
   it('renderiza la navegación', async () => {
