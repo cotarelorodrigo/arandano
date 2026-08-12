@@ -25,6 +25,20 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 
   return {
+    // Sin esto, Next no puede convertir app/opengraph-image.tsx en una URL
+    // absoluta de og:image y cae al fallback http://localhost:3000 — inalcanzable
+    // desde afuera del contenedor para WhatsApp, Instagram o cualquier crawler.
+    // Confirmado sirviendo esta misma ruta con y sin esta línea: sin ella,
+    // og:image sale con el host interno; con ella, con el dominio real.
+    //
+    // Va en esta rama y no en el layout raíz a propósito: DOMINIO_BASE es el
+    // dominio del ápex, y una página de tenant vive en un subdominio, así que
+    // ahí esta base sería la equivocada. Las páginas de tenant no tienen
+    // imagen social ni se indexan (ver la rama de arriba), así que no la
+    // necesitan. DOMINIO_BASE ya es obligatoria —tenantDelRequest() tira si
+    // falta— y es la misma fuente que PaginaApex ya usa para construir URLs
+    // propias.
+    metadataBase: new URL(`https://${process.env.DOMINIO_BASE}`),
     title: TITULO,
     description: DESCRIPCION,
     openGraph: { title: TITULO, description: DESCRIPCION, type: 'website' },

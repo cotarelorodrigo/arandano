@@ -26,6 +26,19 @@ describe('indexación', () => {
     expect(meta.openGraph).toBeTruthy()
   })
 
+  // Sin metadataBase, Next arma la URL absoluta de og:image contra el
+  // fallback http://localhost:3000 — inalcanzable para WhatsApp, Instagram o
+  // cualquier crawler leyendo arandano.app desde afuera del contenedor. Esta
+  // rama es dinámica (force-dynamic) y no corre en `next build`, así que el
+  // build nunca ejercita este valor — este test es lo único que lo verifica.
+  it('el ápex trae metadataBase con el dominio del ápex', async () => {
+    process.env.DOMINIO_BASE = 'arandano.app'
+    tenantDelRequest.mockResolvedValue({ tipo: 'apex' })
+    const { generateMetadata } = await import('@/app/page')
+    const meta = await generateMetadata()
+    expect(meta.metadataBase).toEqual(new URL('https://arandano.app'))
+  })
+
   it('una página de tenant no se indexa', async () => {
     tenantDelRequest.mockResolvedValue({
       tipo: 'tenant',
