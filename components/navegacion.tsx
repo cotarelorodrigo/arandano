@@ -71,13 +71,22 @@ export function Navegacion({ rol }: { rol: RolUsuario }) {
             // subrayado solo no le dice nada a quien no ve la pantalla.
             aria-current={activa ? 'page' : undefined}
             className={cn(
-              'shrink-0 rounded-sm border-b-2 px-3 py-2 transition-colors outline-none',
+              'shrink-0 rounded-t-sm border-b-2 px-3 py-2 transition-colors outline-none',
               // El anillo va INSET, y el motivo es mecánico: overflow-x-auto
               // computa el eje de bloque a `auto` también, así que un anillo
               // dibujado por fuera de la caja se recortaría arriba y abajo y
               // podría sacar una barra de scroll vertical. Uno interior no lo
               // toca el overflow.
-              'focus-visible:inset-ring-3 focus-visible:inset-ring-ring/50',
+              //
+              // Y va OPACO (--ring, sin el /50 que usan botón e input): esos
+              // otros controles acompañan el halo translúcido con un borde
+              // sólido que también identifica el control (focus-visible:border-
+              // ring), y acá no hay ese segundo indicador. Sin él, --ring/50
+              // sobre --background da 2.70:1 — abajo del 3:1 que WCAG 1.4.11
+              // pide para un indicador no textual. Opaco, el mismo par da
+              // 10.79:1 (scripts/contraste.mts). Es el foco del elemento que
+              // más se opera con teclado en el producto: no se le resigna nada.
+              'focus-visible:inset-ring-3 focus-visible:inset-ring-ring',
               activa
                 // El peso hace la mitad del trabajo: así el subrayado no tiene
                 // que hacerlo todo, y de paso la pestaña activa y el anillo de

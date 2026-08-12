@@ -590,8 +590,12 @@ ningún test, y es lo que decide si la dirección funcionó:
 - [ ] **El salto de fuente**: entrar a `/vender` con la caché vacía y una
       sesión con cookie viva, sin pasar por el login. Con `display: swap` el
       nombre aparece en la pila del sistema y salta a Archivo, y a 24 px eso se
-      ve. Si molesta, el ajuste es `adjustFontFallback` en el `localFont` de
-      `app/layout.tsx` — **no** bajar el tamaño del cartel.
+      ve. `adjustFontFallback` ya está activo —es *opt-out* en
+      `next/font/local`, no algo que haya que prender—, así que el swap ya
+      viene compensado en métricas y lo que se ve es un cambio de forma de
+      glifo, no de layout. Si igual molesta, la perilla real es
+      `display: 'optional'` o `'block'` en el `localFont` de `app/layout.tsx`
+      — **no** bajar el tamaño del cartel.
 - [ ] Tabular por las pestañas: que el anillo de foco no se confunda con la
       pestaña activa, y que no aparezca una barra de scroll vertical en el riel.
 - [ ] Un nombre de local largo en 360 px de ancho: que trunque el cartel y no

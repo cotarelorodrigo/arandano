@@ -228,11 +228,20 @@ dos cosas:
   decir eso, que es más útil que la promesa que reemplaza.
 
 **Ningún token cambia de valor y no entra ninguno nuevo**, así que
-`test/sistema-de-diseno.test.ts` y la tabla de contraste no se tocan. Tampoco
-hay pares de contraste nuevos: el cartel es `--foreground` sobre `--background`
-(19.80), la meta es `--muted-foreground` sobre `--background` (5.17) y el
-subrayado es `--primary` sobre `--background` (10.79). Los tres ya están
-medidos.
+`test/sistema-de-diseno.test.ts` no se toca. El cartel es `--foreground` sobre
+`--background` (19.80), la meta es `--muted-foreground` sobre `--background`
+(5.17) y el subrayado es `--primary` sobre `--background` (10.79); los tres ya
+estaban medidos.
+
+**Corrección de la revisión final: esto no era cierto para la tabla de
+contraste.** El párrafo original decía acá "tampoco hay pares de contraste
+nuevos", y era falso: el anillo de foco de las pestañas sí introduce uno,
+`--ring` sobre `--background`, que no tenía fila propia porque hasta esa
+revisión el anillo era translúcido (`--ring/50`, sin par medido). Al pasar a
+opaco (hallazgo 1 de esa revisión) el par pasa a valer 10.79 —el mismo valor
+que `--primary` sobre `--background`, porque son el mismo token— y **sí**
+entra a `PARES` en `scripts/contraste.mts` y a la tabla del documento, con
+mínimo 3.0 por ser un indicador no textual (WCAG 1.4.11).
 
 `--marca` sigue apareciendo en un solo lugar. Lo que cruza el umbral es la
 tipografía, no el color.
@@ -327,8 +336,18 @@ responder**, y queda para una persona sobre el canario después del deploy:
 - **El salto de fuente.** Con `display: swap` y una sesión que entra derecho a
   `/vender` sin pasar por el login, el nombre aparece primero en la pila del
   sistema y salta a Archivo. A 24 px eso se ve. Hay que mirarlo con la caché
-  vacía y decidir si molesta; si molesta, el ajuste es
-  `adjustFontFallback` en `localFont` y no bajar el tamaño.
+  vacía y decidir si molesta.
+
+  **Corrección de la revisión final**: acá decía que el ajuste era
+  `adjustFontFallback`, y es falso — en `next/font/local` esa opción es
+  *opt-out* (`nextFontLocalFontLoader` sólo la desactiva si se le pasa
+  `false`; ver `node_modules/next/dist/compiled/@next/font/dist/local/loader.js`),
+  así que ya está activa sin que nadie la haya tocado: el `--font-archivo` que
+  emite `next/font` ya trae una familia de fallback con `size-adjust` antes de
+  la pila que declara `components/cartel.module.css`, y el swap ya viene
+  compensado en métricas. Lo que se ve al saltar es un cambio de forma de
+  glifo, no un salto de layout. Si eso molesta, la perilla real es
+  `display: 'optional'` o `'block'` en el `localFont` de `app/layout.tsx`.
 - Que el anillo de foco al tabular por las pestañas no se confunda con la
   pestaña activa.
 - Un nombre de local largo en 360 px de ancho: que trunque el cartel y no

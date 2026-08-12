@@ -119,6 +119,7 @@ sobre blanco fuera `#bcbcbc` en vez del `#808080` que todos conocemos).
 | `--destructive` sobre `--background` | 4.77 | 4.5 | ok |
 | `--destructive/90` sobre `--card` | 4.54 | 4.5 | ok |
 | `--input` sobre `--background` | 1.26 | 3.0 | **excepción declarada** |
+| `--ring` sobre `--background` | 10.79 | 3.0 | ok |
 
 <!-- contraste:fin -->
 
@@ -159,8 +160,12 @@ esta paleta:
 
 No es un default que quedó: es una decisión. Cero bytes, cero salto de fuente al
 cargar, y se ve nativa en el Windows del mostrador igual que en el Android del
-dueño. **Sigue siendo la pila de toda la aplicación**, incluido el punto de
-venta.
+dueño. **Sigue siendo la pila del cuerpo de toda la aplicación**, incluido el
+punto de venta: títulos, tablas, botones, campos y texto corrido no la
+abandonan en ninguna pantalla. El único rol que sale de ella es el cartel
+—el nombre del local—, que desde este ciclo paga Archivo también en el header
+de la aplicación y no sólo en el login (ver *La cara de display: Archivo* más
+abajo).
 
 `--font-heading: var(--font-sans)`: los títulos usan la misma familia.
 
@@ -281,10 +286,12 @@ usa `app/(app)/usuarios/page.tsx`, la única tabla que existe hoy; subirla a 40
 pediría `py-2.5`, o sea justo un medio paso de los que la regla de arriba deja
 afuera del código propio.
 
-**El eje izquierdo del shell.** Cartel, pestañas, contenido y pie arrancan
-todos en el mismo gutter de 24 px (`px-6` en `app/(app)/layout.tsx`, `p-6` en
-cada pantalla). Hoy coinciden porque cada pantalla eligió lo mismo por su
-cuenta; queda escrito para que la próxima no invente otro y parta la columna.
+**El eje izquierdo del shell.** Cartel, pestañas y contenido arrancan todos en
+el mismo gutter de 24 px (`px-6` en `app/(app)/layout.tsx`, `p-6` en cada
+pantalla). Hoy coinciden porque cada pantalla eligió lo mismo por su cuenta;
+queda escrito para que la próxima no invente otro y parta la columna. El pie
+comparte el mismo `px-6`, pero su contenido es `text-right`: la caja arranca en
+ese gutter izquierdo, el texto cierra contra el derecho.
 
 `--radius: 0.625rem`, con la escala derivada de 7 pasos que vive en
 `@theme inline`. No hay razón de marca para moverla.
