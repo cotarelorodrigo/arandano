@@ -160,19 +160,22 @@ esta paleta:
 
 No es un default que quedó: es una decisión. Cero bytes, cero salto de fuente al
 cargar, y se ve nativa en el Windows del mostrador igual que en el Android del
-dueño. **Sigue siendo la pila del cuerpo de toda la aplicación**, incluido el
-punto de venta: títulos, tablas, botones, campos y texto corrido no la
-abandonan en ninguna pantalla. El único rol que sale de ella es el cartel
-—el nombre del local—, que desde este ciclo paga Archivo también en el header
-de la aplicación y no sólo en el login (ver *La cara de display: Archivo* más
-abajo).
+dueño. **Sigue siendo la pila del cuerpo de toda la aplicación**: títulos,
+tablas, botones y texto corrido no la abandonan en ninguna pantalla, incluido
+el punto de venta. Dos roles salen de ella, los dos hacia Archivo: el cartel
+—el nombre del local—, que desde el ciclo del cartel paga Archivo también en
+el header de la aplicación y no sólo en el login, y el importe —la plata—, que
+desde este ciclo paga Archivo en `/vender`: ahí los importes de la tabla y de
+la lista de resultados, y los campos de monto, cotización y recibido del
+formulario de cobro, van en Archivo y no en la pila del sistema (ver *La cara
+de display: Archivo* más abajo).
 
 `--font-heading: var(--font-sans)`: los títulos usan la misma familia.
 
 ### La escala
 
 Los roles, con su cara y su tamaño. Un texto que no encaja en ninguno de estos
-cuatro es señal de que falta una decisión, no de que falte un tamaño.
+cinco es señal de que falta una decisión, no de que falte un tamaño.
 
 <!-- escala:inicio -->
 
@@ -223,13 +226,16 @@ excepción: reabre la discusión. Si aparece un segundo importe en 40 px fuera d
 ### La cara de display: Archivo
 
 Lo que el párrafo de arriba anticipaba —*"adoptar una fuente propia más adelante
-es aditivo y barato"*— pasó, y en un solo lugar.
+es aditivo y barato"*— pasó, y no se quedó en un solo lugar: hoy son dos roles
+repartidos en tres módulos CSS.
 
 **Archivo**, de [Omnibus-Type](https://www.omnibus-type.com/), foundry de Buenos
 Aires. **Se usa para dos roles**, y los dos están en la tabla de arriba: el
 nombre del local (`font-stretch: 112%`) y el importe del punto de venta
 (`85%`). Los distingue el eje de ancho, no la familia. Ningún otro rol la usa:
-títulos, tablas, botones y campos siguen en la pila del sistema.
+títulos, tablas y botones siguen en la pila del sistema, y los campos también
+—salvo los de plata en `/vender` (monto, cotización, recibido), que llevan el
+rol Importe igual que cualquier otra columna de plata.
 
 **Por qué ésa.** Tiene eje de ancho variable (`wdth`, 62–125), y ése es el
 motivo entero de la elección: un local argentino tiene el nombre pintado a lo
@@ -311,6 +317,20 @@ mismo motivo por el que se adoptan sus 32 px de alto: son decisiones internas de
 un componente que funciona, y tocarlas es pelearle a la librería para nada. La
 regla gobierna la composición de pantallas, que es donde un espaciado
 inventado sí se nota.
+
+La excepción también cubre **copiar esas clases a mano fuera de
+`components/ui/`, cuando lo que se está igualando es un componente existente**.
+Los dos `<select>` de `FilaDePago` en `/vender`
+(`app/(app)/vender/punto-de-venta.tsx`) llevan `px-2.5 py-1 ring-3` textual,
+tomado de `components/ui/input.tsx`: un `<select>` nativo no es un `<input>` y
+no tiene versión propia en `components/ui/`, así que la única forma de
+igualarlo a `Input` a ojo es transcribir sus medios pasos tal cual. **El
+límite es ese, y no más**: vale para **copiar** las clases de un componente que
+ya vive en `components/ui/`, no para **inventar** un espaciado nuevo que no
+esté en ningún componente. La frase de arriba —*"la regla gobierna la
+composición de pantallas"*— sigue rigiendo para cualquier medio paso que
+alguien tipee de cero ahí; no para uno transcripto de un componente ya
+aceptado.
 
 La densidad es **media**, y en números — todos verificados contra el código, no
 aspiracionales:

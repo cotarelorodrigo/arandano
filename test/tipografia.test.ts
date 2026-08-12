@@ -83,6 +83,20 @@ function anchosDeArchivo(ruta: string): string[] {
   return [...css.matchAll(/font-stretch:\s*([\d.]+%)/g)].map((m) => m[1])
 }
 
+/**
+ * Si el módulo consume la cara de display, sea cual sea el motivo.
+ *
+ * El disparador de la vigilancia es ÉSTE y no "declara font-stretch": un
+ * módulo que meta `font-family: var(--font-archivo)` y se olvide el
+ * font-stretch no queda en un ancho documentado por accidente, queda en el
+ * 100% por default del navegador — la cara de display normal, sin declarar,
+ * sin fila en la tabla de la escala y sin que nadie se entere. Si el gate
+ * sólo mirara font-stretch, ese módulo pasaría entero desapercibido.
+ */
+function usaArchivo(ruta: string): boolean {
+  return readFileSync(ruta, 'utf8').includes('var(--font-archivo)')
+}
+
 describe('la escala tipográfica y los módulos declaran lo mismo', () => {
   // Fail-closed, igual que `la tabla del documento no está vacía` del test de
   // color: un parser que no encuentra filas devuelve un Map vacío, y sobre un
@@ -93,6 +107,20 @@ describe('la escala tipográfica y los módulos declaran lo mismo', () => {
       `no se parseó ningún rol con font-stretch de la tabla de la escala de ` +
         `${DOC}. O la tabla quedó vacía, o cambió el formato de las filas y el ` +
         `regex dejó de matchear.`,
+    ).toBeGreaterThan(0)
+  })
+
+  // Fail-closed del otro lado de la comparación: si el barrido del filesystem
+  // se rompiera (ruta base equivocada, filtro de más) devolvería `[]`, y sobre
+  // una lista vacía los casos de abajo recorrerían cero archivos y pasarían
+  // sin mirar nada — el mismo modo de falla que el caso de arriba cubre para
+  // la tabla del documento.
+  it('el barrido de módulos CSS no viene vacío', () => {
+    expect(
+      modulosDelRepo().length,
+      `modulosDelRepo() no encontró ningún archivo .module.css en el repo. ` +
+        `Hay al menos persiana, cartel e importe, así que una lista vacía es el ` +
+        `barrido roto, no el repo sin módulos CSS.`,
     ).toBeGreaterThan(0)
   })
 
@@ -122,15 +150,17 @@ describe('la escala tipográfica y los módulos declaran lo mismo', () => {
     const documentados = new Set(anchosDelDoc().values())
     const mapeados = new Set(Object.values(MODULOS_POR_ROL).flat())
     for (const ruta of modulosDelRepo()) {
-      const declarados = anchosDeArchivo(ruta)
-      if (declarados.length === 0) continue
+      // El disparador es CONSUMIR la cara de display (`usaArchivo`), no
+      // declarar font-stretch: ver el comentario de esa función.
+      if (!usaArchivo(ruta)) continue
       expect(
         mapeados.has(ruta),
-        `${ruta} declara font-stretch y no figura en MODULOS_POR_ROL. Un ancho ` +
-          `de Archivo que no corresponde a ningún rol escrito es exactamente lo ` +
-          `que la tabla de la escala existe para impedir.`,
+        `${ruta} usa var(--font-archivo) y no figura en MODULOS_POR_ROL. Un ` +
+          `consumidor de la cara de display que no corresponde a ningún rol ` +
+          `escrito es exactamente lo que la tabla de la escala existe para ` +
+          `impedir.`,
       ).toBe(true)
-      for (const ancho of declarados) {
+      for (const ancho of anchosDeArchivo(ruta)) {
         expect(
           documentados.has(ancho),
           `${ruta} declara font-stretch: ${ancho}, que no figura en la tabla de ` +
@@ -138,5 +168,35 @@ describe('la escala tipográfica y los módulos declaran lo mismo', () => {
         ).toBe(true)
       }
     }
+  })
+})
+
+describe('el CSS module del importe declara de verdad lo que el TSX referencia', () => {
+  // vitest corre con `css: false`: importar un .module.css devuelve un Proxy
+  // que fabrica `_<clave>_<hash>` para CUALQUIER propiedad que se le pida,
+  // exista la clase o no. Verificado a mano: renombrando `.total` a
+  // `.totalRenombrado` en components/importe.module.css, sin tocar el TSX,
+  // los tests de arriba (que sólo miran `estilos.total}` en el FUENTE del
+  // TSX, o el className fabricado por el Proxy) siguen en verde — cuando en
+  // el build real, con Lightning CSS procesando el módulo de verdad,
+  // `estilos.total` sería `undefined` y el pie se renderizaría con
+  // `class="undefined text-right"`: sin Archivo, sin 85%, sin cifras
+  // tabulares, sin 40 px y sin peso 600, y ningún test lo notaría. Este caso
+  // lee el TEXTO del CSS —no el módulo importado— y comprueba que los
+  // selectores existen de verdad, que es lo único que cierra ese agujero.
+  const RUTA_CSS = 'components/importe.module.css'
+
+  it.each(['.importe', '.total'])('declara el selector %s', (selector) => {
+    const css = readFileSync(RUTA_CSS, 'utf8')
+    const propiedad = selector.slice(1)
+    expect(
+      css.includes(`${selector} {`),
+      `${RUTA_CSS} no declara ${selector}. ` +
+        `app/(app)/vender/punto-de-venta.tsx referencia estilos.${propiedad} — ` +
+        `pero vitest corre con css: false, así que un CSS module fabrica un ` +
+        `className para CUALQUIER propiedad, exista la clase o no. En el build ` +
+        `real esa clase sería undefined y el rol Importe desaparecería sin que ` +
+        `ningún test lo note.`,
+    ).toBe(true)
   })
 })

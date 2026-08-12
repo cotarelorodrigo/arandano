@@ -355,11 +355,14 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
                   <span>
                     {a.nombre} <span className="text-muted-foreground">· {a.sku}</span>
                   </span>
-                  <span className={estilos.importe}>
-                    {formatearPrecio(a.precio)}
-                    {/* Un servicio muestra —, nunca 0: el motor no le descuenta
-                        stock, y un cero ahí se leería como faltante. */}
-                    <span className="ml-3 text-muted-foreground">
+                  <span>
+                    <span className={estilos.importe}>{formatearPrecio(a.precio)}</span>
+                    {/* El stock no es plata, así que no lleva estilos.importe —
+                        pero sigue siendo una cifra que se compara de un
+                        vistazo, así que conserva tabular-nums. Un servicio
+                        muestra —, nunca 0: el motor no le descuenta stock, y
+                        un cero ahí se leería como faltante. */}
+                    <span className="ml-3 tabular-nums text-muted-foreground">
                       {a.esProducto ? formatearCantidad(a.stock) : '—'}
                     </span>
                   </span>
@@ -583,6 +586,18 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   )
 }
 
+// Las clases de `Input` (components/ui/input.tsx), copiadas a mano y no
+// importadas: un `<select>` nativo no es un `<input>`, así que no hay
+// wrapper de shadcn para reusar sin sumar uno. Se transcriben en vez de
+// cambiar los dos `<select>` por el `Select` de shadcn porque eso sumaría
+// componente y comportamiento (popover, navegación por teclado propia) fuera
+// del alcance visual de este ciclo — ver docs/sistema-de-diseno.md, sección
+// *Espaciado y radio*, la excepción de los medios pasos copiados de
+// components/ui/. `h-8` y el ancho quedan afuera: el alto es común a los dos
+// selects, pero el ancho no (`flex-1` el de medio, `w-24` el de moneda).
+const CLASES_SELECT_COMO_INPUT =
+  'h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm'
+
 /**
  * Una fila del formulario de pago: medio, moneda, monto, cotización (sólo si
  * es USD) y el campo de vuelto (sólo si es efectivo en pesos).
@@ -621,7 +636,7 @@ function FilaDePago({
       <div className="flex gap-2">
         <select
           aria-label={`Medio del pago ${indice + 1}`}
-          className="h-8 flex-1 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+          className={`${CLASES_SELECT_COMO_INPUT} flex-1`}
           value={pago.medio}
           onChange={(e) => onCambiar({ medio: e.target.value as Pago['medio'] })}
         >
@@ -632,7 +647,7 @@ function FilaDePago({
         </select>
         <select
           aria-label={`Moneda del pago ${indice + 1}`}
-          className="h-8 w-24 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm"
+          className={`${CLASES_SELECT_COMO_INPUT} w-24`}
           value={pago.moneda}
           onChange={(e) => {
             const moneda = e.target.value as Pago['moneda']

@@ -43,6 +43,27 @@ describe('el punto de venta', () => {
     expect(fuente).toContain('estilos.total}')
   })
 
+  // El mismo problema que el caso de arriba resuelve para `estilos.total`,
+  // pero para `estilos.importe`: el render de este archivo sólo monta el
+  // carrito vacío, así que no hay ni una fila de <tbody> ni una FilaDePago en
+  // el árbol — ningún <td> ni <Input> de plata llega a pintarse, y nada acá
+  // mira el HTML. Sin este caso se puede borrar `${estilos.importe}` de los
+  // dos <td> de la tabla (Precio y Subtotal) y de los tres <Input> de
+  // FilaDePago (Monto, Cotización, Recibido) y los tests siguen en verde.
+  // Por eso, igual que el caso del total, mira el FUENTE: cuenta cuántas
+  // veces aparece `estilos.importe}` en vez de contar en el HTML renderizado.
+  it('el rol importe cubre las columnas de plata y los campos de monto', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8').replace(/\s+/g, '')
+    const apariciones = [...fuente.matchAll(/estilos\.importe\}/g)].length
+    expect(
+      apariciones,
+      `estilos.importe} aparece ${apariciones} veces en el fuente y tiene que ` +
+        `aparecer 7: el precio de la lista de resultados del buscador, las ` +
+        `columnas Precio y Subtotal de la tabla, los campos Monto, Cotización ` +
+        `y Recibido de FilaDePago, y el aviso de Vuelto.`,
+    ).toBe(7)
+  })
+
   // Una sola vez en pantalla. Antes estaba dos veces —la card de cobro y el
   // pie de la cinta— y en ninguna de las dos mandaba.
   it('el total no está también en la columna de cobro', async () => {
