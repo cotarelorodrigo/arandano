@@ -9,7 +9,9 @@ vi.mock('@/lib/tenant/desde-request', () => ({
 // exigirSesion se mockea acá y no se deja correr de verdad: su implementación
 // real depende de headers(), de authParaTenant y de Postgres, que son detalle
 // de otro módulo (ver lib/auth/sesion.test.ts). Lo único que a esta página le
-// importa es: sin sesión redirige, con sesión trae un usuario.
+// importa es: sin sesión redirige, con sesión sigue de largo hacia /vender —
+// el resultado de exigirSesion() ni se lee, así que a esta página le alcanza
+// con que la promesa resuelva.
 const exigirSesion = vi.fn()
 vi.mock('@/lib/auth/sesion', () => ({
   exigirSesion: () => exigirSesion(),
@@ -64,8 +66,9 @@ describe('página raíz', () => {
   })
 
   // 403 y no 404, deliberadamente: son mensajes distintos para situaciones
-  // distintas. Y antes de exigirSesion: un tenant suspendido no llega ni a
-  // preguntar si hay sesión.
+  // distintas. Y antes de exigirSesion Y antes del redirect: un tenant
+  // suspendido no llega ni a preguntar si hay sesión, y no puede terminar en
+  // /vender para que otra cosa lo rebote sin decir por qué.
   it('403 para un tenant suspendido', async () => {
     tenantDelRequest.mockResolvedValue({
       tipo: 'tenant',
@@ -74,6 +77,7 @@ describe('página raíz', () => {
     await expect(render()).rejects.toThrow('NEXT_FORBIDDEN')
     expect(notFound).not.toHaveBeenCalled()
     expect(exigirSesion).not.toHaveBeenCalled()
+    expect(redirect).not.toHaveBeenCalled()
   })
 
   // Con el guard puesto, un tenant sin sesión ya no renderiza nada de la home:
@@ -100,25 +104,12 @@ describe('página raíz', () => {
     tenantDelRequest.mockResolvedValue({
       tipo: 'tenant',
       tenant: { id: 'x', nombre: 'Flor', estado: 'TRIAL' },
-      subdominio: 'flor',
     })
-    exigirSesion.mockResolvedValue({
-      usuario: { id: 'u1', nombre: 'Ana', email: 'ana@flor.com', rol: 'EMPLEADO' },
-    })
+    // Home() no lee nada de lo que devuelve exigirSesion(); sólo importa que
+    // la promesa resuelva.
+    exigirSesion.mockResolvedValue(undefined)
     await expect(render()).rejects.toThrow('NEXT_REDIRECT:/vender')
     expect(redirect).toHaveBeenCalledWith('/vender')
-  })
-
-  // El orden importa: un tenant suspendido tiene que ver el 403 y no ser
-  // mandado a /vender para que otra cosa lo rebote sin explicar por qué.
-  it('un tenant suspendido ve el 403, no el redirect', async () => {
-    tenantDelRequest.mockResolvedValue({
-      tipo: 'tenant',
-      tenant: { id: 'x', nombre: 'Flor', estado: 'SUSPENDIDO' },
-      subdominio: 'flor',
-    })
-    await expect(render()).rejects.toThrow('NEXT_FORBIDDEN')
-    expect(redirect).not.toHaveBeenCalled()
   })
 
   // Mismo criterio que caso_home_responde en scripts/smoke.sh tras el fix de

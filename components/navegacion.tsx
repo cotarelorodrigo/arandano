@@ -5,22 +5,7 @@ import { usePathname } from 'next/navigation'
 import type { RolUsuario } from '@/lib/auth/sesion'
 import { cn } from '@/lib/utils'
 
-/**
- * Las pestañas de la aplicación, en un solo lugar.
- *
- * Es componente de CLIENTE desde el ciclo del home: la pestaña activa sale de
- * usePathname(), y un layout de servidor no puede saber en qué ruta está. No
- * cuesta nada sin JavaScript — Next renderiza los componentes de cliente en el
- * servidor para el HTML inicial, así que el subrayado sale correcto en la
- * primera carga, y cada navegación sin JS es una carga completa que vuelve a
- * salir correcta.
- *
- * Vivía acá porque tenía dos consumidores (el layout del grupo y app/page.tsx).
- * Desde que `/` redirige a /vender le quedó uno solo, y se queda igual por dos
- * motivos nuevos: es 'use client' —el layout no lo es— y es el punto de
- * extensión que CLAUDE.md promete para el registry de módulos. Cuando exista
- * Órdenes de Trabajo, sus pestañas entran por esta lista.
- */
+// Las pestañas de la aplicación, en un solo lugar.
 type Pestana = { href: string; texto: string; soloDueno?: boolean }
 
 const PESTANAS: Pestana[] = [
@@ -43,6 +28,20 @@ export function estaActiva(href: string, ruta: string): boolean {
   return ruta === href || ruta.startsWith(`${href}/`)
 }
 
+/**
+ * Es componente de CLIENTE desde el ciclo del home: la pestaña activa sale de
+ * usePathname(), y un layout de servidor no puede saber en qué ruta está. No
+ * cuesta nada sin JavaScript — Next renderiza los componentes de cliente en el
+ * servidor para el HTML inicial, así que el subrayado sale correcto en la
+ * primera carga, y cada navegación sin JS es una carga completa que vuelve a
+ * salir correcta.
+ *
+ * Vivía acá porque tenía dos consumidores (el layout del grupo y app/page.tsx).
+ * Desde que `/` redirige a /vender le quedó uno solo, y se queda igual por dos
+ * motivos nuevos: es 'use client' —el layout no lo es— y es el punto de
+ * extensión que CLAUDE.md promete para el registry de módulos. Cuando exista
+ * Órdenes de Trabajo, sus pestañas entran por esta lista.
+ */
 export function Navegacion({ rol }: { rol: RolUsuario }) {
   const ruta = usePathname()
 

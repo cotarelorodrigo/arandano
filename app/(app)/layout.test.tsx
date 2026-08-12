@@ -64,6 +64,21 @@ describe('layout de la aplicación', () => {
     expect(html).toContain('href="/vender"')
   })
 
+  // Los casos por rol (qué pestañas ve un dueño vs. un empleado) ya están en
+  // components/navegacion.test.tsx — acá sólo importa que el layout CABLEE
+  // sesion.usuario.rol hacia <Navegacion>, y no un valor fijo. Sin este caso,
+  // un <Navegacion rol="DUENO" /> hardcodeado en el layout pasaría el resto de
+  // la suite en verde y le mostraría Usuarios a cualquier empleado.
+  it('pasa el rol de la sesión a la navegación, no uno fijo', async () => {
+    exigirSesion.mockResolvedValue({
+      tenant: { id: 'un-id', nombre: 'Local de prueba', estado: 'ACTIVO' },
+      usuario: { id: 'otro-id', nombre: 'Quien sea', rol: 'EMPLEADO' },
+      subdominio: 'prueba',
+    })
+    const html = await render()
+    expect(html).not.toContain('href="/usuarios"')
+  })
+
   it('renderiza el contenido de adentro', async () => {
     const html = await render()
     expect(html).toContain('contenido')

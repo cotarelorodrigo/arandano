@@ -8,9 +8,11 @@
 # Un caso por función, y la lista abajo. Sumar un caso es agregar una función y
 # un renglón. Hoy cubre /api/health, las pantallas sin credenciales, un login
 # real contra /api/auth/sign-in/email y —con esa sesión— cada pantalla de
-# app/(app)/**/page.tsx más /, y el login POR LA PANTALLA, que es lo único que
-# ejercita el redirect de un server action. Lo que falta (venta, factura, orden
-# de trabajo, catálogo público) entra cuando exista ese código.
+# app/(app)/**/page.tsx, caso_home_redirige_a_vender (/ ya no es una pantalla
+# propia, así que lo que se cubre es el redirect), y el login POR LA PANTALLA,
+# que es lo único que ejercita el redirect de un server action. Lo que falta
+# (venta, factura, orden de trabajo, catálogo público) entra cuando exista ese
+# código.
 #
 # ok/bad/PASS/FAIL van inline y NO se sourcean desde scripts/tests/lib-asserts.sh,
 # a propósito: ese archivo se declara a sí mismo compartido entre los
@@ -167,7 +169,7 @@ caso_home_exige_sesion() {
 caso_home_redirige_a_vender() {
   local destino
   destino=$(curl -s -o /dev/null --max-time 10 -w '%{redirect_url}' \
-    -b "$COOKIE_SESION" \
+    -H "Cookie: ${COOKIE_SESION}" \
     -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/")
   [[ "$destino" == */vender ]]
 }
@@ -315,6 +317,10 @@ caso_login_por_la_pantalla() {
   # 303 y no 200: un 200 es el action devolviendo { error } sin redirigir, o
   # sea que el login falló o que el encoding de arriba dejó de valer.
   [[ "$codigo" == "303" ]] || return 1
+  # OJO al diagnosticar un rojo acá: el cuerpo trae el render incrustado del
+  # DESTINO del redirect, y desde este ciclo el destino es /vender —que
+  # consulta la base— y no / —que era estático—. Un /vender roto pinta este
+  # caso de rojo diciendo "login por la pantalla" y no habla del punto de venta.
   # El nombre del local prueba que el render incrustado resolvió el tenant
   # —era exactamente lo que fallaba—, y usuario-nombre prueba que además es la
   # home autenticada y no la pantalla de login: /login lleva el MISMO marcador
@@ -429,7 +435,9 @@ if [[ -n "$COOKIE_SESION" ]]; then
     if caso_pantalla "$ruta"; then ok "pantalla ${ruta}"; else bad "pantalla ${ruta}"; fi
   done
 else
-  omit "$((${#RUTAS_APP[@]})) pantallas omitidas: sin sesión (ver caso_login_devuelve_sesion)"
+  # +1: sin sesión tampoco corre caso_home_redirige_a_vender, no sólo el
+  # barrido de RUTAS_APP — el conteo tiene que incluirlo o miente de menos.
+  omit "$((${#RUTAS_APP[@]} + 1)) chequeos omitidos: sin sesión (ver caso_login_devuelve_sesion)"
 fi
 
 printf '\n%d ok, %d fallan\n' "$PASS" "$FAIL"
