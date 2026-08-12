@@ -203,10 +203,22 @@ medias es una inconsistencia visible; aplicado a una pantalla y declarado como
 tal es una decisión.
 
 **El cartel pesa más que el título de la pantalla, y es la decisión.** El nombre
-del local es lo más grande de la aplicación: siempre estás adentro de tu local,
-y `Inventario` es sólo dónde estás parado. Es la misma jerarquía que declara el
+del local es lo más grande **del shell**: siempre estás adentro de tu local, y
+`Inventario` es sólo dónde estás parado. Es la misma jerarquía que declara el
 login —el negocio del cliente es el héroe, la plataforma no firma—, sostenida
 las ocho horas en vez de los ocho segundos.
+
+**Enmienda (ciclo de la cinta, 2026-08-12): el contenido puede pesar más que el
+cartel cuando el contenido es el punto.** El total del punto de venta va en
+40 px, contra los 24 del cartel. La razón de la regla original es sobre el
+shell —compara el nombre del local con el título de la pantalla, o sea cromo
+contra cromo—, y el total no es cromo: es el valor de la transacción en curso,
+el número que se dice en voz alta cien veces por día.
+
+**El límite, que es la mitad de la enmienda.** Hoy esto es **un número en una
+sola pantalla**. Una segunda pantalla que quiera el suyo no estira esta
+excepción: reabre la discusión. Si aparece un segundo importe en 40 px fuera de
+`/vender`, esta sección dejó de describir el sistema.
 
 ### La cara de display: Archivo
 

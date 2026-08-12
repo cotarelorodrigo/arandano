@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import estilos from '@/components/importe.module.css'
 
 const INICIAL: EstadoCobro = { error: null, venta: null }
 
@@ -322,7 +323,12 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
 
   return (
     <div className="flex flex-col gap-6 md:flex-row">
-      <div className="flex-1">
+      {/* La cinta se contiene: en un monitor de 22" el carrito suelto deja
+          ~1100 px entre el nombre del artículo y su importe, que es más de lo
+          que el ojo enlaza de una sola pasada. `max-w-3xl` es un token de
+          max-width de Tailwind, no un paso de la escala de espaciado, así que
+          no cae bajo la regla del subconjunto. */}
+      <div className="max-w-3xl flex-1">
         <div className="mb-4 flex flex-col gap-2">
           <Label htmlFor="buscar">Buscar artículo</Label>
           <Input
@@ -349,7 +355,7 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
                   <span>
                     {a.nombre} <span className="text-muted-foreground">· {a.sku}</span>
                   </span>
-                  <span className="tabular-nums">
+                  <span className={estilos.importe}>
                     {formatearPrecio(a.precio)}
                     {/* Un servicio muestra —, nunca 0: el motor no le descuenta
                         stock, y un cero ahí se leería como faltante. */}
@@ -363,81 +369,107 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
           </ul>
         )}
 
-        {lineas.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+        <table className="w-full text-sm">
+          <thead>
+            {/* Como imprime una cinta: chico, gris y en mayúsculas. El
+                `font-normal` es necesario porque <th> viene en negrita por
+                default del navegador. */}
+            <tr className="border-b text-left text-xs tracking-wider text-muted-foreground uppercase">
+              <th className="pb-2 font-normal">Artículo</th>
+              <th className="w-24 pb-2 text-right font-normal">Cantidad</th>
+              <th className="pb-2 text-right font-normal">Precio</th>
+              <th className="pb-2 text-right font-normal">Subtotal</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {lineas.map((l, i) => {
+              const cantidadMilesimas = cantidadEnMilesimas(l.cantidad)
+              const invalida = Number.isNaN(cantidadMilesimas)
+              const quedaria = aMilesimas(l.stock) - cantidadMilesimas
+              return (
+                <tr key={l.articuloId} className="border-b">
+                  <td className="py-2">
+                    {l.descripcion}
+                    {/* Antes que el aviso de stock: una cantidad que no se
+                        entiende ni siquiera se puede evaluar contra el
+                        stock (`quedaria` también sería NaN). */}
+                    {invalida && (
+                      <span className="ml-2 text-destructive">cantidad inválida</span>
+                    )}
+                    {/* Se advierte y NO se bloquea: el motor permite vender
+                        sin stock a propósito, y la pantalla no puede ser más
+                        estricta que el motor sin volverse mentirosa. */}
+                    {!invalida && l.esProducto && quedaria < 0 && (
+                      <span className="ml-2 text-destructive">sin stock suficiente</span>
+                    )}
+                  </td>
+                  <td>
+                    <Input
+                      inputMode="decimal"
+                      className="text-right tabular-nums"
+                      value={l.cantidad}
+                      onChange={(e) =>
+                        actualizarCarrito((p) =>
+                          p.map((x, j) => (j === i ? { ...x, cantidad: e.target.value } : x)),
+                        )
+                      }
+                      aria-label={`Cantidad de ${l.descripcion}`}
+                    />
+                  </td>
+                  <td className={`${estilos.importe} text-right`}>
+                    {formatearPrecio(l.precio)}
+                  </td>
+                  <td className={`${estilos.importe} text-right`}>
+                    {invalida
+                      ? '—'
+                      : formatearPrecio(
+                          deCentavos(subtotalEnCentavos(cantidadMilesimas, aCentavos(l.precio))),
+                        )}
+                  </td>
+                  <td className="text-right">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => actualizarCarrito((p) => p.filter((_, j) => j !== i))}
+                      aria-label={`Quitar ${l.descripcion}`}
+                    >
+                      Quitar
+                    </Button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+
+        {lineas.length === 0 && (
+          <p className="py-3 text-sm text-muted-foreground">
             Buscá un artículo para empezar la venta.
           </p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left">
-                <th className="py-2">Artículo</th>
-                <th className="w-24 text-right">Cantidad</th>
-                <th className="text-right">Precio</th>
-                <th className="text-right">Subtotal</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {lineas.map((l, i) => {
-                const cantidadMilesimas = cantidadEnMilesimas(l.cantidad)
-                const invalida = Number.isNaN(cantidadMilesimas)
-                const quedaria = aMilesimas(l.stock) - cantidadMilesimas
-                return (
-                  <tr key={l.articuloId} className="border-b">
-                    <td className="py-2">
-                      {l.descripcion}
-                      {/* Antes que el aviso de stock: una cantidad que no se
-                          entiende ni siquiera se puede evaluar contra el
-                          stock (`quedaria` también sería NaN). */}
-                      {invalida && (
-                        <span className="ml-2 text-destructive">cantidad inválida</span>
-                      )}
-                      {/* Se advierte y NO se bloquea: el motor permite vender
-                          sin stock a propósito, y la pantalla no puede ser más
-                          estricta que el motor sin volverse mentirosa. */}
-                      {!invalida && l.esProducto && quedaria < 0 && (
-                        <span className="ml-2 text-destructive">sin stock suficiente</span>
-                      )}
-                    </td>
-                    <td>
-                      <Input
-                        inputMode="decimal"
-                        className="text-right tabular-nums"
-                        value={l.cantidad}
-                        onChange={(e) =>
-                          actualizarCarrito((p) =>
-                            p.map((x, j) => (j === i ? { ...x, cantidad: e.target.value } : x)),
-                          )
-                        }
-                        aria-label={`Cantidad de ${l.descripcion}`}
-                      />
-                    </td>
-                    <td className="text-right tabular-nums">{formatearPrecio(l.precio)}</td>
-                    <td className="text-right tabular-nums">
-                      {invalida
-                        ? '—'
-                        : formatearPrecio(
-                            deCentavos(subtotalEnCentavos(cantidadMilesimas, aCentavos(l.precio))),
-                          )}
-                    </td>
-                    <td className="text-right">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => actualizarCarrito((p) => p.filter((_, j) => j !== i))}
-                        aria-label={`Quitar ${l.descripcion}`}
-                      >
-                        Quitar
-                      </Button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
         )}
+
+        {/* El pie de la cinta: doble regla y el total. Está siempre, incluso con
+            el carrito vacío en $ 0,00 — un ancla que aparece y desaparece no es
+            un ancla. Supera al cartel de 24 px, y eso está declarado como
+            enmienda con su límite en docs/sistema-de-diseno.md.
+
+            `border-t-4 border-double` y no un valor arbitrario de 3 px: la doble
+            regla necesita al menos 3 px para dibujarse, y 4 es el paso de la
+            escala de bordes de Tailwind. Un ancho de borde no es un paso de
+            espaciado, igual que el -mb-px del riel de pestañas.
+
+            Con una cantidad a medio tipear `totalCentavos` queda en NaN, y
+            "$ NaN" en 40 px es un cartel roto en una pantalla de plata. Muestra
+            "—", que es exactamente lo que ya hace la columna Subtotal de cada
+            línea inválida unas líneas más arriba. */}
+        <div className="mt-2 flex items-baseline justify-between border-t-4 border-double border-foreground pt-3">
+          <span className="text-xs tracking-wider text-muted-foreground uppercase">Total</span>
+          <span className={`${estilos.total} text-right`}>
+            {Number.isNaN(totalCentavos) ? '—' : formatearPrecio(deCentavos(totalCentavos))}
+          </span>
+        </div>
       </div>
 
       <Card className="md:w-80">
