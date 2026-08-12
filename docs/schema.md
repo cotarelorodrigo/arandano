@@ -51,6 +51,15 @@ erDiagram
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
+  leads {
+    uuid id PK
+    text nombre
+    text email
+    text whatsapp "opcional"
+    text rubro
+    text mensaje "opcional"
+    timestamptz(3) creado_en
+  }
   movimientos_stock {
     uuid id PK
     uuid tenant_id FK

@@ -162,6 +162,26 @@ BEGIN
 END
 $$;
 
+-- leads: append-only para la aplicación, y por un motivo distinto al de
+-- movimientos_stock. Aquella es un libro y no se corrige; ésta no tiene
+-- tenant_id, así que no hay policy que la proteja — sin este REVOKE, cualquier
+-- query de la app (o cualquiera que consiga ejecutar una) lee la lista entera
+-- de interesados. La app inserta y nada más; se leen con `npm run leads`, que
+-- se conecta como owner.
+--
+-- SELECT también, a diferencia de movimientos_stock: acá el dato no se muestra
+-- en ninguna pantalla, así que quitarlo no le saca nada a la aplicación.
+--
+-- Mismo guard to_regclass que el de arriba: este script corre también antes de
+-- la primera migración, cuando la tabla todavía no existe.
+DO $$
+BEGIN
+  IF to_regclass('public.leads') IS NOT NULL THEN
+    EXECUTE 'REVOKE SELECT, UPDATE, DELETE ON public.leads FROM arandano_app';
+  END IF;
+END
+$$;
+
 -- Las funciones NO llevan default privilege de EXECUTE, y es deliberado. Una
 -- función SECURITY DEFINER es la vía por la que la app lee lo que RLS le esconde
 -- por diseño: es la superficie que SALTEA el aislamiento, no una que el

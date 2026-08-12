@@ -33,9 +33,11 @@ import { OPCIONES_BASE } from './opciones'
  * —5 adivinanzas por minuto—, que es lo único que este freno tiene que lograr.
  *
  * **En memoria, igual que el de la librería**, y por el mismo motivo: llevarlo
- * a la base agregaría una tabla sin `tenant_id` que `test/rls-cobertura.test.ts`
- * rechazaría con razón. Alcanza mientras haya una sola instancia de la
- * aplicación, y hoy la hay.
+ * a la base agregaría una tabla sin `tenant_id`, y las que no lo llevan tienen
+ * que declararse a mano en `test/rls-cobertura.test.ts` y protegerse por
+ * privilegio en vez de por RLS (es lo que hace `leads`, la de la landing).
+ * Para un contador que se puede perder en cada deploy, ese costo no se paga.
+ * Alcanza mientras haya una sola instancia de la aplicación, y hoy la hay.
  */
 export const REGLA_LOGIN = OPCIONES_BASE.rateLimit.customRules['/sign-in/email']
 

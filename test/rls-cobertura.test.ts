@@ -7,6 +7,7 @@ import { urlOwner } from './postgres-efimero'
 const SIN_TENANT_ID: Record<string, string> = {
   tenants: 'es la raíz; se aísla por id en vez de por tenant_id',
   _prisma_migrations: 'metadatos de Prisma; no tiene datos de ningún tenant',
+  leads: 'un interesado de la landing no es cliente de ningún tenant todavía; la protege el privilegio (REVOKE SELECT en setup-db-roles.sh), no RLS',
 }
 
 let cliente: Client
