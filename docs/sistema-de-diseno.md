@@ -18,6 +18,28 @@ neutro puro. La contención es la decisión, no una etapa: es lo que menos cansa
 en una pantalla que se mira ocho horas, y lo que deja margen para que el rojo de
 un error se destaque de verdad.
 
+### El arándano como superficie
+
+Hay **una** excepción a esa contención, y tiene su propio token: `--marca`, el
+paño de la persiana en la pantalla de login (`app/login/persiana.module.css`).
+
+La razón de la regla está escrita arriba y es literal: *"lo que menos cansa en
+una pantalla que se mira ocho horas"*. El login se mira ocho segundos, una vez
+por día, antes de empezar a trabajar — la razón no aplica, así que la regla
+tampoco. Es además el único momento de marca que tiene el producto: lo que
+viene después es una herramienta y se comporta como tal.
+
+**Por qué un token nuevo y no `--primary` en un `<section>`.** Si el paño fuera
+exactamente el color del botón, el botón dejaría de ser lo único accionable a
+la vista, que es justo lo que la contención compra. `--marca` es más oscuro
+—0.28 contra 0.37 de luminosidad— y eso lo aleja de "control" y lo acerca a
+"material". El hue sigue siendo **287**, igual que los otros tres: es el mismo
+arándano a una cuarta distancia, no un color nuevo.
+
+**Dónde NO se usa**: en ninguna otra pantalla. Si aparece una segunda, esta
+sección deja de describir una excepción y hay que volver a discutir la regla,
+no estirar la excepción en silencio.
+
 ## Los tokens
 
 <!-- tokens:inicio -->
@@ -32,6 +54,7 @@ un error se destaque de verdad.
 | `--popover-foreground` | `oklch(0.145 0 0)` |
 | `--primary` | `oklch(0.37 0.10 287)` |
 | `--primary-foreground` | `oklch(0.985 0 0)` |
+| `--marca` | `oklch(0.28 0.09 287)` |
 | `--secondary` | `oklch(0.97 0 0)` |
 | `--secondary-foreground` | `oklch(0.205 0 0)` |
 | `--muted` | `oklch(0.97 0 0)` |
@@ -57,9 +80,10 @@ primera" se rompe el día que alguien reordene secciones.
 | `--primary` | `#3d3571` | Botón de acción, links |
 | `--ring` | `#3d3571` | Anillo de foco — lo más visible al operar con teclado |
 | `--accent` | `#efeff8` | Fila seleccionada, hover. Único neutral tintado |
+| `--marca` | `#271f52` | El paño de la persiana del login, y nada más |
 
-El hue es **287** en los tres. Lo que los distingue es croma y luminosidad, no
-tono: es un solo color de marca visto a tres distancias.
+El hue es **287** en los cuatro. Lo que los distingue es croma y luminosidad, no
+tono: es un solo color de marca visto a cuatro distancias.
 
 ### Contraste
 
@@ -87,6 +111,8 @@ sobre blanco fuera `#bcbcbc` en vez del `#808080` que todos conocemos).
 | `--muted-foreground` sobre `--accent` | 4.53 | 4.5 | ok |
 | `--primary-foreground` sobre `--primary` | 10.34 | 4.5 | ok |
 | `--primary-foreground` sobre `--primary/80` | 5.76 | 4.5 | ok |
+| `--primary-foreground` sobre `--marca` | 14.33 | 4.5 | ok |
+| `--primary-foreground/70` sobre `--marca` | 7.69 | 4.5 | ok |
 | `--primary` sobre `--background` | 10.79 | 4.5 | ok |
 | `--primary` sobre `--accent` | 9.44 | 4.5 | ok |
 | `--primary-foreground` sobre `--destructive` | 4.57 | 4.5 | ok |
@@ -96,7 +122,7 @@ sobre blanco fuera `#bcbcbc` en vez del `#808080` que todos conocemos).
 
 <!-- contraste:fin -->
 
-Cada par de la tabla nombra los **tokens** involucrados, no colores genéricos: `--primary-foreground` es `oklch(0.985 0 0)`, distinto de "blanco puro", así que sus ratios difieren del que podría calcularse contra un 1.0. El `/NN` es la opacidad con la que ese token aparece en un componente: `--primary/80` es el hover del botón de acción (`components/ui/button.tsx`) y `--destructive/90` es la descripción de un error (`components/ui/alert.tsx`).
+Cada par de la tabla nombra los **tokens** involucrados, no colores genéricos: `--primary-foreground` es `oklch(0.985 0 0)`, distinto de "blanco puro", así que sus ratios difieren del que podría calcularse contra un 1.0. El `/NN` es la opacidad con la que ese token aparece en un componente: `--primary/80` es el hover del botón de acción (`components/ui/button.tsx`), `--destructive/90` es la descripción de un error (`components/ui/alert.tsx`) y `--primary-foreground/70` es la firma "Arándano" sobre el paño del login (`app/login/persiana.module.css`).
 
 **El par más justo es `--muted-foreground` sobre `--accent`, con 4.53.** Es el
 que fija cuánto más se puede oscurecer `--accent` sin romper nada, y por eso
@@ -133,9 +159,51 @@ esta paleta:
 
 No es un default que quedó: es una decisión. Cero bytes, cero salto de fuente al
 cargar, y se ve nativa en el Windows del mostrador igual que en el Android del
-dueño. Adoptar una fuente propia más adelante es aditivo y barato.
+dueño. **Sigue siendo la pila de toda la aplicación**, incluido el punto de
+venta.
 
 `--font-heading: var(--font-sans)`: los títulos usan la misma familia.
+
+### La cara de display: Archivo
+
+Lo que el párrafo de arriba anticipaba —*"adoptar una fuente propia más adelante
+es aditivo y barato"*— pasó, y en un solo lugar.
+
+**Archivo**, de [Omnibus-Type](https://www.omnibus-type.com/), foundry de Buenos
+Aires. Se usa para **una cosa**: el nombre del local en la pantalla de login.
+Ninguna otra pantalla la carga.
+
+**Por qué ésa.** Tiene eje de ancho variable (`wdth`, 62–125), y ése es el
+motivo entero de la elección: un local argentino tiene el nombre pintado a lo
+ancho del frente, y la versión expandida —acá, `font-stretch: 112%`— se parece
+a eso en vez de a un título de aplicación. Que sea de una fundición argentina
+no es lo que la justifica, pero tampoco es un accidente.
+
+**Qué cuesta**, escrito para que se pueda revisar y no sólo defender:
+
+| | |
+|---|---|
+| Peso | 90 KB de woff2, ejes `wght` y `wdth` completos |
+| Subset | Sólo `latin` (U+0000–00FF y algunos más) |
+| Origen | `app/fuentes/archivo-latin-var.woff2`, servido desde el propio dominio |
+| Carga | `next/font/local` con `display: swap` y preload |
+| Dónde pesa | En el login. No en el punto de venta ni en inventario |
+
+El subset `latin` cubre el español entero —ñ, acentos, `¿`, `¡`—. Un nombre de
+local con un carácter afuera de ese rango cae en la pila del sistema **para ese
+glifo**, que es una degradación aceptable y no un error.
+
+Un detalle que muerde si se toca: el descriptor `font-stretch: 62% 125%` va en
+`declarations` de `localFont` (`app/layout.tsx`). **Sin él el eje de ancho no se
+activa** y el `font-stretch: 112%` de la pantalla no hace absolutamente nada,
+sin avisar — se ve una Archivo normal y parece una decisión de diseño.
+
+No hay token `--font-display` en `@theme inline`, y es a propósito: una sola
+pantalla la usa, desde `app/login/persiana.module.css`, con `var(--font-archivo)`
+—la variable que emite `next/font`— directo. Un token de `@theme` que ninguna
+utilidad de Tailwind referencia es un token muerto, que es lo que el caso *no
+quedan tokens de sidebar ni de gráficos* existe para evitar. Si una segunda
+pantalla la necesita, ahí entra el token.
 
 **Tres pesos y no más**: 400 texto, 500 etiquetas y botones, 600 títulos. El 700
 se saltea a propósito — la pila varía demasiado entre sistemas y en algunos cae

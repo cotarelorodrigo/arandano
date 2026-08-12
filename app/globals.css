@@ -26,6 +26,13 @@
      y la tipografía caía en el default del navegador en vez de en la pila de
      fuentes del sistema. */
   --font-heading: var(--font-sans);
+  /* No hay --font-display ni --color-marca acá, y es a propósito: la cara de
+     display y el paño de la persiana los usa una sola pantalla, desde
+     app/login/persiana.module.css, con var(--font-archivo) y var(--marca)
+     directo. Un token en @theme que ninguna utilidad de Tailwind referencia es
+     un token muerto, que es lo que el caso "no quedan tokens de sidebar ni de
+     gráficos" de test/sistema-de-diseno.test.ts existe para evitar. Si una
+     segunda pantalla los necesita, ahí entran acá. */
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -62,6 +69,12 @@
   --popover-foreground: oklch(0.145 0 0);
   --primary: oklch(0.37 0.10 287);
   --primary-foreground: oklch(0.985 0 0);
+  /* El arándano como SUPERFICIE, no como control. Es el paño de la persiana
+     del login y no se usa en ningún otro lado. Más oscuro que --primary a
+     propósito: si el paño fuera exactamente el color del botón, el botón
+     dejaría de ser lo único accionable a la vista. Ver docs/sistema-de-diseno.md,
+     "El arándano como superficie". */
+  --marca: oklch(0.28 0.09 287);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
