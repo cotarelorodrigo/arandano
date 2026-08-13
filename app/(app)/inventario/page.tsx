@@ -41,7 +41,7 @@ export default async function Inventario({
       : {}),
   }
 
-  const [articulos, total] = await Promise.all([
+  const [articulos, total, negativos] = await Promise.all([
     prisma.articulo.findMany({
       where: donde,
       orderBy: { nombre: 'asc' },
@@ -53,6 +53,11 @@ export default async function Inventario({
       },
     }),
     prisma.articulo.count({ where: donde }),
+    // Sobre `donde` y no sobre toda la tabla: el conteo tiene que hablar de lo
+    // que el listado está mostrando, o el subtítulo diría "3 con stock
+    // negativo" mientras la búsqueda filtrada no muestra ninguno.
+    // Sólo PRODUCTO: un servicio no lleva stock, y su columna es un guion.
+    prisma.articulo.count({ where: { ...donde, tipo: 'PRODUCTO', stock: { lt: 0 } } }),
   ])
 
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA))
@@ -68,7 +73,20 @@ export default async function Inventario({
   return (
     <main className="p-6">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-medium">Inventario</h1>
+        <div>
+          <h1 className="text-xl font-medium">Inventario</h1>
+          {/* Sólo si hay algo que contar: en un local recién dado de alta, un
+              "0 artículos · 0 con stock negativo" es ruido debajo del título
+              justo cuando la pantalla ya tiene su propio texto de vacío. */}
+          {total > 0 && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {total === 1 ? '1 artículo' : `${total} artículos`}
+              {verInactivos ? '' : ' activos'}
+              {negativos > 0 &&
+                ` · ${negativos === 1 ? '1 con stock negativo' : `${negativos} con stock negativo`}`}
+            </p>
+          )}
+        </div>
         {sesion.usuario.rol === 'DUENO' && (
           <Button asChild size="sm">
             <Link href="/inventario/nuevo">Artículo nuevo</Link>
