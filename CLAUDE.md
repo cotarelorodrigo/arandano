@@ -369,10 +369,19 @@ Y del producto:
   aplicaba la clase `.dark`. La evidencia de que el mecanismo atrapa de
   verdad —cuatro defectos metidos a mano y revertidos, uno por vez, más la
   tabla vacía— vive en la sección *Cómo se verifica* del propio documento.
-  **Lo que todavía no pasó: mirar la aplicación.** Ningún test puede juzgar si
-  el botón se ve azul-violeta y no negro, o si el foco se distingue; esa
-  verificación a ojo sobre el login de un tenant sigue pendiente de una
-  persona, y está anotada como tal al final del documento.
+  **Y la aplicación ya se miró** (2026-08-13, al cerrar el ciclo del punto de
+  venta). Ningún test puede juzgar si el botón se ve azul-violeta y no negro o
+  si el foco se distingue, así que esa verificación quedó pendiente de una
+  persona desde el 2026-08-11 y se cerró en el primer ciclo que construyó una
+  pantalla que valiera la pena mirar. Confirmado a ojo sobre el login de un
+  tenant y sobre `/vender`; el detalle vive en la sección *Verificación
+  visual* del propio documento. Lo que ese cierre dejó anotado, porque es lo
+  que costó tiempo: la verificación se hace entrando por el subdominio del
+  tenant, no por la IP pelada —`http://100.64.81.63:3000` responde 404 desde
+  el cutover de tenants por `Host`, y es correcto que lo haga—, y el canario
+  de dev arranca sin catálogo, así que hay que sembrarlo antes y con importes
+  de distinta cantidad de dígitos: con montos parejos no se puede ver si las
+  columnas de números bailan.
 - ~~Construir la UI de inventario.~~ **Hecho** (2026-08-11). Listado con
   buscador y paginación, alta con SKU autogenerado y stock inicial que nace
   como movimiento, ingreso de mercadería con su costo, corrección por conteo
