@@ -50,6 +50,11 @@ export const PARES: Par[] = [
   // La fila seleccionada y el hover de las pantallas que vienen: --accent es
   // más oscuro que --muted, así que este par es más filoso que el de arriba.
   { texto: '--muted-foreground', fondo: '--accent', minimo: 4.5 },
+  // El pie de los tiles de /ventas ("sin contar las anuladas"), que va sobre
+  // --card y en 11 px. Es el más chico de los dos textos que viven sobre esa
+  // superficie —el otro es el rótulo, que ya está más abajo—, así que era el
+  // hueco que más valía cerrar.
+  { texto: '--muted-foreground', fondo: '--card', minimo: 4.5 },
   { texto: '--primary-foreground', fondo: '--primary', minimo: 4.5 },
   // El hover del botón de acción — el "Entrar" del login (components/ui/button.tsx).
   // Es un token y no una opacidad desde el ciclo de la paleta oscura: sobre
@@ -78,11 +83,25 @@ export const PARES: Par[] = [
   // zafaba, y con una nueva merece medirse en vez de suponerse.
   { texto: '--destructive', fondo: '--destructive', alfaFondo: 0.1, minimo: 4.5 },
   { texto: '--input', fondo: '--background', minimo: 3.0 },
+  // El MISMO borde, sobre la superficie donde de verdad se dibuja. Todo
+  // formulario del producto pone sus campos adentro de una Card: el de la
+  // landing (app/sitio/formulario.tsx), que es el único camino de conversión
+  // que hay, y la columna de cobro de /vender. --card es más claro que
+  // --background, así que el borde tenue tiene ahí MENOS contraste, no más:
+  // 1.63 contra 1.77. La excepción declarada tiene que nombrar este número,
+  // que es el que alguien está aceptando, y no el teórico.
+  { texto: '--input', fondo: '--card', minimo: 3.0 },
   // El anillo de foco de las pestañas de navegación (components/navegacion.tsx),
   // opaco desde la revisión final de "el cartel en el shell". Mismo mínimo que
   // el borde de --input y por la misma regla (WCAG 1.4.11): no es texto, es lo
   // que identifica un control.
   { texto: '--ring', fondo: '--background', minimo: 3.0 },
+  // El halo de foco de botón e input, que es el mismo anillo pero al 50%
+  // (`focus-visible:ring-ring/50` en components/ui/button.tsx e input.tsx).
+  // Entra porque es el par que el comentario de components/navegacion.tsx cita
+  // para justificar que SU anillo vaya opaco, y un ratio citado a mano es
+  // exactamente lo que este archivo existe para que no se desincronice.
+  { texto: '--ring', fondo: '--background', alfaTexto: 0.5, minimo: 3.0 },
 ]
 
 /**
@@ -94,13 +113,29 @@ export const PARES: Par[] = [
  * test/rls-cobertura.test.ts.
  */
 export const EXCEPCIONES: Record<string, string> = {
+  '--input sobre --card':
+    'el peor caso REALIZADO del borde de un control, y por eso el número que hay ' +
+    'que declarar: 1.63 contra los 3:1 de WCAG 1.4.11. Todo formulario del ' +
+    'producto dibuja sus campos adentro de una Card —el de la landing, que es el ' +
+    'único camino de conversión, y la columna de cobro de /vender—, y --card es ' +
+    'más claro que --background, así que el borde contrasta ahí MENOS que sobre el ' +
+    'fondo. Se conserva el borde tenue que usa la maqueta a conciencia: todo campo ' +
+    'lleva <Label> asociado y anillo de foco de marca, así que el borde no es el ' +
+    'único indicio de que ahí hay un input. Revisar ante un reporte real de gente ' +
+    'que no encuentra los campos, o ante una auditoría de accesibilidad formal.',
   '--input sobre --background':
-    'el borde de un control pide 3:1 (WCAG 1.4.11) y da 1.77 — mejor que el 1.26 ' +
-    'de la paleta clara, pero todavía corto. Se conserva el borde tenue que usa la ' +
-    'maqueta a conciencia: todo campo lleva <Label> asociado y anillo de foco de ' +
-    'marca, así que el borde no es el único indicio de que ahí hay un input. ' +
-    'Revisar ante un reporte real de gente que no encuentra los campos, o ante una ' +
-    'auditoría de accesibilidad formal.',
+    'el mismo borde sobre el fondo pelado: 1.77, mejor que el 1.26 de la paleta ' +
+    'clara y que el 1.63 sobre --card, pero igual de corto contra los 3:1. Hoy no ' +
+    'hay ninguna pantalla con un campo fuera de una Card, así que este par es el ' +
+    'caso teórico y el de arriba el real; la razón y la mitigación son las mismas.',
+  '--ring/50 sobre --background':
+    'el halo de foco de botón e input da 2.33 y no llega a los 3:1 de WCAG 1.4.11 ' +
+    'por sí solo — pero no está solo: `focus-visible:border-ring` pinta al mismo ' +
+    'tiempo el borde del control con --ring OPACO, y ese par da 5.49, o sea que lo ' +
+    'que identifica el control al enfocarlo sí cumple. El halo es refuerzo. Donde ' +
+    'no hay ese segundo indicador —las pestañas de components/navegacion.tsx, que ' +
+    'no tienen borde propio— el anillo va opaco justamente por esto, y su ' +
+    'comentario cita estos dos números.',
 }
 
 const conAlfa = (token: string, alfa?: number) =>

@@ -132,6 +132,7 @@ sobre blanco fuera `#bcbcbc` en vez del `#808080` que todos conocemos).
 | `--muted-foreground` sobre `--background` | 6.59 | 4.5 | ok |
 | `--muted-foreground` sobre `--muted` | 5.69 | 4.5 | ok |
 | `--muted-foreground` sobre `--accent` | 5.69 | 4.5 | ok |
+| `--muted-foreground` sobre `--card` | 6.10 | 4.5 | ok |
 | `--primary-foreground` sobre `--primary` | 5.64 | 4.5 | ok |
 | `--primary-foreground` sobre `--primary-hover` | 7.11 | 4.5 | ok |
 | `--foreground` sobre `--marca` | 10.83 | 4.5 | ok |
@@ -144,11 +145,15 @@ sobre blanco fuera `#bcbcbc` en vez del `#808080` que todos conocemos).
 | `--destructive/90` sobre `--card` | 4.86 | 4.5 | ok |
 | `--destructive` sobre `--destructive/10` | 5.36 | 4.5 | ok |
 | `--input` sobre `--background` | 1.77 | 3.0 | **excepción declarada** |
+| `--input` sobre `--card` | 1.63 | 3.0 | **excepción declarada** |
 | `--ring` sobre `--background` | 5.49 | 3.0 | ok |
+| `--ring/50` sobre `--background` | 2.33 | 3.0 | **excepción declarada** |
 
 <!-- contraste:fin -->
 
-Cada par de la tabla nombra los **tokens** involucrados, no colores genéricos: `--primary-foreground` es `oklch(0.20 0.03 287)`, distinto de "negro puro", así que sus ratios difieren del que podría calcularse contra un 0.0. El `/NN` es la opacidad con la que ese token aparece en un componente: `--destructive/10` es el fondo del botón "Desactivar artículo" (`components/ui/button.tsx`), `--destructive/90` es la descripción de un error (`components/ui/alert.tsx`) y `--foreground/70` es la firma "Arándano" sobre el paño del login (`app/login/persiana.module.css`).
+Cada par de la tabla nombra los **tokens** involucrados, no colores genéricos: `--primary-foreground` es `oklch(0.20 0.03 287)`, distinto de "negro puro", así que sus ratios difieren del que podría calcularse contra un 0.0. El `/NN` es la opacidad con la que ese token aparece en un componente: `--destructive/10` es el fondo del botón "Desactivar artículo" (`components/ui/button.tsx`), `--destructive/90` es la descripción de un error (`components/ui/alert.tsx`), `--foreground/70` es la firma "Arándano" sobre el paño del login (`app/login/persiana.module.css`) y `--ring/50` es el halo de foco de botón e input (`focus-visible:ring-ring/50`).
+
+**Un mismo token puede aparecer sobre dos fondos, y no es redundancia.** `--input` figura dos veces porque el borde de un campo contrasta distinto según dónde esté dibujado, y la superficie que importa es la que el producto usa de verdad: `--card`, porque **todo formulario del producto pone sus campos adentro de una Card**.
 
 **El par más justo es `--primary` sobre `--accent`, con 4.74** — el violeta
 sobre la fila seleccionada. Es el que fija cuánto más se puede aclarar
@@ -165,13 +170,29 @@ esta paleta:
    sobre los bytes reales: no alcanzaba, y de paso mostró que 0.01 de holgura no
    es holgura. El cambio es imperceptible a ojo.
 
-2. **El borde de `--input` da 1.77** — mejor que el 1.26 de la paleta clara,
-   pero todavía corto contra los 3:1 que pide WCAG 1.4.11 para el borde de un
-   control. **Aceptado como excepción, no corregido.** Se conserva el borde
-   tenue que usa la maqueta a conciencia: todo campo lleva `<Label>` asociado y
-   anillo de foco de marca, así que el borde no es el único indicio de que ahí
-   hay un input. **Revisar** si aparece un reporte real de gente que no
-   encuentra los campos, o ante una auditoría de accesibilidad formal.
+2. **El borde de `--input` da 1.63 donde se dibuja de verdad** — sobre `--card`,
+   porque todo formulario del producto (el de la landing, que es el único camino
+   de conversión que hay, y la columna de cobro de `/vender`) pone sus campos
+   adentro de una Card. Sobre el fondo pelado da 1.77, mejor que el 1.26 de la
+   paleta clara; los dos quedan cortos contra los 3:1 que pide WCAG 1.4.11 para
+   el borde de un control, y el número que se está aceptando es el peor de los
+   dos, no el más cómodo. **Aceptado como excepción, no corregido.** Se conserva
+   el borde tenue que usa la maqueta a conciencia: todo campo lleva `<Label>`
+   asociado y anillo de foco de marca, así que el borde no es el único indicio
+   de que ahí hay un input. **Revisar** si aparece un reporte real de gente que
+   no encuentra los campos, o ante una auditoría de accesibilidad formal.
+
+Y una tercera excepción, que no es un defecto heredado sino una consecuencia de
+que el foco tenga **dos** indicadores:
+
+3. **El halo de foco de botón e input (`--ring/50`) da 2.33**, abajo de los
+   mismos 3:1. No está solo: `focus-visible:border-ring` pinta al mismo tiempo
+   el borde del control con `--ring` **opaco**, y ése da **5.49**. Lo que
+   identifica al control enfocado cumple; el halo es refuerzo. **Donde no hay
+   ese segundo indicador el anillo va opaco**: las pestañas de
+   `components/navegacion.tsx` no tienen borde propio, y por eso usan
+   `inset-ring-ring` sin opacidad. Esos dos números son los que cita su
+   comentario, y `test/contraste.test.ts` los ata a esta tabla.
 
 ## Tipografía
 
