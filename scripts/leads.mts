@@ -1,4 +1,24 @@
 import { Client } from 'pg'
+import { formatearFecha } from '@/lib/formato/mostrar'
+
+/**
+ * Lo que un desconocido escribió en un formulario público, listo para imprimir
+ * en una terminal.
+ *
+ * No es prolijidad tipográfica: una terminal EJECUTA los caracteres de control
+ * que le llegan. Un lead con `\u001b[2J` le borra la pantalla a quien corre el
+ * comando, uno con `\r` puede sobreescribir la línea de otro lead y hacerlo
+ * desaparecer del listado, y `\u001b]0;` le cambia el título a la ventana.
+ * Nadie valida estos campos en el camino de entrada —a propósito: el
+ * formulario no pelea, ver app/sitio/acciones.ts— así que se limpian en el
+ * camino de salida, que es donde se sabe que el destino es una terminal.
+ *
+ * Se borran los rangos C0 y C1 completos, no una lista de secuencias conocidas:
+ * enumerar las malas es la forma de dejar afuera la que no se te ocurrió.
+ */
+function sinControles(v: string): string {
+  return v.replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+}
 
 /**
  * Los interesados que dejaron el mail en la landing.
@@ -49,9 +69,18 @@ async function listar(): Promise<void> {
     }
 
     for (const l of rows) {
-      const fecha = new Date(l.creado_en).toISOString().slice(0, 16).replace('T', ' ')
-      console.log(`${fecha}  ${l.nombre} <${l.email}>  ${l.rubro}${l.whatsapp ? `  ${l.whatsapp}` : ''}`)
-      if (l.mensaje) console.log(`             ${l.mensaje}`)
+      // formatearFecha y no toISOString: el servidor está en Ashburn y los
+      // interesados son argentinos. Un lead dejado a las 22:30 del 12 en Buenos
+      // Aires es el 13 a la 01:30 en UTC, así que imprimir en UTC le cambia el
+      // día a todo lo que entra después de las 21. Es la misma función que usa
+      // la aplicación, con el mismo huso declarado.
+      const fecha = formatearFecha(new Date(l.creado_en))
+      const nombre = sinControles(l.nombre)
+      const email = sinControles(l.email)
+      const rubro = sinControles(l.rubro)
+      const whatsapp = l.whatsapp ? sinControles(l.whatsapp) : null
+      console.log(`${fecha}  ${nombre} <${email}>  ${rubro}${whatsapp ? `  ${whatsapp}` : ''}`)
+      if (l.mensaje) console.log(`             ${sinControles(l.mensaje)}`)
     }
     console.log(`\n${rows.length} lead(s).`)
   } finally {
