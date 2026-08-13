@@ -63,27 +63,27 @@ export function Formulario({ whatsapp }: { whatsapp: string }) {
 
             <div className="space-y-2">
               <Label htmlFor="nombre">Tu nombre</Label>
-              <Input id="nombre" name="nombre" required autoComplete="name" />
+              <Input id="nombre" name="nombre" required autoComplete="name" maxLength={120} />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="email">Mail</Label>
-              <Input id="email" name="email" type="email" required autoComplete="email" />
+              <Input id="email" name="email" type="email" required autoComplete="email" maxLength={200} />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="whatsapp">WhatsApp (opcional)</Label>
-              <Input id="whatsapp" name="whatsapp" autoComplete="tel" />
+              <Input id="whatsapp" name="whatsapp" autoComplete="tel" maxLength={40} />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="rubro">¿De qué es tu negocio?</Label>
-              <Input id="rubro" name="rubro" required placeholder="Kiosco, peluquería, service..." />
+              <Input id="rubro" name="rubro" required placeholder="Kiosco, peluquería, service..." maxLength={120} />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="mensaje">Contanos algo más (opcional)</Label>
-              <Input id="mensaje" name="mensaje" />
+              <Input id="mensaje" name="mensaje" maxLength={2000} />
             </div>
 
             {/* El honeypot. Escondido con posición absoluta y no con display:none

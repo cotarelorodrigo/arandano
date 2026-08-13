@@ -10,9 +10,43 @@ export type EstadoLead = { error: string | null; enviado: boolean }
  *  formulario real a propósito: "honeypot" en el atributo lo delataría. */
 const HONEYPOT = 'sitio-web'
 
+/**
+ * El techo por campo.
+ *
+ * Las columnas son TEXT y no tienen largo propio, así que sin esto el único
+ * límite era el megabyte que Next le pone al cuerpo de un server action: con el
+ * freno por IP en cinco envíos, son 5 MB por hora por IP que igual entran a la
+ * base. Un tope por campo es la defensa más barata que hay y no le molesta a
+ * nadie — ningún nombre ni rubro real se acerca a estos números.
+ *
+ * `mensaje` es el único que legítimamente puede ser largo: ahí alguien cuenta
+ * de su negocio, y cortarlo en 120 sería perder justo la parte que sirve para
+ * contestarle.
+ *
+ * Los mismos números van como `maxLength` en los inputs de formulario.tsx, que
+ * es lo que hace que una persona vea el freno mientras escribe en vez de perder
+ * lo que tipeó al mandar. Eso es comodidad; el freno de verdad es éste, porque
+ * el atributo del input no lo respeta nadie que no use el formulario.
+ */
+const LARGOS: Record<string, number> = {
+  nombre: 120,
+  email: 200,
+  whatsapp: 40,
+  rubro: 120,
+  mensaje: 2_000,
+}
+
 function texto(datos: FormData, campo: string): string {
   const v = datos.get(campo)
   return typeof v === 'string' ? v.trim() : ''
+}
+
+/** El primer campo que se pasa del tope, o null si están todos bien. */
+function campoDesmedido(datos: FormData): string | null {
+  for (const [campo, tope] of Object.entries(LARGOS)) {
+    if (texto(datos, campo).length > tope) return campo
+  }
+  return null
 }
 
 /** Vacío es NULL y no cadena vacía: en la base "no dejó WhatsApp" y "dejó un
@@ -46,6 +80,14 @@ export async function enviarLead(_estado: EstadoLead, datos: FormData): Promise<
 
   const rubro = texto(datos, 'rubro')
   if (!rubro) return { error: 'Contanos de qué es tu negocio.', enviado: false }
+
+  // Después de las validaciones que le hablan a una persona y antes del límite
+  // por IP: quien mandó un campo desmedido no llegó por el formulario, así que
+  // no hace falta gastarle un cupo, pero tampoco tiene sentido explicarle a un
+  // bot cuál campo fue.
+  if (campoDesmedido(datos)) {
+    return { error: 'Alguno de los campos es demasiado largo.', enviado: false }
+  }
 
   const clave = claveDeEnvio(await headers())
   if (envioBloqueado(clave)) {
