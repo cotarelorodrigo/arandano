@@ -1,9 +1,15 @@
 import { headers } from 'next/headers'
 
-/**
- * El `baseURL` que Better Auth necesita, derivado del subdominio YA RESUELTO
- * (nunca del Host crudo del request) más el puerto de la CONFIGURACIÓN
- * (nunca del Host crudo tampoco).
+/*
+ * POR QUÉ EL ORIGEN SE ARMA ASÍ, y no leyendo el Host.
+ *
+ * Comentario de archivo y no JSDoc a propósito: vale para las dos funciones de
+ * abajo, y un bloque de doc pegado a otro deja al primero documentando a nadie.
+ *
+ * `piezasDeOrigen()` arma las piezas; `origenDelRequest()` les agrega el
+ * subdominio YA RESUELTO
+ * (nunca el Host crudo del request) para darle a Better Auth su `baseURL`. El
+ * puerto sale de la CONFIGURACIÓN, nunca del Host crudo tampoco.
  *
  * Son la misma decisión mirada desde dos lados, y por eso el porqué se
  * explica junto:
@@ -48,7 +54,29 @@ import { headers } from 'next/headers'
  * propiedad vale en TODOS los entornos, no sólo en producción detrás de
  * Caddy.
  */
-export async function origenDelRequest(subdominio: string): Promise<string> {
+/**
+ * Las tres piezas con las que este stack direcciona a un tenant.
+ *
+ * Extraídas de `origenDelRequest` para que la landing pueda armar el link de
+ * "Ya tengo cuenta" con las MISMAS: ese link cableaba `https://` y ningún
+ * puerto, lo que en producción es correcto y en dev manda a una dirección que
+ * no existe —la app se sirve por HTTP en el 3000—, o sea que el único entorno
+ * donde alguien prueba ese botón a mano era el único donde no andaba.
+ *
+ * Se comparte la función y no el criterio: dos ideas de cómo se arma la
+ * dirección de un tenant son dos cosas que se desincronizan, y esta de acá
+ * carga tres decisiones de seguridad (lista blanca del protocolo, puerto de
+ * configuración, subdominio ya resuelto) que no conviene reescribir de memoria
+ * en otro archivo.
+ */
+export type PiezasDeOrigen = {
+  protocolo: 'http' | 'https'
+  dominioBase: string
+  /** Ya viene con los dos puntos, o vacío. Listo para concatenar. */
+  puerto: string
+}
+
+export async function piezasDeOrigen(): Promise<PiezasDeOrigen> {
   const dominioBase = process.env.DOMINIO_BASE
   if (!dominioBase) {
     throw new Error(
@@ -77,5 +105,19 @@ export async function origenDelRequest(subdominio: string): Promise<string> {
   const puertoPublico = process.env.PUERTO_PUBLICO
   const puerto = puertoPublico ? `:${puertoPublico}` : ''
 
+  return { protocolo, dominioBase, puerto }
+}
+
+/**
+ * El `baseURL` que Better Auth necesita para un tenant.
+ *
+ * Es `piezasDeOrigen()` más el subdominio YA RESUELTO. El porqué de que las tres
+ * piezas se armen así —y de que el subdominio no salga nunca del Host crudo—
+ * está en el bloque grande al principio de este archivo: no es preferencia de
+ * estilo, es lo que impide que un tercero le reinicie el rate limit del login a
+ * otro tenant.
+ */
+export async function origenDelRequest(subdominio: string): Promise<string> {
+  const { protocolo, dominioBase, puerto } = await piezasDeOrigen()
   return `${protocolo}://${subdominio}.${dominioBase}${puerto}`
 }

@@ -144,6 +144,35 @@ describe('enviarLead', () => {
     }
   })
 
+  // Las columnas son TEXT y el único techo que había era el límite de 1 MB que
+  // Next le pone al cuerpo de un server action. Con el límite por IP en cinco,
+  // eso son 5 MB por hora por IP de basura que igual entra a la base. El tope
+  // por campo es más barato que cualquier otra defensa y no le molesta a nadie:
+  // ningún nombre real tiene 200 caracteres.
+  it('rechaza un campo desmedido en vez de guardarlo', async () => {
+    estado.ip = '10.0.0.9'
+    const r = await enviarLead(
+      INICIAL,
+      formulario({ ...COMPLETO, nombre: 'a'.repeat(5_000), email: 'largo@ejemplo.test' }),
+    )
+    expect(r.enviado).toBe(false)
+    expect(r.error).toBeTruthy()
+    expect(await contarPorMail('largo@ejemplo.test')).toBe(0)
+  })
+
+  // El mensaje es el campo que legítimamente puede ser largo, así que su tope
+  // es más alto que el de los demás. Este caso fija que un mensaje normal —de
+  // los que una persona escribe de verdad— sigue entrando.
+  it('un mensaje largo pero razonable entra', async () => {
+    estado.ip = '10.0.0.10'
+    const r = await enviarLead(
+      INICIAL,
+      formulario({ ...COMPLETO, mensaje: 'Tengo un local '.repeat(40), email: 'mensaje@ejemplo.test' }),
+    )
+    expect(r).toEqual({ error: null, enviado: true })
+    expect(await contarPorMail('mensaje@ejemplo.test')).toBe(1)
+  })
+
   // Un envío que falló no puede quemarle el cupo a quien reintenta: el límite
   // cuenta envíos EXITOSOS (ver lib/leads/limite.ts), y una caída de la base no
   // es uno. Va junto al caso de arriba porque es la mitad que el fix del orden
