@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 // Una sola implementación del parser del :root, no dos idénticas. Estaba
 // copiada acá y en el script, y la copia no es gratis: el arreglo que las obliga
 // a exigir un único :root de primer nivel habría que hacerlo en dos lugares, y
@@ -29,12 +30,14 @@ describe('el CSS no arrastra tokens muertos', () => {
     // `dark:`. Mientras esta línea exista, el variante queda atado a una clase
     // que nadie pone y esas reglas quedan inertes. Si se borra, `dark:` vuelve
     // al default de Tailwind v4 —prefers-color-scheme— y se activarían solas en
-    // cualquier usuario con el sistema en oscuro, sobre la paleta clara.
+    // cualquier usuario con el sistema en oscuro. Que la paleta de :root ahora
+    // SEA oscura no las vuelve correctas: se escribieron para otra paleta
+    // oscura, la de shadcn, y pisarían estos tokens con los de ella.
     expect(
       css,
       'se borró @custom-variant dark. Sin esa línea las clases dark: de shadcn ' +
-        'se activan por prefers-color-scheme sobre una paleta que no tiene ' +
-        'ningún token oscuro definido.',
+        'se activan por prefers-color-scheme y pisan los tokens de :root con los ' +
+        'de la paleta oscura de shadcn, que no es ésta.',
     ).toMatch(/@custom-variant\s+dark\s+\(&:is\(\.dark \*\)\)/)
   })
 
@@ -62,6 +65,20 @@ describe('el CSS no arrastra tokens muertos', () => {
         `Si entró un componente que sí los usa, documentalos en docs/sistema-de-diseno.md ` +
         `y sacá este caso.`,
     ).toEqual([])
+  })
+
+  it('declara color-scheme: dark', () => {
+    // Sin esta declaración el navegador pinta de claro todo lo que la hoja de
+    // estilos no controla: los scrollbars, el selector nativo de
+    // <input type="date"> —que /ventas usa en Desde y Hasta— y el lienzo antes
+    // del primer paint, que es un flash blanco en cada carga. Es un modo de
+    // falla que sólo se ve en un navegador de verdad, nunca en jsdom, así que
+    // el único lugar donde puede quedar atrapado es acá.
+    expect(
+      css,
+      'app/globals.css no declara color-scheme: dark. La paleta es oscura, así ' +
+        'que los controles nativos y el lienzo del primer paint quedan claros.',
+    ).toMatch(/color-scheme:\s*dark/)
   })
 })
 
@@ -142,6 +159,68 @@ describe('el documento y el CSS declaran lo mismo', () => {
       `${CSS} define tokens que ${DOC} no declara: ${sinDocumentar.join(', ')}. ` +
         `Un color que no está escrito en ningún lado es exactamente lo que este ` +
         `documento existe para impedir.`,
+    ).toEqual([])
+  })
+})
+
+/**
+ * Todo archivo de pantalla o de estilo donde nombrar `--primary-foreground`
+ * sería sospechoso: `app/` entero y `components/` **salvo `components/ui/`**.
+ *
+ * El caso escaneaba sólo `app/`, mientras su propio mensaje de falla decía que
+ * el token es legítimo "sólo … en components/ui/" — o sea que se presentaba
+ * como una regla sobre todo el código propio y cubría la mitad.
+ * `components/navegacion.tsx`, `components/cartel.module.css` y
+ * `components/contexto.tsx` no los miraba nadie, y son exactamente la clase de
+ * archivo donde alguien elige un token por su luminosidad.
+ */
+function archivosPropios(): string[] {
+  const de = (raiz: string) =>
+    readdirSync(raiz, { recursive: true, encoding: 'utf8' })
+      .filter((f) => f.endsWith('.tsx') || f.endsWith('.module.css'))
+      .map((f) => join(raiz, f))
+  // components/ui/ queda afuera porque es el ÚNICO lugar donde el par
+  // bg-primary + text-primary-foreground es legítimo: es el botón de acción.
+  return [...de('app'), ...de('components').filter((f) => !f.startsWith(join('components', 'ui')))]
+}
+
+/**
+ * Los consumidores de `--primary-foreground` que hay fuera de components/ui/,
+ * por ruta completa desde la raíz del repo (`app/sitio/secciones.tsx`).
+ *
+ * Hoy está vacía, y ése es el estado sano. Si alguna vez una pantalla necesita
+ * de verdad el par `bg-primary` + `text-primary-foreground` —que es legítimo, es
+ * el botón de acción—, se anota acá con su razón en vez de aflojar el caso.
+ * Mismo patrón que EXCEPCIONES en scripts/contraste.mts, RUTAS_SIN_SMOKE en
+ * scripts/lib/rutas-comun.sh y SIN_TENANT_ID en test/rls-cobertura.test.ts.
+ */
+const CONSUMIDORES_LEGITIMOS: Record<string, string> = {}
+
+describe('nadie toma --primary-foreground por "el color claro"', () => {
+  // El bug que este caso existe para que no vuelva: al pasar a la paleta
+  // oscura, --primary-foreground se dio vuelta de casi blanco a casi negro, y
+  // dos utilidades de Tailwind en app/sitio/secciones.tsx lo usaban sobre el
+  // paño de --marca porque era "el color claro". Quedaron en 1.39:1 sobre el
+  // título que convierte, y ningún test lo vio: los dos colores seguían siendo
+  // colores válidos, y la tabla de contraste sólo mide los pares que alguien se
+  // acordó de declarar. Lo encontró un grep a mano.
+  //
+  // El token es legítimo SÓLO sobre --primary, que es el botón de acción, y ese
+  // par vive en components/ui/. Fuera de ahí, nombrarlo es la señal de que
+  // alguien lo eligió por su luminosidad y no por su rol — y la luminosidad es
+  // exactamente lo que cambia cuando la paleta cambia.
+  it('no aparece en ninguna pantalla ni componente fuera de components/ui/', () => {
+    const archivos = archivosPropios()
+      .filter((f) => readFileSync(f, 'utf8').includes('primary-foreground'))
+      .filter((f) => !(f in CONSUMIDORES_LEGITIMOS))
+
+    expect(
+      archivos,
+      `estos archivos nombran --primary-foreground: ${archivos.join(', ')}. ` +
+        `El token es casi negro y sólo sirve sobre --primary (el botón de acción, ` +
+        `en components/ui/). Si lo estás usando como "el color claro", el que ` +
+        `querés es --foreground. Si de verdad es un botón de acción, anotalo en ` +
+        `CONSUMIDORES_LEGITIMOS con su razón.`,
     ).toEqual([])
   })
 })

@@ -45,12 +45,17 @@
   inset: 0;
   pointer-events: none;
 
-  --brillo: color-mix(in srgb, var(--primary-foreground) 7%, transparent);
-  --surco: color-mix(in srgb, var(--foreground) 26%, transparent);
+  --brillo: color-mix(in srgb, var(--foreground) 7%, transparent);
+  /* Desde --background y no desde --foreground: el surco es una línea OSCURA
+     sobre el paño, y con la paleta oscura --foreground es casi blanco. Sin este
+     cambio quedaban dos brillos paralelos y ningún relieve. El 45% es más que
+     el 26% de la paleta clara porque la distancia entre --background (0.214) y
+     --marca (0.32) es menor que la que había entre negro y el paño. */
+  --surco: color-mix(in srgb, var(--background) 45%, transparent);
 
   /* Un poco más oscuro que el paño de atrás: si fueran el mismo color, el
      movimiento no se leería como un objeto que sube sino como un parpadeo. */
-  background-color: color-mix(in srgb, var(--foreground) 9%, var(--marca));
+  background-color: color-mix(in srgb, var(--background) 22%, var(--marca));
   background-image: repeating-linear-gradient(
     180deg,
     var(--brillo) 0px,
@@ -75,7 +80,7 @@
   position: absolute;
   inset: auto 0 0 0;
   height: 4px;
-  background-color: color-mix(in srgb, var(--primary-foreground) 16%, transparent);
+  background-color: color-mix(in srgb, var(--foreground) 16%, transparent);
 }
 
 @keyframes subir {
@@ -94,8 +99,8 @@
   font-weight: 500;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  /* 7.69:1 sobre --marca, medido en scripts/contraste.mts. */
-  color: color-mix(in srgb, var(--primary-foreground) 70%, transparent);
+  /* 6.13:1 sobre --marca, medido en scripts/contraste.mts. */
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
 }
 
 /*
@@ -121,7 +126,7 @@
   line-height: 1.02;
   letter-spacing: -0.022em;
   text-wrap: balance;
-  color: var(--primary-foreground);
+  color: var(--foreground);
 }
 
 @media (prefers-reduced-motion: reduce) {

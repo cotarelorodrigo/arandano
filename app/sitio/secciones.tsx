@@ -18,6 +18,24 @@ import estilos from './cierre.module.css'
 
 const ANCHO = 'mx-auto w-full max-w-5xl px-6'
 
+/**
+ * El kicker: la etiqueta chica que dice de qué habla la sección, arriba del
+ * título. La rayita va INLINE y no absolute a la izquierda como en la
+ * maqueta: estas secciones viven adentro del contenedor de ancho de la
+ * página, así que una rayita en offset negativo se sale de él — en una
+ * pantalla angosta eso es una barra de scroll horizontal en la landing
+ * pública, y ningún test de este repo la vería. aria-hidden en la rayita
+ * porque no dice nada: lo dice el texto de al lado.
+ */
+function Kicker({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="mb-4 flex items-center gap-3 text-xs tracking-[0.06em] text-primary uppercase">
+      <span aria-hidden className="h-px w-11 bg-primary" />
+      {children}
+    </span>
+  )
+}
+
 export function Cartel() {
   return (
     <section className={`${ANCHO} py-12`}>
@@ -51,7 +69,10 @@ export function Prueba() {
       <div className="grid gap-8 md:grid-cols-2">
         <Retrato />
         <div className="space-y-6">
-          <h2 className="text-2xl font-semibold">Así se cobra</h2>
+          <div>
+            <Kicker>El mostrador</Kicker>
+            <h2 className="text-2xl font-semibold">Así se cobra</h2>
+          </div>
           <ul className="space-y-4">
             {ANOTACIONES.map((texto) => (
               <li key={texto} className="border-l-2 border-primary pl-4 text-muted-foreground">
@@ -95,12 +116,32 @@ const CAPACIDADES = [
 export function LoQueHace() {
   return (
     <section className={`${ANCHO} py-12`}>
-      <h2 className="text-2xl font-semibold">Lo que hace</h2>
-      <div className="mt-8 grid gap-8 md:grid-cols-3">
-        {CAPACIDADES.map(([titulo, texto]) => (
-          <div key={titulo}>
+      <Kicker>Lo que hace</Kicker>
+      <h2 className="text-2xl font-semibold">Seis cosas, todos los días</h2>
+      {/* En filas numeradas y no en una grilla de cards: seis items del mismo
+          peso visual no se leen en orden, y éstos tienen uno — es la secuencia
+          de un día de mostrador, de vender a mostrar. */}
+      <div className="mt-8">
+        {CAPACIDADES.map(([titulo, texto], i) => (
+          /* Las tres pistas, que si no son tres números sin explicación:
+             2.5rem es el ancho fijo del número de orden ("01"), que es fijo
+             para que los seis queden en la misma columna óptica; 12rem es el
+             tope del título, elegido sobre el más largo ("Cerrar la caja")
+             para que la descripción arranque siempre a la misma altura y no
+             escalonada; 1fr se queda con el resto. Los minmax(0,…) son lo que
+             impide que una palabra larga estire su pista más allá del tope —el
+             mínimo por default de una pista de grilla es `auto`, no 0. */
+          <div
+            key={titulo}
+            className="grid grid-cols-[2.5rem_minmax(0,12rem)_minmax(0,1fr)] items-baseline gap-x-8 border-t border-border py-6 first:border-t-0"
+          >
+            {/* tabular-nums para que los seis números queden en la misma
+                columna óptica: 01 y 06 tienen anchos distintos sin eso. */}
+            <p className="text-sm text-primary tabular-nums">
+              {String(i + 1).padStart(2, '0')}
+            </p>
             <h3 className="font-medium">{titulo}</h3>
-            <p className="mt-2 text-sm text-muted-foreground">{texto}</p>
+            <p className="max-w-[52ch] text-sm text-muted-foreground">{texto}</p>
           </div>
         ))}
       </div>
@@ -117,6 +158,7 @@ const MODULOS = [
 export function Rubros() {
   return (
     <section className={`${ANCHO} py-12`}>
+      <Kicker>Módulos por rubro</Kicker>
       <h2 className="text-2xl font-semibold">Cada rubro suma lo suyo</h2>
       <p className="mt-4 max-w-2xl text-muted-foreground">
         Lo de arriba lo tiene cualquier negocio. Después, según lo que hagas, se activa lo que te falta.
@@ -148,10 +190,21 @@ export function Planes() {
       <h2 className="text-2xl font-semibold">Planes</h2>
       <div className="mt-8 grid gap-4 md:grid-cols-4">
         {PLANES.map(([nombre, texto, destacado]) => (
-          <Card key={nombre} className={destacado ? 'bg-accent' : undefined}>
+          /* El destacado se marca con un anillo y NO con bg-accent, que es lo
+             que hacía con la paleta clara: el chip "el más elegido" ya lleva
+             bg-accent, y una card del mismo color se lo tragaba — quedaba un
+             chip invisible arriba del único plan que queremos que se lea. El
+             anillo destaca sin competirle. */
+          <Card key={nombre} className={destacado ? 'ring-1 ring-primary' : undefined}>
             <CardContent className="flex h-full flex-col">
-              <h3 className="font-medium">{nombre}</h3>
-              {destacado ? <p className="mt-1 text-xs text-primary">el más elegido</p> : null}
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-medium">{nombre}</h3>
+                {destacado ? (
+                  <span className="inline-flex shrink-0 rounded-md bg-accent px-2.5 py-0.5 text-[11px] text-accent-foreground">
+                    el más elegido
+                  </span>
+                ) : null}
+              </div>
               <p className="mt-2 flex-1 text-sm text-muted-foreground">{texto}</p>
               <Button asChild variant={destacado ? 'default' : 'secondary'} className="mt-4">
                 <a href="#contacto">Consultar</a>
@@ -170,10 +223,10 @@ export function Cierre({ children }: { children: React.ReactNode }) {
       <div className={ANCHO}>
         <div className="grid items-center gap-8 md:grid-cols-2">
           <div>
-            <h2 className="text-3xl font-semibold text-primary-foreground">
+            <h2 className="text-3xl font-semibold text-foreground">
               Contanos de tu negocio
             </h2>
-            <p className="mt-4 text-primary-foreground/70">
+            <p className="mt-4 text-foreground/70">
               Te mostramos el sistema andando con tus productos y tus precios, y respondemos lo que
               haga falta antes de que decidas nada.
             </p>

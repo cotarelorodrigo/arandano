@@ -32,12 +32,15 @@ export type Par = {
  * un control sale de 1.4.11, que es otra regla: no habla de texto sino de qué
  * hace falta para identificar un componente.
  *
- * **Los pares con opacidad son los que el usuario mira de verdad.** Un hover
- * `bg-primary/80` no es `--primary`: es otro color, y puede caerse del mínimo
- * sin que ningún par opaco se entere. Un fondo translúcido se compone sobre
- * `--background`; hoy `--card` y `--popover` son ese mismo blanco, así que no
- * hay diferencia — el día que alguno cambie, este tipo necesita una base
- * explícita.
+ * **Los pares con opacidad son los que el usuario mira de verdad.** Un fondo
+ * `bg-destructive/10` no es `--destructive`: es otro color, y puede caerse del
+ * mínimo sin que ningún par opaco se entere. Un fondo translúcido se compone
+ * sobre `--background`; con la paleta oscura `--card` y `--popover` ya NO son
+ * ese mismo color — son un violeta apenas más claro (`oklch(0.245 0.028 287)`
+ * contra `oklch(0.214 0.025 287)` de `--background`) — así que ese simplismo
+ * ya importa: ningún par de PARES compone hoy un `alfaFondo` contra `--card`,
+ * pero el que lo haga necesita una base explícita en vez de asumir
+ * `--background`.
  */
 export const PARES: Par[] = [
   { texto: '--foreground', fondo: '--background', minimo: 4.5 },
@@ -47,28 +50,58 @@ export const PARES: Par[] = [
   // La fila seleccionada y el hover de las pantallas que vienen: --accent es
   // más oscuro que --muted, así que este par es más filoso que el de arriba.
   { texto: '--muted-foreground', fondo: '--accent', minimo: 4.5 },
+  // El pie de los tiles de /ventas ("sin contar las anuladas"), que va sobre
+  // --card y en 11 px. Es el más chico de los dos textos que viven sobre esa
+  // superficie —el otro es el rótulo, que ya está más abajo—, así que era el
+  // hueco que más valía cerrar.
+  { texto: '--muted-foreground', fondo: '--card', minimo: 4.5 },
   { texto: '--primary-foreground', fondo: '--primary', minimo: 4.5 },
   // El hover del botón de acción — el "Entrar" del login (components/ui/button.tsx).
-  { texto: '--primary-foreground', fondo: '--primary', alfaFondo: 0.8, minimo: 4.5 },
+  // Es un token y no una opacidad desde el ciclo de la paleta oscura: sobre
+  // fondo oscuro `bg-primary/80` acercaba el botón al fondo, o sea que el
+  // control retrocedía al apuntarlo, y el par daba 4.08.
+  { texto: '--primary-foreground', fondo: '--primary-hover', minimo: 4.5 },
   // El paño de la persiana del login. El nombre del local va opaco; el
   // subdominio arriba va al 70%, y esa opacidad es justamente la que ningún
   // par opaco vigila — es texto chico sobre un fondo oscuro, o sea el caso
   // donde una opacidad "que se ve bien" se cae del mínimo sin avisar.
-  { texto: '--primary-foreground', fondo: '--marca', minimo: 4.5 },
-  { texto: '--primary-foreground', fondo: '--marca', alfaTexto: 0.7, minimo: 4.5 },
+  { texto: '--foreground', fondo: '--marca', minimo: 4.5 },
+  { texto: '--foreground', fondo: '--marca', alfaTexto: 0.7, minimo: 4.5 },
   { texto: '--primary', fondo: '--background', minimo: 4.5 },
   { texto: '--primary', fondo: '--accent', minimo: 4.5 },
+  // El rótulo de los tiles de /ventas, que van sobre --card y no sobre el
+  // fondo. Es texto chico (10 px), así que el par vale más que de costumbre.
+  { texto: '--primary', fondo: '--card', minimo: 4.5 },
   { texto: '--primary-foreground', fondo: '--destructive', minimo: 4.5 },
   { texto: '--destructive', fondo: '--background', minimo: 4.5 },
   // La descripción del error de login, que vive en una Alert con bg-card
   // (components/ui/alert.tsx).
   { texto: '--destructive', fondo: '--card', alfaTexto: 0.9, minimo: 4.5 },
+  // El botón "Desactivar artículo" (app/(app)/inventario/formularios.tsx), que
+  // es `bg-destructive/10 text-destructive` en components/ui/button.tsx. Existía
+  // desde el ciclo de inventario y ningún par lo cubría: con la paleta clara
+  // zafaba, y con una nueva merece medirse en vez de suponerse.
+  { texto: '--destructive', fondo: '--destructive', alfaFondo: 0.1, minimo: 4.5 },
   { texto: '--input', fondo: '--background', minimo: 3.0 },
+  // El MISMO borde, sobre la superficie donde de verdad se dibuja. Todo
+  // formulario del producto pone sus campos adentro de una Card: el de la
+  // landing (app/sitio/formulario.tsx), que es el único camino de conversión
+  // que hay, y la columna de cobro de /vender. --card es más claro que
+  // --background, así que el borde tenue tiene ahí MENOS contraste, no más:
+  // 1.63 contra 1.77. La excepción declarada tiene que nombrar este número,
+  // que es el que alguien está aceptando, y no el teórico.
+  { texto: '--input', fondo: '--card', minimo: 3.0 },
   // El anillo de foco de las pestañas de navegación (components/navegacion.tsx),
   // opaco desde la revisión final de "el cartel en el shell". Mismo mínimo que
   // el borde de --input y por la misma regla (WCAG 1.4.11): no es texto, es lo
   // que identifica un control.
   { texto: '--ring', fondo: '--background', minimo: 3.0 },
+  // El halo de foco de botón e input, que es el mismo anillo pero al 50%
+  // (`focus-visible:ring-ring/50` en components/ui/button.tsx e input.tsx).
+  // Entra porque es el par que el comentario de components/navegacion.tsx cita
+  // para justificar que SU anillo vaya opaco, y un ratio citado a mano es
+  // exactamente lo que este archivo existe para que no se desincronice.
+  { texto: '--ring', fondo: '--background', alfaTexto: 0.5, minimo: 3.0 },
 ]
 
 /**
@@ -80,12 +113,29 @@ export const PARES: Par[] = [
  * test/rls-cobertura.test.ts.
  */
 export const EXCEPCIONES: Record<string, string> = {
+  '--input sobre --card':
+    'el peor caso REALIZADO del borde de un control, y por eso el número que hay ' +
+    'que declarar: 1.63 contra los 3:1 de WCAG 1.4.11. Todo formulario del ' +
+    'producto dibuja sus campos adentro de una Card —el de la landing, que es el ' +
+    'único camino de conversión, y la columna de cobro de /vender—, y --card es ' +
+    'más claro que --background, así que el borde contrasta ahí MENOS que sobre el ' +
+    'fondo. Se conserva el borde tenue que usa la maqueta a conciencia: todo campo ' +
+    'lleva <Label> asociado y anillo de foco de marca, así que el borde no es el ' +
+    'único indicio de que ahí hay un input. Revisar ante un reporte real de gente ' +
+    'que no encuentra los campos, o ante una auditoría de accesibilidad formal.',
   '--input sobre --background':
-    'el borde de un control pide 3:1 (WCAG 1.4.11) y da 1.26. Se conserva el look ' +
-    'liviano de shadcn a conciencia: todo campo lleva <Label> asociado y anillo de ' +
-    'foco de marca, así que el borde no es el único indicio de que ahí hay un input. ' +
-    'Revisar ante un reporte real de gente que no encuentra los campos, o ante una ' +
-    'auditoría de accesibilidad formal.',
+    'el mismo borde sobre el fondo pelado: 1.77, mejor que el 1.26 de la paleta ' +
+    'clara y que el 1.63 sobre --card, pero igual de corto contra los 3:1. Hoy no ' +
+    'hay ninguna pantalla con un campo fuera de una Card, así que este par es el ' +
+    'caso teórico y el de arriba el real; la razón y la mitigación son las mismas.',
+  '--ring/50 sobre --background':
+    'el halo de foco de botón e input da 2.33 y no llega a los 3:1 de WCAG 1.4.11 ' +
+    'por sí solo — pero no está solo: `focus-visible:border-ring` pinta al mismo ' +
+    'tiempo el borde del control con --ring OPACO, y ese par da 5.49, o sea que lo ' +
+    'que identifica el control al enfocarlo sí cumple. El halo es refuerzo. Donde ' +
+    'no hay ese segundo indicador —las pestañas de components/navegacion.tsx, que ' +
+    'no tienen borde propio— el anillo va opaco justamente por esto, y su ' +
+    'comentario cita estos dos números.',
 }
 
 const conAlfa = (token: string, alfa?: number) =>
@@ -164,6 +214,9 @@ function aLineal(byte: number): number {
 }
 
 /**
+ * Exportada desde el ciclo de la paleta oscura: test/opengraph.test.ts la usa
+ * para comparar los hexes que Satori necesita contra los tokens reales.
+ *
  * oklch(L C H) → los tres bytes de sRGB.
  *
  * El redondeo a 8 bits no es un detalle de implementación: es lo que hace que
@@ -172,7 +225,7 @@ function aLineal(byte: number): number {
  * de verdad se pintan daba 4.48 y no llegaba al mínimo. Un cálculo que difiere
  * del auditor no sirve para lo único que este script existe para hacer.
  */
-function aRgb(valor: string): Rgb {
+export function aRgb(valor: string): Rgb {
   const m = valor.match(/^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)$/)
   if (!m) throw new Error(`no es un color oklch de tres componentes: ${valor}`)
   const [L, C, H] = [Number(m[1]), Number(m[2]), Number(m[3])]

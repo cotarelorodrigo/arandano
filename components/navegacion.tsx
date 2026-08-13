@@ -82,9 +82,9 @@ export function Navegacion({ rol }: { rol: RolUsuario }) {
               // otros controles acompañan el halo translúcido con un borde
               // sólido que también identifica el control (focus-visible:border-
               // ring), y acá no hay ese segundo indicador. Sin él, --ring/50
-              // sobre --background da 2.70:1 — abajo del 3:1 que WCAG 1.4.11
+              // sobre --background da 2.33:1 — abajo del 3:1 que WCAG 1.4.11
               // pide para un indicador no textual. Opaco, el mismo par da
-              // 10.79:1 (scripts/contraste.mts). Es el foco del elemento que
+              // 5.49:1 (scripts/contraste.mts). Es el foco del elemento que
               // más se opera con teclado en el producto: no se le resigna nada.
               'focus-visible:inset-ring-3 focus-visible:inset-ring-ring',
               activa

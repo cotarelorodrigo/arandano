@@ -12,11 +12,20 @@ que este documento no pueda mentir.
 
 ## La referencia
 
-**El color de un arándano**: el azul-violeta profundo de la fruta. Entra en tres
-lugares y en ninguno más — acciones, foco y selección. Todo el resto es gris
-neutro puro. La contención es la decisión, no una etapa: es lo que menos cansa
-en una pantalla que se mira ocho horas, y lo que deja margen para que el rojo de
-un error se destaque de verdad.
+**El color de un arándano**: el azul-violeta de la fruta, sobre un fondo oscuro.
+Entra saturado en tres lugares y en ninguno más — acciones, foco y selección.
+Todo el resto es gris, pero **gris tintado del mismo hue**: los neutros llevan
+croma hasta 0.030 a hue 287, porque sobre fondo oscuro un gris de croma 0 lee
+apagado. La contención es la decisión, no una etapa: es lo que menos cansa en
+una pantalla que se mira ocho horas, y lo que deja margen para que el rojo de un
+error se destaque de verdad.
+
+**El límite del tinte es 0.030.** Un token de cromo por encima de eso deja de
+ser un gris tintado y pasa a ser un color, y ahí la contención se empieza a
+perder de a poco. `--accent` (0.060) es la excepción declarada, por la misma
+razón por la que ya era el único tintado en la paleta clara: es la fila
+seleccionada, y tiene que distinguirse de `--muted` sin depender sólo de la
+luminosidad.
 
 ### El arándano como superficie
 
@@ -31,10 +40,16 @@ viene después es una herramienta y se comporta como tal.
 
 **Por qué un token nuevo y no `--primary` en un `<section>`.** Si el paño fuera
 exactamente el color del botón, el botón dejaría de ser lo único accionable a
-la vista, que es justo lo que la contención compra. `--marca` es más oscuro
-—0.28 contra 0.37 de luminosidad— y eso lo aleja de "control" y lo acerca a
-"material". El hue sigue siendo **287**, igual que los otros tres: es el mismo
-arándano a una cuarta distancia, no un color nuevo.
+la vista, que es justo lo que la contención compra. `--marca` es **más oscuro**
+que `--primary` —0.32 contra 0.66 de luminosidad— y eso lo aleja de "control" y
+lo acerca a "material". Sobre la paleta clara la distancia era la misma en la
+otra dirección: 0.28 contra 0.37. El hue sigue siendo **287**, igual que los
+otros: es el mismo arándano a otra distancia, no un color nuevo.
+
+**Y sube de 0.28 a 0.32 con la paleta oscura por una razón mecánica**: contra
+un fondo de 0.214, un paño de 0.28 casi no se despega — paño y fondo pasan a
+ser el mismo material. 0.32 es además la luminosidad del único paño saturado de
+la maqueta (`#262a60`), así que el número no sale de la nada.
 
 **Dónde se usa, y en ningún otro lado**: las **superficies de marca** — la
 pantalla de login (`app/login/persiana.module.css`) y la franja de cierre del
@@ -52,25 +67,26 @@ una vez más en silencio.
 
 | Token | Valor |
 |---|---|
-| `--background` | `oklch(1 0 0)` |
-| `--foreground` | `oklch(0.145 0 0)` |
-| `--card` | `oklch(1 0 0)` |
-| `--card-foreground` | `oklch(0.145 0 0)` |
-| `--popover` | `oklch(1 0 0)` |
-| `--popover-foreground` | `oklch(0.145 0 0)` |
-| `--primary` | `oklch(0.37 0.10 287)` |
-| `--primary-foreground` | `oklch(0.985 0 0)` |
-| `--marca` | `oklch(0.28 0.09 287)` |
-| `--secondary` | `oklch(0.97 0 0)` |
-| `--secondary-foreground` | `oklch(0.205 0 0)` |
-| `--muted` | `oklch(0.97 0 0)` |
-| `--muted-foreground` | `oklch(0.535 0 0)` |
-| `--accent` | `oklch(0.955 0.012 287)` |
-| `--accent-foreground` | `oklch(0.37 0.10 287)` |
-| `--destructive` | `oklch(0.577 0.245 27.325)` |
-| `--border` | `oklch(0.922 0 0)` |
-| `--input` | `oklch(0.922 0 0)` |
-| `--ring` | `oklch(0.37 0.10 287)` |
+| `--background` | `oklch(0.214 0.025 287)` |
+| `--foreground` | `oklch(0.935 0.008 287)` |
+| `--card` | `oklch(0.245 0.028 287)` |
+| `--card-foreground` | `oklch(0.935 0.008 287)` |
+| `--popover` | `oklch(0.245 0.028 287)` |
+| `--popover-foreground` | `oklch(0.935 0.008 287)` |
+| `--primary` | `oklch(0.66 0.124 287)` |
+| `--primary-foreground` | `oklch(0.20 0.03 287)` |
+| `--primary-hover` | `oklch(0.72 0.105 287)` |
+| `--marca` | `oklch(0.32 0.095 287)` |
+| `--secondary` | `oklch(0.30 0.025 287)` |
+| `--secondary-foreground` | `oklch(0.935 0.008 287)` |
+| `--muted` | `oklch(0.268 0.024 287)` |
+| `--muted-foreground` | `oklch(0.70 0.030 287)` |
+| `--accent` | `oklch(0.27 0.060 287)` |
+| `--accent-foreground` | `oklch(0.66 0.124 287)` |
+| `--destructive` | `oklch(0.70 0.160 22)` |
+| `--border` | `oklch(0.381 0.019 287)` |
+| `--input` | `oklch(0.381 0.019 287)` |
+| `--ring` | `oklch(0.66 0.124 287)` |
 | `--radius` | `0.625rem` |
 
 <!-- tokens:fin -->
@@ -83,13 +99,14 @@ primera" se rompe el día que alguien reordene secciones.
 
 | Token | Hex | Dónde se ve |
 |---|---|---|
-| `--primary` | `#3d3571` | Botón de acción, links |
-| `--ring` | `#3d3571` | Anillo de foco — lo más visible al operar con teclado |
-| `--accent` | `#efeff8` | Fila seleccionada, hover. Único neutral tintado |
-| `--marca` | `#271f52` | El paño de la persiana del login y la franja de cierre de la landing |
+| `--primary` | `#8e85da` | Botón de acción, links |
+| `--primary-hover` | `#a09ae3` | El botón de acción, apuntado |
+| `--ring` | `#8e85da` | Anillo de foco — lo más visible al operar con teclado |
+| `--accent` | `#252142` | Fila seleccionada, hover, y el chip "el más elegido" de los planes de la landing. El neutral más tintado |
+| `--marca` | `#312860` | El paño de la persiana del login y la franja de cierre de la landing |
 
-El hue es **287** en los cuatro. Lo que los distingue es croma y luminosidad, no
-tono: es un solo color de marca visto a cuatro distancias.
+El hue es **287** en los cinco. Lo que los distingue es croma y luminosidad, no
+tono: es un solo color de marca visto a cinco distancias.
 
 ### Contraste
 
@@ -100,41 +117,48 @@ axe y Lighthouse. La diferencia no es cosmética — medido en continuo,
 `--muted-foreground` sobre `--muted` daba 4.51 y pasaba; sobre los bytes reales
 daba 4.48 y no llegaba.
 
-**Los pares con opacidad cuentan como pares.** Un `hover:bg-primary/80` no es
-`--primary`: es otro color, y puede caerse del mínimo sin que ningún par opaco
-se entere. La composición se hace sobre los bytes, que es donde compone el
-navegador — mezclar en lineal da otros números (y haría que `rgba(0,0,0,.5)`
+**Los pares con opacidad cuentan como pares.** Un `bg-destructive/10` no es
+`--destructive`: es otro color, y puede caerse del mínimo sin que ningún par
+opaco se entere. La composición se hace sobre los bytes, que es donde compone
+el navegador — mezclar en lineal da otros números (y haría que `rgba(0,0,0,.5)`
 sobre blanco fuera `#bcbcbc` en vez del `#808080` que todos conocemos).
 
 <!-- contraste:inicio -->
 
 | Par | Ratio | Mínimo | |
 |---|---|---|---|
-| `--foreground` sobre `--background` | 19.80 | 4.5 | ok |
-| `--foreground` sobre `--muted` | 18.16 | 4.5 | ok |
-| `--muted-foreground` sobre `--background` | 5.17 | 4.5 | ok |
-| `--muted-foreground` sobre `--muted` | 4.75 | 4.5 | ok |
-| `--muted-foreground` sobre `--accent` | 4.53 | 4.5 | ok |
-| `--primary-foreground` sobre `--primary` | 10.34 | 4.5 | ok |
-| `--primary-foreground` sobre `--primary/80` | 5.76 | 4.5 | ok |
-| `--primary-foreground` sobre `--marca` | 14.33 | 4.5 | ok |
-| `--primary-foreground/70` sobre `--marca` | 7.69 | 4.5 | ok |
-| `--primary` sobre `--background` | 10.79 | 4.5 | ok |
-| `--primary` sobre `--accent` | 9.44 | 4.5 | ok |
-| `--primary-foreground` sobre `--destructive` | 4.57 | 4.5 | ok |
-| `--destructive` sobre `--background` | 4.77 | 4.5 | ok |
-| `--destructive/90` sobre `--card` | 4.54 | 4.5 | ok |
-| `--input` sobre `--background` | 1.26 | 3.0 | **excepción declarada** |
-| `--ring` sobre `--background` | 10.79 | 3.0 | ok |
+| `--foreground` sobre `--background` | 14.63 | 4.5 | ok |
+| `--foreground` sobre `--muted` | 12.63 | 4.5 | ok |
+| `--muted-foreground` sobre `--background` | 6.59 | 4.5 | ok |
+| `--muted-foreground` sobre `--muted` | 5.69 | 4.5 | ok |
+| `--muted-foreground` sobre `--accent` | 5.69 | 4.5 | ok |
+| `--muted-foreground` sobre `--card` | 6.10 | 4.5 | ok |
+| `--primary-foreground` sobre `--primary` | 5.64 | 4.5 | ok |
+| `--primary-foreground` sobre `--primary-hover` | 7.11 | 4.5 | ok |
+| `--foreground` sobre `--marca` | 10.83 | 4.5 | ok |
+| `--foreground/70` sobre `--marca` | 6.13 | 4.5 | ok |
+| `--primary` sobre `--background` | 5.49 | 4.5 | ok |
+| `--primary` sobre `--accent` | 4.74 | 4.5 | ok |
+| `--primary` sobre `--card` | 5.08 | 4.5 | ok |
+| `--primary-foreground` sobre `--destructive` | 6.31 | 4.5 | ok |
+| `--destructive` sobre `--background` | 6.14 | 4.5 | ok |
+| `--destructive/90` sobre `--card` | 4.86 | 4.5 | ok |
+| `--destructive` sobre `--destructive/10` | 5.36 | 4.5 | ok |
+| `--input` sobre `--background` | 1.77 | 3.0 | **excepción declarada** |
+| `--input` sobre `--card` | 1.63 | 3.0 | **excepción declarada** |
+| `--ring` sobre `--background` | 5.49 | 3.0 | ok |
+| `--ring/50` sobre `--background` | 2.33 | 3.0 | **excepción declarada** |
 
 <!-- contraste:fin -->
 
-Cada par de la tabla nombra los **tokens** involucrados, no colores genéricos: `--primary-foreground` es `oklch(0.985 0 0)`, distinto de "blanco puro", así que sus ratios difieren del que podría calcularse contra un 1.0. El `/NN` es la opacidad con la que ese token aparece en un componente: `--primary/80` es el hover del botón de acción (`components/ui/button.tsx`), `--destructive/90` es la descripción de un error (`components/ui/alert.tsx`) y `--primary-foreground/70` es la firma "Arándano" sobre el paño del login (`app/login/persiana.module.css`).
+Cada par de la tabla nombra los **tokens** involucrados, no colores genéricos: `--primary-foreground` es `oklch(0.20 0.03 287)`, distinto de "negro puro", así que sus ratios difieren del que podría calcularse contra un 0.0. El `/NN` es la opacidad con la que ese token aparece en un componente: `--destructive/10` es el fondo del botón "Desactivar artículo" (`components/ui/button.tsx`), `--destructive/90` es la descripción de un error (`components/ui/alert.tsx`), `--foreground/70` es la firma "Arándano" sobre el paño del login (`app/login/persiana.module.css`) y `--ring/50` es el halo de foco de botón e input (`focus-visible:ring-ring/50`).
 
-**El par más justo es `--muted-foreground` sobre `--accent`, con 4.53.** Es el
-que fija cuánto más se puede oscurecer `--accent` sin romper nada, y por eso
-está medido: la fila seleccionada de las pantallas que vienen es exactamente
-donde ese par se va a ver.
+**Un mismo token puede aparecer sobre dos fondos, y no es redundancia.** `--input` figura dos veces porque el borde de un campo contrasta distinto según dónde esté dibujado, y la superficie que importa es la que el producto usa de verdad: `--card`, porque **todo formulario del producto pone sus campos adentro de una Card**.
+
+**El par más justo es `--primary` sobre `--accent`, con 4.74** — el violeta
+sobre la fila seleccionada. Es el que fija cuánto más se puede aclarar
+`--accent` antes de romper algo, y ocupa el lugar que en la paleta clara tenía
+`--muted-foreground` sobre `--accent`.
 
 Al medir aparecieron **dos defectos que ya venían del default de shadcn**, no de
 esta paleta:
@@ -146,14 +170,29 @@ esta paleta:
    sobre los bytes reales: no alcanzaba, y de paso mostró que 0.01 de holgura no
    es holgura. El cambio es imperceptible a ojo.
 
-2. **El borde de `--input` sobre blanco da 1.26**, contra los 3:1 que pide WCAG
-   1.4.11 para el borde de un control. **Aceptado como excepción, no corregido.**
-   Llevarlo a `oklch(0.669 0 0)` cerraría el hueco pero cambia visiblemente todo
-   campo de la aplicación, y se eligió conservar el look liviano. Lo mitiga que
-   todo campo lleva `<Label>` asociado y anillo de foco de marca, así que el
-   borde no es el único indicio de que ahí hay un input. **Revisar** si aparece
-   un reporte real de gente que no encuentra los campos, o ante una auditoría de
-   accesibilidad formal.
+2. **El borde de `--input` da 1.63 donde se dibuja de verdad** — sobre `--card`,
+   porque todo formulario del producto (el de la landing, que es el único camino
+   de conversión que hay, y la columna de cobro de `/vender`) pone sus campos
+   adentro de una Card. Sobre el fondo pelado da 1.77, mejor que el 1.26 de la
+   paleta clara; los dos quedan cortos contra los 3:1 que pide WCAG 1.4.11 para
+   el borde de un control, y el número que se está aceptando es el peor de los
+   dos, no el más cómodo. **Aceptado como excepción, no corregido.** Se conserva
+   el borde tenue que usa la maqueta a conciencia: todo campo lleva `<Label>`
+   asociado y anillo de foco de marca, así que el borde no es el único indicio
+   de que ahí hay un input. **Revisar** si aparece un reporte real de gente que
+   no encuentra los campos, o ante una auditoría de accesibilidad formal.
+
+Y una tercera excepción, que no es un defecto heredado sino una consecuencia de
+que el foco tenga **dos** indicadores:
+
+3. **El halo de foco de botón e input (`--ring/50`) da 2.33**, abajo de los
+   mismos 3:1. No está solo: `focus-visible:border-ring` pinta al mismo tiempo
+   el borde del control con `--ring` **opaco**, y ése da **5.49**. Lo que
+   identifica al control enfocado cumple; el halo es refuerzo. **Donde no hay
+   ese segundo indicador el anillo va opaco**: las pestañas de
+   `components/navegacion.tsx` no tienen borde propio, y por eso usan
+   `inset-ring-ring` sin opacidad. Esos dos números son los que cita su
+   comentario, y `test/contraste.test.ts` los ata a esta tabla.
 
 ## Tipografía
 
@@ -306,16 +345,32 @@ La escala de 4 px de Tailwind, con un **subconjunto habilitado**: los pasos `1,
 lista, **en el código que escribimos nosotros** —pantallas y layouts de `app/`—,
 es señal de que el layout está mal, no de que falte un token.
 
-Excepción, y es angosta: un solape de hairline atado al ancho de un borde no
-es un paso de espaciado y no cae bajo esta regla. `-mb-px` en el riel de
-pestañas de `components/navegacion.tsx` es el caso — solapa el `border-b` de
-1 px del `<header>` para que el subrayado de 2 px de la pestaña activa se
-apoye en el riel en vez de dibujar una segunda línea un pixel más arriba. El
-−1 px ahí no sale de elegir un punto de la escala: sale de medir el borde que
-hay que tapar, exactamente como `border-b-2` tampoco sale de la escala de
-espaciado y nadie lo llamaría una violación. El límite es ese y no más: cubre
-un solape de 1 px derivado de un borde real, no una puerta para colar
+Excepción, y es angosta: un valor de **hairline atado al ancho de un borde** no
+es un paso de espaciado y no cae bajo esta regla. Son dos casos, los dos de 1 px:
+
+- `-mb-px` en el riel de pestañas de `components/navegacion.tsx` — solapa el
+  `border-b` de 1 px del `<header>` para que el subrayado de 2 px de la pestaña
+  activa se apoye en el riel en vez de dibujar una segunda línea un pixel más
+  arriba.
+- `gap-px` en la grilla de tiles de `/ventas` — la junta de 1 px **es** la línea
+  divisoria: los tiles van sobre un `bg-border` y lo que se ve por las juntas es
+  ese fondo, en vez de tres bordes que haya que hacer coincidir.
+
+En los dos, el número no sale de elegir un punto de la escala: sale de medir el
+borde que se tapa o que se dibuja, exactamente como `border-b-2` tampoco sale de
+la escala de espaciado y nadie lo llamaría una violación. El límite es ese y no
+más: cubre un valor de 1 px derivado de un borde real, no una puerta para colar
 cualquier valor que no esté en la lista.
+
+**Tampoco son espaciado las dimensiones dibujadas.** El ancho de una regla
+decorativa o de una pista de grilla es una medida de la cosa, no un hueco entre
+cosas: se elige contra lo que tiene al lado y no contra la escala. Los casos son
+de `app/sitio/secciones.tsx` — el `w-11` de la rayita del kicker (44 px de
+regla, medidos contra el texto que acompaña) y las pistas
+`grid-cols-[2.5rem_minmax(0,12rem)_minmax(0,1fr)]` de las filas numeradas, donde
+2.5rem es el ancho fijo del número de orden y 12rem el tope del título, elegido
+sobre el más largo. Los **huecos** de esa misma grilla sí están en la escala
+(`gap-x-8`), y ahí es donde la regla manda.
 
 El recorte importa y no es una escapatoria: los componentes copiados de shadcn
 que viven en `components/ui/` traen medios pasos adentro (`gap-1.5`, `px-2.5`,
@@ -338,6 +393,26 @@ esté en ningún componente. La frase de arriba —*"la regla gobierna la
 composición de pantallas"*— sigue rigiendo para cualquier medio paso que
 alguien tipee de cero ahí; no para uno transcripto de un componente ya
 aceptado.
+
+**Enmienda (ciclo de la paleta oscura, 2026-08-13): lo que exime es ser el
+adentro de un componente, no vivir en `components/ui/`.** El párrafo anterior
+ataba la excepción a la carpeta, y eso alcanzaba mientras todos los componentes
+chicos vinieran de shadcn. Este ciclo escribió dos que no existen ahí —el **chip**
+de estado (`px-2.5 py-0.5 text-[11px]`: "Cobrada"/"Anulada" en `/ventas`, "el más
+elegido" en los planes de la landing) y el **tile** del resumen del período
+(`mt-0.5` entre rótulo, valor y pie)— y les aplica la misma lógica que a los
+`gap-1.5` de shadcn: son decisiones internas de un elemento chico, repetido y
+autocontenido, donde 4 px de paso mínimo es más de lo que la pieza mide de aire.
+**El límite, que es la mitad de la enmienda**: cubre el *adentro* de esa pieza,
+nunca la composición que la rodea —márgenes entre bloques, gutters, ritmo de
+sección—, que sigue entera en el subconjunto. Si la lista de piezas exentas
+crece más allá de chip y tile, la que está mal es esta enmienda y no la escala.
+
+Lo que **no** se exceptúa, para que el precedente quede del lado correcto: la
+landing entró en este mismo ciclo con `py-5` en las filas numeradas de *Seis
+cosas, todos los días*, y eso es composición de pantalla con un valor fuera de la
+lista. Se corrigió a `py-6`, que es lo que la regla manda hacer y no requiere
+ninguna justificación aparte.
 
 La densidad es **media**, y en números — todos verificados contra el código, no
 aspiracionales:
@@ -366,17 +441,33 @@ ese gutter izquierdo, el texto cierra contra el derecho.
 `--radius: 0.625rem`, con la escala derivada de 7 pasos que vive en
 `@theme inline`. No hay razón de marca para moverla.
 
-## Modo oscuro
+## Las clases `dark:` de shadcn
 
-**No hay.** El bloque `.dark` se borró: definía 28 variables y nada aplicaba la
-clase. Vuelve como su propio ciclo —con activador, persistencia y una paleta
-oscura completa— si alguna vez se pide.
+**La paleta de este producto es oscura, y aun así no hay "modo oscuro".** No es
+un juego de palabras: hay **una sola cara**, la que declara el `:root` de
+`app/globals.css`, y no existe ningún activador que cambie a otra. El bloque
+`.dark` de shadcn se borró en el ciclo del sistema de diseño —definía 28
+variables y nada aplicaba la clase— y no volvió con la paleta oscura
+(2026-08-13): esta paleta se escribió **adentro** del único `:root`, que es lo
+que mantiene un solo lugar donde vive un color.
 
-Lo que **sí** se queda es `@custom-variant dark (&:is(.dark *))`, y esa línea es
-load-bearing aunque no lo parezca: sin ella, `dark:` vuelve al default de
-Tailwind v4 (`prefers-color-scheme`) y las 5 clases `dark:` que traen
-`button.tsx` e `input.tsx` se activarían solas en cualquiera con el sistema en
-oscuro, sobre esta paleta clara.
+Lo que **sí** se queda es `@custom-variant dark (&:is(.dark *))`, y esa línea
+sigue siendo load-bearing por la misma razón que antes, que la paleta oscura no
+cambió: sin ella, `dark:` vuelve al default de Tailwind v4
+(`prefers-color-scheme`) y las 5 clases `dark:` que traen `button.tsx` e
+`input.tsx` se activarían solas en cualquiera con el sistema en oscuro. Con
+ella, apuntan a una clase que nadie pone y quedan inertes.
+
+**Que ahora la paleta sea oscura no las vuelve correctas**, y ése es el punto
+que más fácil se pierde: esas cinco reglas —`dark:bg-input/30`,
+`dark:aria-invalid:border-destructive/50` y compañía— fueron escritas para
+*otra* paleta oscura, la de shadcn, no para ésta. Si se activaran, pisarían
+estos tokens con valores derivados de una paleta que este documento no declara.
+Siguen tan inertes y tan equivocadas como el día que se borró el `.dark`.
+
+Si alguna vez se pide una **segunda** cara —clara, con activador y
+persistencia—, es su propio ciclo, y ahí lo primero que hay que resolver es esta
+línea, no los tokens.
 
 ## Colores que todavía no existen
 
