@@ -773,7 +773,7 @@ Ningún test puede responder si el eje de ancho se activó de verdad ni si el to
 - Consumes: todo lo anterior.
 - Produces: nada.
 
-- [ ] **Step 1: Levantar dev**
+- [x] **Step 1: Levantar dev**
 
 ```bash
 docker compose -f docker/compose.dev.yml up -d --wait
@@ -781,7 +781,7 @@ docker compose -f docker/compose.dev.yml up -d --wait
 
 Sirve en `http://100.64.81.63:3000`, sólo por Tailscale.
 
-- [ ] **Step 2: Mirar el login, que es la deuda del ciclo anterior**
+- [x] **Step 2: Mirar el login, que es la deuda del ciclo anterior**
 
 Entrar al login de un tenant y confirmar a ojo las tres cosas que `docs/sistema-de-diseno.md` dejó anotadas:
 
@@ -789,7 +789,7 @@ Entrar al login de un tenant y confirmar a ojo las tres cosas que `docs/sistema-
 2. El anillo de foco (tabulando hasta el botón) es del mismo azul-violeta y no gris.
 3. El texto secundario bajo el título del local se lee cómodo sobre la card.
 
-- [ ] **Step 3: Mirar la cinta**
+- [x] **Step 3: Mirar la cinta**
 
 Entrar a `/vender` y cargar tres artículos:
 
@@ -799,11 +799,11 @@ Entrar a `/vender` y cargar tres artículos:
 4. El pie está en `$ 0,00` con el carrito vacío, y muestra `—` (no `$ NaN`) al dejar una cantidad a medio tipear.
 5. Tabulando por la columna de cobro, los dos `<select>` muestran el anillo de foco de marca.
 
-- [ ] **Step 4: Escribir lo que se vio**
+- [x] **Step 4: Escribir lo que se vio**
 
 En `docs/sistema-de-diseno.md`, la sección *Verificación visual — pendiente* del final se reemplaza por lo observado, con fecha. Si algo no se ve como dice el documento, **eso es un hallazgo y se arregla**, no se anota como aceptado.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/sistema-de-diseno.md
@@ -823,10 +823,10 @@ y se cierra acá porque se mira la misma aplicación."
 
 Antes de dar el ciclo por cerrado:
 
-- [ ] `npm test` en verde, con los 4 casos nuevos de `test/tipografia.test.ts` y los 4 de `punto-de-venta.test.tsx`.
-- [ ] `npm run lint` y `npx tsc --noEmit` en verde.
-- [ ] `npm run contraste` idéntico a la tabla del documento: el ciclo no toca colores.
-- [ ] `git diff v<último>..HEAD --stat` no toca `lib/ventas/**`, `app/(app)/vender/acciones.ts`, `prisma/**` ni `scripts/**`.
-- [ ] La verificación visual de la Task 5, hecha por una persona y escrita.
+- [x] `npm test` en verde, con los 4 casos nuevos de `test/tipografia.test.ts` y los 4 de `punto-de-venta.test.tsx`.
+- [x] `npm run lint` y `npx tsc --noEmit` en verde.
+- [x] `npm run contraste` idéntico a la tabla del documento: el ciclo no toca colores.
+- [x] `git diff v<último>..HEAD --stat` no toca `lib/ventas/**`, `app/(app)/vender/acciones.ts`, `prisma/**` ni `scripts/**`.
+- [x] La verificación visual de la Task 5, hecha por una persona y escrita.
 
 **Deploy:** es **MINOR** — el cliente ve una pantalla distinta. Sin migración, así que expand/contract no aplica y el rollback es la imagen anterior como siempre.

@@ -516,20 +516,48 @@ evidencia existe para permitir verificar. En los cuatro casos, después de
 revertir, `git status --short` volvió a mostrar sólo los cambios de esta task
 —nunca el defecto— antes de seguir con el siguiente.
 
-**Verificación visual — pendiente.** El Step 3 de esta task pide mirar el
-login de un tenant real y juzgar a ojo si el botón **Entrar** es azul-violeta
-y no negro, si el anillo de foco es del mismo azul-violeta y no gris, y si el
-texto secundario bajo el título del local se lee cómodo sobre la card. Ningún
-test automatizado puede responder eso. Lo que sí se comprobó mecánicamente:
-con el stack de dev levantado (`docker compose -f docker/compose.dev.yml up -d
---wait`) y sirviendo en `http://100.64.81.63:3000`, el bundle de CSS que
-manda al navegador (`/_next/static/chunks/app_globals_*.css`) lleva el token
-nuevo — transformado por el build (Lightning CSS/Tailwind v4 baja `oklch(0.37
-0.10 287)` a `#3d3571` como fallback y a `lab(25.5499% 16.7471 -34.1581)`
-dentro de `@supports (color: lab(0% 0 0))`), pero el mismo color en los tres
-lugares donde `--primary` y `--ring` aparecen, coincidente con el hex que ya
-documenta la sección *Dónde entra el arándano*. Queda pendiente que una
-persona abra `http://100.64.81.63:3000` (sólo por Tailscale) con el login de
-un tenant y confirme las tres cosas a ojo.
+**Verificación visual — hecha el 2026-08-13.** Una persona miró dev y confirmó
+las ocho cosas que ningún test automatizado puede responder. Se cerraron las
+dos deudas juntas: las tres del ciclo del sistema de diseño (2026-08-11), que
+habían quedado abiertas por no haber interfaz que mirar todavía, y las cinco
+del ciclo del punto de venta.
+
+En el login: el botón **Entrar** se ve azul-violeta y no negro, el anillo de
+foco al tabular hasta él es del mismo azul-violeta y no gris, y el texto
+secundario bajo el título del local se lee cómodo sobre la card.
+
+En `/vender`, con el carrito cargado: los importes se ven **angostos** y no de
+ancho normal —que es la comprobación de que el eje `wdth` se activó de verdad,
+y por lo tanto de que el cable trampa del descriptor `font-stretch` en
+`test/tipografia.test.ts` no está mintiendo—, las columnas no bailan al
+cambiar cantidades y montos (`tnum` funcionando sobre Archivo), el total ancla
+la vista al entrar a la pantalla, el pie muestra `$ 0,00` con el carrito vacío
+y `—` —no `$ NaN`— con una cantidad a medio tipear, y los dos `<select>` de la
+columna de cobro muestran el anillo de foco de marca.
+
+**Cómo se llegó, que no es como decía este párrafo antes.** La versión anterior
+mandaba a abrir `http://100.64.81.63:3000`, y esa URL responde **404** desde el
+cutover de tenants por `Host` (2026-08-08): la IP pelada no termina en
+`DOMINIO_BASE`, así que para la aplicación es un dominio ajeno, y es correcto
+que lo sea. Hay que entrar por el subdominio del tenant —
+`http://canario.dev.arandano.app:3000/login`, con una línea en el `/etc/hosts`
+de la máquina propia, porque los archivos hosts no tienen wildcards. Y el
+catálogo del canario de dev arrancaba **vacío**: sin artículos que cargar al
+carrito no hay importes que mirar, así que la verificación necesita catálogo
+sintético sembrado antes, con montos de distinta cantidad de dígitos —acá, de
+`$ 990` a `$ 899.999`— porque un catálogo de importes parejos no puede mostrar
+si las columnas bailan. Ver *Tenants y subdominios* en
+`docs/runbook-stacks.md`.
+
+Lo que ya se había comprobado mecánicamente y sigue valiendo: el bundle de CSS
+que manda al navegador (`/_next/static/chunks/app_globals_*.css`) lleva el
+token nuevo — transformado por el build (Lightning CSS/Tailwind v4 baja
+`oklch(0.37 0.10 287)` a `#3d3571` como fallback y a `lab(25.5499% 16.7471
+-34.1581)` dentro de `@supports (color: lab(0% 0 0))`), pero el mismo color en
+los tres lugares donde `--primary` y `--ring` aparecen, coincidente con el hex
+que ya documenta la sección *Dónde entra el arándano*. Y la fuente variable
+(`/_next/static/media/archivo_latin_var-*.woff2`) se sirve con 200: si esa
+respuesta fuera un 404, los importes se verían anchos y el defecto parecería
+del código cuando sería del asset.
 
 **2026-08-11.**
