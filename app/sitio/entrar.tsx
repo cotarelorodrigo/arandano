@@ -6,6 +6,19 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 /**
+ * Cómo se direcciona un tenant en ESTE entorno.
+ *
+ * Las arma el servidor con `piezasDeOrigen()` (lib/auth/origen.ts) y bajan por
+ * props: este componente es de cliente y no puede leer el entorno.
+ */
+export type BaseDeTenant = {
+  protocolo: string
+  dominio: string
+  /** Ya viene con los dos puntos, o vacío. */
+  puerto: string
+}
+
+/**
  * A dónde mandar a alguien que dice tener cuenta.
  *
  * Exportada y pura para poder probarla: la navegación es del navegador, la
@@ -15,11 +28,16 @@ import { Input } from '@/components/ui/input'
  * Reusa validarSubdominio, que es la misma función que usa el alta de tenant:
  * dos listas de reservados o dos ideas de qué caracteres valen serían dos cosas
  * que se desincronizan.
+ *
+ * El protocolo y el puerto tampoco se cablean, por lo mismo: esto decía
+ * `https://` y ningún puerto, que es correcto en producción y en dev apunta a
+ * una dirección inexistente — la app ahí se sirve por HTTP en el 3000. El único
+ * entorno donde este botón se prueba a mano era el único donde no funcionaba.
  */
-export function destinoDeSubdominio(crudo: string, dominio: string): string | null {
+export function destinoDeSubdominio(crudo: string, base: BaseDeTenant): string | null {
   const subdominio = crudo.trim().toLowerCase()
   if (!validarSubdominio(subdominio).ok) return null
-  return `https://${subdominio}.${dominio}`
+  return `${base.protocolo}://${subdominio}.${base.dominio}${base.puerto}`
 }
 
 /**
@@ -27,7 +45,7 @@ export function destinoDeSubdominio(crudo: string, dominio: string): string | nu
  * es cliente y no se acuerda de que su sistema no vive acá. Esto la contesta sin
  * consultar la base: si el subdominio no existe, contesta el 404 que ya existe.
  */
-export function Entrar({ dominio }: { dominio: string }) {
+export function Entrar({ base }: { base: BaseDeTenant }) {
   const [valor, setValor] = useState('')
   const [error, setError] = useState(false)
 
@@ -36,7 +54,7 @@ export function Entrar({ dominio }: { dominio: string }) {
       className="flex items-center gap-2"
       onSubmit={(e) => {
         e.preventDefault()
-        const destino = destinoDeSubdominio(valor, dominio)
+        const destino = destinoDeSubdominio(valor, base)
         if (!destino) {
           setError(true)
           return

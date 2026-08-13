@@ -1,8 +1,10 @@
 import type { Metadata } from 'next'
 import { notFound, forbidden, redirect } from 'next/navigation'
 import { tenantDelRequest } from '@/lib/tenant/desde-request'
+import { piezasDeOrigen } from '@/lib/auth/origen'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { Landing } from '@/app/sitio/landing'
+import type { BaseDeTenant } from '@/app/sitio/entrar'
 
 const TITULO = 'Arándano — el sistema para tu negocio'
 const DESCRIPCION =
@@ -51,17 +53,18 @@ export async function generateMetadata(): Promise<Metadata> {
 // servida a otro tenant es una fuga de datos entre clientes.
 export const dynamic = 'force-dynamic'
 
-function PaginaApex() {
-  // DOMINIO_BASE ya es obligatoria: tenantDelRequest() tira si falta, y este
-  // render ocurre después de esa llamada. El `!` no esconde un caso posible.
-  const dominio = process.env.DOMINIO_BASE!
+// Sincrónico a propósito, con `base` ya resuelto por Home: si esta función
+// fuera async, el elemento que devuelve Home dejaría de poder renderizarse con
+// renderToStaticMarkup, que es el único método de render que tienen los tests
+// de este repo (no hay jsdom). El await vive en Home, que ya era async.
+function PaginaApex({ base }: { base: BaseDeTenant }) {
 
   // Sin default: un wa.me con un número vacío manda a la nada, y un número
   // inventado manda al WhatsApp de un desconocido. Si falta, la landing sale
   // sin el link.
   const whatsapp = process.env.WHATSAPP_CONTACTO ?? ''
 
-  return <Landing dominio={dominio} whatsapp={whatsapp} />
+  return <Landing base={base} whatsapp={whatsapp} />
 }
 
 /**
@@ -77,7 +80,17 @@ function PaginaApex() {
 export default async function Home() {
   const resolucion = await tenantDelRequest()
 
-  if (resolucion.tipo === 'apex') return <PaginaApex />
+  if (resolucion.tipo === 'apex') {
+    // Las tres piezas con las que se direcciona un tenant, de la misma función
+    // que arma el baseURL de Better Auth: el link de "Ya tengo cuenta" tiene
+    // que llevar el protocolo y el puerto de ESTE entorno, no un https://
+    // cableado que en dev apunta a una dirección que no existe.
+    //
+    // piezasDeOrigen() también tira si falta DOMINIO_BASE, igual que
+    // tenantDelRequest(), así que acá no hay ningún caso nuevo que atajar.
+    const { protocolo, dominioBase, puerto } = await piezasDeOrigen()
+    return <PaginaApex base={{ protocolo, dominio: dominioBase, puerto }} />
+  }
 
   // notFound() y forbidden() están tipadas como `never`, así que TypeScript
   // angosta `resolucion` a la variante 'tenant' de acá para abajo solo.

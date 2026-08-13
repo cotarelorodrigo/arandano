@@ -1,4 +1,4 @@
-import { Entrar } from './entrar'
+import { Entrar, type BaseDeTenant } from './entrar'
 import { Formulario } from './formulario'
 import { Cartel, Prueba, Direccion, LoQueHace, Rubros, Planes, Cierre } from './secciones'
 
@@ -10,11 +10,13 @@ import { Cartel, Prueba, Direccion, LoQueHace, Rubros, Planes, Cierre } from './
  * tiene page.tsx, así que no crea ninguna ruta — es composición, igual que
  * formularios.tsx en las pantallas de la aplicación.
  *
- * `dominio` y `whatsapp` entran por props y no se leen del entorno acá: así el
+ * `base` y `whatsapp` entran por props y no se leen del entorno acá: así el
  * componente es probable sin tocar process.env, y el único lugar que sabe de
- * dónde salen esos valores es la página.
+ * dónde salen esos valores es la página. `base` son las tres piezas con las que
+ * se direcciona un tenant (protocolo, dominio y puerto), que la página saca de
+ * `piezasDeOrigen()` — las mismas que usa el baseURL de Better Auth.
  */
-export function Landing({ dominio, whatsapp }: { dominio: string; whatsapp: string }) {
+export function Landing({ base, whatsapp }: { base: BaseDeTenant; whatsapp: string }) {
   return (
     <div className="min-h-full">
       {/* La barra: Arándano firma chico, igual que en el login. La plataforma no
@@ -24,7 +26,7 @@ export function Landing({ dominio, whatsapp }: { dominio: string; whatsapp: stri
           <span className="text-sm font-medium tracking-widest uppercase">Arándano</span>
           <div className="flex items-center gap-3">
             <span className="hidden text-sm text-muted-foreground md:inline">Ya tengo cuenta</span>
-            <Entrar dominio={dominio} />
+            <Entrar base={base} />
           </div>
         </div>
       </header>
@@ -32,7 +34,7 @@ export function Landing({ dominio, whatsapp }: { dominio: string; whatsapp: stri
       <main>
         <Cartel />
         <Prueba />
-        <Direccion dominio={dominio} />
+        <Direccion dominio={base.dominio} />
         <LoQueHace />
         <Rubros />
         <Planes />

@@ -48,7 +48,29 @@ import { headers } from 'next/headers'
  * propiedad vale en TODOS los entornos, no sólo en producción detrás de
  * Caddy.
  */
-export async function origenDelRequest(subdominio: string): Promise<string> {
+/**
+ * Las tres piezas con las que este stack direcciona a un tenant.
+ *
+ * Extraídas de `origenDelRequest` para que la landing pueda armar el link de
+ * "Ya tengo cuenta" con las MISMAS: ese link cableaba `https://` y ningún
+ * puerto, lo que en producción es correcto y en dev manda a una dirección que
+ * no existe —la app se sirve por HTTP en el 3000—, o sea que el único entorno
+ * donde alguien prueba ese botón a mano era el único donde no andaba.
+ *
+ * Se comparte la función y no el criterio: dos ideas de cómo se arma la
+ * dirección de un tenant son dos cosas que se desincronizan, y esta de acá
+ * carga tres decisiones de seguridad (lista blanca del protocolo, puerto de
+ * configuración, subdominio ya resuelto) que no conviene reescribir de memoria
+ * en otro archivo.
+ */
+export type PiezasDeOrigen = {
+  protocolo: 'http' | 'https'
+  dominioBase: string
+  /** Ya viene con los dos puntos, o vacío. Listo para concatenar. */
+  puerto: string
+}
+
+export async function piezasDeOrigen(): Promise<PiezasDeOrigen> {
   const dominioBase = process.env.DOMINIO_BASE
   if (!dominioBase) {
     throw new Error(
@@ -77,5 +99,10 @@ export async function origenDelRequest(subdominio: string): Promise<string> {
   const puertoPublico = process.env.PUERTO_PUBLICO
   const puerto = puertoPublico ? `:${puertoPublico}` : ''
 
+  return { protocolo, dominioBase, puerto }
+}
+
+export async function origenDelRequest(subdominio: string): Promise<string> {
+  const { protocolo, dominioBase, puerto } = await piezasDeOrigen()
   return `${protocolo}://${subdominio}.${dominioBase}${puerto}`
 }

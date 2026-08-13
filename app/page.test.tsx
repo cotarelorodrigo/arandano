@@ -36,6 +36,15 @@ vi.mock('next/navigation', () => ({
 // servidor de Next para ejecutarlo.
 vi.mock('@/app/sitio/acciones', () => ({ enviarLead: vi.fn() }))
 
+// El ápex ahora arma el link de "Ya tengo cuenta" con piezasDeOrigen(), que lee
+// x-forwarded-proto para decidir el protocolo. No se mockea piezasDeOrigen sino
+// el header: así el test ejercita la función de verdad —incluida su lista
+// blanca— y no una versión de mentira que podría divergir de ella.
+const cabeceras = vi.hoisted(() => ({ proto: 'https' }))
+vi.mock('next/headers', () => ({
+  headers: async () => new Headers({ 'x-forwarded-proto': cabeceras.proto }),
+}))
+
 async function render() {
   const { default: Home } = await import('@/app/page')
   return Home()
@@ -132,5 +141,32 @@ describe('página raíz', () => {
     const html = renderToStaticMarkup(elemento)
     expect(html).toContain('Abrís, vendés, cerrás la caja.')
     expect(html).not.toContain('data-testid="tenant-nombre"')
+  })
+
+  // El link de "Ya tengo cuenta" lo arma el navegador con las piezas que le baja
+  // esta página. Cablearlas fue el defecto: decía siempre https:// y sin puerto,
+  // que es correcto en producción y en dev manda a una dirección que no existe.
+  // Se afirma acá, en la página, porque es el único lugar donde las piezas se
+  // leen del entorno — entrar.test.tsx ya prueba la función pura con las dos.
+  it('el ápex baja el protocolo y el puerto del entorno, no https cableado', async () => {
+    process.env.DOMINIO_BASE = 'dev.arandano.app'
+    process.env.PUERTO_PUBLICO = '3000'
+    cabeceras.proto = 'http'
+    tenantDelRequest.mockResolvedValue({ tipo: 'apex' })
+    try {
+      // Se mira el elemento y no el markup: el destino del link lo calcula el
+      // navegador recién al enviar el formulario (Entrar es de cliente), así que
+      // NO aparece en el HTML estático. Lo que esta página decide, y lo único
+      // que puede romper acá, son las piezas que le pasa hacia abajo.
+      const elemento = (await render()) as { props: { base: unknown } }
+      expect(elemento.props.base).toEqual({
+        protocolo: 'http',
+        dominio: 'dev.arandano.app',
+        puerto: ':3000',
+      })
+    } finally {
+      delete process.env.PUERTO_PUBLICO
+      cabeceras.proto = 'https'
+    }
   })
 })
