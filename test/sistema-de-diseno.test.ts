@@ -164,7 +164,29 @@ describe('el documento y el CSS declaran lo mismo', () => {
 })
 
 /**
- * Los consumidores de `--primary-foreground` que hay fuera de components/ui/.
+ * Todo archivo de pantalla o de estilo donde nombrar `--primary-foreground`
+ * sería sospechoso: `app/` entero y `components/` **salvo `components/ui/`**.
+ *
+ * El caso escaneaba sólo `app/`, mientras su propio mensaje de falla decía que
+ * el token es legítimo "sólo … en components/ui/" — o sea que se presentaba
+ * como una regla sobre todo el código propio y cubría la mitad.
+ * `components/navegacion.tsx`, `components/cartel.module.css` y
+ * `components/contexto.tsx` no los miraba nadie, y son exactamente la clase de
+ * archivo donde alguien elige un token por su luminosidad.
+ */
+function archivosPropios(): string[] {
+  const de = (raiz: string) =>
+    readdirSync(raiz, { recursive: true, encoding: 'utf8' })
+      .filter((f) => f.endsWith('.tsx') || f.endsWith('.module.css'))
+      .map((f) => join(raiz, f))
+  // components/ui/ queda afuera porque es el ÚNICO lugar donde el par
+  // bg-primary + text-primary-foreground es legítimo: es el botón de acción.
+  return [...de('app'), ...de('components').filter((f) => !f.startsWith(join('components', 'ui')))]
+}
+
+/**
+ * Los consumidores de `--primary-foreground` que hay fuera de components/ui/,
+ * por ruta completa desde la raíz del repo (`app/sitio/secciones.tsx`).
  *
  * Hoy está vacía, y ése es el estado sano. Si alguna vez una pantalla necesita
  * de verdad el par `bg-primary` + `text-primary-foreground` —que es legítimo, es
@@ -187,15 +209,14 @@ describe('nadie toma --primary-foreground por "el color claro"', () => {
   // par vive en components/ui/. Fuera de ahí, nombrarlo es la señal de que
   // alguien lo eligió por su luminosidad y no por su rol — y la luminosidad es
   // exactamente lo que cambia cuando la paleta cambia.
-  it('no aparece en ninguna pantalla ni módulo CSS de app/', () => {
-    const archivos = readdirSync('app', { recursive: true, encoding: 'utf8' })
-      .filter((f) => f.endsWith('.tsx') || f.endsWith('.module.css'))
-      .filter((f) => readFileSync(join('app', f), 'utf8').includes('primary-foreground'))
+  it('no aparece en ninguna pantalla ni componente fuera de components/ui/', () => {
+    const archivos = archivosPropios()
+      .filter((f) => readFileSync(f, 'utf8').includes('primary-foreground'))
       .filter((f) => !(f in CONSUMIDORES_LEGITIMOS))
 
     expect(
       archivos,
-      `estos archivos de app/ nombran --primary-foreground: ${archivos.join(', ')}. ` +
+      `estos archivos nombran --primary-foreground: ${archivos.join(', ')}. ` +
         `El token es casi negro y sólo sirve sobre --primary (el botón de acción, ` +
         `en components/ui/). Si lo estás usando como "el color claro", el que ` +
         `querés es --foreground. Si de verdad es un botón de acción, anotalo en ` +
