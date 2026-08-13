@@ -373,10 +373,17 @@ precedente del ciclo del punto de venta:
 - Las cinco superficies, en este orden: **login** (la persiana, que es lo que más
   riesgo tiene), **`/vender`**, **`/ventas`**, **`/inventario`** y la **landing**
   del ápex.
-- Cuatro preguntas concretas, que son las que ningún test contesta: ¿la persiana
+- Cinco preguntas concretas, que son las que ningún test contesta: ¿la persiana
   todavía lee como una persiana, con relieve y no con dos brillos? ¿El botón de
   acción se distingue del secundario de un vistazo? ¿El anillo de foco se ve al
-  tabular? ¿La fila seleccionada se distingue de la fila normal?
+  tabular? ¿La fila seleccionada se distingue de la fila normal? Y la quinta,
+  que la agregó la review de la rama: **¿la Card del formulario de `Cierre`
+  sigue leyendo como una superficie elevada sobre el paño de `--marca`?** Con la
+  paleta clara una card blanca flotaba sobre la franja; ahora `--card` está en
+  0.245 y el paño en 0.32, o sea que la superficie elevada es **más oscura** que
+  lo que tiene abajo y puede leerse como un hueco en vez de como una tarjeta. No
+  rompe ninguna regla medible —de ahí que ningún test la vea— y es el formulario
+  que convierte, así que entra en la pasada humana.
 - Y el selector de fecha de `/ventas` **abierto**, que es donde se comprueba que
   `color-scheme` hizo efecto.
 

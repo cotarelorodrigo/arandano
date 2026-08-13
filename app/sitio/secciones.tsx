@@ -123,9 +123,17 @@ export function LoQueHace() {
           de un día de mostrador, de vender a mostrar. */}
       <div className="mt-8">
         {CAPACIDADES.map(([titulo, texto], i) => (
+          /* Las tres pistas, que si no son tres números sin explicación:
+             2.5rem es el ancho fijo del número de orden ("01"), que es fijo
+             para que los seis queden en la misma columna óptica; 12rem es el
+             tope del título, elegido sobre el más largo ("Cerrar la caja")
+             para que la descripción arranque siempre a la misma altura y no
+             escalonada; 1fr se queda con el resto. Los minmax(0,…) son lo que
+             impide que una palabra larga estire su pista más allá del tope —el
+             mínimo por default de una pista de grilla es `auto`, no 0. */
           <div
             key={titulo}
-            className="grid grid-cols-[2.5rem_minmax(0,12rem)_minmax(0,1fr)] items-baseline gap-x-8 border-t border-border py-5 first:border-t-0"
+            className="grid grid-cols-[2.5rem_minmax(0,12rem)_minmax(0,1fr)] items-baseline gap-x-8 border-t border-border py-6 first:border-t-0"
           >
             {/* tabular-nums para que los seis números queden en la misma
                 columna óptica: 01 y 06 tienen anchos distintos sin eso. */}
@@ -182,6 +190,11 @@ export function Planes() {
       <h2 className="text-2xl font-semibold">Planes</h2>
       <div className="mt-8 grid gap-4 md:grid-cols-4">
         {PLANES.map(([nombre, texto, destacado]) => (
+          /* El destacado se marca con un anillo y NO con bg-accent, que es lo
+             que hacía con la paleta clara: el chip "el más elegido" ya lleva
+             bg-accent, y una card del mismo color se lo tragaba — quedaba un
+             chip invisible arriba del único plan que queremos que se lea. El
+             anillo destaca sin competirle. */
           <Card key={nombre} className={destacado ? 'ring-1 ring-primary' : undefined}>
             <CardContent className="flex h-full flex-col">
               <div className="flex items-center justify-between gap-2">

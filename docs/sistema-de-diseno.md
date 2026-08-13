@@ -345,16 +345,32 @@ La escala de 4 px de Tailwind, con un **subconjunto habilitado**: los pasos `1,
 lista, **en el código que escribimos nosotros** —pantallas y layouts de `app/`—,
 es señal de que el layout está mal, no de que falte un token.
 
-Excepción, y es angosta: un solape de hairline atado al ancho de un borde no
-es un paso de espaciado y no cae bajo esta regla. `-mb-px` en el riel de
-pestañas de `components/navegacion.tsx` es el caso — solapa el `border-b` de
-1 px del `<header>` para que el subrayado de 2 px de la pestaña activa se
-apoye en el riel en vez de dibujar una segunda línea un pixel más arriba. El
-−1 px ahí no sale de elegir un punto de la escala: sale de medir el borde que
-hay que tapar, exactamente como `border-b-2` tampoco sale de la escala de
-espaciado y nadie lo llamaría una violación. El límite es ese y no más: cubre
-un solape de 1 px derivado de un borde real, no una puerta para colar
+Excepción, y es angosta: un valor de **hairline atado al ancho de un borde** no
+es un paso de espaciado y no cae bajo esta regla. Son dos casos, los dos de 1 px:
+
+- `-mb-px` en el riel de pestañas de `components/navegacion.tsx` — solapa el
+  `border-b` de 1 px del `<header>` para que el subrayado de 2 px de la pestaña
+  activa se apoye en el riel en vez de dibujar una segunda línea un pixel más
+  arriba.
+- `gap-px` en la grilla de tiles de `/ventas` — la junta de 1 px **es** la línea
+  divisoria: los tiles van sobre un `bg-border` y lo que se ve por las juntas es
+  ese fondo, en vez de tres bordes que haya que hacer coincidir.
+
+En los dos, el número no sale de elegir un punto de la escala: sale de medir el
+borde que se tapa o que se dibuja, exactamente como `border-b-2` tampoco sale de
+la escala de espaciado y nadie lo llamaría una violación. El límite es ese y no
+más: cubre un valor de 1 px derivado de un borde real, no una puerta para colar
 cualquier valor que no esté en la lista.
+
+**Tampoco son espaciado las dimensiones dibujadas.** El ancho de una regla
+decorativa o de una pista de grilla es una medida de la cosa, no un hueco entre
+cosas: se elige contra lo que tiene al lado y no contra la escala. Los casos son
+de `app/sitio/secciones.tsx` — el `w-11` de la rayita del kicker (44 px de
+regla, medidos contra el texto que acompaña) y las pistas
+`grid-cols-[2.5rem_minmax(0,12rem)_minmax(0,1fr)]` de las filas numeradas, donde
+2.5rem es el ancho fijo del número de orden y 12rem el tope del título, elegido
+sobre el más largo. Los **huecos** de esa misma grilla sí están en la escala
+(`gap-x-8`), y ahí es donde la regla manda.
 
 El recorte importa y no es una escapatoria: los componentes copiados de shadcn
 que viven en `components/ui/` traen medios pasos adentro (`gap-1.5`, `px-2.5`,
@@ -377,6 +393,26 @@ esté en ningún componente. La frase de arriba —*"la regla gobierna la
 composición de pantallas"*— sigue rigiendo para cualquier medio paso que
 alguien tipee de cero ahí; no para uno transcripto de un componente ya
 aceptado.
+
+**Enmienda (ciclo de la paleta oscura, 2026-08-13): lo que exime es ser el
+adentro de un componente, no vivir en `components/ui/`.** El párrafo anterior
+ataba la excepción a la carpeta, y eso alcanzaba mientras todos los componentes
+chicos vinieran de shadcn. Este ciclo escribió dos que no existen ahí —el **chip**
+de estado (`px-2.5 py-0.5 text-[11px]`: "Cobrada"/"Anulada" en `/ventas`, "el más
+elegido" en los planes de la landing) y el **tile** del resumen del período
+(`mt-0.5` entre rótulo, valor y pie)— y les aplica la misma lógica que a los
+`gap-1.5` de shadcn: son decisiones internas de un elemento chico, repetido y
+autocontenido, donde 4 px de paso mínimo es más de lo que la pieza mide de aire.
+**El límite, que es la mitad de la enmienda**: cubre el *adentro* de esa pieza,
+nunca la composición que la rodea —márgenes entre bloques, gutters, ritmo de
+sección—, que sigue entera en el subconjunto. Si la lista de piezas exentas
+crece más allá de chip y tile, la que está mal es esta enmienda y no la escala.
+
+Lo que **no** se exceptúa, para que el precedente quede del lado correcto: la
+landing entró en este mismo ciclo con `py-5` en las filas numeradas de *Seis
+cosas, todos los días*, y eso es composición de pantalla con un valor fuera de la
+lista. Se corrigió a `py-6`, que es lo que la regla manda hacer y no requiere
+ninguna justificación aparte.
 
 La densidad es **media**, y en números — todos verificados contra el código, no
 aspiracionales:
