@@ -135,21 +135,30 @@ Ese flip rompe dos cosas que ningún test ve, porque las dos usaban
 
 ### La persiana
 
-`app/login/persiana.module.css` lo usa para el brillo de los listones y para la
-firma *Arándano*; `app/sitio/cierre.module.css` para el texto de la franja. Los
-cuatro usos **se mudan a `--foreground`**, que es el color claro de verdad. El
-par vigilado deja de ser `--primary-foreground sobre --marca` y pasa a
-`--foreground sobre --marca`.
+Son **cinco usos** de `--primary-foreground` como "el color claro": en
+`app/login/persiana.module.css`, el brillo de los listones, el travesaño de
+abajo, la firma *Arándano* y el nombre del local; en
+`app/sitio/cierre.module.css`, la firma de la franja. Los cinco **se mudan a
+`--foreground`**, que es el color claro de verdad. El par vigilado deja de ser
+`--primary-foreground sobre --marca` y pasa a `--foreground sobre --marca`.
 
-Y hay una segunda rotura, más sutil, en el mismo archivo: el surco de los
-listones se dibuja con `color-mix(in srgb, var(--foreground) 26%, transparent)`,
-o sea "una línea oscura sobre el paño". Con `--foreground` casi blanco **el surco
-se vuelve claro** y la persiana deja de leer como persiana — quedan dos brillos
-paralelos y ningún relieve. El sombreado se rederiva: el surco desde
-`--background` (el color oscuro que ahora existe) y el brillo desde
-`--foreground`. Es un cambio de *qué token* compone cada capa, no de las
-proporciones, que se conservan como referencia y se ajustan a ojo en la
-verificación visual.
+Y hay una segunda rotura, en el mismo archivo y en la dirección contraria: **dos
+usos de `--foreground` estaban ahí porque era el color oscuro**, y tienen que
+pasar a `--background`.
+
+1. El surco de los listones, `color-mix(in srgb, var(--foreground) 26%,
+   transparent)` — o sea "una línea oscura sobre el paño". Con `--foreground`
+   casi blanco el surco **se vuelve claro** y la persiana deja de leer como
+   persiana: quedan dos brillos paralelos y ningún relieve.
+2. El fondo del paño de la persiana, `color-mix(in srgb, var(--foreground) 9%,
+   var(--marca))`, cuyo comentario dice literalmente *"un poco más oscuro que el
+   paño de atrás"*. Con el flip pasaría a ser más **claro**, y el movimiento
+   dejaría de leerse como un objeto que sube.
+
+El sombreado se rederiva desde `--background`. Es un cambio de *qué token*
+compone cada capa; las proporciones se conservan como punto de partida y se
+ajustan a ojo en la verificación visual, porque el contraste entre dos mezclas
+del mismo paño no es algo que la tabla mida.
 
 `--marca` sube de 0.28 a 0.32 por la misma razón: contra un fondo de 0.214, un
 paño de 0.28 casi no se despega. En 0.32 vuelve a ser un material apoyado sobre
@@ -348,7 +357,7 @@ Dos casos nuevos:
 
 ## Verificación
 
-`npm test`, `npm run typecheck` y `npm run contraste` tienen que dar verde, y el
+`npm test`, `npx tsc --noEmit` y `npm run contraste` tienen que dar verde, y el
 hook de pre-commit también. Pero el gate no puede decidir lo único que importa
 acá, así que la verificación **es visual y la hace una persona**, con el
 precedente del ciclo del punto de venta:
