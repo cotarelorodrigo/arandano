@@ -2,7 +2,7 @@
 
 import { headers } from 'next/headers'
 import { guardarLead } from '@/lib/leads/guardar'
-import { claveDeEnvio, envioBloqueado, registrarEnvio } from '@/lib/leads/limite'
+import { claveDeEnvio, envioBloqueado, registrarEnvio, revertirEnvio } from '@/lib/leads/limite'
 
 export type EstadoLead = { error: string | null; enviado: boolean }
 
@@ -55,14 +55,34 @@ export async function enviarLead(_estado: EstadoLead, datos: FormData): Promise<
     }
   }
 
-  await guardarLead({
-    nombre,
-    email,
-    whatsapp: opcional(datos, 'whatsapp'),
-    rubro,
-    mensaje: opcional(datos, 'mensaje'),
-  })
+  // El cupo se toma ACÁ, antes del alta, y no después: el `await` de abajo es un
+  // punto donde Node cambia de tarea, así que con el registro al final una
+  // ráfaga simultánea desde la misma IP lee el contador en cero y entra entera
+  // (medido: veinte de veinte). Ver `registrarEnvio`.
   registrarEnvio(clave)
+
+  try {
+    await guardarLead({
+      nombre,
+      email,
+      whatsapp: opcional(datos, 'whatsapp'),
+      rubro,
+      mensaje: opcional(datos, 'mensaje'),
+    })
+  } catch (error) {
+    // Sin este catch la excepción sube hasta el render —`useActionState` la
+    // vuelve a tirar— y Next reemplaza la landing entera por su pantalla de
+    // error: el visitante pierde el formulario justo cuando quería escribirnos.
+    // No hay error.tsx que lo contenga, y ponerlo sería atajar el problema un
+    // nivel más arriba y con menos información: acá sabemos que lo único que
+    // falló fue guardar, así que el resto de la página puede seguir en pie.
+    revertirEnvio(clave)
+    console.error('[leads] no se pudo guardar el lead', error)
+    return {
+      error: 'No pudimos recibir tus datos. Probá de nuevo en un minuto, o escribinos por WhatsApp.',
+      enviado: false,
+    }
+  }
 
   return { error: null, enviado: true }
 }

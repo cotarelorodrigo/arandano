@@ -14,6 +14,11 @@ import { OPCIONES_BASE } from '@/lib/auth/opciones'
  * limitador, para no inventar una segunda lectura de `X-Forwarded-For`
  * (cadenas de proxies, IPv6, direcciones mapeadas) al lado de la que ya existe.
  *
+ * Ese `getIp` sólo resuelve un `X-Forwarded-For` de UN hop, así que esto se
+ * apoya en que Caddy pise el header del cliente en vez de appendearle la IP
+ * real. Lo hace, está medido, y `test/caddyfile.test.ts` fija la condición de
+ * la que depende —que no se declare `trusted_proxies`— con el detalle completo.
+ *
  * **En memoria del proceso.** Se resetea en cada deploy y NO sirve si algún día
  * hay dos instancias de la aplicación — que es exactamente el escenario que
  * CLAUDE.md tiene anotado como "sumar Redis es una decisión consciente, no un
@@ -57,6 +62,16 @@ export function envioBloqueado(clave: string, ahora: number = Date.now()): boole
   return ventana.envios >= MAXIMO_POR_VENTANA
 }
 
+/**
+ * Toma el cupo. Se llama ANTES de guardar, no después: entre el chequeo y el
+ * alta hay un `await`, y Node cambia de tarea ahí, así que una ráfaga paralela
+ * desde la misma IP lee todo el contador en cero y entra entera. Medido: con el
+ * registro al final, veinte envíos simultáneos guardaban veinte.
+ *
+ * Es la misma forma del contador de SKU (`Tenant.proximoSkuArticulo`, ver
+ * CLAUDE.md): reservar primero y arreglar después es lo único que hace que dos
+ * caminos concurrentes no lean el mismo número.
+ */
 export function registrarEnvio(clave: string, ahora: number = Date.now()): void {
   if (ventanas.size > TOPE_ANTES_DE_PODAR) podar(ahora)
 
@@ -66,4 +81,24 @@ export function registrarEnvio(clave: string, ahora: number = Date.now()): void 
     return
   }
   ventana.envios += 1
+}
+
+/**
+ * Devuelve el cupo que `registrarEnvio` tomó, cuando el alta que venía después
+ * no llegó a existir.
+ *
+ * Sin esto, reservar antes cambiaría en silencio qué mide el limitador: pasaría
+ * a contar INTENTOS, y una caída de Postgres le gastaría los cinco envíos a una
+ * persona que no consiguió mandar ninguno. El comentario de arriba dice "envíos
+ * exitosos" y esta función es lo que lo mantiene cierto.
+ *
+ * El cupo igual estuvo tomado mientras duraba el alta, que es exactamente lo que
+ * cierra la ráfaga.
+ */
+export function revertirEnvio(clave: string, ahora: number = Date.now()): void {
+  const ventana = ventanas.get(clave)
+  // Si venció mientras tanto, ya no hay nada que devolver: la ventana nueva
+  // arranca en cero sola.
+  if (!ventana || ventana.venceEn <= ahora) return
+  if (ventana.envios > 0) ventana.envios -= 1
 }
