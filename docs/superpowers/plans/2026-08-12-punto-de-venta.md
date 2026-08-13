@@ -73,9 +73,9 @@ describe('el eje de ancho de Archivo está activado', () => {
     ).toContain('prop:"font-stretch",value:"62%125%"')
   })
 })
-
-export { compacto }
 ```
+
+`compacto` queda local a este archivo: exportarla desde un test para que otro test la importe es dependencia entre suites, y hoy no la necesita nadie más.
 
 - [ ] **Step 2: Correrlo y ver que pasa (todavía no falla)**
 
@@ -482,17 +482,10 @@ Agregar al `describe` del Step 1:
     expect(await render()).toMatch(/class="[^"]*importe/)
   })
 
-  // Una sola vez en pantalla. Antes estaba dos veces —la card de cobro y el
-  // pie— y en ninguna de las dos mandaba.
-  it('el total no está también en la columna de cobro', async () => {
-    const html = await render()
-    const veces = [...html.matchAll(/class="[^"]*total[^"]*"/g)].length
-    expect(veces, `el total aparece ${veces} veces y tiene que aparecer 1`).toBe(1)
-  })
 ```
 
 Run: `npx vitest run "app/(app)/vender/punto-de-venta.test.tsx"`
-Expected: FAIL en los tres casos nuevos — todavía no existe el pie.
+Expected: FAIL en los dos casos nuevos — todavía no existe el pie.
 
 - [ ] **Step 3: Importar el módulo en la pantalla**
 
@@ -611,9 +604,9 @@ El `<tbody>` vacío con encabezado y pie a la vista **es** el estado vacío que 
 - [ ] **Step 7: Correr los tests**
 
 Run: `npx vitest run "app/(app)/vender/punto-de-venta.test.tsx"`
-Expected: FAIL todavía en `el total no está también en la columna de cobro` — ese lo cierra la Task 4. Los otros tres, PASS.
+Expected: PASS, los tres casos.
 
-Si molesta tener un rojo entre tasks, mover ese caso a la Task 4. **No** se cierra acá adelantando el cambio de la card: son dos regiones distintas del archivo y dos revisiones distintas.
+En este punto el total está **dos veces** en pantalla —el pie nuevo y el que sigue en la card de cobro—, y eso es correcto: sacarlo de la card es la Task 4, que es otra región del archivo y otra revisión. El caso que lo exige vive allá, para que esta task no cierre con un rojo a propósito.
 
 - [ ] **Step 8: Escribir la enmienda de la regla**
 
@@ -673,10 +666,22 @@ El total sale de la card —pasa a estar una sola vez en pantalla—, la card no
 - Consumes: `estilos.importe` de `components/importe.module.css`, ya importado por la Task 3.
 - Produces: nada.
 
-- [ ] **Step 1: Ver el rojo que quedó abierto**
+- [ ] **Step 1: Escribir el test que falla**
+
+Agregar al `describe` de `app/(app)/vender/punto-de-venta.test.tsx`:
+
+```tsx
+  // Una sola vez en pantalla. Antes estaba dos veces —la card de cobro y el
+  // pie de la cinta— y en ninguna de las dos mandaba.
+  it('el total no está también en la columna de cobro', async () => {
+    const html = await render()
+    const veces = [...html.matchAll(/class="[^"]*total[^"]*"/g)].length
+    expect(veces, `el total aparece ${veces} veces y tiene que aparecer 1`).toBe(1)
+  })
+```
 
 Run: `npx vitest run "app/(app)/vender/punto-de-venta.test.tsx"`
-Expected: FAIL en `el total no está también en la columna de cobro`, con el mensaje que dice que aparece 2 veces.
+Expected: FAIL con el mensaje que dice que aparece 2 veces.
 
 - [ ] **Step 2: Sacar el total de la card y renombrar el título**
 
@@ -768,7 +773,7 @@ Ningún test puede responder si el eje de ancho se activó de verdad ni si el to
 - Consumes: todo lo anterior.
 - Produces: nada.
 
-- [ ] **Step 1: Levantar dev**
+- [x] **Step 1: Levantar dev**
 
 ```bash
 docker compose -f docker/compose.dev.yml up -d --wait
@@ -776,7 +781,7 @@ docker compose -f docker/compose.dev.yml up -d --wait
 
 Sirve en `http://100.64.81.63:3000`, sólo por Tailscale.
 
-- [ ] **Step 2: Mirar el login, que es la deuda del ciclo anterior**
+- [x] **Step 2: Mirar el login, que es la deuda del ciclo anterior**
 
 Entrar al login de un tenant y confirmar a ojo las tres cosas que `docs/sistema-de-diseno.md` dejó anotadas:
 
@@ -784,7 +789,7 @@ Entrar al login de un tenant y confirmar a ojo las tres cosas que `docs/sistema-
 2. El anillo de foco (tabulando hasta el botón) es del mismo azul-violeta y no gris.
 3. El texto secundario bajo el título del local se lee cómodo sobre la card.
 
-- [ ] **Step 3: Mirar la cinta**
+- [x] **Step 3: Mirar la cinta**
 
 Entrar a `/vender` y cargar tres artículos:
 
@@ -794,11 +799,11 @@ Entrar a `/vender` y cargar tres artículos:
 4. El pie está en `$ 0,00` con el carrito vacío, y muestra `—` (no `$ NaN`) al dejar una cantidad a medio tipear.
 5. Tabulando por la columna de cobro, los dos `<select>` muestran el anillo de foco de marca.
 
-- [ ] **Step 4: Escribir lo que se vio**
+- [x] **Step 4: Escribir lo que se vio**
 
 En `docs/sistema-de-diseno.md`, la sección *Verificación visual — pendiente* del final se reemplaza por lo observado, con fecha. Si algo no se ve como dice el documento, **eso es un hallazgo y se arregla**, no se anota como aceptado.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/sistema-de-diseno.md
@@ -818,10 +823,10 @@ y se cierra acá porque se mira la misma aplicación."
 
 Antes de dar el ciclo por cerrado:
 
-- [ ] `npm test` en verde, con los 4 casos nuevos de `test/tipografia.test.ts` y los 4 de `punto-de-venta.test.tsx`.
-- [ ] `npm run lint` y `npx tsc --noEmit` en verde.
-- [ ] `npm run contraste` idéntico a la tabla del documento: el ciclo no toca colores.
-- [ ] `git diff v<último>..HEAD --stat` no toca `lib/ventas/**`, `app/(app)/vender/acciones.ts`, `prisma/**` ni `scripts/**`.
-- [ ] La verificación visual de la Task 5, hecha por una persona y escrita.
+- [x] `npm test` en verde, con los 4 casos nuevos de `test/tipografia.test.ts` y los 4 de `punto-de-venta.test.tsx`.
+- [x] `npm run lint` y `npx tsc --noEmit` en verde.
+- [x] `npm run contraste` idéntico a la tabla del documento: el ciclo no toca colores.
+- [x] `git diff v<último>..HEAD --stat` no toca `lib/ventas/**`, `app/(app)/vender/acciones.ts`, `prisma/**` ni `scripts/**`.
+- [x] La verificación visual de la Task 5, hecha por una persona y escrita.
 
 **Deploy:** es **MINOR** — el cliente ve una pantalla distinta. Sin migración, así que expand/contract no aplica y el rollback es la imagen anterior como siempre.

@@ -28,12 +28,13 @@
   --font-heading: var(--font-sans);
   /* No hay --font-display ni --color-marca acá, y sigue siendo a propósito.
      --color-marca lo usa una sola pantalla, el login. --font-display lo usan
-     DOS —el cartel del login y el del header de la aplicación— y aun así no
-     entra: los dos lo consumen desde un módulo CSS con var(--font-archivo)
-     directo, porque además de la familia necesitan font-stretch y tracking
-     propios, o sea que ninguna utilidad de Tailwind lo referenciaría igual. Un
-     token en @theme que ninguna utilidad referencia es un token muerto, que es
-     lo que el caso "no quedan tokens de sidebar ni de gráficos" de
+     TRES —el cartel del login, el del header de la aplicación y el importe
+     del punto de venta— y aun así no entra: los tres lo consumen desde un
+     módulo CSS con var(--font-archivo) directo, porque además de la familia
+     cada uno necesita su propio font-stretch (y los dos cartel, también su
+     tracking), o sea que ninguna utilidad de Tailwind lo referenciaría igual.
+     Un token en @theme que ninguna utilidad referencia es un token muerto,
+     que es lo que el caso "no quedan tokens de sidebar ni de gráficos" de
      test/sistema-de-diseno.test.ts existe para evitar. */
   --color-ring: var(--ring);
   --color-input: var(--input);
