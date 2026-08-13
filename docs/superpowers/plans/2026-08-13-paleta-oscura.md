@@ -179,7 +179,13 @@ En `components/ui/button.tsx`, en el variante `default` (línea 12):
 
 No tocar los otros variantes. `secondary` ya usa `color-mix(in oklch, var(--secondary), var(--foreground) 5%)`, que sobre fondo oscuro aclara — anda para el lado correcto sin cambios.
 
-- [ ] **Step 8: Mudar los cinco usos de `--primary-foreground` que significaban "el color claro"**
+- [ ] **Step 8: Mudar los siete usos de `--primary-foreground` que significaban "el color claro"**
+
+> **Corregido durante la ejecución.** Este paso decía *cinco* y son **siete**: el
+> conteo original miró los módulos CSS y se salteó dos utilidades de Tailwind en
+> un `.tsx` — `text-primary-foreground` y `text-primary-foreground/70` en
+> `app/sitio/secciones.tsx`, sobre el paño de `--marca` de la landing. Post-flip
+> daban 1.39:1 en el título que convierte. Los dos van al final de este step.
 
 En `app/login/persiana.module.css`, cuatro cambios:
 
@@ -348,7 +354,7 @@ Y en el punto 2 de la lista de defectos heredados de shadcn, actualizar el 1.26 
 - [ ] **Step 12: Correr todo y verificar verde**
 
 Run: `npm test 2>&1 | tail -20 && npx tsc --noEmit && npm run contraste`
-Expected: los tres en verde. En particular `test/sistema-de-diseno.test.ts` con sus ocho casos y `test/contraste.test.ts` con los seis.
+Expected: los tres en verde. En particular `test/sistema-de-diseno.test.ts` con sus **nueve** casos —los ocho que ya tenía más el de `color-scheme` que suma esta task— y `test/contraste.test.ts` con los seis.
 
 - [ ] **Step 13: Commit**
 
@@ -364,7 +370,7 @@ hasta croma 0.030.
 
 --primary-foreground se da vuelta (casi blanco a casi negro), porque --primary
 también es el color de los links y tiene que llegar a 4.5 sobre el fondo: un
-violeta oscuro no llega. Los cinco usos que lo tomaban por 'el color claro'
+violeta oscuro no llega. Los siete usos que lo tomaban por 'el color claro'
 se mudan a --foreground.
 
 Entra --primary-hover: sobre fondo oscuro bg-primary/80 acercaba el botón al
@@ -411,8 +417,14 @@ El `--brillo` y el travesaño ya quedaron en `--foreground` en la Task 1, y ahí
 
 - [ ] **Step 2: Verificar que no quedó ningún uso de `--foreground` como color oscuro**
 
-Run: `grep -n 'foreground' app/login/persiana.module.css`
-Expected: tres apariciones, todas de `--foreground` y todas en capas claras — `--brillo` (7%), el travesaño (16%), la firma (70%) — más el `color: var(--foreground)` del nombre. Ninguna en `--surco` ni en el `background-color` de `.persiana`.
+Run: `grep -n 'var(--foreground)\|var(--background)\|var(--marca)' app/login/persiana.module.css`
+Expected: exactamente seis líneas.
+
+- **Cuatro con `--foreground`**, todas capas claras: `--brillo` (7%), el travesaño (16%), la firma (70%) y el `color` del nombre.
+- **Dos con `--background`**, las dos capas oscuras: `--surco` (45%) y el `background-color` de `.persiana` (22%, mezclado con `--marca`).
+- Ninguna con `--primary-foreground`, que la Task 1 ya sacó de este archivo.
+
+Si aparece `--foreground` en `--surco` o en el `background-color` de `.persiana`, el Step 1 no se aplicó.
 
 - [ ] **Step 3: Correr los tests**
 
