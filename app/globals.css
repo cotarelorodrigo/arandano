@@ -51,6 +51,7 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -67,30 +68,36 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.37 0.10 287);
-  --primary-foreground: oklch(0.985 0 0);
-  /* El arándano como SUPERFICIE, no como control. Es el paño de la persiana
-     del login y no se usa en ningún otro lado. Más oscuro que --primary a
-     propósito: si el paño fuera exactamente el color del botón, el botón
-     dejaría de ser lo único accionable a la vista. Ver docs/sistema-de-diseno.md,
-     "El arándano como superficie". */
-  --marca: oklch(0.28 0.09 287);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.535 0 0);
-  --accent: oklch(0.955 0.012 287);
-  --accent-foreground: oklch(0.37 0.10 287);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.37 0.10 287);
+  --background: oklch(0.214 0.025 287);
+  --foreground: oklch(0.935 0.008 287);
+  --card: oklch(0.245 0.028 287);
+  --card-foreground: oklch(0.935 0.008 287);
+  --popover: oklch(0.245 0.028 287);
+  --popover-foreground: oklch(0.935 0.008 287);
+  --primary: oklch(0.66 0.124 287);
+  --primary-foreground: oklch(0.20 0.03 287);
+  /* El hover del botón de acción. Es un token y no `bg-primary/80` porque sobre
+     fondo oscuro la opacidad acerca el botón AL FONDO: el control retrocedía
+     cuando lo apuntabas, y encima el par daba 4.08. Éste aclara, y da 7.11. */
+  --primary-hover: oklch(0.72 0.105 287);
+  /* El arándano como SUPERFICIE, no como control: el paño de la persiana del
+     login y la franja de cierre del sitio. Sube de 0.28 a 0.32 porque contra un
+     fondo de 0.214 el valor viejo no se despegaba — el paño y el fondo eran el
+     mismo material. Ver docs/sistema-de-diseno.md, "El arándano como
+     superficie". */
+  --marca: oklch(0.32 0.095 287);
+  --secondary: oklch(0.30 0.025 287);
+  --secondary-foreground: oklch(0.935 0.008 287);
+  --muted: oklch(0.268 0.024 287);
+  --muted-foreground: oklch(0.70 0.030 287);
+  /* El único neutral que pasa de croma 0.030: es la fila seleccionada, y tiene
+     que distinguirse de --muted sin depender sólo de la luminosidad. */
+  --accent: oklch(0.27 0.060 287);
+  --accent-foreground: oklch(0.66 0.124 287);
+  --destructive: oklch(0.70 0.160 22);
+  --border: oklch(0.381 0.019 287);
+  --input: oklch(0.381 0.019 287);
+  --ring: oklch(0.66 0.124 287);
   --radius: 0.625rem;
 }
 
@@ -103,6 +110,12 @@
   }
   html {
     @apply font-sans;
+    /* Le dice al navegador que pinte de oscuro lo que la hoja de estilos no
+       controla: scrollbars, el selector nativo de <input type="date"> —que
+       /ventas usa en Desde y Hasta— y el lienzo antes del primer paint, que
+       sin esto es un flash blanco en cada carga. Va acá y no en :root para que
+       el bloque de tokens siga conteniendo tokens y nada más. */
+    color-scheme: dark;
   }
 }
 

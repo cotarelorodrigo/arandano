@@ -49,13 +49,16 @@ export const PARES: Par[] = [
   { texto: '--muted-foreground', fondo: '--accent', minimo: 4.5 },
   { texto: '--primary-foreground', fondo: '--primary', minimo: 4.5 },
   // El hover del botón de acción — el "Entrar" del login (components/ui/button.tsx).
-  { texto: '--primary-foreground', fondo: '--primary', alfaFondo: 0.8, minimo: 4.5 },
+  // Es un token y no una opacidad desde el ciclo de la paleta oscura: sobre
+  // fondo oscuro `bg-primary/80` acercaba el botón al fondo, o sea que el
+  // control retrocedía al apuntarlo, y el par daba 4.08.
+  { texto: '--primary-foreground', fondo: '--primary-hover', minimo: 4.5 },
   // El paño de la persiana del login. El nombre del local va opaco; el
   // subdominio arriba va al 70%, y esa opacidad es justamente la que ningún
   // par opaco vigila — es texto chico sobre un fondo oscuro, o sea el caso
   // donde una opacidad "que se ve bien" se cae del mínimo sin avisar.
-  { texto: '--primary-foreground', fondo: '--marca', minimo: 4.5 },
-  { texto: '--primary-foreground', fondo: '--marca', alfaTexto: 0.7, minimo: 4.5 },
+  { texto: '--foreground', fondo: '--marca', minimo: 4.5 },
+  { texto: '--foreground', fondo: '--marca', alfaTexto: 0.7, minimo: 4.5 },
   { texto: '--primary', fondo: '--background', minimo: 4.5 },
   { texto: '--primary', fondo: '--accent', minimo: 4.5 },
   { texto: '--primary-foreground', fondo: '--destructive', minimo: 4.5 },
@@ -63,6 +66,11 @@ export const PARES: Par[] = [
   // La descripción del error de login, que vive en una Alert con bg-card
   // (components/ui/alert.tsx).
   { texto: '--destructive', fondo: '--card', alfaTexto: 0.9, minimo: 4.5 },
+  // El botón "Desactivar artículo" (app/(app)/inventario/formularios.tsx), que
+  // es `bg-destructive/10 text-destructive` en components/ui/button.tsx. Existía
+  // desde el ciclo de inventario y ningún par lo cubría: con la paleta clara
+  // zafaba, y con una nueva merece medirse en vez de suponerse.
+  { texto: '--destructive', fondo: '--destructive', alfaFondo: 0.1, minimo: 4.5 },
   { texto: '--input', fondo: '--background', minimo: 3.0 },
   // El anillo de foco de las pestañas de navegación (components/navegacion.tsx),
   // opaco desde la revisión final de "el cartel en el shell". Mismo mínimo que
@@ -81,9 +89,10 @@ export const PARES: Par[] = [
  */
 export const EXCEPCIONES: Record<string, string> = {
   '--input sobre --background':
-    'el borde de un control pide 3:1 (WCAG 1.4.11) y da 1.26. Se conserva el look ' +
-    'liviano de shadcn a conciencia: todo campo lleva <Label> asociado y anillo de ' +
-    'foco de marca, así que el borde no es el único indicio de que ahí hay un input. ' +
+    'el borde de un control pide 3:1 (WCAG 1.4.11) y da 1.77 — mejor que el 1.26 ' +
+    'de la paleta clara, pero todavía corto. Se conserva el borde tenue que usa la ' +
+    'maqueta a conciencia: todo campo lleva <Label> asociado y anillo de foco de ' +
+    'marca, así que el borde no es el único indicio de que ahí hay un input. ' +
     'Revisar ante un reporte real de gente que no encuentra los campos, o ante una ' +
     'auditoría de accesibilidad formal.',
 }

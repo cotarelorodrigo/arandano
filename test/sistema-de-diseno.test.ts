@@ -63,6 +63,20 @@ describe('el CSS no arrastra tokens muertos', () => {
         `y sacá este caso.`,
     ).toEqual([])
   })
+
+  it('declara color-scheme: dark', () => {
+    // Sin esta declaración el navegador pinta de claro todo lo que la hoja de
+    // estilos no controla: los scrollbars, el selector nativo de
+    // <input type="date"> —que /ventas usa en Desde y Hasta— y el lienzo antes
+    // del primer paint, que es un flash blanco en cada carga. Es un modo de
+    // falla que sólo se ve en un navegador de verdad, nunca en jsdom, así que
+    // el único lugar donde puede quedar atrapado es acá.
+    expect(
+      css,
+      'app/globals.css no declara color-scheme: dark. La paleta es oscura, así ' +
+        'que los controles nativos y el lienzo del primer paint quedan claros.',
+    ).toMatch(/color-scheme:\s*dark/)
+  })
 })
 
 const DOC = 'docs/sistema-de-diseno.md'

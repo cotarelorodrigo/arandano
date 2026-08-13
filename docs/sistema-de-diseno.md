@@ -12,11 +12,20 @@ que este documento no pueda mentir.
 
 ## La referencia
 
-**El color de un arándano**: el azul-violeta profundo de la fruta. Entra en tres
-lugares y en ninguno más — acciones, foco y selección. Todo el resto es gris
-neutro puro. La contención es la decisión, no una etapa: es lo que menos cansa
-en una pantalla que se mira ocho horas, y lo que deja margen para que el rojo de
-un error se destaque de verdad.
+**El color de un arándano**: el azul-violeta de la fruta, sobre un fondo oscuro.
+Entra saturado en tres lugares y en ninguno más — acciones, foco y selección.
+Todo el resto es gris, pero **gris tintado del mismo hue**: los neutros llevan
+croma hasta 0.030 a hue 287, porque sobre fondo oscuro un gris de croma 0 lee
+apagado. La contención es la decisión, no una etapa: es lo que menos cansa en
+una pantalla que se mira ocho horas, y lo que deja margen para que el rojo de un
+error se destaque de verdad.
+
+**El límite del tinte es 0.030.** Un token de cromo por encima de eso deja de
+ser un gris tintado y pasa a ser un color, y ahí la contención se empieza a
+perder de a poco. `--accent` (0.060) es la excepción declarada, por la misma
+razón por la que ya era el único tintado en la paleta clara: es la fila
+seleccionada, y tiene que distinguirse de `--muted` sin depender sólo de la
+luminosidad.
 
 ### El arándano como superficie
 
@@ -31,10 +40,16 @@ viene después es una herramienta y se comporta como tal.
 
 **Por qué un token nuevo y no `--primary` en un `<section>`.** Si el paño fuera
 exactamente el color del botón, el botón dejaría de ser lo único accionable a
-la vista, que es justo lo que la contención compra. `--marca` es más oscuro
-—0.28 contra 0.37 de luminosidad— y eso lo aleja de "control" y lo acerca a
-"material". El hue sigue siendo **287**, igual que los otros tres: es el mismo
-arándano a una cuarta distancia, no un color nuevo.
+la vista, que es justo lo que la contención compra. `--marca` es **más oscuro**
+que `--primary` —0.32 contra 0.66 de luminosidad— y eso lo aleja de "control" y
+lo acerca a "material". Sobre la paleta clara la distancia era la misma en la
+otra dirección: 0.28 contra 0.37. El hue sigue siendo **287**, igual que los
+otros: es el mismo arándano a otra distancia, no un color nuevo.
+
+**Y sube de 0.28 a 0.32 con la paleta oscura por una razón mecánica**: contra
+un fondo de 0.214, un paño de 0.28 casi no se despega — paño y fondo pasan a
+ser el mismo material. 0.32 es además la luminosidad del único paño saturado de
+la maqueta (`#262a60`), así que el número no sale de la nada.
 
 **Dónde se usa, y en ningún otro lado**: las **superficies de marca** — la
 pantalla de login (`app/login/persiana.module.css`) y la franja de cierre del
@@ -52,25 +67,26 @@ una vez más en silencio.
 
 | Token | Valor |
 |---|---|
-| `--background` | `oklch(1 0 0)` |
-| `--foreground` | `oklch(0.145 0 0)` |
-| `--card` | `oklch(1 0 0)` |
-| `--card-foreground` | `oklch(0.145 0 0)` |
-| `--popover` | `oklch(1 0 0)` |
-| `--popover-foreground` | `oklch(0.145 0 0)` |
-| `--primary` | `oklch(0.37 0.10 287)` |
-| `--primary-foreground` | `oklch(0.985 0 0)` |
-| `--marca` | `oklch(0.28 0.09 287)` |
-| `--secondary` | `oklch(0.97 0 0)` |
-| `--secondary-foreground` | `oklch(0.205 0 0)` |
-| `--muted` | `oklch(0.97 0 0)` |
-| `--muted-foreground` | `oklch(0.535 0 0)` |
-| `--accent` | `oklch(0.955 0.012 287)` |
-| `--accent-foreground` | `oklch(0.37 0.10 287)` |
-| `--destructive` | `oklch(0.577 0.245 27.325)` |
-| `--border` | `oklch(0.922 0 0)` |
-| `--input` | `oklch(0.922 0 0)` |
-| `--ring` | `oklch(0.37 0.10 287)` |
+| `--background` | `oklch(0.214 0.025 287)` |
+| `--foreground` | `oklch(0.935 0.008 287)` |
+| `--card` | `oklch(0.245 0.028 287)` |
+| `--card-foreground` | `oklch(0.935 0.008 287)` |
+| `--popover` | `oklch(0.245 0.028 287)` |
+| `--popover-foreground` | `oklch(0.935 0.008 287)` |
+| `--primary` | `oklch(0.66 0.124 287)` |
+| `--primary-foreground` | `oklch(0.20 0.03 287)` |
+| `--primary-hover` | `oklch(0.72 0.105 287)` |
+| `--marca` | `oklch(0.32 0.095 287)` |
+| `--secondary` | `oklch(0.30 0.025 287)` |
+| `--secondary-foreground` | `oklch(0.935 0.008 287)` |
+| `--muted` | `oklch(0.268 0.024 287)` |
+| `--muted-foreground` | `oklch(0.70 0.030 287)` |
+| `--accent` | `oklch(0.27 0.060 287)` |
+| `--accent-foreground` | `oklch(0.66 0.124 287)` |
+| `--destructive` | `oklch(0.70 0.160 22)` |
+| `--border` | `oklch(0.381 0.019 287)` |
+| `--input` | `oklch(0.381 0.019 287)` |
+| `--ring` | `oklch(0.66 0.124 287)` |
 | `--radius` | `0.625rem` |
 
 <!-- tokens:fin -->
@@ -83,12 +99,13 @@ primera" se rompe el día que alguien reordene secciones.
 
 | Token | Hex | Dónde se ve |
 |---|---|---|
-| `--primary` | `#3d3571` | Botón de acción, links |
-| `--ring` | `#3d3571` | Anillo de foco — lo más visible al operar con teclado |
-| `--accent` | `#efeff8` | Fila seleccionada, hover. Único neutral tintado |
-| `--marca` | `#271f52` | El paño de la persiana del login y la franja de cierre de la landing |
+| `--primary` | `#8e85da` | Botón de acción, links |
+| `--primary-hover` | `#a09ae3` | El botón de acción, apuntado |
+| `--ring` | `#8e85da` | Anillo de foco — lo más visible al operar con teclado |
+| `--accent` | `#252142` | Fila seleccionada, hover. El neutral más tintado |
+| `--marca` | `#312860` | El paño de la persiana del login y la franja de cierre de la landing |
 
-El hue es **287** en los cuatro. Lo que los distingue es croma y luminosidad, no
+El hue es **287** en los cinco. Lo que los distingue es croma y luminosidad, no
 tono: es un solo color de marca visto a cuatro distancias.
 
 ### Contraste
@@ -110,31 +127,32 @@ sobre blanco fuera `#bcbcbc` en vez del `#808080` que todos conocemos).
 
 | Par | Ratio | Mínimo | |
 |---|---|---|---|
-| `--foreground` sobre `--background` | 19.80 | 4.5 | ok |
-| `--foreground` sobre `--muted` | 18.16 | 4.5 | ok |
-| `--muted-foreground` sobre `--background` | 5.17 | 4.5 | ok |
-| `--muted-foreground` sobre `--muted` | 4.75 | 4.5 | ok |
-| `--muted-foreground` sobre `--accent` | 4.53 | 4.5 | ok |
-| `--primary-foreground` sobre `--primary` | 10.34 | 4.5 | ok |
-| `--primary-foreground` sobre `--primary/80` | 5.76 | 4.5 | ok |
-| `--primary-foreground` sobre `--marca` | 14.33 | 4.5 | ok |
-| `--primary-foreground/70` sobre `--marca` | 7.69 | 4.5 | ok |
-| `--primary` sobre `--background` | 10.79 | 4.5 | ok |
-| `--primary` sobre `--accent` | 9.44 | 4.5 | ok |
-| `--primary-foreground` sobre `--destructive` | 4.57 | 4.5 | ok |
-| `--destructive` sobre `--background` | 4.77 | 4.5 | ok |
-| `--destructive/90` sobre `--card` | 4.54 | 4.5 | ok |
-| `--input` sobre `--background` | 1.26 | 3.0 | **excepción declarada** |
-| `--ring` sobre `--background` | 10.79 | 3.0 | ok |
+| `--foreground` sobre `--background` | 14.63 | 4.5 | ok |
+| `--foreground` sobre `--muted` | 12.63 | 4.5 | ok |
+| `--muted-foreground` sobre `--background` | 6.59 | 4.5 | ok |
+| `--muted-foreground` sobre `--muted` | 5.69 | 4.5 | ok |
+| `--muted-foreground` sobre `--accent` | 5.69 | 4.5 | ok |
+| `--primary-foreground` sobre `--primary` | 5.64 | 4.5 | ok |
+| `--primary-foreground` sobre `--primary-hover` | 7.11 | 4.5 | ok |
+| `--foreground` sobre `--marca` | 10.83 | 4.5 | ok |
+| `--foreground/70` sobre `--marca` | 6.13 | 4.5 | ok |
+| `--primary` sobre `--background` | 5.49 | 4.5 | ok |
+| `--primary` sobre `--accent` | 4.74 | 4.5 | ok |
+| `--primary-foreground` sobre `--destructive` | 6.31 | 4.5 | ok |
+| `--destructive` sobre `--background` | 6.14 | 4.5 | ok |
+| `--destructive/90` sobre `--card` | 4.86 | 4.5 | ok |
+| `--destructive` sobre `--destructive/10` | 5.36 | 4.5 | ok |
+| `--input` sobre `--background` | 1.77 | 3.0 | **excepción declarada** |
+| `--ring` sobre `--background` | 5.49 | 3.0 | ok |
 
 <!-- contraste:fin -->
 
 Cada par de la tabla nombra los **tokens** involucrados, no colores genéricos: `--primary-foreground` es `oklch(0.985 0 0)`, distinto de "blanco puro", así que sus ratios difieren del que podría calcularse contra un 1.0. El `/NN` es la opacidad con la que ese token aparece en un componente: `--primary/80` es el hover del botón de acción (`components/ui/button.tsx`), `--destructive/90` es la descripción de un error (`components/ui/alert.tsx`) y `--primary-foreground/70` es la firma "Arándano" sobre el paño del login (`app/login/persiana.module.css`).
 
-**El par más justo es `--muted-foreground` sobre `--accent`, con 4.53.** Es el
-que fija cuánto más se puede oscurecer `--accent` sin romper nada, y por eso
-está medido: la fila seleccionada de las pantallas que vienen es exactamente
-donde ese par se va a ver.
+**El par más justo es `--primary` sobre `--accent`, con 4.74** — el violeta
+sobre la fila seleccionada. Es el que fija cuánto más se puede aclarar
+`--accent` antes de romper algo, y ocupa el lugar que en la paleta clara tenía
+`--muted-foreground` sobre `--accent`.
 
 Al medir aparecieron **dos defectos que ya venían del default de shadcn**, no de
 esta paleta:
@@ -146,14 +164,13 @@ esta paleta:
    sobre los bytes reales: no alcanzaba, y de paso mostró que 0.01 de holgura no
    es holgura. El cambio es imperceptible a ojo.
 
-2. **El borde de `--input` sobre blanco da 1.26**, contra los 3:1 que pide WCAG
-   1.4.11 para el borde de un control. **Aceptado como excepción, no corregido.**
-   Llevarlo a `oklch(0.669 0 0)` cerraría el hueco pero cambia visiblemente todo
-   campo de la aplicación, y se eligió conservar el look liviano. Lo mitiga que
-   todo campo lleva `<Label>` asociado y anillo de foco de marca, así que el
-   borde no es el único indicio de que ahí hay un input. **Revisar** si aparece
-   un reporte real de gente que no encuentra los campos, o ante una auditoría de
-   accesibilidad formal.
+2. **El borde de `--input` da 1.77** — mejor que el 1.26 de la paleta clara,
+   pero todavía corto contra los 3:1 que pide WCAG 1.4.11 para el borde de un
+   control. **Aceptado como excepción, no corregido.** Se conserva el borde
+   tenue que usa la maqueta a conciencia: todo campo lleva `<Label>` asociado y
+   anillo de foco de marca, así que el borde no es el único indicio de que ahí
+   hay un input. **Revisar** si aparece un reporte real de gente que no
+   encuentra los campos, o ante una auditoría de accesibilidad formal.
 
 ## Tipografía
 

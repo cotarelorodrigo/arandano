@@ -17,12 +17,12 @@
   background-color: var(--marca);
 }
 
-/* La firma sobre el paño, al pie de la franja. 7.69:1 sobre --marca, medido en
+/* La firma sobre el paño, al pie de la franja. 6.13:1 sobre --marca, medido en
    scripts/contraste.mts — es el mismo par que ya usa el login. */
 .firma {
   font-size: 0.75rem;
   font-weight: 500;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--primary-foreground) 70%, transparent);
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
 }

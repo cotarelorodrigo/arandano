@@ -45,7 +45,7 @@
   inset: 0;
   pointer-events: none;
 
-  --brillo: color-mix(in srgb, var(--primary-foreground) 7%, transparent);
+  --brillo: color-mix(in srgb, var(--foreground) 7%, transparent);
   --surco: color-mix(in srgb, var(--foreground) 26%, transparent);
 
   /* Un poco más oscuro que el paño de atrás: si fueran el mismo color, el
@@ -75,7 +75,7 @@
   position: absolute;
   inset: auto 0 0 0;
   height: 4px;
-  background-color: color-mix(in srgb, var(--primary-foreground) 16%, transparent);
+  background-color: color-mix(in srgb, var(--foreground) 16%, transparent);
 }
 
 @keyframes subir {
@@ -94,8 +94,8 @@
   font-weight: 500;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  /* 7.69:1 sobre --marca, medido en scripts/contraste.mts. */
-  color: color-mix(in srgb, var(--primary-foreground) 70%, transparent);
+  /* 6.13:1 sobre --marca, medido en scripts/contraste.mts. */
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
 }
 
 /*
@@ -121,7 +121,7 @@
   line-height: 1.02;
   letter-spacing: -0.022em;
   text-wrap: balance;
-  color: var(--primary-foreground);
+  color: var(--foreground);
 }
 
 @media (prefers-reduced-motion: reduce) {
