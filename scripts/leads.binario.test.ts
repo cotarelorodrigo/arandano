@@ -32,6 +32,30 @@ afterAll(async () => {
 
 const env = () => ({ ...process.env, MIGRATE_DATABASE_URL: urlOwner() })
 
+/**
+ * La línea de un lead puntual en la salida del comando.
+ *
+ * Con `--limite` alto a propósito: la base efímera es UNA sola para toda la
+ * suite (vitest.config.ts corre los archivos en serie contra el mismo
+ * contenedor) y nada la trunca entre archivos, así que para cuando corre este
+ * test puede haber decenas de leads que otros archivos insertaron con `now()`.
+ * El default de 20 dejaba afuera al que el test acaba de insertar según qué
+ * archivo hubiera corrido antes — verde o rojo según el orden, que es la peor
+ * clase de test.
+ *
+ * Y el `expect` de que la línea existe va acá y no en cada caso: sin él, el
+ * `find` devuelve undefined y la aserción siguiente falla con "the given
+ * combination of arguments is invalid", que no nombra el problema real.
+ */
+async function lineaDe(email: string): Promise<string> {
+  const { stdout } = await ejecutar('npx', ['tsx', 'scripts/leads.mts', '--limite=500'], {
+    env: env(),
+  })
+  const linea = stdout.split('\n').find((l) => l.includes(email))
+  expect(linea, `no apareció ningún lead con ${email} en la salida del comando`).toBeDefined()
+  return linea!
+}
+
 describe('npm run leads', () => {
   it('lista los leads', async () => {
     const { stdout } = await ejecutar('npx', ['tsx', 'scripts/leads.mts'], { env: env() })
@@ -49,8 +73,7 @@ describe('npm run leads', () => {
        VALUES (gen_random_uuid(), 'Tarde', 'tarde@ejemplo.test', 'kiosco',
                '2026-08-13T01:30:00Z')`,
     )
-    const { stdout } = await ejecutar('npx', ['tsx', 'scripts/leads.mts'], { env: env() })
-    const linea = stdout.split('\n').find((l) => l.includes('tarde@ejemplo.test'))!
+    const linea = await lineaDe('tarde@ejemplo.test')
     // El día es lo que estaba mal: en UTC este lead cae el 13, en Buenos Aires
     // el 12. La hora se afirma en el formato de la aplicación (12 horas, el de
     // formatearFecha) y no en 24, para no fijar acá un detalle que pertenece a
@@ -72,8 +95,7 @@ describe('npm run leads', () => {
       // \u001b[2J es "borrá la pantalla"; \u0007 hace sonar la campana.
       ['Mala\u001b[2Jgente\u0007'],
     )
-    const { stdout } = await ejecutar('npx', ['tsx', 'scripts/leads.mts'], { env: env() })
-    const linea = stdout.split('\n').find((l) => l.includes('ansi@ejemplo.test'))!
+    const linea = await lineaDe('ansi@ejemplo.test')
     expect(linea).not.toContain('\u001b')
     expect(linea).not.toContain('\u0007')
     // Y el texto legible sobrevive: limpiar no puede significar borrar el lead.

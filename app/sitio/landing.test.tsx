@@ -4,7 +4,7 @@ import { Landing } from './landing'
 
 vi.mock('./acciones', () => ({ enviarLead: vi.fn() }))
 
-const BASE = { protocolo: 'https', dominio: 'arandano.app', puerto: '' }
+const BASE = { protocolo: 'https', dominio: 'arandano.app', puerto: '' } as const
 
 const html = () => renderToStaticMarkup(<Landing base={BASE} whatsapp="5491155555555" />)
 

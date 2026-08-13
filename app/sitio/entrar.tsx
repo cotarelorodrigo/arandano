@@ -12,7 +12,16 @@ import { Input } from '@/components/ui/input'
  * props: este componente es de cliente y no puede leer el entorno.
  */
 export type BaseDeTenant = {
-  protocolo: string
+  /**
+   * Los dos valores de la lista blanca de `piezasDeOrigen()`, y no `string`.
+   *
+   * No es prolijidad de tipos: este valor termina en `window.location.href` unas
+   * líneas más abajo, y el protocolo sale de `x-forwarded-proto`, que lo elige
+   * quien alcanza la app sin pasar por Caddy (ver lib/auth/origen.ts). Con el
+   * tipo abierto, el día que alguien arme un `base` a mano desde el header
+   * crudo, un `javascript:` de scheme compila sin chistar.
+   */
+  protocolo: 'http' | 'https'
   dominio: string
   /** Ya viene con los dos puntos, o vacío. */
   puerto: string

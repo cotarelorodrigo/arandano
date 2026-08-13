@@ -1,9 +1,15 @@
 import { headers } from 'next/headers'
 
-/**
- * El `baseURL` que Better Auth necesita, derivado del subdominio YA RESUELTO
- * (nunca del Host crudo del request) más el puerto de la CONFIGURACIÓN
- * (nunca del Host crudo tampoco).
+/*
+ * POR QUÉ EL ORIGEN SE ARMA ASÍ, y no leyendo el Host.
+ *
+ * Comentario de archivo y no JSDoc a propósito: vale para las dos funciones de
+ * abajo, y un bloque de doc pegado a otro deja al primero documentando a nadie.
+ *
+ * `piezasDeOrigen()` arma las piezas; `origenDelRequest()` les agrega el
+ * subdominio YA RESUELTO
+ * (nunca el Host crudo del request) para darle a Better Auth su `baseURL`. El
+ * puerto sale de la CONFIGURACIÓN, nunca del Host crudo tampoco.
  *
  * Son la misma decisión mirada desde dos lados, y por eso el porqué se
  * explica junto:
@@ -102,6 +108,15 @@ export async function piezasDeOrigen(): Promise<PiezasDeOrigen> {
   return { protocolo, dominioBase, puerto }
 }
 
+/**
+ * El `baseURL` que Better Auth necesita para un tenant.
+ *
+ * Es `piezasDeOrigen()` más el subdominio YA RESUELTO. El porqué de que las tres
+ * piezas se armen así —y de que el subdominio no salga nunca del Host crudo—
+ * está en el bloque grande al principio de este archivo: no es preferencia de
+ * estilo, es lo que impide que un tercero le reinicie el rate limit del login a
+ * otro tenant.
+ */
 export async function origenDelRequest(subdominio: string): Promise<string> {
   const { protocolo, dominioBase, puerto } = await piezasDeOrigen()
   return `${protocolo}://${subdominio}.${dominioBase}${puerto}`

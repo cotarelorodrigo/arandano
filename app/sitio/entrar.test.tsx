@@ -7,7 +7,7 @@ import { destinoDeSubdominio } from './entrar'
  * subdominio con espacios, en mayúsculas, o directamente una URL pegada por
  * alguien que no entendió la pregunta.
  */
-const PROD = { protocolo: 'https', dominio: 'arandano.app', puerto: '' }
+const PROD = { protocolo: 'https', dominio: 'arandano.app', puerto: '' } as const
 
 describe('destinoDeSubdominio', () => {
   it('arma la dirección del negocio', () => {
@@ -46,7 +46,7 @@ describe('destinoDeSubdominio', () => {
    */
   it('respeta el protocolo y el puerto del entorno', () => {
     expect(
-      destinoDeSubdominio('flor', { protocolo: 'http', dominio: 'dev.arandano.app', puerto: ':3000' }),
+      destinoDeSubdominio('flor', { protocolo: 'http', dominio: 'dev.arandano.app', puerto: ':3000' } as const),
     ).toBe('http://flor.dev.arandano.app:3000')
   })
 })

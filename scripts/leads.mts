@@ -13,11 +13,23 @@ import { formatearFecha } from '@/lib/formato/mostrar'
  * formulario no pelea, ver app/sitio/acciones.ts— así que se limpian en el
  * camino de salida, que es donde se sabe que el destino es una terminal.
  *
- * Se borran los rangos C0 y C1 completos, no una lista de secuencias conocidas:
+ * Se borran los rangos completos y no una lista de secuencias conocidas:
  * enumerar las malas es la forma de dejar afuera la que no se te ocurrió.
+ *
+ * Son tres familias, y la tercera es la que casi se escapa:
+ *
+ *   - C0 (\u0000-\u001f): el ESC de las secuencias ANSI, el retorno de carro
+ *     que sobreescribe la línea, el nul.
+ *   - C1 (\u007f-\u009f): los mismos controles en su forma de un solo byte.
+ *   - Bidi (\u200b-\u200f, \u202a-\u202e, \u2066-\u2069): NO son controles
+ *     de terminal, así que los dos rangos de arriba no los tocan, pero toda
+ *     terminal moderna los respeta. Un \u202e en el nombre da vuelta el resto
+ *     del renglón —incluido el mail al que hay que contestarle— y es
+ *     exactamente el "un lead puede taparle la línea a otro" que esta función
+ *     existe para evitar.
  */
 function sinControles(v: string): string {
-  return v.replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+  return v.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '')
 }
 
 /**

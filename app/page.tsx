@@ -26,6 +26,8 @@ export async function generateMetadata(): Promise<Metadata> {
     return { robots: { index: false, follow: false } }
   }
 
+  const { protocolo, dominioBase, puerto } = await piezasDeOrigen()
+
   return {
     // Sin esto, Next no puede convertir app/opengraph-image.tsx en una URL
     // absoluta de og:image y cae al fallback http://localhost:3000 — inalcanzable
@@ -33,14 +35,19 @@ export async function generateMetadata(): Promise<Metadata> {
     // Confirmado sirviendo esta misma ruta con y sin esta línea: sin ella,
     // og:image sale con el host interno; con ella, con el dominio real.
     //
-    // Va en esta rama y no en el layout raíz a propósito: DOMINIO_BASE es el
-    // dominio del ápex, y una página de tenant vive en un subdominio, así que
-    // ahí esta base sería la equivocada. Las páginas de tenant no tienen
-    // imagen social ni se indexan (ver la rama de arriba), así que no la
-    // necesitan. DOMINIO_BASE ya es obligatoria —tenantDelRequest() tira si
-    // falta— y es la misma fuente que PaginaApex ya usa para construir URLs
-    // propias.
-    metadataBase: new URL(`https://${process.env.DOMINIO_BASE}`),
+    // Va en esta rama y no en el layout raíz a propósito: esta base es la del
+    // ápex, y una página de tenant vive en un subdominio, así que ahí sería la
+    // equivocada. Las páginas de tenant no tienen imagen social ni se indexan
+    // (ver la rama de arriba), así que no la necesitan.
+    //
+    // Sale de piezasDeOrigen() y no de un `https://` cableado con DOMINIO_BASE:
+    // es la misma fuente que usa el link de "Ya tengo cuenta" más abajo, y por
+    // el mismo motivo. Con el protocolo y el puerto cableados, en dev el
+    // og:image resolvía a https://dev.arandano.app/opengraph-image —sin puerto
+    // y por HTTPS—, o sea inalcanzable: pegar el ápex de dev en un WhatsApp
+    // daba una vista previa rota. En producción no cambia nada, que es lo que
+    // se quiere: ahí el protocolo ya es https y PUERTO_PUBLICO no está definida.
+    metadataBase: new URL(`${protocolo}://${dominioBase}${puerto}`),
     title: TITULO,
     description: DESCRIPCION,
     openGraph: { title: TITULO, description: DESCRIPCION, type: 'website' },
