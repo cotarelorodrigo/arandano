@@ -95,12 +95,23 @@ const CAPACIDADES = [
 export function LoQueHace() {
   return (
     <section className={`${ANCHO} py-12`}>
-      <h2 className="text-2xl font-semibold">Lo que hace</h2>
-      <div className="mt-8 grid gap-8 md:grid-cols-3">
-        {CAPACIDADES.map(([titulo, texto]) => (
-          <div key={titulo}>
+      <h2 className="text-2xl font-semibold">Seis cosas, todos los días</h2>
+      {/* En filas numeradas y no en una grilla de cards: seis items del mismo
+          peso visual no se leen en orden, y éstos tienen uno — es la secuencia
+          de un día de mostrador, de vender a mostrar. */}
+      <div className="mt-8">
+        {CAPACIDADES.map(([titulo, texto], i) => (
+          <div
+            key={titulo}
+            className="grid grid-cols-[2.5rem_minmax(0,12rem)_minmax(0,1fr)] items-baseline gap-x-8 border-t border-border py-5 first:border-t-0"
+          >
+            {/* tabular-nums para que los seis números queden en la misma
+                columna óptica: 01 y 06 tienen anchos distintos sin eso. */}
+            <p className="text-sm text-primary tabular-nums">
+              {String(i + 1).padStart(2, '0')}
+            </p>
             <h3 className="font-medium">{titulo}</h3>
-            <p className="mt-2 text-sm text-muted-foreground">{texto}</p>
+            <p className="max-w-[52ch] text-sm text-muted-foreground">{texto}</p>
           </div>
         ))}
       </div>
@@ -148,10 +159,16 @@ export function Planes() {
       <h2 className="text-2xl font-semibold">Planes</h2>
       <div className="mt-8 grid gap-4 md:grid-cols-4">
         {PLANES.map(([nombre, texto, destacado]) => (
-          <Card key={nombre} className={destacado ? 'bg-accent' : undefined}>
+          <Card key={nombre} className={destacado ? 'ring-1 ring-primary' : undefined}>
             <CardContent className="flex h-full flex-col">
-              <h3 className="font-medium">{nombre}</h3>
-              {destacado ? <p className="mt-1 text-xs text-primary">el más elegido</p> : null}
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-medium">{nombre}</h3>
+                {destacado ? (
+                  <span className="inline-flex shrink-0 rounded-md bg-accent px-2.5 py-0.5 text-[11px] text-accent-foreground">
+                    el más elegido
+                  </span>
+                ) : null}
+              </div>
               <p className="mt-2 flex-1 text-sm text-muted-foreground">{texto}</p>
               <Button asChild variant={destacado ? 'default' : 'secondary'} className="mt-4">
                 <a href="#contacto">Consultar</a>
