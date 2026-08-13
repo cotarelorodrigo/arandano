@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 // Una sola implementación del parser del :root, no dos idénticas. Estaba
 // copiada acá y en el script, y la copia no es gratis: el arreglo que las obliga
 // a exigir un único :root de primer nivel habría que hacerlo en dos lugares, y
@@ -156,6 +157,47 @@ describe('el documento y el CSS declaran lo mismo', () => {
       `${CSS} define tokens que ${DOC} no declara: ${sinDocumentar.join(', ')}. ` +
         `Un color que no está escrito en ningún lado es exactamente lo que este ` +
         `documento existe para impedir.`,
+    ).toEqual([])
+  })
+})
+
+/**
+ * Los consumidores de `--primary-foreground` que hay fuera de components/ui/.
+ *
+ * Hoy está vacía, y ése es el estado sano. Si alguna vez una pantalla necesita
+ * de verdad el par `bg-primary` + `text-primary-foreground` —que es legítimo, es
+ * el botón de acción—, se anota acá con su razón en vez de aflojar el caso.
+ * Mismo patrón que EXCEPCIONES en scripts/contraste.mts, RUTAS_SIN_SMOKE en
+ * scripts/lib/rutas-comun.sh y SIN_TENANT_ID en test/rls-cobertura.test.ts.
+ */
+const CONSUMIDORES_LEGITIMOS: Record<string, string> = {}
+
+describe('nadie toma --primary-foreground por "el color claro"', () => {
+  // El bug que este caso existe para que no vuelva: al pasar a la paleta
+  // oscura, --primary-foreground se dio vuelta de casi blanco a casi negro, y
+  // dos utilidades de Tailwind en app/sitio/secciones.tsx lo usaban sobre el
+  // paño de --marca porque era "el color claro". Quedaron en 1.39:1 sobre el
+  // título que convierte, y ningún test lo vio: los dos colores seguían siendo
+  // colores válidos, y la tabla de contraste sólo mide los pares que alguien se
+  // acordó de declarar. Lo encontró un grep a mano.
+  //
+  // El token es legítimo SÓLO sobre --primary, que es el botón de acción, y ese
+  // par vive en components/ui/. Fuera de ahí, nombrarlo es la señal de que
+  // alguien lo eligió por su luminosidad y no por su rol — y la luminosidad es
+  // exactamente lo que cambia cuando la paleta cambia.
+  it('no aparece en ninguna pantalla ni módulo CSS de app/', () => {
+    const archivos = readdirSync('app', { recursive: true, encoding: 'utf8' })
+      .filter((f) => f.endsWith('.tsx') || f.endsWith('.module.css'))
+      .filter((f) => readFileSync(join('app', f), 'utf8').includes('primary-foreground'))
+      .filter((f) => !(f in CONSUMIDORES_LEGITIMOS))
+
+    expect(
+      archivos,
+      `estos archivos de app/ nombran --primary-foreground: ${archivos.join(', ')}. ` +
+        `El token es casi negro y sólo sirve sobre --primary (el botón de acción, ` +
+        `en components/ui/). Si lo estás usando como "el color claro", el que ` +
+        `querés es --foreground. Si de verdad es un botón de acción, anotalo en ` +
+        `CONSUMIDORES_LEGITIMOS con su razón.`,
     ).toEqual([])
   })
 })

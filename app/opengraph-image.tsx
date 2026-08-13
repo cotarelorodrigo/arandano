@@ -12,8 +12,10 @@ export const alt = 'Arándano — el sistema para tu negocio'
  * Los colores van en hex y NO en var(--marca), y es una limitación real de
  * Satori (el motor de next/og): no resuelve custom properties de CSS. El hex es
  * el mismo que documenta docs/sistema-de-diseno.md para --marca y para
- * --primary-foreground; si algún día ese token cambia, este archivo es el
- * segundo lugar a tocar, y esta nota es el recordatorio.
+ * --foreground. La nota ya no es el único recordatorio: test/opengraph.test.ts
+ * convierte los tokens reales a hex y compara contra este archivo, así que un
+ * cambio de paleta que se olvide de acá rompe el build en vez de servir en
+ * silencio una tarjeta con el color viejo.
  */
 export default function Imagen() {
   return new ImageResponse(
@@ -26,8 +28,8 @@ export default function Imagen() {
           flexDirection: 'column',
           justifyContent: 'center',
           padding: 96,
-          backgroundColor: '#271f52',
-          color: '#fafafa',
+          backgroundColor: '#312860',
+          color: '#e9e9ef',
         }}
       >
         <div style={{ fontSize: 28, letterSpacing: 6, textTransform: 'uppercase', opacity: 0.7 }}>

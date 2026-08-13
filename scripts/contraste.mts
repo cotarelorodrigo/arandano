@@ -176,6 +176,9 @@ function aLineal(byte: number): number {
 }
 
 /**
+ * Exportada desde el ciclo de la paleta oscura: test/opengraph.test.ts la usa
+ * para comparar los hexes que Satori necesita contra los tokens reales.
+ *
  * oklch(L C H) → los tres bytes de sRGB.
  *
  * El redondeo a 8 bits no es un detalle de implementación: es lo que hace que
@@ -184,7 +187,7 @@ function aLineal(byte: number): number {
  * de verdad se pintan daba 4.48 y no llegaba al mínimo. Un cálculo que difiere
  * del auditor no sirve para lo único que este script existe para hacer.
  */
-function aRgb(valor: string): Rgb {
+export function aRgb(valor: string): Rgb {
   const m = valor.match(/^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)$/)
   if (!m) throw new Error(`no es un color oklch de tres componentes: ${valor}`)
   const [L, C, H] = [Number(m[1]), Number(m[2]), Number(m[3])]
