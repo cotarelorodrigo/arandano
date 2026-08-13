@@ -64,6 +64,9 @@ export const PARES: Par[] = [
   { texto: '--foreground', fondo: '--marca', alfaTexto: 0.7, minimo: 4.5 },
   { texto: '--primary', fondo: '--background', minimo: 4.5 },
   { texto: '--primary', fondo: '--accent', minimo: 4.5 },
+  // El rótulo de los tiles de /ventas, que van sobre --card y no sobre el
+  // fondo. Es texto chico (10 px), así que el par vale más que de costumbre.
+  { texto: '--primary', fondo: '--card', minimo: 4.5 },
   { texto: '--primary-foreground', fondo: '--destructive', minimo: 4.5 },
   { texto: '--destructive', fondo: '--background', minimo: 4.5 },
   // La descripción del error de login, que vive en una Alert con bg-card

@@ -138,6 +138,7 @@ sobre blanco fuera `#bcbcbc` en vez del `#808080` que todos conocemos).
 | `--foreground/70` sobre `--marca` | 6.13 | 4.5 | ok |
 | `--primary` sobre `--background` | 5.49 | 4.5 | ok |
 | `--primary` sobre `--accent` | 4.74 | 4.5 | ok |
+| `--primary` sobre `--card` | 5.08 | 4.5 | ok |
 | `--primary-foreground` sobre `--destructive` | 6.31 | 4.5 | ok |
 | `--destructive` sobre `--background` | 6.14 | 4.5 | ok |
 | `--destructive/90` sobre `--card` | 4.86 | 4.5 | ok |
