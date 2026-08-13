@@ -418,10 +418,11 @@ El `--brillo` y el travesaño ya quedaron en `--foreground` en la Task 1, y ahí
 - [ ] **Step 2: Verificar que no quedó ningún uso de `--foreground` como color oscuro**
 
 Run: `grep -n 'var(--foreground)\|var(--background)\|var(--marca)' app/login/persiana.module.css`
-Expected: exactamente seis líneas.
+Expected: exactamente siete líneas.
 
 - **Cuatro con `--foreground`**, todas capas claras: `--brillo` (7%), el travesaño (16%), la firma (70%) y el `color` del nombre.
-- **Dos con `--background`**, las dos capas oscuras: `--surco` (45%) y el `background-color` de `.persiana` (22%, mezclado con `--marca`).
+- **Dos con `--background`**, las dos capas oscuras: `--surco` (45%) y el `background-color` de `.persiana` (22%, mezclado con `--marca`) — esta última matchea por partida doble, y es una sola línea.
+- **Una con `--marca` sola**: el `background-color` de `.pano`, el paño de atrás. No se toca en ninguna de las dos tasks.
 - Ninguna con `--primary-foreground`, que la Task 1 ya sacó de este archivo.
 
 Si aparece `--foreground` en `--surco` o en el `background-color` de `.persiana`, el Step 1 no se aplicó.
