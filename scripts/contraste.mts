@@ -32,12 +32,15 @@ export type Par = {
  * un control sale de 1.4.11, que es otra regla: no habla de texto sino de qué
  * hace falta para identificar un componente.
  *
- * **Los pares con opacidad son los que el usuario mira de verdad.** Un hover
- * `bg-primary/80` no es `--primary`: es otro color, y puede caerse del mínimo
- * sin que ningún par opaco se entere. Un fondo translúcido se compone sobre
- * `--background`; hoy `--card` y `--popover` son ese mismo blanco, así que no
- * hay diferencia — el día que alguno cambie, este tipo necesita una base
- * explícita.
+ * **Los pares con opacidad son los que el usuario mira de verdad.** Un fondo
+ * `bg-destructive/10` no es `--destructive`: es otro color, y puede caerse del
+ * mínimo sin que ningún par opaco se entere. Un fondo translúcido se compone
+ * sobre `--background`; con la paleta oscura `--card` y `--popover` ya NO son
+ * ese mismo color — son un violeta apenas más claro (`oklch(0.245 0.028 287)`
+ * contra `oklch(0.214 0.025 287)` de `--background`) — así que ese simplismo
+ * ya importa: ningún par de PARES compone hoy un `alfaFondo` contra `--card`,
+ * pero el que lo haga necesita una base explícita en vez de asumir
+ * `--background`.
  */
 export const PARES: Par[] = [
   { texto: '--foreground', fondo: '--background', minimo: 4.5 },

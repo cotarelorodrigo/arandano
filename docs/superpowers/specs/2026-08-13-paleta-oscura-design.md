@@ -135,12 +135,16 @@ Ese flip rompe dos cosas que ningún test ve, porque las dos usaban
 
 ### La persiana
 
-Son **cinco usos** de `--primary-foreground` como "el color claro": en
+Son **siete usos** de `--primary-foreground` como "el color claro": en
 `app/login/persiana.module.css`, el brillo de los listones, el travesaño de
-abajo, la firma *Arándano* y el nombre del local; en
-`app/sitio/cierre.module.css`, la firma de la franja. Los cinco **se mudan a
-`--foreground`**, que es el color claro de verdad. El par vigilado deja de ser
-`--primary-foreground sobre --marca` y pasa a `--foreground sobre --marca`.
+abajo, la firma *Arándano* y el nombre del local (cuatro); en
+`app/sitio/cierre.module.css`, la firma de la franja (uno); y en
+`app/sitio/secciones.tsx`, el título y el párrafo de la sección `Cierre` que
+renderiza sobre el mismo paño (dos) — se cuentan acá porque son Tailwind
+utilities (`text-primary-foreground`) y no CSS-module, pero el patrón es
+idéntico. Los siete **se mudan a `--foreground`**, que es el color claro de
+verdad. El par vigilado deja de ser `--primary-foreground sobre --marca` y pasa
+a `--foreground sobre --marca`.
 
 Y hay una segunda rotura, en el mismo archivo y en la dirección contraria: **dos
 usos de `--foreground` estaban ahí porque era el color oscuro**, y tienen que

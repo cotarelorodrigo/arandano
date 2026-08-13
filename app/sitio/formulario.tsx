@@ -102,7 +102,7 @@ export function Formulario({ whatsapp }: { whatsapp: string }) {
             </Button>
 
             {/* Gris de texto secundario y NO estilos.firma: esa clase es
-                --primary-foreground al 70%, o sea casi blanco. Se ve sobre el
+                --foreground al 70%, o sea casi blanco. Se ve sobre el
                 paño de --marca y desaparece sobre esta Card blanca. La firma de
                 marca vive en la franja, no acá adentro.
 

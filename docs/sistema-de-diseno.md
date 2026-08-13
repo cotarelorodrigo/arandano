@@ -106,7 +106,7 @@ primera" se rompe el día que alguien reordene secciones.
 | `--marca` | `#312860` | El paño de la persiana del login y la franja de cierre de la landing |
 
 El hue es **287** en los cinco. Lo que los distingue es croma y luminosidad, no
-tono: es un solo color de marca visto a cuatro distancias.
+tono: es un solo color de marca visto a cinco distancias.
 
 ### Contraste
 
@@ -117,10 +117,10 @@ axe y Lighthouse. La diferencia no es cosmética — medido en continuo,
 `--muted-foreground` sobre `--muted` daba 4.51 y pasaba; sobre los bytes reales
 daba 4.48 y no llegaba.
 
-**Los pares con opacidad cuentan como pares.** Un `hover:bg-primary/80` no es
-`--primary`: es otro color, y puede caerse del mínimo sin que ningún par opaco
-se entere. La composición se hace sobre los bytes, que es donde compone el
-navegador — mezclar en lineal da otros números (y haría que `rgba(0,0,0,.5)`
+**Los pares con opacidad cuentan como pares.** Un `bg-destructive/10` no es
+`--destructive`: es otro color, y puede caerse del mínimo sin que ningún par
+opaco se entere. La composición se hace sobre los bytes, que es donde compone
+el navegador — mezclar en lineal da otros números (y haría que `rgba(0,0,0,.5)`
 sobre blanco fuera `#bcbcbc` en vez del `#808080` que todos conocemos).
 
 <!-- contraste:inicio -->
@@ -147,7 +147,7 @@ sobre blanco fuera `#bcbcbc` en vez del `#808080` que todos conocemos).
 
 <!-- contraste:fin -->
 
-Cada par de la tabla nombra los **tokens** involucrados, no colores genéricos: `--primary-foreground` es `oklch(0.985 0 0)`, distinto de "blanco puro", así que sus ratios difieren del que podría calcularse contra un 1.0. El `/NN` es la opacidad con la que ese token aparece en un componente: `--primary/80` es el hover del botón de acción (`components/ui/button.tsx`), `--destructive/90` es la descripción de un error (`components/ui/alert.tsx`) y `--primary-foreground/70` es la firma "Arándano" sobre el paño del login (`app/login/persiana.module.css`).
+Cada par de la tabla nombra los **tokens** involucrados, no colores genéricos: `--primary-foreground` es `oklch(0.20 0.03 287)`, distinto de "negro puro", así que sus ratios difieren del que podría calcularse contra un 0.0. El `/NN` es la opacidad con la que ese token aparece en un componente: `--destructive/10` es el fondo del botón "Desactivar artículo" (`components/ui/button.tsx`), `--destructive/90` es la descripción de un error (`components/ui/alert.tsx`) y `--foreground/70` es la firma "Arándano" sobre el paño del login (`app/login/persiana.module.css`).
 
 **El par más justo es `--primary` sobre `--accent`, con 4.74** — el violeta
 sobre la fila seleccionada. Es el que fija cuánto más se puede aclarar

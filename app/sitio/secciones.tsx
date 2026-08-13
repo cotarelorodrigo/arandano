@@ -170,10 +170,10 @@ export function Cierre({ children }: { children: React.ReactNode }) {
       <div className={ANCHO}>
         <div className="grid items-center gap-8 md:grid-cols-2">
           <div>
-            <h2 className="text-3xl font-semibold text-primary-foreground">
+            <h2 className="text-3xl font-semibold text-foreground">
               Contanos de tu negocio
             </h2>
-            <p className="mt-4 text-primary-foreground/70">
+            <p className="mt-4 text-foreground/70">
               Te mostramos el sistema andando con tus productos y tus precios, y respondemos lo que
               haga falta antes de que decidas nada.
             </p>
