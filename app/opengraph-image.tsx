@@ -10,9 +10,13 @@ export const alt = 'Arándano — el sistema para tu negocio'
  * color de marca sin que nadie se entere.
  *
  * Los colores van en hex y NO en var(--marca), y es una limitación real de
- * Satori (el motor de next/og): no resuelve custom properties de CSS. El hex es
- * el mismo que documenta docs/sistema-de-diseno.md para --marca y para
- * --foreground. La nota ya no es el único recordatorio: test/opengraph.test.ts
+ * Satori (el motor de next/og): no resuelve custom properties de CSS. `#312860`
+ * es el hex que docs/sistema-de-diseno.md publica para --marca; `#e9e9ef` es
+ * --foreground convertido, y ése el documento NO lo publica —su tabla de hexes
+ * cubre sólo los cinco tokens donde entra el arándano—, así que el único lugar
+ * donde ese número está atado a algo es el test.
+ *
+ * La nota nunca fue el recordatorio principal: test/opengraph.test.ts
  * convierte los tokens reales a hex y compara contra este archivo, así que un
  * cambio de paleta que se olvide de acá rompe el build en vez de servir en
  * silencio una tarjeta con el color viejo.

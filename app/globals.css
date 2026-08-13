@@ -9,13 +9,15 @@
    devDependencies rompe el build sin que el motivo quede a la vista acá. */
 @import "shadcn/tailwind.css";
 
-/* Se queda aunque el bloque .dark se haya borrado, y no es un olvido.
-   button.tsx e input.tsx traen 5 clases `dark:` de shadcn. Con esta línea, el
-   variante apunta a una clase que ya no pone nadie y esas reglas quedan
-   inertes. SIN esta línea, `dark:` vuelve al default de Tailwind v4
-   —prefers-color-scheme— y se activarían solas en cualquiera con el sistema en
-   oscuro, sobre esta paleta clara y sin un solo token oscuro definido.
-   test/sistema-de-diseno.test.ts lo cuida. */
+/* Se queda aunque el bloque .dark se haya borrado, y no es un olvido — tampoco
+   ahora que la paleta de :root es oscura. button.tsx e input.tsx traen 5 clases
+   `dark:` de shadcn. Con esta línea, el variante apunta a una clase que ya no
+   pone nadie y esas reglas quedan inertes. SIN esta línea, `dark:` vuelve al
+   default de Tailwind v4 —prefers-color-scheme— y se activarían solas en
+   cualquiera con el sistema en oscuro. Que la paleta hoy SEA oscura no las
+   vuelve correctas: se escribieron para otra paleta oscura, la de shadcn, y
+   pisarían estos tokens con los de ella. test/sistema-de-diseno.test.ts lo
+   cuida. */
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

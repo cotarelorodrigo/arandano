@@ -101,10 +101,14 @@ export function Formulario({ whatsapp }: { whatsapp: string }) {
               {enviando ? 'Enviando...' : 'Quiero que me muestren'}
             </Button>
 
-            {/* Gris de texto secundario y NO estilos.firma: esa clase es
-                --foreground al 70%, o sea casi blanco. Se ve sobre el
-                paño de --marca y desaparece sobre esta Card blanca. La firma de
-                marca vive en la franja, no acá adentro.
+            {/* Gris de texto secundario y NO estilos.firma: esa clase es el rol
+                de FIRMA DE MARCA —--foreground al 70%, tracking ancho, mayúsculas—
+                y ese rol pertenece al paño de --marca de la franja, no a una card
+                de contenido. Con la paleta oscura ni siquiera se apoya en la
+                legibilidad: casi blanco al 70% sobre --card se ve de sobra, así
+                que lo único que sigue decidiendo acá es el rol. Dos firmas
+                "Arándano" a treinta píxeles una de otra, además, es la plataforma
+                firmando dos veces la misma franja.
 
                 Sólo se dibuja con whatsapp presente: sin número real todavía
                 (ver docker/compose.*.yml), un wa.me vacío apuntaría a la nada. */}

@@ -102,7 +102,7 @@ primera" se rompe el día que alguien reordene secciones.
 | `--primary` | `#8e85da` | Botón de acción, links |
 | `--primary-hover` | `#a09ae3` | El botón de acción, apuntado |
 | `--ring` | `#8e85da` | Anillo de foco — lo más visible al operar con teclado |
-| `--accent` | `#252142` | Fila seleccionada, hover. El neutral más tintado |
+| `--accent` | `#252142` | Fila seleccionada, hover, y el chip "el más elegido" de los planes de la landing. El neutral más tintado |
 | `--marca` | `#312860` | El paño de la persiana del login y la franja de cierre de la landing |
 
 El hue es **287** en los cinco. Lo que los distingue es croma y luminosidad, no
@@ -384,17 +384,33 @@ ese gutter izquierdo, el texto cierra contra el derecho.
 `--radius: 0.625rem`, con la escala derivada de 7 pasos que vive en
 `@theme inline`. No hay razón de marca para moverla.
 
-## Modo oscuro
+## Las clases `dark:` de shadcn
 
-**No hay.** El bloque `.dark` se borró: definía 28 variables y nada aplicaba la
-clase. Vuelve como su propio ciclo —con activador, persistencia y una paleta
-oscura completa— si alguna vez se pide.
+**La paleta de este producto es oscura, y aun así no hay "modo oscuro".** No es
+un juego de palabras: hay **una sola cara**, la que declara el `:root` de
+`app/globals.css`, y no existe ningún activador que cambie a otra. El bloque
+`.dark` de shadcn se borró en el ciclo del sistema de diseño —definía 28
+variables y nada aplicaba la clase— y no volvió con la paleta oscura
+(2026-08-13): esta paleta se escribió **adentro** del único `:root`, que es lo
+que mantiene un solo lugar donde vive un color.
 
-Lo que **sí** se queda es `@custom-variant dark (&:is(.dark *))`, y esa línea es
-load-bearing aunque no lo parezca: sin ella, `dark:` vuelve al default de
-Tailwind v4 (`prefers-color-scheme`) y las 5 clases `dark:` que traen
-`button.tsx` e `input.tsx` se activarían solas en cualquiera con el sistema en
-oscuro, sobre esta paleta clara.
+Lo que **sí** se queda es `@custom-variant dark (&:is(.dark *))`, y esa línea
+sigue siendo load-bearing por la misma razón que antes, que la paleta oscura no
+cambió: sin ella, `dark:` vuelve al default de Tailwind v4
+(`prefers-color-scheme`) y las 5 clases `dark:` que traen `button.tsx` e
+`input.tsx` se activarían solas en cualquiera con el sistema en oscuro. Con
+ella, apuntan a una clase que nadie pone y quedan inertes.
+
+**Que ahora la paleta sea oscura no las vuelve correctas**, y ése es el punto
+que más fácil se pierde: esas cinco reglas —`dark:bg-input/30`,
+`dark:aria-invalid:border-destructive/50` y compañía— fueron escritas para
+*otra* paleta oscura, la de shadcn, no para ésta. Si se activaran, pisarían
+estos tokens con valores derivados de una paleta que este documento no declara.
+Siguen tan inertes y tan equivocadas como el día que se borró el `.dark`.
+
+Si alguna vez se pide una **segunda** cara —clara, con activador y
+persistencia—, es su propio ciclo, y ahí lo primero que hay que resolver es esta
+línea, no los tokens.
 
 ## Colores que todavía no existen
 

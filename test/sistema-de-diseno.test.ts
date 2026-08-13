@@ -30,12 +30,14 @@ describe('el CSS no arrastra tokens muertos', () => {
     // `dark:`. Mientras esta línea exista, el variante queda atado a una clase
     // que nadie pone y esas reglas quedan inertes. Si se borra, `dark:` vuelve
     // al default de Tailwind v4 —prefers-color-scheme— y se activarían solas en
-    // cualquier usuario con el sistema en oscuro, sobre la paleta clara.
+    // cualquier usuario con el sistema en oscuro. Que la paleta de :root ahora
+    // SEA oscura no las vuelve correctas: se escribieron para otra paleta
+    // oscura, la de shadcn, y pisarían estos tokens con los de ella.
     expect(
       css,
       'se borró @custom-variant dark. Sin esa línea las clases dark: de shadcn ' +
-        'se activan por prefers-color-scheme sobre una paleta que no tiene ' +
-        'ningún token oscuro definido.',
+        'se activan por prefers-color-scheme y pisan los tokens de :root con los ' +
+        'de la paleta oscura de shadcn, que no es ésta.',
     ).toMatch(/@custom-variant\s+dark\s+\(&:is\(\.dark \*\)\)/)
   })
 
