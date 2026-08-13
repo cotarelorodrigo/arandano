@@ -18,6 +18,24 @@ import estilos from './cierre.module.css'
 
 const ANCHO = 'mx-auto w-full max-w-5xl px-6'
 
+/**
+ * El kicker: la etiqueta chica que dice de qué habla la sección, arriba del
+ * título. La rayita va INLINE y no absolute a la izquierda como en la
+ * maqueta: estas secciones viven adentro del contenedor de ancho de la
+ * página, así que una rayita en offset negativo se sale de él — en una
+ * pantalla angosta eso es una barra de scroll horizontal en la landing
+ * pública, y ningún test de este repo la vería. aria-hidden en la rayita
+ * porque no dice nada: lo dice el texto de al lado.
+ */
+function Kicker({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="mb-4 flex items-center gap-3 text-xs tracking-[0.06em] text-primary uppercase">
+      <span aria-hidden className="h-px w-11 bg-primary" />
+      {children}
+    </span>
+  )
+}
+
 export function Cartel() {
   return (
     <section className={`${ANCHO} py-12`}>
@@ -51,7 +69,10 @@ export function Prueba() {
       <div className="grid gap-8 md:grid-cols-2">
         <Retrato />
         <div className="space-y-6">
-          <h2 className="text-2xl font-semibold">Así se cobra</h2>
+          <div>
+            <Kicker>El mostrador</Kicker>
+            <h2 className="text-2xl font-semibold">Así se cobra</h2>
+          </div>
           <ul className="space-y-4">
             {ANOTACIONES.map((texto) => (
               <li key={texto} className="border-l-2 border-primary pl-4 text-muted-foreground">
@@ -95,6 +116,7 @@ const CAPACIDADES = [
 export function LoQueHace() {
   return (
     <section className={`${ANCHO} py-12`}>
+      <Kicker>Lo que hace</Kicker>
       <h2 className="text-2xl font-semibold">Seis cosas, todos los días</h2>
       {/* En filas numeradas y no en una grilla de cards: seis items del mismo
           peso visual no se leen en orden, y éstos tienen uno — es la secuencia
@@ -128,6 +150,7 @@ const MODULOS = [
 export function Rubros() {
   return (
     <section className={`${ANCHO} py-12`}>
+      <Kicker>Módulos por rubro</Kicker>
       <h2 className="text-2xl font-semibold">Cada rubro suma lo suyo</h2>
       <p className="mt-4 max-w-2xl text-muted-foreground">
         Lo de arriba lo tiene cualquier negocio. Después, según lo que hagas, se activa lo que te falta.
