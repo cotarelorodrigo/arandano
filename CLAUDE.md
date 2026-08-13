@@ -396,6 +396,19 @@ Y del producto:
   Cobrar es idempotente. Ver
   `docs/superpowers/specs/2026-08-11-ventas-design.md`. **Queda para el ciclo
   siguiente**: la caja (apertura, cierre y arqueo), que es la pieza 6.
+- ~~Construir la landing del ápex.~~ **Hecho** (2026-08-12). `arandano.app`
+  deja de ser un stub: una sola página que muestra el producto con un
+  fragmento real del punto de venta —los mismos componentes y el mismo
+  formateo de plata, atados por test— y convierte capturando un lead. La
+  tabla `leads` es la primera del schema **sin `tenant_id`**, así que no la
+  protege RLS sino el privilegio: `arandano_app` sólo inserta, y los leads se
+  leen con `npm run leads`. El aviso sale por `notificarLead()` detrás de una
+  interfaz —hoy loguea, el adaptador de la Cloud API entra cuando exista la
+  cuenta de Meta—. `--marca` gana su segunda y última superficie: la franja de
+  cierre, declarada en `docs/sistema-de-diseno.md` con la condición que la
+  hace caducar. **Decisión consciente**: la landing describe el producto
+  completo, incluido lo que todavía no está construido (caja, ARCA, catálogo,
+  bot, módulos). Ver `docs/superpowers/specs/2026-08-12-landing-design.md`.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

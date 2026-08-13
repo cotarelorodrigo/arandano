@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { notFound, forbidden, redirect } from 'next/navigation'
 import { tenantDelRequest } from '@/lib/tenant/desde-request'
 import { sesionActual } from '@/lib/auth/sesion'
@@ -5,6 +6,9 @@ import { FormularioLogin } from './formulario'
 import estilos from './persiana.module.css'
 
 export const dynamic = 'force-dynamic'
+
+// El login no cuelga de (app), así que no hereda su noindex: lleva el propio.
+export const metadata: Metadata = { robots: { index: false, follow: false } }
 
 export default async function Login() {
   const resolucion = await tenantDelRequest()

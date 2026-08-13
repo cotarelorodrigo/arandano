@@ -413,3 +413,28 @@ model Verification {
   @@index([tenantId, identifier])
   @@map("verifications")
 }
+
+// La única tabla del schema SIN tenant_id, y la excepción está declarada en
+// test/rls-cobertura.test.ts con su razón: un interesado que deja el mail en la
+// landing no es cliente de nadie todavía. No hay tenant al que pertenezca, e
+// inventarle uno sería peor que la excepción.
+//
+// Al no tener tenant_id no la protege la policy tenant_aislamiento, así que la
+// protege el privilegio: scripts/setup-db-roles.sh le saca SELECT, UPDATE y
+// DELETE a arandano_app. La aplicación sólo inserta; los leads se leen con
+// `npm run leads`, que se conecta como owner.
+//
+// `rubro` es texto y no un enum: los rubros son ilimitados por diseño (son
+// presets, no código), y un enum obligaría a una migración cada vez que alguien
+// escriba "florería".
+model Lead {
+  id       String   @id @default(uuid(7)) @db.Uuid
+  nombre   String
+  email    String
+  whatsapp String?
+  rubro    String
+  mensaje  String?
+  creadoEn DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  @@map("leads")
+}

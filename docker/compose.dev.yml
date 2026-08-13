@@ -47,6 +47,12 @@ services:
       # hablando la app, no sólo que alguna responda.
       ARANDANO_DB_ESPERADA: arandano_dev
       DOMINIO_BASE: dev.arandano.app
+      # El número de WhatsApp del negocio, en formato internacional sin "+" ni
+      # espacios (ej. 5491155555555): es lo que come wa.me. Vacío a propósito
+      # todavía — no existe el número real, y uno inventado manda a alguien al
+      # WhatsApp de un desconocido. Completar antes del primer deploy con el
+      # número real.
+      WHATSAPP_CONTACTO: ""
       # El puerto con el que el navegador llega a este stack — dev publica la
       # app en :3000 (ver el mapeo de `ports` más abajo). Better Auth lo
       # necesita para armar su `baseURL` (lib/auth/origen.ts): en producción

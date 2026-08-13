@@ -1,3 +1,4 @@
+import type { Metadata } from 'next'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { Button } from '@/components/ui/button'
 import { Navegacion } from '@/components/navegacion'
@@ -9,6 +10,10 @@ import estilos from '@/components/cartel.module.css'
 // queda protegida sin que nadie se acuerde de nada. test/rutas-con-guard.test.ts
 // falla si alguna pantalla queda afuera del grupo sin declarar por qué.
 export const dynamic = 'force-dynamic'
+
+// Ninguna pantalla de la aplicación se indexa: son datos de un local. Lo hereda
+// todo lo que cuelgue de (app), así que una pantalla nueva nace cubierta.
+export const metadata: Metadata = { robots: { index: false, follow: false } }
 
 export default async function LayoutApp({ children }: { children: React.ReactNode }) {
   const sesion = await exigirSesion()

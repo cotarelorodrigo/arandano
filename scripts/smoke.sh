@@ -111,14 +111,18 @@ caso_check_tenant() {
 # pega al Host del canario y verifica algo más fuerte que un curl -f solo, así
 # que este caso quedaría enteramente subsumido si repitiera el mismo Host.
 # En vez de duplicar, cubre la otra rama que no tenía ningún caso: el apex
-# responde 200 con el placeholder y el cuerpo NO trae los testids de una
-# página de tenant — si algún día el apex resolviera por error a un tenant
-# (el bug inverso al que este ciclo entero existe para impedir), esto lo
-# atrapa.
+# responde 200 con la landing, y no con el placeholder de antes de este ciclo.
+#
+# El ápex sirve la landing, y eso son DOS afirmaciones que hay que hacer
+# juntas: que no es una página de tenant (el testid ausente) y que es la
+# landing de verdad (el formulario presente). Sin la segunda, un ápex que
+# sirviera una página en blanco pasaba igual — que es exactamente lo que
+# servía antes de este ciclo.
 caso_home_responde() {
   local cuerpo
   cuerpo=$(curl -fsS --max-time 10 -H "Host: ${DOMINIO_BASE}" "$URL_BASE/") || return 1
-  ! grep -q 'data-testid="tenant-nombre"' <<<"$cuerpo"
+  ! grep -q 'data-testid="tenant-nombre"' <<<"$cuerpo" || return 1
+  grep -q 'name="nombre"' <<<"$cuerpo"
 }
 
 # El Host es obligatorio a partir de la resolución por subdominio: sin él, la

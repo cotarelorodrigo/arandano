@@ -32,6 +32,12 @@ services:
       # puede estar mal no comprueba nada.
       ARANDANO_DB_ESPERADA: arandano_prod
       DOMINIO_BASE: arandano.app
+      # El número de WhatsApp del negocio, en formato internacional sin "+" ni
+      # espacios (ej. 5491155555555): es lo que come wa.me. Vacío a propósito
+      # todavía — no existe el número real, y uno inventado manda a alguien al
+      # WhatsApp de un desconocido. Completar antes del primer deploy con el
+      # número real.
+      WHATSAPP_CONTACTO: ""
       # PUERTO_PUBLICO NO va acá, a propósito: en producción el sitio se
       # sirve en 443, implícito en `https://`, así que Better Auth arma su
       # `baseURL` sin puerto (lib/auth/origen.ts). Ponerle un default —"443"
