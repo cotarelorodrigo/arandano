@@ -188,11 +188,38 @@ caso_login_no_existe_en_apex() {
   [[ "$code" == "404" ]]
 }
 
+# El 404 Y la página propia, en el mismo caso.
+#
+# El código solo no alcanza desde que existe app/not-found.tsx: sin el marcador,
+# este caso pasaría igual con el 404 pelado de Next —que es el que se ve en
+# cualquier deploy de Vercel—, o sea que el gate no distinguiría si nuestra
+# página existe. Borrarla dejaría el gate entero en verde.
+#
+# El marcador es "pagina-404" y NO el texto del cuerpo: Next incluye el payload
+# de ese boundary en TODA página, así que buscar el texto acá funcionaría pero
+# entrenaría a buscarlo también donde da rojo siempre (ver el comentario de
+# caso_pantalla). Un data-testid es lo mismo para este caso y no tiene esa
+# trampa.
+#
+# Se busca el marcador PELADO y no `data-testid="pagina-404"`, y no es
+# tolerancia: el boundary de la raíz no se sirve como HTML. Medido contra
+# arandano-ensayo con una imagen de producción, el 404 llega con
+# `<html id="__next_error__">`, el `<body>` vacío y TODO el árbol en el payload
+# de Flight — donde el atributo aparece como `\"data-testid\":\"pagina-404\"`.
+# La versión con comillas daba rojo contra un build real y verde contra nada.
+# Esta forma es verdadera en las dos.
+#
+# El cuerpo se captura ANTES de greppearlo, por la carrera de SIGPIPE que ya
+# documenta caso_tenant_resuelve: `curl | grep -q` devuelve 141 bajo pipefail
+# CON el marcador presente.
 caso_subdominio_inexistente_404() {
-  local code
-  code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' \
-    -H "Host: no-existe-jamas.${DOMINIO_BASE}" "$URL_BASE/")
-  [[ "$code" == "404" ]]
+  local respuesta codigo cuerpo
+  respuesta=$(curl -s --max-time 10 -w $'\n%{http_code}' \
+    -H "Host: no-existe-jamas.${DOMINIO_BASE}" "$URL_BASE/") || return 1
+  codigo="${respuesta##*$'\n'}"
+  cuerpo="${respuesta%$'\n'*}"
+  [[ "$codigo" == "404" ]] || return 1
+  grep -qF 'pagina-404' <<<"$cuerpo"
 }
 
 caso_host_ajeno_404() {
