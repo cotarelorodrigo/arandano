@@ -84,6 +84,8 @@ describe('página 404', () => {
     // /api/health. Resolver el tenant acá sería gratis de escribir y caro de
     // descubrir.
     const fuente = readFileSync('app/not-found.tsx', 'utf8')
-    expect(fuente).not.toMatch(/from '@\/lib\/(tenant|db)/)
+    // Las comillas van en el patrón como clase: prettier deja simples, pero un
+    // chequeo que sólo mire las simples es uno que se apaga con un formateo.
+    expect(fuente).not.toMatch(/from ['"]@\/lib\/(tenant|db)/)
   })
 })

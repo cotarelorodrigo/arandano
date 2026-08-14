@@ -1,7 +1,11 @@
 import { piezasDeOrigen } from '@/lib/auth/origen'
 
-/**
+/*
  * La página que Next renderiza cuando algo llama a notFound().
+ *
+ * Comentario de archivo y no JSDoc, por lo mismo que lib/auth/origen.ts: abajo
+ * hay otro bloque pegado al `export const dynamic`, y dos JSDoc consecutivos
+ * dejan al primero documentando a nadie.
  *
  * Existe porque sin ella sale el 404 default de Next, que es el que se ve en
  * cualquier deploy de Vercel: un producto que le pide a un comercio que confíe
@@ -27,7 +31,8 @@ import { piezasDeOrigen } from '@/lib/auth/origen'
  * amplificador de carga que ya está anotado para el nivel anónimo de
  * /api/health, y un 404 no vale eso.
  *
- * ESTA PANTALLA NECESITA JAVASCRIPT, y es la única del repo que lo necesita.
+ * ESTA PANTALLA NECESITA JAVASCRIPT, junto con app/forbidden.tsx, que cuelga
+ * de este mismo boundary de la raíz y por lo tanto comparte la propiedad.
  * No es una decisión nuestra: medido contra la imagen de producción, el
  * boundary de la raíz se sirve con `<html id="__next_error__">`, el `<body>`
  * vacío y todo el árbol en el payload de Flight, así que el navegador lo pinta
