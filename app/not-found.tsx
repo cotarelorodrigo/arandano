@@ -96,6 +96,16 @@ export default async function NoEncontrado() {
   // `/` es esta misma página, así que la única salida útil es salir del
   // subdominio.
   //
+  // A QUIÉN NO LE SIRVE, decidido a sabiendas: al usuario logueado que tipeó
+  // mal una ruta adentro de su propio local. Para ése `/` sí lleva a algún lado
+  // —redirige a /vender—, y encima llega acá sin la navegación de (app),
+  // porque este boundary es el de la raíz. O sea que su única salida en
+  // pantalla lo manda a la landing pública y tiene que retipear su subdominio.
+  // Se acepta: es el menos frecuente de los cuatro caminos, el botón Atrás lo
+  // resuelve en un click, y las dos alternativas son peores — un segundo link
+  // a `/` sería un link muerto en los otros tres caminos, y distinguirlos pide
+  // la rama por Host que este archivo sacó a propósito.
+  //
   // Y se arma con piezasDeOrigen() en vez de cablear `https://` + DOMINIO_BASE,
   // por lo mismo que el "Ya tengo cuenta" de la landing: la imagen se buildea
   // una vez y se promueve de stage a prod, así que un valor horneado en build
