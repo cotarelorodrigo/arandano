@@ -102,6 +102,16 @@ export const PARES: Par[] = [
   // para justificar que SU anillo vaya opaco, y un ratio citado a mano es
   // exactamente lo que este archivo existe para que no se desincronice.
   { texto: '--ring', fondo: '--background', alfaTexto: 0.5, minimo: 3.0 },
+  // Las dos series del panel "Cómo entró la plata" de /ventas, contra la
+  // superficie donde se dibujan. Mínimo 3.0 y no 4.5: una barra no es texto,
+  // es un objeto gráfico portador de información (WCAG 1.4.11), la misma regla
+  // que el borde de --input y el anillo de foco.
+  { texto: '--chart-1', fondo: '--card', minimo: 3.0 },
+  { texto: '--chart-2', fondo: '--card', minimo: 3.0 },
+  // Y las dos series ENTRE SÍ, que es el par que ningún par contra el fondo
+  // vigila: los dos tramos de una barra apilada se tocan, así que lo que los
+  // separa es esta distancia y no la que cada uno tiene con --card.
+  { texto: '--chart-1', fondo: '--chart-2', minimo: 3.0 },
 ]
 
 /**
@@ -128,6 +138,29 @@ export const EXCEPCIONES: Record<string, string> = {
     'clara y que el 1.63 sobre --card, pero igual de corto contra los 3:1. Hoy no ' +
     'hay ninguna pantalla con un campo fuera de una Card, así que este par es el ' +
     'caso teórico y el de arriba el real; la razón y la mitigación son las mismas.',
+  '--chart-2 sobre --card':
+    'la serie de dólares del panel de /ventas da 2.52 contra los 3:1 de WCAG ' +
+    '1.4.11. No es un descuido de la elección del color: es su costo. Las dos ' +
+    'series se separan por LUMINOSIDAD, que es la única distancia que sobrevive ' +
+    'a cualquier daltonismo (ΔE 17 bajo deuteranopía y protanopía), y sobre un ' +
+    'fondo oscuro eso obliga a que una de las dos sea la oscura. La alternativa ' +
+    'medida —separarlas por hue, un cian contra el arándano— pasaba este par con ' +
+    'holgura y a cambio dejaba ΔE 8.1 bajo deuteranopía, o sea dos barras que un ' +
+    'daltónico no distingue. Se prefirió el par que TODOS distinguen. ' +
+    'Mitigación, que no es opcional y está construida: cada barra lleva su ' +
+    'importe impreso al lado, hay leyenda apenas existe la segunda serie, el ' +
+    'tooltip desglosa pesos y dólares, y la tabla de ventas con el mismo dato ' +
+    'está en la misma pantalla — el color no es nunca el único portador. ' +
+    'Revisar si alguna vez se define una paleta clara, donde la serie oscura ' +
+    'pasaría a ser la que contrasta.',
+  '--chart-1 sobre --chart-2':
+    'los dos tramos de una barra apilada dan 2.02 entre sí, y el par está acá ' +
+    'para dejar dicho que NO SE TOCAN: entre tramo y tramo va un separador de ' +
+    '2 px pintado de --card, así que el par adyacente que el usuario mira de ' +
+    'verdad es cada tramo contra --card, medido arriba. El separador es ' +
+    'load-bearing, no decoración, y por eso lo asegura un caso de ' +
+    'app/(app)/ventas/grafico.test.tsx: borrarlo pone en falso la razón de esta ' +
+    'excepción y rompe el test.',
   '--ring/50 sobre --background':
     'el halo de foco de botón e input da 2.33 y no llega a los 3:1 de WCAG 1.4.11 ' +
     'por sí solo — pero no está solo: `focus-visible:border-ring` pinta al mismo ' +

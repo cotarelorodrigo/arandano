@@ -19,8 +19,17 @@ function ratiosDelDoc(): Map<string, number> {
   for (const linea of texto.slice(desde, hasta).split('\n')) {
     // El `/NN` opcional es la opacidad: `--primary/80` y `--primary` son
     // colores distintos y filas distintas, porque el usuario mira los dos.
+    //
+    // El `0-9` del nombre no estaba, y lo trajo el primer token con un dígito:
+    // `--chart-1`. Su fila quedaba fuera del Map en silencio, o sea que el
+    // documento podía declarar cualquier ratio para las series del gráfico sin
+    // que nadie lo comparara. No pasó desapercibido porque el caso de abajo
+    // recorre los pares CALCULADOS y exige que el documento tenga cada uno —
+    // falla cerrado, que es justo para lo que está escrito así. El parser de
+    // tokens de test/sistema-de-diseno.test.ts ya usaba `[a-z0-9-]`; éste se
+    // había quedado atrás.
     const m = linea.match(
-      /^\|\s*`(--[a-z-]+(?:\/\d+)?)`\s+sobre\s+`(--[a-z-]+(?:\/\d+)?)`\s*\|\s*([\d.]+)\s*\|/,
+      /^\|\s*`(--[a-z0-9-]+(?:\/\d+)?)`\s+sobre\s+`(--[a-z0-9-]+(?:\/\d+)?)`\s*\|\s*([\d.]+)\s*\|/,
     )
     if (m) filas.set(`${m[1]} sobre ${m[2]}`, Number(m[3]))
   }

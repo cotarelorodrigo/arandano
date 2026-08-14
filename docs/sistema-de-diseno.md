@@ -87,6 +87,8 @@ una vez más en silencio.
 | `--border` | `oklch(0.381 0.019 287)` |
 | `--input` | `oklch(0.381 0.019 287)` |
 | `--ring` | `oklch(0.66 0.124 287)` |
+| `--chart-1` | `oklch(0.66 0.124 287)` |
+| `--chart-2` | `oklch(0.49 0.115 287)` |
 | `--radius` | `0.625rem` |
 
 <!-- tokens:fin -->
@@ -148,6 +150,9 @@ sobre blanco fuera `#bcbcbc` en vez del `#808080` que todos conocemos).
 | `--input` sobre `--card` | 1.63 | 3.0 | **excepción declarada** |
 | `--ring` sobre `--background` | 5.49 | 3.0 | ok |
 | `--ring/50` sobre `--background` | 2.33 | 3.0 | **excepción declarada** |
+| `--chart-1` sobre `--card` | 5.08 | 3.0 | ok |
+| `--chart-2` sobre `--card` | 2.52 | 3.0 | **excepción declarada** |
+| `--chart-1` sobre `--chart-2` | 2.02 | 3.0 | **excepción declarada** |
 
 <!-- contraste:fin -->
 
@@ -193,6 +198,71 @@ que el foco tenga **dos** indicadores:
    `components/navegacion.tsx` no tienen borde propio, y por eso usan
    `inset-ring-ring` sin opacidad. Esos dos números son los que cita su
    comentario, y `test/contraste.test.ts` los ata a esta tabla.
+
+Y una cuarta y una quinta, las dos del panel del gráfico, explicadas enteras en
+la sección que sigue.
+
+## Los colores del gráfico
+
+`--chart-1` y `--chart-2` son las dos series del panel **"Cómo entró la plata"**
+de `/ventas`: lo cobrado en pesos y lo cobrado en dólares, apilados en la misma
+barra. Son los únicos tokens del sistema donde **el color es el dato** y no la
+jerarquía — en todo el resto de la aplicación el color señala una acción o una
+superficie.
+
+| Token | Hex | Serie |
+|---|---|---|
+| `--chart-1` | `#8e85da` | Pesos. Es el arándano de `--primary`, con el mismo valor |
+| `--chart-2` | `#5d549e` | Dólares |
+
+**Las dos se separan por luminosidad, en el mismo hue 287.** No es fidelidad
+decorativa a la paleta monocroma: es la decisión que más protege al que mira.
+La distancia de luminosidad es la única que sobrevive a cualquier daltonismo,
+así que este par da **ΔE 17 tanto en visión normal como bajo deuteranopía y
+protanopía** — o sea que las dos barras se distinguen para todo el mundo. La
+alternativa se midió en vez de suponerse: separarlas por **hue** —un cian
+`#009aa1` contra el arándano— pasaba el contraste contra la superficie con
+holgura y a cambio dejaba **ΔE 8.1 bajo deuteranopía**, dos barras que un
+daltónico no distingue. Se prefirió el par que todos distinguen.
+
+**El costo de esa decisión son las dos excepciones**, y conviene decirlo así y
+no como un descuido:
+
+4. **`--chart-2` sobre `--card` da 2.52**, contra los 3:1 de WCAG 1.4.11 — una
+   barra no es texto, es un objeto gráfico portador de información, la misma
+   regla que el borde de `--input`. Sobre un fondo oscuro, separar por
+   luminosidad obliga a que una de las dos series sea la oscura, y esa es la
+   que no llega. **Mitigación, que está construida y no es opcional**: cada
+   barra lleva su importe impreso al lado en tinta de texto, la leyenda aparece
+   apenas existe la segunda serie, el tooltip desglosa pesos y dólares, y
+   `app/(app)/ventas/grafico.tsx` renderiza además una **tabla** con los mismos
+   números — que no es un extra de accesibilidad sino el componente: recharts no
+   dibuja nada en el servidor, así que sin ella el panel sería un rectángulo
+   vacío para quien llegue antes de que hidrate o con el JavaScript caído.
+   **Revisar** si alguna vez se define una paleta clara, donde la serie oscura
+   pasaría a ser justamente la que contrasta.
+
+5. **`--chart-1` sobre `--chart-2` da 2.02**, y el par está en la tabla para
+   dejar dicho que **los dos tramos no se tocan**: entre uno y otro va un
+   separador de 2 px pintado de `--card`, así que el par adyacente que el
+   usuario mira de verdad es cada tramo contra `--card`, que ya está medido
+   arriba. El separador es load-bearing, no decoración, y por eso lo asegura un
+   caso de `app/(app)/ventas/grafico.test.tsx`: borrarlo deja esta razón en
+   falso y rompe el test.
+
+**De dónde salen los valores.** No de elegirlos a ojo. Salen del validador de
+paletas del skill `dataviz`, que sobre fondo oscuro exige luminosidad OKLCH
+dentro de `[0.48, 0.67]`, croma ≥ 0.10 y ΔE ≥ 15 entre series adyacentes en
+visión normal, además de ≥ 8 bajo daltonismo. Los dos valores de la tabla son
+los que pasan las cinco comprobaciones. Un tercer color, el día que haga falta,
+se elige con el mismo validador y no por analogía.
+
+**Y no están en `@theme`**, a diferencia del resto de la paleta: no los consume
+ninguna utilidad de Tailwind sino el `color:` del `ChartConfig` de
+`components/ui/chart.tsx`, que emite `var(--chart-N)` directo. Es el mismo caso
+que `--marca`. Un token en `@theme` que nada referencia es un token muerto, que
+es lo que el caso "no quedan tokens de sidebar" de
+`test/sistema-de-diseno.test.ts` existe para evitar.
 
 ## Tipografía
 
@@ -656,5 +726,43 @@ que ya documenta la sección *Dónde entra el arándano*. Y la fuente variable
 (`/_next/static/media/archivo_latin_var-*.woff2`) se sirve con 200: si esa
 respuesta fuera un 404, los importes se verían anchos y el defecto parecería
 del código cuando sería del asset.
+
+**Las dos series del gráfico — miradas el 2026-08-14**, al cerrar el ciclo del
+panel "Cómo entró la plata". Confirmado a ojo lo que ningún test puede juzgar:
+que las barras tienen alto de verdad —el punto donde el `ResponsiveContainer`
+se rompería sin que jsdom lo note, porque ahí adentro mide un contenedor que no
+existe— y que el tramo de `--chart-2` se despega del fondo, que es exactamente
+el límite que su excepción de contraste declarada acepta.
+
+**Los importes al lado de las barras quedaron pendientes de una segunda
+mirada**, y conviene que se sepa: cuando se hizo esta verificación, sólo se
+imprimían dos de los cuatro —recharts no emite rectángulo para un tramo de
+valor 0, y sin rectángulo tampoco su rótulo—. Lo levantó la review, está
+arreglado y cubierto por un caso, pero el arreglo cambió lo que se dibuja
+(cuatro rótulos en vez de dos, y más margen a la derecha para que el más largo
+no se corte), así que esa parte todavía no la miró nadie.
+
+**Y cómo se llegó, que otra vez no fue lo obvio.** El stack de dev sirve
+`/root/arandano`, o sea la rama principal, así que una feature en un worktree
+no se ve ahí. Se miró levantando la build de producción del worktree en un
+contenedor aparte sobre la red de dev, publicado sólo en la IP de Tailscale y
+con sus propios límites de CPU y memoria para no pelearle a prod. Dos cosas que
+costaron y no se deducen: `next build` produce `output: standalone`, así que el
+comando es `node server.js` y hay que copiarle `.next/static` y `public` al
+lado, como hace el `Dockerfile`; y con dos `package-lock.json` en el árbol,
+Next infiere la raíz del workspace en `/root/arandano` y anida el standalone
+bajo `.next/standalone/.claude/worktrees/<rama>/`. Además el canario de dev
+arrancaba **sin una sola venta** —tenía catálogo desde la verificación
+anterior, pero ninguna venta ni ningún pago—, y sin pagos este panel no se
+dibuja, que es lo correcto. Las ventas sintéticas las siembra
+`scripts/sembrar-ventas-dev.mts`, con dólares en dos de los cuatro medios
+porque una composición de una sola moneda no ejercita ni la pila, ni la
+leyenda, ni la segunda serie.
+
+Comprobado además por HTTP contra esa misma build, que es lo que dejó la
+verificación cerrada de los dos lados: el panel suma **$ 2.628.838**, el mismo
+número que el tile "Total del período" saca por otro camino y otra consulta.
+Dos números de la misma pantalla que no cerraran serían peor que no mostrar
+ninguno.
 
 **2026-08-11.**
