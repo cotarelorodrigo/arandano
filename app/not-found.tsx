@@ -31,16 +31,30 @@ import { piezasDeOrigen } from '@/lib/auth/origen'
  * amplificador de carga que ya está anotado para el nivel anónimo de
  * /api/health, y un 404 no vale eso.
  *
- * ESTA PANTALLA NECESITA JAVASCRIPT, junto con app/forbidden.tsx, que cuelga
- * de este mismo boundary de la raíz y por lo tanto comparte la propiedad.
- * No es una decisión nuestra: medido contra la imagen de producción, el
- * boundary de la raíz se sirve con `<html id="__next_error__">`, el `<body>`
- * vacío y todo el árbol en el payload de Flight, así que el navegador lo pinta
- * recién al hidratar. NO es una regresión —el 404 default de Next se sirve
- * exactamente igual, verificado contra arandano-ensayo— pero sí es la razón
- * por la que acá no hay ningún formulario ni nada que tenga que funcionar sin
- * JS, al revés que el resto de las pantallas (ver el <form> de salir en
- * app/(app)/layout.tsx). Un link y dos párrafos sobreviven a esa limitación.
+ * SE SIRVE DE DOS FORMAS DISTINTAS, y conviene saberlo antes de agregarle
+ * nada. Medido, con el mismo código y el mismo status 404:
+ *
+ * - Una ruta que NO matchea ninguna (`/no-existe-esta-ruta`) entra por la ruta
+ *   `/_not-found` y se renderiza normal: `<html lang="es">`, el layout raíz, y
+ *   el `<h1>` y el marcador como atributos HTML de verdad. Sin JavaScript.
+ *   Es, además, el 404 más frecuente que va a servir el producto: alguien
+ *   tipeando mal una ruta.
+ * - Un notFound() lanzado desde una ruta que SÍ matchea —los tres casos de
+ *   Host de arriba, más `/inventario/foo`— sube al boundary de la raíz, y ESE
+ *   se sirve con `<html id="__next_error__">`, el `<body>` vacío y todo el
+ *   árbol en el payload de Flight: el navegador lo pinta recién al hidratar.
+ *   Lo mismo le pasa a app/forbidden.tsx, que cuelga del mismo boundary.
+ *
+ * O sea que por el segundo camino esta pantalla necesita JavaScript, y no es
+ * una decisión nuestra ni una regresión —el 404 default de Next se sirve
+ * exactamente igual, verificado contra arandano-ensayo—. Es la razón por la
+ * que acá no hay ningún formulario ni nada que tenga que funcionar sin JS, al
+ * revés que el resto de las pantallas (ver el <form> de salir en
+ * app/(app)/layout.tsx). Un link y dos párrafos sobreviven a las dos formas.
+ *
+ * Es también por lo que el caso del gate busca el marcador PELADO: en HTML
+ * sale como `data-testid="pagina-404"` y en el payload como
+ * `\"data-testid\":\"pagina-404\"`. Ver scripts/smoke.sh.
  *
  * NADA DE --marca. docs/sistema-de-diseno.md declara que --marca tiene dos
  * superficies y que son las últimas (el paño del login y la franja de cierre de
@@ -61,6 +75,16 @@ import { piezasDeOrigen } from '@/lib/auth/origen'
  * promueve de stage a prod — el link saldría apuntando al dominio del otro
  * entorno. Que el prerender falle es la señal correcta; forzar el render
  * dinámico es la respuesta.
+ *
+ * LO QUE CUESTA, escrito acá porque tira contra el "un 404 tiene que ser
+ * barato" de más arriba y no conviene que se lean por separado: `/_not-found`
+ * pasa de estático (`○` en la salida del build) a render por request (`ƒ`), así
+ * que un bot pidiendo /wp-login.php, /.env y /admin.php se lleva un render de
+ * React por cada intento en vez de una página cacheada. Se acepta porque el
+ * daño está acotado —no hay consulta a Postgres, que es la parte cara y la que
+ * el resto de este archivo protege— y porque la alternativa no es "estático y
+ * con link": es estático con el link apuntando al dominio del entorno
+ * equivocado, o sin link.
  *
  * No hace falta un test que cubra esto: el build ES el test, y corre en el
  * paso 7 de cada deploy. Un test unitario no puede prerenderizar.

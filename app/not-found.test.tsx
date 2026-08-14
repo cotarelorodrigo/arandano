@@ -36,7 +36,12 @@ describe('página 404', () => {
     // no decirle nada.
     const html = await render()
     expect(html).toContain('No encontramos esta página.')
-    expect(html).not.toMatch(/no existe ning[úu]n local/i)
+    // Se afirma la AUSENCIA DE VOCABULARIO DE TENANT, no la de una frase
+    // exacta. Fijar "no existe ningún local" dejaba pasar "Este local no
+    // existe." y "No encontramos tu local.", que son la misma afirmación
+    // dañina — o sea que el test cuidaba la redacción de hoy en vez de la
+    // propiedad que dice cuidar.
+    expect(html).not.toMatch(/local|negocio|comercio/i)
   })
 
   it('la salida es el ápex en absoluto, con el protocolo y el puerto de ESTE entorno', async () => {
@@ -83,9 +88,24 @@ describe('página 404', () => {
     // amplificador de carga que ya está anotado para el nivel anónimo de
     // /api/health. Resolver el tenant acá sería gratis de escribir y caro de
     // descubrir.
+    // ALLOWLIST y no lista negra, y la diferencia es la que hace que el chequeo
+    // sirva. Nombrar `@/lib/tenant` y `@/lib/db` dejaba pasar todo lo demás que
+    // llega a Postgres un nivel más abajo: `@/lib/auth/sesion`, `@/lib/ventas`,
+    // `@/lib/inventario`, `@/lib/health`. El caso concreto no es rebuscado —
+    // saludar por su nombre al usuario logueado en el 404 de adentro— y le
+    // costaría una consulta de sesión a CADA 404 contra el pool de max: 5, o
+    // sea exactamente el amplificador que este test dice impedir, con el test
+    // en verde.
+    //
+    // El patrón matchea el especificador entre comillas y no `from '...'`, así
+    // que agarra también `await import()` y `require()`.
+    const PERMITIDOS = ['@/lib/auth/origen']
     const fuente = readFileSync('app/not-found.tsx', 'utf8')
-    // Las comillas van en el patrón como clase: prettier deja simples, pero un
-    // chequeo que sólo mire las simples es uno que se apaga con un formateo.
-    expect(fuente).not.toMatch(/from ['"]@\/lib\/(tenant|db)/)
+    const importados = [...fuente.matchAll(/['"](@\/lib\/[^'"]+)['"]/g)].map((m) => m[1])
+    expect(
+      importados.filter((m) => !PERMITIDOS.includes(m)),
+      'un 404 lo sirve cualquier bot escaneando subdominios: nada de lo que se ' +
+        'importe acá puede terminar en una consulta a Postgres',
+    ).toEqual([])
   })
 })
