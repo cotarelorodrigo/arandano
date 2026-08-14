@@ -4,6 +4,8 @@ import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatearPrecio, formatearFecha, formatearCantidad } from '@/lib/formato/mostrar'
+import { componerPorMedio } from '@/lib/ventas/composicion'
+import { GraficoDeMedios } from './grafico'
 
 export const dynamic = 'force-dynamic'
 
@@ -105,7 +107,7 @@ export default async function Ventas({
   }
 
   const prisma = prismaParaTenant(sesion.tenant.id)
-  const [ventas, total, suma, anuladas] = await Promise.all([
+  const [ventas, total, suma, anuladas, pagos] = await Promise.all([
     prisma.venta.findMany({
       where: donde,
       orderBy: { numero: 'desc' },
@@ -124,8 +126,25 @@ export default async function Ventas({
     // aritmética sobre dos números que ya vienen de la misma transacción, así
     // que no puede dar una suma que no cierre contra el listado.
     prisma.venta.count({ where: { ...donde, anuladaEn: { not: null } } }),
+    // Los pagos del período, para el panel de composición. Se filtran por la
+    // VENTA y no por `pago.creadoEn`: es el mismo `donde` que el listado y que
+    // los tiles, así que las tres cosas de la pantalla no pueden hablar de
+    // períodos distintos.
+    //
+    // `groupBy` y no `$queryRaw` con un `SUM(monto * cotizacion)`, que sería la
+    // consulta obvia: la extensión de lib/tenant/prisma.ts intercepta
+    // operaciones de MODELO, no raw queries, así que un raw no lleva el
+    // `set_config('arandano.tenant_id')` y RLS lo devuelve VACÍO. No falla:
+    // devuelve cero filas, que en un panel de plata se lee como "no vendiste
+    // nada". La multiplicación se hace en JS sobre estas pocas filas.
+    prisma.pago.groupBy({
+      by: ['medio', 'moneda', 'cotizacion'],
+      where: { venta: { ...donde, anuladaEn: null } },
+      _sum: { monto: true },
+    }),
   ])
 
+  const composicion = componerPorMedio(pagos)
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA))
   const conPagina = (n: number) => {
     const u = new URLSearchParams({ desde: dDesde, hasta: dHasta })
@@ -194,6 +213,12 @@ export default async function Ventas({
           <Tile rotulo="Anuladas" valor={formatearCantidad(String(anuladas))} />
         </div>
       )}
+
+      {/* Colgado de que HAYA barras y no de `total > 0`, que es lo que gobierna
+          los tiles: un período puede tener ventas y ningún pago —todas anuladas—
+          y ahí este panel no tiene nada que decir. Dibujarlo vacío sería peor que
+          no dibujarlo: un gráfico en blanco se lee como que algo se rompió. */}
+      {composicion.barras.length > 0 && <GraficoDeMedios composicion={composicion} />}
 
       {ventas.length === 0 ? (
         <p className="text-sm text-muted-foreground">
