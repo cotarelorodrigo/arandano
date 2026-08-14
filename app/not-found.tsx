@@ -1,0 +1,114 @@
+import { piezasDeOrigen } from '@/lib/auth/origen'
+
+/**
+ * La página que Next renderiza cuando algo llama a notFound().
+ *
+ * Existe porque sin ella sale el 404 default de Next, que es el que se ve en
+ * cualquier deploy de Vercel: un producto que le pide a un comercio que confíe
+ * su facturación no puede contestar con la pantalla de otra empresa cuando
+ * alguien escribe mal el subdominio.
+ *
+ * ES UNA SOLA PÁGINA PARA CUATRO CAMINOS, y eso decide el texto. Este boundary
+ * es el de la RAÍZ y es el único que hay: test/boundaries-app.test.ts prohíbe
+ * poner uno adentro de app/(app)/ —ahí taparía el marcador del gate—, así que
+ * acá caen las cuatro cosas:
+ *
+ * - un subdominio que no es de ningún tenant (`proe.arandano.app`),
+ * - un subdominio reservado (`admin.arandano.app`),
+ * - un host ajeno o la IP pelada, que no tienen tenant posible,
+ * - y el notFound() de una pantalla de adentro (`/inventario/foo`), donde hay
+ *   un usuario logueado en un local que SÍ existe.
+ *
+ * Por eso el texto no habla del local. Decirle "este local no existe" a un
+ * dueño que tipeó mal una ruta adentro de su propio negocio es peor que no
+ * decirle nada, y la única forma de distinguir los casos sería resolver el
+ * tenant acá — o sea una consulta a Postgres por cada 404, servida a cualquier
+ * bot que escanee subdominios, contra un pool de max: 5. Es el mismo
+ * amplificador de carga que ya está anotado para el nivel anónimo de
+ * /api/health, y un 404 no vale eso.
+ *
+ * ESTA PANTALLA NECESITA JAVASCRIPT, y es la única del repo que lo necesita.
+ * No es una decisión nuestra: medido contra la imagen de producción, el
+ * boundary de la raíz se sirve con `<html id="__next_error__">`, el `<body>`
+ * vacío y todo el árbol en el payload de Flight, así que el navegador lo pinta
+ * recién al hidratar. NO es una regresión —el 404 default de Next se sirve
+ * exactamente igual, verificado contra arandano-ensayo— pero sí es la razón
+ * por la que acá no hay ningún formulario ni nada que tenga que funcionar sin
+ * JS, al revés que el resto de las pantallas (ver el <form> de salir en
+ * app/(app)/layout.tsx). Un link y dos párrafos sobreviven a esa limitación.
+ *
+ * NADA DE --marca. docs/sistema-de-diseno.md declara que --marca tiene dos
+ * superficies y que son las últimas (el paño del login y la franja de cierre de
+ * la landing). Esta página se mira dos segundos: no justifica reabrir esa
+ * decisión. Sólo neutros, y --primary en el link porque es una acción, que es
+ * exactamente para lo que ese token está declarado.
+ */
+/**
+ * OBLIGATORIO, y lo descubrió el build de producción, no dev.
+ *
+ * Next intenta PRERENDERIZAR `/_not-found` en build time. Ahí no existe
+ * DOMINIO_BASE, así que piezasDeOrigen() tira y `npm run build` sale con
+ * código 1: "Export encountered an error on /_not-found/page". O sea que sin
+ * esta línea el paso 7 del gate de deploy.sh no llega ni a buildear la imagen.
+ *
+ * Y si la variable estuviera definida en el build sería PEOR, no mejor: el
+ * valor quedaría horneado en la imagen, y esta imagen se buildea una vez y se
+ * promueve de stage a prod — el link saldría apuntando al dominio del otro
+ * entorno. Que el prerender falle es la señal correcta; forzar el render
+ * dinámico es la respuesta.
+ *
+ * No hace falta un test que cubra esto: el build ES el test, y corre en el
+ * paso 7 de cada deploy. Un test unitario no puede prerenderizar.
+ */
+export const dynamic = 'force-dynamic'
+
+export default async function NoEncontrado() {
+  // El link tiene que ser ABSOLUTO al ápex: desde un subdominio que no resuelve,
+  // `/` es esta misma página, así que la única salida útil es salir del
+  // subdominio.
+  //
+  // Y se arma con piezasDeOrigen() en vez de cablear `https://` + DOMINIO_BASE,
+  // por lo mismo que el "Ya tengo cuenta" de la landing: la imagen se buildea
+  // una vez y se promueve de stage a prod, así que un valor horneado en build
+  // time sería el de otro entorno. Medido contra arandano-dev: con la función
+  // sale `http://dev.arandano.app:3000`, que es una dirección que existe; con el
+  // https cableado saldría una que no.
+  //
+  // Leer headers() acá obliga a render dinámico, y eso funciona en un
+  // not-found.tsx (verificado contra Next 16.2.12: la respuesta sigue siendo
+  // 404 y el link sale resuelto). No hay nada de tenant en esta página, así que
+  // el render dinámico no protege ningún dato — es sólo el precio del link.
+  const { protocolo, dominioBase, puerto } = await piezasDeOrigen()
+  const apex = `${protocolo}://${dominioBase}${puerto}`
+
+  return (
+    // El data-testid lo consume caso_subdominio_inexistente_404 de
+    // scripts/smoke.sh: sin él, ese caso pasaría igual con el 404 pelado de
+    // Next, o sea que el gate no distinguiría si esta página existe.
+    //
+    // NO puede ser "tenant-nombre", el marcador de pantalla: Next incluye el
+    // payload de este boundary en el cuerpo de TODA página, así que el barrido
+    // autenticado del gate se volvería verde sobre cada pantalla rota.
+    // app/not-found.test.tsx lo fija.
+    <main
+      className="flex min-h-full flex-col items-center justify-center px-6 py-16 text-center"
+      data-testid="pagina-404"
+    >
+      {/* La firma va chica y arriba, no como cartel: quien llega acá llegó por
+          error, y lo que necesita es entender qué pasó y salir. */}
+      <p className="text-xs tracking-[0.06em] text-muted-foreground uppercase">Arándano</p>
+      <h1 className="mt-4 text-3xl font-semibold tracking-tight md:text-4xl">
+        No encontramos esta página.
+      </h1>
+      <p className="mt-4 max-w-md text-muted-foreground">
+        Puede que la dirección esté mal escrita, o que lo que buscabas ya no exista.
+      </p>
+      <a
+        href={apex}
+        className="mt-8 rounded-lg text-primary underline underline-offset-4 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+      >
+        Ir a {dominioBase}
+      </a>
+    </main>
+  )
+}
