@@ -727,4 +727,34 @@ que ya documenta la sección *Dónde entra el arándano*. Y la fuente variable
 respuesta fuera un 404, los importes se verían anchos y el defecto parecería
 del código cuando sería del asset.
 
+**Las dos series del gráfico — miradas el 2026-08-14**, al cerrar el ciclo del
+panel "Cómo entró la plata". Confirmado a ojo lo que ningún test puede juzgar:
+que las barras tienen alto de verdad —el punto donde el `ResponsiveContainer`
+se rompería sin que jsdom lo note, porque ahí adentro mide un contenedor que no
+existe— y que el tramo de `--chart-2` se despega del fondo, que es exactamente
+el límite que su excepción de contraste declarada acepta.
+
+**Y cómo se llegó, que otra vez no fue lo obvio.** El stack de dev sirve
+`/root/arandano`, o sea la rama principal, así que una feature en un worktree
+no se ve ahí. Se miró levantando la build de producción del worktree en un
+contenedor aparte sobre la red de dev, publicado sólo en la IP de Tailscale y
+con sus propios límites de CPU y memoria para no pelearle a prod. Dos cosas que
+costaron y no se deducen: `next build` produce `output: standalone`, así que el
+comando es `node server.js` y hay que copiarle `.next/static` y `public` al
+lado, como hace el `Dockerfile`; y con dos `package-lock.json` en el árbol,
+Next infiere la raíz del workspace en `/root/arandano` y anida el standalone
+bajo `.next/standalone/.claude/worktrees/<rama>/`. Además el canario de dev
+arrancaba **sin una sola venta** —tenía catálogo desde la verificación
+anterior, pero ninguna venta ni ningún pago—, y sin pagos este panel no se
+dibuja, que es lo correcto. Las ventas sintéticas las siembra
+`scripts/sembrar-ventas-dev.mts`, con dólares en dos de los cuatro medios
+porque una composición de una sola moneda no ejercita ni la pila, ni la
+leyenda, ni la segunda serie.
+
+Comprobado además por HTTP contra esa misma build, que es lo que dejó la
+verificación cerrada de los dos lados: el panel suma **$ 2.628.838**, el mismo
+número que el tile "Total del período" saca por otro camino y otra consulta.
+Dos números de la misma pantalla que no cerraran serían peor que no mostrar
+ninguno.
+
 **2026-08-11.**
