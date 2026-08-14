@@ -137,10 +137,13 @@ export default async function Ventas({
     // `set_config('arandano.tenant_id')` y RLS lo devuelve VACÍO. No falla:
     // devuelve cero filas, que en un panel de plata se lee como "no vendiste
     // nada". La multiplicación se hace en JS sobre estas pocas filas.
+    // `monto` va en la clave y se cuenta en vez de sumarse: es lo que mantiene
+    // el redondeo POR PAGO, igual que `totalDePagos`. Con `_sum` el panel y el
+    // tile "Total del período" se separaban por centavos. Ver composicion.ts.
     prisma.pago.groupBy({
-      by: ['medio', 'moneda', 'cotizacion'],
+      by: ['medio', 'moneda', 'cotizacion', 'monto'],
       where: { venta: { ...donde, anuladaEn: null } },
-      _sum: { monto: true },
+      _count: true,
     }),
   ])
 

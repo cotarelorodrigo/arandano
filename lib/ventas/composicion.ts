@@ -10,20 +10,34 @@ export type { Barra, Composicion, Medio }
 export { MEDIOS, ROTULO_MEDIO } from './medios'
 
 /**
- * Una fila del `groupBy` de pagos por `[medio, moneda, cotizacion]`.
+ * Una fila del `groupBy` de pagos por `[medio, moneda, cotizacion, monto]`.
  *
  * La cotización entra en la clave del agrupamiento a propósito: el monto de un
  * pago en dólares no vale nada sin ella, y dos pagos en dólares del mismo medio
  * pueden haberse tomado a cotizaciones distintas. Agrupar sin ella obligaría a
  * multiplicar una suma de dólares por UNA cotización elegida a dedo, que es un
- * número inventado. El costo es más filas, y son pocas: una por cotización
- * distinta del período.
+ * número inventado.
+ *
+ * **Y el monto también, con `_count` en vez de `_sum`.** Es lo que hace que el
+ * redondeo sea POR PAGO. Con `_sum` la base entregaba la suma ya hecha y el
+ * redondeo caía sobre ella: dos pagos de US$ 1 a cotización 1450,5555 dan
+ * 1450,56 + 1450,56 = 2901,12 pago por pago, y 2901,11 sobre la suma. Un
+ * centavo — pero `Venta.total` se arma con `totalDePagos`, que redondea cada
+ * pago, así que ese centavo era el panel contradiciendo al tile "Total del
+ * período" en la misma pantalla. Con el monto en la clave, todos los pagos de
+ * un grupo son idénticos y `round(monto × cotización) × cantidad` es
+ * exactamente la suma pago por pago.
+ *
+ * El costo son más filas, y nunca más que pagos en el período: cada grupo es al
+ * menos un pago. En la práctica son muchas menos, porque los importes se
+ * repiten.
  */
 export type FilaDePagos = {
   medio: Medio
   moneda: 'ARS' | 'USD'
   cotizacion: Decimal
-  _sum: { monto: Decimal | null }
+  monto: Decimal
+  _count: number
 }
 
 /**
@@ -42,12 +56,11 @@ export function componerPorMedio(filas: FilaDePagos[]): Composicion {
   let hayDolares = false
 
   for (const f of filas) {
-    // `_sum` de un grupo vacío es null. Prisma no devuelve grupos vacíos, pero
-    // el tipo lo admite y un `null` acá se propagaría como NaN hasta la pantalla.
-    const monto = f._sum.monto
-    if (!monto) continue
+    if (f._count <= 0) continue
 
-    const enPesos = montoEnPesos(monto, f.cotizacion)
+    // Redondear PRIMERO y multiplicar por la cantidad después, no al revés: es
+    // lo que reproduce exactamente la suma pago por pago de `totalDePagos`.
+    const enPesos = montoEnPesos(f.monto, f.cotizacion).mul(f._count)
     const actual =
       acumulado.get(f.medio) ?? { ars: new Prisma.Decimal(0), usd: new Prisma.Decimal(0) }
 

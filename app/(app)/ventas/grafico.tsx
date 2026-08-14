@@ -46,25 +46,47 @@ const ALTO_DE_BARRA = 40
 /**
  * El importe al final de la barra.
  *
- * Va sobre `total` —la pila entera— y no sobre la serie que lo hospeda: es el
- * número que la barra mide de punta a punta, y el desglose ya lo dan el tooltip
- * y la tabla.
+ * **Cuelga del tramo que termina la pila, y por eso son dos y no uno.** recharts
+ * no emite rectángulo para un punto de valor 0, y sin rectángulo tampoco emite
+ * su label: con el importe colgado sólo del tramo de dólares, toda barra
+ * cobrada íntegramente en pesos se quedaba sin número. No era un borde — con
+ * dólares en efectivo y en transferencia, tarjeta de crédito y débito perdían
+ * el suyo. Y no era cosmético: la excepción de contraste de `--chart-2` se
+ * acepta declarando que cada barra lleva su importe impreso al lado.
+ *
+ * El truco es que el rótulo viaje en los DATOS y no en un formatter: cada fila
+ * trae `rotuloArs` y `rotuloUsd`, y sólo uno de los dos tiene texto — el del
+ * tramo que efectivamente termina esa barra. Así la posición siempre cae al
+ * final de la pila sin tener que calcularla.
  *
  * En tinta de texto (`fill-muted-foreground`) y nunca en el color de la serie:
  * un número pintado del color de su barra compite con la barra por ser el dato,
  * y encima hereda su contraste, que en la serie de dólares no llega a 3:1.
  */
-function ImporteAlFinal() {
+function ImporteAlFinal({ campo }: { campo: 'rotuloArs' | 'rotuloUsd' }) {
   return (
     <LabelList
-      dataKey="total"
+      dataKey={campo}
       position="right"
       offset={8}
       className="fill-muted-foreground"
       fontSize={11}
-      formatter={(v: unknown) => formatearPrecio(String(v))}
     />
   )
+}
+
+/**
+ * Lo que hay que reservar a la derecha para que el importe no se corte.
+ *
+ * El SVG recorta lo que se sale, así que un margen fijo es una apuesta a que
+ * ningún local factura más de lo que ese número aguanta. `$ 1.354.189,00` mide
+ * ~73 px en 11 px de cuerpo, y con `right: 64` terminaba PASADO el borde. Se
+ * calcula sobre el rótulo más largo que esta pantalla va a dibujar de verdad.
+ */
+function margenDerecho(rotulos: string[]): number {
+  const largo = Math.max(0, ...rotulos.map((r) => r.length))
+  // 6.6 px por carácter en 11 px de cuerpo, más el offset de 8 y un respiro.
+  return Math.max(64, Math.ceil(largo * 6.6) + 20)
 }
 
 function Leyenda() {
@@ -100,12 +122,20 @@ function Leyenda() {
 export function GraficoDeMedios({ composicion }: { composicion: Composicion }) {
   const { barras, hayDolares } = composicion
 
-  const datos = barras.map((b) => ({
-    medio: ROTULO_MEDIO[b.medio],
-    ars: Number(b.ars),
-    usd: Number(b.usd),
-    total: Number(b.total),
-  }))
+  const datos = barras.map((b) => {
+    const usd = Number(b.usd)
+    const rotulo = formatearPrecio(b.total)
+    return {
+      medio: ROTULO_MEDIO[b.medio],
+      ars: Number(b.ars),
+      usd,
+      total: Number(b.total),
+      // Sólo uno de los dos lleva texto: el del tramo que termina la pila.
+      // Ver ImporteAlFinal.
+      rotuloArs: usd === 0 ? rotulo : '',
+      rotuloUsd: usd === 0 ? '' : rotulo,
+    }
+  })
 
   return (
     <section className="mb-6 w-full max-w-2xl rounded-lg bg-card p-4">
@@ -126,11 +156,23 @@ export function GraficoDeMedios({ composicion }: { composicion: Composicion }) {
           className="aspect-auto w-full"
           style={{ height: barras.length * ALTO_DE_BARRA + 16 }}
         >
+          {/* Sin `accessibilityLayer`: le pone al SVG `role="application"` y
+              `tabindex="0"`, y este SVG vive adentro de un aria-hidden. Eso es
+              la violación aria-hidden-focus de axe, y en la práctica una parada
+              de tab invisible entre "Filtrar" y el listado — sin foco visible y
+              sin nada que anunciar. El camino accesible es la tabla de abajo,
+              así que la capa sobra. */}
           <BarChart
-            accessibilityLayer
+            tabIndex={-1}
+            role="presentation"
             data={datos}
             layout="vertical"
-            margin={{ left: 0, right: 64, top: 4, bottom: 4 }}
+            margin={{
+              left: 0,
+              right: margenDerecho(datos.map((d) => d.rotuloArs || d.rotuloUsd)),
+              top: 4,
+              bottom: 4,
+            }}
           >
             <YAxis
               dataKey="medio"
@@ -159,9 +201,10 @@ export function GraficoDeMedios({ composicion }: { composicion: Composicion }) {
                 />
               }
             />
-            {/* El importe lo lleva SIEMPRE el tramo de más afuera, que es el de
-                dólares cuando los hay y el de pesos cuando no: puesto en el de
-                adentro quedaría escrito en medio de la barra. */}
+            {/* Los dos tramos llevan su LabelList, y no sólo el de afuera: el
+                que "está afuera" cambia FILA POR FILA — una barra cobrada toda
+                en pesos termina en el tramo de pesos aunque el período tenga
+                dólares. Ver ImporteAlFinal. */}
             <Bar
               dataKey="ars"
               stackId="plata"
@@ -169,7 +212,7 @@ export function GraficoDeMedios({ composicion }: { composicion: Composicion }) {
               radius={hayDolares ? 0 : [0, 4, 4, 0]}
               {...SERIE}
             >
-              {!hayDolares && <ImporteAlFinal />}
+              <ImporteAlFinal campo="rotuloArs" />
             </Bar>
             {hayDolares && (
               <Bar
@@ -179,7 +222,7 @@ export function GraficoDeMedios({ composicion }: { composicion: Composicion }) {
                 radius={[0, 4, 4, 0]}
                 {...SERIE}
               >
-                <ImporteAlFinal />
+                <ImporteAlFinal campo="rotuloUsd" />
               </Bar>
             )}
           </BarChart>

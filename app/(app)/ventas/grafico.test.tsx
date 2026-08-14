@@ -32,6 +32,22 @@ const SOLO_PESOS: Composicion = {
   hayDolares: false,
 }
 
+/**
+ * La composición que produce `scripts/sembrar-ventas-dev.mts`: dólares en dos
+ * de los cuatro medios. Es la forma normal de un local que toma dólares, y la
+ * que destapó que el importe desaparecía de las barras sin ellos.
+ */
+const MIXTO: Composicion = {
+  barras: [
+    { medio: 'EFECTIVO', ars: '484189', usd: '870000', total: '1354189' },
+    { medio: 'TARJETA_CREDITO', ars: '1012499', usd: '0', total: '1012499' },
+    { medio: 'TRANSFERENCIA', ars: '176250', usd: '72500', total: '248750' },
+    { medio: 'TARJETA_DEBITO', ars: '13400', usd: '0', total: '13400' },
+  ],
+  total: '2628838',
+  hayDolares: true,
+}
+
 const CON_DOLARES: Composicion = {
   barras: [{ medio: 'EFECTIVO', ars: '90000', usd: '12000', total: '102000' }],
   total: '102000',
@@ -65,6 +81,52 @@ describe('el gráfico de medios de pago', () => {
     const conSeparador = html.match(/stroke-width="2"/g) ?? []
     expect(conSeparador.length).toBeGreaterThanOrEqual(2)
     expect(html).toContain('stroke="var(--card)"')
+  })
+
+  it('imprime el importe de TODA barra, también las cobradas sin un dólar', () => {
+    // El hallazgo de la review, y el peor de los seis. recharts no emite
+    // rectángulo para un punto de valor 0, y sin rectángulo tampoco emite su
+    // label: con el importe colgado sólo del tramo de dólares, de estas cuatro
+    // barras se imprimían DOS. No es un borde —es un local que toma dólares en
+    // efectivo y transferencia— y no es cosmético: la excepción de contraste de
+    // --chart-2 se acepta declarando que cada barra lleva su importe al lado.
+    //
+    // Se afirma sobre los <tspan> del SVG y NO sobre el marcado entero, y eso
+    // no es precisión decorativa: los cuatro importes están además en la tabla
+    // accesible del mismo componente, así que un `toContain` sobre todo el HTML
+    // da verde aunque el gráfico no dibuje un solo número. La primera versión
+    // de este caso hacía exactamente eso — comprobado rompiendo el arreglo a
+    // propósito y viendo que pasaba igual.
+    const enElSvg = [...montar(MIXTO).matchAll(/<tspan[^>]*>([^<]+)<\/tspan>/g)].map(
+      (m) => m[1],
+    )
+    for (const importe of ['1.354.189,00', '1.012.499,00', '248.750,00', '13.400,00']) {
+      expect(
+        enElSvg.some((t) => t.includes(importe)),
+        `el gráfico no imprime ${importe}; sólo dibuja ${JSON.stringify(enElSvg)}`,
+      ).toBe(true)
+    }
+  })
+
+  it('no deja una parada de tab adentro del aria-hidden', () => {
+    // recharts 3 le pone al SVG `role="application"` y `tabindex="0"` por
+    // default —no hace falta `accessibilityLayer`—, y este SVG vive adentro de
+    // un aria-hidden: es la violación aria-hidden-focus de axe, y en la
+    // práctica una parada de tab invisible entre "Filtrar" y el listado.
+    expect(montar(MIXTO)).not.toContain('tabindex="0"')
+  })
+
+  it('reserva a la derecha lo que el importe más largo necesita', () => {
+    // Con margen fijo, `$ 1.354.189,00` terminaba pasado el borde del SVG, que
+    // recorta lo que se sale. El margen se calcula sobre el rótulo real.
+    const html = montar(MIXTO)
+    const ancho = Number(html.match(/class="recharts-surface" width="(\d+)"/)?.[1])
+    const equis = [...html.matchAll(/<tspan x="([\d.]+)"[^>]*>\$/g)].map((m) => Number(m[1]))
+    expect(equis.length).toBeGreaterThan(0)
+    for (const x of equis) {
+      // 14 caracteres a ~6.6 px es el largo de "$ 1.354.189,00".
+      expect(x + 14 * 6.6).toBeLessThanOrEqual(ancho)
+    }
   })
 
   it('rotula los medios en castellano y no con el nombre del enum', () => {

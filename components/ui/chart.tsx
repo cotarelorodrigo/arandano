@@ -7,7 +7,16 @@ import type { TooltipValueType } from "recharts"
 import { cn } from "@/lib/utils"
 
 // Format: { THEME_NAME: CSS_SELECTOR }
-const THEMES = { light: "", dark: ".dark" } as const
+//
+// Sin la entrada `dark: ".dark"` que trae el componente de shadcn, y es una
+// modificación deliberada del archivo vendorizado —para eso se copian al repo—.
+// El modo oscuro se borró en el ciclo del sistema de diseño: la paleta de
+// :root YA es oscura y nada aplica la clase `.dark`. Con la entrada puesta,
+// `ChartStyle` emitía en CADA render un bloque `.dark [data-chart=…]` idéntico
+// al de arriba, o sea CSS muerto duplicado. Y el cable trampa de
+// test/sistema-de-diseno.test.ts sólo mira app/globals.css, así que un `.dark`
+// generado en runtime le pasa por al lado. Lo levantó la review.
+const THEMES = { light: "" } as const
 
 const INITIAL_DIMENSION = { width: 320, height: 200 } as const
 type TooltipNameType = number | string

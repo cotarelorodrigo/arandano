@@ -1,5 +1,14 @@
 /**
- * Ventas sintéticas para mirar /ventas en dev. NO se commitea con el ciclo.
+ * Ventas sintéticas para mirar /ventas en dev: `npm run ventas:sembrar`.
+ *
+ * Nació como descartable —el encabezado decía "no se commitea", y la review
+ * levantó que estaba commiteado y encima citado por ruta en
+ * docs/sistema-de-diseno.md—. Se queda: el canario de dev arranca sin una sola
+ * venta, y sin pagos el panel "Cómo entró la plata" no se dibuja, así que sin
+ * esto cada verificación visual futura vuelve a escribirlo.
+ *
+ * **Sólo dev.** Escribe ventas de mentira; correrlo contra una base con datos
+ * de clientes ensucia la caja de alguien.
  *
  * Importes de distinta cantidad de dígitos a propósito: con montos parejos no
  * se puede ver si las columnas de números bailan (lección anotada en CLAUDE.md

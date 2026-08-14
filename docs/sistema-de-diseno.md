@@ -734,6 +734,14 @@ se rompería sin que jsdom lo note, porque ahí adentro mide un contenedor que n
 existe— y que el tramo de `--chart-2` se despega del fondo, que es exactamente
 el límite que su excepción de contraste declarada acepta.
 
+**Los importes al lado de las barras quedaron pendientes de una segunda
+mirada**, y conviene que se sepa: cuando se hizo esta verificación, sólo se
+imprimían dos de los cuatro —recharts no emite rectángulo para un tramo de
+valor 0, y sin rectángulo tampoco su rótulo—. Lo levantó la review, está
+arreglado y cubierto por un caso, pero el arreglo cambió lo que se dibuja
+(cuatro rótulos en vez de dos, y más margen a la derecha para que el más largo
+no se corte), así que esa parte todavía no la miró nadie.
+
 **Y cómo se llegó, que otra vez no fue lo obvio.** El stack de dev sirve
 `/root/arandano`, o sea la rama principal, así que una feature en un worktree
 no se ve ahí. Se miró levantando la build de producción del worktree en un
