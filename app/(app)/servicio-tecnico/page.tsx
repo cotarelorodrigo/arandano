@@ -103,8 +103,12 @@ export default async function ServicioTecnico({
       <div className="mt-6 flex flex-wrap gap-2">
         {/* "Abiertas" y no "Todas": nunca contó las entregadas, y ahora que
             hay un chip para ésas el nombre viejo mentiría de verdad. */}
+        {/* Ojo: no usa conParametros, que siempre reincorpora `q`. Este chip
+            promete volver al tablero por defecto, y ese default no lleva
+            búsqueda — arrastrar `q` dejaría el href idéntico a la URL actual
+            durante una búsqueda, un chip que no hace nada. */}
         <Link
-          href={conParametros({ estado: null, p: 1 })}
+          href="/servicio-tecnico"
           aria-current={filtro === null && !buscandoEnTodas ? 'true' : undefined}
           className={`rounded-md border px-3 py-1.5 text-sm ${
             filtro === null && !buscandoEnTodas
