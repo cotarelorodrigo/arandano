@@ -139,10 +139,14 @@ estado que tenía, porque anular es una columna.
 no un default. Hay un chip por estado, `Entregadas` incluido, que es la otra
 mitad de poder volver a un equipo ya entregado.
 
-**Y los contadores siguen contando sólo las abiertas**, deliberadamente: son el
-número del listado por defecto, que es al que el chip sin filtro vuelve. Tampoco
-se recalculan según el filtro elegido — si contaran lo filtrado, apretar "Listo"
-pondría el resto en cero y no habría desde dónde volver.
+**Y cada estado tiene su propio contador, `Entregado` incluido**: el `groupBy`
+cuenta todas las órdenes vivas, no sólo las abiertas, así que cada chip de
+estado refleja lo que hay ahí — la otra mitad de que `Entregadas` exista como
+chip es que también sepa cuántas hay. Lo que sigue acotado a las abiertas es el
+tablero por defecto, la lista que se ve sin elegir nada: es exactamente la
+suma que lleva el chip sin filtro. Tampoco se recalculan según el filtro
+elegido — si contaran lo filtrado, apretar "Listo" pondría el resto en cero y
+no habría desde dónde volver.
 
 ### Anular es una columna, no un estado
 
