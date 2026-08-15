@@ -202,6 +202,18 @@ que el foco tenga **dos** indicadores:
 Y una cuarta y una quinta, las dos del panel del gráfico, explicadas enteras en
 la sección que sigue.
 
+### El ticket de servicio técnico no usa tokens
+
+`app/(app)/servicio-tecnico/[id]/ticket/ticket.module.css` es la única
+superficie del producto que escribe colores literales: `#000` sobre `#fff`.
+
+**Por qué**: una impresora térmica quema un solo color y el fondo es el papel.
+No hay tema claro ni oscuro que aplicar — un token de tema ahí no significaría
+nada, y heredar la paleta oscura de la aplicación imprimiría una hoja negra.
+
+**Qué la haría caducar**: que el ticket deje de imprimirse y pase a ser sólo una
+pantalla, o que aparezca una impresora a color. Ninguna de las dos está prevista.
+
 ## Los colores del gráfico
 
 `--chart-1` y `--chart-2` son las dos series del panel **"Cómo entró la plata"**
