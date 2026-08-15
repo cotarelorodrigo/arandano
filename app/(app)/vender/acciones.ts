@@ -6,6 +6,7 @@ import { crearVenta } from '@/lib/ventas/crear'
 import { ErrorDeVenta } from '@/lib/ventas/errores'
 import { buscarArticulosVendibles, type ArticuloVendible } from '@/lib/ventas/buscar'
 import { aDecimal, ErrorDeFormato } from '@/lib/formato/numeros'
+import { esUuid } from '@/lib/uuid'
 import type { MedioPago, Moneda } from '@/generated/prisma/client'
 
 export type EstadoCobro = {
@@ -17,7 +18,6 @@ export type EstadoCobro = {
 
 const MEDIOS = ['EFECTIVO', 'TRANSFERENCIA', 'TARJETA_DEBITO', 'TARJETA_CREDITO'] as const
 const MONEDAS = ['ARS', 'USD'] as const
-const ES_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** Los errores que la persona puede corregir tipeando distinto se muestran; el
  *  resto se relanza, para que un bug de verdad llegue al log y no se aplane en
@@ -62,7 +62,7 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
       // que `traducirErrorDeBase` no traduce: no sería `ErrorDeVenta` ni
       // `ErrorDeFormato`, así que saldría por `traducir` como un 500 en vez de
       // como el error de dominio que corresponde.
-      if (!ES_UUID.test(articuloId)) {
+      if (!esUuid(articuloId)) {
         throw new ErrorDeVenta('ARTICULO_INEXISTENTE', `no existe el artículo ${articuloId}`)
       }
       return {

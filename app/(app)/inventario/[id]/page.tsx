@@ -5,16 +5,11 @@ import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { FormularioDeEdicion, AccionesDeArticulo, MoverStock } from '../formularios'
 import { formatearPrecio, formatearCantidad, formatearFecha } from '@/lib/formato/mostrar'
+import { esUuid } from '@/lib/uuid'
 
 export const dynamic = 'force-dynamic'
 
 const MOVIMIENTOS_VISIBLES = 50
-
-// `notFound()` y no un 500: `/inventario/foo` es algo que alguien escribe en la
-// barra de direcciones, y la respuesta correcta es la misma que para un id de
-// otro tenant — no existe. Sin esto, Prisma rechaza el valor con P2007 y la
-// pantalla se cae. Es el mismo criterio que el clamp de `?p` en el listado.
-const ES_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const NOMBRE_DE_MOTIVO: Record<string, string> = {
   VENTA: 'Venta',
@@ -26,7 +21,11 @@ const NOMBRE_DE_MOTIVO: Record<string, string> = {
 export default async function DetalleDeArticulo({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion()
   const { id } = await params
-  if (!ES_UUID.test(id)) notFound()
+  // `notFound()` y no un 500: `/inventario/foo` es algo que alguien escribe en
+  // la barra de direcciones, y la respuesta correcta es la misma que para un id
+  // de otro tenant — no existe. Sin esto, Prisma rechaza el valor con P2007 y
+  // la pantalla se cae. Es el mismo criterio que el clamp de `?p` en el listado.
+  if (!esUuid(id)) notFound()
 
   const prisma = prismaParaTenant(sesion.tenant.id)
   const articulo = await prisma.articulo.findUnique({ where: { id } })

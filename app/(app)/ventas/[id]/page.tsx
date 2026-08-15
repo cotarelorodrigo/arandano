@@ -7,6 +7,7 @@ import {
   formatearPrecio, formatearDolares, formatearCantidad, formatearFecha,
 } from '@/lib/formato/mostrar'
 import { AnularVenta } from '../formularios'
+import { esUuid } from '@/lib/uuid'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,15 +18,13 @@ const NOMBRE_DE_MEDIO: Record<string, string> = {
   TARJETA_CREDITO: 'Crédito',
 }
 
-// Mismo guard que el detalle de artículo y por el mismo motivo: `/ventas/foo`
-// es algo que alguien escribe en la barra de direcciones, y sin esto Prisma
-// rechaza el valor con P2007 y la pantalla se cae con un 500.
-const ES_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
 export default async function DetalleDeVenta({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion()
   const { id } = await params
-  if (!ES_UUID.test(id)) notFound()
+  // Mismo guard que el detalle de artículo y por el mismo motivo: `/ventas/foo`
+  // es algo que alguien escribe en la barra de direcciones, y sin esto Prisma
+  // rechaza el valor con P2007 y la pantalla se cae con un 500.
+  if (!esUuid(id)) notFound()
 
   const venta = await prismaParaTenant(sesion.tenant.id).venta.findUnique({
     where: { id },

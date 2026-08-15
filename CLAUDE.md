@@ -247,9 +247,20 @@ quedan abiertas se siguen encareciendo con cada mes que pasa.
   `comanda_id`), y la lógica que filtra por origen se duplica por módulo. Es
   exactamente el riesgo que la sección anterior nombra: que el núcleo quede con
   forma de servicio técnico. Las dos salidas conocidas —columna por módulo, o el
-  par `(origenTipo, origenId)` sin FK— tienen costos distintos y conviene elegir
-  **con el módulo de Órdenes de Trabajo en la mano**, que es el próximo. El cambio
-  en sí es aditivo; lo caro es elegir mal y descubrirlo con tres módulos escritos.
+  par `(origenTipo, origenId)` sin FK— tienen costos distintos. El cambio en sí
+  es aditivo; lo caro es elegir mal y descubrirlo con tres módulos escritos.
+
+  **El módulo de Órdenes de Trabajo ya existe** (2026-08-15, recepción y
+  seguimiento del equipo —
+  `docs/superpowers/specs/2026-08-15-servicio-tecnico-design.md`), y la
+  decisión **sigue abierta a propósito**: ese ciclo se cortó antes de
+  repuestos, así que no toca `MovimientoStock` ni ningún punto de extensión del
+  núcleo — el propio spec lo dice como mitigación del riesgo de arriba. "Elegir
+  con el módulo en la mano" pedía un módulo que ya esté descontando stock de
+  verdad, no uno que todavía manda a `/vender` a mano al entregar. La decisión
+  pasa entonces al **ciclo de repuestos**, que es el próximo de la lista de
+  "Lo que sigue" de ese spec y el que puede elegir bien, porque es el que va a
+  sentir el costo de elegir mal.
 
 Y una que era de ese mismo review quedó cerrada: **`crearVenta` ya es
 idempotente** (2026-08-11, ciclo de la UI de ventas). `Venta.claveIdempotencia`
@@ -335,7 +346,17 @@ Y del producto:
   pre-commit y por el paso 3 de `deploy.sh`, así que no puede quedar
   desactualizado en silencio. Ver
   `docs/superpowers/specs/2026-08-07-diagrama-schema-design.md`.
-- Definir el schema del módulo de órdenes de trabajo (`OrdenDeTrabajo` y sus estados), en `modules/ordenes-de-trabajo/`, con el mismo `tenant_id` y las mismas policies de RLS.
+- ~~Definir el schema del módulo de órdenes de trabajo.~~ **Hecho**
+  (2026-08-15), y **no** en `modules/`: la pestaña es fija y el registry de
+  módulos sigue sin existir — decisión consciente, con su vencimiento escrito
+  en el spec. `OrdenDeTrabajo` y `EventoOrden` (append-only) con el mismo
+  `tenant_id` y las mismas policies de RLS, recepción del equipo, ocho estados
+  con su grafo validado en el servidor, bitácora, y ticket térmico de 80 mm con
+  las dos copias. Ver
+  `docs/superpowers/specs/2026-08-15-servicio-tecnico-design.md`. **Queda para
+  los ciclos siguientes**: repuestos que descuenten stock —que es el que cierra
+  la decisión abierta de `MovimientoStock`—, el cobro por `crearVentaDesde`,
+  las fotos del equipo, el registry de módulos y la sección `/clientes`.
 - Definir el registry de módulos y los puntos de extensión del núcleo: navegación, tipos de artículo, `crearVentaDesde`, movimientos de stock, intents del bot, jobs de pg-boss, vistas del catálogo público y datos demo.
 - ~~Inicializar shadcn/ui, que hoy está a medias.~~ **Hecho** (2026-08-10, en
   el ciclo de autenticación): Tailwind v4 sumado, `components.json` armado y

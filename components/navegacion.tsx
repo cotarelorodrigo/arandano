@@ -12,6 +12,11 @@ const PESTANAS: Pestana[] = [
   { href: '/vender', texto: 'Vender' },
   { href: '/ventas', texto: 'Ventas' },
   { href: '/inventario', texto: 'Inventario' },
+  // Fija y visible en TODO tenant, incluido el que no hace servicio técnico.
+  // Es deuda consciente y está escrita en el spec con su vencimiento: cuando
+  // exista el registry de módulos, esta entrada sale de TenantModule. El
+  // disparador es el primer tenant de un rubro sin servicio técnico.
+  { href: '/servicio-tecnico', texto: 'Servicio Técnico' },
   { href: '/usuarios', texto: 'Usuarios', soloDueno: true },
 ]
 
@@ -56,10 +61,10 @@ export function Navegacion({ rol }: { rol: RolUsuario }) {
        esa lista, sale de medir el border-b de 1 px que tiene que tapar. Por
        eso está exceptuado ahí en vez de ser una violación sin documentar.
 
-       overflow-x-auto: hoy sobra lugar con cuatro pestañas, pero este archivo
+       overflow-x-auto: hoy sobra lugar con cinco pestañas, pero este archivo
        es el punto de extensión que CLAUDE.md promete para el registry de
-       módulos — cuando Órdenes de Trabajo sume las suyas, o en un teléfono, sin
-       esto se rompe. Ahora sale gratis. */
+       módulos — cuando Turnos o Gastronomía sumen las suyas, o en un teléfono,
+       sin esto se rompe. Ahora sale gratis. */
     <nav className="-mb-px flex items-center gap-1 overflow-x-auto text-sm">
       {PESTANAS.filter((p) => !p.soloDueno || rol === 'DUENO').map((p) => {
         const activa = estaActiva(p.href, ruta)

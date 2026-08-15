@@ -51,6 +51,16 @@ erDiagram
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
+  eventos_orden {
+    uuid id PK
+    uuid tenant_id FK
+    uuid orden_id FK
+    estado_orden desde "opcional"
+    estado_orden hasta
+    text nota "opcional"
+    uuid usuario_id FK
+    timestamptz(3) creado_en
+  }
   leads {
     uuid id PK
     text nombre
@@ -71,6 +81,28 @@ erDiagram
     uuid usuario_id FK
     text nota "opcional"
     timestamptz(3) creado_en
+  }
+  ordenes_de_trabajo {
+    uuid id PK
+    uuid tenant_id FK "único junto a numero; único junto a clave_idempotencia"
+    integer numero "único junto a tenant_id"
+    text clave_idempotencia "opcional; único junto a tenant_id"
+    uuid cliente_id FK
+    uuid recibida_por_id FK
+    estado_orden estado
+    text equipo_marca
+    text equipo_modelo
+    text equipo_serie "opcional"
+    text clave_desbloqueo "opcional"
+    text falla_declarada
+    text accesorios "opcional"
+    text danos_visibles "opcional"
+    text diagnostico "opcional"
+    decimal(12,2) monto_estimado "opcional"
+    timestamptz(3) anulada_en "opcional"
+    uuid anulada_por_id FK "opcional"
+    timestamptz(3) creado_en
+    timestamptz(3) actualizado_en
   }
   pagos {
     uuid id PK
@@ -105,6 +137,7 @@ erDiagram
     estado_tenant estado
     integer proximo_numero_venta
     integer proximo_sku_articulo
+    integer proximo_numero_orden
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
@@ -153,10 +186,14 @@ erDiagram
   articulos ||--o{ movimientos_stock : "ON DELETE RESTRICT"
   articulos ||--o{ venta_items : "ON DELETE RESTRICT"
   clientes |o--o{ ventas : "ON DELETE RESTRICT"
+  clientes ||--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
+  ordenes_de_trabajo ||--o{ eventos_orden : "ON DELETE CASCADE"
   tenants ||--o{ accounts : "ON DELETE CASCADE"
   tenants ||--o{ articulos : "ON DELETE CASCADE"
   tenants ||--o{ clientes : "ON DELETE CASCADE"
+  tenants ||--o{ eventos_orden : "ON DELETE CASCADE"
   tenants ||--o{ movimientos_stock : "ON DELETE CASCADE"
+  tenants ||--o{ ordenes_de_trabajo : "ON DELETE CASCADE"
   tenants ||--o{ pagos : "ON DELETE CASCADE"
   tenants ||--o{ sessions : "ON DELETE CASCADE"
   tenants ||--o{ tenant_modules : "ON DELETE CASCADE"
@@ -164,9 +201,12 @@ erDiagram
   tenants ||--o{ venta_items : "ON DELETE CASCADE"
   tenants ||--o{ ventas : "ON DELETE CASCADE"
   tenants ||--o{ verifications : "ON DELETE CASCADE"
+  users |o--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
   users |o--o{ ventas : "ON DELETE RESTRICT"
   users ||--o{ accounts : "ON DELETE CASCADE"
+  users ||--o{ eventos_orden : "ON DELETE RESTRICT"
   users ||--o{ movimientos_stock : "ON DELETE RESTRICT"
+  users ||--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
   users ||--o{ sessions : "ON DELETE CASCADE"
   users ||--o{ ventas : "ON DELETE RESTRICT"
   ventas |o--o{ movimientos_stock : "ON DELETE RESTRICT"
@@ -176,6 +216,7 @@ erDiagram
 
 ## Enums
 
+- **estado_orden**: `RECIBIDO`, `EN_DIAGNOSTICO`, `PRESUPUESTADO`, `EN_REPARACION`, `LISTO`, `ENTREGADO`, `SIN_REPARACION`, `RECHAZADO`
 - **estado_tenant**: `TRIAL`, `ACTIVO`, `SUSPENDIDO`
 - **medio_pago**: `EFECTIVO`, `TRANSFERENCIA`, `TARJETA_DEBITO`, `TARJETA_CREDITO`
 - **modulo**: `ORDENES_DE_TRABAJO`, `TURNOS`, `GASTRONOMIA`
@@ -188,8 +229,11 @@ erDiagram
 
 - **accounts**: `accounts_tenant_id_user_id_idx` sobre (`tenant_id`, `user_id`)
 - **clientes**: `clientes_tenant_id_idx` sobre (`tenant_id`)
+- **eventos_orden**: `eventos_orden_tenant_id_orden_id_creado_en_idx` sobre (`tenant_id`, `orden_id`, `creado_en`)
 - **movimientos_stock**: `movimientos_stock_tenant_id_articulo_id_idx` sobre (`tenant_id`, `articulo_id`)
 - **movimientos_stock**: `movimientos_stock_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
+- **ordenes_de_trabajo**: `ordenes_de_trabajo_tenant_id_cliente_id_idx` sobre (`tenant_id`, `cliente_id`)
+- **ordenes_de_trabajo**: `ordenes_de_trabajo_tenant_id_estado_creado_en_idx` sobre (`tenant_id`, `estado`, `creado_en`)
 - **pagos**: `pagos_tenant_id_moneda_creado_en_idx` sobre (`tenant_id`, `moneda`, `creado_en`)
 - **pagos**: `pagos_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
 - **sessions**: `sessions_tenant_id_user_id_idx` sobre (`tenant_id`, `user_id`)
