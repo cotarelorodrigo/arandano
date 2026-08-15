@@ -449,16 +449,31 @@ cliente concreto, y quien la tuvo es quien está en el mostrador.
   `deploy.sh` falla si quedó desactualizado.
 
 **Y una verificación que ningún test hace: imprimir el ticket de verdad en la
-térmica.** Si el texto entra en 80 mm, si la línea de corte cae donde tiene que
-caer, si el número se lee de lejos — eso lo ve una persona con el papel en la
-mano. Va como paso de cierre del ciclo, igual que la verificación visual del
-punto de venta, y se anota acá cuando se haya hecho.
+térmica.** Sigue **pendiente** — la task de cierre del ciclo (Task 11) no tenía
+térmica ni papel a mano, así que no la hizo, y anotarla como hecha sin haberla
+visto sería peor que dejarla en la lista. Queda para una persona, con esta
+lista para no tener que releer el plan:
 
-Para poder mirar algo hay que tener algo: un sembrador de órdenes de dev en la
-línea de `scripts/sembrar-ventas-dev.mts`, con equipos de nombres largos y
+- ¿El texto entra en los 80 mm, o se corta?
+- ¿La línea de corte cae entre las dos copias?
+- ¿El número se lee de lejos, que es como se busca un equipo en el estante?
+- ¿La falla larga del Xiaomi sembrado se lee entera, o se desarma?
+- ¿La clave de desbloqueo **no** aparece en ninguna de las dos copias? (el test
+  de render ya lo exige bajo jsdom; falta verlo salir del papel, que es otro
+  motor de renderizado y el que realmente importa)
+
+Si algo de esto falla, el arreglo va en `ticket.module.css` y esta lista se
+actualiza con lo que efectivamente se vio — no se borra, se reemplaza.
+
+Para poder mirar algo hay que tener algo: `scripts/sembrar-ordenes-dev.mts`, en
+la línea de `scripts/sembrar-ventas-dev.mts`, con equipos de nombres largos y
 cortos y fallas de uno y de cinco renglones. Con datos parejos no se ve si el
 ticket desborda — la misma lección que dejó el sembrador de ventas con los
-importes de distinta cantidad de dígitos.
+importes de distinta cantidad de dígitos. Ya corrió contra `arandano-dev` en
+este ciclo (`npm run ordenes:sembrar -- <tenantId> <usuarioId>`) y dejó cuatro
+órdenes, numeradas de 1 a 4 — la 2 es el Xiaomi de la falla larga —, cada una
+en `/servicio-tecnico/<id>/ticket`. Es el material que la persona que haga esta
+verificación va a usar; no hace falta sembrar de nuevo.
 
 ## Migración y deploy
 
