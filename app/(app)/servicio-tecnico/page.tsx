@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatearFecha } from '@/lib/formato/mostrar'
 import { ESTADOS, ABIERTOS, NOMBRE_ESTADO } from '@/lib/ordenes-de-trabajo/estados'
+import { condicionesDeBusqueda } from '@/lib/ordenes-de-trabajo/buscar'
 import type { EstadoOrden } from '@/generated/prisma/client'
 
 export const dynamic = 'force-dynamic'
@@ -37,19 +38,11 @@ export default async function ServicioTecnico({
     // Sin filtro explícito, las ABIERTAS: el equipo entregado ya no es problema
     // de nadie, y el tablero es la lista de lo que sigue en el local.
     estado: filtro ? { equals: filtro } : { in: [...ABIERTOS] },
-    ...(busqueda
-      ? {
-          OR: [
-            { equipoModelo: { contains: busqueda, mode: 'insensitive' as const } },
-            { equipoMarca: { contains: busqueda, mode: 'insensitive' as const } },
-            { equipoSerie: { contains: busqueda, mode: 'insensitive' as const } },
-            { cliente: { nombre: { contains: busqueda, mode: 'insensitive' as const } } },
-            // El número se busca como número, no como texto: `?q=42` tiene que
-            // encontrar la orden 42 y no las que contienen un 4 y un 2.
-            ...(Number.isInteger(Number(busqueda)) ? [{ numero: Number(busqueda) }] : []),
-          ],
-        }
-      : {}),
+    // El mismo cuidado que `?p` tres líneas más arriba, que acá faltaba: un
+    // IMEI de 15 dígitos pasa por número y no entra en el int4 de `numero`, así
+    // que la consulta explotaba y el tablero devolvía un 500 justo con lo que
+    // el placeholder invita a escribir. Ver lib/ordenes-de-trabajo/buscar.ts.
+    ...(busqueda ? { OR: condicionesDeBusqueda(busqueda) } : {}),
   }
 
   const [ordenes, total, porEstado] = await Promise.all([
