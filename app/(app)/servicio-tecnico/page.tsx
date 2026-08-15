@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatearFecha } from '@/lib/formato/mostrar'
 import { ESTADOS, ABIERTOS, NOMBRE_ESTADO } from '@/lib/ordenes-de-trabajo/estados'
-import { condicionesDeBusqueda } from '@/lib/ordenes-de-trabajo/buscar'
+import { filtroDelTablero } from '@/lib/ordenes-de-trabajo/buscar'
 import type { EstadoOrden } from '@/generated/prisma/client'
 
 export const dynamic = 'force-dynamic'
@@ -33,17 +33,11 @@ export default async function ServicioTecnico({
   const filtro = esEstado(estado) ? estado : null
 
   const prisma = prismaParaTenant(sesion.tenant.id)
-  const donde = {
-    anuladaEn: null,
-    // Sin filtro explícito, las ABIERTAS: el equipo entregado ya no es problema
-    // de nadie, y el tablero es la lista de lo que sigue en el local.
-    estado: filtro ? { equals: filtro } : { in: [...ABIERTOS] },
-    // El mismo cuidado que `?p` tres líneas más arriba, que acá faltaba: un
-    // IMEI de 15 dígitos pasa por número y no entra en el int4 de `numero`, así
-    // que la consulta explotaba y el tablero devolvía un 500 justo con lo que
-    // el placeholder invita a escribir. Ver lib/ordenes-de-trabajo/buscar.ts.
-    ...(busqueda ? { OR: condicionesDeBusqueda(busqueda) } : {}),
-  }
+  // Por defecto las abiertas; buscando, todas —incluidas las entregadas y las
+  // anuladas—. El porqué, largo, vive en lib/ordenes-de-trabajo/buscar.ts, que
+  // es también donde el buscador recorta el número para que un IMEI no tire
+  // abajo la consulta.
+  const donde = filtroDelTablero(busqueda, filtro)
 
   const [ordenes, total, porEstado] = await Promise.all([
     prisma.ordenDeTrabajo.findMany({
@@ -61,21 +55,31 @@ export default async function ServicioTecnico({
         equipoMarca: true,
         equipoModelo: true,
         creadoEn: true,
+        // Para rotular la fila: con la búsqueda alcanzando a las anuladas, una
+        // fila sin marca no se distingue de una viva.
+        anuladaEn: true,
         cliente: { select: { nombre: true } },
       },
     }),
     prisma.ordenDeTrabajo.count({ where: donde }),
-    // Los contadores hablan de TODAS las abiertas, no de lo que el filtro
+    // Los contadores hablan de TODAS las órdenes vivas, no de lo que el filtro
     // muestra: si contaran lo filtrado, elegir "Listo" pondría el resto en cero
     // y no se podría volver.
     prisma.ordenDeTrabajo.groupBy({
       by: ['estado'],
-      where: { anuladaEn: null, estado: { in: [...ABIERTOS] } },
+      where: { anuladaEn: null },
       _count: { _all: true },
     }),
   ])
 
   const cuenta = new Map(porEstado.map((f) => [f.estado, f._count._all]))
+  // El chip sin filtro cuenta las ABIERTAS y no la suma de todos los estados:
+  // es el que devuelve al listado por defecto, así que su número tiene que ser
+  // el de ese listado. Por eso se suma sobre ABIERTOS y no sobre `cuenta`.
+  const abiertas = ABIERTOS.reduce((a, e) => a + (cuenta.get(e) ?? 0), 0)
+  // Cuando se busca sin chip, el listado se sale de los chips: no hay ninguno
+  // que esté "actual", y decirlo evita que el resultado parezca filtrado.
+  const buscandoEnTodas = busqueda !== '' && filtro === null
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA))
   const conParametros = (cambios: { p?: number; estado?: string | null }) => {
     const u = new URLSearchParams()
@@ -97,16 +101,23 @@ export default async function ServicioTecnico({
       </div>
 
       <div className="mt-6 flex flex-wrap gap-2">
+        {/* "Abiertas" y no "Todas": nunca contó las entregadas, y ahora que
+            hay un chip para ésas el nombre viejo mentiría de verdad. */}
         <Link
           href={conParametros({ estado: null, p: 1 })}
-          aria-current={filtro === null ? 'true' : undefined}
+          aria-current={filtro === null && !buscandoEnTodas ? 'true' : undefined}
           className={`rounded-md border px-3 py-1.5 text-sm ${
-            filtro === null ? 'border-primary font-semibold' : 'text-muted-foreground'
+            filtro === null && !buscandoEnTodas
+              ? 'border-primary font-semibold'
+              : 'text-muted-foreground'
           }`}
         >
-          Todas · {[...cuenta.values()].reduce((a, b) => a + b, 0)}
+          Abiertas · {abiertas}
         </Link>
-        {ABIERTOS.map((e) => (
+        {/* ESTADOS y no ABIERTOS: el chip de Entregadas es la otra mitad de que
+            un equipo entregado se pueda volver a encontrar. Sale en el lugar
+            que le toca del ciclo, porque ESTADOS está en ese orden. */}
+        {ESTADOS.map((e) => (
           <Link
             key={e}
             href={conParametros({ estado: e, p: 1 })}
@@ -128,9 +139,20 @@ export default async function ServicioTecnico({
         </Button>
       </form>
 
+      {buscandoEnTodas ? (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Buscando «{busqueda}» en todas las órdenes, incluidas las entregadas y las anuladas.{' '}
+          <Link href="/servicio-tecnico" className="underline">
+            Volver a las abiertas
+          </Link>
+        </p>
+      ) : null}
+
       {ordenes.length === 0 ? (
         <p className="mt-8 text-sm text-muted-foreground">
-          No hay equipos que mostrar con estos filtros.
+          {buscandoEnTodas
+            ? `No apareció ninguna orden con «${busqueda}».`
+            : 'No hay equipos que mostrar con estos filtros.'}
         </p>
       ) : (
         <ul className="mt-6 divide-y">
@@ -146,7 +168,13 @@ export default async function ServicioTecnico({
                     {o.cliente.nombre} · desde el {formatearFecha(o.creadoEn)}
                   </span>
                 </span>
-                <span className="shrink-0 self-center text-sm">{NOMBRE_ESTADO[o.estado]}</span>
+                {/* Anulada primero y el estado entre paréntesis: la orden
+                    conserva el estado que tenía —anular es una columna—, así
+                    que mostrar sólo "Recibido" haría pasar por viva a una que
+                    no lo está. */}
+                <span className="shrink-0 self-center text-sm">
+                  {o.anuladaEn ? `Anulada (${NOMBRE_ESTADO[o.estado]})` : NOMBRE_ESTADO[o.estado]}
+                </span>
               </Link>
             </li>
           ))}

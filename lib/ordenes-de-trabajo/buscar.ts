@@ -1,4 +1,5 @@
-import type { Prisma } from '@/generated/prisma/client'
+import type { Prisma, EstadoOrden } from '@/generated/prisma/client'
+import { ABIERTOS } from './estados'
 
 /**
  * El techo de un `integer` de Postgres, que es el tipo de
@@ -50,4 +51,36 @@ export function condicionesDeBusqueda(busqueda: string): Prisma.OrdenDeTrabajoWh
     // encontrar la orden 42 y no las que contienen un 4 y un 2.
     ...(numero !== null ? [{ numero }] : []),
   ]
+}
+
+/**
+ * Qué órdenes muestra el tablero: por defecto las abiertas, y buscando, todas.
+ *
+ * El spec dice "por defecto, las abiertas", y por defecto quiere decir cuando
+ * nadie pidió otra cosa. **Buscar es pedir otra cosa.** Con el listado y el
+ * buscador compartiendo el mismo filtro, un equipo entregado no se podía volver
+ * a encontrar nunca —ni por su número, ni por el nombre del cliente, ni por el
+ * IMEI—, y sin embargo el grafo permite `ENTREGADO → EN_REPARACION` justamente
+ * para que la garantía conserve la historia del equipo: se podía llegar al
+ * estado y no se podía llegar a la orden.
+ *
+ * **Y alcanza también a las anuladas**, que tienen el mismo problema por la
+ * misma razón. Una orden anulada sigue siendo algo por lo que alguien pregunta
+ * —"la 42, ¿qué pasó?"— y contestarle "no existe" es peor que "está anulada".
+ * El tablero rotula la fila, así que no se confunde con una viva.
+ *
+ * Un chip SÍ acota, con o sin texto en el buscador: pedir "Listo" es pedir lo
+ * que está listo y no anulado. Es una elección explícita, no un default.
+ */
+export function filtroDelTablero(
+  busqueda: string,
+  filtro: EstadoOrden | null,
+): Prisma.OrdenDeTrabajoWhereInput {
+  const porTexto = busqueda ? { OR: condicionesDeBusqueda(busqueda) } : {}
+  if (busqueda && filtro === null) return porTexto
+  return {
+    anuladaEn: null,
+    estado: filtro ? { equals: filtro } : { in: [...ABIERTOS] },
+    ...porTexto,
+  }
 }

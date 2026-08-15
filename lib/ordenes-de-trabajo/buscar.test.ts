@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { numeroDeOrden, condicionesDeBusqueda, NUMERO_MAXIMO } from './buscar'
+import { numeroDeOrden, condicionesDeBusqueda, filtroDelTablero, NUMERO_MAXIMO } from './buscar'
+import { ABIERTOS } from './estados'
 
 // Sin base a propósito: lo que se prueba es qué texto se convierte en un
 // candidato a `numero` y qué texto no. El caso que rompía el tablero era un
@@ -50,5 +51,47 @@ describe('las condiciones del buscador', () => {
     const porImei = condicionesDeBusqueda('358240051111110')
     expect(porImei).toHaveLength(4)
     expect(JSON.stringify(porImei)).toContain('358240051111110')
+  })
+})
+
+describe('qué muestra el tablero', () => {
+  it('sin búsqueda ni chip, sólo las abiertas y vivas', () => {
+    // El default del spec, que no cambia: el tablero es la lista de lo que
+    // sigue en el local.
+    expect(filtroDelTablero('', null)).toEqual({
+      anuladaEn: null,
+      estado: { in: [...ABIERTOS] },
+    })
+  })
+
+  it('buscando sin chip, alcanza a las entregadas y a las anuladas', () => {
+    // El defecto que esto cierra: entregar un equipo lo volvía imposible de
+    // encontrar por número, por cliente o por IMEI, y el grafo permite
+    // ENTREGADO → EN_REPARACION justamente para la garantía. Una anulada es lo
+    // mismo: sigue siendo algo por lo que alguien pregunta.
+    const donde = filtroDelTablero('42', null)
+    expect(donde.estado).toBeUndefined()
+    expect(donde.anuladaEn).toBeUndefined()
+    expect(donde.OR).toContainEqual({ numero: 42 })
+  })
+
+  it('el chip sí acota, con o sin texto en el buscador', () => {
+    // Un chip es una elección explícita, no un default: pedir "Listo" es pedir
+    // lo que está listo y no anulado.
+    expect(filtroDelTablero('', 'LISTO')).toEqual({
+      anuladaEn: null,
+      estado: { equals: 'LISTO' },
+    })
+    const conTexto = filtroDelTablero('samsung', 'ENTREGADO')
+    expect(conTexto.estado).toEqual({ equals: 'ENTREGADO' })
+    expect(conTexto.anuladaEn).toBeNull()
+    expect(conTexto.OR).toHaveLength(4)
+  })
+
+  it('el IMEI tampoco llega como número por el camino del tablero', () => {
+    // La otra mitad del hallazgo del buscador, medida por donde el tablero la
+    // usa de verdad: la búsqueda amplia habría sido un 500 más ancho.
+    const donde = filtroDelTablero('358240051111110', null)
+    expect(JSON.stringify(donde.OR)).not.toContain('"numero"')
   })
 })
