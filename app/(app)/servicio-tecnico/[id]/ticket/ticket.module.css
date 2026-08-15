@@ -19,11 +19,26 @@
   font-weight: 700;
 }
 
-.corte {
-  border-top: 1px dashed #000;
-  margin: 6mm 0;
-  padding-top: 2mm;
+.rotulo {
   text-align: center;
+  font-weight: 700;
+  margin-bottom: 2mm;
+}
+
+/* Va ENTRE las dos copias y no adentro de ninguna, así que se dibuja sola sobre
+   el rollo: repite el ancho, el papel y la tipografía de .hoja porque afuera de
+   ella el fondo es el de la aplicación, que es oscuro. Sobre el papel es un
+   tramo en blanco con la línea punteada; en pantalla, la continuidad del rollo. */
+.corte {
+  width: 80mm;
+  margin: 0 auto;
+  padding: 4mm 0;
+  background: #fff;
+  color: #000;
+  border-top: 1px dashed #000;
+  text-align: center;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
 }
 
 .firma {
@@ -48,5 +63,11 @@
   .hoja {
     margin: 0;
     padding: 2mm;
+  }
+  /* Mismo trato que .hoja: sobre el papel el ancho lo fija @page, y un 80mm
+     fijo adentro de una página de 80mm sin márgenes se pasa por el padding. */
+  .corte {
+    width: auto;
+    margin: 0;
   }
 }

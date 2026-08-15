@@ -30,6 +30,26 @@ describe('el ticket', () => {
     expect(markup).toContain('COPIA LOCAL')
   })
 
+  it('la línea de corte va una sola vez, y entre las dos copias', () => {
+    // El defecto que esto cierra: la línea vivía adentro de cada copia, entre
+    // su encabezado y su cuerpo, así que cortar por la que decía "COPIA LOCAL"
+    // le arrancaba el encabezado —el #42 grande— a la copia que queda pegada al
+    // equipo en el estante.
+    const markup = html(orden)
+    expect(markup.match(/cortar acá/g) ?? []).toHaveLength(1)
+    expect(markup.indexOf('COPIA CLIENTE')).toBeLessThan(markup.indexOf('cortar acá'))
+    expect(markup.indexOf('cortar acá')).toBeLessThan(markup.indexOf('COPIA LOCAL'))
+  })
+
+  it('el renglón de firma sale sólo en la copia del local', () => {
+    // Depende de un booleano y no de que el rótulo contenga la palabra LOCAL:
+    // atado al texto, retocar la redacción del papel le sacaba la firma al
+    // local sin que nadie se enterara.
+    const markup = html(orden)
+    expect(markup.match(/Firma del cliente/g) ?? []).toHaveLength(1)
+    expect(markup.indexOf('COPIA LOCAL')).toBeLessThan(markup.indexOf('Firma del cliente'))
+  })
+
   it('el número aparece una vez por copia', () => {
     const apariciones = html(orden).match(/#42/g) ?? []
     expect(apariciones).toHaveLength(2)

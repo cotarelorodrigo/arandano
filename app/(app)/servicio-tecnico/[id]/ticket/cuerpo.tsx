@@ -29,21 +29,28 @@ function Copia({
   orden,
   local,
   rotulo,
+  conFirma,
 }: {
   orden: OrdenDelTicket
   local: string
   rotulo: string
+  // Explícito y no deducido del rótulo: que la firma dependa de un string que
+  // se muestra ata el comportamiento a la redacción, y cualquiera que retoque
+  // el texto del papel le saca el renglón de la firma al local sin saberlo.
+  conFirma: boolean
 }) {
   return (
     <div className={estilos.hoja}>
+      {/* El rótulo, ARRIBA de la copia y no en la línea de corte: es el título
+          de lo que sigue. Ver el comentario de CuerpoDelTicket. */}
+      <div className={estilos.rotulo}>{rotulo}</div>
+
       <div style={{ textAlign: 'center' }}>
         <strong>{local}</strong>
         <div>Servicio técnico</div>
         <div className={estilos.numero}>#{orden.numero}</div>
         <div>{formatearFecha(orden.creadoEn)}</div>
       </div>
-
-      <div className={estilos.corte}>{rotulo}</div>
 
       <div>
         <div>Cliente: {orden.cliente.nombre}</div>
@@ -58,7 +65,7 @@ function Copia({
         <div>Recibió: {orden.recibidaPor.nombre}</div>
       </div>
 
-      {rotulo.includes('LOCAL') ? <div className={estilos.firma}>Firma del cliente</div> : null}
+      {conFirma ? <div className={estilos.firma}>Firma del cliente</div> : null}
     </div>
   )
 }
@@ -68,12 +75,25 @@ function Copia({
  *
  * Las DOS copias en una sola impresión: sobre un rollo continuo salen una
  * después de la otra, así que es un botón y no dos.
+ *
+ * La línea de corte va UNA VEZ Y ENTRE LAS DOS COPIAS, que es lo único que la
+ * hace servir para algo. Antes vivía adentro de cada copia, entre su encabezado
+ * y su cuerpo: el rollo salía
+ *
+ *     [local, #42, fecha]  ---- COPIA CLIENTE ----  [cliente, equipo, falla]
+ *     [local, #42, fecha]  ---- COPIA LOCAL   ----  [cliente, equipo, falla]
+ *
+ * o sea que quien cortara por la línea rotulada "COPIA LOCAL" le arrancaba el
+ * encabezado a la copia del local — donde está el #42 grande, y siendo ésa
+ * justamente la que queda pegada al equipo en el estante. El spec pide las
+ * copias "separadas por la línea de corte".
  */
 export function CuerpoDelTicket({ orden, local }: { orden: OrdenDelTicket; local: string }) {
   return (
     <>
-      <Copia orden={orden} local={local} rotulo="— COPIA CLIENTE —" />
-      <Copia orden={orden} local={local} rotulo="— COPIA LOCAL —" />
+      <Copia orden={orden} local={local} rotulo="— COPIA CLIENTE —" conFirma={false} />
+      <div className={estilos.corte}>— cortar acá —</div>
+      <Copia orden={orden} local={local} rotulo="— COPIA LOCAL —" conFirma />
     </>
   )
 }
