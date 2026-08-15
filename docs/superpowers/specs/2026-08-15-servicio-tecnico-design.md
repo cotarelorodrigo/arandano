@@ -329,8 +329,14 @@ Las que parecen raras y no lo son:
   cliente lo retire.
 - **`ENTREGADO → EN_REPARACION`**: la garantía.
 
-Anular sale del grafo: se puede desde cualquier estado, sólo el dueño, y deja su
-evento en la bitácora igual.
+Anular sale del grafo: se puede desde cualquier estado y sólo el dueño.
+
+**Y no deja evento en la bitácora**, a propósito. `EventoOrden` registra
+transiciones, y anular no lo es: el evento tendría que decir `desde` y `hasta`
+el mismo estado, que es una fila que el grafo no puede producir y que un lector
+no sabe interpretar. Quién anuló y cuándo viven en la fila de la orden
+(`anuladaEn`, `anuladaPorId`), que es exactamente la forma que ya tiene `Venta`
+y de donde la pantalla lo lee.
 
 ## Las pantallas
 
