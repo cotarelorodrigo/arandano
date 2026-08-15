@@ -27,10 +27,14 @@ export function Aviso({ estado }: { estado: EstadoServicio }) {
 export function FormularioRecepcion({
   accion,
   clientes,
+  busquedaCliente,
   claveIdempotencia,
 }: {
   accion: (e: EstadoServicio, d: FormData) => Promise<EstadoServicio>
+  // Lo que devolvió el buscador de la pantalla, no "los primeros 50": ver el
+  // comentario de nuevo/page.tsx.
   clientes: { id: string; nombre: string; telefono: string | null }[]
+  busquedaCliente: string
   claveIdempotencia: string
 }) {
   const [estado, ejecutar, pendiente] = useActionState(accion, INICIAL)
@@ -45,21 +49,37 @@ export function FormularioRecepcion({
 
       <fieldset className="space-y-3">
         <legend className="font-medium">Cliente</legend>
-        <Label htmlFor={`${id}-cliente`}>Elegir uno ya cargado</Label>
-        <select
-          id={`${id}-cliente`}
-          name="clienteId"
-          defaultValue=""
-          className="w-full rounded-md border bg-transparent px-3 py-2 text-sm"
-        >
-          <option value="">— cliente nuevo —</option>
-          {clientes.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.nombre}
-              {c.telefono ? ` · ${c.telefono}` : ''}
-            </option>
-          ))}
-        </select>
+
+        {/* Sólo si el buscador de arriba trajo algo. Sin resultados no hay
+            desplegable que mostrar, y una lista vacía o con "los primeros 50"
+            invita a elegir mal. */}
+        {clientes.length > 0 ? (
+          <>
+            <Label htmlFor={`${id}-cliente`}>Elegir uno de los encontrados</Label>
+            <select
+              id={`${id}-cliente`}
+              name="clienteId"
+              defaultValue=""
+              className="w-full rounded-md border bg-transparent px-3 py-2 text-sm"
+            >
+              <option value="">— ninguno, es un cliente nuevo —</option>
+              {clientes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre}
+                  {c.telefono ? ` · ${c.telefono}` : ''}
+                </option>
+              ))}
+            </select>
+          </>
+        ) : busquedaCliente ? (
+          <p className="text-sm text-muted-foreground">
+            No apareció ningún cliente con «{busquedaCliente}». Cargalo acá abajo como nuevo.
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Buscalo arriba si ya vino alguna vez; si es la primera, cargalo acá abajo.
+          </p>
+        )}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
