@@ -71,6 +71,19 @@ enum Moneda {
   @@map("moneda")
 }
 
+enum EstadoOrden {
+  RECIBIDO
+  EN_DIAGNOSTICO
+  PRESUPUESTADO
+  EN_REPARACION
+  LISTO
+  ENTREGADO
+  SIN_REPARACION
+  RECHAZADO
+
+  @@map("estado_orden")
+}
+
 // La raíz. No tiene tenant_id porque ES el tenant; su policy de RLS compara
 // contra id.
 model Tenant {
@@ -91,6 +104,8 @@ model Tenant {
   // y con `desactivadoEn` en juego llegaría a repetir uno ya usado apenas
   // alguien dé de baja algo.
   proximoSkuArticulo Int          @default(1) @map("proximo_sku_articulo")
+  // El tercer correlativo por tenant. Va SIN huecos, como el de ventas.
+  proximoNumeroOrden Int          @default(1) @map("proximo_numero_orden")
   creadoEn           DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn      DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
@@ -105,6 +120,8 @@ model Tenant {
   sesiones       Session[]
   cuentas        Account[]
   verificaciones Verification[]
+  ordenes        OrdenDeTrabajo[]
+  eventosOrden   EventoOrden[]
 
   @@map("tenants")
 }
@@ -149,11 +166,14 @@ model User {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  ventasHechas   Venta[]           @relation("VentasHechas")
-  ventasAnuladas Venta[]           @relation("VentasAnuladas")
-  movimientos    MovimientoStock[]
-  sesiones       Session[]
-  cuentas        Account[]
+  ventasHechas     Venta[]           @relation("VentasHechas")
+  ventasAnuladas   Venta[]           @relation("VentasAnuladas")
+  movimientos      MovimientoStock[]
+  sesiones         Session[]
+  cuentas          Account[]
+  ordenesRecibidas OrdenDeTrabajo[]  @relation("OrdenesRecibidas")
+  ordenesAnuladas  OrdenDeTrabajo[]  @relation("OrdenesAnuladas")
+  eventosOrden     EventoOrden[]
 
   // Por tenant y no global: la misma persona puede trabajar en dos negocios.
   @@unique([tenantId, email])
@@ -171,7 +191,8 @@ model Cliente {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  ventas Venta[]
+  ventas  Venta[]
+  ordenes OrdenDeTrabajo[]
 
   @@index([tenantId])
   @@map("clientes")
@@ -343,6 +364,91 @@ model Pago {
   // bloqueo sobre datos de clientes.
   @@index([tenantId, moneda, creadoEn])
   @@map("pagos")
+}
+
+model OrdenDeTrabajo {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  // Sin huecos, por tenant: es el número que el cliente lee del ticket y dice
+  // por teléfono. Mismo mecanismo que Venta.numero, y la decisión INVERSA a la
+  // de proximoSkuArticulo, que sí tolera huecos porque un SKU no se recita.
+  numero   Int
+  // El doble click acá no cobra dos veces: imprime dos tickets con números
+  // distintos para un solo equipo, y el cliente se lleva uno de los dos.
+  claveIdempotencia String? @map("clave_idempotencia")
+
+  // NO nullable, al revés que Venta.clienteId: una orden sin cliente no sirve,
+  // porque el punto de todo esto es saber a quién llamar.
+  clienteId     String      @map("cliente_id") @db.Uuid
+  recibidaPorId String      @map("recibida_por_id") @db.Uuid
+  estado        EstadoOrden @default(RECIBIDO)
+
+  equipoMarca  String  @map("equipo_marca")
+  equipoModelo String  @map("equipo_modelo")
+  // IMEI o número de serie. Opcional: hay equipos que entran sin encender.
+  equipoSerie  String? @map("equipo_serie")
+  // Texto plano y legible a propósito: el técnico tiene que USARLA para probar
+  // que el arreglo funcionó, no compararla, así que hashearla no es una opción.
+  // NO se imprime nunca, ni en la copia del local — lo asegura un test.
+  claveDesbloqueo String? @map("clave_desbloqueo")
+
+  // Lo que dijo el cliente. Obligatorio: es el motivo por el que el equipo
+  // está acá, y va impreso en las dos copias.
+  fallaDeclarada String  @map("falla_declarada")
+  accesorios     String?
+  danosVisibles  String? @map("danos_visibles")
+
+  // Lo que encontró el técnico. Se carga después de recibir.
+  diagnostico   String?
+  // En pesos. Un número, no un documento: alcanza para decirle un precio al
+  // cliente y para que el estado PRESUPUESTADO signifique algo.
+  montoEstimado Decimal? @map("monto_estimado") @db.Decimal(12, 2)
+
+  // Anular es columna y no estado: como estado pisaría el estado anterior, y
+  // se puede anular desde cualquier punto del ciclo. Misma forma que Venta.
+  anuladaEn    DateTime? @map("anulada_en") @db.Timestamptz(3)
+  anuladaPorId String?   @map("anulada_por_id") @db.Uuid
+
+  creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Restrict: borrar un cliente no puede borrar la historia de sus equipos.
+  cliente     Cliente @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  recibidaPor User    @relation("OrdenesRecibidas", fields: [recibidaPorId], references: [id], onDelete: Restrict)
+  anuladaPor  User?   @relation("OrdenesAnuladas", fields: [anuladaPorId], references: [id], onDelete: Restrict)
+
+  eventos EventoOrden[]
+
+  @@unique([tenantId, numero])
+  @@unique([tenantId, claveIdempotencia])
+  // El tablero filtra por estado y ordena por fecha: éste es su índice.
+  @@index([tenantId, estado, creadoEn])
+  @@index([tenantId, clienteId])
+  @@map("ordenes_de_trabajo")
+}
+
+// Append-only, como movimientos_stock: nada se edita ni se borra. Es lo que
+// responde "hace dos semanas que está acá, ¿qué pasó?".
+model EventoOrden {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  ordenId  String @map("orden_id") @db.Uuid
+
+  // Null en el evento de apertura, que no viene de ningún estado.
+  desde EstadoOrden?
+  hasta EstadoOrden
+  nota  String?
+
+  usuarioId String   @map("usuario_id") @db.Uuid
+  creadoEn  DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orden   OrdenDeTrabajo @relation(fields: [ordenId], references: [id], onDelete: Cascade)
+  usuario User           @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, ordenId, creadoEn])
+  @@map("eventos_orden")
 }
 
 // Las tres tablas que siguen son de Better Auth, y por eso sus campos llevan
