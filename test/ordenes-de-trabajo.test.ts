@@ -58,6 +58,37 @@ describe('alta de una orden', () => {
     expect(b.numero).toBe(a.numero + 1)
   })
 
+  it('el correlativo sigue sin huecos ni repetidos con altas CONCURRENTES', async () => {
+    // Lo que el spec promete en "Cómo se verifica" y no estaba probado: el test
+    // de numeración era secuencial, así que sacar `proximoNumero` de la
+    // transacción del alta lo habría dejado en verde. La invariante se sostiene
+    // por construcción —un UPDATE … RETURNING toma el lock de la fila del
+    // tenant y lo retiene hasta el commit—, y esto es lo que la mide.
+    //
+    // Cinco y no cincuenta: el pool de lib/db.ts tiene max 5, y como cada alta
+    // retiene su conexión hasta comitear, pedir más sólo agrega espera sin
+    // agregar concurrencia real.
+    const CUANTAS = 5
+    const sello = Date.now()
+    const creadas = await Promise.all(
+      Array.from({ length: CUANTAS }, (_, i) =>
+        // Claves DISTINTAS: con la misma, la idempotencia devolvería una sola
+        // orden y el test no probaría nada del correlativo.
+        crearOrden({
+          tenantId,
+          usuarioId,
+          clienteId,
+          ...equipo,
+          claveIdempotencia: `correlativo-${sello}-${i}`,
+        }),
+      ),
+    )
+
+    const numeros = creadas.map((o) => o.numero).sort((a, b) => a - b)
+    const desde = numeros[0]
+    expect(numeros).toEqual(Array.from({ length: CUANTAS }, (_, i) => desde + i))
+  })
+
   it('nace en RECIBIDO con su evento de apertura', async () => {
     const o = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo })
     const { rows } = await owner.query(
