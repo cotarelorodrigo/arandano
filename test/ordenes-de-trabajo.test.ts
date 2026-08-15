@@ -6,6 +6,9 @@ import { ErrorDeOrden } from '@/lib/ordenes-de-trabajo/errores'
 
 let crearOrden: typeof import('@/lib/ordenes-de-trabajo/crear').crearOrden
 let crearCliente: typeof import('@/lib/clientes/administrar').crearCliente
+let cambiarEstado: typeof import('@/lib/ordenes-de-trabajo/operaciones').cambiarEstado
+let guardarDiagnostico: typeof import('@/lib/ordenes-de-trabajo/operaciones').guardarDiagnostico
+let anularOrden: typeof import('@/lib/ordenes-de-trabajo/operaciones').anularOrden
 
 let owner: Client
 let tenantId: string
@@ -24,6 +27,9 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   ;({ crearOrden } = await import('@/lib/ordenes-de-trabajo/crear'))
   ;({ crearCliente } = await import('@/lib/clientes/administrar'))
+  ;({ cambiarEstado, guardarDiagnostico, anularOrden } = await import(
+    '@/lib/ordenes-de-trabajo/operaciones'
+  ))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -120,5 +126,177 @@ describe('alta de una orden', () => {
     await expect(
       crearOrden({ tenantId, usuarioId, clienteId: clienteAjeno, ...equipo }),
     ).rejects.toThrow()
+  })
+})
+
+async function estadoDe(ordenId: string): Promise<string> {
+  const { rows } = await owner.query(`SELECT estado FROM ordenes_de_trabajo WHERE id = $1`, [
+    ordenId,
+  ])
+  return rows[0].estado
+}
+
+describe('cambiar de estado', () => {
+  it('avanza y deja su línea en la bitácora', async () => {
+    const o = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo })
+    await cambiarEstado({ tenantId, usuarioId, ordenId: o.id, hasta: 'EN_DIAGNOSTICO' })
+
+    expect(await estadoDe(o.id)).toBe('EN_DIAGNOSTICO')
+    const { rows } = await owner.query(
+      `SELECT desde, hasta, nota FROM eventos_orden WHERE orden_id = $1 ORDER BY creado_en`,
+      [o.id],
+    )
+    expect(rows).toHaveLength(2)
+    expect(rows[1].desde).toBe('RECIBIDO')
+    expect(rows[1].hasta).toBe('EN_DIAGNOSTICO')
+  })
+
+  it('guarda la nota del cambio', async () => {
+    const o = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo })
+    await cambiarEstado({
+      tenantId,
+      usuarioId,
+      ordenId: o.id,
+      hasta: 'EN_DIAGNOSTICO',
+      nota: 'el cliente lo dejó a las 10',
+    })
+    const { rows } = await owner.query(
+      `SELECT nota FROM eventos_orden WHERE orden_id = $1 ORDER BY creado_en DESC LIMIT 1`,
+      [o.id],
+    )
+    expect(rows[0].nota).toBe('el cliente lo dejó a las 10')
+  })
+
+  it('rechaza el salto que el grafo no permite, y no toca la orden', async () => {
+    const o = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo })
+    await expect(
+      cambiarEstado({ tenantId, usuarioId, ordenId: o.id, hasta: 'ENTREGADO' }),
+    ).rejects.toThrow(ErrorDeOrden)
+    // Lo que importa no es el throw: es que la orden siga como estaba.
+    expect(await estadoDe(o.id)).toBe('RECIBIDO')
+    const { rows } = await owner.query(
+      `SELECT count(*)::int AS n FROM eventos_orden WHERE orden_id = $1`,
+      [o.id],
+    )
+    expect(rows[0].n).toBe(1)
+  })
+
+  it('deja volver un equipo entregado a reparación: es la garantía', async () => {
+    const o = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo })
+    for (const hasta of ['EN_REPARACION', 'LISTO', 'ENTREGADO', 'EN_REPARACION'] as const) {
+      await cambiarEstado({ tenantId, usuarioId, ordenId: o.id, hasta })
+    }
+    expect(await estadoDe(o.id)).toBe('EN_REPARACION')
+  })
+
+  it('una orden anulada no cambia más de estado', async () => {
+    const o = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo })
+    await anularOrden({ tenantId, usuarioId, ordenId: o.id })
+    await expect(
+      cambiarEstado({ tenantId, usuarioId, ordenId: o.id, hasta: 'EN_DIAGNOSTICO' }),
+    ).rejects.toThrow(ErrorDeOrden)
+  })
+
+  it('no toca una orden de otro tenant', async () => {
+    const o = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo })
+    // Con el tenant equivocado, RLS no deja ver la fila: es indistinguible de
+    // que no exista, y ésa es la respuesta honesta.
+    await expect(
+      cambiarEstado({
+        tenantId: otroTenantId,
+        usuarioId,
+        ordenId: o.id,
+        hasta: 'EN_DIAGNOSTICO',
+      }),
+    ).rejects.toThrow(ErrorDeOrden)
+    expect(await estadoDe(o.id)).toBe('RECIBIDO')
+  })
+})
+
+describe('diagnóstico y presupuesto', () => {
+  it('guarda el diagnóstico y el monto', async () => {
+    const { Prisma } = await import('@/generated/prisma/client')
+    const o = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo })
+    await guardarDiagnostico({
+      tenantId,
+      usuarioId,
+      ordenId: o.id,
+      diagnostico: 'pin de carga suelto',
+      montoEstimado: new Prisma.Decimal('35000.00'),
+    })
+    const { rows } = await owner.query(
+      `SELECT diagnostico, monto_estimado FROM ordenes_de_trabajo WHERE id = $1`,
+      [o.id],
+    )
+    expect(rows[0].diagnostico).toBe('pin de carga suelto')
+    expect(String(rows[0].monto_estimado)).toBe('35000.00')
+  })
+
+  it('NO cambia el estado: cargar el diagnóstico no es una transición', async () => {
+    const o = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo })
+    await guardarDiagnostico({
+      tenantId,
+      usuarioId,
+      ordenId: o.id,
+      diagnostico: 'pantalla rota',
+      montoEstimado: null,
+    })
+    expect(await estadoDe(o.id)).toBe('RECIBIDO')
+  })
+
+  it('rechaza un monto negativo', async () => {
+    const { Prisma } = await import('@/generated/prisma/client')
+    const o = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo })
+    await expect(
+      guardarDiagnostico({
+        tenantId,
+        usuarioId,
+        ordenId: o.id,
+        diagnostico: 'x',
+        montoEstimado: new Prisma.Decimal('-1'),
+      }),
+    ).rejects.toThrow(ErrorDeOrden)
+  })
+})
+
+describe('anulación', () => {
+  it('marca quién y cuándo, y no deja evento', async () => {
+    const o = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo })
+    const antes = await owner.query(
+      `SELECT count(*)::int AS n FROM eventos_orden WHERE orden_id = $1`,
+      [o.id],
+    )
+    await anularOrden({ tenantId, usuarioId, ordenId: o.id })
+
+    const { rows } = await owner.query(
+      `SELECT anulada_en, anulada_por_id, estado FROM ordenes_de_trabajo WHERE id = $1`,
+      [o.id],
+    )
+    expect(rows[0].anulada_en).not.toBeNull()
+    expect(rows[0].anulada_por_id).toBe(usuarioId)
+    // El estado NO se pisa: anular es una columna, no un estado.
+    expect(rows[0].estado).toBe('RECIBIDO')
+
+    // Sin evento: EventoOrden registra transiciones, y anular no lo es.
+    const despues = await owner.query(
+      `SELECT count(*)::int AS n FROM eventos_orden WHERE orden_id = $1`,
+      [o.id],
+    )
+    expect(despues.rows[0].n).toBe(antes.rows[0].n)
+  })
+
+  it('anular dos veces no cambia quién la anuló', async () => {
+    const o = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo })
+    await anularOrden({ tenantId, usuarioId, ordenId: o.id })
+    const primera = await owner.query(
+      `SELECT anulada_en FROM ordenes_de_trabajo WHERE id = $1`,
+      [o.id],
+    )
+    await expect(anularOrden({ tenantId, usuarioId, ordenId: o.id })).rejects.toThrow(ErrorDeOrden)
+    const segunda = await owner.query(
+      `SELECT anulada_en FROM ordenes_de_trabajo WHERE id = $1`,
+      [o.id],
+    )
+    expect(String(segunda.rows[0].anulada_en)).toBe(String(primera.rows[0].anulada_en))
   })
 })
