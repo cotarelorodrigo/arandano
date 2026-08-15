@@ -273,8 +273,8 @@ describe('setup-db-roles.sh', () => {
   // el REVOKE se pasara de alcance, ese archivo se cae completo. Un INSERT acá
   // sería una copia peor —necesitaría tenant, artículo y usuario a mano— de algo
   // que ya está cubierto.
-  describe('movimientos_stock es append-only', () => {
-    it('la app no puede editar ni borrar, y sí leer', async () => {
+  describe('las tablas-libro son append-only', () => {
+    it('movimientos_stock: la app no puede editar ni borrar, y sí leer', async () => {
       const app = new Client({ connectionString: urlApp() })
       await app.connect()
       try {
@@ -288,6 +288,49 @@ describe('setup-db-roles.sh', () => {
         // dos asserts de arriba pasarían igual y la app no podría ni mostrar el
         // historial que esta tabla existe para guardar.
         await expect(app.query('SELECT 1 FROM movimientos_stock')).resolves.toBeDefined()
+      } finally {
+        await app.end()
+      }
+    })
+
+    // La bitácora de las órdenes de trabajo, y la razón por la que el módulo
+    // guarda el estado en una columna en vez de derivarlo: si la historia se
+    // puede editar, "hace dos semanas que está acá, ¿qué pasó?" deja de tener
+    // respuesta. El comentario del REVOKE de movimientos_stock avisaba que una
+    // tabla-libro futura necesita su propia línea, y ésta es esa tabla.
+    it('eventos_orden: la app no puede editar ni borrar, y sí leer', async () => {
+      const app = new Client({ connectionString: urlApp() })
+      await app.connect()
+      try {
+        await expect(app.query('UPDATE eventos_orden SET nota = nota')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(app.query('DELETE FROM eventos_orden')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        // Si el REVOKE se hubiera llevado el SELECT, el detalle de la orden no
+        // podría mostrar la bitácora que esta tabla existe para guardar.
+        await expect(app.query('SELECT 1 FROM eventos_orden')).resolves.toBeDefined()
+      } finally {
+        await app.end()
+      }
+    })
+
+    // La puerta de atrás de la bitácora: eventos_orden.orden_id es ON DELETE
+    // CASCADE, así que con DELETE sobre la orden se borra su historia entera sin
+    // tocar nunca eventos_orden. Cerrar una y dejar la otra abierta no cierra
+    // nada.
+    it('ordenes_de_trabajo: la app no puede borrar, pero sí sigue moviendo el estado', async () => {
+      const app = new Client({ connectionString: urlApp() })
+      await app.connect()
+      try {
+        await expect(app.query('DELETE FROM ordenes_de_trabajo')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        // La otra mitad, y no es simetría: una orden NO es un libro. El estado,
+        // el diagnóstico y la anulación se escriben sobre esta misma fila, así
+        // que un REVOKE de UPDATE acá rompería el módulo entero.
+        await expect(app.query('UPDATE ordenes_de_trabajo SET estado = estado')).resolves.toBeDefined()
       } finally {
         await app.end()
       }

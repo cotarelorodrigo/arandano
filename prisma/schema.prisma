@@ -430,6 +430,11 @@ model OrdenDeTrabajo {
 
 // Append-only, como movimientos_stock: nada se edita ni se borra. Es lo que
 // responde "hace dos semanas que está acá, ¿qué pasó?".
+//
+// Lo sostiene la BASE y no este comentario: scripts/setup-db-roles.sh le revoca
+// UPDATE y DELETE a arandano_app sobre esta tabla, y DELETE sobre
+// ordenes_de_trabajo, porque el `orden_id` de acá abajo es ON DELETE CASCADE y
+// borrar la orden se llevaría la historia por la puerta de atrás.
 model EventoOrden {
   id       String @id @default(uuid(7)) @db.Uuid
   tenantId String @map("tenant_id") @db.Uuid

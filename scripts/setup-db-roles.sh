@@ -162,6 +162,38 @@ BEGIN
 END
 $$;
 
+-- eventos_orden: la bitácora de una orden de trabajo, y la tabla-libro que el
+-- comentario de arriba anticipaba. prisma/schema.prisma la declara "append-only,
+-- como movimientos_stock", y esa afirmación es la JUSTIFICACIÓN ENTERA del
+-- diseño de estado-como-columna: la pregunta que se hace cuando el cliente
+-- reclama no es "¿en qué estado está?" sino "hace dos semanas que está acá, ¿qué
+-- pasó?". Un libro editable no la contesta. Sin esta línea la afirmación era sólo
+-- un comentario, exactamente como lo era la de movimientos_stock antes del
+-- REVOKE de arriba: el default privilege le da UPDATE y DELETE a toda tabla
+-- nueva, y no se hereda.
+--
+-- Y el DELETE sobre ordenes_de_trabajo, en el mismo bloque porque es el mismo
+-- agujero: eventos_orden.orden_id es ON DELETE CASCADE, así que borrar una orden
+-- borra su historia entera sin tocar nunca la tabla que acabamos de cerrar.
+-- Ningún código borra órdenes —anular es una columna, a propósito—, así que
+-- revocarlo no le saca nada a nadie; lo que cambia es que la bitácora deja de
+-- tener una puerta de atrás. El UPDATE sobre ordenes_de_trabajo SÍ se conserva:
+-- el estado, el diagnóstico y la anulación se escriben ahí, que es justamente
+-- lo que la separa de una tabla-libro.
+--
+-- Mismo guard to_regclass que los otros dos: este script corre también antes de
+-- la primera migración, cuando las tablas todavía no existen.
+DO $$
+BEGIN
+  IF to_regclass('public.eventos_orden') IS NOT NULL THEN
+    EXECUTE 'REVOKE UPDATE, DELETE ON public.eventos_orden FROM arandano_app';
+  END IF;
+  IF to_regclass('public.ordenes_de_trabajo') IS NOT NULL THEN
+    EXECUTE 'REVOKE DELETE ON public.ordenes_de_trabajo FROM arandano_app';
+  END IF;
+END
+$$;
+
 -- leads: append-only para la aplicación, y por un motivo distinto al de
 -- movimientos_stock. Aquella es un libro y no se corrige; ésta no tiene
 -- tenant_id, así que no hay policy que la proteja — sin este REVOKE, cualquier
