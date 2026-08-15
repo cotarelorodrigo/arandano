@@ -85,6 +85,15 @@ export async function crearOrden(
         // Las FKs de Postgres no distinguen tenants. El porqué completo está en
         // lib/ventas/pertenencia.ts. Sólo para el cliente que vino elegido: el
         // que se acaba de crear recién nació con este tenantId.
+        //
+        // Y a propósito SIN el esUuid() que sí guarda a `ordenId` en
+        // operaciones.ts: con una sesión válida este id sale de un desplegable
+        // que armó el servidor, así que un `clienteId` deforme es un POST
+        // armado a mano, o sea un bug — y lib/ordenes-de-trabajo/errores.ts ya
+        // decide que eso llegue como 500 a Sentry. Guardarlo cambiaría un 500
+        // por otro más silencioso y taparía justo lo que hay que ver. En
+        // `ordenId` el guard sí corresponde porque ahí existe el error de
+        // dominio correcto (ORDEN_INEXISTENTE) y es lo que hay que mostrar.
         await exigirCliente(tx, clienteId)
       }
       await exigirUsuario(tx, usuarioId)

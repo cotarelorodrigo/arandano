@@ -115,6 +115,35 @@ la pregunta que se hace mirando el estante.
 vuelve por garantía. Hoy eso es una orden nueva en el cuaderno, que pierde la
 historia de la anterior.
 
+### El tablero muestra las abiertas; el buscador alcanza todo
+
+Son dos preguntas distintas y merecen dos respuestas distintas.
+
+**El listado, por defecto, son las abiertas y vivas** — todo lo que no está
+entregado ni anulado —, que es la lista de lo que sigue en el local y la razón de
+que la pantalla exista.
+
+**Una búsqueda con texto, en cambio, alcanza todos los estados y también las
+anuladas.** "Por defecto" quiere decir cuando nadie pidió otra cosa, y buscar es
+pedir otra cosa. Con el listado y el buscador compartiendo el mismo filtro, un
+equipo entregado no se podía encontrar nunca más —ni por su número, ni por el
+nombre del cliente, ni por el IMEI—, y sin embargo el grafo permite
+`ENTREGADO → EN_REPARACION` justamente para que la garantía conserve la historia
+del equipo: se llegaba al estado y no se llegaba a la orden. Con las anuladas
+pasa lo mismo por el mismo motivo — "la 42, ¿qué pasó?" se sigue preguntando
+después de anularla, y "no existe" es peor respuesta que "está anulada". La fila
+se rotula como anulada, así que no se confunde con una viva: la orden conserva el
+estado que tenía, porque anular es una columna.
+
+**Un chip sí acota**, con o sin texto en el buscador: es una elección explícita y
+no un default. Hay un chip por estado, `Entregadas` incluido, que es la otra
+mitad de poder volver a un equipo ya entregado.
+
+**Y los contadores siguen contando sólo las abiertas**, deliberadamente: son el
+número del listado por defecto, que es al que el chip sin filtro vuelve. Tampoco
+se recalculan según el filtro elegido — si contaran lo filtrado, apretar "Listo"
+pondría el resto en cero y no habría desde dónde volver.
+
 ### Anular es una columna, no un estado
 
 `anuladaEn` / `anuladaPorId`, igual que `Venta`. Como estado, anular pisaría el
@@ -361,7 +390,8 @@ No es un detalle de gusto: en ventas lo último es lo que importa, y acá lo que
 duele es el equipo que lleva tres semanas en el estante. Arriba, contadores por
 estado que funcionan como filtro; el que más se va a apretar es **Listo**, que
 son los clientes a los que hay que llamar. Buscador por número, cliente, modelo
-o IMEI, y paginación como inventario.
+o IMEI —que **alcanza todo, entregadas y anuladas incluidas**, ver la decisión
+con su nombre—, y paginación como inventario.
 
 **La recepción.** Un formulario. El cliente se resuelve ahí mismo: buscador por
 nombre o teléfono, y alta al vuelo con nombre y teléfono si no está. Al guardar,
@@ -455,7 +485,13 @@ visto sería peor que dejarla en la lista. Queda para una persona, con esta
 lista para no tener que releer el plan:
 
 - ¿El texto entra en los 80 mm, o se corta?
-- ¿La línea de corte cae entre las dos copias?
+- La línea de corte **ya va entre las dos copias**, y el test de render lo fija
+  (antes caía adentro de cada una, entre su encabezado y su cuerpo: cortar por la
+  rotulada "COPIA LOCAL" le arrancaba el `#42` a la copia que queda pegada al
+  equipo). Lo que falta ver en el papel es lo que ningún test sabe: ¿la línea cae
+  donde el rollo efectivamente se corta —a mano o con la barra dentada de la
+  térmica—, o queda tan cerca del borde de una copia que cortar ahí se lleva un
+  renglón?
 - ¿El número se lee de lejos, que es como se busca un equipo en el estante?
 - ¿La falla larga del Xiaomi sembrado se lee entera, o se desarma?
 - ¿La clave de desbloqueo **no** aparece en ninguna de las dos copias? (el test
