@@ -1,6 +1,9 @@
 export type CodigoErrorDeOrden =
   | 'TENANT_INEXISTENTE'
   | 'ORDEN_INEXISTENTE'
+  // Ni cliente elegido ni cliente nuevo: una orden sin cliente no sirve, porque
+  // el punto es saber a quién llamar.
+  | 'SIN_CLIENTE'
   | 'MARCA_VACIA'
   | 'MODELO_VACIO'
   | 'FALLA_VACIA'

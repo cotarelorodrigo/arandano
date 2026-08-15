@@ -1,4 +1,4 @@
-import { enTransaccionDeTenant } from '@/lib/tenant/transaccion'
+import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import { ErrorDeCliente } from './errores'
 
 export type EntradaCrearCliente = {
@@ -8,11 +8,15 @@ export type EntradaCrearCliente = {
 }
 
 /**
- * El alta mínima: nombre y teléfono. Existe para el alta AL VUELO desde la
- * recepción de un equipo — la sección /clientes completa (listado, edición,
- * historial) es su propio ciclo y no entra acá.
+ * El alta mínima, DENTRO de una transacción que abre el llamador.
+ *
+ * Existe separada de `crearCliente` porque el alta al vuelo de la recepción
+ * tiene que nacer en la misma transacción que la orden: comiteada aparte, toda
+ * falla posterior deja un cliente huérfano y el reintento crea otro. Ver
+ * lib/ordenes-de-trabajo/crear.ts.
  */
-export async function crearCliente(
+export async function crearClienteEn(
+  tx: ClienteTx,
   entrada: EntradaCrearCliente,
 ): Promise<{ id: string; nombre: string }> {
   const nombre = entrada.nombre.trim()
@@ -21,13 +25,21 @@ export async function crearCliente(
   }
   const telefono = entrada.telefono?.trim() || null
 
-  return enTransaccionDeTenant(entrada.tenantId, async (tx) => {
-    const c = await tx.cliente.create({
-      data: { tenantId: entrada.tenantId, nombre, telefono },
-      select: { id: true, nombre: true },
-    })
-    return c
+  return tx.cliente.create({
+    data: { tenantId: entrada.tenantId, nombre, telefono },
+    select: { id: true, nombre: true },
   })
+}
+
+/**
+ * El alta mínima con su propia transacción: nombre y teléfono. La sección
+ * /clientes completa (listado, edición, historial) es su propio ciclo y no
+ * entra acá.
+ */
+export async function crearCliente(
+  entrada: EntradaCrearCliente,
+): Promise<{ id: string; nombre: string }> {
+  return enTransaccionDeTenant(entrada.tenantId, async (tx) => crearClienteEn(tx, entrada))
 }
 
 /** Cuántos resultados devuelve el buscador. Es una lista para elegir de un

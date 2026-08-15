@@ -5,7 +5,6 @@ import { redirect } from 'next/navigation'
 import { exigirSesion, exigirDuenio } from '@/lib/auth/sesion'
 import { crearOrden } from '@/lib/ordenes-de-trabajo/crear'
 import { cambiarEstado, guardarDiagnostico, anularOrden } from '@/lib/ordenes-de-trabajo/operaciones'
-import { crearCliente } from '@/lib/clientes/administrar'
 import { ErrorDeOrden } from '@/lib/ordenes-de-trabajo/errores'
 import { ErrorDeCliente } from '@/lib/clientes/errores'
 import { aDecimalOpcional, ErrorDeFormato } from '@/lib/formato/numeros'
@@ -47,21 +46,26 @@ export async function recibirEquipo(
   try {
     // El cliente puede venir elegido de la lista o escrito para crear al vuelo.
     // Nunca los dos: si vino id, se usa ese.
-    let clienteId = texto(datos, 'clienteId')
-    if (clienteId === '') {
-      const creado = await crearCliente({
-        tenantId: sesion.tenant.id,
-        nombre: texto(datos, 'clienteNombre'),
-        telefono: texto(datos, 'clienteTelefono') || null,
-      })
-      clienteId = creado.id
-    }
+    //
+    // El alta al vuelo NO se hace acá: se le pasa a crearOrden, que la resuelve
+    // adentro de la transacción de la orden y después del camino rápido de la
+    // idempotencia. Creado antes y comiteado aparte, el segundo submit de un
+    // doble click creaba un segundo "Juan Pérez" y recién después devolvía la
+    // orden que ya existía — la clave protegía la orden y no al cliente.
+    const clienteId = texto(datos, 'clienteId')
 
     const orden = await crearOrden({
       // De la SESIÓN y nunca del formulario, que lo manda el navegador.
       tenantId: sesion.tenant.id,
       usuarioId: sesion.usuario.id,
-      clienteId,
+      ...(clienteId
+        ? { clienteId }
+        : {
+            clienteNuevo: {
+              nombre: texto(datos, 'clienteNombre'),
+              telefono: texto(datos, 'clienteTelefono') || null,
+            },
+          }),
       equipoMarca: texto(datos, 'equipoMarca'),
       equipoModelo: texto(datos, 'equipoModelo'),
       equipoSerie: texto(datos, 'equipoSerie') || null,

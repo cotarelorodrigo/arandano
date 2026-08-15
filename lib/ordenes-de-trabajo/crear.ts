@@ -1,14 +1,18 @@
 import { Prisma } from '@/generated/prisma/client'
 import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import { exigirCliente, exigirUsuario } from '@/lib/ventas/pertenencia'
+import { crearClienteEn } from '@/lib/clientes/administrar'
 import { ErrorDeOrden } from './errores'
 
 export type EntradaCrearOrden = {
   tenantId: string
   usuarioId: string
-  // Obligatorio, al revés que en una venta: el punto de una orden es saber a
-  // quién llamar cuando el equipo está listo.
-  clienteId: string
+  // Uno de los dos, y el cliente es obligatorio al revés que en una venta: el
+  // punto de una orden es saber a quién llamar cuando el equipo está listo.
+  // `clienteId` para el que ya está cargado (y para el sembrador);
+  // `clienteNuevo` para el alta al vuelo del mostrador.
+  clienteId?: string
+  clienteNuevo?: { nombre: string; telefono: string | null }
   equipoMarca: string
   equipoModelo: string
   equipoSerie?: string | null
@@ -26,7 +30,11 @@ const limpio = (v: string | null | undefined): string | null => v?.trim() || nul
 export async function crearOrden(
   entrada: EntradaCrearOrden,
 ): Promise<{ id: string; numero: number }> {
-  const { tenantId, usuarioId, clienteId, claveIdempotencia } = entrada
+  const { tenantId, usuarioId, claveIdempotencia } = entrada
+
+  if (!entrada.clienteId && !entrada.clienteNuevo) {
+    throw new ErrorDeOrden('SIN_CLIENTE', 'la orden necesita un cliente')
+  }
 
   const equipoMarca = entrada.equipoMarca.trim()
   const equipoModelo = entrada.equipoModelo.trim()
@@ -52,9 +60,33 @@ export async function crearOrden(
         if (yaExiste) return yaExiste
       }
 
-      // Las FKs de Postgres no distinguen tenants. El porqué completo está en
-      // lib/ventas/pertenencia.ts.
-      await exigirCliente(tx, clienteId)
+      // El cliente nuevo nace ACÁ ADENTRO, y DESPUÉS del camino rápido de la
+      // idempotencia. Las dos cosas importan y por el mismo argumento que el
+      // spec usa para la orden y su primer evento: lo que tiene que pasar junto
+      // va en una sola transacción.
+      //
+      // Comiteado aparte —como estaba— cualquier falla posterior dejaba un
+      // Cliente huérfano, y el reintento creaba otro porque el formulario
+      // seguía diciendo "cliente nuevo". Peor: en el escenario exacto que la
+      // clave de idempotencia existe para cubrir (doble click, F5 sobre el
+      // POST, reintento de red) el segundo submit creaba un SEGUNDO "Juan
+      // Pérez" y recién después devolvía la orden que ya existía. Un equipo,
+      // una orden, y dos clientes que nadie puede fusionar porque /clientes
+      // todavía no existe.
+      let clienteId = entrada.clienteId
+      if (clienteId === undefined) {
+        const nuevo = entrada.clienteNuevo
+        // El guard de arriba ya lo garantiza; TypeScript no puede saberlo.
+        if (nuevo === undefined) {
+          throw new ErrorDeOrden('SIN_CLIENTE', 'la orden necesita un cliente')
+        }
+        clienteId = (await crearClienteEn(tx, { tenantId, ...nuevo })).id
+      } else {
+        // Las FKs de Postgres no distinguen tenants. El porqué completo está en
+        // lib/ventas/pertenencia.ts. Sólo para el cliente que vino elegido: el
+        // que se acaba de crear recién nació con este tenantId.
+        await exigirCliente(tx, clienteId)
+      }
       await exigirUsuario(tx, usuarioId)
 
       // Lo más tarde posible: toma el lock de la fila del tenant y lo retiene

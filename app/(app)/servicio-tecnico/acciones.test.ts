@@ -17,7 +17,6 @@ vi.mock('@/lib/ordenes-de-trabajo/operaciones', () => ({
   cambiarEstado,
   guardarDiagnostico,
 }))
-vi.mock('@/lib/clientes/administrar', () => ({ crearCliente: vi.fn(), buscarClientes: vi.fn() }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('next/navigation', () => ({ redirect: vi.fn() }))
 
@@ -65,6 +64,42 @@ describe('recibirEquipo', () => {
     expect(crearOrden).toHaveBeenCalledWith(
       expect.objectContaining({ tenantId: 't-1', usuarioId: 'u-1' }),
     )
+  })
+
+  it('el cliente nuevo se le PASA a crearOrden, no se crea antes', async () => {
+    // La action ya no da de alta al cliente por su cuenta: si lo hiciera, ese
+    // alta comitearía antes de la orden y el segundo submit de un doble click
+    // dejaría dos "Juan Pérez" para un solo equipo. Lo resuelve crearOrden,
+    // adentro de su transacción y después del camino rápido de la clave.
+    const { recibirEquipo } = await import('./acciones')
+    crearOrden.mockResolvedValue({ id: 'o-1', numero: 7 })
+    await recibirEquipo(
+      { error: null, aviso: null },
+      formulario({
+        clienteNombre: 'Juan Pérez',
+        clienteTelefono: '1155667788',
+        equipoMarca: 'Samsung',
+        equipoModelo: 'A54',
+        fallaDeclarada: 'no carga',
+      }),
+    )
+    expect(crearOrden).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clienteNuevo: { nombre: 'Juan Pérez', telefono: '1155667788' },
+      }),
+    )
+    expect(crearOrden.mock.calls[0][0]).not.toHaveProperty('clienteId')
+  })
+
+  it('con un cliente elegido no manda cliente nuevo', async () => {
+    const { recibirEquipo } = await import('./acciones')
+    crearOrden.mockResolvedValue({ id: 'o-1', numero: 7 })
+    await recibirEquipo(
+      { error: null, aviso: null },
+      formulario({ clienteId: 'c-1', equipoMarca: 'Samsung', equipoModelo: 'A54' }),
+    )
+    expect(crearOrden.mock.calls[0][0]).toMatchObject({ clienteId: 'c-1' })
+    expect(crearOrden.mock.calls[0][0]).not.toHaveProperty('clienteNuevo')
   })
 
   it('muestra el error de dominio como cartel', async () => {

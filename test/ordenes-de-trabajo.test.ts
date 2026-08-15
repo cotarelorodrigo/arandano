@@ -98,6 +98,73 @@ describe('alta de una orden', () => {
     expect(rows[0].n).toBe(1)
   })
 
+  it('el cliente nuevo nace con la orden, y el submit repetido no crea un segundo', async () => {
+    // El escenario que la clave de idempotencia nombra —doble click, F5 sobre
+    // el POST, reintento de red— protegía la orden y no al cliente: el alta del
+    // cliente se comiteaba antes, en su propia transacción, así que el segundo
+    // submit creaba otro "Juan Pérez" y recién después devolvía la orden que ya
+    // existía. Un equipo, una orden, y dos clientes que nadie puede fusionar
+    // porque /clientes todavía no existe.
+    const clave = `cliente-nuevo-${Date.now()}`
+    const nombre = `Repetido ${Date.now()}`
+    const a = await crearOrden({
+      tenantId,
+      usuarioId,
+      clienteNuevo: { nombre, telefono: '1177889900' },
+      ...equipo,
+      claveIdempotencia: clave,
+    })
+    const b = await crearOrden({
+      tenantId,
+      usuarioId,
+      clienteNuevo: { nombre, telefono: '1177889900' },
+      ...equipo,
+      claveIdempotencia: clave,
+    })
+
+    expect(b.id).toBe(a.id)
+    const { rows } = await owner.query(
+      `SELECT count(*)::int AS n FROM clientes WHERE tenant_id = $1 AND nombre = $2`,
+      [tenantId, nombre],
+    )
+    expect(rows[0].n).toBe(1)
+    // Y la orden quedó colgada de ESE cliente, no de ninguno: sin esta mitad,
+    // un alta que no creara ningún cliente daría el mismo 1 si el nombre no
+    // existiera.
+    const orden = await owner.query(
+      `SELECT c.nombre FROM ordenes_de_trabajo o JOIN clientes c ON c.id = o.cliente_id
+        WHERE o.id = $1`,
+      [a.id],
+    )
+    expect(orden.rows[0].nombre).toBe(nombre)
+  })
+
+  it('una orden que falla no deja al cliente nuevo suelto', async () => {
+    // La otra mitad del mismo cambio: con el cliente comiteado aparte, toda
+    // falla posterior al alta dejaba un Cliente huérfano en la tabla. Adentro
+    // de la transacción de la orden, se va con ella.
+    const nombre = `Huérfano ${Date.now()}`
+    await expect(
+      crearOrden({
+        tenantId,
+        // Un usuario que no existe en este tenant: falla DESPUÉS de crear al
+        // cliente, que es exactamente el hueco.
+        usuarioId: '00000000-0000-0000-0000-000000000000',
+        clienteNuevo: { nombre, telefono: null },
+        ...equipo,
+      }),
+    ).rejects.toThrow()
+    const { rows } = await owner.query(
+      `SELECT count(*)::int AS n FROM clientes WHERE tenant_id = $1 AND nombre = $2`,
+      [tenantId, nombre],
+    )
+    expect(rows[0].n).toBe(0)
+  })
+
+  it('rechaza el alta sin cliente elegido ni cliente nuevo', async () => {
+    await expect(crearOrden({ tenantId, usuarioId, ...equipo })).rejects.toThrow(ErrorDeOrden)
+  })
+
   it('sin clave, dos altas iguales son dos órdenes distintas', async () => {
     // Correcto y no un defecto: dos clientes pueden traer el mismo modelo con
     // la misma falla el mismo día. La clave la manda la pantalla, no el motor.
