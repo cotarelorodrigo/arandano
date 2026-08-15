@@ -87,11 +87,21 @@ describe('Navegacion', () => {
     expect(html).not.toContain('href="/usuarios"')
   })
 
-  it('están las tres pestañas que ve cualquiera', async () => {
+  it('están las cuatro pestañas que ve cualquiera', async () => {
     const html = await render('EMPLEADO', '/vender')
-    for (const href of ['/vender', '/ventas', '/inventario']) {
+    // Vender, Ventas, Inventario y Servicio Técnico. Usuarios no: es del dueño.
+    for (const href of ['/vender', '/ventas', '/inventario', '/servicio-tecnico']) {
       expect(html).toContain(`href="${href}"`)
     }
+  })
+
+  // El detalle de una orden y el ticket cuelgan de /servicio-tecnico, así que
+  // tienen que dejar esa pestaña subrayada, igual que /ventas/<id> con Ventas.
+  it('el detalle de una orden deja subrayada Servicio Técnico', async () => {
+    const activa = await traerEstaActiva()
+    expect(activa('/servicio-tecnico', '/servicio-tecnico/abc-123')).toBe(true)
+    // Y el ticket, que cuelga un nivel más abajo.
+    expect(activa('/servicio-tecnico', '/servicio-tecnico/abc-123/ticket')).toBe(true)
   })
 
   // Frágil a propósito, y por eso va con su motivo escrito: las pestañas no
@@ -103,7 +113,7 @@ describe('Navegacion', () => {
   it('cada pestaña lleva anillo de foco propio', async () => {
     const html = await render('DUENO', '/vender')
     const pestanas = html.match(/<a[^>]*>/g) ?? []
-    expect(pestanas).toHaveLength(4)
+    expect(pestanas).toHaveLength(5)
     for (const pestana of pestanas) {
       expect(pestana).toContain('focus-visible:inset-ring-3')
     }
