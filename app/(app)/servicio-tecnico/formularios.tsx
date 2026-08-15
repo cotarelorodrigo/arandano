@@ -6,6 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import type { EstadoServicio } from './acciones'
+// El tipo del enum, no `string`: así el compilador atrapa que la pantalla le
+// pase un estado que no existe, en vez de que lo descubra el server action en
+// runtime. Es un import de tipo, así que no arrastra nada al bundle del cliente.
+import type { EstadoOrden } from '@/generated/prisma/client'
 
 // Vive acá y no en acciones.ts: ese archivo es 'use server' y no puede exportar
 // constantes. Ver el comentario allá y test/use-server.test.ts.
@@ -123,6 +127,104 @@ export function FormularioRecepcion({
       <Button type="submit" disabled={pendiente}>
         {pendiente ? 'Guardando…' : 'Recibir e imprimir'}
       </Button>
+    </form>
+  )
+}
+
+export function FormularioEstado({
+  accion,
+  ordenId,
+  siguientes,
+  nombres,
+}: {
+  accion: (e: EstadoServicio, d: FormData) => Promise<EstadoServicio>
+  ordenId: string
+  siguientes: readonly EstadoOrden[]
+  nombres: Record<EstadoOrden, string>
+}) {
+  const [estado, ejecutar, pendiente] = useActionState(accion, INICIAL)
+  const id = useId()
+
+  if (siguientes.length === 0) {
+    return <p className="text-sm text-muted-foreground">Esta orden no se puede mover más.</p>
+  }
+
+  return (
+    <form action={ejecutar} className="space-y-3">
+      <input type="hidden" name="ordenId" value={ordenId} />
+      <div>
+        <Label htmlFor={`${id}-nota`}>Nota (opcional)</Label>
+        <Input id={`${id}-nota`} name="nota" placeholder="qué pasó" />
+      </div>
+      {/* Un botón por transición LEGAL, y el valor viaja en el botón: así no
+          hay un desplegable donde se pueda elegir un salto que el servidor va
+          a rechazar. El servidor lo revalida igual. */}
+      <div className="flex flex-wrap gap-2">
+        {siguientes.map((s) => (
+          <Button key={s} type="submit" name="hasta" value={s} variant="secondary" disabled={pendiente}>
+            {nombres[s]}
+          </Button>
+        ))}
+      </div>
+      <Aviso estado={estado} />
+    </form>
+  )
+}
+
+export function FormularioDiagnostico({
+  accion,
+  ordenId,
+  diagnostico,
+  montoEstimado,
+}: {
+  accion: (e: EstadoServicio, d: FormData) => Promise<EstadoServicio>
+  ordenId: string
+  diagnostico: string
+  montoEstimado: string
+}) {
+  const [estado, ejecutar, pendiente] = useActionState(accion, INICIAL)
+  const id = useId()
+
+  return (
+    <form action={ejecutar} className="space-y-3">
+      <input type="hidden" name="ordenId" value={ordenId} />
+      <div>
+        <Label htmlFor={`${id}-diag`}>Diagnóstico</Label>
+        <textarea
+          id={`${id}-diag`}
+          name="diagnostico"
+          rows={3}
+          defaultValue={diagnostico}
+          className="w-full rounded-md border bg-transparent px-3 py-2 text-sm"
+        />
+      </div>
+      <div>
+        <Label htmlFor={`${id}-monto`}>Monto estimado</Label>
+        <Input id={`${id}-monto`} name="montoEstimado" inputMode="decimal" defaultValue={montoEstimado} />
+      </div>
+      <Button type="submit" disabled={pendiente}>
+        {pendiente ? 'Guardando…' : 'Guardar diagnóstico'}
+      </Button>
+      <Aviso estado={estado} />
+    </form>
+  )
+}
+
+export function FormularioAnular({
+  accion,
+  ordenId,
+}: {
+  accion: (e: EstadoServicio, d: FormData) => Promise<EstadoServicio>
+  ordenId: string
+}) {
+  const [estado, ejecutar, pendiente] = useActionState(accion, INICIAL)
+  return (
+    <form action={ejecutar}>
+      <input type="hidden" name="ordenId" value={ordenId} />
+      <Button type="submit" variant="ghost" disabled={pendiente}>
+        Anular esta orden
+      </Button>
+      <Aviso estado={estado} />
     </form>
   )
 }
