@@ -5,6 +5,7 @@ import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Button } from '@/components/ui/button'
 import { formatearFecha, formatearPrecio } from '@/lib/formato/mostrar'
 import { TRANSICIONES, NOMBRE_ESTADO } from '@/lib/ordenes-de-trabajo/estados'
+import { esUuid } from '@/lib/uuid'
 import { moverEstado, diagnosticar, anular } from '../acciones'
 import { FormularioEstado, FormularioDiagnostico, FormularioAnular } from '../formularios'
 
@@ -13,10 +14,13 @@ export const dynamic = 'force-dynamic'
 export default async function DetalleDeOrden({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion()
   const { id } = await params
-  const prisma = prismaParaTenant(sesion.tenant.id)
+  // El mismo guard que /ventas/[id] y /inventario/[id]: Prisma tipa el
+  // parámetro por columna, así que un id sin forma de uuid lo rechaza antes de
+  // consultar —con findFirst igual que con findUnique— y eso, en un server
+  // component, es un 500 desde la barra de direcciones.
+  if (!esUuid(id)) notFound()
 
-  // findFirst y no findUnique: con un id que no tiene forma de uuid, findUnique
-  // tira un error crudo de Prisma —un 500— en vez de no encontrar nada.
+  const prisma = prismaParaTenant(sesion.tenant.id)
   const orden = await prisma.ordenDeTrabajo.findFirst({
     where: { id },
     select: {

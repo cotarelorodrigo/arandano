@@ -1,6 +1,7 @@
 import type { Prisma as PrismaTipos, EstadoOrden } from '@/generated/prisma/client'
 import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import { exigirUsuario } from '@/lib/ventas/pertenencia'
+import { esUuid } from '@/lib/uuid'
 import { puedeTransicionar } from './estados'
 import { ErrorDeOrden } from './errores'
 
@@ -16,6 +17,16 @@ async function traerAbierta(
   tx: ClienteTx,
   ordenId: string,
 ): Promise<{ id: string; estado: EstadoOrden }> {
+  // El `ordenId` llega de un campo escondido del formulario, así que un POST
+  // armado a mano puede mandar cualquier cosa. Prisma tipa el parámetro por
+  // columna (`@db.Uuid`) y rechaza lo que no tenga forma de uuid ANTES de
+  // consultar, con un error crudo que `traducir` relanzaría como 500 en vez de
+  // como el error de dominio que corresponde. Mismo guard y mismo motivo que
+  // en app/(app)/vender/acciones.ts.
+  if (!esUuid(ordenId)) {
+    throw new ErrorDeOrden('ORDEN_INEXISTENTE', 'la orden no existe en este tenant')
+  }
+
   const orden = await tx.ordenDeTrabajo.findFirst({
     where: { id: ordenId },
     select: { id: true, estado: true, anuladaEn: true },

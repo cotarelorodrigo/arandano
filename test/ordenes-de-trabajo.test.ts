@@ -264,6 +264,29 @@ describe('cambiar de estado', () => {
     ).rejects.toThrow(ErrorDeOrden)
   })
 
+  it('un ordenId que no tiene forma de uuid es ORDEN_INEXISTENTE, no un 500', async () => {
+    // El campo escondido del formulario se puede reescribir. Sin el guard,
+    // Prisma rechaza el valor por el tipo de la columna ANTES de consultar, con
+    // un error crudo que `traducir` relanza como 500 en vez de mostrarlo como
+    // el error de dominio que corresponde.
+    for (const basura of ['foo', '', '1 OR 1=1', '../../etc/passwd']) {
+      await expect(
+        cambiarEstado({ tenantId, usuarioId, ordenId: basura, hasta: 'EN_DIAGNOSTICO' }),
+      ).rejects.toThrow(ErrorDeOrden)
+    }
+    // Y las otras dos operaciones entran por el mismo traerAbierta.
+    await expect(anularOrden({ tenantId, usuarioId, ordenId: 'foo' })).rejects.toThrow(ErrorDeOrden)
+    await expect(
+      guardarDiagnostico({
+        tenantId,
+        usuarioId,
+        ordenId: 'foo',
+        diagnostico: 'x',
+        montoEstimado: null,
+      }),
+    ).rejects.toThrow(ErrorDeOrden)
+  })
+
   it('no toca una orden de otro tenant', async () => {
     const o = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo })
     // Con el tenant equivocado, RLS no deja ver la fila: es indistinguible de
