@@ -346,6 +346,15 @@ Y del producto:
   pre-commit y por el paso 3 de `deploy.sh`, así que no puede quedar
   desactualizado en silencio. Ver
   `docs/superpowers/specs/2026-08-07-diagrama-schema-design.md`.
+- ~~Mantener documentado qué hace cada pantalla.~~ **Hecho** (2026-08-14).
+  `docs/pantallas.md`: una sección por ruta con sus features, sus server
+  actions y las decisiones no obvias que lleva. **No vive en este archivo a
+  propósito** — acá van decisiones cerradas, y un inventario de pantallas es
+  estado actual que cambia en cada ciclo. `test/pantallas.test.ts` lo ata a
+  `app/**/page.tsx` en las dos direcciones, así que una pantalla nueva sin
+  documentar rompe el build; lo que el test NO puede verificar es que el
+  contenido de cada sección siga siendo cierto, y por eso la regla es que la
+  sección va en el mismo commit que el cambio de la pantalla.
 - ~~Definir el schema del módulo de órdenes de trabajo.~~ **Hecho**
   (2026-08-15), y **no** en `modules/`: la pestaña es fija y el registry de
   módulos sigue sin existir — decisión consciente, con su vencimiento escrito
