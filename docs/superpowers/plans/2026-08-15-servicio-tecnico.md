@@ -10,6 +10,16 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-15-servicio-tecnico-design.md` — leerlo entero antes de empezar. El plan argumenta desde ahí.
 
+**Estado (2026-08-16):** ejecutado y en producción. Las once tasks están
+implementadas, mergeadas a `main` en `ec874e7` y deployadas como **`v1.13.0`**
+—gate completo en verde, migración `20260815192118_servicio_tecnico` aplicada
+contra prod, 22 smoke tests—. Quedan sin tildar los tres steps de la Task 11
+que ningún test puede hacer por nadie: la verificación a ojo contra
+`arandano-dev`, la impresión del ticket en la térmica de verdad, y anotar ese
+resultado en el spec. Están sin tildar a propósito: el módulo llegó a
+producción sin que nadie viera el ticket impreso, y redondear eso a hecho sería
+perder el único registro de que falta.
+
 ## Global Constraints
 
 Aplican a **todas** las tasks. No se repiten en cada una.
@@ -41,7 +51,7 @@ Las dos tablas, el enum y los dos correlativos. Sin esto no hay nada que probar.
 - Consumes: nada.
 - Produces: los modelos `OrdenDeTrabajo` y `EventoOrden`, el enum `EstadoOrden` con sus ocho valores, `Tenant.proximoNumeroOrden`. Todo lo demás del plan depende de esto.
 
-- [ ] **Step 1: Agregar el enum y los dos modelos a `prisma/schema.prisma`**
+- [x] **Step 1: Agregar el enum y los dos modelos a `prisma/schema.prisma`**
 
 El bloque completo, con sus comentarios — el spec explica cada decisión y los comentarios la dejan al lado del código:
 
@@ -145,7 +155,7 @@ model EventoOrden {
 }
 ```
 
-- [ ] **Step 2: Agregar el correlativo y las relaciones inversas**
+- [x] **Step 2: Agregar el correlativo y las relaciones inversas**
 
 En `model Tenant`, junto a `proximoNumeroVenta` y `proximoSkuArticulo`:
 
@@ -175,19 +185,19 @@ En `model User`, junto a `ventasHechas` / `ventasAnuladas`:
   eventosOrden     EventoOrden[]
 ```
 
-- [ ] **Step 3: Generar la migración SIN aplicarla**
+- [x] **Step 3: Generar la migración SIN aplicarla**
 
 Run: `npx prisma migrate dev --create-only --name servicio_tecnico`
 Expected: crea `prisma/migrations/<timestamp>_servicio_tecnico/migration.sql` con los `CREATE TABLE`, los índices y las FKs, y **no** lo aplica.
 
 `--create-only` no es opcional: hay que editar el SQL antes de que corra, porque Prisma no sabe nada de RLS.
 
-- [ ] **Step 4: Verificar que la migración no tenga nada destructivo**
+- [x] **Step 4: Verificar que la migración no tenga nada destructivo**
 
 Run: `grep -iE 'DROP|RENAME' prisma/migrations/*_servicio_tecnico/migration.sql`
 Expected: **cero líneas**. Si aparece algo, el schema quedó mal escrito — sin flags, una migración destructiva deja al rollback sin red.
 
-- [ ] **Step 5: Agregar el bloque de RLS al final del SQL generado**
+- [x] **Step 5: Agregar el bloque de RLS al final del SQL generado**
 
 Al final de `migration.sql`, literal — la misma expresión que las otras migraciones, copiada y no reinventada:
 
@@ -213,22 +223,22 @@ CREATE POLICY "tenant_aislamiento" ON "eventos_orden" FOR ALL
   WITH CHECK ("tenant_id" = nullif(current_setting('arandano.tenant_id', true), '')::uuid);
 ```
 
-- [ ] **Step 6: Aplicar la migración y regenerar el cliente**
+- [x] **Step 6: Aplicar la migración y regenerar el cliente**
 
 Run: `npx prisma migrate dev`
 Expected: aplica la migración pendiente contra `arandano-dev` y regenera el cliente en `generated/prisma`.
 
-- [ ] **Step 7: Correr los tests y verificar que RLS quedó cubierta**
+- [x] **Step 7: Correr los tests y verificar que RLS quedó cubierta**
 
 Run: `npm test`
 Expected: PASS. Interesa especialmente `test/rls-cobertura.test.ts` — levanta las tablas del catálogo de Postgres y falla si alguna con `tenant_id` no tiene RLS con `USING` y `WITH CHECK`. Si el Step 5 se salteó, **ese test es el que lo agarra**, sin que nadie haya agregado las tablas a ninguna lista.
 
-- [ ] **Step 8: Regenerar el diagrama del schema**
+- [x] **Step 8: Regenerar el diagrama del schema**
 
 Run: `scripts/generar-erd.sh`
 Expected: `docs/schema.md` actualizado con las dos tablas nuevas. El hook de pre-commit y el paso 3 de `deploy.sh` fallan si quedó desactualizado.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add prisma/schema.prisma prisma/migrations docs/schema.md
@@ -256,7 +266,7 @@ Una función pura y su tabla. Va antes que todo lo que toque la base porque es l
 - Consumes: el tipo `EstadoOrden` de Task 1.
 - Produces: `ESTADOS: readonly EstadoOrden[]`, `TRANSICIONES: Record<EstadoOrden, readonly EstadoOrden[]>`, `puedeTransicionar(desde, hasta): boolean`, `ABIERTOS: readonly EstadoOrden[]`, `NOMBRE_ESTADO: Record<EstadoOrden, string>`.
 
-- [ ] **Step 1: Escribir el test que falla**
+- [x] **Step 1: Escribir el test que falla**
 
 `lib/ordenes-de-trabajo/estados.test.ts`:
 
@@ -344,12 +354,12 @@ describe('el grafo de estados de una orden', () => {
 })
 ```
 
-- [ ] **Step 2: Correr el test y verificar que falla**
+- [x] **Step 2: Correr el test y verificar que falla**
 
 Run: `npx vitest run lib/ordenes-de-trabajo/estados.test.ts`
 Expected: FAIL — `Failed to resolve import "./estados"`.
 
-- [ ] **Step 3: Escribir `lib/ordenes-de-trabajo/estados.ts`**
+- [x] **Step 3: Escribir `lib/ordenes-de-trabajo/estados.ts`**
 
 ```ts
 import type { EstadoOrden } from '@/generated/prisma/client'
@@ -418,12 +428,12 @@ export const NOMBRE_ESTADO: Record<EstadoOrden, string> = {
 }
 ```
 
-- [ ] **Step 4: Correr el test y verificar que pasa**
+- [x] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run lib/ordenes-de-trabajo/estados.test.ts`
 Expected: PASS, 7 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/ordenes-de-trabajo/estados.ts lib/ordenes-de-trabajo/estados.test.ts
@@ -453,7 +463,7 @@ La recepción exige cliente, y hoy no hay forma de crear uno desde la aplicació
   - `crearCliente({ tenantId, nombre, telefono }): Promise<{ id: string; nombre: string }>`
   - `buscarClientes(tenantId: string, texto: string, limite?: number): Promise<{ id: string; nombre: string; telefono: string | null }[]>`
 
-- [ ] **Step 1: Escribir el test que falla**
+- [x] **Step 1: Escribir el test que falla**
 
 `test/clientes.test.ts`:
 
@@ -539,12 +549,12 @@ describe('búsqueda de clientes', () => {
 })
 ```
 
-- [ ] **Step 2: Correr el test y verificar que falla**
+- [x] **Step 2: Correr el test y verificar que falla**
 
 Run: `npx vitest run test/clientes.test.ts`
 Expected: FAIL — no resuelve `@/lib/clientes/errores`.
 
-- [ ] **Step 3: Escribir `lib/clientes/errores.ts`**
+- [x] **Step 3: Escribir `lib/clientes/errores.ts`**
 
 ```ts
 export type CodigoErrorDeCliente = 'NOMBRE_VACIO'
@@ -564,7 +574,7 @@ export class ErrorDeCliente extends Error {
 }
 ```
 
-- [ ] **Step 4: Escribir `lib/clientes/administrar.ts`**
+- [x] **Step 4: Escribir `lib/clientes/administrar.ts`**
 
 ```ts
 import { enTransaccionDeTenant } from '@/lib/tenant/transaccion'
@@ -634,12 +644,12 @@ export async function buscarClientes(
 }
 ```
 
-- [ ] **Step 5: Correr el test y verificar que pasa**
+- [x] **Step 5: Correr el test y verificar que pasa**
 
 Run: `npx vitest run test/clientes.test.ts`
 Expected: PASS, 7 tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add lib/clientes test/clientes.test.ts
@@ -668,7 +678,7 @@ es un scan sobre la pantalla más caliente del módulo."
   - `class ErrorDeOrden extends Error` con `readonly codigo: CodigoErrorDeOrden`
   - `crearOrden(entrada: EntradaCrearOrden): Promise<{ id: string; numero: number }>`
 
-- [ ] **Step 1: Escribir el test que falla**
+- [x] **Step 1: Escribir el test que falla**
 
 `test/ordenes-de-trabajo.test.ts` (este archivo crece en la Task 5; acá va la primera mitad):
 
@@ -799,12 +809,12 @@ describe('alta de una orden', () => {
 })
 ```
 
-- [ ] **Step 2: Correr el test y verificar que falla**
+- [x] **Step 2: Correr el test y verificar que falla**
 
 Run: `npx vitest run test/ordenes-de-trabajo.test.ts`
 Expected: FAIL — no resuelve `@/lib/ordenes-de-trabajo/errores`.
 
-- [ ] **Step 3: Escribir `lib/ordenes-de-trabajo/errores.ts`**
+- [x] **Step 3: Escribir `lib/ordenes-de-trabajo/errores.ts`**
 
 ```ts
 export type CodigoErrorDeOrden =
@@ -842,7 +852,7 @@ export class ErrorDeOrden extends Error {
 }
 ```
 
-- [ ] **Step 4: Escribir `lib/ordenes-de-trabajo/crear.ts`**
+- [x] **Step 4: Escribir `lib/ordenes-de-trabajo/crear.ts`**
 
 ```ts
 import { Prisma } from '@/generated/prisma/client'
@@ -989,12 +999,12 @@ async function proximoNumero(tx: ClienteTx, tenantId: string): Promise<number> {
 }
 ```
 
-- [ ] **Step 5: Correr el test y verificar que pasa**
+- [x] **Step 5: Correr el test y verificar que pasa**
 
 Run: `npx vitest run test/ordenes-de-trabajo.test.ts`
 Expected: PASS, 8 tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add lib/ordenes-de-trabajo/errores.ts lib/ordenes-de-trabajo/crear.ts test/ordenes-de-trabajo.test.ts
@@ -1026,7 +1036,7 @@ Cambiar de estado, guardar el diagnóstico y el presupuesto, y anular.
   - `guardarDiagnostico({ tenantId, usuarioId, ordenId, diagnostico, montoEstimado }): Promise<void>` — `montoEstimado` es `Prisma.Decimal | null`
   - `anularOrden({ tenantId, usuarioId, ordenId }): Promise<void>`
 
-- [ ] **Step 1: Escribir los tests que fallan**
+- [x] **Step 1: Escribir los tests que fallan**
 
 Agregar al final de `test/ordenes-de-trabajo.test.ts`, y sumar los imports dinámicos arriba:
 
@@ -1216,12 +1226,12 @@ describe('anulación', () => {
 })
 ```
 
-- [ ] **Step 2: Correr los tests y verificar que fallan**
+- [x] **Step 2: Correr los tests y verificar que fallan**
 
 Run: `npx vitest run test/ordenes-de-trabajo.test.ts`
 Expected: FAIL — no resuelve `@/lib/ordenes-de-trabajo/operaciones`.
 
-- [ ] **Step 3: Escribir `lib/ordenes-de-trabajo/operaciones.ts`**
+- [x] **Step 3: Escribir `lib/ordenes-de-trabajo/operaciones.ts`**
 
 ```ts
 import type { Prisma as PrismaTipos, EstadoOrden } from '@/generated/prisma/client'
@@ -1354,12 +1364,12 @@ export async function anularOrden(entrada: EntradaAnularOrden): Promise<void> {
 }
 ```
 
-- [ ] **Step 4: Correr los tests y verificar que pasan**
+- [x] **Step 4: Correr los tests y verificar que pasan**
 
 Run: `npx vitest run test/ordenes-de-trabajo.test.ts`
 Expected: PASS, 19 tests (8 de la Task 4 más 11 de ésta).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/ordenes-de-trabajo/operaciones.ts test/ordenes-de-trabajo.test.ts
@@ -1389,7 +1399,7 @@ La primera pantalla. Al terminar esta task, Servicio Técnico existe en la naveg
 - Consumes: `exigirSesion` de `@/lib/auth/sesion`, `prismaParaTenant` de `@/lib/tenant/prisma`, `NOMBRE_ESTADO`/`ESTADOS`/`ABIERTOS` de `@/lib/ordenes-de-trabajo/estados`, `formatearFecha` de `@/lib/formato/mostrar`.
 - Produces: la ruta `/servicio-tecnico`, y la pestaña en `PESTANAS`.
 
-- [ ] **Step 1: Actualizar el test de navegación primero**
+- [x] **Step 1: Actualizar el test de navegación primero**
 
 En `components/navegacion.test.tsx`, dos casos hablan de cuántas pestañas hay. Cambiarlos:
 
@@ -1413,12 +1423,12 @@ Agregar además el caso que fija el comportamiento del prefijo para la ruta nuev
   })
 ```
 
-- [ ] **Step 2: Correr el test y verificar que falla**
+- [x] **Step 2: Correr el test y verificar que falla**
 
 Run: `npx vitest run components/navegacion.test.tsx`
 Expected: FAIL — 4 pestañas contra 5 esperadas.
 
-- [ ] **Step 3: Agregar la pestaña**
+- [x] **Step 3: Agregar la pestaña**
 
 En `components/navegacion.tsx`, dentro de `PESTANAS`, entre Inventario y Usuarios:
 
@@ -1430,7 +1440,7 @@ En `components/navegacion.tsx`, dentro de `PESTANAS`, entre Inventario y Usuario
   { href: '/servicio-tecnico', texto: 'Servicio Técnico' },
 ```
 
-- [ ] **Step 4: Escribir `app/(app)/servicio-tecnico/page.tsx`**
+- [x] **Step 4: Escribir `app/(app)/servicio-tecnico/page.tsx`**
 
 ```tsx
 import Link from 'next/link'
@@ -1609,17 +1619,17 @@ export default async function ServicioTecnico({
 }
 ```
 
-- [ ] **Step 5: Correr todos los tests**
+- [x] **Step 5: Correr todos los tests**
 
 Run: `npm test`
 Expected: PASS. `test/rutas-con-guard.test.ts` toma la pantalla nueva sin excepciones (está bajo `(app)`), y `components/navegacion.test.tsx` pasa con las cinco pestañas.
 
-- [ ] **Step 6: Verificar el tipado**
+- [x] **Step 6: Verificar el tipado**
 
 Run: `npx tsc --noEmit`
 Expected: sin errores.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add 'app/(app)/servicio-tecnico/page.tsx' components/navegacion.tsx components/navegacion.test.tsx
@@ -1650,7 +1660,7 @@ spec — el primer tenant de un rubro sin servicio técnico la hace caducar."
 - Consumes: `crearOrden`, `crearCliente`, `buscarClientes`, `exigirSesion`, `exigirDuenio`.
 - Produces: la ruta `/servicio-tecnico/nuevo`; y de `acciones.ts`, la action `recibirEquipo(estado, datos: FormData): Promise<EstadoServicio>` con `type EstadoServicio = { error: string | null; aviso: string | null }`.
 
-- [ ] **Step 1: Escribir el test de la action**
+- [x] **Step 1: Escribir el test de la action**
 
 `app/(app)/servicio-tecnico/acciones.test.ts`, siguiendo el patrón de `app/(app)/inventario/acciones.test.ts`:
 
@@ -1751,12 +1761,12 @@ describe('anular', () => {
 })
 ```
 
-- [ ] **Step 2: Correr el test y verificar que falla**
+- [x] **Step 2: Correr el test y verificar que falla**
 
 Run: `npx vitest run 'app/(app)/servicio-tecnico/acciones.test.ts'`
 Expected: FAIL — no resuelve `./acciones`.
 
-- [ ] **Step 3: Escribir `app/(app)/servicio-tecnico/acciones.ts`**
+- [x] **Step 3: Escribir `app/(app)/servicio-tecnico/acciones.ts`**
 
 ```ts
 'use server'
@@ -1899,7 +1909,7 @@ export async function anular(_e: EstadoServicio, datos: FormData): Promise<Estad
 }
 ```
 
-- [ ] **Step 4: Escribir `app/(app)/servicio-tecnico/formularios.tsx`**
+- [x] **Step 4: Escribir `app/(app)/servicio-tecnico/formularios.tsx`**
 
 ```tsx
 'use client'
@@ -2032,7 +2042,7 @@ export function FormularioRecepcion({
 }
 ```
 
-- [ ] **Step 5: Escribir `app/(app)/servicio-tecnico/nuevo/page.tsx`**
+- [x] **Step 5: Escribir `app/(app)/servicio-tecnico/nuevo/page.tsx`**
 
 ```tsx
 import { randomUUID } from 'node:crypto'
@@ -2073,17 +2083,17 @@ export default async function RecibirEquipo() {
 }
 ```
 
-- [ ] **Step 6: Correr los tests**
+- [x] **Step 6: Correr los tests**
 
 Run: `npm test`
 Expected: PASS. Incluye `test/use-server.test.ts`, que falla si `acciones.ts` exporta algo que no sea una función async.
 
-- [ ] **Step 7: Verificar el tipado**
+- [x] **Step 7: Verificar el tipado**
 
 Run: `npx tsc --noEmit`
 Expected: sin errores.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add 'app/(app)/servicio-tecnico'
@@ -2110,7 +2120,7 @@ El redirect va fuera del try: señaliza con una excepción, y adentro del catch
 - Consumes: `moverEstado`, `diagnosticar`, `anular` de `../acciones`; `TRANSICIONES` y `NOMBRE_ESTADO` de `@/lib/ordenes-de-trabajo/estados`.
 - Produces: la ruta `/servicio-tecnico/[id]`.
 
-- [ ] **Step 1: Declarar la ruta con parámetro en `RUTAS_SIN_SMOKE`**
+- [x] **Step 1: Declarar la ruta con parámetro en `RUTAS_SIN_SMOKE`**
 
 Sin esto el gate entero corta. En `scripts/lib/rutas-comun.sh`, dentro de `declare -A RUTAS_SIN_SMOKE`:
 
@@ -2118,12 +2128,12 @@ Sin esto el gate entero corta. En `scripts/lib/rutas-comun.sh`, dentro de `decla
   ['/servicio-tecnico/[id]']='no hay de dónde sacar un id de orden válido sin recibir un equipo en el gate, y sembrarlo convertiría el smoke en una suite de fixtures. Lo que esta pantalla usa —el guard de sesión, prismaParaTenant, las actions de estado y anulación— ya está cubierto por /servicio-tecnico, por app/(app)/servicio-tecnico/acciones.test.ts y por test/ordenes-de-trabajo.test.ts.'
 ```
 
-- [ ] **Step 2: Verificar que la derivación de rutas sigue andando**
+- [x] **Step 2: Verificar que la derivación de rutas sigue andando**
 
 Run: `bash -c 'source scripts/lib/rutas-comun.sh && rutas_autenticadas "app/(app)"'`
 Expected: lista con `/servicio-tecnico` y `/servicio-tecnico/nuevo`, **sin** `/servicio-tecnico/[id]`, y salida exitosa. Si la entrada del Step 1 faltara, el comando falla con "ruta con parámetro sin declarar".
 
-- [ ] **Step 3: Agregar los formularios del detalle a `formularios.tsx`**
+- [x] **Step 3: Agregar los formularios del detalle a `formularios.tsx`**
 
 ```tsx
 // El tipo del enum, no `string`: así el compilador atrapa que la pantalla le
@@ -2230,7 +2240,7 @@ export function FormularioAnular({
 }
 ```
 
-- [ ] **Step 4: Escribir `app/(app)/servicio-tecnico/[id]/page.tsx`**
+- [x] **Step 4: Escribir `app/(app)/servicio-tecnico/[id]/page.tsx`**
 
 ```tsx
 import Link from 'next/link'
@@ -2392,17 +2402,17 @@ export default async function DetalleDeOrden({ params }: { params: Promise<{ id:
 }
 ```
 
-- [ ] **Step 5: Correr todos los tests**
+- [x] **Step 5: Correr todos los tests**
 
 Run: `npm test`
 Expected: PASS. `test/boundaries-app.test.ts` sigue en verde porque no se agregó ningún `error.tsx` ni `not-found.tsx` adentro de `(app)`.
 
-- [ ] **Step 6: Verificar el tipado**
+- [x] **Step 6: Verificar el tipado**
 
 Run: `npx tsc --noEmit`
 Expected: sin errores.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add 'app/(app)/servicio-tecnico' scripts/lib/rutas-comun.sh
@@ -2435,7 +2445,7 @@ entero no arranca."
 - Consumes: `formatearFecha`, `prismaParaTenant`, `exigirSesion`.
 - Produces: la ruta `/servicio-tecnico/[id]/ticket`, y el componente exportado `CuerpoDelTicket` que el test renderiza sin base.
 
-- [ ] **Step 1: Escribir el test del ticket**
+- [x] **Step 1: Escribir el test del ticket**
 
 `app/(app)/servicio-tecnico/[id]/ticket/ticket.test.tsx`:
 
@@ -2500,12 +2510,12 @@ describe('el ticket', () => {
 })
 ```
 
-- [ ] **Step 2: Correr el test y verificar que falla**
+- [x] **Step 2: Correr el test y verificar que falla**
 
 Run: `npx vitest run 'app/(app)/servicio-tecnico/[id]/ticket/ticket.test.tsx'`
 Expected: FAIL — no resuelve `./page`.
 
-- [ ] **Step 3: Escribir `ticket.module.css`**
+- [x] **Step 3: Escribir `ticket.module.css`**
 
 ```css
 /* La ÚNICA superficie del producto que no usa los tokens de app/globals.css, y
@@ -2562,7 +2572,7 @@ Expected: FAIL — no resuelve `./page`.
 }
 ```
 
-- [ ] **Step 4: Escribir `imprimir.tsx`**
+- [x] **Step 4: Escribir `imprimir.tsx`**
 
 ```tsx
 'use client'
@@ -2584,7 +2594,7 @@ export function ImprimirAlCargar() {
 }
 ```
 
-- [ ] **Step 5: Escribir `page.tsx`**
+- [x] **Step 5: Escribir `page.tsx`**
 
 ```tsx
 import { notFound } from 'next/navigation'
@@ -2692,12 +2702,12 @@ export default async function Ticket({ params }: { params: Promise<{ id: string 
 }
 ```
 
-- [ ] **Step 6: Correr el test del ticket**
+- [x] **Step 6: Correr el test del ticket**
 
 Run: `npx vitest run 'app/(app)/servicio-tecnico/[id]/ticket/ticket.test.tsx'`
 Expected: PASS, 5 tests.
 
-- [ ] **Step 7: Declarar la ruta en `RUTAS_SIN_SMOKE`**
+- [x] **Step 7: Declarar la ruta en `RUTAS_SIN_SMOKE`**
 
 En `scripts/lib/rutas-comun.sh`:
 
@@ -2705,7 +2715,7 @@ En `scripts/lib/rutas-comun.sh`:
   ['/servicio-tecnico/[id]/ticket']='mismo motivo que /servicio-tecnico/[id]: no hay id de orden que pedir sin sembrar datos en el gate. Y lo específico de esta pantalla —que las dos copias salgan y que la clave de desbloqueo NO se imprima— lo cubre app/(app)/servicio-tecnico/[id]/ticket/ticket.test.tsx, que la renderiza sin base.'
 ```
 
-- [ ] **Step 8: Declarar la excepción en `docs/sistema-de-diseno.md`**
+- [x] **Step 8: Declarar la excepción en `docs/sistema-de-diseno.md`**
 
 En la sección de excepciones del documento, agregar:
 
@@ -2723,12 +2733,12 @@ nada, y heredar la paleta oscura de la aplicación imprimiría una hoja negra.
 pantalla, o que aparezca una impresora a color. Ninguna de las dos está prevista.
 ```
 
-- [ ] **Step 9: Correr todo el gate local**
+- [x] **Step 9: Correr todo el gate local**
 
 Run: `npm test && npx tsc --noEmit`
 Expected: PASS. `test/sistema-de-diseno.test.ts` sigue verde: el documento suma prosa, no tokens.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add 'app/(app)/servicio-tecnico' scripts/lib/rutas-comun.sh docs/sistema-de-diseno.md
@@ -2760,12 +2770,12 @@ Sin datos no se puede mirar nada, y lo que hay que mirar es el papel.
 - Consumes: `crearOrden`, `cambiarEstado`, `crearCliente`, `prisma` de `@/lib/db`.
 - Produces: el comando `npm run ordenes:sembrar -- <tenantId> <usuarioId>`.
 
-- [ ] **Step 1: Leer el sembrador que ya existe**
+- [x] **Step 1: Leer el sembrador que ya existe**
 
 Run: `cat scripts/sembrar-ventas-dev.mts`
 Expected: es el patrón exacto que se copia — argumentos por `process.argv`, imports con alias `@/`, y `await prisma.$disconnect()` al final. Los ids se pasan a mano porque la app conecta como `arandano_app`, sobre el que RLS aplica: un `findFirst` de tenants sin GUC no devuelve nada.
 
-- [ ] **Step 2: Escribir `scripts/sembrar-ordenes-dev.mts`**
+- [x] **Step 2: Escribir `scripts/sembrar-ordenes-dev.mts`**
 
 ```ts
 /**
@@ -2896,7 +2906,7 @@ for (const receta of RECETAS) {
 await prisma.$disconnect()
 ```
 
-- [ ] **Step 3: Agregar el script a `package.json`**
+- [x] **Step 3: Agregar el script a `package.json`**
 
 En `"scripts"`, junto a `"ventas:sembrar"`:
 
@@ -2906,7 +2916,7 @@ En `"scripts"`, junto a `"ventas:sembrar"`:
 
 `tsx` y no `node` pelado: `node` no resuelve el alias `@/` ni los imports sin extensión del cliente de Prisma. Es la lección de la Task 11 del ciclo de autenticación, y está escrita en `docs/runbook-stacks.md`.
 
-- [ ] **Step 4: Correr el sembrador contra dev**
+- [x] **Step 4: Correr el sembrador contra dev**
 
 Sacar los dos ids con psql, que entra con el rol dueño (la app no los puede leer sin GUC):
 
@@ -2919,7 +2929,7 @@ SELECT t.id AS tenant, u.id AS usuario
 Run: `npm run ordenes:sembrar -- <tenantId> <usuarioId>`
 Expected: cuatro líneas, una por orden, con el número y la URL de su ticket.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/sembrar-ordenes-dev.mts package.json
@@ -2943,12 +2953,12 @@ La única task que no la puede terminar un test.
 - Modify: `CLAUDE.md`
 - Modify: `docs/superpowers/specs/2026-08-15-servicio-tecnico-design.md`
 
-- [ ] **Step 1: Correr el gate completo en local**
+- [x] **Step 1: Correr el gate completo en local**
 
 Run: `npm test && npx tsc --noEmit && npm run lint`
 Expected: todo PASS.
 
-- [ ] **Step 2: Verificar que la migración sigue siendo no destructiva**
+- [x] **Step 2: Verificar que la migración sigue siendo no destructiva**
 
 Run: `grep -rniE 'DROP |RENAME ' prisma/migrations/*_servicio_tecnico/migration.sql`
 Expected: cero líneas.
@@ -2982,7 +2992,7 @@ Si algo de esto falla, el arreglo va en `ticket.module.css` y vuelve a esta list
 
 En la sección *Cómo se verifica* del spec, reemplazar el párrafo que dice que la verificación con papel "se anota acá cuando se haya hecho" por lo que efectivamente se vio, incluidos los ajustes que haya habido que hacerle al CSS. Es lo que va a leer quien toque el ticket dentro de seis meses.
 
-- [ ] **Step 6: Actualizar `CLAUDE.md`**
+- [x] **Step 6: Actualizar `CLAUDE.md`**
 
 En *Próximos pasos técnicos*, tachar el ítem del schema de órdenes de trabajo y dejar en su lugar qué se construyó y qué quedó afuera:
 
@@ -3004,7 +3014,7 @@ Y en *Decisiones abiertas del modelo de datos*, agregar al ítem de
 `MovimientoStock` que el módulo ya existe y que la decisión se toma en el ciclo
 de repuestos — el que la puede tomar bien.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add CLAUDE.md docs/superpowers/specs/2026-08-15-servicio-tecnico-design.md
