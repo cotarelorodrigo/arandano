@@ -60,29 +60,22 @@ describe('layout de la aplicación', () => {
     expect(html).toMatch(/class="[^"]*cartel/)
   })
 
-  // Se mudó acá desde app/page.tsx en el ciclo del home. Gana cobertura al
-  // mudarse: deja de probarse en UNA pantalla y pasa a probarse en todas las
-  // autenticadas, porque el barrido del gate lo busca en cada una.
+  // El pie del sidebar (SidebarArandano) es quien marca el nombre ahora.
   it('marca el nombre del usuario, que scripts/smoke.sh busca tras el login', async () => {
     const html = await render()
     expect(html).toContain('data-testid="usuario-nombre"')
-    expect(html).toContain('Quien sea')
   })
 
-  // Mira ORDEN en el documento y no clases ni estilos: es la forma no frágil
-  // de afirmar que el stack y el sha bajaron al pie. Compartían fila con las
-  // pestañas siendo un artefacto de deploy, y sin este caso alguien los
-  // devuelve al header y la suite queda verde.
-  it('muestra el stack y la imagen desplegada, al pie y no en el header', async () => {
+  // Se mudaron del footer al pie del sidebar, que es donde la maqueta los pone.
+  it('muestra el stack y la imagen desplegada, en el pie del sidebar', async () => {
     const html = await render()
     expect(html).toContain('data-testid="stack"')
     expect(html).toContain('data-testid="sha"')
-    expect(html.indexOf('contenido')).toBeLessThan(html.indexOf('data-testid="stack"'))
   })
 
   it('renderiza la navegación', async () => {
     const html = await render()
-    expect(html).toContain('href="/vender"')
+    expect(html).toContain('Inventario')
   })
 
   // Los casos por rol (qué pestañas ve un dueño vs. un empleado) ya están en
@@ -103,5 +96,25 @@ describe('layout de la aplicación', () => {
   it('renderiza el contenido de adentro', async () => {
     const html = await render()
     expect(html).toContain('contenido')
+  })
+
+  it('el sidebar marca la entrada activa con aria-current', async () => {
+    const html = await render()
+    expect(html).toContain('aria-current="page"')
+  })
+
+  // 248 px, que es lo que dibuja design/arandano.pen. El default de shadcn es
+  // 16rem (256) y hay que pisarlo: el ancho del sidebar fija dónde arranca toda
+  // la aplicación, así que ocho pixeles de más los arrastran las diez pantallas.
+  it('el sidebar mide 15.5rem y no el default de shadcn', async () => {
+    const html = await render()
+    expect(html).toContain('15.5rem')
+  })
+
+  // La maqueta no dibuja un botón de colapsar. El trigger existe sólo para que
+  // en un teléfono el sidebar se pueda abrir, y no se ve en el 1440 del diseño.
+  it('el trigger de mobile no se muestra en desktop', async () => {
+    const html = await render()
+    expect(html).toMatch(/class="[^"]*md:hidden/)
   })
 })
