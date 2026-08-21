@@ -45,17 +45,22 @@
   inset: 0;
   pointer-events: none;
 
-  --brillo: color-mix(in srgb, var(--foreground) 7%, transparent);
-  /* Desde --background y no desde --foreground: el surco es una línea OSCURA
-     sobre el paño, y con la paleta oscura --foreground es casi blanco. Sin este
-     cambio quedaban dos brillos paralelos y ningún relieve. El 45% es más que
-     el 26% de la paleta clara porque la distancia entre --background (0.214) y
-     --marca (0.32) es menor que la que había entre negro y el paño. */
-  --surco: color-mix(in srgb, var(--background) 45%, transparent);
+  /* Los dos desde los tokens del PAÑO y no desde los de la página, que es lo
+     que hace que esto sobreviva a un cambio de paleta. El brillo es la cara
+     iluminada del acanalado; el surco, la línea de sombra entre dos canales.
+
+     La versión anterior derivaba el surco de --background, y con la paleta
+     clara eso lo daba vuelta: el surco pasaba a ser una línea CLARA sobre el
+     paño, o sea dos brillos paralelos y ningún relieve — exactamente el bug
+     que su propio comentario describía, en el otro sentido. El negro no es un
+     token de la paleta pero tampoco es un color de marca: es ausencia de luz,
+     que es lo que una sombra es. */
+  --brillo: color-mix(in srgb, var(--marca-foreground) 8%, transparent);
+  --surco: color-mix(in srgb, #000 28%, transparent);
 
   /* Un poco más oscuro que el paño de atrás: si fueran el mismo color, el
      movimiento no se leería como un objeto que sube sino como un parpadeo. */
-  background-color: color-mix(in srgb, var(--background) 22%, var(--marca));
+  background-color: color-mix(in srgb, #000 18%, var(--marca));
   background-image: repeating-linear-gradient(
     180deg,
     var(--brillo) 0px,
@@ -80,7 +85,7 @@
   position: absolute;
   inset: auto 0 0 0;
   height: 4px;
-  background-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+  background-color: color-mix(in srgb, var(--marca-foreground) 16%, transparent);
 }
 
 @keyframes subir {
@@ -99,8 +104,11 @@
   font-weight: 500;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  /* 6.13:1 sobre --marca, medido en scripts/contraste.mts. */
-  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  /* --marca-dim y no una opacidad sobre --foreground: el paño es una superficie
+     de marca y tiene sus propios colores de texto. Con la paleta clara,
+     --foreground es casi negro, así que la versión anterior de esta línea
+     dejaba la firma ilegible. 5.09:1 sobre --marca. */
+  color: var(--marca-dim);
 }
 
 /*
@@ -126,7 +134,9 @@
   line-height: 1.02;
   letter-spacing: -0.022em;
   text-wrap: balance;
-  color: var(--foreground);
+  /* Mismo motivo que la firma: el texto que va sobre el paño sale de los tokens
+     del paño. 15.11:1 sobre --marca. */
+  color: var(--marca-foreground);
 }
 
 @media (prefers-reduced-motion: reduce) {

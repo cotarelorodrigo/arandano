@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-// La misma conversión que usa la tabla de contraste, no una copia: dos
-// implementaciones de oklch → sRGB se desincronizan, y el día que pase, este
-// test compararía contra un color que la aplicación no pinta.
-import { tokensDelCss, aRgb } from '@/scripts/contraste.mts'
+// La misma conversión que lee la paleta, no una copia: dos implementaciones de
+// color → sRGB se desincronizan, y el día que pase, este test compararía contra
+// un color que la aplicación no pinta.
+import { tokensDelCss, aRgb } from '@/scripts/tokens.mts'
 
 const OG = 'app/opengraph-image.tsx'
 
@@ -31,13 +31,17 @@ describe('la tarjeta social no se desincroniza de la paleta', () => {
     ).toContain(`backgroundColor: '${esperado}'`)
   })
 
-  it('el texto es exactamente --foreground', () => {
-    const esperado = hexDelToken('--foreground')
+  it('el texto es exactamente --marca-foreground', () => {
+    // --marca-foreground y no --foreground: el paño de marca es una superficie
+    // oscura, y --foreground es el texto sobre las superficies CLARAS. Con la
+    // paleta oscura los dos coincidían y la distinción no se notaba; con la
+    // clara, usar --foreground acá pinta el título de casi negro sobre el paño.
+    const esperado = hexDelToken('--marca-foreground')
     expect(
       fuente,
-      `${OG} tiene que pintar color: '${esperado}', que es --foreground convertido ` +
-        `a hex. Usaba --primary-foreground, que con la paleta oscura pasó a ser casi ` +
-        `negro: texto negro sobre el paño de marca.`,
+      `${OG} tiene que pintar color: '${esperado}', que es --marca-foreground ` +
+        `convertido a hex. Es el texto que va sobre el paño de marca; --foreground ` +
+        `es el que va sobre las superficies claras y acá quedaría ilegible.`,
     ).toContain(`color: '${esperado}'`)
   })
 })

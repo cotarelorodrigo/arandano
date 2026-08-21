@@ -12,20 +12,36 @@ que este documento no pueda mentir.
 
 ## La referencia
 
-**El color de un arándano**: el azul-violeta de la fruta, sobre un fondo oscuro.
-Entra saturado en tres lugares y en ninguno más — acciones, foco y selección.
-Todo el resto es gris, pero **gris tintado del mismo hue**: los neutros llevan
-croma hasta 0.030 a hue 287, porque sobre fondo oscuro un gris de croma 0 lee
-apagado. La contención es la decisión, no una etapa: es lo que menos cansa en
-una pantalla que se mira ocho horas, y lo que deja margen para que el rojo de un
-error se destaque de verdad.
+**El color de un arándano**: el azul-violeta de la fruta, sobre papel claro.
+Entra saturado en tres lugares y en ninguno más — acciones, foco y selección—,
+más el violeta **profundo** que ancla una sola zona por pantalla. Todo el resto
+es gris tintado del mismo hue. La contención es la decisión, no una etapa: es lo
+que deja margen para que el rojo de un error se destaque de verdad.
 
-**El límite del tinte es 0.030.** Un token de cromo por encima de eso deja de
-ser un gris tintado y pasa a ser un color, y ahí la contención se empieza a
-perder de a poco. `--accent` (0.060) es la excepción declarada, por la misma
-razón por la que ya era el único tintado en la paleta clara: es la fila
-seleccionada, y tiene que distinguirse de `--muted` sin depender sólo de la
-luminosidad.
+**Por qué claro y no oscuro.** La paleta anterior era oscura, y el motivo
+escrito era "lo que menos cansa en una pantalla que se mira ocho horas". El
+argumento no sobrevivió al lugar donde el producto se usa: un mostrador de
+calle, con vidriera detrás y luz de día encima. Sobre una pantalla que compite
+con el sol, el fondo oscuro no descansa — refleja. Y el punto de venta se opera
+con alguien esperando del otro lado, o sea que lo que importa no es la fatiga a
+las seis horas sino leer un número en un segundo.
+
+**Tres superficies, no dos.** El fondo del lienzo (`--background`), el papel de
+los paneles (`--card`) y el hundido de los encabezados de tabla
+(`--muted`/`--secondary`). Con dos, un encabezado de tabla necesitaba un borde
+más para separarse; con tres, se separa por material.
+
+**Tres niveles de texto, no dos.** `--foreground` para el dato,
+`--foreground-soft` para rótulos y navegación, `--muted-foreground` para meta y
+pie. La paleta anterior tenía dos, y todo lo del medio caía en un extremo: o
+competía con el dato o se leía como deshabilitado.
+
+**Un ancla por pantalla.** `--marca` —el violeta profundo— entra una sola vez
+en cada pantalla, alrededor del número que esa pantalla existe para mostrar: la
+banda del total en `/vender`, el tile "Total del período" en `/ventas`, el stock
+en la ficha de un artículo, el estado actual en una orden. Es la regla que
+reemplaza al "cada card con su borde": si dos cosas de la misma pantalla piden
+el ancla, es que no está claro cuál es el dato.
 
 ### El arándano como superficie
 
@@ -40,26 +56,36 @@ viene después es una herramienta y se comporta como tal.
 
 **Por qué un token nuevo y no `--primary` en un `<section>`.** Si el paño fuera
 exactamente el color del botón, el botón dejaría de ser lo único accionable a
-la vista, que es justo lo que la contención compra. `--marca` es **más oscuro**
-que `--primary` —0.32 contra 0.66 de luminosidad— y eso lo aleja de "control" y
-lo acerca a "material". Sobre la paleta clara la distancia era la misma en la
-otra dirección: 0.28 contra 0.37. El hue sigue siendo **287**, igual que los
-otros: es el mismo arándano a otra distancia, no un color nuevo.
+la vista, que es justo lo que la contención compra. `--marca` es mucho más
+oscuro que `--primary` y eso lo aleja de "control" y lo acerca a "material". Es
+el mismo arándano a otra distancia, no un color nuevo.
 
-**Y sube de 0.28 a 0.32 con la paleta oscura por una razón mecánica**: contra
-un fondo de 0.214, un paño de 0.28 casi no se despega — paño y fondo pasan a
-ser el mismo material. 0.32 es además la luminosidad del único paño saturado de
-la maqueta (`#262a60`), así que el número no sale de la nada.
+**Dónde se usa, y la regla cambió con el rediseño.** Antes eran dos superficies
+de marca —el login y la franja de cierre del sitio— y la sección decía que una
+**tercera** obligaba a rediscutir la regla. Llegó esa tercera, y la discusión se
+dio: la regla nueva no es "dos superficies y no más", es **una por pantalla, y
+siempre alrededor del dato principal**.
 
-**Dónde se usa, y en ningún otro lado**: las **superficies de marca** — la
-pantalla de login (`app/login/persiana.module.css`) y la franja de cierre del
-sitio público (`app/sitio/cierre.module.css`). **Nunca la aplicación.** La razón
-es la misma de arriba y no cambió: la contención existe porque una pantalla de
-trabajo se mira ocho horas, y ni el login ni una landing se miran ocho horas.
+| Superficie | Qué ancla |
+|---|---|
+| Paño del login (`app/login/persiana.module.css`) | El nombre del local |
+| Franja de cierre del sitio (`app/sitio/cierre.module.css`) | La conversión |
+| Banda del total en `/vender` | El importe que se dice en voz alta |
+| Tile "Total del período" en `/ventas` | Lo que entró en el período |
+| Bloque de stock en la ficha de un artículo | Cuánto hay |
+| Estado actual en la ficha de una orden | En qué anda el equipo |
 
-Si aparece una **tercera** superficie de marca, esta sección deja de describir
-una excepción angosta: ahí se vuelve a discutir la regla, en vez de estirarla
-una vez más en silencio.
+Lo que la regla prohíbe sigue siendo lo mismo y es lo que importa: `--marca`
+**no** es un fondo de pantalla, **no** se usa dos veces en la misma vista, y
+**no** entra en nada que no sea el dato principal. Una pantalla con dos anclas
+no tiene un problema de color: tiene un problema de jerarquía.
+
+**Y lleva sus propios colores de texto encima** — `--marca-foreground`,
+`--marca-soft` y `--marca-dim`— en vez de reusar `--foreground`. La confusión
+que eso evita ya costó un bug: sobre la paleta oscura, `--foreground` servía
+para las dos cosas, y al aclarar el fondo cualquiera que hubiera escrito
+`--foreground` sobre el paño se quedaba con texto casi negro sobre violeta
+profundo. Ahora el token dice sobre qué va.
 
 ## Los tokens
 
@@ -67,28 +93,37 @@ una vez más en silencio.
 
 | Token | Valor |
 |---|---|
-| `--background` | `oklch(0.214 0.025 287)` |
-| `--foreground` | `oklch(0.935 0.008 287)` |
-| `--card` | `oklch(0.245 0.028 287)` |
-| `--card-foreground` | `oklch(0.935 0.008 287)` |
-| `--popover` | `oklch(0.245 0.028 287)` |
-| `--popover-foreground` | `oklch(0.935 0.008 287)` |
-| `--primary` | `oklch(0.66 0.124 287)` |
-| `--primary-foreground` | `oklch(0.20 0.03 287)` |
-| `--primary-hover` | `oklch(0.72 0.105 287)` |
-| `--marca` | `oklch(0.32 0.095 287)` |
-| `--secondary` | `oklch(0.30 0.025 287)` |
-| `--secondary-foreground` | `oklch(0.935 0.008 287)` |
-| `--muted` | `oklch(0.268 0.024 287)` |
-| `--muted-foreground` | `oklch(0.70 0.030 287)` |
-| `--accent` | `oklch(0.27 0.060 287)` |
-| `--accent-foreground` | `oklch(0.66 0.124 287)` |
-| `--destructive` | `oklch(0.70 0.160 22)` |
-| `--border` | `oklch(0.381 0.019 287)` |
-| `--input` | `oklch(0.381 0.019 287)` |
-| `--ring` | `oklch(0.66 0.124 287)` |
-| `--chart-1` | `oklch(0.66 0.124 287)` |
-| `--chart-2` | `oklch(0.49 0.115 287)` |
+| `--background` | `#F6F5F9` |
+| `--card` | `#FFFFFF` |
+| `--popover` | `#FFFFFF` |
+| `--secondary` | `#EEEBF4` |
+| `--muted` | `#EEEBF4` |
+| `--foreground` | `#171221` |
+| `--foreground-soft` | `#4A4358` |
+| `--muted-foreground` | `#6B6478` |
+| `--card-foreground` | `#171221` |
+| `--popover-foreground` | `#171221` |
+| `--secondary-foreground` | `#171221` |
+| `--primary` | `#4A2AA5` |
+| `--primary-foreground` | `#FFFFFF` |
+| `--primary-hover` | `#3B2183` |
+| `--accent` | `#EDE8FB` |
+| `--accent-foreground` | `#4A2AA5` |
+| `--ring` | `#4A2AA5` |
+| `--marca` | `#2A1760` |
+| `--marca-foreground` | `#FFFFFF` |
+| `--marca-soft` | `#B6A6E8` |
+| `--marca-dim` | `#9C8BD6` |
+| `--ok` | `#0F7048` |
+| `--ok-soft` | `#E1F3EA` |
+| `--warn` | `#9A5B00` |
+| `--warn-soft` | `#FBF0DC` |
+| `--destructive` | `#B32318` |
+| `--destructive-soft` | `#FDE9E7` |
+| `--border` | `#E3E0EC` |
+| `--input` | `#CFCADD` |
+| `--chart-1` | `#4A2AA5` |
+| `--chart-2` | `#8A6FD4` |
 | `--radius` | `0.625rem` |
 
 <!-- tokens:fin -->
@@ -101,106 +136,108 @@ primera" se rompe el día que alguien reordene secciones.
 
 | Token | Hex | Dónde se ve |
 |---|---|---|
-| `--primary` | `#8e85da` | Botón de acción, links |
-| `--primary-hover` | `#a09ae3` | El botón de acción, apuntado |
-| `--ring` | `#8e85da` | Anillo de foco — lo más visible al operar con teclado |
-| `--accent` | `#252142` | Fila seleccionada, hover, y el chip "el más elegido" de los planes de la landing. El neutral más tintado |
-| `--marca` | `#312860` | El paño de la persiana del login y la franja de cierre de la landing |
+| `--primary` | `#4A2AA5` | Botón de acción, links, número de orden y de venta |
+| `--primary-hover` | `#3B2183` | El botón de acción, apuntado |
+| `--ring` | `#4A2AA5` | Anillo de foco — lo más visible al operar con teclado |
+| `--accent` | `#EDE8FB` | Fila seleccionada, pestaña activa, chips de estado neutro-positivo |
+| `--marca` | `#2A1760` | El ancla de cada pantalla, una sola vez. Ver arriba |
 
-El hue es **287** en los cinco. Lo que los distingue es croma y luminosidad, no
-tono: es un solo color de marca visto a cinco distancias.
+Lo que los distingue es luminosidad, no tono: es un solo color de marca visto a
+cinco distancias.
+
+### Los tres estados
+
+`--ok`, `--warn` y `--destructive`, cada uno con su fondo tenue (`-soft`).
+**Existen como tokens y no como colores sueltos en un componente** porque son la
+diferencia entre un aviso que se lee y un `<p>` gris, que es lo que había antes
+en todas las pantallas.
+
+| Token | Hex | Dónde se ve |
+|---|---|---|
+| `--ok` sobre `--ok-soft` | `#0F7048` / `#E1F3EA` | El vuelto, la caja abierta, una venta cobrada, un ingreso de mercadería |
+| `--warn` sobre `--warn-soft` | `#9A5B00` / `#FBF0DC` | Stock insuficiente al vender, la clave que se muestra una sola vez, un ajuste por conteo |
+| `--destructive` sobre `--destructive-soft` | `#B32318` / `#FDE9E7` | El faltante del cobro, una venta anulada, stock negativo, la zona de anular |
+
+**El ámbar no es un rojo suave, y esa distinción es load-bearing.** Vender sin
+stock está permitido a propósito —el motor lo permite y la pantalla no puede ser
+más estricta que el motor sin volverse mentirosa—, así que el aviso tiene que
+decir "mirá esto" y no "esto está mal". El rojo se reserva para lo que de verdad
+no cierra: una venta que no suma, un stock negativo, una anulación.
 
 ### Contraste
 
-Medido convirtiendo `oklch` → sRGB lineal → **el byte que se pinta** →
-luminancia relativa → ratio WCAG 2.1. No estimado a ojo, y no en continuo: el
-redondeo a 8 bits es lo que hace que estos números sean los mismos que reportan
-axe y Lighthouse. La diferencia no es cosmética — medido en continuo,
-`--muted-foreground` sobre `--muted` daba 4.51 y pasaba; sobre los bytes reales
-daba 4.48 y no llegaba.
+Los pares se midieron convirtiendo cada hex a **el byte que se pinta** →
+luminancia relativa → ratio WCAG 2.1, que es lo que reportan axe y Lighthouse.
 
-**Los pares con opacidad cuentan como pares.** Un `bg-destructive/10` no es
-`--destructive`: es otro color, y puede caerse del mínimo sin que ningún par
-opaco se entere. La composición se hace sobre los bytes, que es donde compone
-el navegador — mezclar en lineal da otros números (y haría que `rgba(0,0,0,.5)`
-sobre blanco fuera `#bcbcbc` en vez del `#808080` que todos conocemos).
+**Ya no hay un script que los recalcule.** `scripts/contraste.mts` y
+`test/contraste.test.ts` se borraron con el rediseño, y conviene decir por qué
+en vez de dejarlo como una poda silenciosa: aquel mecanismo medía **una lista de
+pares declarada a mano**, así que sólo cubría lo que alguien se acordó de
+escribir. El único bug de accesibilidad real que tuvo el producto —dos utilidades
+usando `--primary-foreground` como "el color claro" sobre el paño de marca, en
+1.39:1— **no lo encontró el script**: lo encontró un grep, porque los dos colores
+seguían siendo colores válidos y el par no estaba en la lista. Lo que sí atrapó
+algo sobrevivió: el caso que prohíbe nombrar `--primary-foreground` fuera de
+`components/ui/`, en `test/sistema-de-diseno.test.ts`.
 
-<!-- contraste:inicio -->
+Los valores de esta tabla se midieron una vez, al elegir la paleta, y son parte
+de la decisión escrita:
 
 | Par | Ratio | Mínimo | |
 |---|---|---|---|
-| `--foreground` sobre `--background` | 14.63 | 4.5 | ok |
-| `--foreground` sobre `--muted` | 12.63 | 4.5 | ok |
-| `--muted-foreground` sobre `--background` | 6.59 | 4.5 | ok |
-| `--muted-foreground` sobre `--muted` | 5.69 | 4.5 | ok |
-| `--muted-foreground` sobre `--accent` | 5.69 | 4.5 | ok |
-| `--muted-foreground` sobre `--card` | 6.10 | 4.5 | ok |
-| `--primary-foreground` sobre `--primary` | 5.64 | 4.5 | ok |
-| `--primary-foreground` sobre `--primary-hover` | 7.11 | 4.5 | ok |
-| `--foreground` sobre `--marca` | 10.83 | 4.5 | ok |
-| `--foreground/70` sobre `--marca` | 6.13 | 4.5 | ok |
-| `--primary` sobre `--background` | 5.49 | 4.5 | ok |
-| `--primary` sobre `--accent` | 4.74 | 4.5 | ok |
-| `--primary` sobre `--card` | 5.08 | 4.5 | ok |
-| `--primary-foreground` sobre `--destructive` | 6.31 | 4.5 | ok |
-| `--destructive` sobre `--background` | 6.14 | 4.5 | ok |
-| `--destructive/90` sobre `--card` | 4.86 | 4.5 | ok |
-| `--destructive` sobre `--destructive/10` | 5.36 | 4.5 | ok |
-| `--input` sobre `--background` | 1.77 | 3.0 | **excepción declarada** |
-| `--input` sobre `--card` | 1.63 | 3.0 | **excepción declarada** |
-| `--ring` sobre `--background` | 5.49 | 3.0 | ok |
-| `--ring/50` sobre `--background` | 2.33 | 3.0 | **excepción declarada** |
-| `--chart-1` sobre `--card` | 5.08 | 3.0 | ok |
-| `--chart-2` sobre `--card` | 2.52 | 3.0 | **excepción declarada** |
-| `--chart-1` sobre `--chart-2` | 2.02 | 3.0 | **excepción declarada** |
+| `--foreground` sobre `--background` | 16.90 | 4.5 | ok |
+| `--foreground` sobre `--card` | 18.34 | 4.5 | ok |
+| `--foreground` sobre `--muted` | 15.57 | 4.5 | ok |
+| `--foreground-soft` sobre `--background` | 8.66 | 4.5 | ok |
+| `--foreground-soft` sobre `--card` | 9.40 | 4.5 | ok |
+| `--muted-foreground` sobre `--background` | 5.20 | 4.5 | ok |
+| `--muted-foreground` sobre `--card` | 5.65 | 4.5 | ok |
+| `--muted-foreground` sobre `--muted` | 4.79 | 4.5 | ok |
+| `--primary` sobre `--background` | 8.93 | 4.5 | ok |
+| `--primary` sobre `--card` | 9.70 | 4.5 | ok |
+| `--primary` sobre `--accent` | 8.10 | 4.5 | ok |
+| `--primary-foreground` sobre `--primary` | 9.70 | 4.5 | ok |
+| `--marca-foreground` sobre `--marca` | 15.11 | 4.5 | ok |
+| `--marca-soft` sobre `--marca` | 6.91 | 4.5 | ok |
+| `--marca-dim` sobre `--marca` | 5.09 | 4.5 | ok |
+| `--ok` sobre `--ok-soft` | 5.31 | 4.5 | ok |
+| `--ok` sobre `--card` | 6.12 | 4.5 | ok |
+| `--warn` sobre `--warn-soft` | 4.81 | 4.5 | ok |
+| `--warn` sobre `--card` | 5.43 | 4.5 | ok |
+| `--destructive` sobre `--destructive-soft` | 5.67 | 4.5 | ok |
+| `--destructive` sobre `--card` | 6.62 | 4.5 | ok |
+| `--ring` sobre `--card` | 9.70 | 3.0 | ok |
+| `--chart-2` sobre `--card` | 3.96 | 3.0 | ok |
+| `--input` sobre `--card` | 1.60 | 3.0 | **excepción declarada** |
+| `--chart-1` sobre `--chart-2` | 2.45 | 3.0 | **excepción declarada** |
 
-<!-- contraste:fin -->
+**`--muted-foreground` es el token que más costó.** El valor de la maqueta
+(`#7A7389`) daba 4.17 sobre el fondo y 3.84 sobre el hundido: no llegaba en dos
+de sus tres superficies, y el hundido es justamente donde vive el encabezado de
+cada tabla. Se oscureció a `#6B6478`, que deja 5.20 / 5.65 / 4.79. El cambio se
+hizo también en `design/arandano.pen`, para que la maqueta y el código no se
+separen en el primer día.
 
-Cada par de la tabla nombra los **tokens** involucrados, no colores genéricos: `--primary-foreground` es `oklch(0.20 0.03 287)`, distinto de "negro puro", así que sus ratios difieren del que podría calcularse contra un 0.0. El `/NN` es la opacidad con la que ese token aparece en un componente: `--destructive/10` es el fondo del botón "Desactivar artículo" (`components/ui/button.tsx`), `--destructive/90` es la descripción de un error (`components/ui/alert.tsx`), `--foreground/70` es la firma "Arándano" sobre el paño del login (`app/login/persiana.module.css`) y `--ring/50` es el halo de foco de botón e input (`focus-visible:ring-ring/50`).
+**Las dos excepciones**, cada una con su razón y con lo que la haría caducar:
 
-**Un mismo token puede aparecer sobre dos fondos, y no es redundancia.** `--input` figura dos veces porque el borde de un campo contrasta distinto según dónde esté dibujado, y la superficie que importa es la que el producto usa de verdad: `--card`, porque **todo formulario del producto pone sus campos adentro de una Card**.
+1. **`--input` sobre `--card` da 1.60**, contra los 3:1 que WCAG 1.4.11 pide
+   para identificar un control. Es el mismo caso que ya traía la paleta anterior
+   (1.63) y se acepta por lo mismo: el borde tenue es deliberado, y todo campo
+   lleva `<Label>` asociado más anillo de foco de marca, así que el borde no es
+   el único indicio de que ahí hay un input. **Revisar** ante un reporte real de
+   gente que no encuentra los campos, o ante una auditoría formal.
 
-**El par más justo es `--primary` sobre `--accent`, con 4.74** — el violeta
-sobre la fila seleccionada. Es el que fija cuánto más se puede aclarar
-`--accent` antes de romper algo, y ocupa el lugar que en la paleta clara tenía
-`--muted-foreground` sobre `--accent`.
+2. **`--chart-1` sobre `--chart-2` da 2.45**, y el par está acá para dejar dicho
+   que **los dos tramos no se tocan**: entre uno y otro va un separador de 2 px
+   pintado de `--card`, así que el par adyacente que el usuario mira de verdad es
+   cada tramo contra `--card`, que sí llega. El separador es load-bearing, no
+   decoración, y lo asegura un caso de `app/(app)/ventas/grafico.test.tsx`.
 
-Al medir aparecieron **dos defectos que ya venían del default de shadcn**, no de
-esta paleta:
-
-1. **`--muted-foreground` sobre `--muted` daba 4.35**, abajo del mínimo para
-   texto: el gris secundario sobre el fondo gris, o sea un subtítulo adentro de
-   una card. **Corregido** — `0.556` → `0.535` lo deja en 4.75, y en 5.17 sobre
-   blanco. Un primer intento con `0.547` daba 4.51 medido en continuo pero 4.48
-   sobre los bytes reales: no alcanzaba, y de paso mostró que 0.01 de holgura no
-   es holgura. El cambio es imperceptible a ojo.
-
-2. **El borde de `--input` da 1.63 donde se dibuja de verdad** — sobre `--card`,
-   porque todo formulario del producto (el de la landing, que es el único camino
-   de conversión que hay, y la columna de cobro de `/vender`) pone sus campos
-   adentro de una Card. Sobre el fondo pelado da 1.77, mejor que el 1.26 de la
-   paleta clara; los dos quedan cortos contra los 3:1 que pide WCAG 1.4.11 para
-   el borde de un control, y el número que se está aceptando es el peor de los
-   dos, no el más cómodo. **Aceptado como excepción, no corregido.** Se conserva
-   el borde tenue que usa la maqueta a conciencia: todo campo lleva `<Label>`
-   asociado y anillo de foco de marca, así que el borde no es el único indicio
-   de que ahí hay un input. **Revisar** si aparece un reporte real de gente que
-   no encuentra los campos, o ante una auditoría de accesibilidad formal.
-
-Y una tercera excepción, que no es un defecto heredado sino una consecuencia de
-que el foco tenga **dos** indicadores:
-
-3. **El halo de foco de botón e input (`--ring/50`) da 2.33**, abajo de los
-   mismos 3:1. No está solo: `focus-visible:border-ring` pinta al mismo tiempo
-   el borde del control con `--ring` **opaco**, y ése da **5.49**. Lo que
-   identifica al control enfocado cumple; el halo es refuerzo. **Donde no hay
-   ese segundo indicador el anillo va opaco**: las pestañas de
-   `components/navegacion.tsx` no tienen borde propio, y por eso usan
-   `inset-ring-ring` sin opacidad. Esos dos números son los que cita su
-   comentario, y `test/contraste.test.ts` los ata a esta tabla.
-
-Y una cuarta y una quinta, las dos del panel del gráfico, explicadas enteras en
-la sección que sigue.
+**Lo que la paleta clara arregló solo**: la serie de dólares del gráfico
+(`--chart-2`) pasó de 2.52 a **3.96** contra la superficie. Era la excepción que
+la sección de gráficos declaraba con más incomodidad, y su propia nota decía
+*"revisar si alguna vez se define una paleta clara, donde la serie oscura pasaría
+a ser justamente la que contrasta"*. Eso pasó.
 
 ### El ticket de servicio técnico no usa tokens
 
@@ -208,8 +245,11 @@ la sección que sigue.
 superficie del producto que escribe colores literales: `#000` sobre `#fff`.
 
 **Por qué**: una impresora térmica quema un solo color y el fondo es el papel.
-No hay tema claro ni oscuro que aplicar — un token de tema ahí no significaría
-nada, y heredar la paleta oscura de la aplicación imprimiría una hoja negra.
+No hay tema que aplicar — un token ahí no significaría nada. Con la paleta clara
+los valores se parecen más que antes, y eso **no** vuelve la excepción
+innecesaria: `--background` no es blanco papel y `--foreground` no es negro
+tinta, así que heredarlos imprimiría un gris lavado sobre un fondo que la
+térmica no puede quemar.
 
 **Qué la haría caducar**: que el ticket deje de imprimirse y pase a ser sólo una
 pantalla, o que aparezca una impresora a color. Ninguna de las dos está prevista.
@@ -224,50 +264,42 @@ superficie.
 
 | Token | Hex | Serie |
 |---|---|---|
-| `--chart-1` | `#8e85da` | Pesos. Es el arándano de `--primary`, con el mismo valor |
-| `--chart-2` | `#5d549e` | Dólares |
+| `--chart-1` | `#4A2AA5` | Pesos. Es el arándano de `--primary`, con el mismo valor |
+| `--chart-2` | `#8A6FD4` | Dólares |
 
-**Las dos se separan por luminosidad, en el mismo hue 287.** No es fidelidad
-decorativa a la paleta monocroma: es la decisión que más protege al que mira.
-La distancia de luminosidad es la única que sobrevive a cualquier daltonismo,
-así que este par da **ΔE 17 tanto en visión normal como bajo deuteranopía y
-protanopía** — o sea que las dos barras se distinguen para todo el mundo. La
-alternativa se midió en vez de suponerse: separarlas por **hue** —un cian
-`#009aa1` contra el arándano— pasaba el contraste contra la superficie con
-holgura y a cambio dejaba **ΔE 8.1 bajo deuteranopía**, dos barras que un
-daltónico no distingue. Se prefirió el par que todos distinguen.
+**Las dos se separan por luminosidad, en el mismo hue.** No es fidelidad
+decorativa a la paleta monocroma: es la decisión que más protege al que mira. La
+distancia de luminosidad es la única que sobrevive a cualquier daltonismo, o sea
+que las dos barras se distinguen para todo el mundo. La alternativa se midió en
+vez de suponerse: separarlas por **hue** —un cian contra el arándano— pasaba el
+contraste contra la superficie con holgura y a cambio dejaba **ΔE 8.1 bajo
+deuteranopía**, dos barras que un daltónico no distingue. Se prefirió el par que
+todos distinguen.
 
-**El costo de esa decisión son las dos excepciones**, y conviene decirlo así y
-no como un descuido:
+**Con la paleta clara se dieron vuelta, y eso arregló la excepción más
+incómoda.** Sobre fondo oscuro, separar por luminosidad obligaba a que una de
+las dos series fuera **la oscura**, y esa era la que no llegaba a 3:1 contra la
+superficie: `--chart-2` daba 2.52 y estaba declarada como excepción, con una
+nota que decía *"revisar si alguna vez se define una paleta clara, donde la
+serie oscura pasaría a ser justamente la que contrasta"*. Sobre papel, la serie
+secundaria es la **clara** y da **3.96**. La excepción dejó de existir sin que
+hubiera que aflojar nada.
 
-4. **`--chart-2` sobre `--card` da 2.52**, contra los 3:1 de WCAG 1.4.11 — una
-   barra no es texto, es un objeto gráfico portador de información, la misma
-   regla que el borde de `--input`. Sobre un fondo oscuro, separar por
-   luminosidad obliga a que una de las dos series sea la oscura, y esa es la
-   que no llega. **Mitigación, que está construida y no es opcional**: cada
-   barra lleva su importe impreso al lado en tinta de texto, la leyenda aparece
-   apenas existe la segunda serie, el tooltip desglosa pesos y dólares, y
-   `app/(app)/ventas/grafico.tsx` renderiza además una **tabla** con los mismos
-   números — que no es un extra de accesibilidad sino el componente: recharts no
-   dibuja nada en el servidor, así que sin ella el panel sería un rectángulo
-   vacío para quien llegue antes de que hidrate o con el JavaScript caído.
-   **Revisar** si alguna vez se define una paleta clara, donde la serie oscura
-   pasaría a ser justamente la que contrasta.
+**Queda una, y es la de siempre**: `--chart-1` sobre `--chart-2` da 2.45, y el
+par está declarado para dejar dicho que **los dos tramos no se tocan** — entre
+uno y otro va un separador de 2 px pintado de `--card`, así que el par adyacente
+que el usuario mira de verdad es cada tramo contra `--card`. El separador es
+load-bearing, no decoración, y lo asegura un caso de
+`app/(app)/ventas/grafico.test.tsx`: borrarlo deja esta razón en falso y rompe
+el test.
 
-5. **`--chart-1` sobre `--chart-2` da 2.02**, y el par está en la tabla para
-   dejar dicho que **los dos tramos no se tocan**: entre uno y otro va un
-   separador de 2 px pintado de `--card`, así que el par adyacente que el
-   usuario mira de verdad es cada tramo contra `--card`, que ya está medido
-   arriba. El separador es load-bearing, no decoración, y por eso lo asegura un
-   caso de `app/(app)/ventas/grafico.test.tsx`: borrarlo deja esta razón en
-   falso y rompe el test.
-
-**De dónde salen los valores.** No de elegirlos a ojo. Salen del validador de
-paletas del skill `dataviz`, que sobre fondo oscuro exige luminosidad OKLCH
-dentro de `[0.48, 0.67]`, croma ≥ 0.10 y ΔE ≥ 15 entre series adyacentes en
-visión normal, además de ≥ 8 bajo daltonismo. Los dos valores de la tabla son
-los que pasan las cinco comprobaciones. Un tercer color, el día que haga falta,
-se elige con el mismo validador y no por analogía.
+**La mitigación sigue puesta aunque la excepción se haya ido**, porque nunca fue
+solamente una mitigación: cada barra lleva su importe impreso al lado, la
+leyenda aparece apenas existe la segunda serie, el tooltip desglosa pesos y
+dólares, y `app/(app)/ventas/grafico.tsx` renderiza además una **tabla** con los
+mismos números — que es el componente y no un extra: recharts no dibuja nada en
+el servidor, así que sin ella el panel sería un rectángulo vacío para quien
+llegue antes de que hidrate o con el JavaScript caído.
 
 **Y no están en `@theme`**, a diferencia del resto de la paleta: no los consume
 ninguna utilidad de Tailwind sino el `color:` del `ChartConfig` de
@@ -318,7 +350,7 @@ cinco es señal de que falta una decisión, no de que falte un tamaño.
 
 Los marcadores no son decoración: el documento tiene varias tablas y un parser
 que agarre "la primera" se rompe el día que alguien reordene secciones. Es el
-mismo mecanismo que ya usan `<!-- tokens:inicio -->` y `<!-- contraste:inicio -->`.
+mismo mecanismo que ya usa `<!-- tokens:inicio -->`.
 
 **El *Importe* usa la otra punta del mismo eje.** Archivo se eligió por su eje
 `wdth` porque *"un local argentino tiene el nombre pintado a lo ancho del
@@ -525,43 +557,52 @@ ese gutter izquierdo, el texto cierra contra el derecho.
 
 ## Las clases `dark:` de shadcn
 
-**La paleta de este producto es oscura, y aun así no hay "modo oscuro".** No es
-un juego de palabras: hay **una sola cara**, la que declara el `:root` de
+**La paleta de este producto es clara, y aun así no hay "modo claro".** No es un
+juego de palabras: hay **una sola cara**, la que declara el `:root` de
 `app/globals.css`, y no existe ningún activador que cambie a otra. El bloque
 `.dark` de shadcn se borró en el ciclo del sistema de diseño —definía 28
-variables y nada aplicaba la clase— y no volvió con la paleta oscura
-(2026-08-13): esta paleta se escribió **adentro** del único `:root`, que es lo
-que mantiene un solo lugar donde vive un color.
+variables y nada aplicaba la clase— y no volvió ni con la paleta oscura
+(2026-08-13) ni con el rediseño: cada paleta se escribió **adentro** del único
+`:root`, que es lo que mantiene un solo lugar donde vive un color.
 
-Lo que **sí** se queda es `@custom-variant dark (&:is(.dark *))`, y esa línea
-sigue siendo load-bearing por la misma razón que antes, que la paleta oscura no
-cambió: sin ella, `dark:` vuelve al default de Tailwind v4
+Lo que **sí** se queda es `@custom-variant dark (&:is(.dark *))`, y esa línea es
+load-bearing: sin ella, `dark:` vuelve al default de Tailwind v4
 (`prefers-color-scheme`) y las 5 clases `dark:` que traen `button.tsx` e
 `input.tsx` se activarían solas en cualquiera con el sistema en oscuro. Con
 ella, apuntan a una clase que nadie pone y quedan inertes.
 
-**Que ahora la paleta sea oscura no las vuelve correctas**, y ése es el punto
-que más fácil se pierde: esas cinco reglas —`dark:bg-input/30`,
-`dark:aria-invalid:border-destructive/50` y compañía— fueron escritas para
-*otra* paleta oscura, la de shadcn, no para ésta. Si se activaran, pisarían
-estos tokens con valores derivados de una paleta que este documento no declara.
-Siguen tan inertes y tan equivocadas como el día que se borró el `.dark`.
+**Y con la paleta clara el riesgo dejó de ser teórico.** Mientras la paleta era
+oscura, esas cinco reglas activándose solas habrían producido algo parecido a lo
+que ya se veía —mal, pero parecido—. Ahora producirían inputs oscuros adentro de
+paneles blancos en cualquier usuario que tenga el sistema en oscuro, que es la
+mayoría de los teléfonos. Es el mismo motivo por el que `color-scheme: light`
+está declarado explícitamente en `html`, y no por costumbre.
 
-Si alguna vez se pide una **segunda** cara —clara, con activador y
-persistencia—, es su propio ciclo, y ahí lo primero que hay que resolver es esta
-línea, no los tokens.
+Si alguna vez se pide una **segunda** cara —con activador y persistencia—, es su
+propio ciclo, y ahí lo primero que hay que resolver es esta línea, no los
+tokens.
 
-## Colores que todavía no existen
+## De dónde salen estos valores
 
-**No hay verde de éxito ni ámbar de advertencia**, porque hoy no hay una sola
-pantalla que los use. Cuando aparezca la primera, van acá y no inventados a
-mano en un componente:
+De `design/arandano.pen`, que es el archivo de Pencil donde se diseñaron las
+trece pantallas del producto antes de escribir una sola línea de CSS. Los hexes
+de la tabla normativa y los del `.pen` son **los mismos strings**, y por eso la
+paleta se escribe en hex y no en `oklch`: dos representaciones del mismo color
+son dos lugares donde el redondeo puede diferir.
 
-- **Éxito** (cobro confirmado, venta cerrada): hue 150, misma luminosidad que
-  `--destructive`.
-- **Advertencia** (stock bajo, presupuesto por vencer): hue 85.
+**Y está atado.** `test/maqueta.test.ts` compara el bloque de variables del
+`.pen` contra el `:root` del CSS en las dos direcciones, con un mapa explícito
+de equivalencias (`ar-primary` ↔ `--primary`, `--ring`, `--accent-foreground`,
+`--chart-1`) y dos listas de excepciones con su razón escrita: `SIN_TOKEN` para
+las variables de la maqueta que no son colores —las dos familias tipográficas— y
+`SOLO_EN_CSS` para los tokens que se decidieron escribiendo código, que hoy son
+el hover del botón, los dos textos sobre el paño de marca y la segunda serie del
+gráfico.
 
-En los dos casos: medir el contraste antes de fijarlo, no estimarlo a ojo.
+**Mira sólo las variables, nunca la geometría**, y eso es deliberado: un test que
+comparara posiciones o textos se rompería con cada movimiento de un frame, y un
+test que se rompe por moverse es el que se termina ignorando. Mover una card no
+cambia un color; cambiar un color sí. Ver `design/LEEME.md`.
 
 ## Cómo se verifica
 
@@ -601,72 +642,70 @@ modo de falla que importa: un parser que no encuentra filas no puede devolver
 un Map vacío y darse por satisfecho. Revertido con `git checkout
 docs/sistema-de-diseno.md`.
 
-**El contraste.** La tabla de arriba se escribió a mano y se desincronizó: la
-review de la Task 3 encontró que cuatro de los diez ratios no correspondían a
-los tokens que estaban en `app/globals.css`, y se corrigieron a mano en ese
-mismo ciclo (commit `3d57397`). Corregir los números no arreglaba la causa
-—seguían siendo transcriptos—, así que la Task 5 sumó `scripts/contraste.mts`,
-que calcula los ratios WCAG desde los tokens reales de `app/globals.css`
-—oklch → sRGB lineal → luminancia → ratio, en continuo, que es lo que la review
-final corrigió dos párrafos más abajo— en vez de copiarlos a mano; se
-corre suelto con `npm run contraste`. `test/contraste.test.ts` compara esa
-salida contra la tabla del documento y forma parte de `npm test`.
+**El contraste tuvo su propio mecanismo, y se borró con el rediseño.** Vale
+dejar la historia entera, porque la conclusión es sobre qué tipo de test
+conviene escribir y no sobre esta paleta.
 
-Lo que la review de la Task 5 verificó del mecanismo nuevo, mutando el
-documento y el CSS durante la review y confirmando cada rojo (no se re-corrió
-acá — la evidencia vive en esa review):
+La tabla de ratios se escribió a mano y se desincronizó: la review encontró que
+cuatro de diez no correspondían a los tokens del CSS. Corregirlos no arreglaba
+la causa, así que se sumó `scripts/contraste.mts`, que los calculaba desde los
+tokens reales, y `test/contraste.test.ts`, que comparaba esa salida contra el
+documento. Funcionó para lo que se construyó: la tabla dejó de poder mentir, y
+el mecanismo atrapó de verdad varias cosas —la medición en continuo contra los
+8 bits del navegador, los pares con opacidad que nadie miraba, un
+`--muted-foreground` que no llegaba sobre `--accent`—.
 
-- Cambiar un ratio de la tabla del documento da rojo en `el documento declara
-  el ratio que el cálculo produce`.
-- Bajar `--muted-foreground` a `oklch(0.70 0 0)` da rojo en `cada par llega a
-  su mínimo, o está exceptuado con su razón escrita` — el par contra
-  `--background` cae a 2.67.
-- Declarar en `EXCEPCIONES` una excepción para un par que sí llega a su
-  mínimo da rojo en `no hay excepciones de más`.
-- Vaciar la tabla de contraste falla cerrado.
+**Y aun así no atrapó el único bug de accesibilidad real que tuvo el producto.**
+Al pasar a la paleta oscura, `--primary-foreground` se dio vuelta y dos
+utilidades de `app/sitio/secciones.tsx` lo seguían usando sobre el paño de marca
+porque era "el color claro": 1.39:1 sobre el título que convierte. El script no
+lo vio, y no podía verlo: mide **los pares que alguien declaró**, y ese par no
+estaba en la lista porque nadie sabía que existía. Lo encontró un grep a mano.
 
-**El agujero que la review final encontró: un segundo `:root`.** Los dos parsers
-—el del test y el del script— buscaban el bloque con `/^:root\s*\{…/m`, que
-matchea **el primero**. En CSS gana el último, así que agregar al final de
-`app/globals.css`
+La lección, que es la razón del borrado: **el valor no estaba en calcular
+ratios, estaba en prohibir el nombre.** Lo que quedó es el caso *nadie toma
+`--primary-foreground` por "el color claro"*, que revisa todo `app/` y
+`components/` salvo `components/ui/` y no depende de que alguien haya previsto
+el par. La tabla de contraste sigue en el documento, medida una vez al elegir la
+paleta, como parte de la decisión escrita — no como una aserción que el gate
+sostenga.
+
+**Lo que sí sobrevivió del script** es `tokensDelCss()`, que vive ahora en
+`scripts/tokens.mts` y lo importan `test/sistema-de-diseno.test.ts` y
+`test/opengraph.test.ts`. Es la pieza que cerró el agujero más filoso que tuvo
+este mecanismo, y sigue valiendo entera: los parsers viejos buscaban el bloque
+con `/^:root\s*\{…/m`, que matchea **el primero**, y en CSS gana **el último**.
+Agregar al final de `app/globals.css`
 
 ```css
-:root { --primary: oklch(0.6 0.3 30); --inventado: oklch(0.5 0 0); }
+:root { --primary: #ff6600; --inventado: #808080; }
 ```
 
-dejaba los 13 casos **en verde** con la aplicación sirviendo un naranja como
+dejaba todos los casos **en verde** con la aplicación sirviendo un naranja como
 color de acción y un token que ningún documento declaraba. Un
-`@media (prefers-color-scheme: dark) { :root { … } }` pasaba igual de entero: el
-modo oscuro que este documento declara cerrado volvía por la puerta de al lado.
-El parser vive ahora en un solo lugar —`tokensDelCss()` en
-`scripts/contraste.mts`, importado por el test— y exige **un** `:root`, **de
-primer nivel**. Verificado por efecto, revirtiendo cada mutación antes de la
-siguiente:
+`@media (prefers-color-scheme: dark) { :root { … } }` pasaba igual de entero.
+`tokensDelCss()` exige **un** `:root` y **de primer nivel**. Verificado por
+efecto, revirtiendo cada mutación antes de la siguiente:
 
 | Mutación en `app/globals.css` | Resultado |
 |---|---|
 | El `:root` de arriba pegado al final | rojo en `hay un solo bloque :root, y de primer nivel` — *"app/globals.css tiene 2 bloques :root y tiene que tener exactamente 1…"* |
-| `@media (prefers-color-scheme: dark) { :root { --background: oklch(0.145 0 0); } }` al final | el mismo rojo, más los 4 casos de `el documento y el CSS declaran lo mismo` y los 6 de `test/contraste.test.ts`, que dependen del mismo parser |
+| `@media (prefers-color-scheme: dark) { :root { … } }` al final | el mismo rojo, más los 4 casos de `el documento y el CSS declaran lo mismo`, que dependen del mismo parser |
 | El único `:root` envuelto en un `@media` | rojo en el mismo caso, por la otra rama — *"app/globals.css tiene el bloque :root anidado adentro de otra regla…"* |
 
-**El contraste se medía en continuo, y los navegadores miden sobre 8 bits.** El
-cálculo llegaba a la luminancia desde los componentes lineales, sin pasar por el
-byte que efectivamente se pinta. Con eso `--muted-foreground` sobre `--muted`
-daba 4.51 y figuraba "ok"; sobre `#6d6d6d` contra `#f5f5f5`, que son los bytes
-reales, daba 4.48 y no llegaba. Se agregó la cuantización a 8 bits —que es lo
-que hacen axe y Lighthouse— y `--muted-foreground` bajó a `oklch(0.535 0 0)`,
-que deja 4.75 y 5.17 en vez de 0.01 de margen.
+**`test/maqueta.test.ts`** ata `design/arandano.pen` a `app/globals.css`. Tres
+defectos metidos a mano al escribirlo, corridos y revertidos uno por vez:
 
-**Los estados con transparencia entraron a la tabla.** `PARES` sólo cubría pares
-opacos, así que el hover del botón **Entrar** (`hover:bg-primary/80`) y la
-descripción de un error de login (`text-destructive/90`) no los miraba nadie.
-Ahora se componen sobre el color de abajo y se miden como cualquier otro par.
-**Sobre los bytes, que es donde compone el navegador**: mezclar en sRGB lineal
-da otros números —3.49 y 3.46 para esos dos, contra los 5.76 y 4.54 reales— y
-también haría que `rgba(0,0,0,.5)` sobre blanco fuera `#bcbcbc` en vez del
-`#808080` que cualquiera reconoce. Los dos llegan al mínimo sin tocar ningún
-componente; el que no llegaba era `--muted-foreground` sobre `--accent` (4.15
-con el gris de shadcn, 4.27 con `0.547`), y lo cerró el mismo cambio a `0.535`.
+| # | Defecto | Dónde | Caso que falló |
+|---|---|---|---|
+| 1 | `ar-primary` a `#FF6600` | sólo `design/arandano.pen` | `cada variable de la maqueta tiene el mismo valor que su token` — *"design/arandano.pen pinta ar-primary de #FF6600 y app/globals.css pinta --primary de #4A2AA5"* |
+| 2 | `--inventado: #808080;` agregado a `:root` | sólo `app/globals.css` | `todo token de color del CSS está en la maqueta, o exceptuado con su razón` — *"app/globals.css define tokens que la maqueta no conoce: --inventado"* |
+| 3 | El bloque `variables` del `.pen` vaciado | sólo `design/arandano.pen` | **Tres casos a la vez**, que es el modo de falla que importa: `la maqueta declara variables de color` (0 parseadas), `cada variable…` (*"no define la variable ar-bg"*) y `no hay excepciones de más` — sin variables, las dos excepciones de `SIN_TOKEN` pasan a nombrar cosas que no existen |
+
+El defecto 2 vale por los dos sentidos: es el que atrapa un color elegido
+escribiendo código. El 3 es el que impide el verde por vacío — dos listas vacías
+son iguales, así que un parser que dejó de matchear daría verde sobre una maqueta
+rota.
 
 **`test/tipografia.test.ts`** ata la tabla de *La escala* —entre
 `<!-- escala:inicio -->` y `<!-- escala:fin -->`— a los módulos CSS que declaran
