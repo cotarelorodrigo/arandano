@@ -3,10 +3,10 @@
  *
  * QUÉ ES. En el login la persiana sube una vez y descubre el cartel con el
  * nombre del local (app/login/persiana.module.css). Adentro, ese cartel se
- * queda: misma cara y mismo eje expandido, más chico, y por encima del <h1>
- * de cada pantalla. La inversión de jerarquía es la decisión y no un accidente
- * de tamaños — "Inventario" no es dónde estás, es dónde estás parado adentro
- * de TU local.
+ * queda: misma cara y mismo eje expandido, más chico, y en su propia columna,
+ * arriba de la navegación. La inversión de jerarquía es la decisión y no un
+ * accidente de tamaños — "Inventario" no es dónde estás, es dónde estás
+ * parado adentro de TU local.
  *
  * POR QUÉ UN MÓDULO CSS Y NO UNA UTILIDAD DE TAILWIND. El @theme de
  * app/globals.css es `inline`: inyecta el valor en las utilidades en vez de
@@ -15,19 +15,21 @@
  * en persiana.module.css. --font-archivo, en cambio, la emite next/font sobre
  * el <html> y se puede usar directo.
  *
- * POR QUÉ 24 PX. A 20 empata con el <h1> de las pantallas y la inversión no se
- * lee. A 32 la fila crece lo suficiente como para pedir que las pestañas suban
- * a la misma fila, que ya es otro diseño. 24 gana contra el <h1> sin obligar a
- * tocar ninguna pantalla.
+ * POR QUÉ 19 PX. Antes eran 24, y el motivo era que a 20 empataba con el <h1>
+ * de la pantalla, que vivía en la MISMA fila. Con el sidebar el <h1> se mudó al
+ * encabezado, a 248 px de distancia y en otro eje: ya no hay con qué competir,
+ * y 19 es lo que la maqueta dibuja (design/arandano.pen, frame Shell/Sidebar).
+ * La inversión de jerarquía se sigue leyendo porque el cartel es lo único que
+ * hay en su bloque, no porque sea el número más grande de la pantalla.
  *
  * POR QUÉ EL TRACKING NO ES EL DEL LOGIN. Allá es -0.022em sobre una cara de
- * hasta 88 px; acá son 24, y a este tamaño un tracking tan cerrado empasta.
+ * hasta 88 px; acá son 19, y a este tamaño un tracking tan cerrado empasta.
  */
 .cartel {
   font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   font-weight: 600;
   font-stretch: 112%;
-  font-size: 1.5rem;
+  font-size: 1.1875rem;
   line-height: 1.1;
   letter-spacing: -0.01em;
 }
