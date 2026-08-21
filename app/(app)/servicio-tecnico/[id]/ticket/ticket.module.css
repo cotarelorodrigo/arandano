@@ -54,10 +54,25 @@
 }
 
 @media print {
-  /* El shell de la aplicación no va al papel. :global porque el header y el
-     pie los emite app/(app)/layout.tsx, que no conoce este módulo. */
-  :global(header),
-  :global(footer) {
+  /* El shell de la aplicación no va al papel. :global porque el sidebar y su
+     trigger los emite app/(app)/layout.tsx (vía components/ui/sidebar.tsx),
+     que no conoce este módulo.
+
+     Apuntaba a header/footer, que eran lo que emitía el layout VIEJO. El shell
+     nuevo no emite ninguno de los dos: emite un <div data-slot="sidebar"> y un
+     botón [data-sidebar="trigger"], y sin esta regla ninguno de los dos se
+     ocultaba —Chrome, que sí honra @page, corre la impresión en un viewport de
+     ~302px donde md:hidden es falso y el trigger se imprime; Safari y
+     cualquier "guardar como PDF" en A4/Letter usan un viewport ≥768px donde
+     el paño de 248px se enciende entero encima del ticket—. El caso "el shell
+     sigue emitiendo lo que el ticket oculta al imprimir" de
+     app/(app)/layout.test.tsx lee ESTOS DOS SELECTORES de este mismo archivo y
+     los busca en el HTML que el shell emite hoy, así que un shell que cambie
+     de etiquetas sin actualizar esta regla rompe el build acá y no en el
+     mostrador. [data-slot="sidebar-inset"] NO entra en esta lista: es el
+     <main> donde vive el ticket mismo. */
+  :global([data-slot='sidebar']),
+  :global([data-sidebar='trigger']) {
     display: none;
   }
   .hoja {
