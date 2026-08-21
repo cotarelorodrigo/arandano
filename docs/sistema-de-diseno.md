@@ -124,6 +124,14 @@ profundo. Ahora el token dice sobre qué va.
 | `--input` | `#CFCADD` |
 | `--chart-1` | `#4A2AA5` |
 | `--chart-2` | `#8A6FD4` |
+| `--sidebar` | `#FFFFFF` |
+| `--sidebar-foreground` | `#171221` |
+| `--sidebar-primary` | `#4A2AA5` |
+| `--sidebar-primary-foreground` | `#FFFFFF` |
+| `--sidebar-accent` | `#EDE8FB` |
+| `--sidebar-accent-foreground` | `#4A2AA5` |
+| `--sidebar-border` | `#E3E0EC` |
+| `--sidebar-ring` | `#4A2AA5` |
 | `--radius` | `0.625rem` |
 
 <!-- tokens:fin -->
@@ -131,6 +139,22 @@ profundo. Ahora el token dice sobre qué va.
 Los marcadores de arriba y abajo no son decoración: el parser del test busca la
 tabla entre ellos, porque este documento tiene otras tablas y agarrar "la
 primera" se rompe el día que alguien reordene secciones.
+
+### Los tokens del sidebar
+
+El sidebar de shadcn referencia sus colores por nombre propio: `bg-sidebar`,
+`text-sidebar-foreground`, `data-[active=true]:bg-sidebar-accent`. No alcanza
+con que el color exista bajo otro token — tiene que existir con **ese** nombre
+o la utilidad no resuelve a nada.
+
+Ninguno de los ocho es un color nuevo. Cada uno toma el de la variable de
+`design/arandano.pen` que la maqueta ya usa en ese lugar del paño, y
+`test/maqueta.test.ts` los ata a esa variable en las dos direcciones. Un
+`--sidebar-*` con un valor que la maqueta no tenga rompe el build.
+
+Estos ocho reemplazan al caso `no quedan tokens de sidebar` de
+`test/sistema-de-diseno.test.ts`, que existió justamente hasta que hubo un
+componente que los usara.
 
 ### Dónde entra el arándano
 

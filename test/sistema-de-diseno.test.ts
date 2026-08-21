@@ -52,26 +52,13 @@ describe('el CSS no arrastra tokens muertos', () => {
     expect(() => tokensDelCss()).not.toThrow()
   })
 
-  it('no quedan tokens de sidebar', () => {
-    // Ningún componente ni pantalla los referencia — verificado por grep al
-    // escribir el spec. Vuelven solos con `npx shadcn add sidebar`, y ahí se
-    // documentan.
-    //
-    // Los de gráfico SALIERON de esta lista el día que entró el panel "Cómo
-    // entró la plata" de /ventas, que es exactamente lo que este caso pedía que
-    // pasara: --chart-1 y --chart-2 los usa app/(app)/ventas/grafico.tsx y los
-    // declara docs/sistema-de-diseno.md, con su contraste medido y sus dos
-    // excepciones escritas. Lo que sigue cuidándolos es el par de casos de
-    // abajo, que compara documento y CSS en las dos direcciones — un --chart-3
-    // que aparezca sin documentar rompe igual.
-    const muertos = [...css.matchAll(/--(?:color-)?sidebar[a-z0-9-]*/g)].map((m) => m[0])
-    expect(
-      muertos,
-      `app/globals.css declara tokens que ningún componente usa: ${muertos.join(', ')}. ` +
-        `Si entró un componente que sí los usa, documentalos en docs/sistema-de-diseno.md ` +
-        `y sacá este caso.`,
-    ).toEqual([])
-  })
+  // El caso `no quedan tokens de sidebar` vivía acá y se borró el día que entró
+  // el sidebar de shadcn, que es exactamente lo que su comentario anticipaba.
+  // Lo que sigue cuidando el mismo riesgo es el par de casos de abajo, que
+  // compara documento y CSS en las dos direcciones: un --sidebar-* que quede
+  // declarado sin usar hay que borrarlo del CSS, y si se borra del CSS sin
+  // borrarlo del documento, el caso `la tabla del documento no está vacía` y su
+  // hermano fallan igual.
 
   it('declara color-scheme: light', () => {
     // Sin una declaración explícita, el navegador elige por preferencia del
