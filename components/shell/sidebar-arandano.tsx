@@ -20,9 +20,11 @@ import estilos from '@/components/cartel.module.css'
  * mirar la captura: marca `pad:[22,20,18,20] gap:2`, nav `pad:[6,12] gap:2`,
  * pie `pad:[16,16,18,16] gap:10`.
  *
- * Es de SERVIDOR aunque `Navegacion` sea de cliente: lo único que necesita
- * saber la ruta es el menú, y meter todo el paño en el cliente arrastraría la
- * server action de salir a un componente que no la puede recibir.
+ * Es de SERVIDOR aunque `Navegacion` sea de cliente: no HAY que serlo. Lo
+ * único que precisa saber la ruta es `Navegacion`, que ya es `'use client'` y
+ * se las arregla sola; el resto del paño es marcado estático más un
+ * `<form action={alSalir}>` que el servidor resuelve. Quedarse de servidor es
+ * lo que deja del lado del cliente lo mínimo posible.
  */
 export function SidebarArandano({
   nombreLocal,
@@ -67,9 +69,14 @@ export function SidebarArandano({
           <Avatar className="size-8 shrink-0">
             {/* bg-marca/text-marca-foreground no son utilidades: --color-marca
                 no está en @theme inline (ver el comentario ahí mismo, en
-                app/globals.css), así que hace falta el var(--token) directo. */}
+                app/globals.css), así que hace falta el var(--token) directo.
+                bg-transparent/text-transparent no pintan nada — están para
+                pisar el bg-muted/text-muted-foreground que trae por default
+                AvatarFallback (components/ui/avatar.tsx): sin esto seguían
+                colgadas en el className, un color que el style de abajo tapa
+                pero que quien lea las clases creería que es el real. */}
             <AvatarFallback
-              className="text-[13px]"
+              className="bg-transparent text-[13px] text-transparent"
               style={{ backgroundColor: 'var(--marca)', color: 'var(--marca-foreground)' }}
             >
               {nombreUsuario.trim().charAt(0).toUpperCase()}

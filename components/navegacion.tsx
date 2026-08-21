@@ -53,7 +53,10 @@ export function Navegacion({ rol }: { rol: RolUsuario }) {
   const ruta = usePathname()
 
   return (
-    <SidebarMenu>
+    // gap-0.5 (2 px) es el frame `Nav` de design/arandano.pen (Shell/Sidebar):
+    // SidebarMenu trae gap-0 por default, y sin pisarlo los cinco ítems
+    // quedaban pegados uno contra el otro.
+    <SidebarMenu className="gap-0.5">
       {PESTANAS.filter((p) => !p.soloDueno || rol === 'DUENO').map((p) => {
         const activa = estaActiva(p.href, ruta)
         return (
