@@ -44,6 +44,7 @@ const FIN = '<!-- escala:fin -->'
 const MODULOS_POR_ROL: Record<string, string[]> = {
   Cartel: ['app/login/persiana.module.css', 'components/cartel.module.css'],
   Importe: ['components/importe.module.css'],
+  'Título de pantalla': ['components/shell/encabezado.module.css'],
 }
 
 /** Rol → `font-stretch`, leído de la tabla normativa entre marcadores. */
@@ -198,5 +199,31 @@ describe('el CSS module del importe declara de verdad lo que el TSX referencia',
         `real esa clase sería undefined y el rol Importe desaparecería sin que ` +
         `ningún test lo note.`,
     ).toBe(true)
+  })
+})
+
+describe('el CSS module del encabezado declara de verdad lo que el TSX referencia', () => {
+  // Mismo agujero que el bloque de arriba, mismo cierre: components/shell/
+  // encabezado.tsx referencia estilos.titulo del Proxy que css: false fabrica,
+  // así que un .titulo renombrado en el módulo (o nunca escrito) seguiría en
+  // verde ahí. Sólo leer el TEXTO del CSS lo destapa.
+  const RUTA_CSS = 'components/shell/encabezado.module.css'
+  const RUTA_TSX = 'components/shell/encabezado.tsx'
+
+  it('declara el selector .titulo', () => {
+    const css = readFileSync(RUTA_CSS, 'utf8')
+    expect(
+      css.includes('.titulo {'),
+      `${RUTA_CSS} no declara .titulo. ${RUTA_TSX} referencia estilos.titulo — ` +
+        `pero vitest corre con css: false, así que un CSS module fabrica un ` +
+        `className para CUALQUIER propiedad, exista la clase o no. En el build ` +
+        `real esa clase sería undefined y el <h1> de las diez pantallas se ` +
+        `quedaría sin Archivo, sin 21 px y sin peso 600, sin que ningún test lo ` +
+        `note.`,
+    ).toBe(true)
+  })
+
+  it(`${RUTA_TSX} referencia estilos.titulo`, () => {
+    expect(readFileSync(RUTA_TSX, 'utf8')).toContain('estilos.titulo')
   })
 })

@@ -342,17 +342,20 @@ sumarlo ahí no compraría nada.
 
 No es un default que quedó: es una decisión. Cero bytes, cero salto de fuente al
 cargar, y se ve nativa en el Windows del mostrador igual que en el Android del
-dueño. **Sigue siendo la pila del cuerpo de toda la aplicación**: títulos,
-botones y texto corrido no la abandonan en ninguna pantalla; dos roles salen
-hacia Archivo: el cartel —el nombre del local—, que desde el ciclo del cartel
-paga Archivo también en
-el header de la aplicación y no sólo en el login, y el importe —la plata—, que
-desde este ciclo paga Archivo en `/vender`: ahí los importes de la tabla y de
+dueño. **Sigue siendo la pila del cuerpo de toda la aplicación**: botones y
+texto corrido no la abandonan en ninguna pantalla; tres roles salen hacia
+Archivo: el cartel —el nombre del local—, que desde el ciclo del cartel paga
+Archivo también en
+el header de la aplicación y no sólo en el login; el importe —la plata—, que
+desde ese ciclo paga Archivo en `/vender`: ahí los importes de la tabla y de
 la lista de resultados, los campos de monto, cotización y recibido del
 formulario de cobro, y el aviso de vuelto, van en Archivo y no en la pila del
-sistema (ver *La cara de display: Archivo* más abajo).
+sistema; y el título de pantalla (`h1`), que desde el encabezado de 66 px de
+este ciclo paga Archivo en las diez pantallas de la aplicación y no la pila
+del sistema que pagaba antes (ver *La cara de display: Archivo* más abajo).
 
-`--font-heading: var(--font-sans)`: los títulos usan la misma familia.
+`--font-heading: var(--font-sans)`: los demás títulos —los que no son el `h1`
+de pantalla, ya contado arriba— usan la misma familia.
 
 ### La escala
 
@@ -364,7 +367,7 @@ cinco es señal de que falta una decisión, no de que falte un tamaño.
 | Rol | Cara | Tamaño | Peso y ancho |
 |---|---|---|---|
 | **Cartel** — nombre del local | Archivo | 24 px | 600, `font-stretch: 112%`, tracking −0.01em |
-| Título de pantalla (`h1`) | sistema | 20 px | 500 |
+| Título de pantalla (`h1`) | Archivo | 21 px | 600 |
 | Pestaña de navegación | sistema | 14 px | 500; activa 600 |
 | Identidad, meta, pie | sistema | 12 px | 400, `--muted-foreground` |
 | **Importe** — plata en el punto de venta | Archivo | 40 px el total; 14 px la columna | 600 el total, 400 la columna; `font-stretch: 85%`, `tabular-nums` |
@@ -408,17 +411,19 @@ excepción: reabre la discusión. Si aparece un segundo importe en 40 px fuera d
 ### La cara de display: Archivo
 
 Lo que el párrafo de arriba anticipaba —*"adoptar una fuente propia más adelante
-es aditivo y barato"*— pasó, y no se quedó en un solo lugar: hoy son dos roles
-repartidos en tres módulos CSS.
+es aditivo y barato"*— pasó, y no se quedó en un solo lugar: hoy son tres roles
+repartidos en cuatro módulos CSS.
 
 **Archivo**, de [Omnibus-Type](https://www.omnibus-type.com/), foundry de Buenos
-Aires. **Se usa para dos roles**, y los dos están en la tabla de arriba: el
-nombre del local (`font-stretch: 112%`) y el importe del punto de venta
-(`85%`). Los distingue el eje de ancho, no la familia. Ningún otro rol la usa:
-títulos, tablas —salvo las columnas de plata de `/vender`— y botones siguen en
-la pila del sistema, y los campos también —salvo los de plata en `/vender`
-(monto, cotización, recibido), que llevan el rol Importe igual que cualquier
-otra columna de plata.
+Aires. **Se usa para tres roles**, y los tres están en la tabla de arriba: el
+nombre del local (`font-stretch: 112%`), el importe del punto de venta (`85%`)
+y, desde el encabezado de pantalla de este ciclo, el título de pantalla
+(`h1`), sin `font-stretch` propio —el `.pen` no le pide uno, así que se queda
+en el 100 % por default del eje `wdth`—. Los distingue el eje de ancho, no la
+familia. Ningún otro rol la usa: tablas —salvo las columnas de plata de
+`/vender`— y botones siguen en la pila del sistema, y los campos también
+—salvo los de plata en `/vender` (monto, cotización, recibido), que llevan el
+rol Importe igual que cualquier otra columna de plata.
 
 **Por qué ésa.** Tiene eje de ancho variable (`wdth`, 62–125), y ése es el
 motivo entero de la elección: un local argentino tiene el nombre pintado a lo
@@ -446,12 +451,15 @@ activa** y el `font-stretch: 112%` de la pantalla no hace absolutamente nada,
 sin avisar — se ve una Archivo normal y parece una decisión de diseño.
 
 No hay token `--font-display` en `@theme inline`, y es a propósito. Los
-consumidores son **tres** módulos CSS —`app/login/persiana.module.css`,
-`components/cartel.module.css` y `components/importe.module.css`— y ninguno lo
-querría igual: además de la familia, cada uno necesita su `font-stretch` y su
-tracking, así que ninguna utilidad de Tailwind referenciaría el token. Un token
-de `@theme` que ninguna utilidad referencia es un token muerto. Los tres consumen
-`var(--font-archivo)` —la variable que emite `next/font`— directo.
+consumidores son **cuatro** módulos CSS —`app/login/persiana.module.css`,
+`components/cartel.module.css`, `components/importe.module.css` y
+`components/shell/encabezado.module.css`— y ninguno lo querría igual: además
+de la familia, los tres primeros necesitan su propio `font-stretch` o su
+tracking, y el cuarto no —el título de pantalla no tiene eje de ancho propio
+en el `.pen`—, así que ninguna utilidad de Tailwind referenciaría el token. Un
+token de `@theme` que ninguna utilidad referencia es un token muerto. Los
+cuatro consumen `var(--font-archivo)` —la variable que emite `next/font`—
+directo.
 
 Este párrafo dijo lo contrario hasta el ciclo de la cinta: prometía que *"si una
 segunda pantalla la necesita, ahí entra el token"*, cuando el ciclo del cartel ya
