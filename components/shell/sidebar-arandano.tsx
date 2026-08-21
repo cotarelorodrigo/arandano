@@ -43,7 +43,10 @@ export function SidebarArandano({
         {/* El producto arriba y el local abajo, y no al revés: adentro del
             sistema, quién sos importa menos que dónde estás parado. Es la misma
             inversión de jerarquía que la persiana del login descubre. */}
-        <span className="text-[10px] font-semibold tracking-[0.14em] text-sidebar-primary">
+        {/* font-bold y tracking-[0.16em]: el nodo "Producto" del frame Marca
+            (Shell/Sidebar) pide fontWeight 700 y letterSpacing 1.6 sobre
+            fontSize 10 (1.6/10 = 0.16em). */}
+        <span className="text-[10px] font-bold tracking-[0.16em] text-sidebar-primary">
           ARÁNDANO
         </span>
         {/* min-w-0 es lo que hace que truncate funcione adentro de un flex.
@@ -64,7 +67,11 @@ export function SidebarArandano({
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="gap-2.5 px-4 pt-4 pb-[18px]">
+      {/* border-t: el frame Pie de la maqueta lleva stroke:$ar-line arriba (1
+          px), y SidebarFooter no trae borde por default. --sidebar-border es
+          el mismo color ($ar-line) bajo el nombre que el sidebar de shadcn ya
+          usa en sus propias clases. */}
+      <SidebarFooter className="gap-2.5 border-t border-sidebar-border px-4 pt-4 pb-[18px]">
         <div className="flex items-center gap-2.5">
           <Avatar className="size-8 shrink-0">
             {/* bg-marca/text-marca-foreground no son utilidades: --color-marca
@@ -74,17 +81,21 @@ export function SidebarArandano({
                 pisar el bg-muted/text-muted-foreground que trae por default
                 AvatarFallback (components/ui/avatar.tsx): sin esto seguían
                 colgadas en el className, un color que el style de abajo tapa
-                pero que quien lea las clases creería que es el real. */}
+                pero que quien lea las clases creería que es el real.
+                font-semibold: el nodo "Inicial" del frame Pie pide
+                fontWeight 600. */}
             <AvatarFallback
-              className="bg-transparent text-[13px] text-transparent"
+              className="bg-transparent text-[13px] font-semibold text-transparent"
               style={{ backgroundColor: 'var(--marca)', color: 'var(--marca-foreground)' }}
             >
               {nombreUsuario.trim().charAt(0).toUpperCase()}
             </AvatarFallback>
           </Avatar>
           <div className="flex min-w-0 flex-col gap-px">
+            {/* font-semibold: el nodo "Nombre" del frame Pie pide fontWeight
+                600 — a diferencia de "Rol", debajo, que pide "normal". */}
             <span
-              className="truncate text-[13px] text-sidebar-foreground"
+              className="truncate text-[13px] font-semibold text-sidebar-foreground"
               data-testid="usuario-nombre"
             >
               {nombreUsuario}
@@ -95,8 +106,19 @@ export function SidebarArandano({
           </div>
           {/* Un form y no un onClick: así el botón funciona igual sin
               JavaScript, como el resto de las pantallas. */}
+          {/* El frame "Salir" no es cuadrado: padding [6,8] alrededor de un
+              ícono de 16 da ~32×28, no los 32×32 de size="icon". size-auto
+              saca el tamaño fijo y deja que el padding arme la caja;
+              rounded-md es el token que coincide con el cornerRadius 8 del
+              frame (--radius-md, no el rounded-lg que trae Button). */}
           <form action={alSalir} className="ml-auto">
-            <Button type="submit" variant="ghost" size="icon" aria-label="Salir">
+            <Button
+              type="submit"
+              variant="ghost"
+              size="icon"
+              className="size-auto rounded-md px-2 py-1.5"
+              aria-label="Salir"
+            >
               <LogOut aria-hidden="true" />
             </Button>
           </form>

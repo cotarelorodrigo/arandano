@@ -64,7 +64,22 @@ export function Navegacion({ rol }: { rol: RolUsuario }) {
             {/* isActive pinta el fondo y el color; aria-current es lo que un
                 lector de pantalla anuncia. Los dos, siempre: el layout viejo ya
                 los tenía a los dos y no se pierde nada en la mudanza. */}
-            <SidebarMenuButton asChild isActive={activa}>
+            {/* Geometría del ítem, contra el frame `Nav/*` de Shell/Sidebar en
+                design/arandano.pen: padding [9,12], gap 11 entre ícono y
+                rótulo, cornerRadius 9, ícono 17×17, peso 600 activo / 500
+                inactivo. shadcn trae p-2 gap-2 rounded-md [&_svg]:size-4 y sólo
+                pinta font-medium (500) en el activo — nada en el inactivo.
+                h-auto porque size="default" fija h-8 (32 px), y 9+9 de padding
+                sobre un ícono de 17 no entra ahí: el ítem tiene que poder
+                crecer. p-[9px] y no py-[9px]: sólo un p-* completo pisa el
+                p-2 de base (twMerge no funde ejes sueltos con el atajo); el
+                px-3 de al lado gana el horizontal igual, por el orden real de
+                Tailwind en la hoja de estilos. */}
+            <SidebarMenuButton
+              asChild
+              isActive={activa}
+              className="h-auto gap-[11px] rounded-[9px] p-[9px] px-3 font-medium data-active:font-semibold [&_svg]:size-[17px]"
+            >
               <Link href={p.href} aria-current={activa ? 'page' : undefined}>
                 <p.icono aria-hidden="true" />
                 <span>{p.texto}</span>
