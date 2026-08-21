@@ -96,7 +96,7 @@ export default async function Inventario({
           ) : undefined
         }
       />
-      <main className="p-6">
+      <div className="p-6">
         {/* method="get" y no una action: anda sin JavaScript, y la URL con la
             búsqueda adentro se puede compartir o dejar guardada. El buscador
             por código es además lo que habilita un lector de código de barras,
@@ -191,7 +191,7 @@ export default async function Inventario({
             )}
           </nav>
         )}
-      </main>
+      </div>
     </>
   )
 }

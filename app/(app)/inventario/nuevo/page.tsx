@@ -13,14 +13,14 @@ export default async function ArticuloNuevo() {
   return (
     <>
       <Encabezado titulo="Artículo nuevo" subtitulo="Se agrega al catálogo del local" />
-      <main className="p-6">
+      <div className="p-6">
         {/* mb-6: el margen inferior que antes traía el título (mt-4 mb-6,
             ahora en el Encabezado) y que el cuerpo sigue necesitando. */}
         <Link href="/inventario" className="mb-6 block text-sm underline">
           ← Inventario
         </Link>
         <FormularioDeAlta />
-      </main>
+      </div>
     </>
   )
 }

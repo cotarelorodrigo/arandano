@@ -59,7 +59,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
           </>
         }
       />
-      <main className="p-6">
+      <div className="p-6">
         {/* mb-6: el margen inferior que antes traía el <p> del subtítulo
             (ahora en el Encabezado) y que el cuerpo sigue necesitando. */}
         <Link href="/inventario" className="mb-6 block text-sm underline">
@@ -158,7 +158,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
             </p>
           )}
         </section>
-      </main>
+      </div>
     </>
   )
 }

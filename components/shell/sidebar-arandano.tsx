@@ -63,7 +63,13 @@ export function SidebarArandano({
 
       <SidebarContent>
         <SidebarGroup className="px-3 py-1.5">
-          <Navegacion rol={rol} />
+          {/* El landmark que `components/navegacion.tsx` dejó de dibujar al
+              pasar de un <nav> a un <ul> (SidebarMenu, de shadcn): sin esto un
+              lector de pantalla perdía la navegación entera, porque un <ul>
+              suelto no se anuncia como landmark. */}
+          <nav aria-label="Navegación">
+            <Navegacion rol={rol} />
+          </nav>
         </SidebarGroup>
       </SidebarContent>
 

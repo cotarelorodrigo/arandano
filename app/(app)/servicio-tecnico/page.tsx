@@ -107,7 +107,7 @@ export default async function ServicioTecnico({
           </Button>
         }
       />
-      <main className="mx-auto max-w-5xl px-6 py-8">
+      <div className="mx-auto max-w-5xl px-6 py-8">
         <div className="mt-6 flex flex-wrap gap-2">
           {/* "Abiertas" y no "Todas": nunca contó las entregadas, y ahora que
               hay un chip para ésas el nombre viejo mentiría de verdad. */}
@@ -202,7 +202,7 @@ export default async function ServicioTecnico({
             {pagina < paginas ? <Link href={conParametros({ p: pagina + 1 })}>Siguiente</Link> : null}
           </nav>
         ) : null}
-      </main>
+      </div>
     </>
   )
 }

@@ -21,9 +21,9 @@ export default async function Vender() {
           congelada — un reloj mentiroso arriba del punto de venta es peor
           que no tener reloj. Queda para el ciclo de /vender. */}
       <Encabezado titulo="Vender" />
-      <main className="p-6">
+      <div className="p-6">
         <PuntoDeVenta cotizacionInicial={cotizacionInicial} />
-      </main>
+      </div>
     </>
   )
 }

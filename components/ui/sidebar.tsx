@@ -24,12 +24,17 @@ import {
 } from "@/components/ui/tooltip"
 import { PanelLeftIcon } from "lucide-react"
 
-const SIDEBAR_COOKIE_NAME = "sidebar_state"
-const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
+// Respecto del CLI de shadcn: se borraron SIDEBAR_COOKIE_NAME,
+// SIDEBAR_COOKIE_MAX_AGE y SIDEBAR_KEYBOARD_SHORTCUT (ver más abajo, en
+// SidebarProvider). Con collapsible="offcanvas" y sin SidebarRail en
+// components/shell/sidebar-arandano.tsx, el único control visible es
+// SidebarTrigger, que es md:hidden — invisible en desktop. El atajo de
+// teclado que traía el CLI era entonces la única forma de esconder TODA la
+// navegación en un mostrador sin dejar cómo volver a traerla, y la cookie que
+// escribía no la leía nadie (ver el comentario de setOpen).
 const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
-const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
@@ -80,9 +85,10 @@ function SidebarProvider({
       } else {
         _setOpen(openState)
       }
-
-      // This sets the cookie to keep the sidebar state.
-      document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
+      // El CLI acá escribía la cookie sidebar_state para persistir el estado
+      // entre cargas. Se borró: nada en este repo la lee de vuelta —
+      // layout.tsx monta SidebarProvider sin leer cookies()—, así que
+      // escribirla era trabajo que no compraba nada.
     },
     [setOpenProp, open]
   )
@@ -91,22 +97,6 @@ function SidebarProvider({
   const toggleSidebar = React.useCallback(() => {
     return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open)
   }, [isMobile, setOpen, setOpenMobile])
-
-  // Adds a keyboard shortcut to toggle the sidebar.
-  React.useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
-        (event.metaKey || event.ctrlKey)
-      ) {
-        event.preventDefault()
-        toggleSidebar()
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [toggleSidebar])
 
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.

@@ -34,7 +34,7 @@ export default async function RecibirEquipo({
         titulo="Recibir un equipo"
         subtitulo="Queda la orden abierta y sale el ticket con las dos copias"
       />
-      <main className="mx-auto max-w-2xl px-6 py-8">
+      <div className="mx-auto max-w-2xl px-6 py-8">
         {/* Un form GET aparte y NO adentro del de recepción: los formularios no
             se anidan, y así el buscador anda sin una línea de JavaScript, como
             todas las pantallas de este producto. El precio es que buscar recarga
@@ -68,7 +68,7 @@ export default async function RecibirEquipo({
           busquedaCliente={busqueda}
           claveIdempotencia={randomUUID()}
         />
-      </main>
+      </div>
     </>
   )
 }

@@ -51,7 +51,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
           </>
         }
       />
-      <main className="p-6">
+      <div className="p-6">
         {/* mb-6: el margen inferior que antes traía el <p> del subtítulo
             (ahora en el Encabezado) y que el cuerpo sigue necesitando. */}
         <Link href="/ventas" className="mb-6 block text-sm underline">← Ventas</Link>
@@ -133,7 +133,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
         </section>
 
         {sesion.usuario.rol === 'DUENO' && !venta.anuladaEn && <AnularVenta ventaId={venta.id} />}
-      </main>
+      </div>
     </>
   )
 }

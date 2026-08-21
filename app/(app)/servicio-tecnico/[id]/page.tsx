@@ -69,7 +69,7 @@ export default async function DetalleDeOrden({ params }: { params: Promise<{ id:
           </Button>
         }
       />
-      <main className="mx-auto max-w-3xl px-6 py-8">
+      <div className="mx-auto max-w-3xl px-6 py-8">
         {/* El estado ya no está en el título —que ahora es "Orden #N · marca
             modelo", como pide design/arandano.pen— así que sin este párrafo
             la pantalla perdía el único lugar donde se veía fuera del
@@ -182,7 +182,7 @@ export default async function DetalleDeOrden({ params }: { params: Promise<{ id:
             <FormularioAnular accion={anular} ordenId={orden.id} />
           </section>
         ) : null}
-      </main>
+      </div>
     </>
   )
 }

@@ -27,7 +27,7 @@ export default async function Usuarios() {
           </>
         }
       />
-      <main className="p-6">
+      <div className="p-6">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b text-left">
@@ -57,7 +57,7 @@ export default async function Usuarios() {
           </tbody>
         </table>
         <AltaDeEmpleado />
-      </main>
+      </div>
     </>
   )
 }

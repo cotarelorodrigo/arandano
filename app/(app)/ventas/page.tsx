@@ -182,7 +182,7 @@ export default async function Ventas({
           </Button>
         }
       />
-      <main className="p-6">
+      <div className="p-6">
         {/* method="get": anda sin JavaScript y una URL con el rango se comparte. */}
         <form method="get" className="mb-6 flex items-end gap-3">
           <div className="flex flex-col gap-2">
@@ -297,7 +297,7 @@ export default async function Ventas({
             {pagina < paginas && <Link href={conPagina(pagina + 1)} className="underline">Siguiente →</Link>}
           </nav>
         )}
-      </main>
+      </div>
     </>
   )
 }
