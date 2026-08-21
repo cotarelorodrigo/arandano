@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { buscarClientes } from '@/lib/clientes/administrar'
 import { Input } from '@/components/ui/input'
@@ -28,42 +29,46 @@ export default async function RecibirEquipo({
   const encontrados = await buscarClientes(sesion.tenant.id, busqueda)
 
   return (
-    <main className="mx-auto max-w-2xl px-6 py-8">
-      <h1 className="text-2xl font-semibold">Recibir un equipo</h1>
-
-      {/* Un form GET aparte y NO adentro del de recepción: los formularios no
-          se anidan, y así el buscador anda sin una línea de JavaScript, como
-          todas las pantallas de este producto. El precio es que buscar recarga
-          la pantalla, y por eso el buscador va primero: lo que se haya tipeado
-          del equipo se pierde. */}
-      <form className="mt-6 space-y-2" action="/servicio-tecnico/nuevo">
-        <Label htmlFor="buscar-cliente">Buscar al cliente por nombre o teléfono</Label>
-        <div className="flex gap-2">
-          <Input
-            id="buscar-cliente"
-            name="cliente"
-            defaultValue={busqueda}
-            placeholder="Juan Pérez, 1155667788"
-          />
-          <Button type="submit" variant="secondary">
-            Buscar
-          </Button>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Buscá primero: al buscar se recarga la pantalla y se pierde lo que hayas cargado del
-          equipo.
-        </p>
-      </form>
-
-      {/* La clave se genera EN EL SERVIDOR, una vez por carga de la pantalla:
-          si la generara el cliente en cada render, cambiaría con cada
-          re-render y no serviría para nada. */}
-      <FormularioRecepcion
-        accion={recibirEquipo}
-        clientes={encontrados}
-        busquedaCliente={busqueda}
-        claveIdempotencia={randomUUID()}
+    <>
+      <Encabezado
+        titulo="Recibir un equipo"
+        subtitulo="Queda la orden abierta y sale el ticket con las dos copias"
       />
-    </main>
+      <main className="mx-auto max-w-2xl px-6 py-8">
+        {/* Un form GET aparte y NO adentro del de recepción: los formularios no
+            se anidan, y así el buscador anda sin una línea de JavaScript, como
+            todas las pantallas de este producto. El precio es que buscar recarga
+            la pantalla, y por eso el buscador va primero: lo que se haya tipeado
+            del equipo se pierde. */}
+        <form className="mt-6 space-y-2" action="/servicio-tecnico/nuevo">
+          <Label htmlFor="buscar-cliente">Buscar al cliente por nombre o teléfono</Label>
+          <div className="flex gap-2">
+            <Input
+              id="buscar-cliente"
+              name="cliente"
+              defaultValue={busqueda}
+              placeholder="Juan Pérez, 1155667788"
+            />
+            <Button type="submit" variant="secondary">
+              Buscar
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Buscá primero: al buscar se recarga la pantalla y se pierde lo que hayas cargado del
+            equipo.
+          </p>
+        </form>
+
+        {/* La clave se genera EN EL SERVIDOR, una vez por carga de la pantalla:
+            si la generara el cliente en cada render, cambiaría con cada
+            re-render y no serviría para nada. */}
+        <FormularioRecepcion
+          accion={recibirEquipo}
+          clientes={encontrados}
+          busquedaCliente={busqueda}
+          claveIdempotencia={randomUUID()}
+        />
+      </main>
+    </>
   )
 }

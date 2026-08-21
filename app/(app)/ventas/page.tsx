@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Button } from '@/components/ui/button'
@@ -156,11 +157,11 @@ export default async function Ventas({
   }
 
   return (
-    <main className="p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-medium">Ventas</h1>
-          <p className="mt-1 text-xs text-muted-foreground">
+    <>
+      <Encabezado
+        titulo="Ventas"
+        subtitulo={
+          <>
             {dDesde === dHasta ? fechaLarga(dDesde) : `${fechaLarga(dDesde)} — ${fechaLarga(dHasta)}`}
             {/* El conteo sólo si hay algo que contar, igual que el subtítulo de
                 /inventario y por la misma razón: un "· 0 ventas" arriba del
@@ -173,127 +174,130 @@ export default async function Ventas({
                 {total === 1 ? '1 venta' : `${formatearCantidad(String(total))} ventas`}
               </>
             )}
+          </>
+        }
+        acciones={
+          <Button asChild size="sm">
+            <Link href="/vender">Vender</Link>
+          </Button>
+        }
+      />
+      <main className="p-6">
+        {/* method="get": anda sin JavaScript y una URL con el rango se comparte. */}
+        <form method="get" className="mb-6 flex items-end gap-3">
+          <div className="flex flex-col gap-2">
+            <label htmlFor="desde" className="text-sm font-medium">Desde</label>
+            <Input id="desde" name="desde" type="date" defaultValue={dDesde} />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="hasta" className="text-sm font-medium">Hasta</label>
+            <Input id="hasta" name="hasta" type="date" defaultValue={dHasta} />
+          </div>
+          <Button type="submit" size="sm" variant="secondary">Filtrar</Button>
+        </form>
+
+        {/* Sobre `total`, que es el período, y NO sobre `ventas.length`, que es la
+            página: los tres números que muestran estos tiles —total, suma y
+            anuladas— salen de agregados sin paginar. Colgados de la página, un
+            `/ventas?p=5` sobre un período de una sola página los hacía
+            desaparecer, cuando lo que resumen sigue estando ahí. */}
+        {total > 0 && (
+          /* gap-px sobre bg-border: las líneas entre tiles son el fondo que se
+             ve por las juntas, no tres bordes que haya que hacer coincidir.
+             w-max para que los tiles midan lo que necesitan y no se estiren a
+             lo ancho de la pantalla, que los dejaría vacíos por dentro. */
+          <div className="mb-6 grid w-max grid-cols-3 gap-px overflow-hidden rounded-lg bg-border">
+            <Tile
+              rotulo="Total del período"
+              valor={formatearPrecio((suma._sum.total ?? '0').toString())}
+              pie="sin contar las anuladas"
+            />
+            {/* Los conteos con el mismo formateo de miles que la plata de al lado:
+                un local que cruza las mil ventas en el período existe, y "1000"
+                al lado de "$ 412.850,00" se lee como un número mal impreso. */}
+            <Tile rotulo="Ventas cobradas" valor={formatearCantidad(String(total - anuladas))} />
+            <Tile rotulo="Anuladas" valor={formatearCantidad(String(anuladas))} />
+          </div>
+        )}
+
+        {/* Colgado de que HAYA barras y no de `total > 0`, que es lo que gobierna
+            los tiles: un período puede tener ventas y ningún pago —todas anuladas—
+            y ahí este panel no tiene nada que decir. Dibujarlo vacío sería peor que
+            no dibujarlo: un gráfico en blanco se lee como que algo se rompió. */}
+        {composicion.barras.length > 0 && <GraficoDeMedios composicion={composicion} />}
+
+        {ventas.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {/* Los dos vacíos no son el mismo vacío, y desde que los tiles cuelgan
+                del período hay que distinguirlos: con `total > 0` la página quedó
+                fuera de rango (`?p` se clampea a [1, 1.000.000], no a `paginas`),
+                y decir "no hay ventas en ese período" arriba de un tile que dice
+                17 sería contradecirse en la misma pantalla. */}
+            {total === 0 ? (
+              'No hay ventas en ese período.'
+            ) : (
+              <>
+                Esa página no tiene ventas.{' '}
+                {/* Con el enlace y no sólo con el texto: cuando el período entra en
+                    una sola página, `paginas > 1` es falso y la paginación de abajo
+                    no se dibuja, así que sin esto la pantalla queda sin salida. */}
+                <Link href={conPagina(1)} className="underline">
+                  Volver a la primera
+                </Link>
+                .
+              </>
+            )}
           </p>
-        </div>
-        <Button asChild size="sm">
-          <Link href="/vender">Vender</Link>
-        </Button>
-      </div>
-
-      {/* method="get": anda sin JavaScript y una URL con el rango se comparte. */}
-      <form method="get" className="mb-6 flex items-end gap-3">
-        <div className="flex flex-col gap-2">
-          <label htmlFor="desde" className="text-sm font-medium">Desde</label>
-          <Input id="desde" name="desde" type="date" defaultValue={dDesde} />
-        </div>
-        <div className="flex flex-col gap-2">
-          <label htmlFor="hasta" className="text-sm font-medium">Hasta</label>
-          <Input id="hasta" name="hasta" type="date" defaultValue={dHasta} />
-        </div>
-        <Button type="submit" size="sm" variant="secondary">Filtrar</Button>
-      </form>
-
-      {/* Sobre `total`, que es el período, y NO sobre `ventas.length`, que es la
-          página: los tres números que muestran estos tiles —total, suma y
-          anuladas— salen de agregados sin paginar. Colgados de la página, un
-          `/ventas?p=5` sobre un período de una sola página los hacía
-          desaparecer, cuando lo que resumen sigue estando ahí. */}
-      {total > 0 && (
-        /* gap-px sobre bg-border: las líneas entre tiles son el fondo que se
-           ve por las juntas, no tres bordes que haya que hacer coincidir.
-           w-max para que los tiles midan lo que necesitan y no se estiren a
-           lo ancho de la pantalla, que los dejaría vacíos por dentro. */
-        <div className="mb-6 grid w-max grid-cols-3 gap-px overflow-hidden rounded-lg bg-border">
-          <Tile
-            rotulo="Total del período"
-            valor={formatearPrecio((suma._sum.total ?? '0').toString())}
-            pie="sin contar las anuladas"
-          />
-          {/* Los conteos con el mismo formateo de miles que la plata de al lado:
-              un local que cruza las mil ventas en el período existe, y "1000"
-              al lado de "$ 412.850,00" se lee como un número mal impreso. */}
-          <Tile rotulo="Ventas cobradas" valor={formatearCantidad(String(total - anuladas))} />
-          <Tile rotulo="Anuladas" valor={formatearCantidad(String(anuladas))} />
-        </div>
-      )}
-
-      {/* Colgado de que HAYA barras y no de `total > 0`, que es lo que gobierna
-          los tiles: un período puede tener ventas y ningún pago —todas anuladas—
-          y ahí este panel no tiene nada que decir. Dibujarlo vacío sería peor que
-          no dibujarlo: un gráfico en blanco se lee como que algo se rompió. */}
-      {composicion.barras.length > 0 && <GraficoDeMedios composicion={composicion} />}
-
-      {ventas.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {/* Los dos vacíos no son el mismo vacío, y desde que los tiles cuelgan
-              del período hay que distinguirlos: con `total > 0` la página quedó
-              fuera de rango (`?p` se clampea a [1, 1.000.000], no a `paginas`),
-              y decir "no hay ventas en ese período" arriba de un tile que dice
-              17 sería contradecirse en la misma pantalla. */}
-          {total === 0 ? (
-            'No hay ventas en ese período.'
-          ) : (
-            <>
-              Esa página no tiene ventas.{' '}
-              {/* Con el enlace y no sólo con el texto: cuando el período entra en
-                  una sola página, `paginas > 1` es falso y la paginación de abajo
-                  no se dibuja, así que sin esto la pantalla queda sin salida. */}
-              <Link href={conPagina(1)} className="underline">
-                Volver a la primera
-              </Link>
-              .
-            </>
-          )}
-        </p>
-      ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b text-left">
-              <th scope="col" className="py-2">Número</th>
-              <th scope="col">Fecha</th>
-              <th scope="col">Vendió</th>
-              <th scope="col" className="text-right">Total</th>
-              <th scope="col">Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ventas.map((v) => (
-              <tr key={v.id} className="border-b">
-                <td className="py-2">
-                  <Link href={`/ventas/${v.id}`} className="underline">#{v.numero}</Link>
-                </td>
-                <td>{formatearFecha(v.creadoEn)}</td>
-                <td>{v.usuario.nombre}</td>
-                <td className="text-right tabular-nums">{formatearPrecio(v.total.toString())}</td>
-                {/* Las anuladas se MUESTRAN: el historial tiene que poder
-                    responder qué pasó, y esconderlas sería tapar la respuesta.
-                    Chip y no texto suelto: en una columna de una sola palabra,
-                    la forma se lee antes que el color, y quien no distingue el
-                    rojo igual ve que una fila está marcada. */}
-                <td>
-                  {v.anuladaEn ? (
-                    <span className="inline-flex rounded-md border border-destructive px-2.5 py-0.5 text-[11px] text-destructive">
-                      Anulada
-                    </span>
-                  ) : (
-                    <span className="inline-flex rounded-md bg-muted px-2.5 py-0.5 text-[11px]">
-                      Cobrada
-                    </span>
-                  )}
-                </td>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left">
+                <th scope="col" className="py-2">Número</th>
+                <th scope="col">Fecha</th>
+                <th scope="col">Vendió</th>
+                <th scope="col" className="text-right">Total</th>
+                <th scope="col">Estado</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            </thead>
+            <tbody>
+              {ventas.map((v) => (
+                <tr key={v.id} className="border-b">
+                  <td className="py-2">
+                    <Link href={`/ventas/${v.id}`} className="underline">#{v.numero}</Link>
+                  </td>
+                  <td>{formatearFecha(v.creadoEn)}</td>
+                  <td>{v.usuario.nombre}</td>
+                  <td className="text-right tabular-nums">{formatearPrecio(v.total.toString())}</td>
+                  {/* Las anuladas se MUESTRAN: el historial tiene que poder
+                      responder qué pasó, y esconderlas sería tapar la respuesta.
+                      Chip y no texto suelto: en una columna de una sola palabra,
+                      la forma se lee antes que el color, y quien no distingue el
+                      rojo igual ve que una fila está marcada. */}
+                  <td>
+                    {v.anuladaEn ? (
+                      <span className="inline-flex rounded-md border border-destructive px-2.5 py-0.5 text-[11px] text-destructive">
+                        Anulada
+                      </span>
+                    ) : (
+                      <span className="inline-flex rounded-md bg-muted px-2.5 py-0.5 text-[11px]">
+                        Cobrada
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
 
-      {paginas > 1 && (
-        <nav aria-label="Paginación" className="mt-6 flex items-center gap-4 text-sm">
-          {pagina > 1 && <Link href={conPagina(pagina - 1)} className="underline">← Anterior</Link>}
-          <span className="text-muted-foreground">Página {pagina} de {paginas}</span>
-          {pagina < paginas && <Link href={conPagina(pagina + 1)} className="underline">Siguiente →</Link>}
-        </nav>
-      )}
-    </main>
+        {paginas > 1 && (
+          <nav aria-label="Paginación" className="mt-6 flex items-center gap-4 text-sm">
+            {pagina > 1 && <Link href={conPagina(pagina - 1)} className="underline">← Anterior</Link>}
+            <span className="text-muted-foreground">Página {pagina} de {paginas}</span>
+            {pagina < paginas && <Link href={conPagina(pagina + 1)} className="underline">Siguiente →</Link>}
+          </nav>
+        )}
+      </main>
+    </>
   )
 }

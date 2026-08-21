@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Button } from '@/components/ui/button'
@@ -71,123 +72,126 @@ export default async function Inventario({
   }
 
   return (
-    <main className="p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-medium">Inventario</h1>
-          {/* Sólo si hay algo que contar: en un local recién dado de alta, un
-              "0 artículos · 0 con stock negativo" es ruido debajo del título
-              justo cuando la pantalla ya tiene su propio texto de vacío. */}
-          {total > 0 && (
-            <p className="mt-1 text-xs text-muted-foreground">
+    <>
+      <Encabezado
+        titulo="Inventario"
+        subtitulo={
+          /* Sólo si hay algo que contar: en un local recién dado de alta, un
+             "0 artículos · 0 con stock negativo" es ruido debajo del título
+             justo cuando la pantalla ya tiene su propio texto de vacío. */
+          total > 0 ? (
+            <>
               {total === 1 ? '1 artículo' : `${total} artículos`}
               {verInactivos ? '' : ' activos'}
               {negativos > 0 &&
                 ` · ${negativos === 1 ? '1 con stock negativo' : `${negativos} con stock negativo`}`}
-            </p>
-          )}
-        </div>
-        {sesion.usuario.rol === 'DUENO' && (
-          <Button asChild size="sm">
-            <Link href="/inventario/nuevo">Artículo nuevo</Link>
-          </Button>
-        )}
-      </div>
-
-      {/* method="get" y no una action: anda sin JavaScript, y la URL con la
-          búsqueda adentro se puede compartir o dejar guardada. El buscador
-          por código es además lo que habilita un lector de código de barras,
-          que tipea y manda Enter. */}
-      <form method="get" className="mb-6 flex items-end gap-3">
-        <div className="flex flex-1 flex-col gap-2">
-          <label htmlFor="q" className="text-sm font-medium">
-            Buscar por nombre o código
+            </>
+          ) : undefined
+        }
+        acciones={
+          sesion.usuario.rol === 'DUENO' ? (
+            <Button asChild size="sm">
+              <Link href="/inventario/nuevo">Artículo nuevo</Link>
+            </Button>
+          ) : undefined
+        }
+      />
+      <main className="p-6">
+        {/* method="get" y no una action: anda sin JavaScript, y la URL con la
+            búsqueda adentro se puede compartir o dejar guardada. El buscador
+            por código es además lo que habilita un lector de código de barras,
+            que tipea y manda Enter. */}
+        <form method="get" className="mb-6 flex items-end gap-3">
+          <div className="flex flex-1 flex-col gap-2">
+            <label htmlFor="q" className="text-sm font-medium">
+              Buscar por nombre o código
+            </label>
+            <Input id="q" name="q" defaultValue={busqueda} />
+          </div>
+          <label className="flex h-8 items-center gap-2 text-sm">
+            <input type="checkbox" name="inactivos" value="1" defaultChecked={verInactivos} />
+            Ver desactivados
           </label>
-          <Input id="q" name="q" defaultValue={busqueda} />
-        </div>
-        <label className="flex h-8 items-center gap-2 text-sm">
-          <input type="checkbox" name="inactivos" value="1" defaultChecked={verInactivos} />
-          Ver desactivados
-        </label>
-        <Button type="submit" size="sm" variant="secondary">
-          Buscar
-        </Button>
-      </form>
+          <Button type="submit" size="sm" variant="secondary">
+            Buscar
+          </Button>
+        </form>
 
-      {articulos.length === 0 ? (
-        // Un local recién dado de alta llega acá con cero artículos, y ésta es
-        // la primera pantalla que ve. En blanco no diría qué hacer.
-        <p className="text-sm text-muted-foreground">
-          {busqueda
-            ? `No hay artículos que coincidan con "${busqueda}".`
-            : sesion.usuario.rol === 'DUENO'
-              ? 'Todavía no cargaste ningún artículo. Empezá por «Artículo nuevo».'
-              : 'Todavía no hay artículos cargados.'}
-        </p>
-      ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b text-left">
-              <th className="py-2">Código</th>
-              <th>Nombre</th>
-              <th>Tipo</th>
-              <th className="text-right">Precio</th>
-              <th className="text-right">Stock</th>
-            </tr>
-          </thead>
-          <tbody>
-            {articulos.map((a) => (
-              <tr key={a.id} className="border-b">
-                <td className="py-2">{a.sku}</td>
-                <td>
-                  <Link href={`/inventario/${a.id}`} className="underline">
-                    {a.nombre}
-                  </Link>
-                  {a.desactivadoEn && (
-                    <span className="ml-2 text-muted-foreground">(desactivado)</span>
-                  )}
-                </td>
-                <td>{a.tipo === 'PRODUCTO' ? 'Producto' : 'Servicio'}</td>
-                {/* tabular-nums text-right en toda columna de plata o de
-                    cantidad: sin eso las columnas bailan y comparar dos
-                    precios de un vistazo deja de funcionar. */}
-                <td className="text-right tabular-nums">{formatearPrecio(a.precio.toString())}</td>
-                <td className="text-right tabular-nums">
-                  {a.tipo === 'SERVICIO' ? (
-                    // Un guion y NO un 0: el motor no le descuenta stock a un
-                    // servicio (lib/ventas/crear.ts filtra por esProducto), así
-                    // que un 0 se leería como faltante y alguien saldría a
-                    // comprar lo que no existe.
-                    <span className="text-muted-foreground">—</span>
-                  ) : (
-                    <span className={a.stock.lessThan(0) ? 'text-destructive' : undefined}>
-                      {formatearCantidad(a.stock.toString())}
-                    </span>
-                  )}
-                </td>
+        {articulos.length === 0 ? (
+          // Un local recién dado de alta llega acá con cero artículos, y ésta es
+          // la primera pantalla que ve. En blanco no diría qué hacer.
+          <p className="text-sm text-muted-foreground">
+            {busqueda
+              ? `No hay artículos que coincidan con "${busqueda}".`
+              : sesion.usuario.rol === 'DUENO'
+                ? 'Todavía no cargaste ningún artículo. Empezá por «Artículo nuevo».'
+                : 'Todavía no hay artículos cargados.'}
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left">
+                <th className="py-2">Código</th>
+                <th>Nombre</th>
+                <th>Tipo</th>
+                <th className="text-right">Precio</th>
+                <th className="text-right">Stock</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            </thead>
+            <tbody>
+              {articulos.map((a) => (
+                <tr key={a.id} className="border-b">
+                  <td className="py-2">{a.sku}</td>
+                  <td>
+                    <Link href={`/inventario/${a.id}`} className="underline">
+                      {a.nombre}
+                    </Link>
+                    {a.desactivadoEn && (
+                      <span className="ml-2 text-muted-foreground">(desactivado)</span>
+                    )}
+                  </td>
+                  <td>{a.tipo === 'PRODUCTO' ? 'Producto' : 'Servicio'}</td>
+                  {/* tabular-nums text-right en toda columna de plata o de
+                      cantidad: sin eso las columnas bailan y comparar dos
+                      precios de un vistazo deja de funcionar. */}
+                  <td className="text-right tabular-nums">{formatearPrecio(a.precio.toString())}</td>
+                  <td className="text-right tabular-nums">
+                    {a.tipo === 'SERVICIO' ? (
+                      // Un guion y NO un 0: el motor no le descuenta stock a un
+                      // servicio (lib/ventas/crear.ts filtra por esProducto), así
+                      // que un 0 se leería como faltante y alguien saldría a
+                      // comprar lo que no existe.
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <span className={a.stock.lessThan(0) ? 'text-destructive' : undefined}>
+                        {formatearCantidad(a.stock.toString())}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
 
-      {paginas > 1 && (
-        <nav className="mt-6 flex items-center gap-4 text-sm">
-          {pagina > 1 && (
-            <Link href={conParametros(pagina - 1)} className="underline">
-              ← Anterior
-            </Link>
-          )}
-          <span className="text-muted-foreground">
-            Página {pagina} de {paginas}
-          </span>
-          {pagina < paginas && (
-            <Link href={conParametros(pagina + 1)} className="underline">
-              Siguiente →
-            </Link>
-          )}
-        </nav>
-      )}
-    </main>
+        {paginas > 1 && (
+          <nav className="mt-6 flex items-center gap-4 text-sm">
+            {pagina > 1 && (
+              <Link href={conParametros(pagina - 1)} className="underline">
+                ← Anterior
+              </Link>
+            )}
+            <span className="text-muted-foreground">
+              Página {pagina} de {paginas}
+            </span>
+            {pagina < paginas && (
+              <Link href={conParametros(pagina + 1)} className="underline">
+                Siguiente →
+              </Link>
+            )}
+          </nav>
+        )}
+      </main>
+    </>
   )
 }

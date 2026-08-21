@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Encabezado } from '@/components/shell/encabezado'
 import { exigirDuenio } from '@/lib/auth/sesion'
 import { FormularioDeAlta } from '../formularios'
 
@@ -10,12 +11,16 @@ export default async function ArticuloNuevo() {
   await exigirDuenio()
 
   return (
-    <main className="p-6">
-      <Link href="/inventario" className="text-sm underline">
-        ← Inventario
-      </Link>
-      <h1 className="mt-4 mb-6 text-xl font-medium">Artículo nuevo</h1>
-      <FormularioDeAlta />
-    </main>
+    <>
+      <Encabezado titulo="Artículo nuevo" subtitulo="Se agrega al catálogo del local" />
+      <main className="p-6">
+        {/* mb-6: el margen inferior que antes traía el título (mt-4 mb-6,
+            ahora en el Encabezado) y que el cuerpo sigue necesitando. */}
+        <Link href="/inventario" className="mb-6 block text-sm underline">
+          ← Inventario
+        </Link>
+        <FormularioDeAlta />
+      </main>
+    </>
   )
 }

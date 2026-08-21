@@ -1,3 +1,4 @@
+import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { ultimaCotizacionUsd } from '@/lib/ventas/buscar'
 import { PuntoDeVenta } from './punto-de-venta'
@@ -14,9 +15,15 @@ export default async function Vender() {
   const cotizacionInicial = await ultimaCotizacionUsd(sesion.tenant.id)
 
   return (
-    <main className="p-6">
-      <h1 className="mb-6 text-xl font-medium">Vender</h1>
-      <PuntoDeVenta cotizacionInicial={cotizacionInicial} />
-    </main>
+    <>
+      {/* Sin subtítulo: la maqueta pide fecha Y hora ("14:32"), y un
+          componente de servidor la renderiza una sola vez y la deja
+          congelada — un reloj mentiroso arriba del punto de venta es peor
+          que no tener reloj. Queda para el ciclo de /vender. */}
+      <Encabezado titulo="Vender" />
+      <main className="p-6">
+        <PuntoDeVenta cotizacionInicial={cotizacionInicial} />
+      </main>
+    </>
   )
 }

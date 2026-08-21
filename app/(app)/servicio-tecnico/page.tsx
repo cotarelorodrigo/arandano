@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Button } from '@/components/ui/button'
@@ -92,108 +93,116 @@ export default async function ServicioTecnico({
   }
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-8">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Servicio Técnico</h1>
-        <Button asChild>
-          <Link href="/servicio-tecnico/nuevo">Recibir un equipo</Link>
-        </Button>
-      </div>
-
-      <div className="mt-6 flex flex-wrap gap-2">
-        {/* "Abiertas" y no "Todas": nunca contó las entregadas, y ahora que
-            hay un chip para ésas el nombre viejo mentiría de verdad. */}
-        {/* Ojo: no usa conParametros, que siempre reincorpora `q`. Este chip
-            promete volver al tablero por defecto, y ese default no lleva
-            búsqueda — arrastrar `q` dejaría el href idéntico a la URL actual
-            durante una búsqueda, un chip que no hace nada. */}
-        <Link
-          href="/servicio-tecnico"
-          aria-current={filtro === null && !buscandoEnTodas ? 'true' : undefined}
-          className={`rounded-md border px-3 py-1.5 text-sm ${
-            filtro === null && !buscandoEnTodas
-              ? 'border-primary font-semibold'
-              : 'text-muted-foreground'
-          }`}
-        >
-          Abiertas · {abiertas}
-        </Link>
-        {/* ESTADOS y no ABIERTOS: el chip de Entregadas es la otra mitad de que
-            un equipo entregado se pueda volver a encontrar. Sale en el lugar
-            que le toca del ciclo, porque ESTADOS está en ese orden. */}
-        {ESTADOS.map((e) => (
+    <>
+      {/* Sin subtítulo: la maqueta pide "N equipos en el local · el más viejo
+          hace N días". El primer número existe (`abiertas`, ya calculado más
+          abajo); el segundo necesita una consulta nueva (MIN(creadoEn) sobre
+          las abiertas) que esta pantalla todavía no hace. Media verdad arriba
+          de un tablero es peor que nada. Queda para el ciclo del tablero. */}
+      <Encabezado
+        titulo="Servicio Técnico"
+        acciones={
+          <Button asChild>
+            <Link href="/servicio-tecnico/nuevo">Recibir un equipo</Link>
+          </Button>
+        }
+      />
+      <main className="mx-auto max-w-5xl px-6 py-8">
+        <div className="mt-6 flex flex-wrap gap-2">
+          {/* "Abiertas" y no "Todas": nunca contó las entregadas, y ahora que
+              hay un chip para ésas el nombre viejo mentiría de verdad. */}
+          {/* Ojo: no usa conParametros, que siempre reincorpora `q`. Este chip
+              promete volver al tablero por defecto, y ese default no lleva
+              búsqueda — arrastrar `q` dejaría el href idéntico a la URL actual
+              durante una búsqueda, un chip que no hace nada. */}
           <Link
-            key={e}
-            href={conParametros({ estado: e, p: 1 })}
-            aria-current={filtro === e ? 'true' : undefined}
+            href="/servicio-tecnico"
+            aria-current={filtro === null && !buscandoEnTodas ? 'true' : undefined}
             className={`rounded-md border px-3 py-1.5 text-sm ${
-              filtro === e ? 'border-primary font-semibold' : 'text-muted-foreground'
+              filtro === null && !buscandoEnTodas
+                ? 'border-primary font-semibold'
+                : 'text-muted-foreground'
             }`}
           >
-            {NOMBRE_ESTADO[e]} · {cuenta.get(e) ?? 0}
+            Abiertas · {abiertas}
           </Link>
-        ))}
-      </div>
-
-      <form className="mt-6 flex gap-2" action="/servicio-tecnico">
-        {filtro ? <input type="hidden" name="estado" value={filtro} /> : null}
-        <Input name="q" defaultValue={busqueda} placeholder="Número, cliente, modelo o IMEI" />
-        <Button type="submit" variant="secondary">
-          Buscar
-        </Button>
-      </form>
-
-      {buscandoEnTodas ? (
-        <p className="mt-3 text-sm text-muted-foreground">
-          Buscando «{busqueda}» en todas las órdenes, incluidas las entregadas y las anuladas.{' '}
-          <Link href="/servicio-tecnico" className="underline">
-            Volver a las abiertas
-          </Link>
-        </p>
-      ) : null}
-
-      {ordenes.length === 0 ? (
-        <p className="mt-8 text-sm text-muted-foreground">
-          {buscandoEnTodas
-            ? `No apareció ninguna orden con «${busqueda}».`
-            : 'No hay equipos que mostrar con estos filtros.'}
-        </p>
-      ) : (
-        <ul className="mt-6 divide-y">
-          {ordenes.map((o) => (
-            <li key={o.id}>
-              <Link href={`/servicio-tecnico/${o.id}`} className="flex gap-4 py-3">
-                <span className="w-14 shrink-0 font-mono text-sm">#{o.numero}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">
-                    {o.equipoMarca} {o.equipoModelo}
-                  </span>
-                  <span className="block truncate text-sm text-muted-foreground">
-                    {o.cliente.nombre} · desde el {formatearFecha(o.creadoEn)}
-                  </span>
-                </span>
-                {/* Anulada primero y el estado entre paréntesis: la orden
-                    conserva el estado que tenía —anular es una columna—, así
-                    que mostrar sólo "Recibido" haría pasar por viva a una que
-                    no lo está. */}
-                <span className="shrink-0 self-center text-sm">
-                  {o.anuladaEn ? `Anulada (${NOMBRE_ESTADO[o.estado]})` : NOMBRE_ESTADO[o.estado]}
-                </span>
-              </Link>
-            </li>
+          {/* ESTADOS y no ABIERTOS: el chip de Entregadas es la otra mitad de que
+              un equipo entregado se pueda volver a encontrar. Sale en el lugar
+              que le toca del ciclo, porque ESTADOS está en ese orden. */}
+          {ESTADOS.map((e) => (
+            <Link
+              key={e}
+              href={conParametros({ estado: e, p: 1 })}
+              aria-current={filtro === e ? 'true' : undefined}
+              className={`rounded-md border px-3 py-1.5 text-sm ${
+                filtro === e ? 'border-primary font-semibold' : 'text-muted-foreground'
+              }`}
+            >
+              {NOMBRE_ESTADO[e]} · {cuenta.get(e) ?? 0}
+            </Link>
           ))}
-        </ul>
-      )}
+        </div>
 
-      {paginas > 1 ? (
-        <nav className="mt-6 flex gap-3 text-sm">
-          {pagina > 1 ? <Link href={conParametros({ p: pagina - 1 })}>Anterior</Link> : null}
-          <span className="text-muted-foreground">
-            Página {pagina} de {paginas}
-          </span>
-          {pagina < paginas ? <Link href={conParametros({ p: pagina + 1 })}>Siguiente</Link> : null}
-        </nav>
-      ) : null}
-    </main>
+        <form className="mt-6 flex gap-2" action="/servicio-tecnico">
+          {filtro ? <input type="hidden" name="estado" value={filtro} /> : null}
+          <Input name="q" defaultValue={busqueda} placeholder="Número, cliente, modelo o IMEI" />
+          <Button type="submit" variant="secondary">
+            Buscar
+          </Button>
+        </form>
+
+        {buscandoEnTodas ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            Buscando «{busqueda}» en todas las órdenes, incluidas las entregadas y las anuladas.{' '}
+            <Link href="/servicio-tecnico" className="underline">
+              Volver a las abiertas
+            </Link>
+          </p>
+        ) : null}
+
+        {ordenes.length === 0 ? (
+          <p className="mt-8 text-sm text-muted-foreground">
+            {buscandoEnTodas
+              ? `No apareció ninguna orden con «${busqueda}».`
+              : 'No hay equipos que mostrar con estos filtros.'}
+          </p>
+        ) : (
+          <ul className="mt-6 divide-y">
+            {ordenes.map((o) => (
+              <li key={o.id}>
+                <Link href={`/servicio-tecnico/${o.id}`} className="flex gap-4 py-3">
+                  <span className="w-14 shrink-0 font-mono text-sm">#{o.numero}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">
+                      {o.equipoMarca} {o.equipoModelo}
+                    </span>
+                    <span className="block truncate text-sm text-muted-foreground">
+                      {o.cliente.nombre} · desde el {formatearFecha(o.creadoEn)}
+                    </span>
+                  </span>
+                  {/* Anulada primero y el estado entre paréntesis: la orden
+                      conserva el estado que tenía —anular es una columna—, así
+                      que mostrar sólo "Recibido" haría pasar por viva a una que
+                      no lo está. */}
+                  <span className="shrink-0 self-center text-sm">
+                    {o.anuladaEn ? `Anulada (${NOMBRE_ESTADO[o.estado]})` : NOMBRE_ESTADO[o.estado]}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {paginas > 1 ? (
+          <nav className="mt-6 flex gap-3 text-sm">
+            {pagina > 1 ? <Link href={conParametros({ p: pagina - 1 })}>Anterior</Link> : null}
+            <span className="text-muted-foreground">
+              Página {pagina} de {paginas}
+            </span>
+            {pagina < paginas ? <Link href={conParametros({ p: pagina + 1 })}>Siguiente</Link> : null}
+          </nav>
+        ) : null}
+      </main>
+    </>
   )
 }
