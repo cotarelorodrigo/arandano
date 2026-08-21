@@ -36,12 +36,18 @@ más para separarse; con tres, se separa por material.
 pie. La paleta anterior tenía dos, y todo lo del medio caía en un extremo: o
 competía con el dato o se leía como deshabilitado.
 
-**Un ancla por pantalla.** `--marca` —el violeta profundo— entra una sola vez
-en cada pantalla, alrededor del número que esa pantalla existe para mostrar: la
-banda del total en `/vender`, el tile "Total del período" en `/ventas`, el stock
-en la ficha de un artículo, el estado actual en una orden. Es la regla que
-reemplaza al "cada card con su borde": si dos cosas de la misma pantalla piden
-el ancla, es que no está claro cuál es el dato.
+**Un ancla de contenido por pantalla, y una identidad que no cuenta contra esa
+regla.** `--marca` —el violeta profundo— entra una sola vez por pantalla
+alrededor del número que ESA pantalla existe para mostrar: la banda del total
+en `/vender`, el tile "Total del período" en `/ventas`, el stock en la ficha de
+un artículo, el estado actual en una orden. Es la regla que reemplaza al "cada
+card con su borde": si dos cosas de la misma pantalla piden el ancla, es que no
+está claro cuál es el dato. Hay una excepción declarada, no una grieta: el
+avatar del pie del sidebar (`components/shell/sidebar-arandano.tsx`), presente
+en las diez pantallas a la vez porque es chrome del shell —ancla la identidad
+de quién está adentro del sistema— y no el dato de la pantalla actual. El
+porqué no rompe la regla, y por qué el `.pen` es quien lo decide, vive más
+abajo en *Dónde se usa*.
 
 ### El arándano como superficie
 
@@ -66,19 +72,38 @@ de marca —el login y la franja de cierre del sitio— y la sección decía que
 dio: la regla nueva no es "dos superficies y no más", es **una por pantalla, y
 siempre alrededor del dato principal**.
 
+**El rediseño del shell (2026-08-21) sumó una séptima, y ésta no encaja en el
+mismo molde que las otras seis.** El avatar del pie del sidebar
+(`components/shell/sidebar-arandano.tsx:89`) pinta su fondo con `var(--marca)`.
+Verificado contra `design/arandano.pen` —frame `Shell/Sidebar`— y no a ojo: el
+avatar está pintado con la variable `ar-primary-deep`, que es exactamente
+`--marca` (`#2A1760`, la misma equivalencia que ata `test/maqueta.test.ts`). El
+`.pen` manda, así que lo que se ajusta es esta regla, no el color del avatar.
+La diferencia con las otras seis es que el avatar no es **por pantalla**: está
+en las diez a la vez, porque es chrome del shell —ancla quién está adentro del
+sistema— y no el dato que cada pantalla en particular existe para mostrar.
+
 | Superficie | Qué ancla |
 |---|---|
 | Paño del login (`app/login/persiana.module.css`) | El nombre del local |
 | Franja de cierre del sitio (`app/sitio/cierre.module.css`) | La conversión |
+| Avatar del pie del sidebar (`components/shell/sidebar-arandano.tsx`) | Quién está adentro — en las diez pantallas, no en una sola |
 | Banda del total en `/vender` | El importe que se dice en voz alta |
 | Tile "Total del período" en `/ventas` | Lo que entró en el período |
 | Bloque de stock en la ficha de un artículo | Cuánto hay |
 | Estado actual en la ficha de una orden | En qué anda el equipo |
 
-Lo que la regla prohíbe sigue siendo lo mismo y es lo que importa: `--marca`
-**no** es un fondo de pantalla, **no** se usa dos veces en la misma vista, y
-**no** entra en nada que no sea el dato principal. Una pantalla con dos anclas
-no tiene un problema de color: tiene un problema de jerarquía.
+**Y eso reescribe "no se usa dos veces en la misma vista", sin aflojarlo.** La
+regla sigue rigiendo entera entre las seis anclas de **contenido**: dos de
+ellas conviviendo en la misma pantalla siguen siendo un problema de jerarquía
+sin resolver, exactamente como antes. Lo que cambia es que el avatar no cuenta
+contra esa cuenta —es identidad persistente, no una segunda ancla de contenido
+compitiendo por la misma pantalla—, así que el día que se construya la banda
+del total de `/vender` esa pantalla va a mostrar **dos** superficies de
+`--marca` a la vez (el avatar arriba, la banda abajo) y eso es lo esperado, no
+una regresión de esta regla: una ancla quién sos, la otra ancla qué estás
+mirando. `--marca` **sigue sin ser** un fondo de pantalla y **sigue sin**
+entrar en nada que no sea una identidad o un dato principal — eso no cambió.
 
 **Y lleva sus propios colores de texto encima** — `--marca-foreground`,
 `--marca-soft` y `--marca-dim`— en vez de reusar `--foreground`. La confusión
@@ -373,7 +398,7 @@ de pantalla, ya contado arriba— usan la misma familia.
 ### La escala
 
 Los roles, con su cara y su tamaño. Un texto que no encaja en ninguno de estos
-cinco es señal de que falta una decisión, no de que falte un tamaño.
+roles es señal de que falta una decisión, no de que falte un tamaño.
 
 <!-- escala:inicio -->
 
@@ -382,7 +407,9 @@ cinco es señal de que falta una decisión, no de que falte un tamaño.
 | **Cartel** — nombre del local | Archivo | 19 px | 600, `font-stretch: 112%` |
 | Título de pantalla (`h1`) | Archivo | 21 px | 600 |
 | Pestaña de navegación | sistema | 14 px | 500; activa 600 |
-| Identidad, meta, pie | sistema | 12 px | 400, `--muted-foreground` |
+| Nombre de usuario, inicial del avatar — pie del sidebar | sistema | 13 px | 600 |
+| Rol del usuario (pie del sidebar), subtítulo del encabezado | sistema | 11 px | 400, `--muted-foreground` |
+| Rótulo "ARÁNDANO", stack · sha — pie del sidebar | sistema | 10 px | 700 el rótulo (`tracking-[0.16em]`); 400 stack · sha, `--muted-foreground` |
 | **Importe** — plata en el punto de venta | Archivo | 40 px el total; 14 px la columna | 600 el total, 400 la columna; `font-stretch: 85%`, `tabular-nums` |
 
 <!-- escala:fin -->
@@ -511,19 +538,25 @@ lista, **en el código que escribimos nosotros** —pantallas y layouts de `app/
 es señal de que el layout está mal, no de que falte un token.
 
 Excepción, y es angosta: un valor de **hairline atado al ancho de un borde** no
-es un paso de espaciado y no cae bajo esta regla. Son dos casos, los dos de 1 px:
+es un paso de espaciado y no cae bajo esta regla. Hoy es un solo caso, de 1 px:
 
-- `-mb-px` en el riel de pestañas de `components/navegacion.tsx` — solapa el
-  `border-b` de 1 px del `<header>` para que el subrayado de 2 px de la pestaña
-  activa se apoye en el riel en vez de dibujar una segunda línea un pixel más
-  arriba.
 - `gap-px` en la grilla de tiles de `/ventas` — la junta de 1 px **es** la línea
   divisoria: los tiles van sobre un `bg-border` y lo que se ve por las juntas es
   ese fondo, en vez de tres bordes que haya que hacer coincidir.
 
-En los dos, el número no sale de elegir un punto de la escala: sale de medir el
-borde que se tapa o que se dibuja, exactamente como `border-b-2` tampoco sale de
-la escala de espaciado y nadie lo llamaría una violación. El límite es ese y no
+**Hasta el rediseño del shell (2026-08-21) eran dos.** El otro caso era
+`-mb-px` en el riel de pestañas de `components/navegacion.tsx`: solapaba el
+`border-b` de 1 px del `<header>` horizontal para que el subrayado de 2 px de
+la pestaña activa se apoyara en el riel en vez de dibujar una segunda línea un
+pixel más arriba. Ese `<header>` y ese riel no existen más —la navegación pasó
+de pestañas horizontales a un `<ul>` vertical en el sidebar, sin subrayado que
+solapar—, así que el caso se borró junto con el código que lo justificaba, y no
+quedó reemplazado por ningún otro: el sidebar no tiene un borde propio que
+algún elemento necesite tapar.
+
+El número no sale de elegir un punto de la escala: sale de medir el borde que
+se tapa o que se dibuja, exactamente como `border-b-2` tampoco sale de la
+escala de espaciado y nadie lo llamaría una violación. El límite es ese y no
 más: cubre un valor de 1 px derivado de un borde real, no una puerta para colar
 cualquier valor que no esté en la lista.
 
@@ -579,6 +612,37 @@ cosas, todos los días*, y eso es composición de pantalla con un valor fuera de
 lista. Se corrigió a `py-6`, que es lo que la regla manda hacer y no requiere
 ninguna justificación aparte.
 
+**Segunda enmienda (ciclo del rediseño del shell, 2026-08-21): la lista creció
+más allá de chip y tile, así que —tal cual anticipaba el límite de arriba— la
+que estaba mal era la enmienda, no la escala.** El shell trajo valores que no
+son un paso de la escala y que tampoco son el adentro de un elemento chico y
+repetido: `p-[9px]`, `gap-[11px]`, `rounded-[9px]` y `size-[17px]` en el ítem de
+navegación; `pt-[22px]` y `px-5` en el bloque Marca del sidebar; `pb-[18px]` y
+`px-4` en su pie; `px-7` y `h-[66px]` en el Topbar del encabezado
+(`components/shell/encabezado.tsx`). Ninguno se repite muchas veces en la misma
+pantalla como un chip o un tile —cada uno aparece una sola vez, porque el shell
+mismo es único—, así que "chico, repetido y autocontenido" no los describe.
+
+**Lo que sí los describe, y reemplaza a la regla de 2026-08-13:** lo que exime
+a un valor no es el tamaño de la pieza ni que se repita — es que el número **no
+salga de elegir un punto en el código, sino de transcribir una medida que
+`design/arandano.pen` ya fija** para ese frame. El chip y el tile seguían siendo
+casos legítimos bajo esta regla más amplia —sus valores también salen de medir
+la pieza, no de inventar un espaciado—, así que no hace falta desandar nada de
+lo que ya estaba escrito: lo que cambia es describir la excepción por el
+**origen** del número y no por el **tamaño** de la pieza que lo usa. Cuando el
+`.pen` dicta una medida exacta para un frame —y `design/arandano.pen` es la
+autoridad sobre esto y no el código, según la regla de CLAUDE.md—, transcribirla
+no viola la escala; redondearla para "cumplir" un paso que el diseño no pidió
+sería la violación real, y perdería exactamente la fidelidad al frame que
+justifica tener un `.pen` en el repo.
+
+**El límite sigue siendo el mismo, sólo que mejor dicho:** la escala de 4 px
+sigue rigiendo todo el espaciado que el código **inventa** —la composición de
+pantallas, los gutters entre bloques, el ritmo de una sección—, que sigue
+entera en el subconjunto. Lo que queda afuera es sólo lo que el `.pen` ya midió
+por su cuenta.
+
 La densidad es **media**, y en números — todos verificados contra el código, no
 aspiracionales:
 
@@ -596,12 +660,30 @@ usa `app/(app)/usuarios/page.tsx`, la única tabla que existe hoy; subirla a 40
 pediría `py-2.5`, o sea justo un medio paso de los que la regla de arriba deja
 afuera del código propio.
 
-**El eje izquierdo del shell.** Cartel, pestañas y contenido arrancan todos en
-el mismo gutter de 24 px (`px-6` en `app/(app)/layout.tsx`, `p-6` en cada
-pantalla). Hoy coinciden porque cada pantalla eligió lo mismo por su cuenta;
-queda escrito para que la próxima no invente otro y parta la columna. El pie
-comparte el mismo `px-6`, pero su contenido es `text-right`: la caja arranca en
-ese gutter izquierdo, el texto cierra contra el derecho.
+**El eje izquierdo del shell, corregido con el rediseño (2026-08-21): no hay un
+solo gutter, hay cuatro.** Esta sección decía que cartel, pestañas y contenido
+arrancaban todos en los mismos 24 px de `px-6` en `app/(app)/layout.tsx`, y que
+el pie compartía ese mismo `px-6` con su contenido en `text-right`. Las cuatro
+afirmaciones son falsas contra el shell de hoy: `app/(app)/layout.tsx` no tiene
+ningún `px-6` —ya no hay una franja horizontal que lo necesite—, y cada bloque
+entra por su propio inset, tomado del frame que le corresponde en
+`design/arandano.pen`:
+
+| Bloque | Inset horizontal | De dónde sale |
+|---|---|---|
+| Cartel (`SidebarHeader`, sidebar-arandano.tsx) | `px-5` — 20 px | frame Marca, `pad:[22,20,18,20]` |
+| Pie (`SidebarFooter`, sidebar-arandano.tsx) | `px-4` — 16 px | frame Pie, `pad:[16,16,18,16]` |
+| Encabezado de pantalla (`encabezado.tsx`) | `px-7` — 28 px | frame Topbar, `pad:[0,28]` |
+| Cuerpo de cada pantalla | `p-6` (o `px-6`) — 24 px | elegido por pantalla, no por el shell |
+
+**"Todo arranca en el mismo eje" ya no aplica, y no por descuido: dejó de ser
+la idea que el shell persigue.** El sidebar y el contenido son dos columnas
+separadas por 248 px, no una sola franja donde un gutter compartido evitara que
+las cosas se vieran descalzadas entre sí —que era el motivo original de la
+regla vieja, escrita para un header horizontal que ya no existe—. Y el pie
+**no** es `text-right`: `components/contexto.tsx` (el stack y el sha) es un
+`<p>` sin alineación propia, a la izquierda igual que el nombre y el rol que
+tiene arriba en el mismo bloque.
 
 `--radius: 0.625rem`, con la escala derivada de 7 pasos que vive en
 `@theme inline`. No hay razón de marca para moverla.

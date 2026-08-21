@@ -204,6 +204,9 @@ El alta de un artículo.
   teléfono.
 - El stock inicial entra como `MovimientoStock`, así que el historial del
   artículo arranca explicando de dónde salió cada unidad.
+- El encabezado (`components/shell/encabezado.tsx`, ciclo del shell) lleva el
+  subtítulo fijo "Se agrega al catálogo del local": no depende de ningún dato
+  de la pantalla, así que no hace falta una consulta para mostrarlo.
 
 ## `/inventario/[id]`
 
@@ -320,6 +323,14 @@ La ficha de una orden: moverla de estado, diagnosticarla y leer su historia.
 
 **Decisiones**
 
+- **El estado salió del título y bajó al cuerpo (ciclo del shell).** El título
+  ahora es "Orden #N · marca modelo" —lo que identifica al equipo—, y el
+  subtítulo dice "Ingresó el DD/MM/AAAA · hace N días en el local" (`hoy` para
+  0, singular para 1). El estado en sí quedó como un párrafo al principio del
+  cuerpo ("Estado actual: X"), porque el encabezado de 66 px es común a las
+  diez pantallas y no tiene lugar para un dato que sólo ésta necesita. El
+  cálculo de los días es `lib/ordenes-de-trabajo/antiguedad.ts` (`diasEnElLocal`),
+  contado por fecha CALENDARIO de Buenos Aires y no por milisegundos.
 - **El grafo de estados es la fuente de verdad y el servidor lo vuelve a
   consultar.** La pantalla dibuja los botones a partir de la misma tabla, pero
   una UI que esconde un botón no es una validación.
@@ -403,13 +414,17 @@ El equipo del local.
 - El mínimo son **8 caracteres**, y el número no está escrito acá ni en el
   formulario: sale de `ctx.password.config` de Better Auth, para que la
   validación del servidor y la de la librería no puedan desincronizarse.
+- El encabezado (ciclo del shell) muestra un subtítulo con dos números
+  derivados: cuánta gente hay y cuántos dueños activos (`contarDuenosActivos`,
+  `lib/usuarios/resumen.ts`). Se calculan sobre el mismo `findMany` que ya trae
+  la tabla, no con una consulta aparte.
 
 <!-- pantallas:fin -->
 
 ## Lo que hereda toda pantalla de la aplicación
 
 Todas las de arriba que no son `/` ni `/login` cuelgan de `app/(app)/`, y de ahí
-heredan tres cosas sin que nadie las repita:
+heredan cuatro cosas sin que nadie las repita:
 
 - **El guard de sesión** (`exigirSesion` en el layout). Una ruta nueva bajo
   `(app)` nace protegida; `test/rutas-con-guard.test.ts` falla si alguna queda
@@ -417,6 +432,9 @@ heredan tres cosas sin que nadie las repita:
 - **`robots: noindex`**. Son datos de un local.
 - **El shell**: el cartel con el nombre del local, quién sos, cómo salir, y la
   navegación.
+- **El encabezado de 66 px** (`components/shell/encabezado.tsx`, ciclo del
+  shell): el único `<h1>` de la pantalla, un subtítulo opcional y un slot de
+  acciones a la derecha. Las diez lo usan; ninguna dibuja su propio `<h1>`.
 
 Y todas, sin excepción, leen la base con `prismaParaTenant`, que fuerza el
 filtro por `tenant_id` y ata la conexión al tenant por GUC de sesión. RLS es la

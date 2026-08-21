@@ -461,7 +461,8 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
             `border-t-4 border-double` y no un valor arbitrario de 3 px: la doble
             regla necesita al menos 3 px para dibujarse, y 4 es el paso de la
             escala de bordes de Tailwind. Un ancho de borde no es un paso de
-            espaciado, igual que el -mb-px del riel de pestañas.
+            espaciado, igual que el `gap-px` de la grilla de tiles de /ventas
+            (docs/sistema-de-diseno.md, sección Espaciado y radio).
 
             Con una cantidad a medio tipear `totalCentavos` queda en NaN, y
             "$ NaN" en 40 px es un cartel roto en una pantalla de plata. Muestra
