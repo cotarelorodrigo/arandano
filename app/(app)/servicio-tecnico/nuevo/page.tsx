@@ -40,7 +40,7 @@ export default async function RecibirEquipo({
             todas las pantallas de este producto. El precio es que buscar recarga
             la pantalla, y por eso el buscador va primero: lo que se haya tipeado
             del equipo se pierde. */}
-        <form className="mt-6 space-y-2" action="/servicio-tecnico/nuevo">
+        <form className="space-y-2" action="/servicio-tecnico/nuevo">
           <Label htmlFor="buscar-cliente">Buscar al cliente por nombre o teléfono</Label>
           <div className="flex gap-2">
             <Input

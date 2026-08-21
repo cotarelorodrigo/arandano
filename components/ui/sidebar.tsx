@@ -184,9 +184,12 @@ function Sidebar({
           }
           side={side}
         >
+          {/* Respecto del CLI: título y descripción traducidos — este texto lo
+              anuncia un lector de pantalla en una app lang="es", y es la única
+              forma de llegar a la navegación en un teléfono. */}
           <SheetHeader className="sr-only">
-            <SheetTitle>Sidebar</SheetTitle>
-            <SheetDescription>Displays the mobile sidebar.</SheetDescription>
+            <SheetTitle>Barra lateral</SheetTitle>
+            <SheetDescription>Muestra la barra lateral en el teléfono.</SheetDescription>
           </SheetHeader>
           <div className="flex h-full w-full flex-col">{children}</div>
         </SheetContent>
@@ -261,7 +264,10 @@ function SidebarTrigger({
       {...props}
     >
       <PanelLeftIcon />
-      <span className="sr-only">Toggle Sidebar</span>
+      {/* Respecto del CLI: traducido — mismo motivo que el SheetHeader de más
+          arriba, y en este botón es todavía más filoso: es el único control
+          visible en un teléfono para llegar a la navegación. */}
+      <span className="sr-only">Mostrar u ocultar la barra lateral</span>
     </Button>
   )
 }

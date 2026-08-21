@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { readdirSync, statSync, readFileSync } from 'node:fs'
+import path from 'node:path'
 import { Encabezado } from './encabezado'
 
 describe('el encabezado de pantalla', () => {
@@ -27,12 +29,44 @@ describe('el encabezado de pantalla', () => {
     expect(html.indexOf('Inventario')).toBeLessThan(html.indexOf('Artículo nuevo'))
   })
 
-  // Un solo h1 por documento: el cartel del sidebar es <span> justamente por
-  // esto, y el encabezado no puede romperlo por el otro lado.
-  it('nunca hay más de un h1', () => {
-    const html = renderToStaticMarkup(
-      <Encabezado titulo="Usuarios" subtitulo="4 personas" acciones={<button>Agregar</button>} />,
-    )
-    expect(html.match(/<h1/g) ?? []).toHaveLength(1)
+})
+
+/**
+ * Las `page.tsx` de `app/(app)/`, barridas del sistema de archivos.
+ *
+ * Mismo patrón que `test/rutas-con-guard.test.ts` y `test/pantallas.test.ts`:
+ * derivada y no una lista a mano, para que una pantalla nueva quede cubierta
+ * sin que nadie se acuerde de sumarla.
+ */
+function paginasDeLaApp(dir = 'app/(app)', acumulado: string[] = []): string[] {
+  for (const entrada of readdirSync(dir)) {
+    const completo = path.join(dir, entrada)
+    if (statSync(completo).isDirectory()) {
+      paginasDeLaApp(completo, acumulado)
+    } else if (/^page\.(tsx|ts|jsx|js)$/.test(entrada)) {
+      acumulado.push(completo)
+    }
+  }
+  return acumulado
+}
+
+describe('un solo h1 por pantalla', () => {
+  // El caso viejo ("nunca hay más de un h1") no podía fallar nunca: Encabezado
+  // tiene un <h1> LITERAL en su propio JSX, así que "renderizar Encabezado y
+  // contar los <h1>" siempre daba 1, sea lo que sea que le pasaras. El riesgo
+  // real no vive acá adentro: vive en los diez page.tsx que consumen
+  // Encabezado, cualquiera de los cuales podría sumar su propio <h1> —como de
+  // hecho pasaba antes del ciclo del shell— y volver a haber dos landmarks
+  // <h1> en la misma pantalla. Este caso mira ahí.
+  it('ningún page.tsx de la aplicación dibuja su propio <h1>', () => {
+    const paginas = paginasDeLaApp()
+    expect(paginas.length, 'no se encontró ningún page.tsx bajo app/(app)/').toBeGreaterThan(0)
+    for (const p of paginas) {
+      expect(
+        readFileSync(p, 'utf8'),
+        `${p} tiene un <h1> propio. El único <h1> de la pantalla lo pone ` +
+          `<Encabezado> (components/shell/encabezado.tsx) — sacalo de acá.`,
+      ).not.toMatch(/<h1[\s>]/)
+    }
   })
 })

@@ -28,11 +28,16 @@ export function fechaCorta(v: Date): string {
  * `ahora` es un parámetro, no `new Date()` adentro de la función: es lo que
  * permite testear el cruce de medianoche sin mockear el reloj del sistema.
  * En producción se llama con un solo argumento.
+ *
+ * Con un piso en cero: si el reloj de Node quedó adelantado respecto de
+ * `creadoEn` —desvío de NTP, o el equipo se recibió en la misma transacción
+ * que lo consulta— la resta da negativa, y "hace -1 días en el local" es peor
+ * que "hoy": un negativo no dice ningún error, se lee como un dato real.
  */
 export function diasEnElLocal(creadoEn: Date, ahora: Date = new Date()): number {
   const comoDiaDeBuenosAires = (d: Date) =>
     new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(d)
   const inicio = new Date(`${comoDiaDeBuenosAires(creadoEn)}T00:00:00-03:00`)
   const hoy = new Date(`${comoDiaDeBuenosAires(ahora)}T00:00:00-03:00`)
-  return Math.round((hoy.getTime() - inicio.getTime()) / (24 * 60 * 60 * 1000))
+  return Math.max(0, Math.round((hoy.getTime() - inicio.getTime()) / (24 * 60 * 60 * 1000)))
 }

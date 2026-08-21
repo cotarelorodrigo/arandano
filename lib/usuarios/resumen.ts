@@ -1,4 +1,10 @@
-type UsuarioParaContar = { rol: 'DUENO' | 'EMPLEADO'; desactivadoEn: Date | null }
+// RolUsuario importado y no repetido a mano: 'DUENO' | 'EMPLEADO' ya vive en
+// lib/auth/sesion.ts, y una tercera copia de la misma unión (M7 de la review
+// final — la segunda fue justamente la que este ciclo agregó acá) es la que
+// se desincroniza en silencio el día que el modelo sume un rol nuevo.
+import type { RolUsuario } from '@/lib/auth/sesion'
+
+type UsuarioParaContar = { rol: RolUsuario; desactivadoEn: Date | null }
 
 /**
  * Cuántos dueños siguen activos.

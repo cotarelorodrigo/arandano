@@ -79,7 +79,11 @@ describe('layout de la aplicación', () => {
 
   it('renderiza la navegación', async () => {
     const html = await render()
-    expect(html).toContain('Inventario')
+    // href="/vender" y no sólo el texto "Inventario": el texto solo pasaría
+    // igual si el link se rompiera y la pestaña quedara sin href, o si sólo se
+    // renderizara el rótulo suelto sin el <Link>. El href es lo que prueba que
+    // la navegación de verdad se montó, no que la palabra apareció en algún lado.
+    expect(html).toContain('href="/vender"')
   })
 
   // Los casos por rol (qué pestañas ve un dueño vs. un empleado) ya están en

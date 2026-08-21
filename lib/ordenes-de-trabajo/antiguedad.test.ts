@@ -55,6 +55,17 @@ describe('diasEnElLocal', () => {
     expect(diasEnElLocal(creadoEn, ahora)).toBe(1)
   })
 
+  // M6 de la review final: si `ahora` queda ANTES de `creadoEn` —el reloj de
+  // Node se desvió, o la orden se recibió y se consultó en la misma
+  // transacción con un margen de reloj adverso— la resta sin piso daba
+  // negativo, y la pantalla mostraría "hace -1 días en el local", que no lee
+  // como un error: lee como un dato.
+  it('nunca da negativo, aunque `ahora` quede antes de `creadoEn`', () => {
+    const creadoEn = new Date('2026-08-21T10:00:00-03:00')
+    const ahora = new Date('2026-08-20T10:00:00-03:00')
+    expect(diasEnElLocal(creadoEn, ahora)).toBe(0)
+  })
+
   it('sin `ahora`, usa la hora real del sistema', () => {
     // vi.setSystemTime en vez de comparar contra `new Date()` en el propio
     // test: así el caso queda determinístico y no depende de en qué

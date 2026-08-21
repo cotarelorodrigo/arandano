@@ -108,7 +108,7 @@ export default async function ServicioTecnico({
         }
       />
       <div className="mx-auto max-w-5xl px-6 py-8">
-        <div className="mt-6 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
           {/* "Abiertas" y no "Todas": nunca contó las entregadas, y ahora que
               hay un chip para ésas el nombre viejo mentiría de verdad. */}
           {/* Ojo: no usa conParametros, que siempre reincorpora `q`. Este chip
