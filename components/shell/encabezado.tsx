@@ -26,8 +26,14 @@ export function Encabezado({
   acciones?: React.ReactNode
 }) {
   return (
-    <header className="flex h-[66px] shrink-0 items-center justify-between gap-6 border-b bg-card px-7">
-      <div className="min-w-0">
+    // gap-4 (16px): lo que declara el Topbar en nueve de las diez pantallas del
+    // .pen (Vender es la excepción, sin gap propio). Hoy es inerte porque
+    // justify-between empuja título y acciones a los extremos, pero el número
+    // tiene que seguir siendo el de la maqueta para el día que deje de serlo.
+    <header className="flex h-[66px] shrink-0 items-center justify-between gap-4 border-b bg-card px-7">
+      {/* flex-col gap-px: el frame Título del .pen es layout vertical con
+          gap:1, no dos elementos sueltos que el flujo de bloque apila solos. */}
+      <div className="flex min-w-0 flex-col gap-px">
         <h1 className={`${estilos.titulo} truncate text-foreground`}>{titulo}</h1>
         {/* Condicional y no un <p> siempre presente: sin subtítulo, un párrafo
             vacío corre el título hacia arriba y la franja deja de leerse
@@ -36,7 +42,10 @@ export function Encabezado({
           <p className="truncate text-[11px] text-muted-foreground">{subtitulo}</p>
         ) : null}
       </div>
-      {acciones ? <div className="flex shrink-0 items-center gap-2">{acciones}</div> : null}
+      {/* gap-2.5 (10px): el frame Acciones/Estado del .pen, igual en las diez
+          pantallas. No se nota hoy porque ninguna pantalla llena este slot
+          todavía, pero la Task 6 les mete botones a cuatro de las diez. */}
+      {acciones ? <div className="flex shrink-0 items-center gap-2.5">{acciones}</div> : null}
     </header>
   )
 }

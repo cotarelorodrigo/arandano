@@ -22,14 +22,18 @@
  * La inversión de jerarquía se sigue leyendo porque el cartel es lo único que
  * hay en su bloque, no porque sea el número más grande de la pantalla.
  *
- * POR QUÉ EL TRACKING NO ES EL DEL LOGIN. Allá es -0.022em sobre una cara de
- * hasta 88 px; acá son 19, y a este tamaño un tracking tan cerrado empasta.
+ * SIN LETTER-SPACING. El nodo Local del frame Shell/Sidebar no declara
+ * tracking en el .pen — a diferencia de Producto, dos líneas arriba en el
+ * mismo frame (1.6), y del cartel del login (-0.022em): la maqueta sí sabe
+ * pedir tracking cuando lo quiere, así que la ausencia acá se lee como un 0
+ * elegido y no como un olvido de la herramienta. Esto llevaba un -0.01em
+ * propio, justificado con "a este tamaño un tracking tan cerrado empasta" —la
+ * razón no estaba mal escrita, pero el .pen no lo pide y manda él.
  */
 .cartel {
   font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   font-weight: 600;
   font-stretch: 112%;
   font-size: 1.1875rem;
-  line-height: 1.1;
-  letter-spacing: -0.01em;
+  line-height: 1.25;
 }

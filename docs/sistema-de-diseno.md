@@ -366,7 +366,7 @@ cinco es señal de que falta una decisión, no de que falte un tamaño.
 
 | Rol | Cara | Tamaño | Peso y ancho |
 |---|---|---|---|
-| **Cartel** — nombre del local | Archivo | 19 px | 600, `font-stretch: 112%`, tracking −0.01em |
+| **Cartel** — nombre del local | Archivo | 19 px | 600, `font-stretch: 112%` |
 | Título de pantalla (`h1`) | Archivo | 21 px | 600 |
 | Pestaña de navegación | sistema | 14 px | 500; activa 600 |
 | Identidad, meta, pie | sistema | 12 px | 400, `--muted-foreground` |
