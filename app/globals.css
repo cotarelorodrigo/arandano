@@ -22,9 +22,8 @@
   /* No hay --font-display, --color-marca ni --color-chart-N acá, y es a
      propósito: los consumen módulos de CSS y el ChartConfig con var(--token)
      directo, así que ninguna utilidad de Tailwind los referenciaría. Un token
-     en @theme que ninguna utilidad referencia es un token muerto, que es lo que
-     el caso "no quedan tokens de sidebar" de test/sistema-de-diseno.test.ts
-     existe para evitar. */
+     en @theme que ninguna utilidad referencia es un token muerto, y sumarlo acá
+     sólo agregaría uno más. */
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);

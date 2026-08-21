@@ -328,9 +328,8 @@ llegue antes de que hidrate o con el JavaScript caído.
 **Y no están en `@theme`**, a diferencia del resto de la paleta: no los consume
 ninguna utilidad de Tailwind sino el `color:` del `ChartConfig` de
 `components/ui/chart.tsx`, que emite `var(--chart-N)` directo. Es el mismo caso
-que `--marca`. Un token en `@theme` que nada referencia es un token muerto, que
-es lo que el caso "no quedan tokens de sidebar" de
-`test/sistema-de-diseno.test.ts` existe para evitar.
+que `--marca`. Un token en `@theme` que nada referencia es un token muerto, y
+sumarlo ahí no compraría nada.
 
 ## Tipografía
 
@@ -451,9 +450,7 @@ consumidores son **tres** módulos CSS —`app/login/persiana.module.css`,
 `components/cartel.module.css` y `components/importe.module.css`— y ninguno lo
 querría igual: además de la familia, cada uno necesita su `font-stretch` y su
 tracking, así que ninguna utilidad de Tailwind referenciaría el token. Un token
-de `@theme` que ninguna utilidad referencia es un token muerto, que es lo que el
-caso *no quedan tokens de sidebar ni de gráficos* de
-`test/sistema-de-diseno.test.ts` existe para evitar. Los tres consumen
+de `@theme` que ninguna utilidad referencia es un token muerto. Los tres consumen
 `var(--font-archivo)` —la variable que emite `next/font`— directo.
 
 Este párrafo dijo lo contrario hasta el ciclo de la cinta: prometía que *"si una
