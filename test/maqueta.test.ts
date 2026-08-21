@@ -48,7 +48,10 @@ const EQUIVALENCIAS: Record<string, string[]> = {
   ],
   'ar-primary-deep': ['--marca'],
   'ar-primary-soft': ['--accent', '--sidebar-accent'],
-  'ar-on-primary': ['--primary-foreground', '--marca-foreground', '--sidebar-primary-foreground'],
+  // --sidebar-primary-foreground NO va acá: se podó del CSS en el cierre del
+  // ciclo del shell (2026-08-21) porque nada lo pintaba — ver el comentario de
+  // app/globals.css, junto a --sidebar-primary, para el porqué.
+  'ar-on-primary': ['--primary-foreground', '--marca-foreground'],
   'ar-ok': ['--ok'],
   'ar-ok-soft': ['--ok-soft'],
   'ar-warn': ['--warn'],

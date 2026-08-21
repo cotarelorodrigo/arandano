@@ -426,9 +426,51 @@ Y del producto:
     el documento, medida una vez al elegir la paleta, como decisión escrita y
     no como aserción que el gate sostenga.
 
-  **Pendiente**: nadie miró todavía la paleta nueva en un navegador, y las
-  once pantallas de la maqueta **no están construidas** — el código sigue
-  sirviendo el layout viejo con los colores nuevos.
+  **El shell ya está construido** (2026-08-21). El sidebar de 248 px de la
+  maqueta reemplazó al header horizontal, y las diez pantallas de aplicación
+  —no las trece que diseña `design/arandano.pen`: `/login`, el ticket y la
+  landing no llevan shell— abren con el encabezado de 66 px. Ver
+  `docs/superpowers/specs/2026-08-21-maqueta-shell-design.md`.
+
+  De los ocho tokens `--sidebar-*` que trae `shadcn add sidebar`, **volvieron
+  siete**. El caso `no quedan tokens de sidebar` —que existía porque estos
+  ocho estaban declarados sin que ningún componente los usara, y se borró al
+  reintroducirlos con el sidebar— exigía auditar el uso real antes de darlo
+  por bueno, y esa auditoría encontró que `--sidebar-primary-foreground` no lo
+  pinta nada: ni el cartel del encabezado (usa `--sidebar-primary` como texto,
+  sin ningún fondo pintado con él), ni el avatar del pie (pinta con `--marca` /
+  `--marca-foreground`, no con este par, aunque ambos resuelvan al mismo
+  blanco). Se podó, con la razón escrita junto a los siete que quedan en
+  `app/globals.css`. **Vale la pena dejar anotado el punto ciego del propio
+  grep de auditoría**, porque el próximo componente de shadcn que sume tokens
+  va a repetir la pregunta: buscar en `app/` incluye `app/globals.css`, y la
+  línea de `@theme inline` que expone cada token a Tailwind
+  (`--color-X: var(--X)`) hace que ese token se "encuentre a sí mismo" — el
+  conteo nunca puede dar cero para un token ya declarado, lo consuma o no
+  algún componente real. La corrección fue excluir esa auto-referencia y
+  contar sólo el consumo en `.tsx`.
+
+  **La regla más importante que dejó el ciclo**: el dueño del producto fijó
+  que `design/arandano.pen` es la autoridad, y que cuando contradice al
+  código, a la documentación o a un test, **se modifica lo otro**. Ya obligó a
+  dos correcciones: el título de pantalla pasó a pagar Archivo (la cara de
+  display pasó de dos superficies a tres) y se corrigió la tabla de
+  `docs/sistema-de-diseno.md`.
+
+  **El punto ciego que hace falta nombrar**: `test/maqueta.test.ts` ata el
+  `.pen` con el CSS **sólo en los colores**, a propósito. Todo lo que no sea
+  color —tipografía, geometría, espaciado— puede divergir sin que nada avise.
+  Este ciclo hizo el primer barrido manual completo y encontró once
+  divergencias en total (seis de geometría en el sidebar, una de tipografía en
+  el encabezado, y cinco más de gaps y tracking). Mientras dependa de que
+  alguien vaya a mirar, la regla se sostiene sola hasta que alguien se olvide.
+  Y una limitación que conviene dejar escrita: **`font-stretch` no es
+  representable en el schema del `.pen`**, así que el `112%` del cartel no se
+  puede verificar contra la maqueta en ninguna dirección.
+
+  **Queda para los ciclos siguientes**: las tres migraciones aditivas
+  (`Articulo.categoria`, `Caja`, `Tenant.cotizacionUsd`) y después el cuerpo de
+  cada pantalla, una por ciclo, en el orden que fija ese spec.
 - ~~Construir la UI de inventario.~~ **Hecho** (2026-08-11). Listado con
   buscador y paginación, alta con SKU autogenerado y stock inicial que nace
   como movimiento, ingreso de mercadería con su costo, corrección por conteo

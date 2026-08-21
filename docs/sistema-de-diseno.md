@@ -127,7 +127,6 @@ profundo. Ahora el token dice sobre qué va.
 | `--sidebar` | `#FFFFFF` |
 | `--sidebar-foreground` | `#171221` |
 | `--sidebar-primary` | `#4A2AA5` |
-| `--sidebar-primary-foreground` | `#FFFFFF` |
 | `--sidebar-accent` | `#EDE8FB` |
 | `--sidebar-accent-foreground` | `#4A2AA5` |
 | `--sidebar-border` | `#E3E0EC` |
@@ -147,14 +146,27 @@ El sidebar de shadcn referencia sus colores por nombre propio: `bg-sidebar`,
 con que el color exista bajo otro token — tiene que existir con **ese** nombre
 o la utilidad no resuelve a nada.
 
-Ninguno de los ocho es un color nuevo. Cada uno toma el de la variable de
+Ninguno de los siete es un color nuevo. Cada uno toma el de la variable de
 `design/arandano.pen` que la maqueta ya usa en ese lugar del paño, y
 `test/maqueta.test.ts` los ata a esa variable en las dos direcciones. Un
 `--sidebar-*` con un valor que la maqueta no tenga rompe el build.
 
-Estos ocho reemplazan al caso `no quedan tokens de sidebar` de
+Estos siete reemplazan al caso `no quedan tokens de sidebar` de
 `test/sistema-de-diseno.test.ts`, que existió justamente hasta que hubo un
 componente que los usara.
+
+**Son siete y no los ocho que trae `shadcn add sidebar`.** El octavo,
+`--sidebar-primary-foreground`, se podó en el cierre del ciclo del shell
+(2026-08-21): el único uso real de `--sidebar-primary` es texto —el cartel
+"ARÁNDANO" del encabezado—, no hay ningún fondo pintado con ese color, y sin un
+fondo `--sidebar-primary` no hay superficie que necesite un color "encima". El
+candidato natural para usarlo era el avatar del pie, pero pinta su fondo con
+`--marca` y su texto con `--marca-foreground` — los dos resuelven a `#FFFFFF`
+igual que `--sidebar-primary-foreground`, así que a la vista no cambia nada,
+pero el token que corresponde semánticamente es el que ya estaba puesto. Es
+exactamente el riesgo que el párrafo de arriba nombra sin decirlo: reintroducir
+los ocho tokens de shadcn no significa que un componente real los use a los
+ocho.
 
 ### Dónde entra el arándano
 
