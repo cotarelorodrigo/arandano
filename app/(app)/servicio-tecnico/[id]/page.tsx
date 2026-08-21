@@ -6,40 +6,12 @@ import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Button } from '@/components/ui/button'
 import { formatearFecha, formatearPrecio } from '@/lib/formato/mostrar'
 import { TRANSICIONES, NOMBRE_ESTADO } from '@/lib/ordenes-de-trabajo/estados'
+import { fechaCorta, diasEnElLocal } from '@/lib/ordenes-de-trabajo/antiguedad'
 import { esUuid } from '@/lib/uuid'
 import { moverEstado, diagnosticar, anular } from '../acciones'
 import { FormularioEstado, FormularioDiagnostico, FormularioAnular } from '../formularios'
 
 export const dynamic = 'force-dynamic'
-
-/**
- * `Date` → "DD/MM/AAAA", con el huso de Buenos Aires — mismo criterio que
- * `formatearFecha`, pero sin la hora: el subtítulo de esta pantalla dice hace
- * cuántos días entró el equipo, y para eso alcanza con el día.
- */
-function fechaCorta(v: Date): string {
-  return new Intl.DateTimeFormat('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    timeZone: 'America/Argentina/Buenos_Aires',
-  }).format(v)
-}
-
-/**
- * Días corridos entre `creadoEn` y hoy, contando por fecha CALENDARIO de
- * Buenos Aires y no por milisegundos: un equipo que entró a las 23:50 y se
- * consulta a las 00:10 del día siguiente son 20 minutos de reloj, pero ya es
- * "un día" para quien lo tiene en el mostrador — así se cuenta el tiempo en
- * el local, no en horas exactas.
- */
-function diasEnElLocal(creadoEn: Date): number {
-  const comoDia = (d: Date) =>
-    new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(d)
-  const inicio = new Date(`${comoDia(creadoEn)}T00:00:00-03:00`)
-  const hoy = new Date(`${comoDia(new Date())}T00:00:00-03:00`)
-  return Math.round((hoy.getTime() - inicio.getTime()) / (24 * 60 * 60 * 1000))
-}
 
 export default async function DetalleDeOrden({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion()
@@ -79,12 +51,16 @@ export default async function DetalleDeOrden({ params }: { params: Promise<{ id:
   return (
     <>
       <Encabezado
-        titulo={`Orden #${orden.numero} · ${NOMBRE_ESTADO[orden.estado]}`}
+        titulo={`Orden #${orden.numero} · ${orden.equipoMarca} ${orden.equipoModelo}`}
         subtitulo={
           <>
             Ingresó el {fechaCorta(orden.creadoEn)}
             {' · '}
-            {dias === 1 ? 'hace 1 día en el local' : `hace ${dias} días en el local`}
+            {dias === 0
+              ? 'hoy'
+              : dias === 1
+                ? 'hace 1 día en el local'
+                : `hace ${dias} días en el local`}
           </>
         }
         acciones={
@@ -94,6 +70,18 @@ export default async function DetalleDeOrden({ params }: { params: Promise<{ id:
         }
       />
       <main className="mx-auto max-w-3xl px-6 py-8">
+        {/* El estado ya no está en el título —que ahora es "Orden #N · marca
+            modelo", como pide design/arandano.pen— así que sin este párrafo
+            la pantalla perdía el único lugar donde se veía fuera del
+            formulario de transiciones (que ni siquiera se dibuja si la orden
+            está anulada). Va arriba de todo en el cuerpo, en el lugar que la
+            maqueta le da a un paño "ESTADO ACTUAL": ese paño es del ciclo que
+            rediseñe esta pantalla, así que por ahora es texto simple en la
+            misma posición, no un componente nuevo inventado para esta task. */}
+        <p className="text-sm">
+          Estado actual: <span className="font-medium">{NOMBRE_ESTADO[orden.estado]}</span>
+        </p>
+
         {anulada ? (
           <p className="mt-3 text-sm">
             Anulada por {orden.anuladaPor?.nombre ?? 'alguien'} el{' '}

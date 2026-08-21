@@ -1,6 +1,7 @@
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirDuenio } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
+import { contarDuenosActivos } from '@/lib/usuarios/resumen'
 import { AltaDeEmpleado, AccionesDeUsuario } from './formularios'
 
 export const dynamic = 'force-dynamic'
@@ -12,10 +13,7 @@ export default async function Usuarios() {
     select: { id: true, nombre: true, email: true, rol: true, desactivadoEn: true },
   })
 
-  // Contado en memoria y no con un `count` aparte: la lista completa ya está
-  // acá, y sumar una consulta nueva por un número que sale de lo que ya se
-  // trajo sería duplicar el viaje a la base.
-  const duenosActivos = usuarios.filter((u) => u.rol === 'DUENO' && !u.desactivadoEn).length
+  const duenosActivos = contarDuenosActivos(usuarios)
 
   return (
     <>
