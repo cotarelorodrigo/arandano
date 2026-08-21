@@ -60,10 +60,13 @@ describe('layout de la aplicación', () => {
     expect(html).toMatch(/class="[^"]*cartel/)
   })
 
-  // El pie del sidebar (SidebarArandano) es quien marca el nombre ahora.
+  // El pie del sidebar (SidebarArandano) es quien marca el nombre ahora. No
+  // alcanza con el data-testid solo: si mañana el span queda vacío o muestra
+  // otra cosa (el rol, por ejemplo), este caso tiene que notarlo.
   it('marca el nombre del usuario, que scripts/smoke.sh busca tras el login', async () => {
     const html = await render()
     expect(html).toContain('data-testid="usuario-nombre"')
+    expect(html).toContain('Quien sea')
   })
 
   // Se mudaron del footer al pie del sidebar, que es donde la maqueta los pone.

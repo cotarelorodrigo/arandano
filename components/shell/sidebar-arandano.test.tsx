@@ -46,8 +46,13 @@ describe('el sidebar de Arándano', () => {
     expect(html).toContain('title="Un local con un nombre larguísimo"')
   })
 
+  // No alcanza con el data-testid solo: si mañana el span queda vacío o
+  // muestra otra cosa (el rol, por ejemplo), este caso tiene que notarlo. El
+  // de layout.test.tsx cubre lo mismo por integración, pero el unitario tiene
+  // que sostenerse solo el día que ese otro cambie de forma.
   it('marca el nombre del usuario, que scripts/smoke.sh busca tras el login', () => {
     expect(render()).toContain('data-testid="usuario-nombre"')
+    expect(render()).toContain('Quien sea')
   })
 
   it('traduce el rol al castellano que se lee en el pie', () => {
