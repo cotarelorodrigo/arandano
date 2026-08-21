@@ -366,7 +366,7 @@ cinco es señal de que falta una decisión, no de que falte un tamaño.
 
 | Rol | Cara | Tamaño | Peso y ancho |
 |---|---|---|---|
-| **Cartel** — nombre del local | Archivo | 24 px | 600, `font-stretch: 112%`, tracking −0.01em |
+| **Cartel** — nombre del local | Archivo | 19 px | 600, `font-stretch: 112%`, tracking −0.01em |
 | Título de pantalla (`h1`) | Archivo | 21 px | 600 |
 | Pestaña de navegación | sistema | 14 px | 500; activa 600 |
 | Identidad, meta, pie | sistema | 12 px | 400, `--muted-foreground` |
@@ -390,15 +390,24 @@ la pila del sistema hasta que tengan su propio ciclo: un rol nuevo aplicado a
 medias es una inconsistencia visible; aplicado a una pantalla y declarado como
 tal es una decisión.
 
-**El cartel pesa más que el título de la pantalla, y es la decisión.** El nombre
-del local es lo más grande **del shell**: siempre estás adentro de tu local, y
-`Inventario` es sólo dónde estás parado. Es la misma jerarquía que declara el
-login —el negocio del cliente es el héroe, la plataforma no firma—, sostenida
-las ocho horas en vez de los ocho segundos.
+**El cartel manda sobre el título de la pantalla, y sigue siendo la
+decisión — ya no por tamaño.** Este párrafo comparaba números porque cartel y
+título compartían la misma fila de un header horizontal. Desde que el sidebar
+movió esa fila a una columna aparte (*el layout monta el sidebar y jubila el
+header horizontal*), los dos viven en ejes distintos: el cartel en su propia
+columna, arriba de la navegación; el título en la franja de contenido, hoy en
+el Topbar del encabezado (`components/shell/encabezado.tsx`, este ciclo). A
+19 px contra 21 px el cartel ya ni siquiera es el número más grande, y no
+necesita serlo: manda porque es lo único que hay en su bloque y está en las
+diez pantallas sin excepción, mientras que `Inventario` es sólo dónde estás
+parado en ésta (ver `components/cartel.module.css`, que ya lo dice así desde
+que bajó a 19 px). Es la misma jerarquía que declara el login —el negocio del
+cliente es el héroe, la plataforma no firma—, sostenida las ocho horas en vez
+de los ocho segundos.
 
 **Enmienda (ciclo de la cinta, 2026-08-12): el contenido puede pesar más que el
 cartel cuando el contenido es el punto.** El total del punto de venta va en
-40 px, contra los 24 del cartel. La razón de la regla original es sobre el
+40 px, contra los 19 del cartel. La razón de la regla original es sobre el
 shell —compara el nombre del local con el título de la pantalla, o sea cromo
 contra cromo—, y el total no es cromo: es el valor de la transacción en curso,
 el número que se dice en voz alta cien veces por día.
