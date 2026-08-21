@@ -128,13 +128,20 @@ describe('Navegacion', () => {
 
   // Frágil a propósito, y por eso va con su motivo escrito: las pestañas no
   // tenían focus-visible y quedaban con el outline del navegador, sobre un
-  // producto que se opera con teclado en un mostrador. Esta aserción es lo
-  // único que impide que el anillo desaparezca en un refactor de estilos sin
-  // que nada se queje. Si cambia el nombre de la utilidad de Tailwind, se
-  // actualiza acá: ése es el costo y se paga.
+  // producto que se opera con teclado en un mostrador. Mide sobre los CINCO
+  // <a> reales, no sobre el HTML entero: `focus-visible:ring-2` es parte fija
+  // de sidebarMenuButtonVariants (components/ui/sidebar.tsx), así que aparece
+  // en el HTML pase lo que pase adentro del botón — un toContain() sobre el
+  // string completo pasaría igual aunque `asChild` no forwardeara la clase al
+  // ancla, o aunque sólo una de las cinco la tuviera. Contando por elemento es
+  // lo único que de verdad impide que el anillo desaparezca en un refactor de
+  // estilos sin que nada se queje. Si cambia el nombre de la utilidad de
+  // Tailwind, se actualiza acá: ése es el costo y se paga.
   it('cada pestaña lleva anillo de foco propio', async () => {
     const html = await render('DUENO', '/vender')
-    expect(html).toContain('focus-visible:ring-2')
+    const anclas = html.match(/<a\b[^>]*>/g) ?? []
+    expect(anclas).toHaveLength(5)
+    expect(anclas.filter((a) => a.includes('focus-visible:ring-2'))).toHaveLength(5)
   })
 
   // Los íconos los nombra design/arandano.pen. No son decoración: en un
