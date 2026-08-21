@@ -437,14 +437,15 @@ Y del producto:
   ocho estaban declarados sin que ningún componente los usara, y se borró al
   reintroducirlos con el sidebar— exigía auditar el uso real antes de darlo
   por bueno, y esa auditoría encontró que `--sidebar-primary-foreground` no lo
-  pinta nada: ni el cartel del encabezado (usa `--sidebar-primary` como texto,
-  sin ningún fondo pintado con él), ni el avatar del pie (pinta con `--marca` /
-  `--marca-foreground`, no con este par, aunque ambos resuelvan al mismo
-  blanco). Se podó, con la razón escrita junto a los siete que quedan en
-  `app/globals.css`. **Vale la pena dejar anotado el punto ciego del propio
-  grep de auditoría**, porque el próximo componente de shadcn que sume tokens
-  va a repetir la pregunta: buscar en `app/` incluye `app/globals.css`, y la
-  línea de `@theme inline` que expone cada token a Tailwind
+  pinta nada: ni el rótulo "ARÁNDANO" de la marca del sidebar (usa
+  `--sidebar-primary` como texto, sin ningún fondo pintado con él — y no es el
+  cartel, que es el nombre del local y paga otro token), ni el avatar del pie
+  (pinta con `--marca` / `--marca-foreground`, no con este par, aunque ambos
+  resuelvan al mismo blanco). Se podó, con la razón escrita junto a los siete
+  que quedan en `app/globals.css`. **Vale la pena dejar anotado el punto ciego
+  del propio grep de auditoría**, porque el próximo componente de shadcn que
+  sume tokens va a repetir la pregunta: buscar en `app/` incluye
+  `app/globals.css`, y la línea de `@theme inline` que expone cada token a Tailwind
   (`--color-X: var(--X)`) hace que ese token se "encuentre a sí mismo" — el
   conteo nunca puede dar cero para un token ya declarado, lo consuma o no
   algún componente real. La corrección fue excluir esa auto-referencia y
@@ -461,9 +462,13 @@ Y del producto:
   `.pen` con el CSS **sólo en los colores**, a propósito. Todo lo que no sea
   color —tipografía, geometría, espaciado— puede divergir sin que nada avise.
   Este ciclo hizo el primer barrido manual completo y encontró once
-  divergencias en total (seis de geometría en el sidebar, una de tipografía en
-  el encabezado, y cinco más de gaps y tracking). Mientras dependa de que
-  alguien vaya a mirar, la regla se sostiene sola hasta que alguien se olvide.
+  divergencias en total —seis de geometría en el sidebar, una de tipografía en
+  el encabezado, cinco más de gaps y tracking en el barrido final— y no doce:
+  una de las seis del sidebar, el `line-height` del cartel, se había diferido
+  ahí por error (se creyó que ese archivo se compartía con el login) y recién
+  se cerró entre las cinco del barrido final, así que cuenta una sola vez.
+  Mientras dependa de que alguien vaya a mirar, la regla se sostiene sola hasta
+  que alguien se olvide.
   Y una limitación que conviene dejar escrita: **`font-stretch` no es
   representable en el schema del `.pen`**, así que el `112%` del cartel no se
   puede verificar contra la maqueta en ninguna dirección.

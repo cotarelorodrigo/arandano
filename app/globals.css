@@ -149,12 +149,13 @@
      Son siete y no ocho: `shadcn add sidebar` trae también
      --sidebar-primary-foreground, pero acá no queda ningún fondo pintado con
      --sidebar-primary —el único uso de --sidebar-primary es texto, en el
-     cartel del encabezado— así que no hay superficie que necesite un color
-     "encima". El avatar del pie, que sería el candidato, pinta su fondo con
-     --marca y su texto con --marca-foreground, no con este par. Se podó en el
-     cierre del ciclo del shell (2026-08-21): declararlo sin que nada lo pinte
-     es exactamente lo que el caso borrado `no quedan tokens de sidebar`
-     existía para atrapar. */
+     rótulo "ARÁNDANO" de la marca del sidebar (sidebar-arandano.tsx), que no
+     es el cartel (ese es el nombre del local, debajo, y paga otro token)—
+     así que no hay superficie que necesite un color "encima". El avatar del
+     pie, que sería el candidato, pinta su fondo con --marca y su texto con
+     --marca-foreground, no con este par. Se podó en el cierre del ciclo del
+     shell (2026-08-21): declararlo sin que nada lo pinte es exactamente lo
+     que el caso borrado `no quedan tokens de sidebar` existía para atrapar. */
   --sidebar: #FFFFFF;
   --sidebar-foreground: #171221;
   --sidebar-primary: #4A2AA5;

@@ -157,8 +157,9 @@ componente que los usara.
 
 **Son siete y no los ocho que trae `shadcn add sidebar`.** El octavo,
 `--sidebar-primary-foreground`, se podó en el cierre del ciclo del shell
-(2026-08-21): el único uso real de `--sidebar-primary` es texto —el cartel
-"ARÁNDANO" del encabezado—, no hay ningún fondo pintado con ese color, y sin un
+(2026-08-21): el único uso real de `--sidebar-primary` es texto —el rótulo
+"ARÁNDANO" de la marca del sidebar, que no es el cartel (el nombre del local,
+debajo, en otro token)—, no hay ningún fondo pintado con ese color, y sin un
 fondo `--sidebar-primary` no hay superficie que necesite un color "encima". El
 candidato natural para usarlo era el avatar del pie, pero pinta su fondo con
 `--marca` y su texto con `--marca-foreground` — los dos resuelven a `#FFFFFF`
