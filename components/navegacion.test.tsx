@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { Navegacion } from '@/components/navegacion'
+import { SidebarProvider } from '@/components/ui/sidebar'
 
 // usePathname sólo existe adentro del router de Next. Acá interesa qué
 // renderiza la navegación para una ruta dada, no cómo Next la averigua.
@@ -9,7 +11,27 @@ vi.mock('next/navigation', () => ({ usePathname: () => usePathname() }))
 async function render(rol: 'DUENO' | 'EMPLEADO', ruta: string) {
   usePathname.mockReturnValue(ruta)
   const { Navegacion } = await import('@/components/navegacion')
-  return renderToStaticMarkup(<Navegacion rol={rol} />)
+  // SidebarMenuButton (components/ui/sidebar.tsx) llama a useSidebar(), que
+  // tira si no hay un SidebarProvider como ancestro — en la app real ese
+  // ancestro lo pone el shell (Task 3), acá lo pone el test. Sin esto,
+  // CUALQUIER render de Navegacion explota con "useSidebar must be used
+  // within a SidebarProvider", no con una aserción que falle.
+  //
+  // Y tiene que importarse DINÁMICO, igual que Navegacion: con
+  // vi.resetModules() en cada beforeEach, un SidebarProvider importado
+  // arriba del archivo (antes del primer reset) queda armado sobre un
+  // React.createContext() de una instancia vieja de sidebar.tsx. Navegacion,
+  // reimportada después del reset, arrastra su propia instancia nueva del
+  // mismo archivo —con su propio SidebarContext—, así que useSidebar() no
+  // encuentra el Provider de arriba: son dos Context distintos con el mismo
+  // nombre. Importando los dos en la misma llamada quedan atados a la misma
+  // instancia del módulo.
+  const { SidebarProvider } = await import('@/components/ui/sidebar')
+  return renderToStaticMarkup(
+    <SidebarProvider>
+      <Navegacion rol={rol} />
+    </SidebarProvider>,
+  )
 }
 
 // Import dinámico y no de arriba: el archivo usa vi.resetModules() en cada
@@ -112,10 +134,30 @@ describe('Navegacion', () => {
   // actualiza acá: ése es el costo y se paga.
   it('cada pestaña lleva anillo de foco propio', async () => {
     const html = await render('DUENO', '/vender')
-    const pestanas = html.match(/<a[^>]*>/g) ?? []
-    expect(pestanas).toHaveLength(5)
-    for (const pestana of pestanas) {
-      expect(pestana).toContain('focus-visible:inset-ring-3')
-    }
+    expect(html).toContain('focus-visible:ring-2')
+  })
+
+  // Los íconos los nombra design/arandano.pen. No son decoración: en un
+  // sidebar de 248 px son lo que hace la entrada reconocible de reojo, que es
+  // como se opera un mostrador. Van con aria-hidden porque el rótulo de al lado
+  // ya dice lo mismo, y anunciarlo dos veces es peor que no anunciarlo.
+  it('cada pestaña lleva su ícono, y el ícono no se anuncia', async () => {
+    // El resto de los casos de este describe llaman a render(), que setea
+    // este mock y envuelve en SidebarProvider antes de renderizar. Éste llama
+    // a renderToStaticMarkup() directo (no le importa la ruta, sólo los
+    // íconos), pero Navegacion sigue necesitando las dos cosas: usePathname()
+    // devolviendo un string —si no, estaActiva() explota contra
+    // `undefined.startsWith`— y un SidebarProvider como ancestro —si no,
+    // SidebarMenuButton explota con "useSidebar must be used within a
+    // SidebarProvider". Ninguna de las dos es la aserción que el caso quiere
+    // probar, así que ninguna se deja como falla de la aserción.
+    usePathname.mockReturnValue('/vender')
+    const html = renderToStaticMarkup(
+      <SidebarProvider>
+        <Navegacion rol="DUENO" />
+      </SidebarProvider>,
+    )
+    const svgs = html.match(/<svg[^>]*aria-hidden="true"[^>]*>/g) ?? []
+    expect(svgs).toHaveLength(5)
   })
 })
