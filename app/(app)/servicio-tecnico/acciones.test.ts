@@ -162,6 +162,33 @@ describe('moverEstado', () => {
     )
   })
 
+  // Hallazgo C1 de la review final: el campo "Nota (opcional)" había
+  // desaparecido del paño de estado y con él el único escritor de
+  // `EventoOrden.nota`. Este caso no existía —moverEstado leía `nota` desde
+  // siempre, pero nadie lo probaba— y es lo que hubiera atrapado que el
+  // formulario dejara de mandarla.
+  it('con una nota tipeada, la pasa (recortada) a cambiarEstado', async () => {
+    const { moverEstado } = await import('./acciones')
+    cambiarEstado.mockResolvedValue(undefined)
+    await moverEstado(
+      { error: null, aviso: null },
+      formulario({ ordenId: 'o-1', hasta: 'PRESUPUESTADO', nota: '  el cliente aceptó por WhatsApp  ' }),
+    )
+    expect(cambiarEstado).toHaveBeenCalledWith(
+      expect.objectContaining({ nota: 'el cliente aceptó por WhatsApp' }),
+    )
+  })
+
+  it('sin nota tipeada, manda null y no un string vacío', async () => {
+    const { moverEstado } = await import('./acciones')
+    cambiarEstado.mockResolvedValue(undefined)
+    await moverEstado(
+      { error: null, aviso: null },
+      formulario({ ordenId: 'o-1', hasta: 'PRESUPUESTADO' }),
+    )
+    expect(cambiarEstado).toHaveBeenCalledWith(expect.objectContaining({ nota: null }))
+  })
+
   it('rechaza un "hasta" inventado sin llegar a cambiarEstado', async () => {
     const { moverEstado } = await import('./acciones')
     const r = await moverEstado(

@@ -105,6 +105,36 @@ describe('alta de una orden', () => {
     expect(rows[0].usuario_id).toBe(usuarioId)
   })
 
+  // Hallazgo I1 de la review final del rediseño: la card "Equipo" de la ficha
+  // dejó de mostrar "Daños visibles" (la maqueta enumera cuatro filas, no
+  // cinco), y la maqueta MUDA ese dato a la nota del evento de apertura en vez
+  // de tirarlo. Sin esto, el dato quedaba de sólo escritura: se guardaba en la
+  // columna pero no se podía volver a ver desde ningún lugar de la app salvo
+  // abriendo el diálogo de impresión del ticket.
+  it('el evento de apertura lleva los daños visibles como nota', async () => {
+    const o = await crearOrden({
+      tenantId,
+      usuarioId,
+      clienteId,
+      ...equipo,
+      danosVisibles: 'tapa trasera despegada, marco golpeado',
+    })
+    const { rows } = await owner.query(
+      `SELECT nota FROM eventos_orden WHERE orden_id = $1`,
+      [o.id],
+    )
+    expect(rows[0].nota).toBe('tapa trasera despegada, marco golpeado')
+  })
+
+  it('sin daños visibles, el evento de apertura no inventa una nota', async () => {
+    const o = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo, danosVisibles: null })
+    const { rows } = await owner.query(
+      `SELECT nota FROM eventos_orden WHERE orden_id = $1`,
+      [o.id],
+    )
+    expect(rows[0].nota).toBeNull()
+  })
+
   it('la misma clave de idempotencia devuelve la orden que ya existe', async () => {
     const clave = `clave-${Date.now()}`
     const a = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo, claveIdempotencia: clave })

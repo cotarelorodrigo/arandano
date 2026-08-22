@@ -105,6 +105,20 @@ describe('PanelEstado (Task 4 del rediseño: el paño "ESTADO ACTUAL")', () => {
     const html = render(['LISTO'])
     expect(html).toContain('esconder un botón no es una validación')
   })
+
+  // Hallazgo C1 de la review final: el campo de nota había desaparecido y con
+  // él el único escritor de EventoOrden.nota. Sin este caso, el defecto no
+  // ponía nada en rojo (grep confirmó que ningún test cubría `name="nota"`).
+  it('trae el campo de nota, único escritor de EventoOrden.nota', () => {
+    const html = render(['LISTO'])
+    expect(html).toContain('name="nota"')
+    expect(html).toContain('Nota (opcional)')
+  })
+
+  it('sin transiciones (orden anulada), tampoco hay campo de nota: no hay a qué evento atarla', () => {
+    const html = render([])
+    expect(html).not.toContain('name="nota"')
+  })
 })
 
 describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {

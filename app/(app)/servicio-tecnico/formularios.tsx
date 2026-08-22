@@ -428,6 +428,7 @@ export function PanelEstado({
   diasEnEstado: number
 }) {
   const [estadoAccion, ejecutar, pendiente] = useActionState(accion, INICIAL)
+  const id = useId()
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl p-[18px]" style={{ backgroundColor: 'var(--marca)' }}>
@@ -471,6 +472,33 @@ export function PanelEstado({
           >
             MOVER A
           </span>
+          {/* Único escritor de EventoOrden.nota (hallazgo C1 de la review
+              final): sin este campo ninguna bitácora nueva puede dejar
+              contexto de por qué pasó cada cosa — la maqueta no lo dibuja
+              (modela reposo, no la interacción de escribir), pero SÍ dibuja
+              notas ya escritas en 4 de los 5 eventos de ejemplo de la
+              bitácora, así que las da por existentes. Mismo tratamiento de
+              rótulo (11px/600) que ya usa la card "Cliente nuevo" de la
+              recepción, con el color adaptado al paño violeta en vez de
+              --foreground-soft, que acá sería casi invisible; y el mismo
+              tinte translúcido (10%/33% de --marca-foreground) que ya usan
+              los botones "fantasma" de este mismo paño para lo que no es el
+              camino principal. */}
+          <div className="flex flex-col gap-[5px]">
+            <Label
+              htmlFor={`${id}-nota`}
+              className="text-[11px] font-semibold"
+              style={{ color: 'var(--marca-dim)' }}
+            >
+              Nota (opcional)
+            </Label>
+            <Input
+              id={`${id}-nota`}
+              name="nota"
+              placeholder="qué pasó"
+              className="border-[color-mix(in_srgb,var(--marca-foreground)_33%,transparent)] bg-[color-mix(in_srgb,var(--marca-foreground)_10%,transparent)] text-[var(--marca-foreground)] placeholder:text-[color-mix(in_srgb,var(--marca-foreground)_55%,transparent)]"
+            />
+          </div>
           <div className="flex flex-wrap gap-2">
             {siguientes.map((s, i) => (
               <BotonDeTransicion

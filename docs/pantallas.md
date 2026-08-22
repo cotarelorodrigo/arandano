@@ -622,13 +622,18 @@ Servicio Técnico):
 - **Las cards Cliente/Equipo/Falla se rehacen contra la maqueta.** Cliente
   suma "Órdenes previas" (mismo dato y helper de redacción que el buscador de
   `/servicio-tecnico/nuevo`, ver esa sección) y un botón "Llamar al cliente".
-  Equipo **pierde la fila de "Daños visibles"**: el dato sigue en el schema y
-  en el ticket, pero esta card del rediseño enumera cuatro filas exactas, no
-  cinco — es una omisión de la maqueta frente al dato existente, no al revés.
-  Falla y Diagnóstico se funden en una sola card (antes eran dos `<section>`
-  separadas): la cita de lo que dijo el cliente es de sólo lectura y siempre
-  visible; el formulario de diagnóstico se apaga con la orden anulada, igual
-  que antes del ciclo.
+  Equipo **pierde la fila de "Daños visibles"**: la card del rediseño enumera
+  cuatro filas exactas, no cinco. **La maqueta no tira ese dato, lo muda a la
+  bitácora**: la nota del evento de apertura ("Equipo recibido") es
+  literalmente el texto que el mostrador tipeó ahí (nodo `C1Ip0` del `.pen`,
+  "Marco golpeado en la esquina inferior derecha") — hallazgo I1 de la review
+  final, que corrigió una primera versión donde el dato quedaba de sólo
+  escritura (se guardaba pero no se veía en ningún lado salvo abriendo el
+  diálogo de impresión del ticket). `crearOrden` escribe `danosVisibles` como
+  la nota de ese evento, en la misma transacción. Falla y Diagnóstico se
+  funden en una sola card (antes eran dos `<section>` separadas): la cita de
+  lo que dijo el cliente es de sólo lectura y siempre visible; el formulario
+  de diagnóstico se apaga con la orden anulada, igual que antes del ciclo.
 - **"Anular orden" y "Reimprimir ticket" suben al Topbar.** El botón de anular
   usa el mismo mecanismo de `<form>` invisible + atributo `form=` que
   `/servicio-tecnico/nuevo`, y sólo existe en el DOM cuando puede aparecer
