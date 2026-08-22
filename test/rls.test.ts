@@ -364,4 +364,80 @@ describe('aislamiento por RLS', () => {
       ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
     })
   })
+
+  // I2 de la review de Task 3: `lib/caja/abrir-cerrar.test.ts` sólo probaba
+  // "dos tenants pueden tener cada uno su caja abierta" con `not.toBeNull()`
+  // de los dos lados — eso pasa igual si la policy estuviera rota y A viera
+  // la caja de B, porque `cajaAbierta(tenantA)` tampoco da null en ESE caso.
+  // `cajaAbierta` y `cerrarCaja` no filtran por tenantId en su propio `where`
+  // —`prismaParaTenant` no inyecta filtros en lecturas, a propósito—, así que
+  // el aislamiento de `cajas` depende ENTERAMENTE del texto de la policy. Acá
+  // se prueba ese texto, por comportamiento, igual que el resto del archivo.
+  describe('la caja', () => {
+    let usuarioB: string
+    let cajaB: string
+
+    beforeAll(async () => {
+      const u = await owner.query(
+        `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, 'Dueño de B', 'caja-b@ejemplo.com', 'DUENO', now(), now())
+         RETURNING id`,
+        [tenantB],
+      )
+      usuarioB = u.rows[0].id
+
+      const c = await owner.query(
+        `INSERT INTO cajas (id, tenant_id, abierta_en, abierta_por_id, saldo_inicial, creado_en)
+         VALUES (gen_random_uuid(), $1, now(), $2, 9000.00, now())
+         RETURNING id`,
+        [tenantB, usuarioB],
+      )
+      cajaB = c.rows[0].id
+    })
+
+    it('cajas: el otro tenant no ve la fila, y su dueño sí', async () => {
+      const { rows: deA } = await comoTenant(tenantA, 'SELECT 1 FROM cajas')
+      expect(deA, 'cajas filtró filas de otro tenant').toHaveLength(0)
+
+      // La mitad que falta, igual que en los otros bloques: sin ella, una
+      // tabla vacía para todos (policy que compara la columna que no es, o
+      // la fila que nunca se insertó) daría 0 y el test quedaría verde sin
+      // haber probado ningún aislamiento.
+      const { rows: deB } = await comoTenant(tenantB, 'SELECT 1 FROM cajas')
+      expect(deB, 'cajas no es legible por su propio tenant').toHaveLength(1)
+    })
+
+    it('cajas: rechaza insertar con el tenant_id de otro', async () => {
+      await expect(
+        comoTenant(
+          tenantA,
+          `INSERT INTO cajas (id, tenant_id, abierta_en, abierta_por_id, saldo_inicial, creado_en)
+           VALUES (gen_random_uuid(), $1, now(), $2, 1.00, now())`,
+          [tenantB, usuarioB],
+        ),
+      ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+    })
+
+    it('cajas: A no puede cerrar (UPDATE) la caja de B — cero filas afectadas', async () => {
+      const { rowCount } = await comoTenant(
+        tenantA,
+        `UPDATE cajas SET cerrada_en = now(), cerrada_por_id = $1 WHERE id = $2`,
+        [usuarioB, cajaB],
+      )
+      expect(rowCount, 'el UPDATE de A afectó una fila que no es suya').toBe(0)
+
+      // Y no es que el UPDATE haya fallado en silencio por otro motivo: la
+      // caja de B sigue exactamente como estaba, vista con el owner.
+      const { rows } = await owner.query('SELECT cerrada_en FROM cajas WHERE id = $1', [cajaB])
+      expect(rows[0].cerrada_en).toBeNull()
+    })
+
+    it('cajas: A no puede borrar (DELETE) la caja de B — cero filas afectadas', async () => {
+      const { rowCount } = await comoTenant(tenantA, `DELETE FROM cajas WHERE id = $1`, [cajaB])
+      expect(rowCount, 'el DELETE de A afectó una fila que no es suya').toBe(0)
+
+      const { rows } = await owner.query('SELECT 1 FROM cajas WHERE id = $1', [cajaB])
+      expect(rows, 'la caja de B desapareció').toHaveLength(1)
+    })
+  })
 })
