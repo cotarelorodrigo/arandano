@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   formatearPrecio, formatearDolares, formatearCantidad, formatearFecha, formatearHora,
-  montoSinSigno,
+  formatearFechaCorta, montoSinSigno,
 } from './mostrar'
 
 // Puro: sin Docker, sin base. `Intl` alcanza y corre en cualquier Node.
@@ -74,6 +74,18 @@ describe('formatearHora', () => {
     // "timeStyle", esto es lo que lo delata sin depender de qué dígitos
     // coincidan por casualidad entre la hora y el día.
     expect(salida).not.toMatch(/\//)
+  })
+})
+
+describe('formatearFechaCorta', () => {
+  it('día, mes y año, con los cuatro dígitos del año', () => {
+    const instante = new Date('2026-08-21T20:28:00Z') // 17:28 en Buenos Aires
+    expect(formatearFechaCorta(instante)).toBe('21/08/2026')
+  })
+
+  it('usa el día de Buenos Aires, no el de UTC', () => {
+    const instante = new Date('2026-03-15T01:30:00Z') // 22:30 del 14/03 en AR
+    expect(formatearFechaCorta(instante)).toBe('14/03/2026')
   })
 })
 

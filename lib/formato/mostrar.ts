@@ -70,6 +70,27 @@ export function formatearHora(v: Date): string {
 }
 
 /**
+ * `Date` → "21/08/2026": día/mes/año, los tres de dos y cuatro dígitos fijos.
+ *
+ * Ni `formatearFecha` (que da "21/8/26" con año a dos dígitos y hora en
+ * 12 horas, pensado para lectura corrida) ni `formatearHora` alcanzan solos
+ * para el panel Resumen de /ventas/[id] (design/arandano.pen, nodo `V3VcI8`):
+ * "21/08/2026 · 14:28" pide fecha y hora por separado, unidas con su propio
+ * separador — se compone afuera con `formatearHora`, no acá, para no crear un
+ * tercer formateador que sólo sirva para ESTE armado puntual.
+ */
+const FECHA_CORTA = new Intl.DateTimeFormat('es-AR', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  timeZone: 'America/Argentina/Buenos_Aires',
+})
+
+export function formatearFechaCorta(v: Date): string {
+  return FECHA_CORTA.format(v)
+}
+
+/**
  * Lo que devuelve `formatearPrecio`/`formatearDolares`, sin el signo de
  * moneda adelante — para las superficies que ya dicen de qué moneda se
  * trata por otro lado (el rótulo "USD" del chip de cotización en

@@ -20,14 +20,19 @@ export function AnularVenta({ ventaId }: { ventaId: string }) {
 
   if (estado.aviso) {
     return (
-      <Alert className="mt-6 max-w-md">
+      <Alert>
         <AlertDescription>{estado.aviso}</AlertDescription>
       </Alert>
     )
   }
 
   return (
-    <form action={accion} className="mt-6 flex max-w-md flex-col gap-3">
+    // Sin mt-6: antes este formulario vivía suelto en la pantalla y ese
+    // margen lo separaba del párrafo de arriba. Ahora vive DENTRO de la
+    // card "Zona de riesgo" (design/arandano.pen, nodo `TIlD3`), que ya pone
+    // su propio gap entre hijos — un margen de más acá duplicaría ese
+    // espacio.
+    <form action={accion} className="flex flex-col gap-3">
       <input type="hidden" name="ventaId" value={ventaId} />
       {estado.error && (
         <Alert variant="destructive">

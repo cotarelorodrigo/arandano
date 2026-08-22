@@ -1,15 +1,15 @@
 import Link from 'next/link'
-import { Funnel, Undo2 } from 'lucide-react'
+import { Funnel } from 'lucide-react'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatearPrecio, formatearHora, formatearCantidad } from '@/lib/formato/mostrar'
 import { componerPorMedio } from '@/lib/ventas/composicion'
 import { ROTULO_MEDIO, CONSUMIDOR_FINAL, type Medio } from '@/lib/ventas/medios'
+import { ChipEstado } from './chip-estado'
 import { GraficoDeMedios } from './grafico'
 
 export const dynamic = 'force-dynamic'
@@ -243,22 +243,6 @@ function Tile({
       </div>
       {pie && <div className="text-[11px] text-muted-foreground">{pie}</div>}
     </div>
-  )
-}
-
-function ChipEstado({ anulada }: { anulada: boolean }) {
-  if (anulada) {
-    return (
-      <Badge className="h-auto gap-[5px] border-transparent bg-destructive-soft px-[9px] py-[3px] text-[11px] font-semibold text-destructive">
-        <Undo2 aria-hidden="true" className="size-[11px]" />
-        Anulada
-      </Badge>
-    )
-  }
-  return (
-    <Badge className="h-auto border-transparent bg-ok-soft px-[9px] py-[3px] text-[11px] font-semibold text-ok">
-      Cobrada
-    </Badge>
   )
 }
 
