@@ -602,6 +602,37 @@ Y del producto:
   chip con `chevron-down` que ningún `<select>` nativo dibuja en ningún
   browser, y porque `/vender` es, de las diez pantallas, la que más se opera
   sin mouse: ahí el manejo de Radix es mejor que el nativo, no peor.
+
+  **Y el rediseño de `/ventas` y `/ventas/[id]`** (2026-08-22, ciclo propio,
+  posterior al del shell y al de `/vender`). El tile "Total del período" pasa
+  a pintarse con `--marca` —`docs/sistema-de-diseno.md` ya lo listaba entre
+  las anclas de marca del producto, así que el código venía contradiciendo su
+  propio sistema de diseño escrito, no sólo la maqueta—. El listado suma
+  chips de rango rápido (Hoy / 7 días / Este mes), pasa a vivir dentro de su
+  propia card, cambia "Vendió" de empleado a **cliente** y suma la columna
+  Medios. El detalle suma el panel "Resumen" que no existía (Fecha, Vendió,
+  Cliente, Estado, Comprobante) y la columna Subtotal en "Qué se vendió".
+
+  **El panel "Cómo entró la plata" se reescribió sin recharts**: la maqueta
+  siempre dibujó una barra de un solo color por medio de pago, nunca dos
+  series apiladas por moneda —la segunda serie (`--chart-2`) se había elegido
+  escribiendo el código, no diseñando la pantalla, y `test/maqueta.test.ts` ya
+  lo dejaba anotado—. La reescritura usa `Progress` de shadcn más un reparto
+  por el método del resto mayor para que los porcentajes cierren en 100
+  siempre. Efecto colateral: el componente dejó de necesitar `'use client'`, y
+  con eso `grafico.test.tsx` dejó de ser el único archivo del repo que corría
+  en jsdom —no hay nada que medir del lado del cliente, así que
+  `renderToStaticMarkup` alcanza para afirmar todo—. **`recharts` sigue en
+  `package.json` a propósito**: el ciclo de inventario tiene su propio bloque
+  de barras y es el próximo en decidir si lo sigue necesitando; recién cuando
+  ningún consumidor quede, el paquete se desinstala.
+
+  **"Sin factura ARCA" es texto fijo, no leído de ningún campo**: no existe
+  `model Factura` en el schema (ver *Decisiones abiertas del modelo de
+  datos*, más arriba), y hoy ninguna venta tiene comprobante fiscal, así que
+  el texto es exactamente cierto para todas. El disparador de cuándo deja de
+  serlo: el día que ARCA se integre y exista un modelo de factura —recién ahí
+  este campo pasa a leer de él, con su propia migración aditiva.
 - ~~Construir la UI de inventario.~~ **Hecho** (2026-08-11). Listado con
   buscador y paginación, alta con SKU autogenerado y stock inicial que nace
   como movimiento, ingreso de mercadería con su costo, corrección por conteo

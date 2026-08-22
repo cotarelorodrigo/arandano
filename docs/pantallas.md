@@ -198,51 +198,82 @@ El historial por período.
 
 **Qué se puede hacer**
 
-- Filtrar por rango de fechas. El default es hoy.
-- Ver tres tiles: total del período, ventas cobradas y anuladas.
-- Ver **"Cómo entró la plata"**: una barra por medio de pago, apilada por
-  moneda, con los dólares convertidos a pesos a la cotización de cada pago.
+- Filtrar por rango de fechas a mano, o con los accesos rápidos **Hoy / 7 días
+  / Este mes**. El default es hoy.
+- Ver tres tiles: total del período (el ancla de `--marca` de esta pantalla,
+  ver `docs/sistema-de-diseno.md`), ventas cobradas con su promedio, y
+  anuladas con lo devuelto.
+- Ver el listado dentro de su propia card ("Últimas ventas"), con quién compró
+  (el **cliente**, no quién la vendió — eso vive en el detalle), cuántos
+  artículos, con qué medios se pagó y su estado.
+- Ver **"Cómo entró la plata"**: una barra por medio de pago, de un solo color,
+  con los dólares convertidos a pesos a la cotización de cada pago —sin
+  segunda serie: la maqueta nunca pidió una, ver el comentario de
+  `--chart-2` en `test/maqueta.test.ts`—.
 - Entrar al detalle de cualquier venta.
-- Paginar de a 50.
+- Paginar de a 50, con números de página.
 
 **Decisiones**
 
 - **El total NO suma las anuladas**, y lo dice en pantalla para que nadie tenga
-  que deducirlo.
+  que deducirlo. Lo devuelto de las anuladas es un agregado APARTE, no el
+  mismo número con el filtro invertido.
 - **Las anuladas se muestran**: el historial tiene que poder responder qué pasó,
-  y esconderlas sería tapar la respuesta. Van con un chip, no con texto suelto:
-  quien no distingue el rojo igual ve que la fila está marcada.
+  y esconderlas sería tapar la respuesta. Van con un chip (`ChipEstado`,
+  compartido con el panel Resumen del detalle), no con texto suelto: quien no
+  distingue el rojo igual ve que la fila está marcada.
 - Los tiles cuelgan del **período**, no de la página: colgados de la página, un
   `?p=5` los hacía desaparecer.
+- **La columna "Medios" de un pago partido** lista los medios distintos
+  separados por "+" (`rotuloDeMedios()`) — decisión de UI sin equivalente en
+  la maqueta, que no muestra ningún caso con más de un medio por venta.
 - El filtro es `method="get"`: anda sin JavaScript y la URL con el rango se
-  comparte.
+  comparte. Los chips de rango rápido son links por el mismo motivo.
 - El "hoy" se calcula en el huso de Buenos Aires y no en el del servidor, que
   está en Ashburn: sin eso, a las 22:00 "las ventas de hoy" mostraría las de
   mañana.
 - Una fecha malformada en el query string cae en hoy en vez de servir un 500.
-- El panel del gráfico **no se dibuja si no hay pagos** — un período puede tener
-  ventas y ningún pago si están todas anuladas, y un gráfico en blanco se lee
+- El panel de medios **no se dibuja si no hay pagos** — un período puede tener
+  ventas y ningún pago si están todas anuladas, y un panel en blanco se lee
   como que algo se rompió.
+- **"Ver todas →"** apunta a `/ventas` sin filtro (vuelve al default de hoy):
+  esta pantalla ya es el listado completo del período que se está mirando, así
+  que no hay un "todas" más grande sin sumar un modo sin rango — que sería
+  lógica de consulta nueva, y este ciclo fue sólo presentación.
 
 ## `/ventas/[id]`
 
-El detalle de una venta: qué se vendió y cómo se pagó.
+El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 
 **Acciones**: `anular`.
 
 **Qué se puede hacer**
 
-- Ver los ítems con cantidad, precio unitario y subtotal.
-- Ver los pagos con su medio, moneda y cotización.
-- **Anular la venta** — sólo el dueño.
+- Ver los ítems con su SKU (o "Servicio" si no lleva stock), cantidad, precio
+  unitario y subtotal.
+- Ver los pagos con su medio, moneda, cotización (sólo en los pagos en
+  dólares), monto y su equivalente en pesos.
+- Ver el panel **Resumen**: fecha y hora, quién la vendió, el cliente (o
+  "Consumidor final"), el estado y el comprobante.
+- **Anular la venta** — sólo el dueño, y sólo mientras siga cobrada.
 
 **Decisiones**
 
 - El guard de dueño está **en la action**, no sólo en la pantalla: una server
-  action se invoca sin pasar por ningún componente.
+  action se invoca sin pasar por ningún componente. `puedeAnular()` en
+  `page.tsx` sólo decide si el botón se ofrece.
 - Anular **no borra los movimientos de stock originales**: genera movimientos
   compensatorios. Por eso el aviso puede decir "el stock volvió al inventario"
   sin mentir, y el historial del artículo sigue explicando qué pasó.
+- **La "Zona de riesgo" es texto permanente, visible a cualquier rol** —no
+  sólo al dueño—: explica qué pasa y por qué un empleado no tiene el botón. Se
+  oculta entera una vez la venta está anulada, porque ya no hay nada que
+  advertir sobre una acción que no se puede repetir.
+- **"Comprobante" dice "Sin factura ARCA", fijo.** No existe `model Factura` en
+  el schema (ver CLAUDE.md, *Decisiones abiertas del modelo de datos*) y hoy
+  ninguna venta tiene comprobante fiscal, así que el texto es exactamente
+  cierto para todas. Cuando ARCA se integre, este campo pasa a leer del
+  modelo — no antes.
 
 ## `/inventario`
 
