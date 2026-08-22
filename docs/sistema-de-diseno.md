@@ -410,7 +410,7 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | Nombre de usuario, inicial del avatar — pie del sidebar | sistema | 13 px | 600 |
 | Rol del usuario (pie del sidebar), subtítulo del encabezado | sistema | 11 px | 400, `--muted-foreground` |
 | Rótulo "ARÁNDANO", stack · sha — pie del sidebar | sistema | 10 px | 700 el rótulo (`tracking-[0.16em]`); 400 stack · sha, `--muted-foreground` |
-| Meta — texto que acompaña a un dato sin competirle | sistema | 12 px | 400; `--muted-foreground` en superficie clara, `--marca-soft` sobre la banda oscura del total |
+| Meta — texto que acompaña a un dato sin competirle | sistema | 12 px | 400; `--muted-foreground` en superficie clara, `--marca-dim` sobre la banda oscura del total |
 | **Importe** — plata en el punto de venta | Archivo | 40 px el total; 14 px la columna | 600 el total, 400 la columna; `font-stretch: 85%`, `tabular-nums` |
 
 <!-- escala:fin -->
@@ -446,8 +446,10 @@ El color tampoco es uno solo. `--muted-foreground` es el tono en toda
 superficie clara —y el que usan los cuatro casos del código, todos sobre
 `--card` o `--background`—, pero "Detalle" vive sobre la banda oscura del
 total (`fill: $ar-primary-deep`) y ahí el `.pen` lo pinta con `#9C8BD6`, que es
-`--marca-soft`: el tinte más claro que necesita para leerse sobre `--marca`.
-La tabla dice las dos cosas, y no sólo la primera.
+`--marca-dim`, no `--marca-soft`: de los dos tintes de marca la maqueta eligió
+el más apagado (`--marca-dim`, un escalón por debajo de `--marca-soft`
+`#B6A6E8`), no el más claro. La tabla dice las dos cosas, y no sólo la
+primera.
 
 **Y quedaron afuera, a propósito, otros cuatro usos de `text-xs` que el mismo
 grep encuentra y que NO son este rol** —forzarlos acá taparía la diferencia en
