@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { cn } from '@/lib/utils'
-import { formatearFecha } from '@/lib/formato/mostrar'
+import { formatearFecha, formatearPrecio, montoSinSigno } from '@/lib/formato/mostrar'
 import {
   TRANSICIONES,
   NOMBRE_ESTADO,
@@ -99,12 +99,23 @@ function FilaClaveValor({ clave, valor }: { clave: string; valor: React.ReactNod
  * la frase pluralizada del buscador de "Recibir equipo" (`rotuloOrdenesPrevias`,
  * lib/clientes/administrar.ts) — mismo dato, dos redacciones distintas según
  * dónde vive.
+ *
+ * `cliente._count.ordenes - 1` y no el `_count` pelado (hallazgo I3 de la
+ * review final): `Cliente.ordenes` cuenta TODAS las órdenes, la que se está
+ * mirando incluida. En el buscador de la recepción eso es exacto —esta orden
+ * todavía no existe—, pero acá "Órdenes previas: 1" para un cliente que viene
+ * por primera vez era la propia orden contándose a sí misma, y el mostrador
+ * veía "3 órdenes previas" en el buscador y "4" un click después para la
+ * misma persona. Exportada para poder renderizarla directo con un `_count` de
+ * prueba: no había ningún test que la montara, sólo un regex sobre el
+ * `select` de la consulta.
  */
-function CardCliente({
+export function CardCliente({
   cliente,
 }: {
   cliente: { nombre: string; telefono: string | null; _count: { ordenes: number } }
 }) {
+  const ordenesPrevias = cliente._count.ordenes - 1
   return (
     <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border bg-card">
       <div className="flex items-center gap-2 border-b px-[18px] py-[13px]">
@@ -114,7 +125,7 @@ function CardCliente({
       <div className="flex flex-col">
         <FilaClaveValor clave="Nombre" valor={cliente.nombre} />
         <FilaClaveValor clave="Teléfono" valor={cliente.telefono ?? '—'} />
-        <FilaClaveValor clave="Órdenes previas" valor={cliente._count.ordenes} />
+        <FilaClaveValor clave="Órdenes previas" valor={ordenesPrevias} />
       </div>
       {/* Sin teléfono no hay a dónde llamar: el botón entero desaparece, no
           queda deshabilitado sin explicación. */}
@@ -176,8 +187,12 @@ function CardEquipo({
  * (lo que dijo el cliente) es de sólo lectura y se muestra siempre; el
  * formulario de diagnóstico —editable— se apaga con la orden anulada, mismo
  * criterio que ya regía antes de este ciclo (la sección entera desaparecía).
+ *
+ * Exportada (hallazgo I2 de la review final): así se puede renderizar directo
+ * con un `Prisma.Decimal` real y comprobar el FORMATO del presupuesto, en vez
+ * de sólo `grep`ear el fuente.
  */
-function CardFallaYDiagnostico({
+export function CardFallaYDiagnostico({
   orden,
   anulada,
 }: {
@@ -209,7 +224,19 @@ function CardFallaYDiagnostico({
             accion={diagnosticar}
             ordenId={orden.id}
             diagnostico={orden.diagnostico ?? ''}
-            montoEstimado={orden.montoEstimado ? String(orden.montoEstimado) : ''}
+            // Formateado a la argentina ("145.000,00", el texto exacto del
+            // nodo `XuSfC` del .pen) y no el `String(Decimal)` crudo que daba
+            // "145000" — hallazgo I2 de la review final: decimal.js poda los
+            // ceros de cola, así que el presupuesto se veía como un número
+            // pelado. `montoSinSigno(formatearPrecio(...))` reusa el mismo
+            // formateador que ya usa el resto del producto para pesos, sin el
+            // "$" adelante: el campo ya dice "Presupuesto" por su rótulo, y
+            // `aDecimalOpcional` acepta el formato argentino completo de
+            // vuelta (MILES_Y_DECIMALES en lib/formato/gramatica.ts), así que
+            // el round-trip no se rompe.
+            montoEstimado={
+              orden.montoEstimado ? montoSinSigno(formatearPrecio(orden.montoEstimado.toString())) : ''
+            }
           />
         ) : null}
       </div>

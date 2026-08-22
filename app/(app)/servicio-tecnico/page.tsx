@@ -155,6 +155,30 @@ export function ventanaDePaginas(actual: number, total: number): number[] {
 }
 
 /**
+ * La celda ESTADO de una fila del listado (hallazgo I5 de la review final):
+ * anulada primero, en neutro —la orden conserva el estado que tenía, anular
+ * es una columna y no un estado, así que pintar el chip de color de ese
+ * estado (por ejemplo, "Listo" en verde) mentiría sobre una orden que ya no
+ * está viva—; viva, el chip de color e ícono de `ChipEstadoFila`. Extraída a
+ * su propio componente EXPORTADO y no dejada como el ternario inline que
+ * había antes: ese ternario tenía un test cuyo nombre prometía "no usa el
+ * chip de color" pero cuyo cuerpo sólo comprobaba `toContain('o.anuladaEn ?')`
+ * —una mutación que igualaba las dos ramas seguía en verde—, y una función
+ * que se puede renderizar de verdad con `renderToStaticMarkup` es lo que
+ * permite probar QUÉ se pinta, no que el código tenga forma de ternario.
+ */
+export function CeldaDeEstado({ estado, anulada }: { estado: EstadoOrden; anulada: boolean }) {
+  if (anulada) {
+    return (
+      <Badge className="h-auto gap-[5px] border-transparent bg-muted px-[9px] py-[3px] text-[11px] font-semibold text-muted-foreground">
+        Anulada ({NOMBRE_ESTADO[estado]})
+      </Badge>
+    )
+  }
+  return <ChipEstadoFila estado={estado} />
+}
+
+/**
  * Un chip de la fila de filtro (design/arandano.pen, nodo `G5b3dG`): "Abiertas"
  * y los nueve estados. Dos variables visuales, no una por estado —a
  * diferencia de `ChipEstadoFila`, que sí varía por estado—: si está
@@ -477,18 +501,7 @@ export default async function ServicioTecnico({
                         </div>
                       </TableCell>
                       <TableCell className="p-[11px] px-[7px] pr-[18px] text-right">
-                        {/* Anulada primero: la orden conserva el estado que
-                            tenía —anular es una columna, no un estado—, así
-                            que pintar el chip de color de ese estado (por
-                            ejemplo, "Listo" en verde) mentiría sobre una
-                            orden que ya no está viva. */}
-                        {o.anuladaEn ? (
-                          <Badge className="h-auto gap-[5px] border-transparent bg-muted px-[9px] py-[3px] text-[11px] font-semibold text-muted-foreground">
-                            Anulada ({NOMBRE_ESTADO[o.estado]})
-                          </Badge>
-                        ) : (
-                          <ChipEstadoFila estado={o.estado} />
-                        )}
+                        <CeldaDeEstado estado={o.estado} anulada={o.anuladaEn !== null} />
                       </TableCell>
                     </TableRow>
                   ))}

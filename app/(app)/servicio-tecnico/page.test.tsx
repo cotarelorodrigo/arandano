@@ -21,6 +21,7 @@ import {
   notaDelConjunto,
   ventanaDePaginas,
   FilaDeChips,
+  CeldaDeEstado,
 } from './page'
 
 describe('esEstado', () => {
@@ -307,6 +308,39 @@ describe('FilaDeChips', () => {
   })
 })
 
+/**
+ * Hallazgo I5 de la review final: el test viejo prometía "una fila anulada NO
+ * usa el chip de color del estado" y su cuerpo sólo comprobaba
+ * `toContain('o.anuladaEn ?')` — una mutación que igualaba las dos ramas del
+ * ternario seguía en verde. `CeldaDeEstado` se extrajo a un componente
+ * EXPORTADO para poder renderizarlo de verdad con `renderToStaticMarkup` y
+ * comprobar QUÉ se pinta, no que el código tenga forma de ternario.
+ */
+describe('CeldaDeEstado (hallazgo I5 de la review final)', () => {
+  it('anulada: se pinta neutro con "Anulada (Estado)", sin el color de ESTADO_VISUAL', () => {
+    const html = renderToStaticMarkup(<CeldaDeEstado estado="LISTO" anulada={true} />)
+    expect(html).toContain('Anulada (Listo)')
+    // LISTO se pinta bg-ok-soft/text-ok en ESTADO_VISUAL: una fila anulada no
+    // puede llevar ese color, porque mentiría sobre una orden que ya no está
+    // viva.
+    expect(html).not.toContain('bg-ok-soft')
+    expect(html).not.toContain('text-ok')
+  })
+
+  it('viva: usa el chip de color e ícono de ESTADO_VISUAL, y no dice "Anulada"', () => {
+    const html = renderToStaticMarkup(<CeldaDeEstado estado="LISTO" anulada={false} />)
+    expect(html).toContain('bg-ok-soft')
+    expect(html).not.toContain('Anulada')
+  })
+
+  // Un segundo estado, para no atar el caso a un solo color/ícono.
+  it('recorre otro estado: EN_REPARACION anulada tampoco lleva su color (warn)', () => {
+    const html = renderToStaticMarkup(<CeldaDeEstado estado="EN_REPARACION" anulada={true} />)
+    expect(html).toContain('Anulada (En reparación)')
+    expect(html).not.toContain('bg-warn-soft')
+  })
+})
+
 describe('el listado pide y usa lo que la fila del rediseño necesita (Task 2 del ciclo)', () => {
   const FUENTE = readFileSync('app/(app)/servicio-tecnico/page.tsx', 'utf8')
 
@@ -315,8 +349,8 @@ describe('el listado pide y usa lo que la fila del rediseño necesita (Task 2 de
     expect(FUENTE).toMatch(/telefono:\s*true/)
   })
 
-  it('una fila anulada NO usa el chip de color del estado: mentiría sobre una orden que ya no está viva', () => {
-    expect(FUENTE).toContain('o.anuladaEn ?')
+  it('el listado usa CeldaDeEstado para pintar la columna ESTADO', () => {
+    expect(FUENTE).toContain('<CeldaDeEstado')
   })
 
   it('el buscador muestra la ayuda permanente, no sólo el aviso de después de buscar', () => {

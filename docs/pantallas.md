@@ -537,6 +537,21 @@ Servicio Técnico):
   clic de más dejaba la orden a nombre de quien había quedado seleccionado
   antes, sin que lo tipeado después se usara (`crearOrden` prioriza
   `clienteId` sobre `clienteNuevo` si vienen los dos).
+- **Elegir un cliente EXISTENTE de la lista requiere JavaScript, desde este
+  cambio** (hallazgo I6 de la review final). El `<select>` nativo de antes
+  andaba sin una sola línea de JS —el comentario que lo decía se borró en el
+  mismo commit que sacó el `<select>`—, y las cards seleccionables de ahora son
+  un `<button onClick>` que sólo fija estado de React: sin JS, todo submit
+  toma la rama "cliente nuevo". **No falla en silencio**: con los campos de esa
+  card vacíos, `crearClienteEn` tira `NOMBRE_VACIO` y el `Aviso` lo muestra. Lo
+  que se pierde es la posibilidad de elegir un cliente ya cargado sin JS —quien
+  quisiera avanzar así terminaría tipeando el nombre de nuevo, el duplicado que
+  este módulo evita a propósito—. El buscador de texto (recargar con
+  `?cliente=`) y el alta al vuelo siguen andando sin JS, igual que siempre.
+  Decisión: dejarlo así —el producto entero ya exige JavaScript (`/vender` no
+  existe sin él) y el fallo es ruidoso, no silencioso—, mientras que revertir la
+  propiedad significaría volver a un control nativo (radio oculto con `label`)
+  sólo para este único caso.
 - **"Guardar e imprimir ticket" y "Cancelar" suben al Topbar.** Como el
   buscador de cliente necesita su propio `<form>` de método GET —y un `<form>`
   no puede anidar otro—, el `<form>` real que dispara `recibirEquipo` queda
@@ -621,7 +636,11 @@ Servicio Técnico):
   este ciclo no replicó: usa el mapeo real en todos los casos.
 - **Las cards Cliente/Equipo/Falla se rehacen contra la maqueta.** Cliente
   suma "Órdenes previas" (mismo dato y helper de redacción que el buscador de
-  `/servicio-tecnico/nuevo`, ver esa sección) y un botón "Llamar al cliente".
+  `/servicio-tecnico/nuevo`, ver esa sección — **con la orden actual restada**,
+  hallazgo I3 de la review final: `Cliente.ordenes` cuenta TODAS las órdenes,
+  la que se está mirando incluida, y sin restarla un cliente nuevo veía
+  "Órdenes previas: 1" en su propia primera orden) y un botón "Llamar al
+  cliente".
   Equipo **pierde la fila de "Daños visibles"**: la card del rediseño enumera
   cuatro filas exactas, no cinco. **La maqueta no tira ese dato, lo muda a la
   bitácora**: la nota del evento de apertura ("Equipo recibido") es

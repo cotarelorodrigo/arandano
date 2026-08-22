@@ -204,6 +204,21 @@ export function FormularioRecepcion({
                 </div>
               </form>
 
+              {/* El aviso del precio de buscar (hallazgo I4 de la review
+                  final): el comportamiento nunca cambió —este buscador sigue
+                  siendo un <form> GET que recarga y descarta lo tipeado del
+                  equipo—, pero el ciclo lo sacó de la pantalla y lo dejó sólo
+                  en el comentario de arriba. Mismo tratamiento (11px,
+                  --muted-foreground) que la ayuda permanente del buscador del
+                  tablero (page.tsx, "Buscar alcanza también a las entregadas
+                  y anuladas"). El `.pen` calla acá —no dibuja ninguna nota—,
+                  pero su silencio no es instrucción de sacarla: es el mismo
+                  criterio que ya aplicó bien este ciclo en el tablero. */}
+              <p className="text-[11px] text-muted-foreground">
+                Buscá primero: al buscar se recarga la pantalla y se pierde lo que hayas cargado del
+                equipo.
+              </p>
+
               {/* Un único hidden con el valor de la selección: reemplaza al
                   <select> de antes de este ciclo. */}
               <input type="hidden" name="clienteId" value={clienteId} form={FORM_RECEPCION} />

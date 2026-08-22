@@ -171,17 +171,28 @@ describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
 })
 
 describe('FormularioDiagnostico (Task 4 del rediseño: fila diagnóstico + presupuesto)', () => {
-  it('trae los valores ya cargados', () => {
+  // Hallazgo I2 de la review final: `montoEstimado` viaja YA FORMATEADO desde
+  // el llamador ([id]/page.tsx, CardFallaYDiagnostico) — el texto exacto de la
+  // maqueta ("145.000,00", nodo `XuSfC`), no el `String(Decimal)` crudo que
+  // decimal.js poda a "145000". Antes este caso pasaba "145000" como prop y
+  // comprobaba que "145000" apareciera: una aserción que bendecía el formato
+  // crudo en vez de probar el formato de verdad. Este componente no formatea
+  // nada por su cuenta —eso lo prueba `[id]/page.test.tsx` sobre
+  // `CardFallaYDiagnostico`, que es donde vive `montoSinSigno(formatearPrecio(
+  // ...))`—; lo único que le toca a éste es no arruinar lo que ya le llega
+  // formateado.
+  it('trae los valores ya cargados, con el presupuesto en el formato que le pasa el llamador', () => {
     const html = renderToStaticMarkup(
       <FormularioDiagnostico
         accion={accionFalsa}
         ordenId="o-1"
         diagnostico="Módulo roto"
-        montoEstimado="145000"
+        montoEstimado="145.000,00"
       />,
     )
     expect(html).toContain('Módulo roto')
-    expect(html).toContain('145000')
+    expect(html).toContain('value="145.000,00"')
+    expect(html).not.toContain('value="145000"')
     expect(html).toContain('Guardar diagnóstico')
   })
 })

@@ -78,6 +78,18 @@ describe('FormularioRecepcion — el buscador de cliente (Task 3 del rediseño)'
     expect(html).toContain('Buscalo arriba')
   })
 
+  // Hallazgo I4 de la review final: el aviso de que buscar recarga la
+  // pantalla y pierde lo tipeado del equipo había quedado sólo en un
+  // comentario de código, no en la pantalla — el comportamiento nunca
+  // cambió (el buscador sigue siendo un <form> GET), pero la advertencia sí
+  // desapareció.
+  it('avisa que buscar recarga la pantalla y pierde lo tipeado del equipo', () => {
+    const html = render([])
+    expect(html).toContain(
+      'Buscá primero: al buscar se recarga la pantalla y se pierde lo que hayas cargado del equipo.',
+    )
+  })
+
   it('sin resultados pero habiendo buscado, invita a cargarlo como nuevo', () => {
     const html = render([], 'Alguien Que No Está')
     expect(html).toContain('No apareció ningún cliente con «Alguien Que No Está»')

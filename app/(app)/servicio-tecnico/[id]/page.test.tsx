@@ -7,13 +7,15 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { EstadoOrden } from '@/generated/prisma/client'
+import { Prisma, type EstadoOrden } from '@/generated/prisma/client'
 import { ESTADOS, TRANSICIONES, NOMBRE_ESTADO } from '@/lib/ordenes-de-trabajo/estados'
 import {
   transicionesDisponibles,
   fechaYHoraDelEvento,
   tituloDeEvento,
   Bitacora,
+  CardFallaYDiagnostico,
+  CardCliente,
   type EventoDeBitacora,
 } from './page'
 
@@ -145,6 +147,74 @@ describe('Bitacora (Task 4 del rediseño)', () => {
     const sinNota: EventoDeBitacora = { ...EVENTOS[0], nota: null }
     const html = renderToStaticMarkup(<Bitacora eventos={[sinNota]} />)
     expect(html).toContain('Pasó a En reparación')
+  })
+})
+
+describe('CardFallaYDiagnostico (hallazgo I2 de la review final: el presupuesto formateado)', () => {
+  const ORDEN_BASE = {
+    id: 'o-1',
+    fallaDeclarada: 'no carga',
+    diagnostico: null,
+  }
+
+  // El caso central: `String(Decimal)` para "145000.00" da "145000" —
+  // decimal.js poda los ceros de cola—, y así se veía el presupuesto como un
+  // número pelado. El nodo `XuSfC` de la maqueta dice "145.000,00".
+  it('el presupuesto se ve en el formato argentino de la maqueta, no crudo', () => {
+    const html = renderToStaticMarkup(
+      <CardFallaYDiagnostico
+        orden={{ ...ORDEN_BASE, montoEstimado: new Prisma.Decimal('145000.00') }}
+        anulada={false}
+      />,
+    )
+    expect(html).toContain('value="145.000,00"')
+    expect(html).not.toContain('value="145000"')
+  })
+
+  it('un monto con centavos también se formatea, no sólo el ejemplo redondo', () => {
+    const html = renderToStaticMarkup(
+      <CardFallaYDiagnostico
+        orden={{ ...ORDEN_BASE, montoEstimado: new Prisma.Decimal('35250.5') }}
+        anulada={false}
+      />,
+    )
+    expect(html).toContain('value="35.250,50"')
+  })
+
+  it('sin presupuesto todavía, el campo nace vacío y no "NaN" ni "0"', () => {
+    const html = renderToStaticMarkup(
+      <CardFallaYDiagnostico orden={{ ...ORDEN_BASE, montoEstimado: null }} anulada={false} />,
+    )
+    expect(html).not.toContain('NaN')
+    expect(html).toContain('name="montoEstimado"')
+  })
+
+  it('anulada, no se ofrece el formulario de diagnóstico (y por lo tanto tampoco el presupuesto)', () => {
+    const html = renderToStaticMarkup(
+      <CardFallaYDiagnostico
+        orden={{ ...ORDEN_BASE, montoEstimado: new Prisma.Decimal('145000.00') }}
+        anulada={true}
+      />,
+    )
+    expect(html).not.toContain('name="montoEstimado"')
+  })
+})
+
+describe('CardCliente (hallazgo I3 de la review final: la orden que se está mirando no se cuenta a sí misma)', () => {
+  it('resta la orden actual: 4 órdenes en total se muestran como 3 previas', () => {
+    const html = renderToStaticMarkup(
+      <CardCliente cliente={{ nombre: 'Marcos Vera', telefono: '111', _count: { ordenes: 4 } }} />,
+    )
+    expect(html).toContain('>3<')
+    expect(html).not.toContain('>4<')
+  })
+
+  it('un cliente que viene por primera vez ve 0 previas, no 1', () => {
+    const html = renderToStaticMarkup(
+      <CardCliente cliente={{ nombre: 'Nuevo Cliente', telefono: null, _count: { ordenes: 1 } }} />,
+    )
+    expect(html).toContain('>0<')
+    expect(html).not.toContain('>1<')
   })
 })
 
