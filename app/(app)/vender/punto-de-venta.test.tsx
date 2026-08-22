@@ -360,17 +360,29 @@ describe('el punto de venta', () => {
   // y la regla general es que cualquier control nativo que ya sabe qué
   // hacer con su propio Enter (INPUT, TEXTAREA, SELECT, BUTTON) deja pasar
   // el atajo global en vez de competirle.
-  it('el atajo global de cobro no dispara con el foco en un control nativo (el buscador incluido)', async () => {
+  // ALLOW-LIST, no deny-list: el defecto Critical de la revisión final de
+  // esta task fue exactamente que la deny-list anterior (negar
+  // INPUT/TEXTAREA/SELECT/BUTTON) dejaba pasar 'DIV' — y un `<div
+  // role="option">` de Radix con el foco es justo lo que queda resaltado
+  // dentro de un `Select` de medio/moneda abierto. Con esa lista, Enter
+  // sobre una opción resaltada cobraba la venta con el medio/moneda
+  // TODAVÍA no actualizado en React. La regla ahora es la inversa: sólo
+  // BODY o ningún foco dejan pasar el atajo, así que 'DIV' —como cualquier
+  // otro tagName que no sea BODY— queda afuera.
+  it('el atajo global de cobro sólo dispara con el foco en BODY o sin ningún foco', async () => {
     const { puedeDispararCobroDesdeFoco } = await import('./punto-de-venta')
     expect(puedeDispararCobroDesdeFoco('INPUT')).toBe(false)
     expect(puedeDispararCobroDesdeFoco('TEXTAREA')).toBe(false)
     expect(puedeDispararCobroDesdeFoco('SELECT')).toBe(false)
     expect(puedeDispararCobroDesdeFoco('BUTTON')).toBe(false)
+    // El caso que antes se colaba: la opción resaltada de un Select de Radix
+    // abierto es un <div role="option">, no un <select> ni un <button>.
+    expect(puedeDispararCobroDesdeFoco('DIV')).toBe(false)
     // Nada en particular enfocado (el <body>, típicamente): ahí Enter
     // todavía no significa nada, y es el único lugar donde corresponde que
     // el atajo tenga trabajo.
     expect(puedeDispararCobroDesdeFoco(undefined)).toBe(true)
-    expect(puedeDispararCobroDesdeFoco('DIV')).toBe(true)
+    expect(puedeDispararCobroDesdeFoco('BODY')).toBe(true)
   })
 
   // Cableado: el atajo global de Enter tiene que respetar la MISMA condición

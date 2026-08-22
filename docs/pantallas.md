@@ -95,9 +95,8 @@ shell (sidebar + encabezado) ya venía de un ciclo anterior.
   dólares muestra cuántos pesos representa (`Entran $X`).
 - Ver el vuelto y el faltante como chips de estado (verde/rojo), excluyentes
   entre sí.
-- Cobrar apretando `Enter` desde cualquier parte de la pantalla que no sea un
-  control con foco propio (un input, un select, un botón — cada uno ya sabe
-  qué hacer con su Enter), y vaciar el carrito con `Esc`.
+- Cobrar apretando `Enter` con el foco en `<body>` (sin nada en particular
+  enfocado), y vaciar el carrito con `Esc`.
 - Ver el estado real de la caja del turno en un chip del header, y abrirla o
   cerrarla ahí mismo, sin salir de la pantalla.
 - Ver la cotización del dólar que fijó el dueño (`Tenant.cotizacionUsd`), con
@@ -158,11 +157,33 @@ shell (sidebar + encabezado) ya venía de un ciclo anterior.
   frecuente": sin diálogo (que además competiría por la misma tecla con el
   manejo propio de Escape de cualquier panel modal) y sin sumar una
   dependencia de toasts para un vaciado deshacible.
-- **`Enter` no cobra con el foco en el buscador** (ahí agrega el artículo) —
-  resuelto sin un caso especial: la regla general es que el atajo global no
-  dispara con el foco en ningún control nativo (`INPUT`, `TEXTAREA`,
-  `SELECT`, `BUTTON`), que ya sabe qué hacer con su propio Enter, y el
-  buscador es uno de ésos como cualquier otro.
+- **`Enter` no cobra salvo con el foco en `<body>` (o sin ningún foco), y
+  `Esc` se abstiene ENTERO mientras haya un overlay de Radix abierto —
+  las dos son allow-lists, no deny-lists, y el porqué es un bug de runtime
+  real, no una prolijidad.** La primera versión negaba tagNames concretos
+  (`INPUT`, `TEXTAREA`, `SELECT`, `BUTTON`) asumiendo que cualquier otro
+  elemento no tiene nada que hacer con su propio Enter — cierto mientras
+  medio/moneda eran `<select>` nativos, falso en cuanto pasaron a `Select`
+  de shadcn (Radix): Radix no renderiza ningún `<select>`, el trigger es un
+  `<button>` y la opción resaltada de un dropdown abierto es un `<div
+  role="option">`, que la deny-list dejaba pasar. Verificado en runtime: con
+  el carrito armado, abrir "Medio", bajar a "Transferencia" y apretar Enter
+  cobraba la venta — porque ni `@radix-ui/react-select` ni
+  `DismissableLayer` cortan la propagación del evento hacia `window`, así
+  que Enter elegía la opción en Radix Y disparaba el atajo global en el
+  mismo golpe, con el medio TODAVÍA no actualizado en React. Con Esc el
+  espejo era peor: cerrar el dropdown de "Medio" con Esc armaba el vaciado
+  del carrito, y cerrar el de "Moneda" con un segundo Esc lo confirmaba —dos
+  Esc sueltos, sin relación con el carrito, alcanzaban para vaciar quince
+  ítems. El arreglo tiene dos partes: `puedeDispararCobroDesdeFoco` pasó a
+  allow-list (sólo `BODY` o ningún foco dejan pasar Enter), y el listener
+  compartido de Enter/Esc se abstiene entero cuando `hayOverlayDeRadixAbierto()`
+  encuentra un `[role="listbox"]`/`[role="dialog"]`/`[role="menu"]` montado.
+  El mismo problema, sin ningún overlay de Radix de por medio, alcanzaba
+  también al mini-form de caja del header (`caja.tsx`): tipear el saldo
+  inicial y apretar Escape armaba el vaciado del carrito de al lado, así
+  que esos dos mini-forms cortan Escape con `stopPropagation()` en su
+  propio `onKeyDown` en vez de depender de la guarda de la pantalla.
 
 **Pendiente**
 

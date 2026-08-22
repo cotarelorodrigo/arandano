@@ -543,12 +543,12 @@ Y del producto:
   **Entraron tres atajos de teclado** (`F2` enfoca el buscador, `Enter`
   cobra, `Esc` vacía el carrito), con dos reglas que vale dejar escritas
   porque no son obvias mirando sólo la maqueta:
-  - **`Enter` no dispara con el foco en NINGÚN control nativo** (`INPUT`,
-    `TEXTAREA`, `SELECT`, `BUTTON`), no sólo el buscador. La regla general
-    —cualquier control que ya sabe qué hacer con su propio Enter se queda
-    con él— es más simple que un caso especial para el buscador, y lo cubre
-    igual: ahí Enter agrega el artículo, no cobra, sin que el código tenga
-    que nombrarlo aparte.
+  - **`Enter` no dispara salvo con el foco en `<body>` (o sin ningún foco)**,
+    no sólo fuera del buscador. La regla general —el atajo global sólo tiene
+    trabajo donde Enter todavía no significa nada para nadie— es más simple
+    que un caso especial para el buscador, y lo cubre igual: ahí Enter
+    agrega el artículo, no cobra, sin que el código tenga que nombrarlo
+    aparte.
   - **`Esc` vacía con confirmación en dos pasos sobre la MISMA tecla** —el
     primer Esc arma la confirmación (la leyenda bajo el botón cambia), el
     segundo confirma, y se desarma solo a los 3 segundos o apenas se toca una
@@ -558,6 +558,29 @@ Y del producto:
     frecuente": sin diálogo —que además competiría por la misma tecla con el
     manejo propio de Escape de cualquier panel modal futuro— y sin sumar una
     librería de toasts sólo para un vaciado deshacible.
+
+  **Corregido después** (2026-08-22, review final del rediseño): la primera
+  versión de las dos reglas de arriba era una deny-list de tagNames
+  (`INPUT`, `TEXTAREA`, `SELECT`, `BUTTON`) para Enter, y la rama de Esc no
+  tenía guarda de foco alguna. Las dos tenían el mismo bug de runtime,
+  expuesto por la propia decisión (más abajo en este documento) de pasar los
+  `<select>` de medio/moneda a `Select` de shadcn (Radix): Radix no
+  renderiza ningún `<select>` — el trigger es un `<button>` y la opción
+  resaltada de un dropdown abierto es un `<div role="option">` —, y ni
+  `@radix-ui/react-select` ni `DismissableLayer` cortan la propagación del
+  evento hacia `window`. Con el carrito armado, abrir "Medio", bajar a
+  "Transferencia" y apretar Enter **cobraba la venta con el medio anterior**
+  (la deny-list dejaba pasar el `<div>`); cerrar ese mismo dropdown con Esc
+  armaba el vaciado del carrito, y hacerlo una segunda vez sobre "Moneda" lo
+  confirmaba — dos Esc sin relación con el carrito alcanzaban para vaciarlo.
+  El arreglo: `puedeDispararCobroDesdeFoco` pasó a allow-list (sólo `BODY` o
+  ningún foco dejan pasar Enter) y el listener compartido se abstiene entero
+  cuando `hayOverlayDeRadixAbierto()` encuentra un overlay de Radix montado
+  (`[role="listbox"]`/`[role="dialog"]`/`[role="menu"]`). El mismo problema,
+  sin overlay de Radix de por medio, alcanzaba también al mini-form de caja
+  del header (`caja.tsx`): apretar Escape ahí armaba el vaciado del carrito
+  de al lado, así que esos dos mini-forms cortan Escape con
+  `stopPropagation()` en su propio `onKeyDown`.
 
   **La lectura del `.pen` que este ciclo deja escrita, porque los ciclos
   siguientes la van a necesitar**: la maqueta modela estados de **reposo**,

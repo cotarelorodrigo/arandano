@@ -141,25 +141,44 @@ export function esAtajoDeCobro(tecla: string): boolean {
  * Si el foco en un elemento con esta etiqueta deja pasar el atajo global de
  * Enter-para-cobrar.
  *
- * La regla no es "todo menos el buscador": es "todo menos un control nativo
- * que ya sabe qué hacer con su propio Enter". Un INPUT (el buscador, el
- * stepper, cualquier campo de `FilaDePago`) usa Enter para lo suyo; un
- * SELECT o un BUTTON (los selects de medio/moneda, el stepper, "Quitar",
- * incluso el propio botón Cobrar) ya se activan solos con Enter cuando
- * tienen el foco, sea por el navegador o por Radix. Dejarlos pasar TAMBIÉN
- * por acá dispararía una segunda cosa a la vez que la persona no pidió.
+ * ALLOW-LIST y no deny-list — cambiado en la revisión final del rediseño,
+ * porque la deny-list original (negar INPUT/TEXTAREA/SELECT/BUTTON) tenía un
+ * defecto de runtime real: afirmaba que "los selects de medio/moneda ya se
+ * activan solos con Enter", cierto mientras eran `<select>` nativos, pero
+ * FALSO desde que pasaron a `Select` de shadcn (Radix, ver
+ * docs/pantallas.md). Radix no renderiza ningún `<select>` — el trigger es
+ * un `<button>` y cada opción del popup abierto es un `<div role="option">`,
+ * así que 'SELECT' quedó negando algo que ya no existe en esta pantalla, y
+ * el `<div>` con el foco (la opción resaltada de un dropdown abierto)
+ * quedaba FUERA de la lista negada. Con el foco ahí, apretar Enter elegía la
+ * opción en Radix Y —en el mismo evento, porque ni `@radix-ui/react-select`
+ * ni `DismissableLayer` cortan la propagación hacia `window`— disparaba el
+ * atajo global con el medio/moneda TODAVÍA no actualizado en el estado de
+ * React: cobraba la venta con el medio o la moneda anteriores. Verificado en
+ * runtime, no sólo leído.
  *
- * Esto es lo que resuelve, SIN un caso especial para el buscador, el
+ * La regla ahora es la inversa: el atajo sólo dispara con el foco en
+ * `BODY`, o sin ningún elemento enfocado — exactamente donde Enter no
+ * significa nada para NADIE más. Cualquier OTRO tagName se abstiene,
+ * incluidos los que ya cambiaron de primitiva una vez (SELECT → Radix) y los
+ * que puedan volver a cambiar. Una allow-list no se rompe cuando un
+ * componente cambia de primitiva; una deny-list sí, que es exactamente lo
+ * que acaba de pasar acá.
+ *
+ * Esto sigue resolviendo, SIN un caso especial para el buscador, el
  * requisito puntual de la task ("Enter no puede cobrar mientras el foco está
  * en el buscador, ahí Enter agrega el artículo"): el buscador es un INPUT
- * como cualquier otro, así que ya queda afuera por esta regla general.
+ * con foco propio, así que nunca es `BODY`.
  *
- * El atajo global sólo tiene trabajo cuando el foco está en cualquier OTRA
- * parte de la pantalla —una fila de la cinta, el `<body>`, nada en
- * particular—, que es exactamente donde Enter todavía no significa nada.
+ * No es la única defensa: el listener global también se abstiene ENTERO
+ * mientras haya un overlay de Radix abierto (ver `hayOverlayDeRadixAbierto`,
+ * más abajo) — esa guarda cubre el caso general (cualquier tecla, cualquier
+ * overlay); ésta cubre el caso puntual de Enter incluso cuando el foco quedó
+ * en otro control que no es un overlay (el trigger ya cerrado, un botón de
+ * la cinta, etc.).
  */
 export function puedeDispararCobroDesdeFoco(etiqueta: string | undefined): boolean {
-  return etiqueta !== 'INPUT' && etiqueta !== 'TEXTAREA' && etiqueta !== 'SELECT' && etiqueta !== 'BUTTON'
+  return etiqueta === undefined || etiqueta === 'BODY'
 }
 
 /**
@@ -220,6 +239,33 @@ export function entranPesosCentavos(montoUsd: string, cotizacion: string): numbe
  */
 export function puedeMostrarVuelto(esEfectivoArs: boolean, hayFaltante: boolean): boolean {
   return esEfectivoArs && !hayFaltante
+}
+
+/**
+ * Si hay algún overlay de Radix abierto ahora mismo: el listbox de un
+ * `Select` desplegado, un dialog o un menu. Los tres primitivos comparten el
+ * mismo defecto (ver el comentario largo de `puedeDispararCobroDesdeFoco` y
+ * el del efecto que llama a esta función): ninguno corta la propagación del
+ * evento hacia `window`, así que el listener global de esta pantalla ve el
+ * mismo Enter/Escape que Radix ya está atendiendo. La salida no es adivinar
+ * qué tecla hace qué cosa en cada primitivo — es que el listener se
+ * ABSTENGA por completo mientras el overlay siga montado.
+ *
+ * `[role="listbox"]` (y análogos) sólo existen en el DOM mientras el overlay
+ * está DESPLEGADO: `SelectContent` de `@radix-ui/react-select` se monta con
+ * `<Presence present={context.open}>` y se DESMONTA al cerrar —no lo oculta
+ * con `display:none` ni con un atributo `data-state="closed"` que quedara
+ * dando vueltas—, así que alcanza con preguntarle al DOM en cada tecla, sin
+ * guardar estado propio por cada `SelectContent` de la pantalla (la tercera
+ * opción que la review consideró, y la que este archivo NO eligió).
+ *
+ * SIN TEST: usa `document`, que es DOM real (ver la nota del efecto que la
+ * llama). Se verificó en runtime con un test de jsdom escrito para esta
+ * task y borrado después de confirmar — el resultado queda en el reporte
+ * final, no acá.
+ */
+function hayOverlayDeRadixAbierto(): boolean {
+  return document.querySelector('[role="listbox"], [role="dialog"], [role="menu"]') !== null
 }
 
 export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string | null }) {
@@ -559,8 +605,27 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   // `ticket.test.tsx`. Lo que SÍ se prueba son las reglas puras que deciden
   // cada atajo: `esAtajoDeCobro`, `puedeDispararCobroDesdeFoco` y
   // `esAtajoDeVaciar`.
+  //
+  // LA GUARDA QUE FALTABA, encontrada en la revisión final de esta task: un
+  // `<Select>` de Radix abierto (el de medio o el de moneda, en cualquier
+  // `FilaDePago`) deja pasar Enter y Esc hacia ACÁ sin avisar. Ninguno de los
+  // dos corta la propagación del evento —`@radix-ui/react-select` no llama a
+  // `stopPropagation` ni una vez, y `DismissableLayer` escucha Escape en
+  // `document` en fase de CAPTURA pero tampoco la corta—, así que este
+  // listener en `window` ve exactamente el mismo evento que Radix ya está
+  // atendiendo. Con Enter eso cobraba la venta con el medio/moneda todavía
+  // no actualizado en React (ver el comentario largo de
+  // `puedeDispararCobroDesdeFoco`); con Esc, cerraba el dropdown Y armaba (o
+  // confirmaba) el vaciado del carrito en el mismo golpe de tecla — dos Esc
+  // sueltos para abrir "Medio" y "Moneda" alcanzaban para vaciar un carrito
+  // de 15 ítems sin que la persona lo pidiera. `hayOverlayDeRadixAbierto()`
+  // es la abstención que cierra los dos a la vez: si hay un overlay
+  // montado, este listener no hace NADA con la tecla, y deja que sea Radix
+  // quien decida.
   useEffect(() => {
     function alApretarTecla(e: KeyboardEvent) {
+      if (hayOverlayDeRadixAbierto()) return
+
       if (esAtajoDeVaciar(e.key)) {
         // Nada que vaciar: ni vale la pena armar la confirmación.
         if (lineas.length === 0) return

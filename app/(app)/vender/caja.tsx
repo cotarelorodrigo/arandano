@@ -69,6 +69,25 @@ function ChipCajaAbierta({ caja }: { caja: CajaDelChip }) {
 }
 
 /**
+ * Corta Escape ACÁ para que no le llegue al carrito de venta, del otro lado
+ * de la pantalla — hallazgo de la revisión final del rediseño de /vender.
+ * `punto-de-venta.tsx` escucha `keydown` en `window` para armar/vaciar el
+ * carrito con Esc, sin mirar qué elemento tiene el foco (ver el comentario
+ * de `hayOverlayDeRadixAbierto` ahí: esa guarda cubre un `Select` de Radix
+ * abierto, pero estos mini-forms NO son de Radix, así que esa guarda no los
+ * alcanza). Sin este corte, tipear el saldo inicial acá —o simplemente mirar
+ * la confirmación de cierre— y apretar Escape, el gesto más obvio para
+ * "cancelar esto", armaba o vaciaba de rebote un carrito de la venta en
+ * curso que no tiene nada que ver con la caja. `stopPropagation` en la fase
+ * de burbuja alcanza: React 17+ delega los eventos en la raíz del árbol, así
+ * que cortarla ahí frena también al listener nativo que escucha en
+ * `window`, más arriba en la cadena.
+ */
+function detenerEscapeGlobal(e: React.KeyboardEvent) {
+  if (e.key === 'Escape') e.stopPropagation()
+}
+
+/**
  * Confirmación en dos pasos sobre el mismo chip, mismo criterio que
  * `AnularVenta` (app/(app)/ventas/formularios.tsx): cerrar la caja no se
  * deshace desde acá —no hay arqueo ni pantalla propia todavía—, así que un
@@ -80,6 +99,7 @@ function ConfirmarCierre({ caja, onCancelar }: { caja: CajaDelChip; onCancelar: 
   return (
     <form
       action={accion}
+      onKeyDown={detenerEscapeGlobal}
       className="flex items-center gap-2 rounded-full border border-input bg-card py-[3px] pr-[5px] pl-[11px]"
     >
       <span className="text-xs text-foreground-soft">
@@ -125,6 +145,7 @@ function FormularioDeApertura({ onCancelar }: { onCancelar: () => void }) {
   return (
     <form
       action={accion}
+      onKeyDown={detenerEscapeGlobal}
       className="flex items-center gap-2 rounded-full border border-input bg-card py-[3px] pr-[5px] pl-[11px]"
     >
       <Label htmlFor="saldoInicial" className="text-xs text-foreground-soft">
