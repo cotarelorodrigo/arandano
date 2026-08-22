@@ -100,6 +100,28 @@ Detectado en el ciclo de inventario (2026-08-22).
 
 ---
 
+## 5. El card "Datos" de la ficha no distingue campos editables de sólo lectura
+
+- **Frame**: `y4tEb` (`App / Artículo ficha`), card "Datos"
+- **Dibuja**: cuatro campos con el mismo tratamiento visual — Nombre, Precio de
+  venta, Código y Tipo
+- **El problema**: dos de ellos **no se pueden editar**. El código lo genera el
+  sistema, y el tipo (Producto/Servicio) no se puede cambiar sin dejar stock
+  huérfano — una decisión ya tomada y fundamentada en el código.
+
+**Por qué importa.** Cuatro cajas idénticas invitan a escribir en las cuatro. La
+maqueta no tiene ningún tratamiento de sólo-lectura que copiar, así que el ciclo
+de inventario resolvió la mitad segura: mostró los editables y **omitió el campo
+"Tipo"** en vez de dibujarlo como si se pudiera cambiar.
+
+Hace falta decidir en la maqueta cómo se ve un campo que se muestra pero no se
+edita —fondo hundido, sin borde, con candado, lo que sea— y aplicarlo al Código
+y al Tipo. Recién ahí el código puede mostrarlos sin mentir.
+
+Detectado en el ciclo de inventario (2026-08-22).
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el
