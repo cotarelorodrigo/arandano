@@ -476,6 +476,47 @@ Y del producto:
   **Queda para los ciclos siguientes**: las tres migraciones aditivas
   (`Articulo.categoria`, `Caja`, `Tenant.cotizacionUsd`) y después el cuerpo de
   cada pantalla, una por ciclo, en el orden que fija ese spec.
+- ~~Sumar las tres migraciones aditivas que el ítem de arriba dejó
+  pendientes.~~ **Hecho** (2026-08-22): `Articulo.categoria` (texto libre, no
+  una tabla — un rubro con veinte artículos no necesita un catálogo de
+  categorías para mantener, y agregar la tabla más adelante sigue siendo
+  aditivo si hiciera falta), el modelo `Caja` (sólo apertura y cierre) y
+  `Tenant.cotizacionUsd` junto con `cotizacionUsdEn`. **Sin UI a propósito, por
+  expand/contract**: la columna viaja primero y el código que la lee llega
+  recién en el ciclo de cada pantalla, así el rollback automático de un deploy
+  siempre tiene a dónde volver — revertir la imagen no sirve de nada si el
+  código que ya está en producción depende de una columna que la base todavía
+  no tiene, y ninguna migración de este ciclo crea esa dependencia.
+
+  **La caja entra sólo con apertura y cierre.** El arqueo, los movimientos de
+  efectivo sueltos y la pantalla `/caja` siguen siendo la pieza 6 del roadmap:
+  lo que hay hoy es el modelo y la garantía de que no hay dos turnos abiertos
+  a la vez, no el flujo completo de manejo de efectivo. Y esa garantía —**una
+  sola caja abierta por tenant**— la sostiene un índice único parcial en la
+  base (`CREATE UNIQUE INDEX … WHERE cerrada_en IS NULL`), no un chequeo de
+  aplicación: dos pestañas apretando "Abrir caja" en el mismo segundo pasan
+  las dos por cualquier `if` previo, y sólo la base ve las dos transacciones a
+  la vez. Una decisión de producto que vale registrar junto con el modelo:
+  **cualquiera del local abre y cierra la caja, dueño o empleado**. En un
+  mostrador abre el que llega primero a la mañana; la fila registra quién fue,
+  y sin arqueo todavía no hay plata que cuadrar contra nadie, que sería lo
+  único que justificaría restringirlo a un rol.
+
+  **La distinción que hay que dejar más clara, porque es la que alguien va a
+  querer borrar en seis meses**: `Tenant.cotizacionUsd` no es lo mismo que
+  `Pago.cotizacion`, que ya existía. `Pago.cotizacion` es a cuánto se cobró
+  *aquella* venta — histórico e inmutable, una venta de la semana pasada
+  tiene que seguir diciendo su cotización para siempre, aunque el dólar haya
+  cambiado tres veces desde entonces. `Tenant.cotizacionUsd` es a cuánto está
+  el dólar en el local *hoy*, el número que el dueño fija y que cambia.
+  Confundirlos no es un detalle: `lib/ventas/buscar.ts` ya calculaba
+  `ultimaCotizacionUsd()` desde el último `Pago`, y ésa es exactamente la
+  cotización vieja del jueves pasado si nadie volvió a pagar en dólares desde
+  entonces, mostrada en el header de `/vender` sin decir que es vieja. El
+  campo nuevo, con su `cotizacionUsdEn` al lado, es lo que permite algún día
+  distinguir ahí "el dólar de hoy" de "hace cuánto que nadie lo actualiza" —
+  unificar los dos campos borraría justo esa diferencia, entre lo que valió y
+  lo que vale.
 - ~~Construir la UI de inventario.~~ **Hecho** (2026-08-11). Listado con
   buscador y paginación, alta con SKU autogenerado y stock inicial que nace
   como movimiento, ingreso de mercadería con su costo, corrección por conteo
