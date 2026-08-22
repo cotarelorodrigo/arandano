@@ -410,7 +410,7 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | Nombre de usuario, inicial del avatar — pie del sidebar | sistema | 13 px | 600 |
 | Rol del usuario (pie del sidebar), subtítulo del encabezado | sistema | 11 px | 400, `--muted-foreground` |
 | Rótulo "ARÁNDANO", stack · sha — pie del sidebar | sistema | 10 px | 700 el rótulo (`tracking-[0.16em]`); 400 stack · sha, `--muted-foreground` |
-| Meta — aclaración bajo un dato o un campo | sistema | 12 px | 400, `--muted-foreground` |
+| Meta — texto que acompaña a un dato sin competirle | sistema | 12 px | 400; `--muted-foreground` en superficie clara, `--marca-soft` sobre la banda oscura del total |
 | **Importe** — plata en el punto de venta | Archivo | 40 px el total; 14 px la columna | 600 el total, 400 la columna; `font-stretch: 85%`, `tabular-nums` |
 
 <!-- escala:fin -->
@@ -424,15 +424,30 @@ residuales, 2026-08-21).** El ciclo del shell había borrado la fila "Identidad,
 meta, pie · sistema · 12 px · 400" porque describía el pie del shell viejo, y
 ese pie no existe más. Lo que no se fue con él es el tamaño: `text-xs` (12 px)
 sigue en el código, en la aclaración bajo la clave de desbloqueo y bajo el
-buscador de `app/(app)/servicio-tecnico/`, y en el pie y el formulario de
-`app/sitio/`. Los cuatro comparten la misma fórmula exacta —`text-xs
-text-muted-foreground`, sin tracking ni mayúsculas— y el `.pen` respalda el
-tamaño: en el cuerpo de `App / Vender` (frame `Fe3bW`), los nodos "Detalle"
-(`4 artículos · 5 unidades`, bajo la banda del total), "Conteo" (`2 pagos`, en
-el encabezado de la card de cobro) y "Entran" (la equivalencia de un pago en
-dólares) están los tres a 12 px, sistema, sin tracking, en el tono apagado de
-la superficie que los rodea — la misma aclaración menor junto a un dato
-principal, en cuatro lugares distintos del producto.
+buscador de `app/(app)/servicio-tecnico/`, bajo el botón del formulario de
+`app/sitio/formulario.tsx` y en el pie de página de `app/sitio/landing.tsx`.
+Los cuatro comparten la misma fórmula exacta —`text-xs text-muted-foreground`,
+sin tracking ni mayúsculas—, pero no comparten una posición: uno cuelga bajo
+un campo, otro bajo un botón, el último es la leyenda de toda la página. Lo
+que los une no es dónde caen sino qué son: texto secundario que acompaña a un
+dato o a una pantalla sin competirle por atención.
+
+**Y por eso el nombre del rol no dice "bajo".** El `.pen` respalda el tamaño
+con tres nodos del cuerpo de `App / Vender` (frame `Fe3bW`), y los tres están
+en geometrías distintas entre sí: "Detalle" (`P7CvWx`, `4 artículos · 5
+unidades`) sí cuelga debajo del importe de la banda del total; "Conteo"
+(`NyUYT`, `2 pagos`) está en la **misma fila** que el título "Cobro", no
+debajo; y "Entran" (`sQIAg`) está **al lado** de su monto, no debajo. Nombrar
+el rol por la geometría del primer caso que se miró habría dejado a los otros
+dos afuera de lo que la fila promete, así que el nombre describe la función
+—acompaña sin competir— y no la posición, que varía caso a caso.
+
+El color tampoco es uno solo. `--muted-foreground` es el tono en toda
+superficie clara —y el que usan los cuatro casos del código, todos sobre
+`--card` o `--background`—, pero "Detalle" vive sobre la banda oscura del
+total (`fill: $ar-primary-deep`) y ahí el `.pen` lo pinta con `#9C8BD6`, que es
+`--marca-soft`: el tinte más claro que necesita para leerse sobre `--marca`.
+La tabla dice las dos cosas, y no sólo la primera.
 
 **Y quedaron afuera, a propósito, otros cuatro usos de `text-xs` que el mismo
 grep encuentra y que NO son este rol** —forzarlos acá taparía la diferencia en
