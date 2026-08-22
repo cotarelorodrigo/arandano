@@ -73,6 +73,33 @@ Detectado en el ciclo de inventario (2026-08-22).
 
 ---
 
+## 4. El frame "Artículo nuevo" perdió su columna: en Pencil se ve vacío
+
+- **Frame**: `B4O7t` (`App / Artículo nuevo`)
+- **Tiene**: un solo hijo, el `ref` del Sidebar (`jr0Ww`)
+- **Le falta**: el hijo `Columna` (`LBhdp`), que contiene el `Topbar` y el `Cuerpo`
+
+**Qué pasó.** El nodo `LBhdp` **existe y está entero** —sus dos hijos siguen ahí,
+con las tres cards del formulario— pero está **desenganchado del frame**. Las
+otras cuatro pantallas de aplicación (`y4tEb`, `pb32f`, `yhuFd`, `Fe3bW`) tienen
+sus dos hijos normalmente.
+
+La consecuencia práctica: **quien abra "Artículo nuevo" en Pencil hoy no va a ver
+ni el topbar ni el cuerpo dibujados en el lienzo**, aunque el contenido no se
+haya perdido.
+
+**No lo causó el rediseño.** Verificado: el MD5 de `design/arandano.pen` es el
+mismo desde el inicio del trabajo, y el único commit que tocó el archivo es
+`87973d4`, el que lo trajo al repo. Ya venía así.
+
+Se arregla en Pencil arrastrando `LBhdp` de vuelta adentro de `B4O7t`. El
+contenido se pudo relevar igual navegando por id, así que el rediseño de esa
+pantalla se hizo contra los valores correctos.
+
+Detectado en el ciclo de inventario (2026-08-22).
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el
