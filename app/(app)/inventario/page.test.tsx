@@ -133,6 +133,36 @@ describe('FiltrosDeInventario', () => {
     )
     expect(html).not.toContain('name="tipo"')
   })
+
+  // C1 de la review: "Ver desactivados" no aplicaba nada al clickearlo. El
+  // `Checkbox` de shadcn es un `<button type="button" role="checkbox">` cuyo
+  // toggle arma React — sin JavaScript no se puede ni tildar — y encima no
+  // había ningún submit en el form, así que la única forma de aplicar el
+  // filtro era poner el foco en el buscador y apretar Enter. La corrección es
+  // un `<input type="checkbox">` nativo (tildable sin JS) más un botón
+  // "Buscar" con submit real.
+  it('"Ver desactivados" es un checkbox nativo, tildable y submiteable sin JavaScript', () => {
+    const html = renderToStaticMarkup(
+      <FiltrosDeInventario busqueda="" verInactivos={false} tipo={null} />,
+    )
+    // Nativo y no el botón de shadcn: es lo que permite tildarlo con un click
+    // de verdad cuando no hay React corriendo.
+    expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*name="inactivos"[^>]*>/)
+    expect(html).not.toMatch(/role="checkbox"/)
+    // Con un submit real adentro del mismo form: sin esto, tildar el
+    // checkbox no aplica nada hasta que alguien descubra que Enter en el
+    // buscador también manda el form.
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*>\s*Buscar\s*<\/button>/)
+  })
+
+  it('"Ver desactivados" nace tildado cuando verInactivos es true, para que sobreviva a un recargar', () => {
+    const html = renderToStaticMarkup(
+      <FiltrosDeInventario busqueda="" verInactivos={true} tipo={null} />,
+    )
+    const [entrada] = html.match(/<input[^>]*name="inactivos"[^>]*>/) ?? []
+    expect(entrada).toBeDefined()
+    expect(entrada).toContain('checked=""')
+  })
 })
 
 describe('el listado pide y muestra la categoría (Task 1 del rediseño)', () => {

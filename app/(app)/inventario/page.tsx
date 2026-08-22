@@ -5,7 +5,6 @@ import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
@@ -116,15 +115,21 @@ const OPCIONES_TIPO: { valor: TipoFiltro | null; rotulo: string }[] = [
  * La fila de filtros (design/arandano.pen, nodo `PmgHg`): buscador, la
  * pastilla "Ver desactivados" y el segmentado de Tipo.
  *
- * El buscador y "Ver desactivados" viven en un `<form method="get">` propio
- * —sin botón de submit: con un solo campo de texto en el form, Enter ya
- * dispara el submit implícito del navegador, sin JavaScript— y el tipo
- * activo viaja como campo oculto para no perderse al tipear una búsqueda o
- * tildar la pastilla. Las tabs de Tipo son links (mismo mecanismo que ya
- * usa `/ventas` para su segmentado de rango): la navegación real no depende
- * de `Tabs`, que acá sólo aporta el rol de pestaña y el estado visual de
- * cuál está activa — por eso `activationMode="manual"`, para que mover el
- * foco con las flechas no la marque como activa sin haber navegado.
+ * El buscador y "Ver desactivados" viven en un `<form method="get">` propio,
+ * con un botón "Buscar" de submit real: el checkbox por sí solo no dispara
+ * nada al tildarlo (nunca lo hizo, ni con el `<input>` nativo de antes ni con
+ * el `Checkbox` de shadcn que se probó en su lugar), así que sin un submit
+ * explícito la única forma de aplicar el filtro era poner el foco en el
+ * buscador y apretar Enter — algo que nadie descubre solo. El checkbox es un
+ * `<input type="checkbox">` nativo y no el `Checkbox` de shadcn a propósito:
+ * ese último es un `<button type="button" role="checkbox">` cuyo toggle lo
+ * arma React — sin JavaScript ni siquiera se puede tildar. El tipo activo
+ * viaja como campo oculto para no perderse al tipear una búsqueda o tildar la
+ * pastilla. Las tabs de Tipo son links (mismo mecanismo que ya usa `/ventas`
+ * para su segmentado de rango): la navegación real no depende de `Tabs`, que
+ * acá sólo aporta el rol de pestaña y el estado visual de cuál está activa —
+ * por eso `activationMode="manual"`, para que mover el foco con las flechas
+ * no la marque como activa sin haber navegado.
  */
 export function FiltrosDeInventario({
   busqueda,
@@ -153,9 +158,18 @@ export function FiltrosDeInventario({
           />
         </div>
         <label className="flex h-10 items-center gap-2 rounded-[9px] border border-input bg-card px-[13px] text-[13px] font-normal text-foreground-soft">
-          <Checkbox name="inactivos" value="1" defaultChecked={verInactivos} className="size-[15px]" />
+          <input
+            type="checkbox"
+            name="inactivos"
+            value="1"
+            defaultChecked={verInactivos}
+            className="size-[15px] rounded-[4px] border-input accent-primary"
+          />
           Ver desactivados
         </label>
+        <Button type="submit" size="sm" variant="secondary">
+          Buscar
+        </Button>
       </form>
       <Tabs defaultValue={tipo ?? VALOR_TODOS} activationMode="manual">
         <TabsList className="h-auto gap-0.5 rounded-[10px] bg-muted p-[3px]">
