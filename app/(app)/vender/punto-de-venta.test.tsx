@@ -247,7 +247,7 @@ describe('el punto de venta', () => {
     // test de PASOS_STEPPER de arriba: la función pura no prueba de dónde
     // salen sus argumentos.
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
-    expect(fuente).toMatch(/resumenDelCarrito\(lineas\.length,/)
+    expect(fuente).toMatch(/resumenDelCarrito\(lineas\.length,\s*unidadesMilesimas\)/)
   })
 
   // --- Task 4: el panel de cobro ---
@@ -267,9 +267,17 @@ describe('el punto de venta', () => {
   // renderToStaticMarkup acá.
   it('un pago en dólares muestra cuántos pesos entran', async () => {
     const { entranPesosCentavos } = await import('./punto-de-venta')
-    // 20 USD × 1.485 = 29.700 pesos = 2.970.000 centavos — el mismo ejemplo
-    // de design/arandano.pen (nodos `bAHMf`/`xgspX`/`F3H35`).
-    expect(entranPesosCentavos('20', '1485')).toBe(2_970_000)
+    // NO enteros redondos a propósito: con '20' y '1485' (el ejemplo del
+    // .pen, nodos `bAHMf`/`xgspX`/`F3H35`) aplicar la escala de centavos a
+    // la cotización y la de diezmilésimas al monto —el bug exacto que este
+    // caso existe para atrapar— da EL MISMO resultado que la cuenta
+    // correcta, porque 100×10000 = 10000×100 cuando las dos cifras son
+    // enteras: el test sería ciego por construcción. Con centavos en el
+    // monto (,55) y cuatro decimales en la cotización (,7382) las dos
+    // cuentas divergen (3.053.192 la correcta, 3.053.175 la de las escalas
+    // cambiadas) — verificado invirtiendo las escalas a mano antes de
+    // escribir este valor, no supuesto.
+    expect(entranPesosCentavos('20,55', '1485,7382')).toBe(3_053_192)
 
     // Cableado: FilaDePago tiene que llamarla con pago.monto y
     // pago.cotizacion, ni al revés ni con otra cosa — es justo la clase de
@@ -325,6 +333,6 @@ describe('el punto de venta', () => {
     // adentro de FilaDePago, o dejaría de describir "el conjunto", que es la
     // parte que este caso existe para proteger.
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
-    expect(fuente).toMatch(/hayFaltante=\{/)
+    expect(fuente).toMatch(/hayFaltante=\{hayFaltante\}/)
   })
 })
