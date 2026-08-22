@@ -91,3 +91,50 @@ describe('los tiles de la ficha (Task 4 del rediseño)', () => {
     expect(FUENTE).toContain("ultimoCosto ? formatearPrecio(ultimoCosto.toString()) : '—'")
   })
 })
+
+describe('el historial de la ficha (Task 5 del rediseño)', () => {
+  // La columna "Queda" se reconstruye contra el STOCK ACTUAL del artículo,
+  // no contra ningún número guardado — calcularSaldos ya lo prueba a fondo
+  // en historial.test.tsx; esto sólo verifica que page.tsx la llame con los
+  // datos reales (el stock del artículo, no un valor fijo o el de otro).
+  it('calcularSaldos se llama con los deltas de los movimientos y el stock real del artículo', () => {
+    expect(FUENTE).toContain('calcularSaldos(\n    movimientos.map((m) => m.delta),\n    articulo.stock,\n  )')
+  })
+
+  it('cada fila del historial usa el saldo reconstruido, indexado por fila (saldos[i])', () => {
+    expect(FUENTE).toContain('{formatearCantidad(saldos[i].toString())}')
+  })
+
+  it('la consulta de movimientos ahora trae costoUnitario, que detalleDeMovimiento necesita', () => {
+    expect(FUENTE).toMatch(/select:\s*{\s*id: true, delta: true, motivo: true, nota: true, creadoEn: true, costoUnitario: true,/)
+  })
+
+  it('el motivo se ve con ChipMotivo, no como texto plano', () => {
+    expect(FUENTE).toContain('<ChipMotivo motivo={m.motivo} />')
+  })
+
+  it('"Exportar CSV" vive en el encabezado de la card de historial', () => {
+    const posHistorial = FUENTE.indexOf('Historial de movimientos')
+    const posBoton = FUENTE.indexOf('<BotonExportarCsv')
+    expect(posHistorial).toBeGreaterThan(-1)
+    expect(posBoton).toBeGreaterThan(posHistorial)
+  })
+
+  // Cambio positivo en --ok, negativo en --destructive — la maqueta pinta
+  // los dos, no sólo el negativo (que era todo lo que hacía el código viejo).
+  it('la celda "Cambio" distingue positivo (ok) de negativo (destructive)', () => {
+    expect(FUENTE).toContain("m.delta.lessThan(0) ? 'text-destructive' : 'text-ok'")
+  })
+})
+
+describe('"Cómo se movió" en la ficha (Task 5 del rediseño)', () => {
+  it('sólo se arma para un producto: un servicio no vende con movimiento de stock', () => {
+    expect(FUENTE).toContain(
+      'columnaDerechaExtra={esProducto ? <GraficoDeRotacion meses={meses} /> : undefined}',
+    )
+  })
+
+  it('la consulta de ventas por mes filtra por motivo VENTA', () => {
+    expect(FUENTE).toContain("where: { articuloId: id, motivo: 'VENTA', creadoEn: { gte: SIETE_MESES_ATRAS } }")
+  })
+})

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { exigirSesion, exigirDuenio } from '@/lib/auth/sesion'
+import { prismaParaTenant } from '@/lib/tenant/prisma'
 import {
   crearArticulo,
   editarArticulo,
@@ -11,6 +12,9 @@ import {
 import { ingresarStock, corregirStock } from '@/lib/inventario/stock'
 import { ErrorDeInventario } from '@/lib/inventario/errores'
 import { aDecimal, aDecimalOpcional, ErrorDeFormato } from '@/lib/formato/numeros'
+import { esUuid } from '@/lib/uuid'
+import { calcularSaldos, detalleDeMovimiento, textoDeMotivo, formatearFechaMovimiento } from './historial'
+import { formatearCantidad } from '@/lib/formato/mostrar'
 
 export type EstadoInventario = { error: string | null; aviso: string | null }
 
@@ -198,4 +202,100 @@ export async function corregirPorConteo(
   } catch (e) {
     return traducir(e)
   }
+}
+
+const ENCABEZADO_CSV = ['Fecha', 'Motivo', 'Detalle', 'Cambio', 'Queda']
+
+/**
+ * Comillas dobles si el valor trae coma, comilla o salto de línea (regla
+ * estándar de CSV, RFC 4180); las comillas internas se duplican al doblarlas.
+ *
+ * Sin esto, una nota como "Factura A 0001-00023145 · Distribuidora Sur" —el
+ * estilo real de este repo, CLAUDE.md— todavía anda porque no tiene coma,
+ * pero alcanza con que UNA nota la tenga (o traiga comillas) para que la fila
+ * se parta en dos al abrirla en una planilla, silenciosamente: ninguna
+ * herramienta avisa "esto estaba mal separado", el importe simplemente cae
+ * en la columna de al lado.
+ */
+function celdaCsv(valor: string): string {
+  return /[",\r\n]/.test(valor) ? `"${valor.replace(/"/g, '""')}"` : valor
+}
+
+function filaCsv(campos: string[]): string {
+  return campos.map(celdaCsv).join(',')
+}
+
+/**
+ * El historial completo de un artículo, como CSV — en memoria, sin librería,
+ * sin endpoint nuevo y sin streaming (decisión ya tomada): arma el string
+ * entero acá y lo devuelve; quien llama (el botón "Exportar CSV →" de la
+ * ficha) lo convierte en una descarga del lado del cliente con un Blob.
+ *
+ * **Sin restringir a dueño, a propósito.** Es de sólo lectura y de datos que
+ * la propia pantalla ya le muestra a cualquier sesión (`conSesion`, no
+ * `comoDuenio`): exportar a CSV lo mismo que ya está en la tabla no es una
+ * capacidad nueva que alguien pueda abusar, a diferencia de editar el
+ * artículo o desactivarlo.
+ *
+ * **A diferencia de la tabla en pantalla, acá no hay límite de filas.** La
+ * tabla corta en `MOVIMIENTOS_VISIBLES` (page.tsx) porque es lo que entra
+ * cómodo en una pantalla; el sentido de exportar es llevarse TODO el
+ * historial, no el mismo recorte en otro formato.
+ */
+export async function exportarHistorialCsv(
+  articuloId: string,
+): Promise<{ csv: string; nombreArchivo: string }> {
+  // Antes de `conSesion`, mismo motivo que en el resto del archivo: un id sin
+  // forma de uuid llega crudo (esto no pasa por un <form>, lo llama el botón
+  // directo con la prop), y Prisma lo rechazaría con P2007 sin este guard.
+  if (!esUuid(articuloId)) {
+    throw new ErrorDeInventario(
+      'ARTICULO_INEXISTENTE',
+      `el artículo ${articuloId} no existe en este tenant`,
+    )
+  }
+
+  return conSesion(async (tenantId) => {
+    const prisma = prismaParaTenant(tenantId)
+
+    const articulo = await prisma.articulo.findUnique({
+      where: { id: articuloId },
+      select: { sku: true, stock: true },
+    })
+    if (!articulo) {
+      throw new ErrorDeInventario(
+        'ARTICULO_INEXISTENTE',
+        `el artículo ${articuloId} no existe en este tenant`,
+      )
+    }
+
+    const movimientos = await prisma.movimientoStock.findMany({
+      where: { articuloId },
+      orderBy: { creadoEn: 'desc' },
+      select: {
+        delta: true, motivo: true, nota: true, creadoEn: true, costoUnitario: true,
+        usuario: { select: { nombre: true } },
+        venta: { select: { numero: true } },
+      },
+    })
+
+    // Mismo cálculo que la tabla en pantalla (historial.ts, calcularSaldos):
+    // el saldo de cada fila se reconstruye recorriendo los deltas hacia atrás
+    // desde el stock actual, nunca se guarda.
+    const saldos = calcularSaldos(
+      movimientos.map((m) => m.delta),
+      articulo.stock,
+    )
+
+    const filas = movimientos.map((m, i) => [
+      formatearFechaMovimiento(m.creadoEn),
+      textoDeMotivo(m.motivo),
+      detalleDeMovimiento(m),
+      (m.delta.greaterThan(0) ? '+' : '') + formatearCantidad(m.delta.toString()),
+      formatearCantidad(saldos[i].toString()),
+    ])
+
+    const csv = [ENCABEZADO_CSV, ...filas].map(filaCsv).join('\r\n')
+    return { csv, nombreArchivo: `historial-${articulo.sku}.csv` }
+  })
 }

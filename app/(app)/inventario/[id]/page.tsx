@@ -1,23 +1,20 @@
 import { notFound } from 'next/navigation'
 import { Prisma } from '@/generated/prisma/client'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
-import { FichaDeArticulo, MoverStock } from '../formularios'
-import { formatearPrecio, formatearCantidad, formatearFecha } from '@/lib/formato/mostrar'
+import { cn } from '@/lib/utils'
+import { FichaDeArticulo, MoverStock, BotonExportarCsv } from '../formularios'
+import { ChipMotivo, detalleDeMovimiento, formatearFechaMovimiento, calcularSaldos } from '../historial'
+import { GraficoDeRotacion, agregarVentasPorMes } from '../rotacion'
+import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
 import { esUuid } from '@/lib/uuid'
 import estilos from '../tipografia.module.css'
 
 export const dynamic = 'force-dynamic'
 
 const MOVIMIENTOS_VISIBLES = 50
-
-const NOMBRE_DE_MOTIVO: Record<string, string> = {
-  VENTA: 'Venta',
-  ANULACION_VENTA: 'Anulación de venta',
-  AJUSTE: 'Ajuste',
-  INGRESO: 'Ingreso',
-}
 
 /**
  * Días corridos entre `fecha` y `ahora`, por fecha CALENDARIO de Buenos Aires.
@@ -153,13 +150,20 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   const esDuenio = sesion.usuario.rol === 'DUENO'
   const esProducto = articulo.tipo === 'PRODUCTO'
 
-  const [movimientos, ultimoConCosto] = await Promise.all([
+  // Seis meses de sobra para "Cómo se movió": agregarVentasPorMes() sólo usa
+  // los últimos 6, así que traer un poco más de margen (7) cubre el borde de
+  // un movimiento del día 1 del mes más viejo en un huso distinto al de la
+  // consulta, sin costar nada — son pocas filas por artículo.
+  const SIETE_MESES_ATRAS = new Date()
+  SIETE_MESES_ATRAS.setUTCMonth(SIETE_MESES_ATRAS.getUTCMonth() - 7)
+
+  const [movimientos, ultimoConCosto, ventasPorMes] = await Promise.all([
     prisma.movimientoStock.findMany({
       where: { articuloId: id },
       orderBy: { creadoEn: 'desc' },
       take: MOVIMIENTOS_VISIBLES,
       select: {
-        id: true, delta: true, motivo: true, nota: true, creadoEn: true,
+        id: true, delta: true, motivo: true, nota: true, creadoEn: true, costoUnitario: true,
         usuario: { select: { nombre: true } },
         venta: { select: { numero: true } },
       },
@@ -178,9 +182,27 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
           select: { costoUnitario: true },
         })
       : null,
+    // Mismo motivo que el de arriba: un servicio no vende con movimiento de
+    // stock (no tiene), así que "Cómo se movió" no tiene nada que graficar.
+    esProducto
+      ? prisma.movimientoStock.findMany({
+          where: { articuloId: id, motivo: 'VENTA', creadoEn: { gte: SIETE_MESES_ATRAS } },
+          select: { delta: true, creadoEn: true },
+        })
+      : [],
   ])
 
   const ultimoCosto = ultimoConCosto?.costoUnitario ?? null
+  // La columna "Queda" (decisión ya tomada, historial.ts: calcularSaldos): se
+  // RECONSTRUYE recorriendo los deltas hacia atrás desde el stock actual, no
+  // se guarda en ninguna columna nueva.
+  const saldos = calcularSaldos(
+    movimientos.map((m) => m.delta),
+    articulo.stock,
+  )
+  const meses = agregarVentasPorMes(
+    ventasPorMes.map((m) => ({ delta: m.delta.toString(), creadoEn: m.creadoEn })),
+  )
 
   const columnaIzquierda = (
     <>
@@ -216,50 +238,81 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
       {/* El bloque que responde "por qué tengo 3 y no 5", que es la pregunta
           que un dueño hace cuando el inventario no le cierra. Es para lo que la
           tabla es append-only. */}
-      <section>
-        <h2 className="mb-3 text-base font-medium">Historial</h2>
+      <section className="flex flex-col overflow-hidden rounded-2xl border bg-card">
+        <div className="flex items-center justify-between border-b px-[18px] py-[13px]">
+          <h2 className={`${estilos.tituloDeCard} text-foreground`}>Historial de movimientos</h2>
+          <BotonExportarCsv articuloId={articulo.id} />
+        </div>
         {movimientos.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="p-[18px] text-sm text-muted-foreground">
             Todavía no hubo movimientos de este artículo.
           </p>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left">
-                <th className="py-2">Fecha</th>
-                <th>Motivo</th>
-                <th className="text-right">Cambio</th>
-                <th>Quién</th>
-                <th>Detalle</th>
-              </tr>
-            </thead>
-            <tbody>
-              {movimientos.map((m) => (
-                <tr key={m.id} className="border-b">
-                  <td className="py-2">{formatearFecha(m.creadoEn)}</td>
-                  <td>{NOMBRE_DE_MOTIVO[m.motivo] ?? m.motivo}</td>
-                  <td
-                    className={`text-right tabular-nums ${
-                      m.delta.lessThan(0) ? 'text-destructive' : ''
-                    }`}
+          <Table className="table-fixed">
+            <TableHeader>
+              <TableRow className="bg-muted hover:bg-muted">
+                <TableHead className="h-auto w-[150px] px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Fecha
+                </TableHead>
+                <TableHead className="h-auto w-[170px] px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Motivo
+                </TableHead>
+                <TableHead className="h-auto px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Detalle
+                </TableHead>
+                <TableHead className="h-auto w-[110px] px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Cambio
+                </TableHead>
+                <TableHead className="h-auto w-[100px] px-[7px] py-3 pr-[18px] text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Queda
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {movimientos.map((m, i) => (
+                <TableRow key={m.id}>
+                  <TableCell className="p-[11px] px-[7px] pl-[18px] text-sm text-foreground">
+                    {formatearFechaMovimiento(m.creadoEn)}
+                  </TableCell>
+                  <TableCell className="p-[11px] px-[7px]">
+                    <ChipMotivo motivo={m.motivo} />
+                  </TableCell>
+                  {/* truncate y no sólo whitespace-nowrap (el default de
+                      TableCell): esta celda es la única de ancho flexible, y
+                      una nota larga sin truncar se derrama sobre la celda de
+                      Cambio en vez de cortarse con "…". */}
+                  <TableCell className="max-w-0 truncate p-[11px] px-[7px] text-sm text-muted-foreground">
+                    {detalleDeMovimiento(m)}
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      estilos.archivo,
+                      'p-[11px] px-[7px] text-right font-semibold tabular-nums',
+                      m.delta.lessThan(0) ? 'text-destructive' : 'text-ok',
+                    )}
                   >
                     {/* El signo explícito en el positivo: la columna se lee de
                         un vistazo como "entró" o "salió". */}
                     {m.delta.greaterThan(0) ? '+' : ''}
                     {formatearCantidad(m.delta.toString())}
-                  </td>
-                  <td>{m.usuario.nombre}</td>
-                  <td className="text-muted-foreground">
-                    {m.venta ? `Venta #${m.venta.numero}` : (m.nota ?? '')}
-                  </td>
-                </tr>
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      estilos.archivo,
+                      'p-[11px] px-[7px] pr-[18px] text-right font-semibold tabular-nums text-foreground',
+                    )}
+                  >
+                    {formatearCantidad(saldos[i].toString())}
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
         {movimientos.length === MOVIMIENTOS_VISIBLES && (
-          <p className="mt-3 text-sm text-muted-foreground">
-            Se muestran los últimos {MOVIMIENTOS_VISIBLES} movimientos.
+          <p className="border-t px-[18px] py-3 text-sm text-muted-foreground">
+            Se muestran los últimos {MOVIMIENTOS_VISIBLES} movimientos. Exportar CSV trae el
+            historial completo.
           </p>
         )}
       </section>
@@ -288,6 +341,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
       precio={articulo.precio.toString()}
       categoria={articulo.categoria}
       columnaIzquierda={columnaIzquierda}
+      columnaDerechaExtra={esProducto ? <GraficoDeRotacion meses={meses} /> : undefined}
     >
       {articulo.desactivadoEn && (
         <Alert>

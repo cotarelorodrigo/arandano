@@ -11,6 +11,7 @@ import {
   reactivarArticuloAccion,
   ingresarMercaderia,
   corregirPorConteo,
+  exportarHistorialCsv,
   type EstadoInventario,
 } from './acciones'
 import { Encabezado } from '@/components/shell/encabezado'
@@ -466,6 +467,61 @@ export function MoverStock({ articuloId }: { articuloId: string }) {
           </form>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+/**
+ * "Exportar CSV →" (design/arandano.pen, frame `y4tEb`, nodo `HlObR`): texto
+ * de acción sobre el Encabezado de la card de historial, sin fondo ni borde.
+ *
+ * No es un `<form action={...}>` como el resto de este archivo: la decisión
+ * ya tomada (CLAUDE.md) es que `exportarHistorialCsv` arma el CSV en memoria
+ * y lo devuelve como STRING, no como una respuesta HTTP con
+ * `Content-Disposition` — un server action no puede fijar esos headers. Así
+ * que la única forma de convertir ese string en una descarga real es
+ * llamarlo directo (no vía `<form>`) y armar el Blob acá, del lado del
+ * cliente — el único onClick de todo este módulo que no pasa por
+ * `useActionState`.
+ */
+export function BotonExportarCsv({ articuloId }: { articuloId: string }) {
+  const [exportando, setExportando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function exportar() {
+    setExportando(true)
+    setError(null)
+    try {
+      const { csv, nombreArchivo } = await exportarHistorialCsv(articuloId)
+      // El BOM (﻿) al principio del Blob no es decorativo: sin él, Excel
+      // en Windows abre un CSV con acentos asumiendo Latin-1 y rompe cada
+      // "ó"/"ñ" — el motivo más común de un CSV que se ve perfecto en un
+      // editor de texto y mal en la planilla de alguien.
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const enlace = document.createElement('a')
+      enlace.href = url
+      enlace.download = nombreArchivo
+      enlace.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      setError('No se pudo exportar. Probá de nuevo.')
+    } finally {
+      setExportando(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={exportar}
+        disabled={exportando}
+        className="text-[12px] font-semibold text-primary hover:underline disabled:opacity-50"
+      >
+        {exportando ? 'Exportando…' : 'Exportar CSV →'}
+      </button>
+      {error && <span className="text-[11px] text-destructive">{error}</span>}
     </div>
   )
 }

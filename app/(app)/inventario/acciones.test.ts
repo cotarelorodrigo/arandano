@@ -37,6 +37,7 @@ let bajaArticulo: typeof import('./acciones').bajaArticulo
 let reactivarArticuloAccion: typeof import('./acciones').reactivarArticuloAccion
 let ingresarMercaderia: typeof import('./acciones').ingresarMercaderia
 let corregirPorConteo: typeof import('./acciones').corregirPorConteo
+let exportarHistorialCsv: typeof import('./acciones').exportarHistorialCsv
 let authParaTenant: typeof import('@/lib/auth/para-tenant').authParaTenant
 let origenDelRequest: typeof import('@/lib/auth/origen').origenDelRequest
 
@@ -63,6 +64,7 @@ beforeAll(async () => {
   ;({
     altaArticulo, guardarArticulo, bajaArticulo,
     reactivarArticuloAccion, ingresarMercaderia, corregirPorConteo,
+    exportarHistorialCsv,
   } = await import('./acciones'))
   ;({ authParaTenant } = await import('@/lib/auth/para-tenant'))
   ;({ origenDelRequest } = await import('@/lib/auth/origen'))
@@ -355,5 +357,68 @@ describe('el rol de cada action de inventario', () => {
       [id],
     )
     expect(rows[0].desactivado_en).toBeNull()
+  })
+})
+
+describe('exportarHistorialCsv (Task 5 del rediseño)', () => {
+  it('trae el encabezado y una fila por movimiento, con el saldo reconstruido', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Para exportar', '10')
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('cantidad', '5')
+    datos.set('costoUnitario', '100')
+    datos.set('nota', 'Factura A 0001')
+    await ingresarMercaderia(INICIAL, datos)
+
+    const { csv, nombreArchivo } = await exportarHistorialCsv(id)
+    const filas = csv.split('\r\n')
+    expect(filas[0]).toBe('Fecha,Motivo,Detalle,Cambio,Queda')
+    expect(filas).toHaveLength(2) // encabezado + el único movimiento
+    expect(filas[1]).toContain('Ingreso')
+    expect(filas[1]).toContain('Factura A 0001')
+    expect(filas[1]).toContain('+5')
+    // 10 (stock inicial de la fixture) + 5 (el ingreso) = 15: el saldo
+    // reconstruido tiene que cerrar contra el stock real de la base.
+    expect(filas[1]).toContain('15')
+    expect(nombreArchivo).toMatch(/^historial-.*\.csv$/)
+  })
+
+  // El caso que el brief pide explícitamente: una nota con coma y comillas
+  // —el estilo real de una factura— no puede partir la fila.
+  it('escapa las comas y las comillas de las notas', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Con nota con coma', '0')
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('cantidad', '1')
+    datos.set('nota', 'Factura A, 0001-00023145 "urgente"')
+    await ingresarMercaderia(INICIAL, datos)
+
+    const { csv } = await exportarHistorialCsv(id)
+    const filas = csv.split('\r\n')
+    expect(filas).toHaveLength(2)
+    // La celda entera queda entre comillas, con las comillas internas
+    // dobladas — RFC 4180. Sin esto, la coma de la nota partiría esta fila
+    // en dos columnas de más.
+    expect(filas[1]).toContain('"Factura A, 0001-00023145 ""urgente"""')
+  })
+
+  it('un EMPLEADO también puede exportar: es de sólo lectura, sin restricción de dueño', async () => {
+    estado.cookie = cookieEmpleado
+    const { csv } = await exportarHistorialCsv(articuloId)
+    expect(csv.split('\r\n')[0]).toBe('Fecha,Motivo,Detalle,Cambio,Queda')
+  })
+
+  it('sin sesión, manda al login en vez de exportar', async () => {
+    estado.cookie = ''
+    await expect(exportarHistorialCsv(articuloId)).rejects.toThrow('REDIRECT')
+  })
+
+  it('un artículo que no existe en este tenant es un error de dominio, no un CSV vacío', async () => {
+    estado.cookie = cookieDuenio
+    await expect(
+      exportarHistorialCsv('00000000-0000-0000-0000-000000000000'),
+    ).rejects.toThrow(/no existe/)
   })
 })
