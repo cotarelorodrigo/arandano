@@ -1063,7 +1063,13 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
                     {
                       medio: 'EFECTIVO',
                       moneda: 'ARS',
-                      monto: deCentavos(Math.max(0, faltanCentavos)),
+                      // Vacío y no `deCentavos(NaN)` si una línea del carrito
+                      // está a medio tipear: `Math.max(0, NaN)` es NaN,
+                      // `deCentavos(NaN)` es el string literal "NaN.NaN", y el
+                      // campo Monto de la fila nueva arrancaba mostrando eso —
+                      // el mismo defecto preexistente que "Entran $X", acá del
+                      // otro lado del cálculo (el precargado, no el mostrado).
+                      monto: Number.isNaN(faltanCentavos) ? '' : deCentavos(Math.max(0, faltanCentavos)),
                       cotizacion: '1',
                       recibido: '',
                     },
@@ -1108,9 +1114,18 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
                   más antes de este rediseño. Se mantiene en el mismo chip,
                   con el verde de "--ok" en vez de reinventar un color que
                   ningún nodo del .pen pide, y SIN el ícono `circle-alert` —
-                  ver el comentario de `puedeMostrarVuelto` sobre el ícono. */}
+                  ver el comentario de `puedeMostrarVuelto` sobre el ícono.
+
+                  `role="status"` porque el cartel aparece y cambia de texto
+                  sin que nadie lo mire, y es la única pista de por qué el
+                  botón sigue apagado — se perdió al migrar de un <p> suelto
+                  a este `Badge` (que es un <span> pelado, ver
+                  components/ui/badge.tsx) en la Task 3 del rediseño, sin que
+                  ningún test lo reclamara. `punto-de-venta.test.tsx` ahora
+                  lo fija. */}
               {!Number.isNaN(faltanCentavos) && faltanCentavos !== 0 && hayCarrito && (
                 <Badge
+                  role="status"
                   variant="outline"
                   className={`h-auto w-full justify-between gap-3 rounded-[10px] border-transparent px-3 py-[9px] ${
                     faltanCentavos > 0 ? 'bg-destructive-soft' : 'bg-ok-soft'
@@ -1258,6 +1273,15 @@ function FilaDePago({
   // no se calcula así de todos modos, así que el campo directamente no se
   // ofrece.
   const esEfectivoArs = pago.medio === 'EFECTIVO' && pago.moneda === 'ARS'
+  // Calculado ACÁ, una sola vez, y no adentro del JSX de "Entran $X": monto o
+  // cotización a medio tipear (el campo vacío incluido) dejan
+  // `entranPesosCentavos` en NaN, y `formatearPrecio` de un NaN imprime
+  // "$ NaN" — el único importe de la pantalla que no aplicaba la guarda que
+  // el resto del archivo ya usa por regla escrita (ver `:916` la banda del
+  // total, `:1112` el chip de faltante). Guardado en una constante para que
+  // el guard de renderizado y el guard de "Agregar pago" (más abajo, en el
+  // componente padre) no puedan divergir en cómo detectan el NaN.
+  const pesosDelPagoCentavos = entranPesosCentavos(pago.monto, pago.cotizacion)
 
   return (
     // fill $ar-bg (--background) y no --card: design/arandano.pen pinta cada
@@ -1341,11 +1365,14 @@ function FilaDePago({
       {pago.moneda === 'USD' && (
         // "Entran $X": cuántos pesos representa este pago en dólares
         // (design/arandano.pen, nodo `OTlAa`). entranPesosCentavos reusa el
-        // mismo cálculo que cierra la venta — ver su comentario.
+        // mismo cálculo que cierra la venta — ver su comentario. Guarda de
+        // NaN igual que el resto de la plata de esta pantalla: borrar el
+        // campo Monto o Cotización para retipearlo deja `pesosDelPagoCentavos`
+        // en NaN, y "Entran $ NaN" es un cartel sin sentido.
         <div className="flex items-center justify-between px-0.5">
           <span className="text-xs text-muted-foreground">Entran</span>
           <span className={`${estilos.importe} text-[13px] font-semibold text-foreground-soft`}>
-            {formatearPrecio(deCentavos(entranPesosCentavos(pago.monto, pago.cotizacion)))}
+            {Number.isNaN(pesosDelPagoCentavos) ? '—' : formatearPrecio(deCentavos(pesosDelPagoCentavos))}
           </span>
         </div>
       )}

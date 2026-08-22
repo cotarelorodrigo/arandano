@@ -287,6 +287,39 @@ describe('el punto de venta', () => {
     expect(fuente).toMatch(/entranPesosCentavos\(pago\.monto,\s*pago\.cotizacion\)/)
   })
 
+  // El hallazgo IMPORTANT de la review final: "Entran $X" era el ÚNICO
+  // importe de la pantalla sin guarda de NaN. Se alcanza con sólo borrar el
+  // campo Monto para retipearlo (o Cotización, o dejar cualquiera de los dos
+  // a medio tipear): `entranPesosCentavos` da NaN, y sin guarda
+  // `formatearPrecio` imprimía el cartel sin sentido "Entran $ NaN".
+  it('"Entran $X" muestra — y no "$ NaN" con un monto o una cotización a medio tipear', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    const posicion = fuente.indexOf('>Entran<')
+    expect(posicion, 'el rótulo "Entran" tiene que existir en el fuente').toBeGreaterThan(-1)
+    const contexto = fuente.slice(posicion, posicion + 300)
+    expect(
+      contexto,
+      'el renglón "Entran $X" tiene que guardarse contra NaN, igual que el resto de la plata de la pantalla',
+    ).toMatch(/Number\.isNaN\(pesosDelPagoCentavos\)\s*\?\s*'—'/)
+  })
+
+  // El mismo defecto preexistente, del otro lado del cálculo: "Agregar pago"
+  // precargaba el campo Monto de la fila nueva con `deCentavos(NaN)` —el
+  // string literal "NaN.NaN"— en cuanto una línea del carrito quedaba
+  // inválida (`faltanCentavos` se calcula sobre `totalCentavos`, que es NaN
+  // ahí). Vacío es la salida honesta, mismo criterio que ya usa el resto del
+  // archivo para "no se puede calcular": no inventar un cero ni un NaN.
+  it('"Agregar pago" no precarga el monto con NaN cuando el carrito tiene una línea inválida', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    const posicion = fuente.indexOf('Agregar pago')
+    expect(posicion, '"Agregar pago" tiene que existir en el fuente').toBeGreaterThan(-1)
+    const contexto = fuente.slice(Math.max(0, posicion - 700), posicion)
+    expect(
+      contexto,
+      'el monto precargado tiene que guardarse contra faltanCentavos en NaN',
+    ).toMatch(/Number\.isNaN\(faltanCentavos\)\s*\?\s*''\s*:\s*deCentavos\(Math\.max\(0, faltanCentavos\)\)/)
+  })
+
   it('el vuelto aparece como chip cuando sobra plata', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
     // >Vuelto< y no sólo 'Vuelto': la palabra sola aparece antes en varios
@@ -315,6 +348,27 @@ describe('el punto de venta', () => {
       /bg-destructive-soft/,
     )
     expect(contexto, 'el chip de faltante lleva el ícono circle-alert').toMatch(/CircleAlert/)
+  })
+
+  // El hallazgo IMPORTANT de la review final: el cartel de faltante/sobrante
+  // era un <p role="status"> antes de la Task 3 de este rediseño, y el
+  // atributo (con su comentario) se perdió al migrarlo a `Badge` —un <span>
+  // pelado, sin ningún rol implícito— sin que ningún test lo reclamara. Sin
+  // `role="status"` un lector de pantalla no anuncia el cartel cuando
+  // aparece o cambia de texto, y es la única pista de por qué el botón
+  // Cobrar sigue apagado.
+  it('el chip de faltante/sobrante es un role="status", para que un lector de pantalla lo anuncie', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    // <Badge\n  role="status"\n y NO la primera aparición de la cadena: el
+    // propio comentario que explica el porqué la menciona en prosa, antes
+    // del JSX.
+    const posicion = fuente.search(/<Badge\s+role="status"/)
+    expect(posicion, 'el <Badge> del chip tiene que llevar role="status"').toBeGreaterThan(-1)
+    const contexto = fuente.slice(posicion, posicion + 300)
+    expect(
+      contexto,
+      'role="status" tiene que estar en el MISMO Badge que el chip de faltante/sobrante',
+    ).toMatch(/faltanCentavos > 0 \? 'bg-destructive-soft' : 'bg-ok-soft'/)
   })
 
   // El caso que importa más de lo que parece: vuelto y faltante son estados
