@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest'
-import { Client } from 'pg'
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
+import { Client, type PoolClient } from 'pg'
 import { urlOwner, urlApp } from '@/test/postgres-efimero'
 import { crearTenant, crearUsuario } from '@/test/datos'
 
@@ -11,6 +11,7 @@ let usuarioB: string
 let abrirCaja: typeof import('@/lib/caja/abrir-cerrar').abrirCaja
 let cerrarCaja: typeof import('@/lib/caja/abrir-cerrar').cerrarCaja
 let cajaAbierta: typeof import('@/lib/caja/abrir-cerrar').cajaAbierta
+let pool: typeof import('@/lib/db').pool
 
 beforeAll(async () => {
   owner = new Client({ connectionString: urlOwner() })
@@ -24,6 +25,11 @@ beforeAll(async () => {
   // que fijarla ANTES del import, no después.
   process.env.DATABASE_URL = urlApp()
   ;({ abrirCaja, cerrarCaja, cajaAbierta } = await import('@/lib/caja/abrir-cerrar'))
+  // Mismo pool que usa `abrir-cerrar.ts` por debajo (vía lib/tenant/transaccion
+  // -> lib/db): es un import dinámico y no uno estático arriba del archivo por
+  // el mismo motivo que el de la línea anterior — importado antes de fijar
+  // DATABASE_URL sería OTRO pool, apuntando a ningún lado.
+  ;({ pool } = await import('@/lib/db'))
 })
 
 afterAll(async () => {
@@ -252,6 +258,71 @@ describe('abrir y cerrar la caja', () => {
     expect(despues.rows[0].cerrada_en).toEqual(antes.rows[0].cerrada_en)
     expect(despues.rows[0].cerrada_por_id).toBe(antes.rows[0].cerrada_por_id)
     expect(despues.rows[0].cerrada_por_id).toBe(usuarioA)
+  })
+
+  // QUÉ PROTEGE ESTE TEST, para quien lo encuentre dentro de seis meses y se
+  // pregunte si es una restricción de performance arbitraria: no lo es.
+  // `cerrarCaja` resuelve el cierre con un solo `updateManyAndReturn`, sin
+  // ningún `findFirst` previo — `cerradaEn: null` es el ÚNICO selector de la
+  // fila. Volver a la forma de DOS pasos (leer cuál está abierta, y recién
+  // después escribir el cierre por ese id) reintroduce la ventana entre la
+  // lectura y la escritura que I3 (review de esta task) encontró: otra
+  // llamada puede colarse en el medio y pisar el cierre. Ese defecto NO lo
+  // detectan los tests de arriba si el cambio es sólo VOLVER a dos pasos
+  // manteniendo el filtro `cerradaEn: null` en la lectura —son secuenciales,
+  // y esa lectura previa ya rechaza una segunda llamada antes de que
+  // compitan—; hace falta concurrencia real para verlo (el test 'el
+  // mecanismo' de más arriba la ejercita con SQL crudo, pero no llama a
+  // `cerrarCaja`). Contar cuántos statements toca la función en la base es lo
+  // que sí distingue un mecanismo del otro sin depender de timing: un solo
+  // paso SIEMPRE emite un statement contra `cajas`, dos pasos SIEMPRE emiten
+  // dos, sea cual sea el resultado de la carrera.
+  //
+  // Cómo se mide: se espía `pool.connect` (lib/db.ts) —el mismo pool que usa
+  // Prisma por debajo de `enTransaccionDeTenant`— y se envuelve el `.query`
+  // del cliente que devuelve, para contar los statements cuyo SQL menciona
+  // `cajas` durante una llamada a `cerrarCaja`. Es un spy de test sobre un
+  // handle que ya es público: no toca código de producción.
+  it('cerrarCaja resuelve el cierre con UN SOLO statement contra `cajas`', async () => {
+    await abrirCaja(tenantA, usuarioA, '15000.00')
+
+    const statementsSobreCajas: string[] = []
+    let clienteEspiado: PoolClient | undefined
+
+    // `pool.connect` está sobrecargado (sin argumentos devuelve una Promise;
+    // con callback, no) — de ahí los casts: sin ellos TypeScript infiere el
+    // tipo de retorno de la sobrecarga equivocada (la de callback, `void`).
+    const connectOriginal = pool.connect.bind(pool) as () => Promise<PoolClient>
+    const espia = vi.spyOn(pool, 'connect').mockImplementation((async () => {
+      const cliente = await connectOriginal()
+      clienteEspiado = cliente
+      const queryOriginal = cliente.query.bind(cliente)
+      // El wrapper sólo necesita leer el texto del SQL y delegar: no hace
+      // falta replicar la firma sobrecargada de `query` de `pg` (texto suelto,
+      // config object, streams) para eso, así que se tipa ancho a propósito.
+      cliente.query = ((...args: unknown[]) => {
+        const primero = args[0]
+        const texto = typeof primero === 'string' ? primero : (primero as { text?: string })?.text
+        if (typeof texto === 'string' && /cajas/i.test(texto)) {
+          statementsSobreCajas.push(texto)
+        }
+        return (queryOriginal as (...a: unknown[]) => unknown)(...args)
+      }) as unknown as typeof cliente.query
+      return cliente
+    }) as unknown as typeof pool.connect)
+
+    try {
+      await cerrarCaja(tenantA, usuarioA)
+    } finally {
+      // Restaurar el mock de `connect` no alcanza: el `.query` envuelto quedó
+      // como propiedad propia del CLIENTE devuelto, y ese mismo objeto vuelve
+      // al pool para conexiones futuras. Sin borrarlo, un test posterior que
+      // reutilice esta conexión seguiría empujando texto a este array cerrado.
+      espia.mockRestore()
+      if (clienteEspiado) delete (clienteEspiado as unknown as Record<string, unknown>).query
+    }
+
+    expect(statementsSobreCajas).toHaveLength(1)
   })
 
   describe('el saldo inicial', () => {
