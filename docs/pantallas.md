@@ -74,19 +74,34 @@ Entrar a un local. Usuario y contraseña, sin magic link ni OAuth.
 
 ## `/vender`
 
-El punto de venta. Es la pantalla más caliente del sistema y la única que se
-opera con alguien esperando del otro lado del mostrador.
+El punto de venta. Es la pantalla más caliente del sistema, la única que se
+opera con alguien esperando del otro lado del mostrador, y la primera con su
+**cuerpo** rediseñado contra `design/arandano.pen` (frame `App / Vender`) — el
+shell (sidebar + encabezado) ya venía de un ciclo anterior.
 
-**Acciones**: `cobrar`, `buscarArticulos`.
+**Acciones**: `cobrar`, `buscarArticulos`, `abrirCajaDesdeVender`,
+`cerrarCajaDesdeVender`.
 
 **Qué se puede hacer**
 
-- Buscar un artículo por nombre o código y agregarlo al carrito. El buscador
-  habilita el lector de código de barras sin código propio: el lector tipea.
-- Cambiar cantidades y quitar ítems.
+- Buscar un artículo por nombre o código y agregarlo al carrito, desde una
+  barra prominente a todo el ancho de la pantalla con su propio atajo (`F2`
+  la enfoca desde cualquier lado). El buscador habilita el lector de código de
+  barras sin código propio: el lector tipea y manda Enter.
+- Cambiar cantidades con un stepper `[−] [valor] [+]` —el valor del medio
+  sigue siendo editable a mano, no sólo con los botones— y quitar ítems.
 - Cobrar con **pagos partidos**, en pesos y en dólares, cada uno con su medio
-  (efectivo, transferencia, débito, crédito) y su cotización.
-- Ver el vuelto calculado.
+  (efectivo, transferencia, débito, crédito) y su cotización. Un pago en
+  dólares muestra cuántos pesos representa (`Entran $X`).
+- Ver el vuelto y el faltante como chips de estado (verde/rojo), excluyentes
+  entre sí.
+- Cobrar apretando `Enter` desde cualquier parte de la pantalla que no sea un
+  control con foco propio (un input, un select, un botón — cada uno ya sabe
+  qué hacer con su Enter), y vaciar el carrito con `Esc`.
+- Ver el estado real de la caja del turno en un chip del header, y abrirla o
+  cerrarla ahí mismo, sin salir de la pantalla.
+- Ver la cotización del dólar que fijó el dueño (`Tenant.cotizacionUsd`), con
+  de cuándo es.
 
 **Decisiones**
 
@@ -94,29 +109,67 @@ opera con alguien esperando del otro lado del mostrador.
   por venta; si el mismo submit llega dos veces —doble click, F5 sobre el POST,
   reintento de red— la segunda devuelve la venta que ya existe en vez de cobrar
   dos veces y descontar el stock dos veces.
-- El total ancla la vista: está **siempre** en el mismo lugar, desde el carrito
-  vacío y en `$ 0,00`. Un ancla que aparece y desaparece no es un ancla.
+- El total ancla la vista: está **siempre** en el mismo lugar, en una franja
+  pintada con `--marca` (la única superficie de marca de esta pantalla, junto
+  con el avatar del pie del sidebar), desde el carrito vacío y en `$ 0,00`. Un
+  ancla que aparece y desaparece no es un ancla.
 - Con una cantidad a medio tipear muestra `—`, nunca `$ NaN`.
-- La cotización del dólar se precarga con la última que usó el local
-  (`ultimaCotizacionUsd`), y esa consulta tiene índice propio: sin él era un
-  scan de toda la tabla de pagos en cada carga de la pantalla más usada.
+- La cotización que **precarga el campo de un pago en dólares** sale de la
+  última con la que se cobró (`ultimaCotizacionUsd`, sobre `Pago.cotizacion`,
+  histórica) — **no** es la misma que el chip del header, que muestra
+  `Tenant.cotizacionUsd` (la que el dueño fija para hoy). Las dos conviven a
+  propósito: una es "a cuánto se cobró", la otra es "a cuánto se cobra ahora
+  si no se toca nada". El comentario del campo en `prisma/schema.prisma` lo
+  explica.
 - Todo producto se redondea **antes** de entrar en cualquier suma: el total de
   los ítems y el de los pagos se comparan por igualdad, así que los dos tienen
   que redondear en el mismo momento y de la misma forma.
+- **El typeahead del buscador se mantuvo**, aunque el `.pen` no dibuja ningún
+  frame para la lista de resultados. No es un descuido: el `.pen` modela
+  estados de **reposo**, no de interacción —el mismo criterio que ya vale para
+  `--primary-hover`, un token que tampoco aparece en la maqueta porque un frame
+  estático no puede dibujar un hover—. Borrar el typeahead habría perdido una
+  capacidad real (buscar por nombre cuando no hay código de barras) a cambio
+  de nada. Es la lectura a aplicar cada vez que el `.pen` no contesta algo: la
+  ausencia de un frame no es una instrucción de borrar, es un estado que la
+  maqueta no puede mostrar.
+- **El aviso de stock insuficiente es un chip ámbar, no rojo.** Vender con
+  stock negativo está permitido en este producto —el mostrador manda—, así que
+  es "hay que mirar", no "esto impide seguir"; el rojo queda para lo que sí
+  bloquea (una cantidad ilegible, que sí apaga "Cobrar").
+- **Los `<select>` nativos de medio de pago y moneda pasaron a `Select` de
+  shadcn (Radix), a conciencia.** Trae popover propio y navegación por
+  teclado —alcance que un comentario de una task anterior había diferido
+  explícitamente—, pero se acepta: la maqueta pide un chip con `chevron-down`
+  que ningún `<select>` nativo dibuja en ningún browser, y ésta es una
+  pantalla que se opera con teclado, donde el manejo de Radix es mejor que el
+  nativo.
+- **El chip de caja muestra el estado real y ofrece abrirla o cerrarla ahí
+  mismo**, sin pantalla `/caja` ni arqueo — ver el detalle en *Pendiente*.
+  `cajaAbierta()` se lee en el servidor (`page.tsx`), igual que
+  `ultimaCotizacionUsd`, así que el chip llega con el dato puesto en vez de
+  parpadear entre "sin caja" y "caja abierta" en cada carga.
+- **`Esc` vacía el carrito con confirmación en dos pasos, no con `confirm()`
+  ni con un deshacer.** El primer `Esc` arma la confirmación (la leyenda bajo
+  el botón cambia a "Esc de nuevo para vaciar el carrito") y se desarma solo a
+  los 3 segundos, o apenas se toca cualquier línea del carrito; sólo el
+  **segundo** `Esc` vacía de verdad. Mismo mecanismo que ya usa `AnularVenta`
+  (`app/(app)/ventas/formularios.tsx`) para "esto es irreversible pero
+  frecuente": sin diálogo (que además competiría por la misma tecla con el
+  manejo propio de Escape de cualquier panel modal) y sin sumar una
+  dependencia de toasts para un vaciado deshacible.
+- **`Enter` no cobra con el foco en el buscador** (ahí agrega el artículo) —
+  resuelto sin un caso especial: la regla general es que el atajo global no
+  dispara con el foco en ningún control nativo (`INPUT`, `TEXTAREA`,
+  `SELECT`, `BUTTON`), que ya sabe qué hacer con su propio Enter, y el
+  buscador es uno de ésos como cualquier otro.
 
 **Pendiente**
 
-- **`Caja` existe pero no tiene UI.** `lib/caja/abrir-cerrar.ts` tiene
-  `cajaAbierta()`, `abrirCaja()` y `cerrarCaja()` funcionando y probados, pero
-  ninguna pantalla los llama: no hay ruta para abrir o cerrar turno, esta
-  pantalla no muestra el chip "Caja abierta" del header, y `crearVenta` no
-  exige que haya una caja abierta para cobrar. Cerrar esto es su propio ciclo.
-- **El aviso de stock insuficiente está pintado del color equivocado.**
-  `punto-de-venta.tsx` lo pinta con `text-destructive` (rojo), pero tanto
-  `docs/sistema-de-diseno.md` como la maqueta lo definen en **ámbar**. No es
-  un desvío menor: vender con stock negativo está permitido en este producto
-  —el mostrador manda—, así que el aviso es "hay que mirar esto", no "esto
-  impide seguir", y el rojo es el color reservado para lo segundo.
+- **La caja sigue sin arqueo ni pantalla propia**, y `crearVenta` **no** exige
+  que haya una caja abierta para cobrar — a propósito: eso rompería el cobro
+  de cualquier tenant que no use la caja. El chip del header cubre abrir y
+  cerrar; el arqueo es su propio ciclo futuro.
 
 ## `/ventas`
 

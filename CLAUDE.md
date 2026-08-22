@@ -517,6 +517,68 @@ Y del producto:
   distinguir ahí "el dólar de hoy" de "hace cuánto que nadie lo actualiza" —
   unificar los dos campos borraría justo esa diferencia, entre lo que valió y
   lo que vale.
+- ~~Rediseñar el cuerpo de `/vender` contra la maqueta.~~ **Hecho**
+  (2026-08-22). `design/arandano.pen`, frame `App / Vender`: el buscador pasó
+  a barra prominente a todo el ancho con su propio atajo (`F2`), la cinta del
+  carrito vive dentro de una card con un stepper `[−] [valor] [+]` de
+  cantidad, la banda del total se pinta con `--marca`, y el panel de cobro
+  (384 px) muestra chips de vuelto/faltante y la equivalencia en pesos de un
+  pago en dólares. `/vender` es la **primera** de las diez pantallas de
+  aplicación con su cuerpo tocado desde que el shell se instaló (ver la nota
+  de arriba) — las otras nueve siguen sirviendo su layout viejo con los
+  colores nuevos, cada una su propio ciclo. Ver
+  `docs/superpowers/plans/2026-08-22-vender.md` y `docs/pantallas.md`
+  (sección `/vender`) para el detalle completo de lo construido.
+
+  **El chip de caja entra con estado real y control, no sólo con el dato.**
+  `cajaAbierta()` (`lib/caja/abrir-cerrar.ts`) ya existía desde el ciclo de
+  arriba sin que ninguna pantalla la llamara — un chip que mostrara "sin
+  caja" para siempre habría sido peor que no tenerlo. Ahora el header de
+  `/vender` la muestra y ofrece abrir o cerrar el turno ahí mismo. **Sigue
+  sin entrar** una pantalla `/caja`, el arqueo, y `crearVenta` sigue **sin**
+  exigir caja abierta para cobrar — a propósito: eso rompería el cobro de
+  cualquier tenant que no use la caja. Las tres siguen siendo la pieza 6 del
+  roadmap.
+
+  **Entraron tres atajos de teclado** (`F2` enfoca el buscador, `Enter`
+  cobra, `Esc` vacía el carrito), con dos reglas que vale dejar escritas
+  porque no son obvias mirando sólo la maqueta:
+  - **`Enter` no dispara con el foco en NINGÚN control nativo** (`INPUT`,
+    `TEXTAREA`, `SELECT`, `BUTTON`), no sólo el buscador. La regla general
+    —cualquier control que ya sabe qué hacer con su propio Enter se queda
+    con él— es más simple que un caso especial para el buscador, y lo cubre
+    igual: ahí Enter agrega el artículo, no cobra, sin que el código tenga
+    que nombrarlo aparte.
+  - **`Esc` vacía con confirmación en dos pasos sobre la MISMA tecla** —el
+    primer Esc arma la confirmación (la leyenda bajo el botón cambia), el
+    segundo confirma, y se desarma solo a los 3 segundos o apenas se toca una
+    línea del carrito—, no con un `confirm()` del navegador ni con un
+    vaciado deshacible. Es el mismo mecanismo que ya elegía `AnularVenta`
+    (`app/(app)/ventas/formularios.tsx`) para "esto es irreversible pero
+    frecuente": sin diálogo —que además competiría por la misma tecla con el
+    manejo propio de Escape de cualquier panel modal futuro— y sin sumar una
+    librería de toasts sólo para un vaciado deshacible.
+
+  **La lectura del `.pen` que este ciclo deja escrita, porque los ciclos
+  siguientes la van a necesitar**: la maqueta modela estados de **reposo**,
+  no de interacción, y su silencio sobre algo no es una instrucción de
+  borrarlo. La lista de resultados del buscador (el typeahead) no tiene
+  ningún frame en `App / Vender`, y se mantuvo igual — es el mismo criterio
+  que ya regía para `--primary-hover`, un token que tampoco aparece en la
+  maqueta porque un frame estático no puede dibujar un hover. Borrar el
+  typeahead porque "el `.pen` no lo dibuja" habría sacado una capacidad real
+  —buscar por nombre cuando no hay código de barras— a cambio de nada. La
+  pregunta correcta ante un silencio del `.pen` es qué pierde el producto si
+  se saca, no si el archivo lo dibuja.
+
+  Una decisión más chica pero real, en el mismo espíritu de leer la maqueta a
+  conciencia: **`Select` de shadcn (Radix) reemplazó los `<select>` nativos**
+  de medio de pago y moneda, revirtiendo una decisión que un comentario de un
+  ciclo anterior había diferido a propósito —Radix trae popover propio y
+  navegación por teclado, costo real—. Se aceptó porque la maqueta pide un
+  chip con `chevron-down` que ningún `<select>` nativo dibuja en ningún
+  browser, y porque `/vender` es, de las diez pantallas, la que más se opera
+  sin mouse: ahí el manejo de Radix es mejor que el nativo, no peor.
 - ~~Construir la UI de inventario.~~ **Hecho** (2026-08-11). Listado con
   buscador y paginación, alta con SKU autogenerado y stock inicial que nace
   como movimiento, ingreso de mercadería con su costo, corrección por conteo
