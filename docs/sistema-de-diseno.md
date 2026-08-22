@@ -565,16 +565,18 @@ excepción: reabre la discusión. Si aparece un segundo importe en 40 px fuera d
 
 Lo que el párrafo de arriba anticipaba —*"adoptar una fuente propia más adelante
 es aditivo y barato"*— pasó, y no se quedó en un solo lugar: hoy son **diez
-roles** repartidos en **cinco módulos CSS** (cuatro roles en cuatro módulos
-desde el ciclo del cartel, el login, el encabezado y `/vender`; seis roles
-más en un quinto módulo, `app/(app)/ventas/tipografia.module.css`, del
-rediseño de `/ventas` y `/ventas/[id]`).
+roles** repartidos en **seis módulos CSS**. Cuatro roles ya existían, en
+cinco módulos —Cartel usa dos (`app/login/persiana.module.css` y
+`components/cartel.module.css`), y Importe, Título de pantalla y Cobro uno
+cada uno—; los seis roles nuevos de este ciclo comparten un sexto módulo,
+`app/(app)/ventas/tipografia.module.css`, del rediseño de `/ventas` y
+`/ventas/[id]`.
 
 **Archivo**, de [Omnibus-Type](https://www.omnibus-type.com/), foundry de Buenos
-Aires. Los diez roles están en la tabla de arriba. Cuatro le piden un ancho
+Aires. Los diez roles están en la tabla de arriba. **Dos** le piden un ancho
 propio al eje `wdth`: el nombre del local (`font-stretch: 112%`) y el importe
 del punto de venta (`85%`) — los dos extremos opuestos del mismo eje, ver más
-abajo. Los otros seis se quedan en el 100 % por default: el título de
+abajo. Los otros **ocho** se quedan en el 100 % por default: el título de
 pantalla (`h1`, desde el encabezado de un ciclo anterior), el título y el
 botón de la card de Cobro, y los seis roles nuevos de `/ventas` y
 `/ventas/[id]` (título de card, valor de tile, monto de tabla, banda de
@@ -618,16 +620,17 @@ activa** y el `font-stretch: 112%` de la pantalla no hace absolutamente nada,
 sin avisar — se ve una Archivo normal y parece una decisión de diseño.
 
 No hay token `--font-display` en `@theme inline`, y es a propósito. Los
-consumidores son **cinco** módulos CSS —`app/login/persiana.module.css`,
+consumidores son **seis** módulos CSS —`app/login/persiana.module.css`,
 `components/cartel.module.css`, `components/importe.module.css`,
-`components/shell/encabezado.module.css` y
+`components/shell/encabezado.module.css`,
+`app/(app)/vender/cobro.module.css` y
 `app/(app)/ventas/tipografia.module.css`— y ninguno lo querría igual: además
 de la familia, los tres primeros necesitan su propio `font-stretch` o su
-tracking, y los otros dos no —ni el título de pantalla ni los seis roles de
-`/ventas` tienen eje de ancho propio en el `.pen`—, así que ninguna utilidad
-de Tailwind referenciaría el token. Un token de `@theme` que ninguna utilidad
-referencia es un token muerto. Los cinco consumen `var(--font-archivo)` —la
-variable que emite `next/font`— directo.
+tracking, y los otros tres no —ni el título de pantalla, ni Cobro, ni los
+seis roles de `/ventas` tienen eje de ancho propio en el `.pen`—, así que
+ninguna utilidad de Tailwind referenciaría el token. Un token de `@theme` que
+ninguna utilidad referencia es un token muerto. Los seis consumen
+`var(--font-archivo)` —la variable que emite `next/font`— directo.
 
 Este párrafo dijo lo contrario hasta el ciclo de la cinta: prometía que *"si una
 segunda pantalla la necesita, ahí entra el token"*, cuando el ciclo del cartel ya
