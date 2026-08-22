@@ -8,8 +8,8 @@ import {
 } from './estados'
 
 describe('el grafo de estados de una orden', () => {
-  it('los ocho estados tienen fila en la tabla de transiciones', () => {
-    expect(ESTADOS).toHaveLength(8)
+  it('los nueve estados tienen fila en la tabla de transiciones', () => {
+    expect(ESTADOS).toHaveLength(9)
     for (const e of ESTADOS) {
       expect(TRANSICIONES[e], `${e} no tiene fila`).toBeDefined()
     }
@@ -66,8 +66,29 @@ describe('el grafo de estados de una orden', () => {
     expect(puedeTransicionar('SIN_REPARACION', 'EN_REPARACION')).toBe(false)
   })
 
+  // El estado nuevo del ciclo 6 (design/arandano.pen, nodo `p6wbf` del
+  // tablero): llena el hueco de que la aprobación del cliente no quedaba
+  // registrada en ningún lado — ver CLAUDE.md, decisiones del modelo de datos.
+  it('desde PRESUPUESTADO se puede ir a APROBADO', () => {
+    expect(puedeTransicionar('PRESUPUESTADO', 'APROBADO')).toBe(true)
+  })
+
+  it('desde APROBADO se puede seguir a EN_REPARACION o a SIN_REPARACION', () => {
+    expect(puedeTransicionar('APROBADO', 'EN_REPARACION')).toBe(true)
+    // Se abrió el equipo con el presupuesto ya aceptado y resultó no tener
+    // arreglo — el mismo caso que ya vale para EN_REPARACION → PRESUPUESTADO.
+    expect(puedeTransicionar('APROBADO', 'SIN_REPARACION')).toBe(true)
+  })
+
+  it('no se puede aprobar sin presupuestar primero', () => {
+    // El salto que la maqueta NO muestra: RECIBIDO no tiene botón "Aprobado"
+    // en el paño de transiciones, porque no hay nada que el cliente haya
+    // aceptado todavía.
+    expect(puedeTransicionar('RECIBIDO', 'APROBADO')).toBe(false)
+  })
+
   it('ABIERTOS es todo menos ENTREGADO', () => {
-    expect(ABIERTOS).toHaveLength(7)
+    expect(ABIERTOS).toHaveLength(8)
     expect(ABIERTOS).not.toContain('ENTREGADO')
   })
 
@@ -77,5 +98,9 @@ describe('el grafo de estados de una orden', () => {
       // En castellano y para una persona: el tablero no muestra EN_DIAGNOSTICO.
       expect(NOMBRE_ESTADO[e]).not.toContain('_')
     }
+  })
+
+  it('APROBADO se lee "Aprobado" en castellano', () => {
+    expect(NOMBRE_ESTADO.APROBADO).toBe('Aprobado')
   })
 })

@@ -75,6 +75,11 @@ enum EstadoOrden {
   RECIBIDO
   EN_DIAGNOSTICO
   PRESUPUESTADO
+  // El cliente aceptó el presupuesto. Antes de este estado esa aceptación no
+  // quedaba registrada en ningún lado (ver CLAUDE.md, decisiones abiertas del
+  // modelo de datos) — cae acá, después de PRESUPUESTADO, porque es el punto
+  // real del recorrido donde el cliente dice que sí.
+  APROBADO
   EN_REPARACION
   LISTO
   ENTREGADO
