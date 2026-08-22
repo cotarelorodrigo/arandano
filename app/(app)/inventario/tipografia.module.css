@@ -1,10 +1,11 @@
 /*
  * Archivo sin font-stretch propio, mismo caso que app/(app)/ventas/
- * tipografia.module.css: las celdas de código/precio/stock del listado y los
- * números de paginación (design/arandano.pen, nodo `pb32f`) piden la MISMA
- * cara que Cartel e Importe, pero ninguno le pide un ancho propio al eje
- * `wdth` — se quedan en el 100% por default. test/tipografia.test.ts lo cuida
- * con el mismo mecanismo que ese módulo.
+ * tipografia.module.css: las celdas de código/precio/stock del listado, los
+ * números de paginación y los títulos de card de `/inventario/nuevo`
+ * (design/arandano.pen, nodo `pb32f` y `B4O7t`) piden la MISMA cara que
+ * Cartel e Importe, pero ninguno le pide un ancho propio al eje `wdth` — se
+ * quedan en el 100% por default. test/tipografia.test.ts lo cuida con el
+ * mismo mecanismo que ese módulo.
  *
  * POR QUÉ UN MÓDULO CSS Y NO `style={{ fontFamily: 'var(--font-archivo)' }}`
  * A MANO: evadiría la vigilancia de test/tipografia.test.ts, que sólo
@@ -13,4 +14,13 @@
  */
 .archivo {
   font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Título de card de "Artículo nuevo" ("Qué estás cargando", "Datos del
+   artículo", "Stock inicial"): mismo tamaño y peso que .tituloDeCard de
+   /ventas, en su propia clase porque son módulos CSS distintos. */
+.tituloDeCard {
+  composes: archivo;
+  font-weight: 600;
+  font-size: 0.9375rem; /* 15px */
 }

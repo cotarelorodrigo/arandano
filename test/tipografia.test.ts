@@ -56,7 +56,10 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   // que Cobro, arriba): ninguno le pide un ancho al eje `wdth`, así que
   // ninguno aparece vía anchosDelDoc() — están acá sólo para que el chequeo
   // de "consumidor fantasma" los reconozca.
-  'Título de card': ['app/(app)/ventas/tipografia.module.css'],
+  'Título de card': [
+    'app/(app)/ventas/tipografia.module.css',
+    'app/(app)/inventario/tipografia.module.css',
+  ],
   'Valor de tile': ['app/(app)/ventas/tipografia.module.css'],
   'Monto de tabla': ['app/(app)/ventas/tipografia.module.css'],
   'Banda de Total': ['app/(app)/ventas/tipografia.module.css'],
