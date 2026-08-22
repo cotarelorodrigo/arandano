@@ -51,6 +51,24 @@ export function formatearFecha(v: Date): string {
   return FECHA.format(v)
 }
 
+// Mismo huso que FECHA y por la misma razón: sin declararlo, "14:28" de
+// Buenos Aires se lee como la hora de Ashburn. Existe aparte de
+// formatearFecha() porque el listado de /ventas (design/arandano.pen, nodo
+// `ZjnhR`) pide la columna "Hora" sola, sin la fecha repetida en cada fila —
+// la fecha ya está una sola vez en el subtítulo de la pantalla.
+// hour12: false a propósito: design/arandano.pen escribe "14:28", 24 horas,
+// no "2:28 p. m." — que es lo que timeStyle: 'short' da por default en es-AR.
+const HORA = new Intl.DateTimeFormat('es-AR', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: 'America/Argentina/Buenos_Aires',
+})
+
+export function formatearHora(v: Date): string {
+  return HORA.format(v)
+}
+
 /**
  * Lo que devuelve `formatearPrecio`/`formatearDolares`, sin el signo de
  * moneda adelante — para las superficies que ya dicen de qué moneda se

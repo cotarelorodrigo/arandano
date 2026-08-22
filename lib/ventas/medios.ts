@@ -32,6 +32,14 @@ export const ROTULO_MEDIO: Record<Medio, string> = {
 }
 
 /**
+ * El cliente de una venta de mostrador, sin identificar — literal en
+ * `design/arandano.pen` (el listado de /ventas y el panel Resumen de
+ * /ventas/[id]). Un solo lugar y no un literal repetido en cada pantalla que
+ * lo muestra.
+ */
+export const CONSUMIDOR_FINAL = 'Consumidor final'
+
+/**
  * Una barra del panel: un medio de pago, ya en pesos.
  *
  * Los montos son `string` y no `Decimal` porque el destinatario es un componente

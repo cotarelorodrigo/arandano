@@ -1,11 +1,15 @@
 import Link from 'next/link'
+import { Funnel, Undo2 } from 'lucide-react'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { formatearPrecio, formatearFecha, formatearCantidad } from '@/lib/formato/mostrar'
+import { Badge } from '@/components/ui/badge'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { formatearPrecio, formatearHora, formatearCantidad } from '@/lib/formato/mostrar'
 import { componerPorMedio } from '@/lib/ventas/composicion'
+import { ROTULO_MEDIO, CONSUMIDOR_FINAL, type Medio } from '@/lib/ventas/medios'
 import { GraficoDeMedios } from './grafico'
 
 export const dynamic = 'force-dynamic'
@@ -63,23 +67,198 @@ function fechaLarga(iso: string): string {
   }).format(inicioDelDia(iso))
 }
 
+/** Los tres accesos rápidos de rango del filtro (design/arandano.pen, nodo `SM9Zl`). */
+export const RANGOS = ['hoy', '7dias', 'estemes'] as const
+export type Rango = (typeof RANGOS)[number]
+
+export const ROTULO_RANGO: Record<Rango, string> = {
+  hoy: 'Hoy',
+  '7dias': '7 días',
+  estemes: 'Este mes',
+}
+
+/**
+ * `YYYY-MM-DD` más/menos `dias` días de calendario.
+ *
+ * A medianoche UTC y no con `inicioDelDia` (que ancla a Buenos Aires): acá lo
+ * único que importa son los componentes de la fecha, no el instante, así que
+ * cualquier huso fijo sirve con tal de no cruzar un cambio de horario de
+ * verano que Argentina no tiene. Usar un huso real metería esa complejidad de
+ * vuelta sin necesidad.
+ */
+function sumarDias(iso: string, dias: number): string {
+  const d = new Date(`${iso}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + dias)
+  return d.toISOString().slice(0, 10)
+}
+
+/** El primer día del mes de `iso`, mismo criterio que sumarDias. */
+function primerDiaDelMes(iso: string): string {
+  return `${iso.slice(0, 7)}-01`
+}
+
+/**
+ * El `[desde, hasta]` que arma cada chip de rango rápido, contra `hoy`.
+ *
+ * "7dias" resta 6 y no 7: del 15 al 21 son 7 días con el 21 incluido
+ * (21,20,19,18,17,16,15), y restar 7 dejaría afuera el propio día de hoy.
+ */
+export function rangoDeChip(rango: Rango, hoy: string): { desde: string; hasta: string } {
+  switch (rango) {
+    case 'hoy':
+      return { desde: hoy, hasta: hoy }
+    case '7dias':
+      return { desde: sumarDias(hoy, -6), hasta: hoy }
+    case 'estemes':
+      return { desde: primerDiaDelMes(hoy), hasta: hoy }
+  }
+}
+
+/**
+ * Qué chip, si alguno, describe el filtro vigente — para resaltarlo con el
+ * mismo tratamiento que la maqueta le da a "Hoy" en su estado activo. Ninguno
+ * cuando el rango viene de tipear las fechas a mano.
+ */
+export function chipActivo(desde: string, hasta: string, hoy: string): Rango | null {
+  return RANGOS.find((r) => {
+    const rg = rangoDeChip(r, hoy)
+    return rg.desde === desde && rg.hasta === hasta
+  }) ?? null
+}
+
+/**
+ * El pie del tile "Ventas cobradas": el promedio por venta cobrada.
+ *
+ * `undefined` y no `NaN` cuando no hubo ninguna cobrada — un período puede
+ * anularse entero, y "promedio $ NaN" es peor que no mostrar ningún pie: ver
+ * el mismo criterio en `hayFaltanteDeVenta` de punto-de-venta.tsx.
+ */
+export function pieDeCobradas(sumaCobradas: string, cobradas: number): string | undefined {
+  if (cobradas <= 0) return undefined
+  const promedio = Number(sumaCobradas) / cobradas
+  return `promedio ${formatearPrecio(promedio.toFixed(2))}`
+}
+
+/**
+ * El pie del tile "Anuladas": lo DEVUELTO, no el total del período de al
+ * lado — son dos agregados distintos (`SUM(total) WHERE anuladaEn IS NOT
+ * NULL` acá, `WHERE anuladaEn IS NULL` en el tile de al lado) y mezclarlos
+ * sería el mismo bug que ya evita `crearVenta` al no reutilizar sumas.
+ */
+export function pieDeAnuladas(montoDevuelto: string): string {
+  return `${formatearPrecio(montoDevuelto)} devueltos`
+}
+
+/**
+ * La celda "Medios" del listado: los medios distintos de una venta, en el
+ * orden en que se cobraron, cada uno marcado con "· US$" si tuvo algún pago
+ * en dólares (fila #1040 del relevamiento: "Efectivo · US$").
+ *
+ * **Decisión de UI que la maqueta no muestra**: ninguna de las siete filas de
+ * ejemplo combina dos medios en la misma venta, así que no hay ninguna pista
+ * de cómo resumir un pago partido entre efectivo y tarjeta. Acá se listan
+ * los dos, separados por "+" — no es lo único razonable ("Mixto" también lo
+ * sería), pero es el que no pierde información, y `Pago` ya admite varios
+ * registros por venta a propósito (ver el comentario de ese modelo).
+ */
+export function rotuloDeMedios(pagos: { medio: Medio; moneda: 'ARS' | 'USD' }[]): string {
+  if (pagos.length === 0) return '—'
+  const conDolares = new Map<Medio, boolean>()
+  for (const p of pagos) {
+    conDolares.set(p.medio, (conDolares.get(p.medio) ?? false) || p.moneda === 'USD')
+  }
+  return [...conDolares.entries()]
+    .map(([medio, usd]) => ROTULO_MEDIO[medio] + (usd ? ' · US$' : ''))
+    .join(' + ')
+}
+
+/**
+ * Hasta 5 números de página centrados en `actual`, recortados a `[1, total]`.
+ *
+ * Sin "…": la maqueta (design/arandano.pen, nodo `KRTvR`) dibuja tres botones
+ * fijos sin elipsis, y un total real de más de 5 páginas no tiene ningún
+ * ejemplo del que copiar ese tratamiento — se prefirió la ventana simple, sin
+ * inventar un símbolo que el diseño no pidió.
+ */
+export function ventanaDePaginas(actual: number, total: number): number[] {
+  if (total <= 0) return []
+  const tam = Math.min(5, total)
+  const inicioCentrado = actual - Math.floor(tam / 2)
+  const fin = Math.min(total, Math.max(tam, inicioCentrado + tam - 1))
+  const inicio = fin - tam + 1
+  const out: number[] = []
+  for (let n = inicio; n <= fin; n++) out.push(n)
+  return out
+}
+
 /**
  * Un tile del resumen del período.
  *
- * Van sobre --card y no sobre el fondo: es la superficie elevada que ya define
- * el sistema, y es lo que los separa del listado de abajo sin sumar un borde.
+ * `marca` sólo lo pide el tile de "Total del período": es el ancla de
+ * `--marca` que docs/sistema-de-diseno.md ya lista para esta pantalla ("Lo
+ * que entró en el período"), así que ANTES de este ciclo el código
+ * contradecía su propio sistema de diseño escrito — no sólo la maqueta.
  */
-function Tile({ rotulo, valor, pie }: { rotulo: string; valor: string; pie?: string }) {
+function Tile({
+  rotulo, valor, pie, marca = false,
+}: { rotulo: string; valor: string; pie?: string; marca?: boolean }) {
+  if (marca) {
+    return (
+      <div
+        className="flex flex-1 flex-col gap-[3px] rounded-2xl px-[18px] py-4"
+        style={{ backgroundColor: 'var(--marca)' }}
+      >
+        <div
+          className="text-[10px] font-bold tracking-[1.2px] uppercase"
+          style={{ color: 'var(--marca-soft)' }}
+        >
+          {rotulo}
+        </div>
+        <div
+          style={{ fontFamily: 'var(--font-archivo)', color: 'var(--marca-foreground)' }}
+          className="text-[32px] leading-none font-semibold tracking-[-0.6px] tabular-nums"
+        >
+          {valor}
+        </div>
+        {pie && (
+          <div className="text-[11px]" style={{ color: 'var(--marca-dim)' }}>
+            {pie}
+          </div>
+        )}
+      </div>
+    )
+  }
   return (
-    <div className="bg-card px-4 py-3">
-      <div className="text-[10px] font-medium tracking-[0.1em] text-primary uppercase">
+    <div className="flex flex-1 flex-col gap-[3px] rounded-2xl border bg-card px-[18px] py-4">
+      <div className="text-[10px] font-bold tracking-[1.2px] text-muted-foreground uppercase">
         {rotulo}
       </div>
       {/* tabular-nums en los tres, no sólo en el de plata: los tiles están uno
           al lado del otro y un dígito de ancho variable los descalza entre sí. */}
-      <div className="mt-0.5 text-2xl tracking-tight tabular-nums">{valor}</div>
-      {pie && <div className="mt-0.5 text-[11px] text-muted-foreground">{pie}</div>}
+      <div
+        style={{ fontFamily: 'var(--font-archivo)' }}
+        className="text-[26px] leading-none font-semibold tracking-[-0.6px] tabular-nums text-foreground"
+      >
+        {valor}
+      </div>
+      {pie && <div className="text-[11px] text-muted-foreground">{pie}</div>}
     </div>
+  )
+}
+
+function ChipEstado({ anulada }: { anulada: boolean }) {
+  if (anulada) {
+    return (
+      <Badge className="h-auto gap-[5px] border-transparent bg-destructive-soft px-[9px] py-[3px] text-[11px] font-semibold text-destructive">
+        <Undo2 aria-hidden="true" className="size-[11px]" />
+        Anulada
+      </Badge>
+    )
+  }
+  return (
+    <Badge className="h-auto border-transparent bg-ok-soft px-[9px] py-[3px] text-[11px] font-semibold text-ok">
+      Cobrada
+    </Badge>
   )
 }
 
@@ -108,7 +287,7 @@ export default async function Ventas({
   }
 
   const prisma = prismaParaTenant(sesion.tenant.id)
-  const [ventas, total, suma, anuladas, pagos] = await Promise.all([
+  const [ventas, total, suma, anuladas, devueltas, pagos] = await Promise.all([
     prisma.venta.findMany({
       where: donde,
       orderBy: { numero: 'desc' },
@@ -116,7 +295,9 @@ export default async function Ventas({
       take: POR_PAGINA,
       select: {
         id: true, numero: true, total: true, creadoEn: true, anuladaEn: true,
-        usuario: { select: { nombre: true } },
+        cliente: { select: { nombre: true } },
+        pagos: { select: { medio: true, moneda: true } },
+        _count: { select: { items: true } },
       },
     }),
     prisma.venta.count({ where: donde }),
@@ -127,6 +308,10 @@ export default async function Ventas({
     // aritmética sobre dos números que ya vienen de la misma transacción, así
     // que no puede dar una suma que no cierre contra el listado.
     prisma.venta.count({ where: { ...donde, anuladaEn: { not: null } } }),
+    // Lo DEVUELTO del tile de anuladas: un agregado propio, y no el mismo
+    // `suma` de arriba con el filtro invertido reusado a mano — son sumas de
+    // conjuntos disjuntos y cada una necesita su propio `_sum`.
+    prisma.venta.aggregate({ where: { ...donde, anuladaEn: { not: null } }, _sum: { total: true } }),
     // Los pagos del período, para el panel de composición. Se filtran por la
     // VENTA y no por `pago.creadoEn`: es el mismo `donde` que el listado y que
     // los tiles, así que las tres cosas de la pantalla no pueden hablar de
@@ -155,6 +340,12 @@ export default async function Ventas({
     if (n > 1) u.set('p', String(n))
     return `/ventas?${u.toString()}`
   }
+  const hrefRango = (r: Rango) => {
+    const { desde: d, hasta: h } = rangoDeChip(r, hoy)
+    return `/ventas?${new URLSearchParams({ desde: d, hasta: h }).toString()}`
+  }
+  const rangoVigente = chipActivo(dDesde, dHasta, hoy)
+  const cobradas = total - anuladas
 
   return (
     <>
@@ -182,121 +373,244 @@ export default async function Ventas({
           </Button>
         }
       />
-      <div className="p-6">
-        {/* method="get": anda sin JavaScript y una URL con el rango se comparte. */}
-        <form method="get" className="mb-6 flex items-end gap-3">
-          <div className="flex flex-col gap-2">
-            <label htmlFor="desde" className="text-sm font-medium">Desde</label>
-            <Input id="desde" name="desde" type="date" defaultValue={dDesde} />
+      <div className="flex flex-col gap-4 p-6">
+        {/* Filtros: fechas + accesos rápidos de rango (design/arandano.pen,
+            nodo `H9Bw1`). method="get": anda sin JavaScript y una URL con el
+            rango se comparte. */}
+        <form method="get" className="flex items-end gap-[10px]">
+          <div className="flex w-[168px] flex-col gap-[5px]">
+            <label htmlFor="desde" className="text-[11px] font-semibold text-foreground-soft">
+              Desde
+            </label>
+            <Input
+              id="desde" name="desde" type="date" defaultValue={dDesde}
+              className="h-10 rounded-[9px] border-input bg-card px-[11px] text-sm"
+            />
           </div>
-          <div className="flex flex-col gap-2">
-            <label htmlFor="hasta" className="text-sm font-medium">Hasta</label>
-            <Input id="hasta" name="hasta" type="date" defaultValue={dHasta} />
+          <div className="flex w-[168px] flex-col gap-[5px]">
+            <label htmlFor="hasta" className="text-[11px] font-semibold text-foreground-soft">
+              Hasta
+            </label>
+            <Input
+              id="hasta" name="hasta" type="date" defaultValue={dHasta}
+              className="h-10 rounded-[9px] border-input bg-card px-[11px] text-sm"
+            />
           </div>
-          <Button type="submit" size="sm" variant="secondary">Filtrar</Button>
+          <Button
+            type="submit" variant="outline" size="sm"
+            className="h-[38px] gap-[7px] rounded-[9px] border-input bg-card px-[15px] text-[13px] font-semibold text-foreground hover:bg-muted"
+          >
+            <Funnel aria-hidden="true" className="size-[15px]" />
+            Filtrar
+          </Button>
+          <div className="flex-1" />
+          {/* Rangos: segmented control de 3 opciones. Links y no botones de
+              cliente: el rango vive en la URL, igual que el resto del filtro. */}
+          <div className="flex gap-0.5 rounded-[10px] bg-muted p-[3px]">
+            {RANGOS.map((r) => (
+              <Link
+                key={r}
+                href={hrefRango(r)}
+                className={
+                  r === rangoVigente
+                    ? 'rounded-lg bg-card px-[13px] py-[7px] text-[12px] font-semibold text-foreground shadow-sm'
+                    : 'rounded-lg px-[13px] py-[7px] text-[12px] font-medium text-muted-foreground'
+                }
+              >
+                {ROTULO_RANGO[r]}
+              </Link>
+            ))}
+          </div>
         </form>
 
-        {/* Sobre `total`, que es el período, y NO sobre `ventas.length`, que es la
-            página: los tres números que muestran estos tiles —total, suma y
-            anuladas— salen de agregados sin paginar. Colgados de la página, un
-            `/ventas?p=5` sobre un período de una sola página los hacía
-            desaparecer, cuando lo que resumen sigue estando ahí. */}
-        {total > 0 && (
-          /* gap-px sobre bg-border: las líneas entre tiles son el fondo que se
-             ve por las juntas, no tres bordes que haya que hacer coincidir.
-             w-max para que los tiles midan lo que necesitan y no se estiren a
-             lo ancho de la pantalla, que los dejaría vacíos por dentro. */
-          <div className="mb-6 grid w-max grid-cols-3 gap-px overflow-hidden rounded-lg bg-border">
-            <Tile
-              rotulo="Total del período"
-              valor={formatearPrecio((suma._sum.total ?? '0').toString())}
-              pie="sin contar las anuladas"
-            />
-            {/* Los conteos con el mismo formateo de miles que la plata de al lado:
-                un local que cruza las mil ventas en el período existe, y "1000"
-                al lado de "$ 412.850,00" se lee como un número mal impreso. */}
-            <Tile rotulo="Ventas cobradas" valor={formatearCantidad(String(total - anuladas))} />
-            <Tile rotulo="Anuladas" valor={formatearCantidad(String(anuladas))} />
-          </div>
-        )}
-
-        {/* Colgado de que HAYA barras y no de `total > 0`, que es lo que gobierna
-            los tiles: un período puede tener ventas y ningún pago —todas anuladas—
-            y ahí este panel no tiene nada que decir. Dibujarlo vacío sería peor que
-            no dibujarlo: un gráfico en blanco se lee como que algo se rompió. */}
-        {composicion.barras.length > 0 && <GraficoDeMedios composicion={composicion} />}
-
-        {ventas.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {/* Los dos vacíos no son el mismo vacío, y desde que los tiles cuelgan
-                del período hay que distinguirlos: con `total > 0` la página quedó
-                fuera de rango (`?p` se clampea a [1, 1.000.000], no a `paginas`),
-                y decir "no hay ventas en ese período" arriba de un tile que dice
-                17 sería contradecirse en la misma pantalla. */}
-            {total === 0 ? (
-              'No hay ventas en ese período.'
-            ) : (
-              <>
-                Esa página no tiene ventas.{' '}
-                {/* Con el enlace y no sólo con el texto: cuando el período entra en
-                    una sola página, `paginas > 1` es falso y la paginación de abajo
-                    no se dibuja, así que sin esto la pantalla queda sin salida. */}
-                <Link href={conPagina(1)} className="underline">
-                  Volver a la primera
-                </Link>
-                .
-              </>
+        {/* Fila: las dos columnas — el listado a la izquierda, la composición
+            de medios a la derecha (design/arandano.pen, nodo `dP70c`). */}
+        <div className="flex items-start gap-4">
+          <div className="flex flex-1 flex-col gap-4">
+            {/* Sobre `total`, que es el período, y NO sobre `ventas.length`, que es la
+                página: los tres números que muestran estos tiles —total, suma y
+                anuladas— salen de agregados sin paginar. Colgados de la página, un
+                `/ventas?p=5` sobre un período de una sola página los hacía
+                desaparecer, cuando lo que resumen sigue estando ahí. */}
+            {total > 0 && (
+              <div className="flex gap-4">
+                <Tile
+                  marca
+                  rotulo="Total del período"
+                  valor={formatearPrecio((suma._sum.total ?? '0').toString())}
+                  pie="sin contar las anuladas"
+                />
+                <Tile
+                  rotulo="Ventas cobradas"
+                  valor={formatearCantidad(String(cobradas))}
+                  pie={pieDeCobradas((suma._sum.total ?? '0').toString(), cobradas)}
+                />
+                <Tile
+                  rotulo="Anuladas"
+                  valor={formatearCantidad(String(anuladas))}
+                  pie={pieDeAnuladas((devueltas._sum.total ?? '0').toString())}
+                />
+              </div>
             )}
-          </p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left">
-                <th scope="col" className="py-2">Número</th>
-                <th scope="col">Fecha</th>
-                <th scope="col">Vendió</th>
-                <th scope="col" className="text-right">Total</th>
-                <th scope="col">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ventas.map((v) => (
-                <tr key={v.id} className="border-b">
-                  <td className="py-2">
-                    <Link href={`/ventas/${v.id}`} className="underline">#{v.numero}</Link>
-                  </td>
-                  <td>{formatearFecha(v.creadoEn)}</td>
-                  <td>{v.usuario.nombre}</td>
-                  <td className="text-right tabular-nums">{formatearPrecio(v.total.toString())}</td>
-                  {/* Las anuladas se MUESTRAN: el historial tiene que poder
-                      responder qué pasó, y esconderlas sería tapar la respuesta.
-                      Chip y no texto suelto: en una columna de una sola palabra,
-                      la forma se lee antes que el color, y quien no distingue el
-                      rojo igual ve que una fila está marcada. */}
-                  <td>
-                    {v.anuladaEn ? (
-                      <span className="inline-flex rounded-md border border-destructive px-2.5 py-0.5 text-[11px] text-destructive">
-                        Anulada
-                      </span>
-                    ) : (
-                      <span className="inline-flex rounded-md bg-muted px-2.5 py-0.5 text-[11px]">
-                        Cobrada
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
 
-        {paginas > 1 && (
-          <nav aria-label="Paginación" className="mt-6 flex items-center gap-4 text-sm">
-            {pagina > 1 && <Link href={conPagina(pagina - 1)} className="underline">← Anterior</Link>}
-            <span className="text-muted-foreground">Página {pagina} de {paginas}</span>
-            {pagina < paginas && <Link href={conPagina(pagina + 1)} className="underline">Siguiente →</Link>}
-          </nav>
-        )}
+            {/* El listado, dentro de su propia card (design/arandano.pen, nodo
+                `niIY5`) — antes era una <table> suelta en la pantalla. */}
+            <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border bg-card">
+              <div className="flex items-center justify-between border-b px-[18px] py-[13px]">
+                <h2
+                  style={{ fontFamily: 'var(--font-archivo)' }}
+                  className="text-[15px] font-semibold text-foreground"
+                >
+                  Últimas ventas
+                </h2>
+                {/* "Ver todas →": la maqueta la dibuja, pero esta pantalla YA
+                    es el listado completo del período — no hay un "todas" más
+                    grande adonde ir sin sumar un modo sin rango, que es lógica
+                    de consulta nueva y este ciclo es sólo presentación (ver
+                    relevamiento.md, punto 3.a). Apunta a la propia ruta sin
+                    filtro, que es el único destino que no inventa nada. */}
+                <Link href="/ventas" className="text-[12px] font-semibold text-primary">
+                  Ver todas →
+                </Link>
+              </div>
+
+              {ventas.length === 0 ? (
+                <p className="p-[18px] text-sm text-muted-foreground">
+                  {/* Los dos vacíos no son el mismo vacío, y desde que los tiles cuelgan
+                      del período hay que distinguirlos: con `total > 0` la página quedó
+                      fuera de rango (`?p` se clampea a [1, 1.000.000], no a `paginas`),
+                      y decir "no hay ventas en ese período" arriba de un tile que dice
+                      17 sería contradecirse en la misma pantalla. */}
+                  {total === 0 ? (
+                    'No hay ventas en ese período.'
+                  ) : (
+                    <>
+                      Esa página no tiene ventas.{' '}
+                      <Link href={conPagina(1)} className="underline">
+                        Volver a la primera
+                      </Link>
+                      .
+                    </>
+                  )}
+                </p>
+              ) : (
+                <>
+                  <Table className="table-fixed">
+                    <TableHeader>
+                      <TableRow className="bg-muted hover:bg-muted">
+                        <TableHead className="h-auto w-[84px] px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                          Número
+                        </TableHead>
+                        <TableHead className="h-auto w-[110px] px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                          Hora
+                        </TableHead>
+                        <TableHead className="h-auto px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                          Vendió
+                        </TableHead>
+                        <TableHead className="h-auto w-[150px] px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                          Medios
+                        </TableHead>
+                        <TableHead className="h-auto w-[140px] px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                          Total
+                        </TableHead>
+                        <TableHead className="h-auto w-[104px] px-[7px] py-3 pr-[18px] text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                          Estado
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {ventas.map((v) => (
+                        <TableRow key={v.id}>
+                          <TableCell
+                            style={{ fontFamily: 'var(--font-archivo)' }}
+                            className="p-[11px] px-[7px] pl-[18px] font-semibold text-primary"
+                          >
+                            <Link href={`/ventas/${v.id}`}>#{v.numero}</Link>
+                          </TableCell>
+                          <TableCell className="p-[11px] px-[7px] text-foreground">
+                            {formatearHora(v.creadoEn)}
+                          </TableCell>
+                          <TableCell className="p-[11px] px-[7px] whitespace-normal">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-sm font-medium text-foreground">
+                                {v.cliente?.nombre ?? CONSUMIDOR_FINAL}
+                              </span>
+                              <span className="text-[11px] text-muted-foreground">
+                                {v._count.items === 1 ? '1 artículo' : `${v._count.items} artículos`}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="p-[11px] px-[7px] text-foreground">
+                            {rotuloDeMedios(v.pagos)}
+                          </TableCell>
+                          <TableCell
+                            style={{ fontFamily: 'var(--font-archivo)' }}
+                            className="p-[11px] px-[7px] text-right font-semibold text-foreground tabular-nums"
+                          >
+                            {formatearPrecio(v.total.toString())}
+                          </TableCell>
+                          {/* Las anuladas se MUESTRAN: el historial tiene que
+                              poder responder qué pasó, y esconderlas sería
+                              tapar la respuesta. */}
+                          <TableCell className="p-[11px] px-[7px] pr-[18px] text-right">
+                            <ChipEstado anulada={v.anuladaEn !== null} />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+
+                  <div className="flex-1" />
+
+                  {paginas > 1 && (
+                    <nav
+                      aria-label="Paginación"
+                      className="flex items-center justify-between border-t px-[18px] py-3"
+                    >
+                      <span className="text-[12px] text-muted-foreground">
+                        {(pagina - 1) * POR_PAGINA + 1}–{Math.min(pagina * POR_PAGINA, total)} de{' '}
+                        {formatearCantidad(String(total))} {total === 1 ? 'venta' : 'ventas'}
+                      </span>
+                      <div className="flex items-center gap-[6px]">
+                        {ventanaDePaginas(pagina, paginas).map((n) =>
+                          n === pagina ? (
+                            <Button
+                              key={n}
+                              disabled
+                              size="icon-sm"
+                              style={{ fontFamily: 'var(--font-archivo)' }}
+                              className="size-[30px] rounded-lg text-[13px] font-semibold disabled:opacity-100"
+                            >
+                              {n}
+                            </Button>
+                          ) : (
+                            <Button
+                              key={n}
+                              asChild
+                              variant="outline"
+                              size="icon-sm"
+                              style={{ fontFamily: 'var(--font-archivo)' }}
+                              className="size-[30px] rounded-lg text-[13px] font-semibold text-foreground-soft"
+                            >
+                              <Link href={conPagina(n)}>{n}</Link>
+                            </Button>
+                          ),
+                        )}
+                      </div>
+                    </nav>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Colgado de que HAYA barras y no de `total > 0`, que es lo que
+              gobierna los tiles: un período puede tener ventas y ningún pago
+              —todas anuladas— y ahí este panel no tiene nada que decir.
+              Dibujarlo vacío sería peor que no dibujarlo: un panel en blanco
+              se lee como que algo se rompió. */}
+          {composicion.barras.length > 0 && <GraficoDeMedios composicion={composicion} />}
+        </div>
       </div>
     </>
   )
