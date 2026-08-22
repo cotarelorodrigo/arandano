@@ -155,6 +155,16 @@ describe('"Cómo se movió" en la ficha (Task 5 del rediseño)', () => {
   })
 
   it('la consulta de ventas por mes filtra por motivo VENTA', () => {
-    expect(FUENTE).toContain("where: { articuloId: id, motivo: 'VENTA', creadoEn: { gte: SIETE_MESES_ATRAS } }")
+    expect(FUENTE).toContain("motivo: 'VENTA'")
+    expect(FUENTE).toContain('creadoEn: { gte: SIETE_MESES_ATRAS }')
+  })
+
+  // I5 de la review: sin este filtro, una venta de 3 unidades anulada al día
+  // siguiente seguía sumando 3 al mes de "Cómo se movió", aunque el
+  // ANULACION_VENTA ya le hubiera devuelto el stock al artículo — el mismo
+  // hecho de negocio contado distinto que en /ventas, que si excluye las
+  // anuladas (docs/pantallas.md).
+  it('excluye las ventas anuladas, igual que /ventas', () => {
+    expect(FUENTE).toContain('venta: { anuladaEn: null }')
   })
 })

@@ -5,7 +5,6 @@ import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
@@ -125,11 +124,20 @@ const OPCIONES_TIPO: { valor: TipoFiltro | null; rotulo: string }[] = [
  * ese último es un `<button type="button" role="checkbox">` cuyo toggle lo
  * arma React — sin JavaScript ni siquiera se puede tildar. El tipo activo
  * viaja como campo oculto para no perderse al tipear una búsqueda o tildar la
- * pastilla. Las tabs de Tipo son links (mismo mecanismo que ya usa `/ventas`
- * para su segmentado de rango): la navegación real no depende de `Tabs`, que
- * acá sólo aporta el rol de pestaña y el estado visual de cuál está activa —
- * por eso `activationMode="manual"`, para que mover el foco con las flechas
- * no la marque como activa sin haber navegado.
+ * pastilla.
+ *
+ * El segmentado de Tipo es tres `<Link>` a secas, con la clase condicionada a
+ * si `o.valor === tipo` — el mismo mecanismo (y el mismo criterio) que ya usa
+ * `/ventas` para su segmentado de rango. **No** el `Tabs` de shadcn: la
+ * versión anterior de esta task lo usaba con `TabsTrigger asChild` envolviendo
+ * el `Link`, sin ningún `TabsContent` (I8 de la review) — no hay ningún panel
+ * que estas "tabs" controlen, sólo un filtro que navega, así que cada
+ * `aria-controls` que Radix generaba apuntaba a un id que no existe (una
+ * referencia ARIA rota), y el roving `tabindex` del widget dejaba las tres
+ * con `tabindex="-1"` en el HTML servido: con mouse se podía elegir cualquiera,
+ * pero con teclado y sin JavaScript ninguna era alcanzable. Un link plano no
+ * tiene ese problema — es nativamente enfocable y no reclama un rol de pestaña
+ * que no puede cumplir.
  */
 export function FiltrosDeInventario({
   busqueda,
@@ -171,20 +179,21 @@ export function FiltrosDeInventario({
           Buscar
         </Button>
       </form>
-      <Tabs defaultValue={tipo ?? VALOR_TODOS} activationMode="manual">
-        <TabsList className="h-auto gap-0.5 rounded-[10px] bg-muted p-[3px]">
-          {OPCIONES_TIPO.map((o) => (
-            <TabsTrigger
-              key={o.valor ?? VALOR_TODOS}
-              value={o.valor ?? VALOR_TODOS}
-              asChild
-              className="rounded-lg bg-transparent px-[13px] py-[7px] text-[12px] font-medium text-muted-foreground shadow-none data-active:bg-card data-active:font-semibold data-active:text-foreground data-active:shadow-none"
-            >
-              <Link href={hrefListado({ busqueda, verInactivos, tipo: o.valor })}>{o.rotulo}</Link>
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+      <div className="flex h-auto gap-0.5 rounded-[10px] bg-muted p-[3px]">
+        {OPCIONES_TIPO.map((o) => (
+          <Link
+            key={o.valor ?? VALOR_TODOS}
+            href={hrefListado({ busqueda, verInactivos, tipo: o.valor })}
+            className={
+              o.valor === tipo
+                ? 'rounded-lg bg-card px-[13px] py-[7px] text-[12px] font-semibold text-foreground shadow-sm'
+                : 'rounded-lg px-[13px] py-[7px] text-[12px] font-medium text-muted-foreground'
+            }
+          >
+            {o.rotulo}
+          </Link>
+        ))}
+      </div>
     </div>
   )
 }

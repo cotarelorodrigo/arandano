@@ -99,17 +99,42 @@ describe('ventanaDePaginas', () => {
   })
 })
 
+/** Extrae el `class` del `<a>` cuyo `href` es exactamente `href` (SIN escapar:
+ *  se pasa tal cual aparece en el atributo, p. ej. "/inventario?tipo=X") —
+ *  para no depender de en qué orden React serializa los atributos. */
+function claseDelLink(html: string, href: string): string {
+  const escapada = href.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+  const re = new RegExp(`<a class="([^"]*)"[^>]*href="${escapada}"`)
+  const m = html.match(re)
+  expect(m, `no se encontró un <a> con href="${href}"`).not.toBeNull()
+  return m![1]
+}
+
 describe('FiltrosDeInventario', () => {
-  it('la tab activa sale de la URL: "Productos" activo si tipo=PRODUCTO', () => {
+  // I8 de la review: la versión anterior envolvía estos links en el `Tabs` de
+  // shadcn (`role="tab"`, `aria-controls`, roving `tabindex`) sin ningún
+  // `TabsContent` que ese `aria-controls` pudiera señalar, y las tres nacían
+  // con `tabindex="-1"` — alcanzables con mouse, no con teclado y sin JS. El
+  // segmentado es ahora tres <Link> a secas (mismo criterio que /ventas), así
+  // que el activo se distingue por clase (bg-card), no por data-state, y
+  // ninguno lleva rol de pestaña.
+  it('la opción activa sale de la URL: "Productos" activo si tipo=PRODUCTO', () => {
     const html = renderToStaticMarkup(
       <FiltrosDeInventario busqueda="" verInactivos={false} tipo="PRODUCTO" />,
     )
-    // asChild funde el <a> de Link con el <button> del trigger en un solo
-    // elemento: data-state="active" y el href conviven en la misma etiqueta.
-    expect(html).toMatch(/data-state="active"[^>]*href="\/inventario\?tipo=PRODUCTO"[^>]*>Productos/)
-    // Y las otras dos tabs, inactivas.
-    expect(html).toMatch(/data-state="inactive"[^>]*href="\/inventario"[^>]*>Todos/)
-    expect(html).toMatch(/data-state="inactive"[^>]*href="\/inventario\?tipo=SERVICIO"[^>]*>Servicios/)
+    expect(claseDelLink(html, '/inventario?tipo=PRODUCTO')).toContain('bg-card')
+    // Y las otras dos, inactivas: sin bg-card en su clase.
+    expect(claseDelLink(html, '/inventario')).not.toContain('bg-card')
+    expect(claseDelLink(html, '/inventario?tipo=SERVICIO')).not.toContain('bg-card')
+  })
+
+  it('el segmentado de Tipo no reclama un rol de pestaña que no puede cumplir (sin TabsContent)', () => {
+    const html = renderToStaticMarkup(
+      <FiltrosDeInventario busqueda="" verInactivos={false} tipo={null} />,
+    )
+    expect(html).not.toContain('role="tab"')
+    expect(html).not.toContain('aria-controls')
+    expect(html).not.toContain('tabindex="-1"')
   })
 
   it('cada tab arma su propio href, preservando búsqueda y desactivados', () => {

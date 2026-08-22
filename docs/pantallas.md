@@ -407,6 +407,11 @@ stock y el historial; a la derecha los datos editables y "Cómo se movió"
   setear `arandano.tenant_id`, no raw queries — un `$queryRaw` sin esa
   variable de sesión choca contra RLS y devuelve cero filas, en silencio
   (mismo hallazgo que ya dejó anotado `/ventas` para su panel de medios).
+- **"Cómo se movió" excluye las ventas anuladas**, mismo criterio que
+  `/ventas` ("el total NO suma las anuladas"): la consulta de movimientos
+  filtra por `venta: { anuladaEn: null }`, así que una venta anulada no sigue
+  contando como vendida sólo porque el `ANULACION_VENTA` que le devolvió el
+  stock cae en un mes distinto.
 - **"Exportar CSV" es un server action que arma el CSV en memoria** y lo
   devuelve como string — no hay librería, endpoint nuevo ni streaming. El
   botón lo convierte en una descarga con un `Blob` del lado del cliente,

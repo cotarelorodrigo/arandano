@@ -186,7 +186,20 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
     // stock (no tiene), así que "Cómo se movió" no tiene nada que graficar.
     esProducto
       ? prisma.movimientoStock.findMany({
-          where: { articuloId: id, motivo: 'VENTA', creadoEn: { gte: SIETE_MESES_ATRAS } },
+          where: {
+            articuloId: id,
+            motivo: 'VENTA',
+            creadoEn: { gte: SIETE_MESES_ATRAS },
+            // Mismo criterio que /ventas (docs/pantallas.md, sección
+            // /ventas: "El total NO suma las anuladas"): sin este filtro, una
+            // venta anulada seguía sumando sus unidades acá aunque el
+            // ANULACION_VENTA le haya devuelto el stock al artículo — el
+            // mismo hecho de negocio contado distinto en dos pantallas.
+            // Filtrar la fila VENTA por `venta.anuladaEn` hace que la unidad
+            // desaparezca del mes en que se vendió, en vez de aparecer
+            // restada en el mes en que se anuló (que puede ser otro).
+            venta: { anuladaEn: null },
+          },
           select: { delta: true, creadoEn: true },
         })
       : [],

@@ -13,8 +13,8 @@ import { ingresarStock, corregirStock } from '@/lib/inventario/stock'
 import { ErrorDeInventario } from '@/lib/inventario/errores'
 import { aDecimal, aDecimalOpcional, ErrorDeFormato } from '@/lib/formato/numeros'
 import { esUuid } from '@/lib/uuid'
-import { calcularSaldos, detalleDeMovimiento, textoDeMotivo, formatearFechaMovimiento } from './historial'
-import { formatearCantidad } from '@/lib/formato/mostrar'
+import { calcularSaldos, detalleDeMovimiento, textoDeMotivo } from './historial'
+import { formatearCantidad, formatearFechaCorta, formatearHora } from '@/lib/formato/mostrar'
 
 export type EstadoInventario = { error: string | null; aviso: string | null }
 
@@ -204,7 +204,13 @@ export async function corregirPorConteo(
   }
 }
 
-const ENCABEZADO_CSV = ['Fecha', 'Motivo', 'Detalle', 'Cambio', 'Queda']
+// "Usuario" al final y no mezclado en "Detalle": la pantalla funde quién y
+// qué en una sola celda porque la maqueta la pide así (design/arandano.pen),
+// pero el CSV se vende como "el historial completo" y es el artefacto
+// auditable — ahí el nombre tiene que poder filtrarse y ordenarse como
+// columna propia, no quedar adentro de un string armado para leer, no para
+// procesar (I6 de la review).
+const ENCABEZADO_CSV = ['Fecha', 'Motivo', 'Detalle', 'Cambio', 'Queda', 'Usuario']
 
 /**
  * Comillas dobles si el valor trae coma, comilla o salto de línea (regla
@@ -223,6 +229,20 @@ function celdaCsv(valor: string): string {
 
 function filaCsv(campos: string[]): string {
   return campos.map(celdaCsv).join(',')
+}
+
+/**
+ * `Date` → "21/08/2026 · 14:28", CON año — a propósito distinto de
+ * `formatearFechaMovimiento` (historial.tsx), que da "21/08 · 14:28" porque
+ * la tabla en pantalla lo pide así (design/arandano.pen). El CSV no tiene el
+ * límite de filas de la tabla —"el sentido de exportar es llevarse TODO el
+ * historial"—, así que un artículo con varios años de antigüedad exportaría
+ * filas de 2024 y de 2026 indistinguibles entre sí sin el año (I7 de la
+ * review). Mismo armado que ya usa `/ventas/[id]` para su panel Resumen: ver
+ * el comentario de `formatearFechaCorta`.
+ */
+function fechaCsv(v: Date): string {
+  return `${formatearFechaCorta(v)} · ${formatearHora(v)}`
 }
 
 /**
@@ -288,11 +308,17 @@ export async function exportarHistorialCsv(
     )
 
     const filas = movimientos.map((m, i) => [
-      formatearFechaMovimiento(m.creadoEn),
+      fechaCsv(m.creadoEn),
       textoDeMotivo(m.motivo),
       detalleDeMovimiento(m),
       (m.delta.greaterThan(0) ? '+' : '') + formatearCantidad(m.delta.toString()),
       formatearCantidad(saldos[i].toString()),
+      // La consulta ya trae `usuario` para armar "Detalle" en pantalla; acá
+      // se usa también para la columna propia, en las cuatro filas —incluida
+      // ANULACION_VENTA (quién anuló) e INGRESO (quién recibió la
+      // mercadería), que "Detalle" ya no muestra desde el rediseño de la
+      // pantalla.
+      m.usuario.nombre,
     ])
 
     const csv = [ENCABEZADO_CSV, ...filas].map(filaCsv).join('\r\n')

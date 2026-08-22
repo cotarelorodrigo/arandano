@@ -411,7 +411,7 @@ describe('exportarHistorialCsv (Task 5 del rediseño)', () => {
 
     const { csv, nombreArchivo } = await exportarHistorialCsv(id)
     const filas = csv.split('\r\n')
-    expect(filas[0]).toBe('Fecha,Motivo,Detalle,Cambio,Queda')
+    expect(filas[0]).toBe('Fecha,Motivo,Detalle,Cambio,Queda,Usuario')
     expect(filas).toHaveLength(2) // encabezado + el único movimiento
     expect(filas[1]).toContain('Ingreso')
     expect(filas[1]).toContain('Factura A 0001')
@@ -424,6 +424,16 @@ describe('exportarHistorialCsv (Task 5 del rediseño)', () => {
     // fuera otro (mutación probada: un saldo constante "115" también
     // contiene "15" como substring).
     expect(celdasDe(filas[1])[4]).toBe('15')
+    // I6 de la review: la pantalla dejó de mostrar quién hizo el movimiento
+    // (la maqueta lo pide así), pero el CSV es "el historial completo" y ahí
+    // el "quién" no se puede perder — se agrega como columna propia.
+    expect(celdasDe(filas[1])[5]).toBe('La dueña')
+    // I7 de la review: el CSV no tiene el límite de filas de la tabla en
+    // pantalla ("el sentido de exportar es llevarse TODO el historial"), así
+    // que un artículo con años de movimientos exporta fechas sin año que no
+    // alcanzan para conciliar. La columna "Fecha" tiene que traer los 4
+    // dígitos, a diferencia de la tabla (formatearFechaMovimiento, sin año).
+    expect(celdasDe(filas[1])[0]).toMatch(/^\d{2}\/\d{2}\/\d{4} · \d{2}:\d{2}$/)
     expect(nombreArchivo).toMatch(/^historial-.*\.csv$/)
   })
 
@@ -486,7 +496,7 @@ describe('exportarHistorialCsv (Task 5 del rediseño)', () => {
   it('un EMPLEADO también puede exportar: es de sólo lectura, sin restricción de dueño', async () => {
     estado.cookie = cookieEmpleado
     const { csv } = await exportarHistorialCsv(articuloId)
-    expect(csv.split('\r\n')[0]).toBe('Fecha,Motivo,Detalle,Cambio,Queda')
+    expect(csv.split('\r\n')[0]).toBe('Fecha,Motivo,Detalle,Cambio,Queda,Usuario')
   })
 
   it('sin sesión, manda al login en vez de exportar', async () => {
