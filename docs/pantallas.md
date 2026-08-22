@@ -437,7 +437,8 @@ El tablero de órdenes: qué equipos hay en el local y en qué anda cada uno.
 
 **Qué se puede hacer**
 
-- Ver las órdenes **abiertas** (los siete estados que no son `ENTREGADO`).
+- Ver las órdenes **abiertas** (los ocho estados que no son `ENTREGADO` —desde
+  el ciclo del rediseño, con `APROBADO` sumado al medio del flujo).
 - Filtrar por estado con los chips, que traen el conteo de cada uno.
 - Buscar por número de orden, cliente, marca, modelo o IMEI.
 - Paginar de a 50.
@@ -465,6 +466,26 @@ El tablero de órdenes: qué equipos hay en el local y en qué anda cada uno.
   "IMEI".
 - `?p` se trunca y se limita, por lo mismo que en `/inventario`.
 
+**Rediseño contra `design/arandano.pen`** (ciclo de las tres pantallas de
+Servicio Técnico):
+
+- **Cada chip de fila lleva color e ícono propios**, salidos de un único mapeo
+  (`ESTADO_VISUAL`, `lib/ordenes-de-trabajo/estados.ts`) que también usan el
+  chip del tablero y la bitácora de la ficha — un solo lugar para no repetir la
+  paleta en tres archivos. Una orden **anulada** nunca usa el chip de color de
+  su estado viejo (mentiría sobre una orden que ya no está viva): se pinta
+  neutro, "Anulada (Estado)".
+- **El listado vive dentro de una card**, con encabezado propio y una `<Table>`
+  real de cinco columnas (Orden/Equipo/Cliente/Ingresó/Estado) — reemplaza al
+  `<ul>` suelto de antes del rediseño.
+- **`ENTREGADO` va al final de la fila de chips**, no en su posición "natural"
+  después de `LISTO`: es el orden exacto que dibuja la maqueta, y `ESTADOS`
+  —la fuente que también alimenta `TRANSICIONES` y el guard `esEstado`— se
+  reordenó para decir la verdad sobre qué ve el tablero.
+- **El subtítulo del Topbar** ("N equipos en el local · el más viejo hace N
+  días") se completó en este ciclo: el comentario que dejaba pendiente el ciclo
+  del shell decía textualmente "para el ciclo del tablero", y éste lo fue.
+
 ## `/servicio-tecnico/nuevo`
 
 La recepción del equipo en el mostrador.
@@ -473,8 +494,8 @@ La recepción del equipo en el mostrador.
 
 **Qué se puede hacer**
 
-- Buscar al cliente por nombre o teléfono, o **crearlo al vuelo** escribiendo
-  nombre y teléfono.
+- Buscar al cliente por nombre o teléfono y elegirlo de una lista de cards —o
+  **crearlo al vuelo** escribiendo nombre y teléfono.
 - Cargar marca, modelo, IMEI o número de serie y clave de desbloqueo.
 - Anotar la falla declarada por el cliente, los accesorios entregados y los
   daños visibles.
@@ -497,6 +518,36 @@ La recepción del equipo en el mostrador.
   del `catch` el traductor de errores la relanzaría como si fuera un bug. Mismo
   cuidado que `app/login/acciones.ts`.
 
+**Rediseño contra `design/arandano.pen`** (ciclo de las tres pantallas de
+Servicio Técnico):
+
+- **El buscador pasa de `<select>` a cards seleccionables**, con nombre,
+  teléfono y "N órdenes previas" — dato que antes no se calculaba
+  (`buscarClientes`, `lib/clientes/administrar.ts`, ya traía sólo `id, nombre,
+  telefono`). `Cliente.ordenes` ya era una relación del schema, así que sumar
+  el conteo fue un `_count` de Prisma, no una migración. La redacción
+  ("1 orden previa" / "N órdenes previas") vive en `rotuloOrdenesPrevias`, en
+  el mismo archivo — la ficha de la orden (`/servicio-tecnico/[id]`) pide el
+  mismo dato para su card Cliente, aunque con otra redacción (el número
+  pelado, sin la frase).
+- **La selección es estado de React, no un grupo de radios nativo.** El
+  componente ya es `'use client'` por `useActionState`, así que no había
+  pureza que preservar, y el estado es lo que permite deseleccionar un cliente
+  elegido por error con sólo empezar a tipear en "Cliente nuevo" — sin eso, un
+  clic de más dejaba la orden a nombre de quien había quedado seleccionado
+  antes, sin que lo tipeado después se usara (`crearOrden` prioriza
+  `clienteId` sobre `clienteNuevo` si vienen los dos).
+- **"Guardar e imprimir ticket" y "Cancelar" suben al Topbar.** Como el
+  buscador de cliente necesita su propio `<form>` de método GET —y un `<form>`
+  no puede anidar otro—, el `<form>` real que dispara `recibirEquipo` queda
+  invisible (mismo mecanismo que `FORM_BAJA_ARTICULO` en
+  `app/(app)/inventario/formularios.tsx`) y cada campo de las cuatro cards
+  apunta a él con el atributo HTML `form=`, sin importar dónde caiga en el DOM.
+- **Cuatro cards**: Cliente (buscador + resultados + alta al vuelo), Equipo
+  (con el aviso de que la clave no se imprime), Qué le pasa (falla, accesorios,
+  daños) y "Qué se imprime" — un panel puramente informativo, sin inputs, con
+  los cuatro puntos que ya explicaba el ticket.
+
 ## `/servicio-tecnico/[id]`
 
 La ficha de una orden: moverla de estado, diagnosticarla y leer su historia.
@@ -505,26 +556,18 @@ La ficha de una orden: moverla de estado, diagnosticarla y leer su historia.
 
 **Qué se puede hacer**
 
-- Ver el equipo, el cliente, la falla y lo que se anotó al recibirlo.
-- **Mover el estado**, con una nota opcional. Sólo aparecen las transiciones
-  legales desde donde está.
+- Ver el equipo, el cliente (con sus órdenes previas) y la falla declarada.
+- **Mover el estado**, con una nota opcional, desde el paño violeta "ESTADO
+  ACTUAL". Sólo aparecen las transiciones legales desde donde está.
 - **Cargar el diagnóstico** y el monto estimado del presupuesto.
 - Llamar al cliente con un toque (el teléfono es un `tel:`, no texto suelto: es
   el gesto que se hace cuando el equipo queda listo).
 - Reimprimir el ticket.
-- Leer la bitácora completa.
+- Leer la bitácora completa, más nueva primero.
 - **Anular la orden** — sólo el dueño.
 
 **Decisiones**
 
-- **El estado salió del título y bajó al cuerpo (ciclo del shell).** El título
-  ahora es "Orden #N · marca modelo" —lo que identifica al equipo—, y el
-  subtítulo dice "Ingresó el DD/MM/AAAA · hace N días en el local" (`hoy` para
-  0, singular para 1). El estado en sí quedó como un párrafo al principio del
-  cuerpo ("Estado actual: X"), porque el encabezado de 66 px es común a las
-  diez pantallas y no tiene lugar para un dato que sólo ésta necesita. El
-  cálculo de los días es `lib/ordenes-de-trabajo/antiguedad.ts` (`diasEnElLocal`),
-  contado por fecha CALENDARIO de Buenos Aires y no por milisegundos.
 - **El grafo de estados es la fuente de verdad y el servidor lo vuelve a
   consultar.** La pantalla dibuja los botones a partir de la misma tabla, pero
   una UI que esconde un botón no es una validación.
@@ -545,6 +588,56 @@ La ficha de una orden: moverla de estado, diagnosticarla y leer su historia.
   Prisma tipa el parámetro por columna, así que un id sin forma de uuid lo
   rechaza antes de consultar, y eso en un server component es un 500 servido
   desde la barra de direcciones.
+
+**Rediseño contra `design/arandano.pen`** (ciclo de las tres pantallas de
+Servicio Técnico):
+
+- **El paño "ESTADO ACTUAL" reemplaza al `<p>` de texto plano** que un ciclo
+  anterior bajó al cuerpo esperando exactamente este paño (el comentario lo
+  decía). Es un bloque pintado con `--marca`: rótulo, estado y "hace cuánto"
+  arriba; "MOVER A" y los botones de transición abajo, sólido el camino
+  principal (el primero de la lista) y fantasma el resto. "Hace cuánto" mide el
+  tiempo desde el **último evento de la bitácora**, no desde que el equipo
+  entró al local (eso ya lo dice el subtítulo del Topbar) — por invariante, el
+  evento más reciente siempre trajo la orden a su estado actual.
+- **Los botones son los que devuelve `TRANSICIONES`, no los que dibuja la
+  maqueta.** Para `EN_REPARACION` el `.pen` muestra Listo / Sin reparación /
+  Rechazado; el grafo real de este módulo es Listo / Presupuestado / Sin
+  reparación, sin Rechazado ahí. **No se tocó** — agregar un estado que falta
+  (como `APROBADO`, tarea de un ciclo anterior) es llenar un hueco evidente;
+  cambiar a qué estados se puede ir desde uno existente es rediseñar el flujo
+  del negocio, y esa decisión no le toca a un ciclo de presentación. Queda
+  como pregunta abierta para el dueño del producto (ver `CLAUDE.md`).
+- **Una orden anulada no ofrece transiciones**, aunque `TRANSICIONES` diga que
+  las hay desde su estado: anular es una columna aparte
+  (`OrdenDeTrabajo.anuladaEn`), no un estado, así que el grafo no puede
+  expresarlo por su cuenta — `transicionesDisponibles(estado, anulada)` le
+  suma esa segunda razón.
+- **La bitácora pasa a línea de tiempo, más nueva primero** (al revés que
+  antes del rediseño), con el ícono y el color de `ESTADO_VISUAL` — el mismo
+  mapeo que ya pinta los chips del tablero, no uno nuevo. La maqueta pinta
+  distinto el evento de apertura ("Equipo recibido", verde) del resto de las
+  apariciones de `RECIBIDO` (gris) — inconsistencia de la propia maqueta que
+  este ciclo no replicó: usa el mapeo real en todos los casos.
+- **Las cards Cliente/Equipo/Falla se rehacen contra la maqueta.** Cliente
+  suma "Órdenes previas" (mismo dato y helper de redacción que el buscador de
+  `/servicio-tecnico/nuevo`, ver esa sección) y un botón "Llamar al cliente".
+  Equipo **pierde la fila de "Daños visibles"**: el dato sigue en el schema y
+  en el ticket, pero esta card del rediseño enumera cuatro filas exactas, no
+  cinco — es una omisión de la maqueta frente al dato existente, no al revés.
+  Falla y Diagnóstico se funden en una sola card (antes eran dos `<section>`
+  separadas): la cita de lo que dijo el cliente es de sólo lectura y siempre
+  visible; el formulario de diagnóstico se apaga con la orden anulada, igual
+  que antes del ciclo.
+- **"Anular orden" y "Reimprimir ticket" suben al Topbar.** El botón de anular
+  usa el mismo mecanismo de `<form>` invisible + atributo `form=` que
+  `/servicio-tecnico/nuevo`, y sólo existe en el DOM cuando puede aparecer
+  (dueño, orden viva) — esconderlo no reemplaza la revalidación de la action
+  (`exigirDuenio` + `ORDEN_ANULADA`), es sólo comodidad.
+- **"Quién recibió" dejó de pedirse aparte.** Es siempre el mismo usuario que
+  firma el evento de apertura de la bitácora (`crearOrden` le asigna el mismo
+  `usuarioId` a los dos), así que ese dato ya sale de ahí sin repetir la
+  consulta.
 
 ## `/servicio-tecnico/[id]/ticket`
 

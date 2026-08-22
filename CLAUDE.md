@@ -699,6 +699,55 @@ Y del producto:
   serie de dólares que la maqueta nunca pidió—. La excepción de jsdom en
   `vitest.config.mts` ya se había retirado en el ciclo de `/ventas` (arriba):
   no había nada más que sacar ahí.
+
+  **Y el rediseño de las tres pantallas de Servicio Técnico** (2026-08-22,
+  ciclo propio, posterior al de `/inventario`): el tablero
+  (`/servicio-tecnico`), la recepción (`/servicio-tecnico/nuevo`) y la ficha
+  de una orden (`/servicio-tecnico/[id]`).
+
+  **Entró el estado `APROBADO`, entre `PRESUPUESTADO` y `EN_REPARACION`.**
+  Antes de este ciclo, un presupuesto pasaba directo a reparación
+  (`PRESUPUESTADO → EN_REPARACION`) y la aceptación del cliente **no quedaba
+  registrada en ningún lado** — ni en el estado, ni en la bitácora. En un
+  service eso importa de verdad: es justo lo que hay que poder probar (a un
+  cliente que dice "yo no autoricé esto") antes de haber gastado un repuesto
+  que después nadie paga. `APROBADO` es aditivo al enum y **no reemplaza** el
+  camino directo: `PRESUPUESTADO → EN_REPARACION` se mantiene, porque hay
+  locales donde el cliente aprueba de palabra en el mostrador y el paso extra
+  no hace falta — es un registro que se puede usar, no uno obligatorio. Las
+  tres transiciones nuevas son `PRESUPUESTADO → APROBADO`, `APROBADO →
+  EN_REPARACION` y `APROBADO → SIN_REPARACION` (se abre el equipo y aparece
+  que no tiene arreglo incluso después de aprobado). El resto del grafo
+  —incluidas las transiciones de `EN_REPARACION`— **no se tocó**.
+
+  **Pregunta abierta para el dueño del producto, que este ciclo dejó
+  explícitamente sin responder**: `design/arandano.pen` dibuja, para el paño
+  de estado en `EN_REPARACION`, los botones Listo / Sin reparación /
+  Rechazado. El grafo real (`TRANSICIONES.EN_REPARACION`,
+  `lib/ordenes-de-trabajo/estados.ts`) es Listo / Presupuestado / Sin
+  reparación — sin `Rechazado` ahí, y con `Presupuestado` en su lugar (la
+  vuelta a presupuestar cuando se abre el equipo y aparece algo más). La
+  pantalla dibuja **lo que `TRANSICIONES` devuelve de verdad, no lo que
+  muestra la maqueta**, a propósito: agregar un estado que falta al enum
+  (como `APROBADO`, arriba) es llenar un hueco evidente que nadie discute;
+  cambiar a qué estados se puede pasar desde uno que ya existe es rediseñar
+  el flujo de trabajo del service, y esa decisión la tiene que tomar quien
+  entiende el negocio, no un ciclo de presentación que sólo tenía la maqueta
+  en la mano. Si la intención real es que `EN_REPARACION` pueda ir a
+  `RECHAZADO` (y no a `PRESUPUESTADO`), es un cambio de una línea en
+  `TRANSICIONES` — pero alguien tiene que decidirlo primero.
+
+  El resto del ciclo es presentación pura contra el `.pen`: los chips de
+  estado del tablero ganan color e ícono propios (`ESTADO_VISUAL`, un único
+  mapeo que también pinta la bitácora de la ficha), el listado pasa a vivir
+  en una card con `<Table>` real, el buscador de cliente de la recepción
+  pasa de `<select>` a cards seleccionables con "N órdenes previas" (dato
+  que no se calculaba: `Cliente.ordenes` ya era una relación, así que fue un
+  `_count`, no una migración), y la ficha suma el paño violeta "ESTADO
+  ACTUAL" con los botones de transición adentro, más la bitácora como línea
+  de tiempo (más nueva primero, al revés que antes). El detalle completo de
+  cada pantalla vive en `docs/pantallas.md`, no acá — éste es el resumen de
+  las decisiones que valen para releer más adelante.
 - ~~Construir la UI de inventario.~~ **Hecho** (2026-08-11). Listado con
   buscador y paginación, alta con SKU autogenerado y stock inicial que nace
   como movimiento, ingreso de mercadería con su costo, corrección por conteo
