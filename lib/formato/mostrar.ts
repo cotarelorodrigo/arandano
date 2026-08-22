@@ -50,3 +50,22 @@ const FECHA = new Intl.DateTimeFormat('es-AR', {
 export function formatearFecha(v: Date): string {
   return FECHA.format(v)
 }
+
+/**
+ * Lo que devuelve `formatearPrecio`/`formatearDolares`, sin el signo de
+ * moneda adelante — para las superficies que ya dicen de qué moneda se
+ * trata por otro lado (el rótulo "USD" del chip de cotización en
+ * `app/(app)/vender/caja.tsx`, el "$" que la banda del total de
+ * `app/(app)/vender/punto-de-venta.tsx` pinta como SU PROPIO elemento) y en
+ * las que anteponer el signo de nuevo duplicaría el símbolo o compitiría con
+ * el que ya está al lado.
+ *
+ * "Todo lo que no es dígito al principio" y no una lista fija de símbolos:
+ * el símbolo varía con la moneda (pesos, dólares) y con el locale de ICU,
+ * así que esa regla no hay que retocarla si el formateador cambia. Extraída
+ * acá y no repetida en cada pantalla —estaba duplicada en las dos de
+ * arriba, hallazgo de la review final del rediseño de /vender.
+ */
+export function montoSinSigno(formateado: string): string {
+  return formateado.replace(/^\D+/, '')
+}

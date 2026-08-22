@@ -43,7 +43,7 @@ export default async function Vender() {
         titulo="Vender"
         acciones={
           <ChipCaja
-            caja={caja ? { id: caja.id, abiertaEn: caja.abiertaEn } : null}
+            caja={caja ? { abiertaEn: caja.abiertaEn } : null}
             // .toString() y no el Decimal crudo: un componente CLIENTE no
             // puede recibir un Decimal de Prisma a través de la frontera,
             // mismo motivo que ArticuloVendible en lib/ventas/buscar.ts.

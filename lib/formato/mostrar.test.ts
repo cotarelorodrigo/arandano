@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatearPrecio, formatearDolares, formatearCantidad, formatearFecha } from './mostrar'
+import { formatearPrecio, formatearDolares, formatearCantidad, formatearFecha, montoSinSigno } from './mostrar'
 
 // Puro: sin Docker, sin base. `Intl` alcanza y corre en cualquier Node.
 
@@ -52,5 +52,23 @@ describe('formatearFecha', () => {
     const salida = formatearFecha(instante)
     expect(salida).toContain('14')
     expect(salida).not.toContain('15')
+  })
+})
+
+// Extraída de la review final del rediseño de /vender: el mismo
+// `.replace(/^\D+/, '')` estaba escrito dos veces (la banda del total de
+// punto-de-venta.tsx y el chip de cotización de caja.tsx) para separar el
+// signo de moneda de un valor ya formateado.
+describe('montoSinSigno', () => {
+  it('descarta el signo de pesos', () => {
+    expect(montoSinSigno(formatearPrecio('1500.5'))).toBe('1.500,50')
+  })
+
+  it('descarta el signo de dólares, de dos caracteres', () => {
+    expect(montoSinSigno(formatearDolares('0.8'))).toBe('0,80')
+  })
+
+  it('no toca un valor que ya viene sin signo', () => {
+    expect(montoSinSigno('1.500,50')).toBe('1.500,50')
   })
 })

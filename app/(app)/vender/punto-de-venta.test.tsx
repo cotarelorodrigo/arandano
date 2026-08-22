@@ -64,6 +64,13 @@ describe('el punto de venta', () => {
   // análogos, "Valor" — fuente Archivo, igual que el resto de la plata de la
   // cinta) que antes no existía porque la cantidad era un <Input> de texto
   // libre sin tratamiento de importe.
+  // MINOR de la review final: este mensaje quedó desactualizado dos veces
+  // sin que el número (8) se enterara, y por pura coincidencia. La
+  // extracción de `CampoMonto` (Task 4) consolidó los tres sitios de Monto/
+  // Cotización/Recibido en UNA sola definición —de 8 bajó a 6—, y después
+  // el chip de Faltante/Sobrante y el renglón "Entran $X" sumaron cada uno
+  // el suyo —de 6 volvió a 8—. El total dio el mismo número por casualidad;
+  // la lista de abajo es la que hoy describe esos 8 sitios de verdad.
   it('el rol importe cubre las columnas de plata y los campos de monto', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8').replace(/\s+/g, '')
     const apariciones = [...fuente.matchAll(/estilos\.importe\}/g)].length
@@ -72,8 +79,9 @@ describe('el punto de venta', () => {
       `estilos.importe} aparece ${apariciones} veces en el fuente y tiene que ` +
         `aparecer 8: el precio de la lista de resultados del buscador, las ` +
         `columnas Precio y Subtotal de la tabla, el valor del stepper de ` +
-        `cantidad, los campos Monto, Cotización y Recibido de FilaDePago, y el ` +
-        `aviso de Vuelto.`,
+        `cantidad, la definición de \`CampoMonto\` (una sola, compartida por ` +
+        `Monto, Cotización y Recibido de FilaDePago), el chip de Vuelto, el ` +
+        `chip de Faltante/Sobrante, y el renglón "Entran $X".`,
     ).toBe(8)
   })
 

@@ -1,8 +1,8 @@
 'use client'
 
-import { useActionState, useState } from 'react'
+import { cloneElement, useActionState, useState } from 'react'
 import { abrirCajaDesdeVender, cerrarCajaDesdeVender, type EstadoCaja } from './acciones'
-import { formatearFecha, formatearPrecio } from '@/lib/formato/mostrar'
+import { formatearFecha, formatearPrecio, montoSinSigno } from '@/lib/formato/mostrar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,10 +11,26 @@ import estilos from '@/components/importe.module.css'
 
 const INICIAL: EstadoCaja = { error: null }
 
+/**
+ * La forma de "chip convertido en mini-form", compartida por `ConfirmarCierre`
+ * y `FormularioDeApertura`: los dos reemplazan un chip de píldora por un
+ * formulario que vive en el MISMO lugar del header, así que llevan la misma
+ * geometría de píldora (radio completo, borde, fondo `--card`). Estaba
+ * copiada verbatim en los dos —hallazgo de la review final—; un solo lugar
+ * para el string es lo que evita que retocar el padding de uno los
+ * desalinee entre sí sin que se note.
+ */
+const CLASES_MINI_FORM =
+  'flex items-center gap-2 rounded-full border border-input bg-card py-[3px] pr-[5px] pl-[11px]'
+
 /** Lo mínimo del turno en curso que el chip necesita — no el `saldoInicial`
  *  (`Decimal` de Prisma), que no cruza la frontera servidor→cliente: un
- *  objeto de una librería no es JSON, a diferencia de un `Date`, que sí. */
-export type CajaDelChip = { id: string; abiertaEn: Date }
+ *  objeto de una librería no es JSON, a diferencia de un `Date`, que sí. Y
+ *  no el `id`: `cerrarCajaDesdeVender()` no recibe parámetros —encuentra la
+ *  caja abierta del tenant/usuario del lado del servidor—, así que un `id`
+ *  acá sólo cruzaría la frontera para no ser leído nunca, hallazgo de la
+ *  review final del rediseño. */
+export type CajaDelChip = { abiertaEn: Date }
 
 /**
  * El chip de caja y el de cotización del header de `/vender`
@@ -100,7 +116,7 @@ function ConfirmarCierre({ caja, onCancelar }: { caja: CajaDelChip; onCancelar: 
     <form
       action={accion}
       onKeyDown={detenerEscapeGlobal}
-      className="flex items-center gap-2 rounded-full border border-input bg-card py-[3px] pr-[5px] pl-[11px]"
+      className={CLASES_MINI_FORM}
     >
       <span className="text-xs text-foreground-soft">
         ¿Cerrar la caja abierta desde las {formatearFecha(caja.abiertaEn)}?
@@ -146,7 +162,7 @@ function FormularioDeApertura({ onCancelar }: { onCancelar: () => void }) {
     <form
       action={accion}
       onKeyDown={detenerEscapeGlobal}
-      className="flex items-center gap-2 rounded-full border border-input bg-card py-[3px] pr-[5px] pl-[11px]"
+      className={CLASES_MINI_FORM}
     >
       <Label htmlFor="saldoInicial" className="text-xs text-foreground-soft">
         Saldo inicial
@@ -190,10 +206,10 @@ function ChipCotizacion({ valor, en }: { valor: string | null; en: Date | null }
       <span className="text-[11px] font-semibold text-foreground-soft">USD</span>
       <span className={`text-xs font-semibold text-foreground ${estilos.importe}`}>
         {/* formatearPrecio() ya antepone "$ ", que acá no corresponde —el
-            rótulo "USD" de al lado ya dice de qué moneda se habla— y se
-            descarta con el mismo `.replace()` que ya usa la banda del total
-            de punto-de-venta.tsx para separar el signo del número. */}
-        {valor === null ? '—' : formatearPrecio(valor).replace(/^\D+/, '')}
+            rótulo "USD" de al lado ya dice de qué moneda se habla—, y
+            montoSinSigno() (lib/formato/mostrar.ts) lo descarta con la misma
+            regla que ya usa la banda del total de punto-de-venta.tsx. */}
+        {valor === null ? '—' : montoSinSigno(formatearPrecio(valor))}
       </span>
     </span>
   )
@@ -203,7 +219,15 @@ function ChipCotizacion({ valor, en }: { valor: string | null; en: Date | null }
   return (
     <TooltipProvider>
       <Tooltip>
-        <TooltipTrigger asChild>{chip}</TooltipTrigger>
+        {/* tabIndex={0} vía cloneElement, y no en `chip` directamente: el
+            <span> pelado del chip nunca entra al orden de tabulación por
+            default, así que "Actualizada el ..." quedaba inalcanzable por
+            teclado —hallazgo de la review final— en la pantalla que este
+            mismo ciclo declara la más operada sin mouse. Sólo hace falta acá,
+            en la rama CON tooltip: el chip sin cotización (más arriba) no
+            esconde ningún dato extra detrás de un hover, así que no necesita
+            un tabIndex que no llevaría a ningún lado. */}
+        <TooltipTrigger asChild>{cloneElement(chip, { tabIndex: 0 })}</TooltipTrigger>
         {/* De cuándo es la cotización. El `.pen` no dibuja esto —el nodo
             `TB7On` sólo tiene rótulo y valor—, y va igual: el comentario de
             `Tenant.cotizacionUsdEn` en el schema lo dice explícito, "un dólar

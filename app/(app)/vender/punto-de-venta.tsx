@@ -10,7 +10,7 @@ import {
   deMilesimas, dineroEnCentavos, pesosDePagoEnCentavos, subtotalEnCentavos,
   totalDePagosEnCentavos, totalEnCentavos,
 } from '@/lib/ventas/centavos'
-import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
+import { formatearPrecio, formatearCantidad, montoSinSigno } from '@/lib/formato/mostrar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -1013,10 +1013,11 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
               <span className={estilos.total} style={{ color: 'var(--marca-foreground)' }}>
                 {Number.isNaN(totalCentavos)
                   ? '—'
-                  : // El "$ " que formatearPrecio() ya antepone se descarta acá:
-                    // el signo es SU PROPIO elemento (arriba), no parte de esta
-                    // cadena — es justo lo que separa esta banda del pie viejo.
-                    formatearPrecio(deCentavos(totalCentavos)).replace(/^\D+/, '')}
+                  : // El "$ " que formatearPrecio() ya antepone se descarta con
+                    // montoSinSigno() (lib/formato/mostrar.ts): el signo es SU
+                    // PROPIO elemento (arriba), no parte de esta cadena — es
+                    // justo lo que separa esta banda del pie viejo.
+                    montoSinSigno(formatearPrecio(deCentavos(totalCentavos)))}
               </span>
             </div>
           </div>
@@ -1259,12 +1260,19 @@ function CampoMonto({
       <Label htmlFor={id} className="text-[11px] font-semibold text-foreground-soft">
         {etiqueta}
       </Label>
+      {/* El relevamiento pide 15px/600 para Monto/Cotización/Recibido. El
+          TAMAÑO no se fuerza a propósito —queda en el `text-base`/`md:text-sm`
+          responsivo que ya trae `Input` por default (docs/sistema-de-diseno.md,
+          "text-base en inputs hasta md"): abajo de 16px iOS hace zoom al
+          enfocar, y en una tablet de mostrador eso es la pantalla saltando en
+          cada pago. El PESO sí —`font-semibold`—, hallazgo de la review final:
+          no tiene la misma excusa, y sin él quedaba en el 400 por default. */}
       <Input
         id={id}
         inputMode="decimal"
         value={valor}
         onChange={(e) => onChange(e.target.value)}
-        className={`h-10 rounded-[9px] border-input text-right ${estilos.importe}`}
+        className={`h-10 rounded-[9px] border-input text-right font-semibold ${estilos.importe}`}
       />
     </div>
   )
