@@ -109,8 +109,9 @@ export const PASOS_STEPPER: { verbo: string; delta: 1 | -1; Icono: typeof Minus 
  *
  * Extraída como función pura —sin tocar `buscador.current` ni el DOM—
  * porque es la ÚNICA parte del listener de F2 que se puede probar sin
- * jsdom, que este repo no tiene salvo una excepción puntual (ver la nota de
- * `ticket.test.tsx`). `punto-de-venta.test.tsx` prueba esta función.
+ * jsdom, que este repo no tiene (ver la nota de `ticket.test.tsx`, que
+ * explica por qué ese archivo tampoco lo necesita). `punto-de-venta.test.tsx`
+ * prueba esta función.
  *
  * Lo que ESE test NO cubre, para que no se lea como cobertura completa: que
  * el listener esté realmente enganchado a `window`, que dispare
@@ -481,10 +482,9 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   // SIN TEST de este efecto en sí —sólo de `esAtajoDeBuscador`, la regla que
   // decide la tecla (ver su comentario)—. Enganchar `window`, disparar
   // `preventDefault` y mover el foco de verdad son DOM real, y este repo no
-  // corre jsdom salvo la excepción puntual de `ticket.test.tsx`. Quede
-  // anotado así a propósito, para que la presencia de un test sobre
-  // `esAtajoDeBuscador` no se lea como si este bloque entero estuviera
-  // cubierto.
+  // corre jsdom (ver la nota de `ticket.test.tsx`). Quede anotado así a
+  // propósito, para que la presencia de un test sobre `esAtajoDeBuscador` no
+  // se lea como si este bloque entero estuviera cubierto.
   useEffect(() => {
     function alApretarTecla(e: KeyboardEvent) {
       if (!esAtajoDeBuscador(e.key)) return
@@ -634,10 +634,9 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   //
   // SIN TEST de este efecto en sí, mismo motivo que el de F2: enganchar
   // `window`, leer `document.activeElement` y llamar `requestSubmit()` es
-  // DOM real, y este repo no corre jsdom salvo la excepción puntual de
-  // `ticket.test.tsx`. Lo que SÍ se prueba son las reglas puras que deciden
-  // cada atajo: `esAtajoDeCobro`, `puedeDispararCobroDesdeFoco` y
-  // `esAtajoDeVaciar`.
+  // DOM real, y este repo no corre jsdom (ver la nota de `ticket.test.tsx`).
+  // Lo que SÍ se prueba son las reglas puras que deciden cada atajo:
+  // `esAtajoDeCobro`, `puedeDispararCobroDesdeFoco` y `esAtajoDeVaciar`.
   //
   // LA GUARDA QUE FALTABA, encontrada en la revisión final de esta task: un
   // `<Select>` de Radix abierto (el de medio o el de moneda, en cualquier

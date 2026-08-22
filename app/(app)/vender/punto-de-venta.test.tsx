@@ -105,10 +105,10 @@ describe('el punto de venta', () => {
 
   // El listener de `window` en sí (enganchar keydown, preventDefault, mover
   // el foco de verdad) NO está probado acá: es DOM real y este repo no corre
-  // jsdom salvo la excepción puntual de `ticket.test.tsx`. Lo que SÍ se
-  // puede probar sin jsdom es la regla pura que decide qué tecla dispara el
-  // atajo — y es lo único que un test de este archivo puede afirmar en
-  // verdad sin mentir sobre la cobertura.
+  // jsdom (ver la nota de `ticket.test.tsx`). Lo que SÍ se puede probar sin
+  // jsdom es la regla pura que decide qué tecla dispara el atajo — y es lo
+  // único que un test de este archivo puede afirmar en verdad sin mentir
+  // sobre la cobertura.
   it('F2 es el atajo que enfoca el buscador, y ninguna otra tecla lo es', async () => {
     const { esAtajoDeBuscador } = await import('./punto-de-venta')
     expect(esAtajoDeBuscador('F2')).toBe(true)

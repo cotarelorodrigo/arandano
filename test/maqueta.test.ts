@@ -94,9 +94,12 @@ const SOLO_EN_CSS: Record<string, string> = {
     'que más se repite sin variable y el candidato número uno a promoverse.',
   '--marca-dim': 'lo mismo que --marca-soft, un escalón más apagado (#9C8BD6).',
   '--chart-2':
-    'la serie de dólares del panel de /ventas. La maqueta dibuja el panel con ' +
-    'barras de una sola serie, así que el segundo color se eligió al escribir el ' +
-    'CSS, con su contraste medido en docs/sistema-de-diseno.md.',
+    'era la serie de dólares del panel de /ventas antes del rediseño de ese ' +
+    'panel: la reescritura sin recharts dibuja una sola serie por barra (ver ' +
+    'el comentario de grafico.tsx), así que hoy no tiene ningún consumidor — ' +
+    'ni de código ni de la maqueta, que nunca pidió una segunda serie. Se ' +
+    'queda documentado y sin usar, con su contraste ya medido en ' +
+    'docs/sistema-de-diseno.md; sacarlo es del ciclo siguiente.',
   '--radius': 'no es un color; la maqueta lleva el radio en cada frame.',
 }
 

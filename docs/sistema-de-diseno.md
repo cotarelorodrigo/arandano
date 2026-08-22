@@ -381,24 +381,37 @@ sumarlo ahí no compraría nada.
 No es un default que quedó: es una decisión. Cero bytes, cero salto de fuente al
 cargar, y se ve nativa en el Windows del mostrador igual que en el Android del
 dueño. **Sigue siendo la pila del cuerpo de toda la aplicación**: botones y
-texto corrido no la abandonan en ninguna pantalla; cuatro roles salen hacia
-Archivo: el cartel —el nombre del local—, que desde el ciclo del cartel paga
-Archivo también en
+texto corrido no la abandonan en ninguna pantalla; cuatro roles salían hacia
+Archivo antes de este ciclo: el cartel —el nombre del local—, que desde el
+ciclo del cartel paga Archivo también en
 el header de la aplicación y no sólo en el login; el importe —la plata—, que
 desde ese ciclo paga Archivo en `/vender`: ahí los importes de la tabla y de
 la lista de resultados, la banda del total (monto y signo, cada uno con su
 propio tamaño), los campos de monto, cotización y recibido del formulario de
 cobro, y los chips de vuelto, faltante y la equivalencia de un pago en
 dólares, van en Archivo y no en la pila del sistema; el título de pantalla
-(`h1`), que desde el encabezado de 66 px de este ciclo paga Archivo en las
+(`h1`), que desde el encabezado de 66 px de ese ciclo paga Archivo en las
 diez pantallas de la aplicación y no la pila del sistema que pagaba antes (ver
 *La cara de display: Archivo* más abajo); y, del rediseño de `/vender`
 (`app/(app)/vender/cobro.module.css`), el título de la card de Cobro y el
 texto del botón "Cobrar" — dos rótulos que no son plata ni el `h1` de la
-pantalla, así que no encajan en ninguno de los otros tres roles.
+pantalla, así que no encajaban en ninguno de los otros roles.
 
-`--font-heading: var(--font-sans)`: los demás títulos —los que no son el `h1`
-de pantalla, ya contado arriba— usan la misma familia.
+**El rediseño de `/ventas` y `/ventas/[id]` sumó seis roles más**, los seis en
+`app/(app)/ventas/tipografia.module.css` y los seis SIN `font-stretch` propio
+(ver el porqué en *La cara de display: Archivo*): el título de card (los
+encabezados "Qué se vendió", "Cómo se pagó", "Resumen", "Últimas ventas" y
+"Cómo entró la plata" — 15 px, peso 600); el valor de los tiles del resumen
+del período (32 px el tile de marca, 26 px los otros dos, tracking -0.6 px);
+los montos de tabla del listado y del detalle (14 px, heredado de `text-sm`
+de `<Table>`, sin tamaño propio); la banda de Total del detalle de venta
+(22 px, peso 600); los números de paginación (13 px, peso 600); y la
+cotización de cada pago en la tabla "Cómo se pagó" (14 px, mismo tratamiento
+que un monto de tabla pero un dato distinto: una tasa de cambio, no plata).
+Con éstos son **diez** los roles que Archivo cubre en total.
+
+`--font-heading: var(--font-sans)`: los demás títulos —los que no son ninguno
+de los diez roles ya contados— usan la misma familia.
 
 ### La escala
 
@@ -418,8 +431,35 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | Meta — texto que acompaña a un dato sin competirle | sistema | 12 px | 400; `--muted-foreground` en superficie clara, `--marca-dim` sobre la banda oscura del total |
 | **Importe** — plata en el punto de venta | Archivo | 42 px el monto de la banda del total; 24 px su signo; 15 px los chips de vuelto y faltante; 14 px la columna | 600 el monto y los chips, 500 el signo, 400 la columna; `font-stretch: 85%`, `tabular-nums` |
 | **Cobro** — título de la card y texto del botón "Cobrar" | Archivo | 16 px el título; 17 px el botón | 600 |
+| **Título de card** — encabezados de card en /ventas y /ventas/[id] | Archivo | 15 px | 600 |
+| **Valor de tile** — resumen del período en /ventas | Archivo | 32 px el tile de marca; 26 px los otros dos | 600, tracking -0.6 px, `tabular-nums` |
+| **Monto de tabla** — listado de /ventas y detalle de /ventas/[id] | Archivo | 14 px (heredado de `text-sm` de `<Table>`, sin tamaño propio) | 400 a 600 según la columna, `tabular-nums` |
+| **Banda de Total** — pie de la tabla "Qué se vendió" en /ventas/[id] | Archivo | 22 px | 600, `tabular-nums` |
+| **Número de paginación** — /ventas | Archivo | 13 px | 600 |
+| **Cotización** — columna de la tabla "Cómo se pagó" en /ventas/[id] | Archivo | 14 px | 400, `tabular-nums` |
 
 <!-- escala:fin -->
+
+**Los seis roles de arriba son nuevos y no una extensión de *Importe*, a
+propósito.** La plata de `/ventas` y `/ventas/[id]` también es dinero en
+Archivo con `tabular-nums`, así que la pregunta obvia es por qué no entra en
+el rol que ya existe para eso. Dos motivos, no uno:
+
+- *Importe* está definido, en su propia fila de esta tabla, como "plata en el
+  **punto de venta**" — y `font-stretch: 85%` es parte de esa definición, no un
+  detalle suelto: el rol completo lo eligió *La cara de display: Archivo* más
+  abajo por el eje de ancho (112% el cartel, 85% la plata), pensado para el
+  número que hay que leer rápido y de un vistazo en una pantalla de cobro. Las
+  dos pantallas de este ciclo son un HISTORIAL, no el momento de cobrar: la
+  plata ahí compite por espacio con una fila entera de columnas, no con el
+  resto de una pantalla de mostrador.
+- Estirar *Importe* para que cubra esto también volvería su definición
+  ambigua: ¿el rol es "toda la plata de la aplicación" o "la plata del punto de
+  venta"? Cualquiera de las dos respuestas invalida alguna de sus dos
+  menciones existentes (la fila de la escala, que dice "punto de venta"; el
+  párrafo de *La cara de display: Archivo*, que ata el 85% a esa pantalla en
+  particular). Un rol nuevo sin `font-stretch` dice lo mismo con las mismas
+  palabras que ya estaban escritas, y no las contradice.
 
 Los marcadores no son decoración: el documento tiene varias tablas y un parser
 que agarre "la primera" se rompe el día que alguien reordene secciones. Es el
@@ -485,10 +525,14 @@ número angosto que sale impreso en la cinta de la registradora. 112 % el nombre
 85 % la plata. Una sola cara cumpliendo dos roles opuestos, distinguidos por el
 eje que motivó elegirla.
 
-Hoy el rol se aplica **sólo en `/vender`**. `/ventas` e `/inventario` siguen en
-la pila del sistema hasta que tengan su propio ciclo: un rol nuevo aplicado a
-medias es una inconsistencia visible; aplicado a una pantalla y declarado como
-tal es una decisión.
+El rol *Importe*, tal cual está definido —con su `font-stretch: 85%`—, se
+aplica **sólo en `/vender`**, y sigue siendo así después de este ciclo: un rol
+nuevo aplicado a medias es una inconsistencia visible; aplicado a una pantalla
+y declarado como tal es una decisión. `/inventario` sigue en la pila del
+sistema hasta que tenga su propio ciclo. `/ventas` y `/ventas/[id]` **sí**
+pagan Archivo desde el rediseño de esas dos pantallas —seis roles propios,
+sin el `font-stretch` de *Importe*—, y la sección *La cara de display:
+Archivo* de más abajo es la que los cuenta a todos.
 
 **El cartel manda sobre el título de la pantalla, y sigue siendo la
 decisión — ya no por tamaño.** Este párrafo comparaba números porque cartel y
@@ -520,19 +564,33 @@ excepción: reabre la discusión. Si aparece un segundo importe en 40 px fuera d
 ### La cara de display: Archivo
 
 Lo que el párrafo de arriba anticipaba —*"adoptar una fuente propia más adelante
-es aditivo y barato"*— pasó, y no se quedó en un solo lugar: hoy son tres roles
-repartidos en cuatro módulos CSS.
+es aditivo y barato"*— pasó, y no se quedó en un solo lugar: hoy son **diez
+roles** repartidos en **cinco módulos CSS** (cuatro roles en cuatro módulos
+desde el ciclo del cartel, el login, el encabezado y `/vender`; seis roles
+más en un quinto módulo, `app/(app)/ventas/tipografia.module.css`, del
+rediseño de `/ventas` y `/ventas/[id]`).
 
 **Archivo**, de [Omnibus-Type](https://www.omnibus-type.com/), foundry de Buenos
-Aires. **Se usa para tres roles**, y los tres están en la tabla de arriba: el
-nombre del local (`font-stretch: 112%`), el importe del punto de venta (`85%`)
-y, desde el encabezado de pantalla de este ciclo, el título de pantalla
-(`h1`), sin `font-stretch` propio —el `.pen` no le pide uno, así que se queda
-en el 100 % por default del eje `wdth`—. Los distingue el eje de ancho, no la
-familia. Ningún otro rol la usa: tablas —salvo las columnas de plata de
-`/vender`— y botones siguen en la pila del sistema, y los campos también
-—salvo los de plata en `/vender` (monto, cotización, recibido), que llevan el
-rol Importe igual que cualquier otra columna de plata.
+Aires. Los diez roles están en la tabla de arriba. Cuatro le piden un ancho
+propio al eje `wdth`: el nombre del local (`font-stretch: 112%`) y el importe
+del punto de venta (`85%`) — los dos extremos opuestos del mismo eje, ver más
+abajo. Los otros seis se quedan en el 100 % por default: el título de
+pantalla (`h1`, desde el encabezado de un ciclo anterior), el título y el
+botón de la card de Cobro, y los seis roles nuevos de `/ventas` y
+`/ventas/[id]` (título de card, valor de tile, monto de tabla, banda de
+Total, número de paginación, cotización) — ninguno de éstos necesita
+comprimirse ni expandirse, sólo la cara. Los distingue el eje de ancho
+—cuando lo piden— y el tamaño, no la familia: los diez comparten la misma
+`font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif`.
+
+**Ya no es sólo `/vender`.** Antes de este ciclo, el único lugar donde una
+tabla o una columna de plata pagaba Archivo era `/vender` (vía el rol
+Importe). El listado de `/ventas` y el detalle de `/ventas/[id]` ahora
+también: sus tablas, sus tiles y su paginación son Archivo, con los seis
+roles nuevos de arriba — ninguno de ellos usa el rol Importe ni su
+`font-stretch`, por el motivo que la tabla de la escala ya explica en la nota
+debajo de esa fila. `/inventario` es la única pantalla con tablas de datos
+que sigue enteramente en la pila del sistema.
 
 **Por qué ésa.** Tiene eje de ancho variable (`wdth`, 62–125), y ése es el
 motivo entero de la elección: un local argentino tiene el nombre pintado a lo
@@ -560,15 +618,16 @@ activa** y el `font-stretch: 112%` de la pantalla no hace absolutamente nada,
 sin avisar — se ve una Archivo normal y parece una decisión de diseño.
 
 No hay token `--font-display` en `@theme inline`, y es a propósito. Los
-consumidores son **cuatro** módulos CSS —`app/login/persiana.module.css`,
-`components/cartel.module.css`, `components/importe.module.css` y
-`components/shell/encabezado.module.css`— y ninguno lo querría igual: además
+consumidores son **cinco** módulos CSS —`app/login/persiana.module.css`,
+`components/cartel.module.css`, `components/importe.module.css`,
+`components/shell/encabezado.module.css` y
+`app/(app)/ventas/tipografia.module.css`— y ninguno lo querría igual: además
 de la familia, los tres primeros necesitan su propio `font-stretch` o su
-tracking, y el cuarto no —el título de pantalla no tiene eje de ancho propio
-en el `.pen`—, así que ninguna utilidad de Tailwind referenciaría el token. Un
-token de `@theme` que ninguna utilidad referencia es un token muerto. Los
-cuatro consumen `var(--font-archivo)` —la variable que emite `next/font`—
-directo.
+tracking, y los otros dos no —ni el título de pantalla ni los seis roles de
+`/ventas` tienen eje de ancho propio en el `.pen`—, así que ninguna utilidad
+de Tailwind referenciaría el token. Un token de `@theme` que ninguna utilidad
+referencia es un token muerto. Los cinco consumen `var(--font-archivo)` —la
+variable que emite `next/font`— directo.
 
 Este párrafo dijo lo contrario hasta el ciclo de la cinta: prometía que *"si una
 segunda pantalla la necesita, ahí entra el token"*, cuando el ciclo del cartel ya

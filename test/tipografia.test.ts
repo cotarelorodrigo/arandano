@@ -51,6 +51,17 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   // tiene un rol escrito, y no lo marque como un consumidor fantasma de
   // var(--font-archivo).
   Cobro: ['app/(app)/vender/cobro.module.css'],
+  // Los seis roles del rediseño de /ventas y /ventas/[id], los seis en el
+  // mismo módulo compartido y los seis sin font-stretch propio (mismo motivo
+  // que Cobro, arriba): ninguno le pide un ancho al eje `wdth`, así que
+  // ninguno aparece vía anchosDelDoc() — están acá sólo para que el chequeo
+  // de "consumidor fantasma" los reconozca.
+  'Título de card': ['app/(app)/ventas/tipografia.module.css'],
+  'Valor de tile': ['app/(app)/ventas/tipografia.module.css'],
+  'Monto de tabla': ['app/(app)/ventas/tipografia.module.css'],
+  'Banda de Total': ['app/(app)/ventas/tipografia.module.css'],
+  'Número de paginación': ['app/(app)/ventas/tipografia.module.css'],
+  Cotización: ['app/(app)/ventas/tipografia.module.css'],
 }
 
 /** Rol → `font-stretch`, leído de la tabla normativa entre marcadores. */
@@ -231,5 +242,35 @@ describe('el CSS module del encabezado declara de verdad lo que el TSX referenci
 
   it(`${RUTA_TSX} referencia estilos.titulo`, () => {
     expect(readFileSync(RUTA_TSX, 'utf8')).toContain('estilos.titulo')
+  })
+})
+
+describe('el CSS module de tipografía de /ventas declara de verdad lo que el TSX referencia', () => {
+  // Mismo agujero que los dos bloques de arriba: los tres consumidores
+  // (page.tsx, [id]/page.tsx, grafico.tsx) referencian estilos.archivo y
+  // estilos.tituloDeCard del Proxy que css: false fabrica, así que una clase
+  // renombrada o nunca escrita en el módulo seguiría en verde en cualquier
+  // test que sólo mire el className fabricado. Sólo leer el TEXTO del CSS lo
+  // destapa.
+  const RUTA_CSS = 'app/(app)/ventas/tipografia.module.css'
+  const CONSUMIDORES = [
+    'app/(app)/ventas/page.tsx',
+    'app/(app)/ventas/[id]/page.tsx',
+    'app/(app)/ventas/grafico.tsx',
+  ]
+
+  it.each(['.archivo', '.tituloDeCard'])('declara el selector %s', (selector) => {
+    const css = readFileSync(RUTA_CSS, 'utf8')
+    expect(
+      css.includes(`${selector} {`),
+      `${RUTA_CSS} no declara ${selector}. Sin la clase de verdad, el build ` +
+        `real dejaría estilos.${selector.slice(1)} en undefined y las 19 ` +
+        `apariciones de Archivo en /ventas y /ventas/[id] volverían a caer al ` +
+        `default del navegador, sin fallback, sin que ningún test lo note.`,
+    ).toBe(true)
+  })
+
+  it.each(CONSUMIDORES)('%s importa el módulo', (ruta) => {
+    expect(readFileSync(ruta, 'utf8')).toMatch(/from '\.\.?\/tipografia\.module\.css'/)
   })
 })
