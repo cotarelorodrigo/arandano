@@ -104,6 +104,20 @@ opera con alguien esperando del otro lado del mostrador.
   los ítems y el de los pagos se comparan por igualdad, así que los dos tienen
   que redondear en el mismo momento y de la misma forma.
 
+**Pendiente**
+
+- **`Caja` existe pero no tiene UI.** `lib/caja/abrir-cerrar.ts` tiene
+  `cajaAbierta()`, `abrirCaja()` y `cerrarCaja()` funcionando y probados, pero
+  ninguna pantalla los llama: no hay ruta para abrir o cerrar turno, esta
+  pantalla no muestra el chip "Caja abierta" del header, y `crearVenta` no
+  exige que haya una caja abierta para cobrar. Cerrar esto es su propio ciclo.
+- **El aviso de stock insuficiente está pintado del color equivocado.**
+  `punto-de-venta.tsx` lo pinta con `text-destructive` (rojo), pero tanto
+  `docs/sistema-de-diseno.md` como la maqueta lo definen en **ámbar**. No es
+  un desvío menor: vender con stock negativo está permitido en este producto
+  —el mostrador manda—, así que el aviso es "hay que mirar esto", no "esto
+  impide seguir", y el rojo es el color reservado para lo segundo.
+
 ## `/ventas`
 
 El historial por período.
