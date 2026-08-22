@@ -594,6 +594,50 @@ export function FormularioDiagnostico({
 const FORM_ANULAR = 'form-anular-orden'
 
 /**
+ * "Anular orden" del Topbar, con confirmación en dos pasos (hallazgo M5 de la
+ * review final): mismo mecanismo que ya elige `AnularVenta`
+ * (app/(app)/ventas/formularios.tsx) para "esto es irreversible pero
+ * frecuente" —el patrón que `CLAUDE.md` documenta para ese caso—, y no un
+ * `confirm()` del navegador ni una anulación deshacible. Sin esto, el botón
+ * quedaba pegado a "Reimprimir ticket" —el que más se aprieta en esta
+ * pantalla— y un solo click disparaba algo sin vuelta atrás.
+ *
+ * El primer render es SIEMPRE el botón sin confirmar: `confirmando` nace en
+ * `false` y este componente no tiene forma de empezar armado.
+ */
+function BotonAnular({ anulando }: { anulando: boolean }) {
+  const [confirmando, setConfirmando] = useState(false)
+
+  if (confirmando) {
+    return (
+      <>
+        <Button type="submit" form={FORM_ANULAR} variant="destructive" disabled={anulando}>
+          {anulando ? 'Anulando…' : 'Sí, anular'}
+        </Button>
+        <Button type="button" variant="ghost" onClick={() => setConfirmando(false)}>
+          Cancelar
+        </Button>
+      </>
+    )
+  }
+
+  return (
+    // type="button" y SIN form=: a propósito no está atado al <form> de
+    // anular. Si lo estuviera, este primer click ya anularía la orden —
+    // exactamente lo que este componente existe para no hacer.
+    <Button
+      type="button"
+      variant="outline"
+      onClick={() => setConfirmando(true)}
+      className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
+    >
+      <Ban aria-hidden="true" className="size-[15px]" />
+      Anular orden
+    </Button>
+  )
+}
+
+/**
  * La ficha entera de una orden (design/arandano.pen, frame `XVOe5`): el
  * `<Encabezado>` con "Reimprimir ticket" y "Anular orden" en sus acciones, el
  * `<form>` invisible que dispara `anular`, y las dos columnas del cuerpo que
@@ -644,18 +688,7 @@ export function FichaDeOrden({
                 Reimprimir ticket
               </Link>
             </Button>
-            {puedeAnular ? (
-              <Button
-                type="submit"
-                form={FORM_ANULAR}
-                variant="outline"
-                disabled={anulando}
-                className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
-              >
-                <Ban aria-hidden="true" className="size-[15px]" />
-                {anulando ? 'Anulando…' : 'Anular orden'}
-              </Button>
-            ) : null}
+            {puedeAnular ? <BotonAnular anulando={anulando} /> : null}
           </>
         }
       />

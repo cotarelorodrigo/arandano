@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { User, Smartphone, Phone } from 'lucide-react'
 import { Prisma } from '@/generated/prisma/client'
 import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { cn } from '@/lib/utils'
@@ -387,10 +388,22 @@ export default async function DetalleDeOrden({ params }: { params: Promise<{ id:
       accionAnular={anular}
       columnaIzquierda={
         <>
+          {/* Hallazgo M6 de la review final: un `<p>` en `--muted-foreground`
+              —el color más apagado de la paleta— era lo menos visible del
+              cuerpo para el estado "esta orden ya no está viva", que es
+              justamente lo primero que hay que ver. `/ventas/[id]` ya
+              resuelve el mismo caso (venta anulada) con este mismo par
+              `Alert`/`bg-destructive-soft` (`notaDeAnulacion`,
+              `app/(app)/ventas/[id]/page.tsx`); acá se reusa el patrón en vez
+              de inventar uno nuevo para el mismo estado del mismo producto.
+              El `.pen` no modela una orden anulada (el relevamiento lo dice),
+              así que no hay nada que este cambio contradiga. */}
           {anulada ? (
-            <p className="text-sm text-muted-foreground">
-              Anulada por {orden.anuladaPor?.nombre ?? 'alguien'} el {formatearFecha(orden.anuladaEn!)}.
-            </p>
+            <Alert className="rounded-2xl bg-destructive-soft px-4 py-4">
+              <AlertDescription className="text-[11px] leading-[1.45] text-destructive opacity-85">
+                Anulada por {orden.anuladaPor?.nombre ?? 'alguien'} el {formatearFecha(orden.anuladaEn!)}.
+              </AlertDescription>
+            </Alert>
           ) : null}
 
           <PanelEstado

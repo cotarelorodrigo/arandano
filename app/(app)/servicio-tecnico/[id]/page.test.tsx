@@ -242,4 +242,20 @@ describe('la consulta y el armado de la ficha (Task 4 del rediseño)', () => {
   it('el formulario de diagnóstico se apaga con la orden anulada, igual que antes del ciclo', () => {
     expect(FUENTE).toContain('{!anulada ? (\n          <FormularioDiagnostico')
   })
+
+  // Hallazgo M6 de la review final: el aviso "Anulada por…" vivía en
+  // `text-muted-foreground` —el color más apagado de la paleta— para el
+  // estado que más hay que ver. Ahora reusa el mismo patrón que
+  // `/ventas/[id]` ya usa para su venta anulada: `Alert` sobre
+  // `bg-destructive-soft`, texto en `text-destructive`.
+  it('el aviso de orden anulada usa el mismo patrón que /ventas/[id] (Alert + bg-destructive-soft)', () => {
+    const desde = FUENTE.indexOf('{anulada ? (')
+    const hasta = FUENTE.indexOf('<PanelEstado')
+    expect(desde).toBeGreaterThan(-1)
+    expect(hasta).toBeGreaterThan(desde)
+    const bloque = FUENTE.slice(desde, hasta)
+    expect(bloque).toContain('bg-destructive-soft')
+    expect(bloque).toContain('text-destructive')
+    expect(bloque).not.toContain('text-muted-foreground')
+  })
 })

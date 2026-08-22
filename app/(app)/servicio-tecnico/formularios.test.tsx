@@ -168,6 +168,26 @@ describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
     expect(html).toContain('cuerpo izquierdo')
     expect(html).toContain('bitácora')
   })
+
+  // Hallazgo M5 de la review final: "Anular orden" quedaba pegado a
+  // "Reimprimir ticket" —el botón que más se aprieta acá— y disparaba la
+  // acción irreversible con un solo click. El primer render tiene que ser un
+  // botón que ARMA la confirmación, no uno que ya está atado al <form> de
+  // anular: si alguien revirtiera el mecanismo a un submit directo, este caso
+  // tiene que quedar en rojo.
+  it('"Anular orden" arma la confirmación en vez de anular con un solo click', () => {
+    const html = render({ esDuenio: true, anulada: false })
+    const inicio = html.indexOf('Anular orden')
+    expect(inicio).toBeGreaterThan(-1)
+    const desde = html.lastIndexOf('<button', inicio)
+    const cierre = html.indexOf('>', desde)
+    const etiqueta = html.slice(desde, cierre)
+    expect(etiqueta).toContain('type="button"')
+    expect(etiqueta).not.toContain(`form="${'form-anular-orden'}"`)
+    // Sin confirmar todavía: ni "Sí, anular" ni "Cancelar" aparecen.
+    expect(html).not.toContain('Sí, anular')
+    expect(html).not.toContain('>Cancelar<')
+  })
 })
 
 describe('FormularioDiagnostico (Task 4 del rediseño: fila diagnóstico + presupuesto)', () => {

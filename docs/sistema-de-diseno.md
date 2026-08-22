@@ -360,12 +360,13 @@ columna ORDEN del listado (14 px, heredado de `text-sm` de `<Table>` igual
 que un monto de tabla, peso 700 y en `--primary` porque además es el link a
 la ficha de la orden) y el conteo de cada chip de filtro, tanto el de
 "Abiertas" como el de cada estado (12 px, peso 700). El título de card de esa
-misma pantalla ("Equipos en el local") no es un rol nuevo: reusa *Título de
-card*, que suma así su cuarta pantalla. Con los dos roles nuevos son
-**catorce** los roles que Archivo cubre en total.
+misma pantalla ("Equipos en el local") y su paginación no son roles nuevos:
+reusan *Título de card* y *Número de paginación* respectivamente, que suman
+así su cuarta y su tercera pantalla. Con los dos roles nuevos son **catorce**
+los roles que Archivo cubre en total.
 
 `--font-heading: var(--font-sans)`: los demás títulos —los que no son ninguno
-de los doce roles ya contados— usan la misma familia.
+de los catorce roles ya contados— usan la misma familia.
 
 ### La escala
 
@@ -393,7 +394,8 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | **Cotización** — columna de la tabla "Cómo se pagó" en /ventas/[id] | Archivo | 14 px | 400, `tabular-nums` |
 | **Código/precio/stock de tabla** — listado de /inventario | Archivo | 14 px (heredado de `text-sm` de `<Table>`, sin tamaño propio) | 400 a 700 según la columna y el estado de la fila, `tabular-nums` |
 | **Número de paginación** — /inventario | Archivo | 13 px | 600 |
-| **Número de orden** — columna ORDEN del listado de /servicio-tecnico | Archivo | 14 px (heredado de `text-sm` de `<Table>`, sin tamaño propio) | 700, `tabular-nums` |
+| **Número de paginación** — /servicio-tecnico | Archivo | 13 px | 600 |
+| **Número de orden** — columna ORDEN del listado de /servicio-tecnico | Archivo | 14 px (heredado de `text-sm` de `<Table>`, sin tamaño propio) | 700 |
 | **Conteo de chip** — chips de filtro del tablero de /servicio-tecnico | Archivo | 12 px | 700 |
 
 <!-- escala:fin -->

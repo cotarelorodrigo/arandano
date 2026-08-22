@@ -43,4 +43,20 @@ describe('ChipEstadoFila', () => {
     expect(ESTADO_VISUAL.RECIBIDO.clase).toBe(ESTADO_VISUAL.EN_DIAGNOSTICO.clase)
     expect(recibido).not.toBe(diagnostico)
   })
+
+  // Hallazgo M7 de la review final: `badgeVariants` trae `[&>svg]:size-3!`
+  // con `!important`, que gana por especificidad de selector sobre una clase
+  // puesta en el propio ícono (`size-[11px]`) — el chip renderizaba a 12px, no
+  // a los 11 que pide la maqueta. La corrección va en la clase del `<Badge>`
+  // (tailwind-merge descarta el `size-3!` de base al ver el mismo modificador
+  // `[&>svg]` de nuevo), así que lo que hay que comprobar es que el `size-3!`
+  // de base ya NO sobrevive al merge, no que "algo diga 11px" en el fuente.
+  it.each(ESTADOS)('%s renderiza su ícono a 11px, sin el size-3! que impone Badge por default', (estado) => {
+    const html = renderToStaticMarkup(<ChipEstadoFila estado={estado} />)
+    // El atributo class sale HTML-escapado (`&` -> `&amp;`, `>` -> `&gt;`) en
+    // el markup estático, así que se busca el fragmento que sobrevive intacto
+    // a ese escape.
+    expect(html).toContain('size-[11px]!')
+    expect(html).not.toContain('size-3!')
+  })
 })

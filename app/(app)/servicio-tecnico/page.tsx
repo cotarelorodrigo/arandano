@@ -212,7 +212,12 @@ function ChipDeFiltro({
         asChild
         className="h-auto gap-[7px] rounded-full border-transparent px-3 py-[7px] text-xs font-semibold"
       >
-        <Link href={href} aria-current="true">
+        {/* "page" y no "true" (hallazgo M9 de la review final): más
+            específico, y es el mismo valor que ya usa el número de página
+            actual de la paginación más abajo — un chip seleccionado es,
+            igual que esa página, "dónde estoy parado dentro de un conjunto
+            de vistas del mismo listado". */}
+        <Link href={href} aria-current="page">
           {rotulo}
           <span className={cn(estilos.archivo, 'text-xs font-bold')} style={{ color: 'var(--marca-soft)' }}>
             {formatearCantidad(String(cuenta))}
@@ -366,6 +371,10 @@ export default async function ServicioTecnico({
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA))
   const desde = (pagina - 1) * POR_PAGINA + 1
   const hasta = Math.min(pagina * POR_PAGINA, total)
+  // Una sola vez y no dos (hallazgo M9 de la review final): el pie de la
+  // paginación la evaluaba dos veces seguidas, una para decidir si había algo
+  // que mostrar y otra para el contenido.
+  const notaDelPie = notaDelConjunto(filtro, buscandoEnTodas)
 
   return (
     <>
@@ -553,10 +562,8 @@ export default async function ServicioTecnico({
                     )}
                   </div>
                 ) : (
-                  notaDelConjunto(filtro, buscandoEnTodas) && (
-                    <span className="text-[11px] text-muted-foreground">
-                      {notaDelConjunto(filtro, buscandoEnTodas)}
-                    </span>
+                  notaDelPie && (
+                    <span className="text-[11px] text-muted-foreground">{notaDelPie}</span>
                   )
                 )}
               </nav>

@@ -657,7 +657,14 @@ Servicio Técnico):
   usa el mismo mecanismo de `<form>` invisible + atributo `form=` que
   `/servicio-tecnico/nuevo`, y sólo existe en el DOM cuando puede aparecer
   (dueño, orden viva) — esconderlo no reemplaza la revalidación de la action
-  (`exigirDuenio` + `ORDEN_ANULADA`), es sólo comodidad.
+  (`exigirDuenio` + `ORDEN_ANULADA`), es sólo comodidad. **"Anular orden" pide
+  confirmación en dos pasos** (hallazgo M5 de la review final del rediseño):
+  el primer click arma "¿Sí, anular?"/"Cancelar" en el mismo lugar del Topbar,
+  y sólo el segundo dispara la acción — mismo mecanismo que `AnularVenta`
+  (`app/(app)/ventas/formularios.tsx`) para "esto es irreversible pero
+  frecuente", y no un `confirm()` del navegador. Antes de esto, el botón vivía
+  pegado a "Reimprimir ticket" —el que más se aprieta en la pantalla— y un
+  solo click ya anulaba.
 - **"Quién recibió" dejó de pedirse aparte.** Es siempre el mismo usuario que
   firma el evento de apertura de la bitácora (`crearOrden` le asigna el mismo
   `usuarioId` a los dos), así que ese dato ya sale de ahí sin repetir la

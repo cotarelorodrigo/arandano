@@ -271,6 +271,16 @@ describe('FilaDeChips', () => {
     expect(abiertas).toContain('bg-primary')
   })
 
+  // Hallazgo M9 de la review final: "page" es más específico que "true", y es
+  // el mismo valor que ya usa el número de página actual de la paginación.
+  it('el chip seleccionado usa aria-current="page", no "true"', () => {
+    const html = renderToStaticMarkup(
+      <FilaDeChips abiertas={18} cuenta={{}} filtro={null} buscandoEnTodas={false} busqueda="" />,
+    )
+    const abiertas = bloqueDelChip(html, 'Abiertas')
+    expect(abiertas).toContain('aria-current="page"')
+  })
+
   it('con un chip de estado elegido, ESE queda seleccionado y "Abiertas" no', () => {
     const html = renderToStaticMarkup(
       <FilaDeChips abiertas={5} cuenta={{ LISTO: 3 }} filtro="LISTO" buscandoEnTodas={false} busqueda="" />,

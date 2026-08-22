@@ -70,12 +70,17 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   'Monto de tabla': ['app/(app)/ventas/tipografia.module.css'],
   'Banda de Total': ['app/(app)/ventas/tipografia.module.css'],
   // Mismo rótulo en negrita que la fila de /ventas (el texto entre `**` no
-  // lleva el "— /ventas"/"— /inventario" del final): las dos pantallas
-  // comparten el nombre del rol, cada una con su propio módulo, así que el
-  // arreglo suma el segundo archivo en vez de abrir una segunda clave.
+  // lleva el "— /ventas"/"— /inventario"/"— /servicio-tecnico" del final):
+  // las tres pantallas comparten el nombre del rol, cada una con su propio
+  // módulo, así que el arreglo suma el archivo en vez de abrir una clave
+  // nueva. La tercera entrada (servicio-tecnico) se sumó en la fix wave de la
+  // review final (hallazgo M3): la paginación de esa pantalla ya pagaba
+  // Archivo con el mismo tratamiento (13 px, peso 600) pero no tenía fila
+  // propia en la tabla de la escala.
   'Número de paginación': [
     'app/(app)/ventas/tipografia.module.css',
     'app/(app)/inventario/tipografia.module.css',
+    'app/(app)/servicio-tecnico/tipografia.module.css',
   ],
   Cotización: ['app/(app)/ventas/tipografia.module.css'],
   // Rediseño de /inventario (Task 2): mismo motivo que Cobro/los roles de

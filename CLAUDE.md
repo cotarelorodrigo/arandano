@@ -532,11 +532,12 @@ Y del producto:
   aplicación con su cuerpo tocado desde que el shell se instaló (ver la nota
   de arriba) — las demás seguían sirviendo su layout viejo con los colores
   nuevos, cada una su propio ciclo. **Este contador ya no está al día**: con
-  `/ventas`, `/ventas/[id]`, `/inventario`, `/inventario/nuevo` e
-  `/inventario/[id]` (más abajo) van seis de las diez rediseñadas; quedan
-  `/servicio-tecnico` y sus dos pantallas más `/usuarios`. Ver
-  `docs/superpowers/plans/2026-08-22-vender.md` y `docs/pantallas.md`
-  (sección `/vender`) para el detalle completo de lo construido.
+  `/ventas`, `/ventas/[id]`, `/inventario`, `/inventario/nuevo`,
+  `/inventario/[id]` (más abajo) y las tres de `/servicio-tecnico` (ciclo
+  posterior, ver más abajo) van nueve de las diez rediseñadas; sólo queda
+  `/usuarios`. Ver `docs/superpowers/plans/2026-08-22-vender.md` y
+  `docs/pantallas.md` (sección `/vender`) para el detalle completo de lo
+  construido.
 
   **El chip de caja entra con estado real y control, no sólo con el dato.**
   `cajaAbierta()` (`lib/caja/abrir-cerrar.ts`) ya existía desde el ciclo de
