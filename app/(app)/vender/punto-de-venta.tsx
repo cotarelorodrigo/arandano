@@ -2,6 +2,7 @@
 
 import { useActionState, useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
+import { Minus, Plus, ScanBarcode, TriangleAlert, X } from 'lucide-react'
 import { cobrar, buscarArticulos, type EstadoCobro } from './acciones'
 import type { ArticuloVendible } from '@/lib/ventas/buscar'
 import {
@@ -14,6 +15,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import estilos from '@/components/importe.module.css'
 
 const INICIAL: EstadoCobro = { error: null, venta: null }
@@ -56,6 +59,29 @@ function firmaDelCarrito(lineas: Linea[]): string {
 // constante y no calculada al vuelo: es el valor inicial del estado, y tiene
 // que ser el MISMO en el render del servidor y en el del navegador.
 const CARRITO_VACIO = firmaDelCarrito([])
+
+/**
+ * Un paso del stepper de cantidad: +1 o -1 unidad completa (1000 milésimas),
+ * el mismo incremento que ya usa `agregar()` al reescanear un artículo
+ * repetido.
+ *
+ * Exportada (y no interna) porque es la única forma de probar la aritmética
+ * del stepper de verdad: este archivo se testea con `renderToStaticMarkup`
+ * (sin jsdom ni fireEvent, ver la nota de `ticket.test.tsx`), que no ejecuta
+ * handlers de clic. Llamar la función pura es lo que reemplaza a "apretar el
+ * botón" en ese harness.
+ *
+ * Si lo tipeado no se entiende (NaN) el paso no hace nada: pisarlo con
+ * basura sería peor que dejar la línea como está, mismo criterio que ya usa
+ * `agregar()` con una cantidad a medio tipear. Restar tampoco baja de cero:
+ * una cantidad negativa no significa nada acá, y sacar la línea entera es el
+ * trabajo del botón "quitar" (el ícono x), no de este stepper.
+ */
+export function pasoDeCantidad(cantidad: string, delta: 1 | -1): string {
+  const actual = cantidadEnMilesimas(cantidad)
+  if (Number.isNaN(actual)) return cantidad
+  return deMilesimas(Math.max(0, actual + delta * 1000))
+}
 
 export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string | null }) {
   const [estado, accion, cobrando] = useActionState(cobrar, INICIAL)
@@ -206,6 +232,20 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
     if (ventaProcesada) buscador.current?.focus()
   }, [ventaProcesada])
 
+  // F2 enfoca el buscador desde cualquier parte de la pantalla: es el atajo
+  // que el chip de al lado promete, no sólo lo anuncia. En un mostrador que
+  // se opera sin mouse, un chip que muestra un atajo que no hace nada es peor
+  // que no tenerlo.
+  useEffect(() => {
+    function alApretarTecla(e: KeyboardEvent) {
+      if (e.key !== 'F2') return
+      e.preventDefault()
+      buscador.current?.focus()
+    }
+    window.addEventListener('keydown', alApretarTecla)
+    return () => window.removeEventListener('keydown', alApretarTecla)
+  }, [])
+
   function alCambiarBusqueda(valor: string) {
     setBusqueda(valor)
     // Vacío no dispara el debounce del efecto de arriba (ver el `return`
@@ -322,15 +362,28 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   const cierra = hayCarrito && faltanCentavos === 0
 
   return (
-    <div className="flex flex-col gap-6 md:flex-row">
-      {/* La cinta se contiene: en un monitor de 22" el carrito suelto deja
-          ~1100 px entre el nombre del artículo y su importe, que es más de lo
-          que el ojo enlaza de una sola pasada. `max-w-3xl` es un token de
-          max-width de Tailwind, no un paso de la escala de espaciado, así que
-          no cae bajo la regla del subconjunto. */}
-      <div className="max-w-3xl flex-1">
-        <div className="mb-4 flex flex-col gap-2">
-          <Label htmlFor="buscar">Buscar artículo</Label>
+    // "Cuerpo": el buscador a todo el ancho, arriba de las dos columnas — el
+    // padding de 24px de este frame ya lo pone `app/(app)/vender/page.tsx`
+    // (`<div className="p-6">` alrededor de este componente), así que acá
+    // sólo hace falta el gap vertical de 18px entre el buscador y la fila de
+    // abajo.
+    <div className="flex flex-col gap-[18px]">
+      {/* El buscador: a todo el ancho del Cuerpo, ya no encajado en la
+          columna izquierda. El borde violeta de 2px es PERMANENTE —no sólo
+          en foco—: design/arandano.pen lo pide así porque en este mostrador
+          el cuadro es lo primero que se mira, y un borde que sólo aparece al
+          enfocar no ayuda a encontrarlo de entrada. El resplandor
+          (shadow-[...]) también sale del .pen: un halo violeta muy tenue de
+          4px, no un valor inventado. */}
+      <div className="relative">
+        {/* focus-within y no el focus-visible del <Input>: el ring por
+            default aparecería sólo alrededor del campo de texto —que no
+            cubre ni el ícono ni el chip F2—, y se vería como un rectángulo
+            roto en medio de la barra. El <Input> de adentro apaga su propio
+            ring (ver más abajo) para que sea ESTE, el de la barra entera, el
+            que se vea al enfocar. */}
+        <div className="flex h-[58px] items-center gap-3 rounded-[14px] border-2 border-primary bg-card px-[18px] shadow-[0_0_0_4px_#4A2AA51F] focus-within:ring-3 focus-within:ring-ring/50">
+          <ScanBarcode aria-hidden="true" className="size-[22px] shrink-0 text-primary" />
           <Input
             id="buscar"
             ref={buscador}
@@ -339,12 +392,17 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
             value={busqueda}
             onChange={(e) => alCambiarBusqueda(e.target.value)}
             onKeyDown={alTeclearEnBuscador}
-            placeholder="Nombre o código"
+            placeholder="Escaneá un código o buscá por nombre…"
+            aria-label="Buscar artículo"
+            className="h-full flex-1 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
           />
+          <span className="shrink-0 rounded-sm bg-secondary px-2 py-1 text-[11px] font-semibold text-foreground-soft">
+            F2
+          </span>
         </div>
 
         {resultados.length > 0 && (
-          <ul className="mb-6 divide-y rounded-md border">
+          <ul className="absolute z-10 mt-2 w-full divide-y rounded-md border bg-card shadow-md">
             {resultados.map((a) => (
               <li key={a.id}>
                 <button
@@ -371,218 +429,321 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
             ))}
           </ul>
         )}
-
-        <table className="w-full text-sm">
-          <thead>
-            {/* Como imprime una cinta: chico, gris y en mayúsculas. El
-                `font-normal` es necesario porque <th> viene en negrita por
-                default del navegador. */}
-            <tr className="border-b text-left text-xs tracking-wider text-muted-foreground uppercase">
-              <th className="pb-2 font-normal">Artículo</th>
-              <th className="w-24 pb-2 text-right font-normal">Cantidad</th>
-              <th className="pb-2 text-right font-normal">Precio</th>
-              <th className="pb-2 text-right font-normal">Subtotal</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {lineas.map((l, i) => {
-              const cantidadMilesimas = cantidadEnMilesimas(l.cantidad)
-              const invalida = Number.isNaN(cantidadMilesimas)
-              const quedaria = aMilesimas(l.stock) - cantidadMilesimas
-              return (
-                <tr key={l.articuloId} className="border-b">
-                  <td className="py-2">
-                    {l.descripcion}
-                    {/* Antes que el aviso de stock: una cantidad que no se
-                        entiende ni siquiera se puede evaluar contra el
-                        stock (`quedaria` también sería NaN). */}
-                    {invalida && (
-                      <span className="ml-2 text-destructive">cantidad inválida</span>
-                    )}
-                    {/* Se advierte y NO se bloquea: el motor permite vender
-                        sin stock a propósito, y la pantalla no puede ser más
-                        estricta que el motor sin volverse mentirosa. */}
-                    {!invalida && l.esProducto && quedaria < 0 && (
-                      <span className="ml-2 text-destructive">sin stock suficiente</span>
-                    )}
-                  </td>
-                  <td>
-                    <Input
-                      inputMode="decimal"
-                      className="text-right tabular-nums"
-                      value={l.cantidad}
-                      onChange={(e) =>
-                        actualizarCarrito((p) =>
-                          p.map((x, j) => (j === i ? { ...x, cantidad: e.target.value } : x)),
-                        )
-                      }
-                      aria-label={`Cantidad de ${l.descripcion}`}
-                    />
-                  </td>
-                  <td className={`${estilos.importe} text-right`}>
-                    {formatearPrecio(l.precio)}
-                  </td>
-                  <td className={`${estilos.importe} text-right`}>
-                    {invalida
-                      ? '—'
-                      : formatearPrecio(
-                          deCentavos(subtotalEnCentavos(cantidadMilesimas, aCentavos(l.precio))),
-                        )}
-                  </td>
-                  <td className="text-right">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => actualizarCarrito((p) => p.filter((_, j) => j !== i))}
-                      aria-label={`Quitar ${l.descripcion}`}
-                    >
-                      Quitar
-                    </Button>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-
-        {lineas.length === 0 && (
-          <p className="py-3 text-sm text-muted-foreground">
-            Buscá un artículo para empezar la venta.
-          </p>
-        )}
-
-        {/* El pie de la cinta: doble regla y el total. Está siempre, incluso con
-            el carrito vacío en $ 0,00 — un ancla que aparece y desaparece no es
-            un ancla. Supera al cartel de 24 px, y eso está declarado como
-            enmienda con su límite en docs/sistema-de-diseno.md.
-
-            `border-t-4 border-double` y no un valor arbitrario de 3 px: la doble
-            regla necesita al menos 3 px para dibujarse, y 4 es el paso de la
-            escala de bordes de Tailwind. Un ancho de borde no es un paso de
-            espaciado, igual que el `gap-px` de la grilla de tiles de /ventas
-            (docs/sistema-de-diseno.md, sección Espaciado y radio).
-
-            Con una cantidad a medio tipear `totalCentavos` queda en NaN, y
-            "$ NaN" en 40 px es un cartel roto en una pantalla de plata. Muestra
-            "—", que es exactamente lo que ya hace la columna Subtotal de cada
-            línea inválida unas líneas más arriba. */}
-        <div className="mt-2 flex items-baseline justify-between border-t-4 border-double border-foreground pt-3">
-          <span className="text-xs tracking-wider text-muted-foreground uppercase">Total</span>
-          <span className={`${estilos.total} text-right`}>
-            {Number.isNaN(totalCentavos) ? '—' : formatearPrecio(deCentavos(totalCentavos))}
-          </span>
-        </div>
       </div>
 
-      <Card className="md:w-80">
-        <CardHeader>
-          {/* "Cobro" y no "Cobrar": el botón de abajo dice Cobrar, y una acción
-              tiene un solo nombre en todo el flujo. La card nombra la zona, el
-              botón nombra lo que pasa al apretarlo. */}
-          <CardTitle>Cobro</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form action={accion} className="flex flex-col gap-4">
-            <input type="hidden" name="clave" value={clave} />
-            <input
-              type="hidden"
-              name="items"
-              value={JSON.stringify(
-                lineas.map((l) => ({ articuloId: l.articuloId, cantidad: l.cantidad })),
+      {/* "Fila": las dos columnas — el carrito y el cobro. */}
+      <div className="flex flex-col gap-[18px] md:flex-row">
+        {/* El carrito entero vive dentro de una card con radius y borde
+            propios — antes era una <table> suelta. Se contiene con
+            max-w-3xl por la misma razón que antes: en un monitor de 22" una
+            card sin techo deja un hueco enorme entre el nombre del artículo y
+            su precio, que es más de lo que el ojo enlaza de una sola pasada.
+            `max-w-3xl` es un token de max-width de Tailwind, no un paso de la
+            escala de espaciado, así que no cae bajo la regla del
+            subconjunto. */}
+        <Card className="max-w-3xl flex-1 gap-0 rounded-[16px] border py-0 ring-0">
+          <Table className="table-fixed">
+            <TableHeader>
+              {/* Fila "hundida": fondo --muted, padding [12,18] y 14 de gap
+                  entre columnas. Una tabla no tiene `gap` de verdad entre
+                  celdas, así que el hueco se arma con el padding de cada
+                  celda: la mitad (7px) contra la celda vecina y el resto
+                  (18px) contra el borde de la card. */}
+              <TableRow className="bg-muted hover:bg-muted">
+                <TableHead className="h-auto px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Artículo
+                </TableHead>
+                <TableHead className="h-auto w-[104px] px-[7px] py-3 text-center text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Cantidad
+                </TableHead>
+                <TableHead className="h-auto w-[110px] px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Precio
+                </TableHead>
+                <TableHead className="h-auto w-[130px] px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Subtotal
+                </TableHead>
+                {/* La columna de "Quitar" queda vacía en el encabezado. */}
+                <TableHead className="h-auto w-7 px-[7px] py-3 pr-[18px]" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {lineas.map((l, i) => {
+                const cantidadMilesimas = cantidadEnMilesimas(l.cantidad)
+                const invalida = Number.isNaN(cantidadMilesimas)
+                const quedaria = aMilesimas(l.stock) - cantidadMilesimas
+                return (
+                  <TableRow key={l.articuloId}>
+                    <TableCell className="p-[11px] px-[7px] pl-[18px] whitespace-normal">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-sm font-medium text-foreground">{l.descripcion}</span>
+                        <div className="flex items-center gap-2">
+                          {/* El SKU bajo el nombre: antes sólo se veía en el
+                              buscador. Un servicio no tiene SKU de stock, así
+                              que muestra "Servicio" en su lugar — mismo
+                              criterio que ya usa la lista de resultados para
+                              el stock de un servicio (una raya, no un cero). */}
+                          <span className="text-[11px] text-muted-foreground">
+                            {l.esProducto ? `SKU ${l.sku}` : 'Servicio'}
+                          </span>
+                          {/* Antes que el aviso de stock: una cantidad que no
+                              se entiende ni siquiera se puede evaluar contra
+                              el stock (`quedaria` también sería NaN). Ésta sí
+                              queda en rojo: a diferencia del aviso de stock,
+                              una cantidad ilegible SÍ impide seguir —apaga
+                              Cobrar—, así que acá el rojo es el color
+                              correcto (docs/sistema-de-diseno.md: "el ámbar
+                              no es un rojo suave", el rojo es para lo que
+                              bloquea). */}
+                          {invalida && (
+                            <span className="text-[11px] font-semibold text-destructive">
+                              cantidad inválida
+                            </span>
+                          )}
+                          {/* Se advierte y NO se bloquea: el motor permite
+                              vender sin stock a propósito, y la pantalla no
+                              puede ser más estricta que el motor sin volverse
+                              mentirosa. Ámbar y no rojo: vender con stock
+                              negativo está PERMITIDO en este producto, así
+                              que esto es "hay que mirar", no "no se puede
+                              seguir" — el rojo queda para lo que sí bloquea
+                              (arriba). */}
+                          {!invalida && l.esProducto && quedaria < 0 && (
+                            <Badge
+                              variant="outline"
+                              className="h-auto gap-[5px] border-transparent bg-warn-soft px-[7px] py-[2px] text-[11px] font-semibold text-warn"
+                            >
+                              <TriangleAlert aria-hidden="true" />
+                              sin stock suficiente
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="p-[11px] px-[7px]">
+                      {/* El stepper [-] [valor] [+]: los botones cubren sumar
+                          y restar de a una unidad completa, pero el campo del
+                          medio sigue siendo editable a mano — el motor admite
+                          cantidades con hasta tres decimales a propósito
+                          (lib/formato/mostrar.ts: "Medio kilo de harina
+                          necesita los decimales"), y +1/-1 no alcanza para
+                          tipear "0,5". */}
+                      {/* focus-within por la misma razón que la barra del
+                          buscador: el <Input> del medio apaga su propio ring
+                          para que el foco se vea en el stepper entero, no en
+                          un rectángulo que ignora los botones [-]/[+]. */}
+                      <div className="flex h-9 w-[104px] items-center rounded-[9px] border border-input focus-within:ring-3 focus-within:ring-ring/50">
+                        <button
+                          type="button"
+                          aria-label={`Restar una unidad a ${l.descripcion}`}
+                          className="flex h-full w-8 items-center justify-center text-foreground-soft hover:bg-muted"
+                          onClick={() =>
+                            actualizarCarrito((p) =>
+                              p.map((x, j) =>
+                                j === i ? { ...x, cantidad: pasoDeCantidad(x.cantidad, -1) } : x,
+                              ),
+                            )
+                          }
+                        >
+                          <Minus className="size-[13px]" />
+                        </button>
+                        <Input
+                          inputMode="decimal"
+                          value={l.cantidad}
+                          onChange={(e) =>
+                            actualizarCarrito((p) =>
+                              p.map((x, j) => (j === i ? { ...x, cantidad: e.target.value } : x)),
+                            )
+                          }
+                          aria-label={`Cantidad de ${l.descripcion}`}
+                          className={`h-full flex-1 border-0 bg-transparent px-0 py-0 text-center font-semibold text-foreground shadow-none focus-visible:ring-0 ${estilos.importe}`}
+                        />
+                        <button
+                          type="button"
+                          aria-label={`Sumar una unidad a ${l.descripcion}`}
+                          className="flex h-full w-8 items-center justify-center text-foreground-soft hover:bg-muted"
+                          onClick={() =>
+                            actualizarCarrito((p) =>
+                              p.map((x, j) =>
+                                j === i ? { ...x, cantidad: pasoDeCantidad(x.cantidad, 1) } : x,
+                              ),
+                            )
+                          }
+                        >
+                          <Plus className="size-[13px]" />
+                        </button>
+                      </div>
+                    </TableCell>
+                    <TableCell className={`p-[11px] px-[7px] text-right text-foreground-soft ${estilos.importe}`}>
+                      {formatearPrecio(l.precio)}
+                    </TableCell>
+                    <TableCell
+                      className={`p-[11px] px-[7px] pr-[18px] text-right text-[15px] font-semibold text-foreground ${estilos.importe}`}
+                    >
+                      {invalida
+                        ? '—'
+                        : formatearPrecio(
+                            deCentavos(subtotalEnCentavos(cantidadMilesimas, aCentavos(l.precio))),
+                          )}
+                    </TableCell>
+                    <TableCell className="p-[11px] pr-[18px] pl-[7px] text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => actualizarCarrito((p) => p.filter((_, j) => j !== i))}
+                        aria-label={`Quitar ${l.descripcion}`}
+                        className="text-muted-foreground"
+                      >
+                        <X className="size-[15px]" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+
+          {lineas.length === 0 && (
+            <p className="px-[18px] py-3 text-sm text-muted-foreground">
+              Buscá un artículo para empezar la venta.
+            </p>
+          )}
+
+          {/* Empuja la banda del total al fondo de la card cuando el panel
+              de Cobro de al lado es más alto que la cinta. */}
+          <div className="flex-1" />
+
+          {/* El pie de la cinta: doble regla y el total. Está siempre, incluso con
+              el carrito vacío en $ 0,00 — un ancla que aparece y desaparece no es
+              un ancla. Supera al cartel de 24 px, y eso está declarado como
+              enmienda con su límite en docs/sistema-de-diseno.md.
+
+              `border-t-4 border-double` y no un valor arbitrario de 3 px: la doble
+              regla necesita al menos 3 px para dibujarse, y 4 es el paso de la
+              escala de bordes de Tailwind. Un ancho de borde no es un paso de
+              espaciado, igual que el `gap-px` de la grilla de tiles de /ventas
+              (docs/sistema-de-diseno.md, sección Espaciado y radio).
+
+              Con una cantidad a medio tipear `totalCentavos` queda en NaN, y
+              "$ NaN" en 40 px es un cartel roto en una pantalla de plata. Muestra
+              "—", que es exactamente lo que ya hace la columna Subtotal de cada
+              línea inválida unas líneas más arriba. */}
+          <div className="mt-2 flex items-baseline justify-between border-t-4 border-double border-foreground px-[18px] pt-3 pb-[18px]">
+            <span className="text-xs tracking-wider text-muted-foreground uppercase">Total</span>
+            <span className={`${estilos.total} text-right`}>
+              {Number.isNaN(totalCentavos) ? '—' : formatearPrecio(deCentavos(totalCentavos))}
+            </span>
+          </div>
+        </Card>
+
+        <Card className="md:w-80">
+          <CardHeader>
+            {/* "Cobro" y no "Cobrar": el botón de abajo dice Cobrar, y una acción
+                tiene un solo nombre en todo el flujo. La card nombra la zona, el
+                botón nombra lo que pasa al apretarlo. */}
+            <CardTitle>Cobro</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form action={accion} className="flex flex-col gap-4">
+              <input type="hidden" name="clave" value={clave} />
+              <input
+                type="hidden"
+                name="items"
+                value={JSON.stringify(
+                  lineas.map((l) => ({ articuloId: l.articuloId, cantidad: l.cantidad })),
+                )}
+              />
+              <div className="flex flex-col gap-3">
+                {pagos.map((p, i) => (
+                  <FilaDePago
+                    key={i}
+                    pago={p}
+                    indice={i}
+                    cotizacionInicial={cotizacionInicial}
+                    onCambiar={(cambio) => cambiarPago(i, cambio)}
+                    onQuitar={() => setPagos((p2) => p2.filter((_, j) => j !== i))}
+                    puedeQuitar={pagos.length > 1}
+                  />
+                ))}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() =>
+                    setPagos((p) => [
+                      ...p,
+                      {
+                        medio: 'EFECTIVO',
+                        moneda: 'ARS',
+                        monto: deCentavos(Math.max(0, faltanCentavos)),
+                        cotizacion: '1',
+                        recibido: '',
+                      },
+                    ])
+                  }
+                >
+                  Agregar pago
+                </Button>
+              </div>
+
+              {/* `!Number.isNaN` primero: un monto a medio tipear (una coma de
+                  más, una letra) deja `faltanCentavos` en NaN, y `faltanCentavos
+                  > 0` da falso ahí, así que sin esta guarda se cae a la rama de
+                  "Sobran" y se imprime "Sobran $ NaN" — un cartel sin sentido
+                  para un estado que ya deja el botón apagado. `role="status"`
+                  porque el cartel aparece y cambia de texto sin que nadie lo
+                  mire, y es la única pista de por qué el botón sigue
+                  apagado. */}
+              {!Number.isNaN(faltanCentavos) && faltanCentavos !== 0 && hayCarrito && (
+                <p role="status" className="text-sm tabular-nums text-destructive">
+                  {faltanCentavos > 0
+                    ? `Faltan ${formatearPrecio(deCentavos(faltanCentavos))}`
+                    : `Sobran ${formatearPrecio(deCentavos(-faltanCentavos))}`}
+                </p>
               )}
-            />
-            <div className="flex flex-col gap-3">
-              {pagos.map((p, i) => (
-                <FilaDePago
-                  key={i}
-                  pago={p}
-                  indice={i}
-                  cotizacionInicial={cotizacionInicial}
-                  onCambiar={(cambio) => cambiarPago(i, cambio)}
-                  onQuitar={() => setPagos((p2) => p2.filter((_, j) => j !== i))}
-                  puedeQuitar={pagos.length > 1}
-                />
-              ))}
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() =>
-                  setPagos((p) => [
-                    ...p,
-                    {
-                      medio: 'EFECTIVO',
-                      moneda: 'ARS',
-                      monto: deCentavos(Math.max(0, faltanCentavos)),
-                      cotizacion: '1',
-                      recibido: '',
-                    },
-                  ])
-                }
-              >
-                Agregar pago
+
+              <input
+                type="hidden"
+                name="pagos"
+                value={JSON.stringify(
+                  // `recibido` NO viaja: es una ayuda de pantalla para calcular
+                  // el vuelto, y lo que entra a la caja es el monto.
+                  pagos.map((p) => ({
+                    medio: p.medio,
+                    moneda: p.moneda,
+                    monto: p.monto,
+                    cotizacion: p.cotizacion,
+                  })),
+                )}
+              />
+
+              {estado.error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{estado.error}</AlertDescription>
+                </Alert>
+              )}
+              {/* Sólo mientras `ventaProcesada` siga siendo ésta: en cuanto el
+                  carrito cambia (ver `actualizarCarrito`) el cartel se apaga,
+                  para que no quede colgado mientras se arma la venta
+                  siguiente. */}
+              {estado.venta && estado.venta.id === ventaProcesada && (
+                <Alert>
+                  <AlertDescription>
+                    Venta #{estado.venta.numero} cobrada.{' '}
+                    <Link href={`/ventas/${estado.venta.id}`} className="underline">
+                      Ver detalle
+                    </Link>
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <Button type="submit" disabled={!cierra || cobrando}>
+                {cobrando ? 'Cobrando…' : 'Cobrar'}
               </Button>
-            </div>
-
-            {/* `!Number.isNaN` primero: un monto a medio tipear (una coma de
-                más, una letra) deja `faltanCentavos` en NaN, y `faltanCentavos
-                > 0` da falso ahí, así que sin esta guarda se cae a la rama de
-                "Sobran" y se imprime "Sobran $ NaN" — un cartel sin sentido
-                para un estado que ya deja el botón apagado. `role="status"`
-                porque el cartel aparece y cambia de texto sin que nadie lo
-                mire, y es la única pista de por qué el botón sigue
-                apagado. */}
-            {!Number.isNaN(faltanCentavos) && faltanCentavos !== 0 && hayCarrito && (
-              <p role="status" className="text-sm tabular-nums text-destructive">
-                {faltanCentavos > 0
-                  ? `Faltan ${formatearPrecio(deCentavos(faltanCentavos))}`
-                  : `Sobran ${formatearPrecio(deCentavos(-faltanCentavos))}`}
-              </p>
-            )}
-
-            <input
-              type="hidden"
-              name="pagos"
-              value={JSON.stringify(
-                // `recibido` NO viaja: es una ayuda de pantalla para calcular
-                // el vuelto, y lo que entra a la caja es el monto.
-                pagos.map((p) => ({
-                  medio: p.medio,
-                  moneda: p.moneda,
-                  monto: p.monto,
-                  cotizacion: p.cotizacion,
-                })),
-              )}
-            />
-
-            {estado.error && (
-              <Alert variant="destructive">
-                <AlertDescription>{estado.error}</AlertDescription>
-              </Alert>
-            )}
-            {/* Sólo mientras `ventaProcesada` siga siendo ésta: en cuanto el
-                carrito cambia (ver `actualizarCarrito`) el cartel se apaga,
-                para que no quede colgado mientras se arma la venta
-                siguiente. */}
-            {estado.venta && estado.venta.id === ventaProcesada && (
-              <Alert>
-                <AlertDescription>
-                  Venta #{estado.venta.numero} cobrada.{' '}
-                  <Link href={`/ventas/${estado.venta.id}`} className="underline">
-                    Ver detalle
-                  </Link>
-                </AlertDescription>
-              </Alert>
-            )}
-
-            <Button type="submit" disabled={!cierra || cobrando}>
-              {cobrando ? 'Cobrando…' : 'Cobrar'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }
