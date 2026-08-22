@@ -78,9 +78,14 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   'Código/precio/stock de tabla': ['app/(app)/inventario/tipografia.module.css'],
 }
 
-/** Rol → `font-stretch`, leído de la tabla normativa entre marcadores. */
-function anchosDelDoc(): Map<string, string> {
-  const texto = readFileSync(DOC, 'utf8')
+/**
+ * Rol → `font-stretch`, leído de la tabla normativa entre marcadores.
+ *
+ * Recibe el TEXTO como parámetro (por defecto, el propio `DOC`) sólo para que
+ * el caso de más abajo pueda ejercitarla contra una tabla sintética sin tocar
+ * el documento real.
+ */
+function anchosDelDoc(texto: string = readFileSync(DOC, 'utf8')): Map<string, string> {
   const desde = texto.indexOf(INICIO)
   const hasta = texto.indexOf(FIN)
   if (desde === -1 || hasta === -1 || hasta < desde) {
@@ -94,10 +99,58 @@ function anchosDelDoc(): Map<string, string> {
   for (const linea of texto.slice(desde, hasta).split('\n')) {
     const rol = linea.match(/^\|\s*\*\*([^*]+)\*\*/)
     const ancho = linea.match(/`font-stretch:\s*([\d.]+%)`/)
-    if (rol && ancho) anchos.set(rol[1].trim(), ancho[1])
+    if (!rol || !ancho) continue
+    const clave = rol[1].trim()
+    const valor = ancho[1]
+    const previo = anchos.get(clave)
+    // Dos filas pueden compartir el mismo rótulo en negrita (dos pantallas,
+    // un mismo rol — "Número de paginación" hoy) sin que sea un problema,
+    // mientras ninguna de las dos declare font-stretch: MODULOS_POR_ROL ya
+    // las junta bajo una sola clave a propósito (ver su comentario). Lo que
+    // no puede pasar en silencio es que las dos EMPIECEN a declarar un
+    // font-stretch y sea distinto entre sí — un Map sólo guarda un valor por
+    // clave, y sobreescribir sin avisar dejaría la primera fila sin ningún
+    // chequeo real contra su módulo CSS (hallazgo de la review del rediseño
+    // de /inventario, minors).
+    if (previo !== undefined && previo !== valor) {
+      throw new Error(
+        `${DOC} tiene dos filas con el rótulo "${clave}" en negrita y ` +
+          `font-stretch distinto (${previo} y ${valor}). anchosDelDoc() sólo ` +
+          `puede guardar un valor por rótulo — si de verdad son dos anchos ` +
+          `distintos, dales rótulos distintos en negrita (no sólo el ` +
+          `"— /pantalla" del final, que queda afuera de los **...**).`,
+      )
+    }
+    anchos.set(clave, valor)
   }
   return anchos
 }
+
+describe('anchosDelDoc detecta filas con el mismo rótulo y font-stretch distinto', () => {
+  const tabla = (filas: string[]) => [INICIO, ...filas, FIN].join('\n')
+
+  it('dos filas con el mismo rótulo y el MISMO font-stretch no chocan', () => {
+    const texto = tabla([
+      '| **Cartel** — nombre del local | Archivo | 19 px | 600, `font-stretch: 112%` |',
+      '| **Cartel** — repetido a propósito para este test | Archivo | 19 px | 600, `font-stretch: 112%` |',
+    ])
+    expect(() => anchosDelDoc(texto)).not.toThrow()
+    expect(anchosDelDoc(texto).get('Cartel')).toBe('112%')
+  })
+
+  // El caso que el minor de la review pide explícitamente: hoy "Número de
+  // paginación" aparece dos veces sin font-stretch (por eso el Map de
+  // anchosDelDoc() nunca las ve), pero el día que una de las dos declare un
+  // ancho propio DISTINTO de la otra, sobreescribir en silencio dejaría la
+  // primera fila sin ningún chequeo contra su módulo CSS.
+  it('dos filas con el mismo rótulo y font-stretch DISTINTO explota, no se sobreescribe en silencio', () => {
+    const texto = tabla([
+      '| **Número de paginación** — /ventas | Archivo | 13 px | 600, `font-stretch: 100%` |',
+      '| **Número de paginación** — /inventario | Archivo | 13 px | 600, `font-stretch: 90%` |',
+    ])
+    expect(() => anchosDelDoc(texto)).toThrow(/rótulo "Número de paginación"[\s\S]*distinto/)
+  })
+})
 
 /** Todos los módulos CSS del repo, sin node_modules ni directorios ocultos. */
 function modulosDelRepo(dir = '.', encontrados: string[] = []): string[] {

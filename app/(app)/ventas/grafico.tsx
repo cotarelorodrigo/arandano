@@ -54,9 +54,12 @@ export function porcentajesQueSuman100(
  *
  * Un solo color por barra —`--primary`, vía el `Progress` de shadcn— y no dos
  * series apiladas: la maqueta nunca pidió una segunda serie para dólares, eso
- * se decidió escribiendo el código anterior (ver test/maqueta.test.ts, entrada
- * `--chart-2`). Los dólares siguen ahí, convertidos a pesos a la cotización de
- * cada pago —por eso la nota del pie—, simplemente no tienen su propio color:
+ * se decidió escribiendo el código anterior (ver `docs/sistema-de-diseno.md`,
+ * sección "Cómo se verifica", el párrafo sobre esta reescritura — la entrada
+ * `--chart-2` de `test/maqueta.test.ts` que citaba antes no existe más:
+ * `--chart-1` y `--chart-2` se sacaron del repo entero en este mismo ciclo).
+ * Los dólares siguen ahí, convertidos a pesos a la cotización de cada pago
+ * —por eso la nota del pie—, simplemente no tienen su propio color:
  * `componerPorMedio` ya los suma en el mismo `barra.total` que los pesos.
  *
  * Y sin tabla `sr-only` de respaldo: la versión con recharts la necesitaba

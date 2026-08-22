@@ -208,8 +208,9 @@ El historial por período.
   artículos, con qué medios se pagó y su estado.
 - Ver **"Cómo entró la plata"**: una barra por medio de pago, de un solo color,
   con los dólares convertidos a pesos a la cotización de cada pago —sin
-  segunda serie: la maqueta nunca pidió una, ver el comentario de
-  `--chart-2` en `test/maqueta.test.ts`—.
+  segunda serie: la maqueta nunca pidió una (`docs/sistema-de-diseno.md`,
+  sección "Cómo se verifica", el párrafo sobre la reescritura sin `recharts`
+  que sacó `--chart-1` y `--chart-2` del repo)—.
 - Entrar al detalle de cualquier venta.
 - Paginar de a 50, con números de página.
 

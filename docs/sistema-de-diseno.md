@@ -341,8 +341,20 @@ cotización de cada pago en la tabla "Cómo se pagó" (14 px, mismo tratamiento
 que un monto de tabla pero un dato distinto: una tasa de cambio, no plata).
 Con éstos son **diez** los roles que Archivo cubre en total.
 
+**El rediseño de `/inventario` (este ciclo) sumó dos roles más**, los dos en
+`app/(app)/inventario/tipografia.module.css`: el código, precio y stock de la
+tabla del listado (14 px, heredado de `text-sm` de `<Table>` igual que un monto
+de tabla, pero con un rango de peso propio — 400 a 700 según la columna y el
+estado de la fila, porque acá el peso también dice "negativo" o "desactivado",
+algo que ningún rol anterior necesitaba); y el número de paginación de esta
+pantalla (13 px, peso 600 — el mismo tratamiento que ya usa `/ventas`, con una
+fila propia en la escala porque son pantallas distintas, aunque comparten el
+mismo rótulo en negrita: `MODULOS_POR_ROL` en `test/tipografia.test.ts` las
+junta bajo una sola clave a propósito, con un módulo CSS por pantalla). Con
+éstos son **doce** los roles que Archivo cubre en total.
+
 `--font-heading: var(--font-sans)`: los demás títulos —los que no son ninguno
-de los diez roles ya contados— usan la misma familia.
+de los doce roles ya contados— usan la misma familia.
 
 ### La escala
 
@@ -362,8 +374,8 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | Meta — texto que acompaña a un dato sin competirle | sistema | 12 px | 400; `--muted-foreground` en superficie clara, `--marca-dim` sobre la banda oscura del total |
 | **Importe** — plata en el punto de venta | Archivo | 42 px el monto de la banda del total; 24 px su signo; 15 px los chips de vuelto y faltante; 14 px la columna | 600 el monto y los chips, 500 el signo, 400 la columna; `font-stretch: 85%`, `tabular-nums` |
 | **Cobro** — título de la card y texto del botón "Cobrar" | Archivo | 16 px el título; 17 px el botón | 600 |
-| **Título de card** — encabezados de card en /ventas, /ventas/[id] y /inventario/nuevo | Archivo | 15 px | 600 |
-| **Valor de tile** — resumen del período en /ventas | Archivo | 32 px el tile de marca; 26 px los otros dos | 600, tracking -0.6 px, `tabular-nums` |
+| **Título de card** — encabezados de card en /ventas, /ventas/[id], /inventario/nuevo y /inventario/[id] | Archivo | 15 px | 600 |
+| **Valor de tile** — resumen del período en /ventas; ficha de /inventario/[id] | Archivo | 32 px el tile de marca y 26 px los otros dos, en /ventas; 34 px el tile de marca y 24 px el otro, en la ficha de /inventario/[id] — la maqueta de esa pantalla usa un tamaño distinto para su tile de marca | 600, tracking -0.6 px, `tabular-nums` |
 | **Monto de tabla** — listado de /ventas y detalle de /ventas/[id] | Archivo | 14 px (heredado de `text-sm` de `<Table>`, sin tamaño propio) | 400 a 600 según la columna, `tabular-nums` |
 | **Banda de Total** — pie de la tabla "Qué se vendió" en /ventas/[id] | Archivo | 22 px | 600, `tabular-nums` |
 | **Número de paginación** — /ventas | Archivo | 13 px | 600 |

@@ -213,6 +213,22 @@ export async function corregirPorConteo(
 const ENCABEZADO_CSV = ['Fecha', 'Motivo', 'Detalle', 'Cambio', 'Queda', 'Usuario']
 
 /**
+ * Un apóstrofe adelante si el valor arranca con `=`, `+`, `-` o `@`: sin él,
+ * Excel y Google Sheets abren esos cuatro caracteres iniciales como el
+ * comienzo de una fórmula en vez de como texto (inyección de fórmulas, ver
+ * la guía de OWASP sobre CSV injection). No es un caso de laboratorio: la
+ * columna "Cambio" de ESTE MISMO archivo emite "+5" literal en cada ingreso,
+ * así que sin neutralizar, cualquier exportación con al menos un ingreso ya
+ * dispara el problema — no hace falta una nota manipulada a propósito. El
+ * apóstrofe fuerza texto sin mostrarse en la celda al abrirla en una
+ * planilla, que es como Excel y Sheets leen un CSV (no sólo cómo se tipea a
+ * mano).
+ */
+function neutralizarFormula(valor: string): string {
+  return /^[=+\-@]/.test(valor) ? `'${valor}` : valor
+}
+
+/**
  * Comillas dobles si el valor trae coma, comilla o salto de línea (regla
  * estándar de CSV, RFC 4180); las comillas internas se duplican al doblarlas.
  *
@@ -224,7 +240,8 @@ const ENCABEZADO_CSV = ['Fecha', 'Motivo', 'Detalle', 'Cambio', 'Queda', 'Usuari
  * en la columna de al lado.
  */
 function celdaCsv(valor: string): string {
-  return /[",\r\n]/.test(valor) ? `"${valor.replace(/"/g, '""')}"` : valor
+  const segura = neutralizarFormula(valor)
+  return /[",\r\n]/.test(segura) ? `"${segura.replace(/"/g, '""')}"` : segura
 }
 
 function filaCsv(campos: string[]): string {
@@ -291,7 +308,11 @@ export async function exportarHistorialCsv(
 
     const movimientos = await prisma.movimientoStock.findMany({
       where: { articuloId },
-      orderBy: { creadoEn: 'desc' },
+      // `id` como segundo criterio: mismo motivo que la consulta de
+      // movimientos de `[id]/page.tsx` (ver su comentario) — `creado_en` es
+      // la hora de inicio de transacción, así que sin desempate la pantalla y
+      // este CSV podían mostrar "Queda" distinto para las mismas filas.
+      orderBy: [{ creadoEn: 'desc' }, { id: 'desc' }],
       select: {
         delta: true, motivo: true, nota: true, creadoEn: true, costoUnitario: true,
         usuario: { select: { nombre: true } },

@@ -12,6 +12,7 @@ vi.mock('./acciones', () => ({
   reactivarArticuloAccion: vi.fn(),
   ingresarMercaderia: vi.fn(),
   corregirPorConteo: vi.fn(),
+  exportarHistorialCsv: vi.fn(),
 }))
 
 async function renderAlta() {
@@ -187,6 +188,27 @@ describe('FichaDeArticulo', () => {
     expect(html).not.toContain('>Desactivar<')
   })
 
+  // Minor de la review: el botón quedó con variant="destructive" fijo —antes
+  // era condicional—, así que "Reactivar" salía pintado en rojo como si fuera
+  // una acción destructiva.
+  it('"Reactivar" NO sale en rojo (variant destructive es sólo para Desactivar)', async () => {
+    const html = await renderFicha(null, { desactivado: true })
+    const boton = html.match(
+      /<button[^>]*data-variant="([^"]+)"[^>]*>(?:(?!<\/button>)[\s\S])*Reactivar/,
+    )
+    expect(boton, 'no se encontró el botón "Reactivar" con su data-variant').not.toBeNull()
+    expect(boton![1]).not.toBe('destructive')
+  })
+
+  it('"Desactivar" sí sale en rojo (variant destructive)', async () => {
+    const html = await renderFicha(null, { desactivado: false })
+    const boton = html.match(
+      /<button[^>]*data-variant="([^"]+)"[^>]*>(?:(?!<\/button>)[\s\S])*Desactivar/,
+    )
+    expect(boton, 'no se encontró el botón "Desactivar" con su data-variant').not.toBeNull()
+    expect(boton![1]).toBe('destructive')
+  })
+
   // Sin esDuenio no hay nada que editar ni que desactivar: ni el botón del
   // Topbar, ni el <form> oculto de baja, ni la card "Datos".
   it('sin esDuenio no renderiza ninguna acción de edición', async () => {
@@ -197,8 +219,58 @@ describe('FichaDeArticulo', () => {
     expect(html).not.toMatch(/<form id="form-baja-articulo"/)
   })
 
+  // Minor de la review: un EMPLEADO (esDuenio=false) mirando un SERVICIO (sin
+  // columnaDerechaExtra, que sólo arma page.tsx para un producto) se quedaba
+  // sin "Datos" y sin "Cómo se movió", pero el <div> de 324 px seguía
+  // reservando el hueco vacío igual. La columna entera tiene que desaparecer,
+  // no sólo su contenido.
+  it('sin nada que mostrar a la derecha, la columna de 324 px no se renderiza', async () => {
+    const html = await renderFicha(null, { esDuenio: false })
+    expect(html).not.toContain('w-[324px]')
+  })
+
+  it('con esDuenio, la columna de 324 px sí aparece (trae la card "Datos")', async () => {
+    const html = await renderFicha(null, { esDuenio: true })
+    expect(html).toContain('w-[324px]')
+  })
+
   it('la columna izquierda que arma page.tsx se renderiza tal cual', async () => {
     const html = await renderFicha(null)
     expect(html).toContain('columna izquierda')
+  })
+})
+
+// Minor de la review: BotonExportarCsv no se renderizaba en ningún test. La
+// descarga en sí (Blob, appendChild, click(), revokeObjectURL) no se puede
+// ejercitar con renderToStaticMarkup —no hay DOM en el entorno "node" de
+// vitest, y este repo no suma jsdom sólo para esto (ver el minor de la
+// dependencia muerta)—, así que el render estático cubre lo que sí se puede
+// (que exista, con su texto inicial) y el resto se ata leyendo el FUENTE,
+// mismo criterio que ya usa este archivo para "ocultar el stock inicial".
+describe('BotonExportarCsv', () => {
+  it('se renderiza con su texto inicial, sin disparar la exportación', async () => {
+    const { BotonExportarCsv } = await import('./formularios')
+    const html = renderToStaticMarkup(<BotonExportarCsv articuloId="a1" />)
+    expect(html).toContain('Exportar CSV →')
+    expect(html).not.toContain('Exportando…')
+  })
+})
+
+describe('la descarga del CSV: inserta el <a> en el DOM y difiere el revoke (minor de la review)', () => {
+  const FUENTE = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')
+
+  // Sin esto, Safari no dispara la descarga de un <a download> al que nunca
+  // se le hizo appendChild — "la forma canónica de la descarga que no hace
+  // nada en Safari" (texto literal del hallazgo).
+  it('inserta el <a> en el DOM con appendChild antes de clickearlo', () => {
+    expect(FUENTE).toContain('document.body.appendChild(enlace)')
+  })
+
+  // revokeObjectURL sincrónico justo después del click() puede ganarle a la
+  // descarga que el navegador todavía no arrancó del todo.
+  it('revoca la URL en el siguiente tick (setTimeout), no sincrónicamente tras el click', () => {
+    expect(FUENTE).toMatch(
+      /enlace\.click\(\)[\s\S]{0,400}setTimeout\(\(\) => URL\.revokeObjectURL\(url\), 0\)/,
+    )
   })
 })

@@ -160,7 +160,13 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   const [movimientos, ultimoConCosto, ventasPorMes] = await Promise.all([
     prisma.movimientoStock.findMany({
       where: { articuloId: id },
-      orderBy: { creadoEn: 'desc' },
+      // `id` como segundo criterio, no sólo `creadoEn`: `creado_en` es la
+      // hora de INICIO de transacción, así que dos movimientos escritos en la
+      // misma transacción comparten timestamp y su orden queda indefinido sin
+      // desempate — y como el CSV (`acciones.ts`) corre esta misma consulta
+      // por separado, la pantalla y el CSV podían mostrar "Queda" distinto
+      // para las mismas filas. `id` es `uuid(7)`, ordenable por tiempo.
+      orderBy: [{ creadoEn: 'desc' }, { id: 'desc' }],
       take: MOVIMIENTOS_VISIBLES,
       select: {
         id: true, delta: true, motivo: true, nota: true, creadoEn: true, costoUnitario: true,
@@ -178,7 +184,9 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
           // CLAUDE.md— así que el filtro es explícito: el primero CON costo,
           // no el primero a secas.
           where: { articuloId: id, costoUnitario: { not: null } },
-          orderBy: { creadoEn: 'desc' },
+          // Mismo desempate que la consulta de movimientos de arriba: dos
+          // ingresos de la misma transacción comparten `creadoEn`.
+          orderBy: [{ creadoEn: 'desc' }, { id: 'desc' }],
           select: { costoUnitario: true },
         })
       : null,

@@ -52,7 +52,7 @@ La correspondencia:
 | `ar-ink-3` | `--muted-foreground` |
 | `ar-line` | `--border` |
 | `ar-line-strong` | `--input` |
-| `ar-primary` | `--primary`, `--ring`, `--chart-1` |
+| `ar-primary` | `--primary`, `--ring` |
 | `ar-primary-deep` | `--marca` |
 | `ar-primary-soft` | `--accent` |
 | `ar-ok`, `ar-ok-soft` | `--ok`, `--ok-soft` |

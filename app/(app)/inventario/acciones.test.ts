@@ -493,6 +493,93 @@ describe('exportarHistorialCsv (Task 5 del rediseño)', () => {
     expect(celdasDe(filas[1])[2]).toContain('Nota "con comillas" sin coma')
   })
 
+  // Minor de la review: inyección de fórmulas (CSV injection, OWASP).
+  // `celdaCsv` cumplía RFC 4180 pero no neutralizaba una celda que arranca
+  // con `=`, `+`, `-` o `@` — Excel y Google Sheets abren esos cuatro
+  // caracteres iniciales como el comienzo de una fórmula. No hace falta una
+  // nota manipulada a propósito: la columna "Cambio" de CUALQUIER ingreso ya
+  // emite "+5" literal, así que se prueba primero ese caso, sin necesidad de
+  // ninguna nota especial.
+  it('la columna "Cambio" (siempre "+N" en un ingreso) sale neutralizada con un apóstrofe adelante', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Para probar Cambio', '0')
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('cantidad', '5')
+    await ingresarMercaderia(INICIAL, datos)
+
+    const { csv } = await exportarHistorialCsv(id)
+    const filas = csv.split('\r\n')
+    expect(celdasDe(filas[1])[3]).toBe("'+5")
+  })
+
+  it.each(['=1+1', '+1+1', '-1+1', '@SUM(A1:A9)'])(
+    'una nota que arranca con "%s" (fórmula) se neutraliza con un apóstrofe adelante',
+    async (nota) => {
+      estado.cookie = cookieDuenio
+      const id = await crearArticuloDePrueba(`Con nota ${nota}`, '0')
+      const datos = new FormData()
+      datos.set('articuloId', id)
+      datos.set('cantidad', '1')
+      datos.set('nota', nota)
+      await ingresarMercaderia(INICIAL, datos)
+
+      const { csv } = await exportarHistorialCsv(id)
+      const filas = csv.split('\r\n')
+      // El Detalle de un AJUSTE ni siquiera aplica acá: es un INGRESO, y
+      // detalleDeMovimiento antepone la nota tal cual, sin nada delante.
+      expect(celdasDe(filas[1])[2].startsWith("'")).toBe(true)
+      expect(celdasDe(filas[1])[2]).toContain(nota)
+    },
+  )
+
+  it('una nota que NO arranca con ninguno de los cuatro caracteres no se toca', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Con nota normal', '0')
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('cantidad', '1')
+    datos.set('nota', 'Factura A 0001')
+    await ingresarMercaderia(INICIAL, datos)
+
+    const { csv } = await exportarHistorialCsv(id)
+    const filas = csv.split('\r\n')
+    expect(celdasDe(filas[1])[2]).toBe('Factura A 0001')
+  })
+
+  // Minor de la review: `creado_en` es la hora de INICIO de transacción, así
+  // que dos movimientos de la misma transacción comparten timestamp y quedan
+  // sin orden definido si sólo se ordena por esa columna. Se simula con dos
+  // filas insertadas a mano con el MISMO `creado_en` — el orden de inserción
+  // en Postgres no garantiza nada por sí solo, así que si el resultado sale
+  // determinístico es porque el `id` (uuid v7, ordenable por tiempo) lo
+  // desempata, no por casualidad.
+  it('desempata por id cuando dos movimientos comparten el mismo creadoEn', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Con movimientos simultáneos', '10')
+    const ts = new Date()
+    const menor = '00000000-0000-7000-8000-00000000000a'
+    const mayor = '00000000-0000-7000-8000-00000000000b'
+    await owner.query(
+      `INSERT INTO movimientos_stock (id, tenant_id, articulo_id, delta, motivo, nota, creado_en, usuario_id)
+       VALUES ($1, $2, $3, -1, 'AJUSTE', 'Primero por id', $4, $5)`,
+      [menor, estado.tenantId, id, ts, empleadoId],
+    )
+    await owner.query(
+      `INSERT INTO movimientos_stock (id, tenant_id, articulo_id, delta, motivo, nota, creado_en, usuario_id)
+       VALUES ($1, $2, $3, -2, 'AJUSTE', 'Segundo por id', $4, $5)`,
+      [mayor, estado.tenantId, id, ts, empleadoId],
+    )
+
+    const { csv } = await exportarHistorialCsv(id)
+    const filas = csv.split('\r\n')
+    expect(filas).toHaveLength(3) // encabezado + los dos movimientos
+    // `id` desc: el de id mayor ("…b") va primero, sin importar el orden de
+    // inserción — los dos comparten el mismo creadoEn.
+    expect(celdasDe(filas[1])[2]).toContain('Segundo por id')
+    expect(celdasDe(filas[2])[2]).toContain('Primero por id')
+  })
+
   it('un EMPLEADO también puede exportar: es de sólo lectura, sin restricción de dueño', async () => {
     estado.cookie = cookieEmpleado
     const { csv } = await exportarHistorialCsv(articuloId)

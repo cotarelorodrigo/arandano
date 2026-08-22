@@ -309,7 +309,12 @@ export function FichaDeArticulo({
               <Button
                 type="submit"
                 form={FORM_BAJA_ARTICULO}
-                variant="destructive"
+                // Condicional, no fijo en "destructive": reactivar un
+                // artículo no es una acción destructiva y pintarla en rojo la
+                // hace parecer una — antes del rediseño ya era
+                // `desactivado ? 'secondary' : 'destructive'`, y esta task lo
+                // había dejado fijo por error.
+                variant={desactivado ? 'secondary' : 'destructive'}
                 disabled={dandoBaja}
               >
                 {desactivado ? (
@@ -353,47 +358,55 @@ export function FichaDeArticulo({
         {children}
         <div className="flex items-start gap-4">
           <div className="flex flex-1 flex-col gap-4">{columnaIzquierda}</div>
-          <div className="flex w-[324px] shrink-0 flex-col gap-4">
-            {esDuenio && (
-              <CardDelFormulario titulo="Datos">
-                <form id={FORM_EDITAR_ARTICULO} action={accionEditar} className="contents">
-                  <input type="hidden" name="articuloId" value={articuloId} />
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="e-nombre">Nombre</Label>
-                    <Input id="e-nombre" name="nombre" defaultValue={nombre} required />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="e-precio">Precio de venta</Label>
-                    <Input
-                      id="e-precio"
-                      name="precio"
-                      inputMode="decimal"
-                      defaultValue={precio}
-                      required
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <div className="flex flex-1 flex-col gap-2">
-                      <Label htmlFor="e-sku">Código</Label>
-                      <Input id="e-sku" name="sku" defaultValue={sku} required />
+          {/* Sin la columna entera —no sólo su contenido— cuando no hay nada
+              que mostrar: un EMPLEADO mirando un SERVICIO no tiene "Datos"
+              (esDuenio) ni "Cómo se movió" (columnaDerechaExtra, sólo para
+              productos), y sin esta condición el <div> de 324 px quedaba
+              reservando el hueco vacío igual, en vez de dejarle todo el ancho
+              a la columna izquierda. */}
+          {(esDuenio || columnaDerechaExtra) && (
+            <div className="flex w-[324px] shrink-0 flex-col gap-4">
+              {esDuenio && (
+                <CardDelFormulario titulo="Datos">
+                  <form id={FORM_EDITAR_ARTICULO} action={accionEditar} className="contents">
+                    <input type="hidden" name="articuloId" value={articuloId} />
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="e-nombre">Nombre</Label>
+                      <Input id="e-nombre" name="nombre" defaultValue={nombre} required />
                     </div>
-                    <div className="flex flex-1 flex-col gap-2">
-                      <Label htmlFor="e-categoria">Categoría</Label>
-                      {/* '' y no `categoria` crudo: un <input> no controlado
-                          con defaultValue={null} tira la advertencia de React
-                          de pasar de no-controlado a controlado. */}
-                      <Input id="e-categoria" name="categoria" defaultValue={categoria ?? ''} />
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="e-precio">Precio de venta</Label>
+                      <Input
+                        id="e-precio"
+                        name="precio"
+                        inputMode="decimal"
+                        defaultValue={precio}
+                        required
+                      />
                     </div>
-                  </div>
-                  {/* El tipo no está y no es un olvido: pasar un PRODUCTO con
-                      stock y movimientos a SERVICIO deja stock huérfano que el
-                      motor ya no descuenta ni explica. Un artículo mal cargado
-                      se desactiva y se crea de nuevo. */}
-                </form>
-              </CardDelFormulario>
-            )}
-            {columnaDerechaExtra}
-          </div>
+                    <div className="flex gap-2">
+                      <div className="flex flex-1 flex-col gap-2">
+                        <Label htmlFor="e-sku">Código</Label>
+                        <Input id="e-sku" name="sku" defaultValue={sku} required />
+                      </div>
+                      <div className="flex flex-1 flex-col gap-2">
+                        <Label htmlFor="e-categoria">Categoría</Label>
+                        {/* '' y no `categoria` crudo: un <input> no controlado
+                            con defaultValue={null} tira la advertencia de React
+                            de pasar de no-controlado a controlado. */}
+                        <Input id="e-categoria" name="categoria" defaultValue={categoria ?? ''} />
+                      </div>
+                    </div>
+                    {/* El tipo no está y no es un olvido: pasar un PRODUCTO con
+                        stock y movimientos a SERVICIO deja stock huérfano que el
+                        motor ya no descuenta ni explica. Un artículo mal cargado
+                        se desactiva y se crea de nuevo. */}
+                  </form>
+                </CardDelFormulario>
+              )}
+              {columnaDerechaExtra}
+            </div>
+          )}
         </div>
       </div>
     </>
@@ -502,8 +515,18 @@ export function BotonExportarCsv({ articuloId }: { articuloId: string }) {
       const enlace = document.createElement('a')
       enlace.href = url
       enlace.download = nombreArchivo
+      // Insertado en el DOM y no sólo creado: Safari no dispara la descarga
+      // de un <a download> al que nunca se le hizo appendChild, que es la
+      // forma canónica de la descarga que en ese navegador no hace nada.
+      document.body.appendChild(enlace)
       enlace.click()
-      URL.revokeObjectURL(url)
+      enlace.remove()
+      // revokeObjectURL en el siguiente tick, no sincrónico: hacerlo justo
+      // después del click() puede ganarle a la descarga que el navegador
+      // todavía no terminó de arrancar, sobre todo con el archivo más grande
+      // que el resto de esta pantalla maneja (todo el historial, sin el
+      // límite de filas de la tabla).
+      setTimeout(() => URL.revokeObjectURL(url), 0)
     } catch {
       setError('No se pudo exportar. Probá de nuevo.')
     } finally {

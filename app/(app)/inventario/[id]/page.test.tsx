@@ -91,9 +91,14 @@ describe('los tiles de la ficha (Task 4 del rediseño)', () => {
   // mismo bloque `findFirst` que trae `costoUnitario: { not: null } }`, así
   // que sólo esa consulta puede satisfacerla.
   it('la consulta de "Último costo" filtra por costoUnitario no nulo y ordena por fecha descendente', () => {
-    expect(FUENTE).toContain(
-      "where: { articuloId: id, costoUnitario: { not: null } },\n          orderBy: { creadoEn: 'desc' },",
-    )
+    const desde = FUENTE.indexOf('where: { articuloId: id, costoUnitario: { not: null } },')
+    expect(desde).toBeGreaterThan(-1)
+    const bloque = FUENTE.slice(desde, desde + 300)
+    // El `orderBy` de ESTE bloque en particular (no el de la consulta de
+    // "movimientos" de más abajo, que también ordena por `creadoEn: 'desc'`):
+    // por eso se recorta un bloque acotado desde el `where` de arriba en vez
+    // de buscar el string en todo el FUENTE.
+    expect(bloque).toContain("orderBy: [{ creadoEn: 'desc' }, { id: 'desc' }]")
   })
 
   it('sin costo cargado, el tile muestra "—" y no un número inventado', () => {
@@ -127,6 +132,16 @@ describe('el historial de la ficha (Task 5 del rediseño)', () => {
 
   it('la consulta de movimientos ahora trae costoUnitario, que detalleDeMovimiento necesita', () => {
     expect(FUENTE).toMatch(/select:\s*{\s*id: true, delta: true, motivo: true, nota: true, creadoEn: true, costoUnitario: true,/)
+  })
+
+  // Minor de la review: `creado_en` es la hora de INICIO de transacción, así
+  // que dos movimientos escritos en la misma transacción comparten timestamp
+  // y quedan sin orden definido — y como el CSV (acciones.ts) corre esta
+  // misma consulta por separado, la pantalla y el CSV podían mostrar "Queda"
+  // distinto para las mismas filas. `id` (uuid v7, ordenable por tiempo) como
+  // segundo criterio lo desempata.
+  it('la consulta de movimientos desempata por id, no sólo por creadoEn', () => {
+    expect(FUENTE).toContain("orderBy: [{ creadoEn: 'desc' }, { id: 'desc' }],\n      take: MOVIMIENTOS_VISIBLES,")
   })
 
   it('el motivo se ve con ChipMotivo, no como texto plano', () => {
