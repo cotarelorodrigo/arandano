@@ -45,6 +45,12 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   Cartel: ['app/login/persiana.module.css', 'components/cartel.module.css'],
   Importe: ['components/importe.module.css'],
   'Título de pantalla': ['components/shell/encabezado.module.css'],
+  // Sin font-stretch (ver el comentario del propio módulo), así que nunca
+  // aparece vía anchosDelDoc() — está acá sólo para que "ningún módulo
+  // declara un ancho que el documento no documente" sepa que este archivo SÍ
+  // tiene un rol escrito, y no lo marque como un consumidor fantasma de
+  // var(--font-archivo).
+  Cobro: ['app/(app)/vender/cobro.module.css'],
 }
 
 /** Rol → `font-stretch`, leído de la tabla normativa entre marcadores. */

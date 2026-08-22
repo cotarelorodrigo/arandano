@@ -1,0 +1,36 @@
+/*
+ * Dos rótulos del panel de Cobro que pagan Archivo sin ser plata: el título
+ * de la card ("Cobro") y el texto del botón "Cobrar". design/arandano.pen los
+ * pide en fontFamily Archivo, peso 600 (nodos `EszMA` y `jvE8l`) — un cuarto
+ * consumidor de la cara de display, junto al Cartel, el Importe y el Título
+ * de pantalla (docs/sistema-de-diseno.md, sección Tipografía).
+ *
+ * SIN font-stretch, mismo criterio que ya declara
+ * components/shell/encabezado.module.css para el <h1> de pantalla: el .pen no
+ * puede pedir un ancho propio —TextStyle no tiene esa propiedad—, así que sin
+ * evidencia de que la maqueta quiera un eje angosto o expandido, los dos se
+ * quedan en el 100% por default del eje wdth. test/tipografia.test.ts lo
+ * vigila igual: un font-stretch que apareciera acá sin fila en la tabla de la
+ * escala rompería el gate.
+ *
+ * POR QUÉ UN MÓDULO CSS Y NO UNA UTILIDAD DE TAILWIND. Mismo motivo que
+ * importe.module.css: --font-archivo se podría escribir inline en el TSX
+ * (next/font la emite sobre el <html>), pero test/tipografia.test.ts vigila
+ * cada consumidor de la cara de display leyendo el TEXTO de los .module.css
+ * del repo (`modulosDelRepo()` sólo barre esa extensión) — puesto inline
+ * quedaría fuera de ese barrido, y un rol nuevo sin fila en la escala pasaría
+ * desapercibido, que es justo lo que ese mecanismo existe para impedir.
+ *
+ * El tamaño (16 px el título, 17 px el botón) queda como utilidad de Tailwind
+ * en el JSX y no acá: comparten familia y peso, no tamaño, así que fijarlo acá
+ * hubiera obligado a duplicar la clase por una sola diferencia.
+ */
+.titulo {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+}
+
+.boton {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+}

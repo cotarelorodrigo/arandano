@@ -381,16 +381,21 @@ sumarlo ahí no compraría nada.
 No es un default que quedó: es una decisión. Cero bytes, cero salto de fuente al
 cargar, y se ve nativa en el Windows del mostrador igual que en el Android del
 dueño. **Sigue siendo la pila del cuerpo de toda la aplicación**: botones y
-texto corrido no la abandonan en ninguna pantalla; tres roles salen hacia
+texto corrido no la abandonan en ninguna pantalla; cuatro roles salen hacia
 Archivo: el cartel —el nombre del local—, que desde el ciclo del cartel paga
 Archivo también en
 el header de la aplicación y no sólo en el login; el importe —la plata—, que
 desde ese ciclo paga Archivo en `/vender`: ahí los importes de la tabla y de
-la lista de resultados, los campos de monto, cotización y recibido del
-formulario de cobro, y el aviso de vuelto, van en Archivo y no en la pila del
-sistema; y el título de pantalla (`h1`), que desde el encabezado de 66 px de
-este ciclo paga Archivo en las diez pantallas de la aplicación y no la pila
-del sistema que pagaba antes (ver *La cara de display: Archivo* más abajo).
+la lista de resultados, la banda del total (monto y signo, cada uno con su
+propio tamaño), los campos de monto, cotización y recibido del formulario de
+cobro, y los chips de vuelto, faltante y la equivalencia de un pago en
+dólares, van en Archivo y no en la pila del sistema; el título de pantalla
+(`h1`), que desde el encabezado de 66 px de este ciclo paga Archivo en las
+diez pantallas de la aplicación y no la pila del sistema que pagaba antes (ver
+*La cara de display: Archivo* más abajo); y, del rediseño de `/vender`
+(`app/(app)/vender/cobro.module.css`), el título de la card de Cobro y el
+texto del botón "Cobrar" — dos rótulos que no son plata ni el `h1` de la
+pantalla, así que no encajan en ninguno de los otros tres roles.
 
 `--font-heading: var(--font-sans)`: los demás títulos —los que no son el `h1`
 de pantalla, ya contado arriba— usan la misma familia.
@@ -411,7 +416,8 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | Rol del usuario (pie del sidebar), subtítulo del encabezado | sistema | 11 px | 400, `--muted-foreground` |
 | Rótulo "ARÁNDANO", stack · sha — pie del sidebar | sistema | 10 px | 700 el rótulo (`tracking-[0.16em]`); 400 stack · sha, `--muted-foreground` |
 | Meta — texto que acompaña a un dato sin competirle | sistema | 12 px | 400; `--muted-foreground` en superficie clara, `--marca-dim` sobre la banda oscura del total |
-| **Importe** — plata en el punto de venta | Archivo | 40 px el total; 14 px la columna | 600 el total, 400 la columna; `font-stretch: 85%`, `tabular-nums` |
+| **Importe** — plata en el punto de venta | Archivo | 42 px el monto de la banda del total; 24 px su signo; 15 px los chips de vuelto y faltante; 14 px la columna | 600 el monto y los chips, 500 el signo, 400 la columna; `font-stretch: 85%`, `tabular-nums` |
+| **Cobro** — título de la card y texto del botón "Cobrar" | Archivo | 16 px el título; 17 px el botón | 600 |
 
 <!-- escala:fin -->
 
@@ -456,13 +462,14 @@ grep encuentra y que NO son este rol** —forzarlos acá taparía la diferencia 
 vez de mostrarla:
 
 - Los encabezados de columna del carrito (`ARTÍCULO`/`CANTIDAD`/`PRECIO`/
-  `SUBTOTAL`, `app/(app)/vender/punto-de-venta.tsx:380`) y el rótulo "Total"
-  (`:472`) están en `text-xs` en el código, pero el `.pen` los dibuja a
-  **10 px**, peso 700, con tracking ancho y mayúsculas — el mismo tratamiento
-  que ya tiene el rótulo "ARÁNDANO" del pie del sidebar, no el de *Meta*. Hoy
-  hay un desvío real entre el código y la maqueta que esta task no corrige —no
-  toca `punto-de-venta.tsx`—, y queda anotado para decidir si se ensancha esa
-  fila de 10 px a estos dos usos nuevos o se corrige el componente.
+  `SUBTOTAL`) y el rótulo "Total" de la banda usan **10 px**, peso 700, con
+  tracking ancho y mayúsculas — el mismo tratamiento que ya tiene el rótulo
+  "ARÁNDANO" del pie del sidebar, no el de *Meta*. Los dos vivían en `text-xs`
+  sin ese tracking hasta que cada uno se corrigió por separado: los
+  encabezados en el ciclo del stepper de cantidad, y el rótulo "Total" en el
+  rediseño de la banda del total. **Y el tracking de los dos es distinto a
+  propósito**: `0.8px` los encabezados, `1.4px` el rótulo "Total" — el `.pen`
+  no los iguala, así que el código tampoco.
 - El rótulo "Arándano" de `app/not-found.tsx` y el *kicker* de
   `app/sitio/secciones.tsx` usan `text-xs tracking-[0.06em] uppercase` — una
   firma trackeada, emparentada con `.firma` de `app/sitio/cierre.module.css`

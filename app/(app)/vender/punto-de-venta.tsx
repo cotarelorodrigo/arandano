@@ -2,22 +2,25 @@
 
 import { Fragment, useActionState, useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { Minus, Plus, ScanBarcode, TriangleAlert, X } from 'lucide-react'
+import { ArrowRight, CircleAlert, Minus, Plus, ScanBarcode, TriangleAlert, X } from 'lucide-react'
 import { cobrar, buscarArticulos, type EstadoCobro } from './acciones'
 import type { ArticuloVendible } from '@/lib/ventas/buscar'
 import {
   aCentavos, aMilesimas, cantidadEnMilesimas, cotizacionEnDiezMilesimas, deCentavos,
-  deMilesimas, dineroEnCentavos, subtotalEnCentavos, totalDePagosEnCentavos, totalEnCentavos,
+  deMilesimas, dineroEnCentavos, pesosDePagoEnCentavos, subtotalEnCentavos,
+  totalDePagosEnCentavos, totalEnCentavos,
 } from '@/lib/ventas/centavos'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import estilos from '@/components/importe.module.css'
+import estilosCobro from './cobro.module.css'
 
 const INICIAL: EstadoCobro = { error: null, venta: null }
 
@@ -122,6 +125,58 @@ export function esAtajoDeBuscador(tecla: string): boolean {
   return tecla === 'F2'
 }
 
+/**
+ * "N artículos · N unidades" de la banda del total, con el singular que le
+ * corresponde a cada mitad — en castellano cero y "muchos" comparten el
+ * plural, así que 1 es la única excepción en los dos casos (mismo criterio ya
+ * usado en `app/(app)/inventario/page.tsx` para "N artículos").
+ *
+ * Exportada por el mismo motivo que `pasoDeCantidad` y `esAtajoDeBuscador`:
+ * este archivo se testea con `renderToStaticMarkup` sobre el carrito VACÍO
+ * (ver la nota de `render()` en el test), así que un carrito con líneas de
+ * verdad —4 artículos, 5 unidades— nunca llega a renderizarse ahí. Llamar la
+ * función directo es lo único que prueba la pluralización con un carrito no
+ * vacío.
+ */
+export function resumenDelCarrito(articulos: number, unidadesMilesimas: number): string {
+  const unidadesTexto = formatearCantidad(deMilesimas(unidadesMilesimas))
+  const arts = articulos === 1 ? '1 artículo' : `${articulos} artículos`
+  const unids = unidadesTexto === '1' ? '1 unidad' : `${unidadesTexto} unidades`
+  return `${arts} · ${unids}`
+}
+
+/**
+ * Cuántos pesos entran por un pago en dólares, para el renglón "Entran $X"
+ * que sólo se muestra bajo un pago en USD (design/arandano.pen, nodo
+ * `OTlAa`).
+ *
+ * Reusa `pesosDePagoEnCentavos` (lib/ventas/centavos.ts) —el mismo cálculo
+ * que ata el total de la venta contra la suma de los pagos— en vez de
+ * reinventar "monto × cotización" a mano acá: son los mismos centavos que el
+ * motor ya suma para decidir si la venta cierra, y escribir la cuenta dos
+ * veces es la forma en que este archivo se desincronizaría de esa cuenta sin
+ * que ningún test lo note.
+ */
+export function entranPesosCentavos(montoUsd: string, cotizacion: string): number {
+  return pesosDePagoEnCentavos(dineroEnCentavos(montoUsd), cotizacionEnDiezMilesimas(cotizacion))
+}
+
+/**
+ * Si UN pago puede mostrar su chip de vuelto, dado el estado de PAGO
+ * agregado de toda la venta.
+ *
+ * Vuelto y faltante son estados excluyentes a propósito, y hasta esta task
+ * nada lo garantizaba: mostrar "te sobran $10.000" en un pago en efectivo
+ * mientras la VENTA completa sigue corta —porque hay otro pago insuficiente
+ * al lado— le dice al cajero que dé vuelto sobre una venta que en conjunto no
+ * cerró. `hayFaltante` tiene que venir calculado sobre TODOS los pagos
+ * (`faltanCentavos > 0`, ver el cuerpo de `PuntoDeVenta`), no sobre éste
+ * solo — por eso es un parámetro y no algo que esta función recalcule.
+ */
+export function puedeMostrarVuelto(esEfectivoArs: boolean, hayFaltante: boolean): boolean {
+  return esEfectivoArs && !hayFaltante
+}
+
 export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string | null }) {
   const [estado, accion, cobrando] = useActionState(cobrar, INICIAL)
   const [lineas, setLineas] = useState<Linea[]>([])
@@ -200,6 +255,16 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   // rechazaba la venta entera con "falta la cantidad".
   const hayLineaInvalida = enCentavos.some((l) => Number.isNaN(l.cantidadMilesimas))
   const hayCarrito = lineas.length > 0 && totalCentavos > 0 && !hayLineaInvalida
+
+  // Unidades totales de la banda: la suma de cantidades, no la cantidad de
+  // líneas (eso ya lo da `lineas.length`, el otro término de
+  // `resumenDelCarrito`). Una línea inválida (NaN) suma 0 acá — no puede
+  // envenenar el conteo entero, a diferencia de `totalCentavos`, que si es
+  // el precio de esa línea el que importa se vuelve "—" más abajo.
+  const unidadesMilesimas = enCentavos.reduce(
+    (acc, l) => acc + (Number.isNaN(l.cantidadMilesimas) ? 0 : l.cantidadMilesimas),
+    0,
+  )
 
   // Clave nueva en cuanto el carrito deja de ser el que la clave describe.
   // Ajuste durante el render, con la misma forma que los dos bloques de abajo:
@@ -407,6 +472,11 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   )
   const faltanCentavos = totalCentavos - pagadoCentavos
   const cierra = hayCarrito && faltanCentavos === 0
+  // Para `puedeMostrarVuelto`: NaN (un monto a medio tipear en CUALQUIER
+  // pago) cuenta como "sí hay faltante" — "no se sabe si cierra" no es
+  // licencia para mostrarle vuelto a nadie, es exactamente el mismo criterio
+  // conservador que ya usa `hayLineaInvalida` más arriba.
+  const hayFaltante = Number.isNaN(faltanCentavos) || faltanCentavos > 0
 
   return (
     // "Cuerpo": el buscador a todo el ancho, arriba de las dos columnas — el
@@ -665,110 +735,156 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
               de Cobro de al lado es más alto que la cinta. */}
           <div className="flex-1" />
 
-          {/* El pie de la cinta: doble regla y el total. Está siempre, incluso con
-              el carrito vacío en $ 0,00 — un ancla que aparece y desaparece no es
-              un ancla. Supera al cartel de 24 px, y eso está declarado como
-              enmienda con su límite en docs/sistema-de-diseno.md.
+          {/* La banda del total: la ÚNICA superficie de --marca de esta
+              pantalla (design/arandano.pen, nodo `B7teV`), alrededor del dato
+              que /vender existe para mostrar — docs/sistema-de-diseno.md,
+              sección "Un ancla de contenido por pantalla". El avatar del pie
+              del sidebar también pinta con --marca, pero ancla la identidad
+              de quién está adentro del sistema en las diez pantallas, no el
+              dato de ÉSTA en particular: las dos conviven a propósito, según
+              ese mismo documento.
 
-              `border-t-4 border-double` y no un valor arbitrario de 3 px: la doble
-              regla necesita al menos 3 px para dibujarse, y 4 es el paso de la
-              escala de bordes de Tailwind. Un ancho de borde no es un paso de
-              espaciado, igual que el `gap-px` de la grilla de tiles de /ventas
-              (docs/sistema-de-diseno.md, sección Espaciado y radio).
+              bg/color con var(--token) inline, y no una utilidad de
+              Tailwind: --marca y sus variantes no están en @theme (ver el
+              comentario en app/globals.css) porque nada más que este tipo de
+              superficie las consume, así que ninguna clase de Tailwind las
+              resuelve — mismo patrón que ya usa
+              components/shell/sidebar-arandano.tsx para el avatar.
 
-              Con una cantidad a medio tipear `totalCentavos` queda en NaN, y
-              "$ NaN" en 40 px es un cartel roto en una pantalla de plata. Muestra
-              "—", que es exactamente lo que ya hace la columna Subtotal de cada
-              línea inválida unas líneas más arriba. */}
-          <div className="mt-2 flex items-baseline justify-between border-t-4 border-double border-foreground px-[18px] pt-3 pb-[18px]">
-            <span className="text-xs tracking-wider text-muted-foreground uppercase">Total</span>
-            <span className={`${estilos.total} text-right`}>
-              {Number.isNaN(totalCentavos) ? '—' : formatearPrecio(deCentavos(totalCentavos))}
-            </span>
+              Está siempre, incluso con el carrito vacío en $ 0,00 — un ancla
+              que aparece y desaparece no es un ancla. Con una cantidad a
+              medio tipear `totalCentavos` queda en NaN, y el monto muestra
+              "—", igual que ya hace la columna Subtotal de cada línea
+              inválida unas líneas más arriba. */}
+          <div
+            className="flex items-center justify-between px-[22px] py-5"
+            style={{ backgroundColor: 'var(--marca)' }}
+          >
+            <div className="flex flex-col gap-0.5">
+              {/* letter-spacing 1.4 y no 0.8: es más ancho que el de los
+                  encabezados de columna de arriba, a propósito — el .pen no
+                  los iguala (ver docs/sistema-de-diseno.md). */}
+              <span
+                className="text-[10px] font-bold tracking-[1.4px] uppercase"
+                style={{ color: 'var(--marca-soft)' }}
+              >
+                Total
+              </span>
+              {/* Rol "Meta" sobre la banda oscura: --marca-dim, no
+                  --marca-soft (docs/sistema-de-diseno.md, "Meta" en la
+                  escala) — de los dos tintes de marca la maqueta eligió el
+                  más apagado para el texto que acompaña sin competir. */}
+              <span className="text-xs" style={{ color: 'var(--marca-dim)' }}>
+                {resumenDelCarrito(lineas.length, unidadesMilesimas)}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={estilos.signo} style={{ color: 'var(--marca-soft)' }}>
+                $
+              </span>
+              <span className={estilos.total} style={{ color: 'var(--marca-foreground)' }}>
+                {Number.isNaN(totalCentavos)
+                  ? '—'
+                  : // El "$ " que formatearPrecio() ya antepone se descarta acá:
+                    // el signo es SU PROPIO elemento (arriba), no parte de esta
+                    // cadena — es justo lo que separa esta banda del pie viejo.
+                    formatearPrecio(deCentavos(totalCentavos)).replace(/^\D+/, '')}
+              </span>
+            </div>
           </div>
         </Card>
 
-        <Card className="md:w-80">
-          <CardHeader>
-            {/* "Cobro" y no "Cobrar": el botón de abajo dice Cobrar, y una acción
-                tiene un solo nombre en todo el flujo. La card nombra la zona, el
-                botón nombra lo que pasa al apretarlo. */}
-            <CardTitle>Cobro</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form action={accion} className="flex flex-col gap-4">
-              <input type="hidden" name="clave" value={clave} />
-              <input
-                type="hidden"
-                name="items"
-                value={JSON.stringify(
-                  lineas.map((l) => ({ articuloId: l.articuloId, cantidad: l.cantidad })),
-                )}
-              />
-              <div className="flex flex-col gap-3">
-                {pagos.map((p, i) => (
-                  <FilaDePago
-                    key={i}
-                    pago={p}
-                    indice={i}
-                    cotizacionInicial={cotizacionInicial}
-                    onCambiar={(cambio) => cambiarPago(i, cambio)}
-                    onQuitar={() => setPagos((p2) => p2.filter((_, j) => j !== i))}
-                    puedeQuitar={pagos.length > 1}
-                  />
-                ))}
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() =>
-                    setPagos((p) => [
-                      ...p,
-                      {
-                        medio: 'EFECTIVO',
-                        moneda: 'ARS',
-                        monto: deCentavos(Math.max(0, faltanCentavos)),
-                        cotizacion: '1',
-                        recibido: '',
-                      },
-                    ])
-                  }
-                >
-                  Agregar pago
-                </Button>
-              </div>
+        {/* w-96 (384px) y no el w-80 (320px) de antes: design/arandano.pen,
+            nodo `Cyias`. gap-0/py-0/ring-0 por el mismo motivo que ya anota
+            la card del Carrito de arriba: las secciones de adentro (el
+            encabezado, el pie) traen su propio padding y su propio borde, y
+            el `Card` de shadcn por default suma los suyos. */}
+        <Card className="gap-0 rounded-[16px] border py-0 ring-0 md:w-96">
+          {/* El encabezado: título + contador de pagos en la MISMA fila
+              (design/arandano.pen, nodos `EszMA`/`NyUYT`) — no `CardHeader`
+              de shadcn, que arma una grilla pensada para título+acción con
+              ícono, no para dos textos en los extremos de una fila. */}
+          <div className="flex items-center justify-between border-b px-[18px] py-[14px]">
+            {/* "Cobro" y no "Cobrar": el botón de abajo dice Cobrar, y una
+                acción tiene un solo nombre en todo el flujo. La card nombra
+                la zona, el botón nombra lo que pasa al apretarlo. Archivo
+                600 vía cobro.module.css — ver ese archivo para el porqué de
+                un módulo nuevo. */}
+            <span className={`${estilosCobro.titulo} text-base text-foreground`}>Cobro</span>
+            <span className="text-xs text-muted-foreground">
+              {pagos.length === 1 ? '1 pago' : `${pagos.length} pagos`}
+            </span>
+          </div>
 
-              {/* `!Number.isNaN` primero: un monto a medio tipear (una coma de
-                  más, una letra) deja `faltanCentavos` en NaN, y `faltanCentavos
-                  > 0` da falso ahí, así que sin esta guarda se cae a la rama de
-                  "Sobran" y se imprime "Sobran $ NaN" — un cartel sin sentido
-                  para un estado que ya deja el botón apagado. `role="status"`
-                  porque el cartel aparece y cambia de texto sin que nadie lo
-                  mire, y es la única pista de por qué el botón sigue
-                  apagado. */}
-              {!Number.isNaN(faltanCentavos) && faltanCentavos !== 0 && hayCarrito && (
-                <p role="status" className="text-sm tabular-nums text-destructive">
-                  {faltanCentavos > 0
-                    ? `Faltan ${formatearPrecio(deCentavos(faltanCentavos))}`
-                    : `Sobran ${formatearPrecio(deCentavos(-faltanCentavos))}`}
-                </p>
+          <form action={accion} className="flex flex-1 flex-col">
+            <input type="hidden" name="clave" value={clave} />
+            <input
+              type="hidden"
+              name="items"
+              value={JSON.stringify(
+                lineas.map((l) => ({ articuloId: l.articuloId, cantidad: l.cantidad })),
               )}
+            />
+            <input
+              type="hidden"
+              name="pagos"
+              value={JSON.stringify(
+                // `recibido` NO viaja: es una ayuda de pantalla para calcular
+                // el vuelto, y lo que entra a la caja es el monto.
+                pagos.map((p) => ({
+                  medio: p.medio,
+                  moneda: p.moneda,
+                  monto: p.monto,
+                  cotizacion: p.cotizacion,
+                })),
+              )}
+            />
 
-              <input
-                type="hidden"
-                name="pagos"
-                value={JSON.stringify(
-                  // `recibido` NO viaja: es una ayuda de pantalla para calcular
-                  // el vuelto, y lo que entra a la caja es el monto.
-                  pagos.map((p) => ({
-                    medio: p.medio,
-                    moneda: p.moneda,
-                    monto: p.monto,
-                    cotizacion: p.cotizacion,
-                  })),
-                )}
-              />
+            <div className="flex flex-col gap-3 p-4">
+              {pagos.map((p, i) => (
+                <FilaDePago
+                  key={i}
+                  pago={p}
+                  indice={i}
+                  cotizacionInicial={cotizacionInicial}
+                  hayFaltante={hayFaltante}
+                  onCambiar={(cambio) => cambiarPago(i, cambio)}
+                  onQuitar={() => setPagos((p2) => p2.filter((_, j) => j !== i))}
+                  puedeQuitar={pagos.length > 1}
+                />
+              ))}
+              {/* outline y con ícono "+", ya no relleno gris (design/arandano.pen,
+                  nodo `RJII3`) — border-input y no el border-border del outline
+                  por default: la maqueta pinta este borde con el mismo
+                  $ar-line-strong que ya usan los selects y el stepper, no con
+                  el borde tenue genérico de una card. */}
+              <Button
+                type="button"
+                variant="outline"
+                className="h-[38px] gap-[7px] rounded-[9px] border-input text-[13px] font-semibold text-foreground-soft"
+                onClick={() =>
+                  setPagos((p) => [
+                    ...p,
+                    {
+                      medio: 'EFECTIVO',
+                      moneda: 'ARS',
+                      monto: deCentavos(Math.max(0, faltanCentavos)),
+                      cotizacion: '1',
+                      recibido: '',
+                    },
+                  ])
+                }
+              >
+                <Plus className="size-[14px]" aria-hidden="true" />
+                Agregar pago
+              </Button>
+            </div>
 
+            {/* Empuja el pie al fondo de la card cuando hay pocos pagos —
+                mismo rol que el espaciador análogo del Carrito. */}
+            <div className="flex-1" />
+
+            <div className="flex flex-col gap-2.5 border-t p-4">
               {estado.error && (
                 <Alert variant="destructive">
                   <AlertDescription>{estado.error}</AlertDescription>
@@ -789,28 +905,93 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
                 </Alert>
               )}
 
-              <Button type="submit" disabled={!cierra || cobrando}>
+              {/* El chip de faltante/sobrante (design/arandano.pen, nodo
+                  `G9w7U`, sólo modela "Faltan"). "Sobran" no está en la
+                  maqueta —el ejemplo que dibuja ya cierra corto, nunca de
+                  más—, pero el motor SÍ deja pagar de más (dos pagos que
+                  suman más que el total), y avisarlo ya evitaba un cobro de
+                  más antes de este rediseño. Se mantiene en el mismo chip,
+                  con el verde de "--ok" en vez de reinventar un color que
+                  ningún nodo del .pen pide, y SIN el ícono `circle-alert` —
+                  ver el comentario de `puedeMostrarVuelto` sobre el ícono. */}
+              {!Number.isNaN(faltanCentavos) && faltanCentavos !== 0 && hayCarrito && (
+                <Badge
+                  variant="outline"
+                  className={`h-auto w-full justify-between gap-3 rounded-[10px] border-transparent px-3 py-[9px] ${
+                    faltanCentavos > 0 ? 'bg-destructive-soft' : 'bg-ok-soft'
+                  }`}
+                >
+                  <span
+                    className={`flex items-center gap-[7px] text-xs font-semibold ${
+                      faltanCentavos > 0 ? 'text-destructive' : 'text-ok'
+                    }`}
+                  >
+                    {faltanCentavos > 0 && <CircleAlert className="size-[14px]" aria-hidden="true" />}
+                    {faltanCentavos > 0 ? 'Faltan' : 'Sobran'}
+                  </span>
+                  <span
+                    className={`${estilos.importe} text-[15px] font-bold ${
+                      faltanCentavos > 0 ? 'text-destructive' : 'text-ok'
+                    }`}
+                  >
+                    {formatearPrecio(deCentavos(Math.abs(faltanCentavos)))}
+                  </span>
+                </Badge>
+              )}
+
+              {/* 54px de alto, ícono arrow-right, texto en Archivo
+                  (design/arandano.pen, nodo `yJaPt`) — el orden texto-luego-
+                  ícono importa: es el orden de los hijos en el .pen, no un
+                  detalle visual libre. */}
+              <Button
+                type="submit"
+                disabled={!cierra || cobrando}
+                className={`h-[54px] gap-[9px] rounded-[12px] text-[17px] ${estilosCobro.boton}`}
+              >
                 {cobrando ? 'Cobrando…' : 'Cobrar'}
+                <ArrowRight className="size-[18px]" aria-hidden="true" />
               </Button>
-            </form>
-          </CardContent>
+            </div>
+          </form>
         </Card>
       </div>
     </div>
   )
 }
 
-// Las clases de `Input` (components/ui/input.tsx), copiadas a mano y no
-// importadas: un `<select>` nativo no es un `<input>`, así que no hay
-// wrapper de shadcn para reusar sin sumar uno. Se transcriben en vez de
-// cambiar los dos `<select>` por el `Select` de shadcn porque eso sumaría
-// componente y comportamiento (popover, navegación por teclado propia) fuera
-// del alcance visual de este ciclo — ver docs/sistema-de-diseno.md, sección
-// *Espaciado y radio*, la excepción de los medios pasos copiados de
-// components/ui/. El ancho queda afuera (`flex-1` el de medio, `w-24` el de
-// moneda); `h-8` entra, porque el alto sí es común a los dos selects.
-const CLASES_SELECT_COMO_INPUT =
-  'h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm'
+/**
+ * Un campo de monto con su rótulo: Monto, Cotización o "Con cuánto paga"
+ * comparten exactamente el mismo tratamiento en design/arandano.pen (rótulo
+ * 11px/600 + input de 40px con el valor en Archivo, alineado a la derecha) —
+ * sólo cambia la etiqueta y qué campo de `Pago` atan. Extraído para no
+ * escribir ese bloque tres veces dentro de `FilaDePago`.
+ */
+function CampoMonto({
+  id,
+  etiqueta,
+  valor,
+  onChange,
+}: {
+  id: string
+  etiqueta: string
+  valor: string
+  onChange: (valor: string) => void
+}) {
+  return (
+    <div className="flex flex-1 flex-col gap-[5px]">
+      <Label htmlFor={id} className="text-[11px] font-semibold text-foreground-soft">
+        {etiqueta}
+      </Label>
+      <Input
+        id={id}
+        inputMode="decimal"
+        value={valor}
+        onChange={(e) => onChange(e.target.value)}
+        className={`h-10 rounded-[9px] border-input text-right ${estilos.importe}`}
+      />
+    </div>
+  )
+}
 
 /**
  * Una fila del formulario de pago: medio, moneda, monto, cotización (sólo si
@@ -827,6 +1008,7 @@ function FilaDePago({
   pago,
   indice,
   cotizacionInicial,
+  hayFaltante,
   onCambiar,
   onQuitar,
   puedeQuitar,
@@ -834,6 +1016,9 @@ function FilaDePago({
   pago: Pago
   indice: number
   cotizacionInicial: string | null
+  // Si la VENTA completa (todos los pagos, no sólo éste) sigue corta — ver
+  // `puedeMostrarVuelto` para el porqué de este parámetro.
+  hayFaltante: boolean
   onCambiar: (cambio: Partial<Pago>) => void
   onQuitar: () => void
   puedeQuitar: boolean
@@ -843,28 +1028,39 @@ function FilaDePago({
   // fueran pesos (US$20 de vuelto se leería "$ 20,00"). En dólares el vuelto
   // no se calcula así de todos modos, así que el campo directamente no se
   // ofrece.
-  const mostrarVuelto = pago.medio === 'EFECTIVO' && pago.moneda === 'ARS'
+  const esEfectivoArs = pago.medio === 'EFECTIVO' && pago.moneda === 'ARS'
 
   return (
-    <div className="flex flex-col gap-2 rounded-md border p-3">
-      <div className="flex gap-2">
-        <select
-          aria-label={`Medio del pago ${indice + 1}`}
-          className={`${CLASES_SELECT_COMO_INPUT} flex-1`}
+    // fill $ar-bg (--background) y no --card: design/arandano.pen pinta cada
+    // pago con el mismo gris del lienzo, para que se distinga de la card
+    // blanca de Cobro que lo contiene (nodos `XdYjF`/`VnEsm`).
+    <div className="flex flex-col gap-2.5 rounded-xl bg-background p-3">
+      <div className="flex items-center gap-2">
+        <Select
           value={pago.medio}
-          onChange={(e) => onCambiar({ medio: e.target.value as Pago['medio'] })}
+          onValueChange={(medio) => onCambiar({ medio: medio as Pago['medio'] })}
         >
-          <option value="EFECTIVO">Efectivo</option>
-          <option value="TRANSFERENCIA">Transferencia</option>
-          <option value="TARJETA_DEBITO">Débito</option>
-          <option value="TARJETA_CREDITO">Crédito</option>
-        </select>
-        <select
-          aria-label={`Moneda del pago ${indice + 1}`}
-          className={`${CLASES_SELECT_COMO_INPUT} w-24`}
+          {/* h-9! (important): SelectTrigger fija su alto con
+              data-[size=default]:h-8, una clase condicionada por atributo que
+              gana por especificidad a un h-9 suelto — sin el !, el trigger se
+              queda en 32px y el radio 9 (design/arandano.pen pide 36px). */}
+          <SelectTrigger
+            aria-label={`Medio del pago ${indice + 1}`}
+            className="h-9! flex-1 justify-between rounded-[9px] border-input pr-[11px] pl-[11px] text-[13px] font-medium text-foreground"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="EFECTIVO">Efectivo</SelectItem>
+            <SelectItem value="TRANSFERENCIA">Transferencia</SelectItem>
+            <SelectItem value="TARJETA_DEBITO">Débito</SelectItem>
+            <SelectItem value="TARJETA_CREDITO">Crédito</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
           value={pago.moneda}
-          onChange={(e) => {
-            const moneda = e.target.value as Pago['moneda']
+          onValueChange={(valor) => {
+            const moneda = valor as Pago['moneda']
             onCambiar({
               moneda,
               // Un pago en pesos lleva cotización 1 SIEMPRE; uno en dólares
@@ -873,53 +1069,88 @@ function FilaDePago({
             })
           }}
         >
-          <option value="ARS">$</option>
-          <option value="USD">US$</option>
-        </select>
+          <SelectTrigger
+            aria-label={`Moneda del pago ${indice + 1}`}
+            className="h-9! w-[92px] justify-between rounded-[9px] border-input pr-[11px] pl-[11px] text-[13px] font-medium text-foreground"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ARS">$</SelectItem>
+            <SelectItem value="USD">US$</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`monto-${indice}`}>Monto</Label>
-        <Input
-          id={`monto-${indice}`}
-          inputMode="decimal"
-          className={`${estilos.importe} text-right`}
-          value={pago.monto}
-          onChange={(e) => onCambiar({ monto: e.target.value })}
-        />
-      </div>
-      {pago.moneda === 'USD' && (
-        <div className="flex flex-col gap-2">
-          <Label htmlFor={`cot-${indice}`}>Cotización</Label>
-          <Input
+
+      {pago.moneda === 'USD' ? (
+        // Monto y Cotización lado a lado (design/arandano.pen, frame
+        // "Montos" del Pago 2) — sólo en dólares, porque sólo ahí hay un
+        // segundo campo con el que compartir la fila.
+        <div className="flex gap-2">
+          <CampoMonto
+            id={`monto-${indice}`}
+            etiqueta="Monto"
+            valor={pago.monto}
+            onChange={(v) => onCambiar({ monto: v })}
+          />
+          <CampoMonto
             id={`cot-${indice}`}
-            inputMode="decimal"
-            className={`${estilos.importe} text-right`}
-            value={pago.cotizacion}
-            onChange={(e) => onCambiar({ cotizacion: e.target.value })}
+            etiqueta="Cotización"
+            valor={pago.cotizacion}
+            onChange={(v) => onCambiar({ cotizacion: v })}
           />
         </div>
+      ) : (
+        <CampoMonto
+          id={`monto-${indice}`}
+          etiqueta="Monto"
+          valor={pago.monto}
+          onChange={(v) => onCambiar({ monto: v })}
+        />
       )}
-      {mostrarVuelto && (
-        <div className="flex flex-col gap-2">
-          <Label htmlFor={`rec-${indice}`}>Con cuánto paga (opcional)</Label>
-          <Input
-            id={`rec-${indice}`}
-            inputMode="decimal"
-            className={`${estilos.importe} text-right`}
-            value={pago.recibido}
-            onChange={(e) => onCambiar({ recibido: e.target.value })}
-          />
-          {pago.recibido.trim() !== '' &&
-            dineroEnCentavos(pago.recibido) > dineroEnCentavos(pago.monto) && (
-              <p className={`${estilos.importe} text-sm`}>
-                Vuelto:{' '}
-                {formatearPrecio(
-                  deCentavos(dineroEnCentavos(pago.recibido) - dineroEnCentavos(pago.monto)),
-                )}
-              </p>
-            )}
+
+      {pago.moneda === 'USD' && (
+        // "Entran $X": cuántos pesos representa este pago en dólares
+        // (design/arandano.pen, nodo `OTlAa`). entranPesosCentavos reusa el
+        // mismo cálculo que cierra la venta — ver su comentario.
+        <div className="flex items-center justify-between px-0.5">
+          <span className="text-xs text-muted-foreground">Entran</span>
+          <span className={`${estilos.importe} text-[13px] font-semibold text-foreground-soft`}>
+            {formatearPrecio(deCentavos(entranPesosCentavos(pago.monto, pago.cotizacion)))}
+          </span>
         </div>
       )}
+
+      {esEfectivoArs && (
+        <CampoMonto
+          id={`rec-${indice}`}
+          etiqueta="Con cuánto paga (opcional)"
+          valor={pago.recibido}
+          onChange={(v) => onCambiar({ recibido: v })}
+        />
+      )}
+      {/* El chip de vuelto: verde, con el monto en Archivo
+          (design/arandano.pen, nodo `USFQ3`) — y gateado por
+          puedeMostrarVuelto, no sólo por esEfectivoArs: mientras la VENTA
+          completa siga corta (hayFaltante), este pago no muestra vuelto,
+          aunque el campo "con cuánto paga" de arriba siga disponible para
+          tipear. Sin ícono, a diferencia del chip de Faltante — el .pen no le
+          pone uno (nodo `USFQ3` sólo tiene rótulo + monto). */}
+      {puedeMostrarVuelto(esEfectivoArs, hayFaltante) &&
+        pago.recibido.trim() !== '' &&
+        dineroEnCentavos(pago.recibido) > dineroEnCentavos(pago.monto) && (
+          <Badge
+            variant="outline"
+            className="h-auto w-full justify-between gap-2 rounded-[9px] border-transparent bg-ok-soft px-[11px] py-2"
+          >
+            <span className="text-xs font-semibold text-ok">Vuelto</span>
+            <span className={`${estilos.importe} text-[15px] font-bold text-ok`}>
+              {formatearPrecio(
+                deCentavos(dineroEnCentavos(pago.recibido) - dineroEnCentavos(pago.monto)),
+              )}
+            </span>
+          </Badge>
+        )}
       {puedeQuitar && (
         <Button type="button" variant="ghost" size="sm" onClick={onQuitar}>
           Quitar pago

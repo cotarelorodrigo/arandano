@@ -205,4 +205,126 @@ describe('el punto de venta', () => {
     expect(fuente).toMatch(/PASOS_STEPPER\.map\(/)
     expect(fuente).toMatch(/pasoDeCantidad\(x\.cantidad,\s*delta\)/)
   })
+
+  // --- Task 3: la banda del total ---
+
+  // El "$" y el monto son dos <span> con tratamiento tipográfico distinto
+  // (24px/500 el signo, 42px/600 el monto — design/arandano.pen, nodos
+  // `w06dh` y `T4rEAA`), no la cadena única "$ 103.900,00" que armaba
+  // formatearPrecio() para el pie viejo.
+  it('el signo y el monto son dos elementos, no una cadena', async () => {
+    const html = await render()
+    expect(html).toMatch(/>\$<\/span>/)
+    expect(html).toMatch(/>0,00<\/span>/)
+    expect(
+      html,
+      'el signo y el monto no pueden viajar concatenados en un solo texto',
+    ).not.toMatch(/>\$\s+0,00</)
+  })
+
+  // El carrito vacío es el único estado que este harness puede renderizar de
+  // verdad (renderToStaticMarkup no ejecuta clics ni tipeo, ver la nota de
+  // render() más arriba): con cero líneas, "0 artículos · 0 unidades" es lo
+  // único honesto. Mostrar el texto de EJEMPLO de la maqueta ("4 artículos ·
+  // 5 unidades", copiado tal cual del .pen) es el error más fácil de cometer
+  // acá, y este caso es el que lo atraparía.
+  it('con el carrito vacío la banda no miente el conteo', async () => {
+    const html = await render()
+    expect(html).toContain('0 artículos · 0 unidades')
+  })
+
+  // resumenDelCarrito en aislamiento: la pluralización de las dos mitades, en
+  // los casos que el carrito vacío del harness no puede alcanzar.
+  it('la banda del total muestra cuántos artículos y cuántas unidades', async () => {
+    const { resumenDelCarrito } = await import('./punto-de-venta')
+    expect(resumenDelCarrito(4, 5000)).toBe('4 artículos · 5 unidades')
+    expect(resumenDelCarrito(1, 1000)).toBe('1 artículo · 1 unidad')
+    expect(resumenDelCarrito(0, 0)).toBe('0 artículos · 0 unidades')
+    expect(resumenDelCarrito(2, 2500)).toBe('2 artículos · 2,5 unidades')
+
+    // Cableado: lineas.length para artículos y la suma de cantidadMilesimas
+    // para unidades — no al revés, y no un valor fijo. Mismo motivo que el
+    // test de PASOS_STEPPER de arriba: la función pura no prueba de dónde
+    // salen sus argumentos.
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    expect(fuente).toMatch(/resumenDelCarrito\(lineas\.length,/)
+  })
+
+  // --- Task 4: el panel de cobro ---
+
+  // El carrito vacío YA arranca con UN pago en pesos (el ajuste de "seguir el
+  // total" que sigue en pie, más abajo en el cuerpo del componente crea la
+  // primera fila apenas hay un total que seguir, incluso en $0), así que esto
+  // sí es un render real y no una lectura de fuente.
+  it('el encabezado cuenta cuántos pagos hay cargados', async () => {
+    const html = await render()
+    expect(html).toContain('1 pago')
+  })
+
+  // entranPesosCentavos en aislamiento: el harness sólo puede mostrar el pago
+  // en ARS que arranca solo (ver el test de arriba), así que un pago en
+  // USD —y su renglón "Entran $X"— no tiene forma de llegar a
+  // renderToStaticMarkup acá.
+  it('un pago en dólares muestra cuántos pesos entran', async () => {
+    const { entranPesosCentavos } = await import('./punto-de-venta')
+    // 20 USD × 1.485 = 29.700 pesos = 2.970.000 centavos — el mismo ejemplo
+    // de design/arandano.pen (nodos `bAHMf`/`xgspX`/`F3H35`).
+    expect(entranPesosCentavos('20', '1485')).toBe(2_970_000)
+
+    // Cableado: FilaDePago tiene que llamarla con pago.monto y
+    // pago.cotizacion, ni al revés ni con otra cosa — es justo la clase de
+    // bug que una función pura probada sola no atrapa (ver la nota del
+    // encargo sobre el stepper).
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    expect(fuente).toMatch(/entranPesosCentavos\(pago\.monto,\s*pago\.cotizacion\)/)
+  })
+
+  it('el vuelto aparece como chip cuando sobra plata', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    // >Vuelto< y no sólo 'Vuelto': la palabra sola aparece antes en varios
+    // comentarios (empezando por el de puedeMostrarVuelto), y esto busca el
+    // texto tal cual lo pinta el JSX, no su primera mención en prosa.
+    const posicion = fuente.indexOf('>Vuelto<')
+    expect(posicion, 'el rótulo "Vuelto" tiene que existir en el JSX').toBeGreaterThan(-1)
+    const contexto = fuente.slice(Math.max(0, posicion - 400), posicion + 400)
+    expect(contexto, 'el chip de vuelto tiene que pintarse con el verde tenue').toMatch(
+      /bg-ok-soft/,
+    )
+    expect(contexto, 'el texto del chip de vuelto tiene que ir en --ok').toMatch(/text-ok/)
+  })
+
+  it('el faltante aparece como chip cuando falta', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    // 'Faltan' (con comillas) y no la palabra suelta: "Faltante" —que
+    // aparece antes, en prosa— empieza con las mismas seis letras.
+    const posicion = fuente.indexOf("'Faltan'")
+    expect(posicion, 'el rótulo "Faltan" tiene que existir en el fuente').toBeGreaterThan(-1)
+    const contexto = fuente.slice(Math.max(0, posicion - 600), posicion + 400)
+    expect(contexto, 'el chip de faltante sigue mostrándose sólo cuando falta').toMatch(
+      /faltanCentavos > 0/,
+    )
+    expect(contexto, 'el chip de faltante tiene que pintarse con el rojo tenue').toMatch(
+      /bg-destructive-soft/,
+    )
+    expect(contexto, 'el chip de faltante lleva el ícono circle-alert').toMatch(/CircleAlert/)
+  })
+
+  // El caso que importa más de lo que parece: vuelto y faltante son estados
+  // excluyentes a propósito, y hoy nada lo verificaba. Mostrar "te sobran
+  // $X" en UN pago mientras la venta completa sigue corta por OTRO pago le
+  // dice al cajero que dé vuelto sobre una venta que en conjunto no cerró.
+  it('no muestra vuelto y faltante al mismo tiempo', async () => {
+    const { puedeMostrarVuelto } = await import('./punto-de-venta')
+    expect(puedeMostrarVuelto(true, true)).toBe(false)
+    expect(puedeMostrarVuelto(true, false)).toBe(true)
+    expect(puedeMostrarVuelto(false, false)).toBe(false)
+    expect(puedeMostrarVuelto(false, true)).toBe(false)
+
+    // Cableado: hayFaltante tiene que salir de faltanCentavos > 0 calculado
+    // sobre TODOS los pagos, y viajar como prop a cada fila — no puede nacer
+    // adentro de FilaDePago, o dejaría de describir "el conjunto", que es la
+    // parte que este caso existe para proteger.
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    expect(fuente).toMatch(/hayFaltante=\{/)
+  })
 })
