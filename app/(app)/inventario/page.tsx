@@ -50,7 +50,7 @@ export default async function Inventario({
       take: POR_PAGINA,
       select: {
         id: true, sku: true, nombre: true, tipo: true, precio: true,
-        stock: true, desactivadoEn: true,
+        stock: true, desactivadoEn: true, categoria: true,
       },
     }),
     prisma.articulo.count({ where: donde }),
@@ -148,6 +148,15 @@ export default async function Inventario({
                     </Link>
                     {a.desactivadoEn && (
                       <span className="ml-2 text-muted-foreground">(desactivado)</span>
+                    )}
+                    {/* Segunda línea, bajo el nombre (design/arandano.pen,
+                        nodo `HU2a7`): un string de dos niveles ya tipeado a
+                        mano por quien carga el artículo ("Accesorios ·
+                        Protección"), no una jerarquía que el código interprete.
+                        Ausente en la mayoría de los artículos hoy: nullable, y
+                        sin ella la fila no pierde ninguna línea. */}
+                    {a.categoria && (
+                      <div className="text-xs text-muted-foreground">{a.categoria}</div>
                     )}
                   </td>
                   <td>{a.tipo === 'PRODUCTO' ? 'Producto' : 'Servicio'}</td>

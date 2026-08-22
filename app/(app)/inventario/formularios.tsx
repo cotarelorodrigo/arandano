@@ -89,6 +89,16 @@ export function FormularioDeAlta() {
             <Label htmlFor="sku">Código (opcional)</Label>
             <Input id="sku" name="sku" placeholder="Se genera solo si lo dejás vacío" />
           </div>
+          {/* La maqueta (design/arandano.pen) no trae este campo en ninguno
+              de los dos formularios, y a propósito se aparta acá: muestra la
+              categoría en el listado y en el subtítulo de la ficha, y un dato
+              que se ve pero no se puede cargar nace siempre vacío. String
+              libre, sin catálogo de opciones: Articulo.categoria no tiene
+              tabla ni jerarquía (comentario del schema). */}
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="categoria">Categoría (opcional)</Label>
+            <Input id="categoria" name="categoria" placeholder="Accesorios · Protección" />
+          </div>
           {tipo === 'PRODUCTO' && (
             <>
               <div className="flex flex-col gap-2">
@@ -117,11 +127,13 @@ export function FormularioDeEdicion({
   nombre,
   sku,
   precio,
+  categoria,
 }: {
   articuloId: string
   nombre: string
   sku: string
   precio: string
+  categoria: string | null
 }) {
   const [estado, accion, pendiente] = useActionState(guardarArticulo, INICIAL)
 
@@ -140,6 +152,13 @@ export function FormularioDeEdicion({
           <div className="flex flex-col gap-2">
             <Label htmlFor="e-sku">Código</Label>
             <Input id="e-sku" name="sku" defaultValue={sku} required />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="e-categoria">Categoría (opcional)</Label>
+            {/* '' y no `categoria` crudo: un <input> no controlado con
+                defaultValue={null} tira la advertencia de React de pasar de
+                no-controlado a controlado si alguna vez cambiara. */}
+            <Input id="e-categoria" name="categoria" defaultValue={categoria ?? ''} />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="e-precio">Precio</Label>

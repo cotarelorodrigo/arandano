@@ -249,6 +249,42 @@ describe('el rol de cada action de inventario', () => {
     expect(r.error).toMatch(/no se entiende/)
   })
 
+  // De punta a punta: el campo nuevo del formulario de alta (Task 1 del
+  // rediseño) tiene que llegar tal cual hasta la columna.
+  it('el alta guarda la categoría cuando se la manda', async () => {
+    estado.cookie = cookieDuenio
+    const datos = new FormData()
+    datos.set('nombre', 'Con categoría')
+    datos.set('tipo', 'PRODUCTO')
+    datos.set('precio', '5000')
+    datos.set('categoria', 'Accesorios · Protección')
+    await altaArticulo(INICIAL, datos)
+
+    const { rows } = await owner.query(
+      `SELECT categoria FROM articulos WHERE nombre = 'Con categoría' AND tenant_id = $1`,
+      [estado.tenantId],
+    )
+    expect(rows[0].categoria).toBe('Accesorios · Protección')
+  })
+
+  // Un artículo sin categoría no puede romper nada (CLAUDE.md): el alta sin
+  // mandar el campo tiene que dejar la columna en null, no en ''.
+  it('el alta sin categoría no rompe nada y la deja en null', async () => {
+    estado.cookie = cookieDuenio
+    const datos = new FormData()
+    datos.set('nombre', 'Sin categoría del todo')
+    datos.set('tipo', 'PRODUCTO')
+    datos.set('precio', '5000')
+    const r = await altaArticulo(INICIAL, datos)
+    expect(r.error).toBeNull()
+
+    const { rows } = await owner.query(
+      `SELECT categoria FROM articulos WHERE nombre = 'Sin categoría del todo' AND tenant_id = $1`,
+      [estado.tenantId],
+    )
+    expect(rows[0].categoria).toBeNull()
+  })
+
   // Las cuatro actions de dueño hasta acá sólo se probaron rechazando al rol
   // equivocado (o, para altaArticulo, dando de alta). Falta el camino feliz de
   // las otras tres: que la DUEÑA efectivamente hace lo suyo. Se verifica
@@ -271,6 +307,22 @@ describe('el rol de cada action de inventario', () => {
     expect(rows[0].nombre).toBe('Después de editar')
     expect(rows[0].sku).toBe('ACC-EDITADO')
     expect(new Prisma.Decimal(rows[0].precio).toString()).toBe('2500')
+  })
+
+  it('un DUEÑO edita la categoría de un artículo, y la ficha la deja editar', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Para editar categoría')
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('nombre', 'Para editar categoría')
+    datos.set('sku', 'ACC-CAT-1')
+    datos.set('precio', '2500')
+    datos.set('categoria', 'Repuestos')
+    const r = await guardarArticulo(INICIAL, datos)
+    expect(r.error).toBeNull()
+
+    const { rows } = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [id])
+    expect(rows[0].categoria).toBe('Repuestos')
   })
 
   it('un DUEÑO desactiva un artículo', async () => {

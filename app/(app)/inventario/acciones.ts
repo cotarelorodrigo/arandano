@@ -72,6 +72,7 @@ export async function altaArticulo(
         tipo,
         precio: aDecimal(texto(datos, 'precio'), 'el precio'),
         sku: texto(datos, 'sku'),
+        categoria: texto(datos, 'categoria') || null,
         // Un servicio no lleva stock, y sin JavaScript los campos se ven
         // igual: se ignoran acá en vez de rechazar el alta por algo que la
         // persona no eligió mandar.
@@ -101,6 +102,7 @@ export async function guardarArticulo(
         nombre: texto(datos, 'nombre'),
         sku: texto(datos, 'sku'),
         precio: aDecimal(texto(datos, 'precio'), 'el precio'),
+        categoria: texto(datos, 'categoria') || null,
       }),
     )
     revalidatePath('/inventario')

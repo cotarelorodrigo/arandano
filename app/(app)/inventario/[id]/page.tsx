@@ -56,6 +56,12 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
           <>
             {articulo.sku} · {esProducto ? 'Producto' : 'Servicio'} ·{' '}
             {formatearPrecio(articulo.precio.toString())}
+            {/* La maqueta (design/arandano.pen, nodo `chN9u`) trae la
+                categoría acá, y no el precio: se agrega sin sacar el precio
+                —que sí es un dato que ya vivía en este subtítulo— porque un
+                artículo sin categoría (la mayoría, hoy) no puede perder el
+                único dato de plata que este encabezado mostraba. */}
+            {articulo.categoria && <> · {articulo.categoria}</>}
           </>
         }
       />
@@ -100,6 +106,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
               nombre={articulo.nombre}
               sku={articulo.sku}
               precio={articulo.precio.toString()}
+              categoria={articulo.categoria}
             />
             <AccionesDeArticulo
               articuloId={articulo.id}
