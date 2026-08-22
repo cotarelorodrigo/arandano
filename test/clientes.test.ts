@@ -1,26 +1,30 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { Client } from 'pg'
 import { urlOwner, urlApp } from './postgres-efimero'
-import { crearTenant } from './datos'
+import { crearTenant, crearUsuario } from './datos'
 import { ErrorDeCliente } from '@/lib/clientes/errores'
 
 // Import DINÁMICO de todo lo que arrastre lib/db.ts: ese módulo construye su
 // Pool AL IMPORTARSE, leyendo DATABASE_URL, que no está seteada globalmente.
 let crearCliente: typeof import('@/lib/clientes/administrar').crearCliente
 let buscarClientes: typeof import('@/lib/clientes/administrar').buscarClientes
+let crearOrden: typeof import('@/lib/ordenes-de-trabajo/crear').crearOrden
 
 let owner: Client
 let tenantId: string
 let otroTenantId: string
+let usuarioId: string
 
 beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   ;({ crearCliente, buscarClientes } = await import('@/lib/clientes/administrar'))
+  ;({ crearOrden } = await import('@/lib/ordenes-de-trabajo/crear'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
   tenantId = await crearTenant(owner, `clientes-${Date.now()}`)
   otroTenantId = await crearTenant(owner, `clientes-otro-${Date.now()}`)
+  usuarioId = await crearUsuario(owner, tenantId, `tecnico-clientes-${Date.now()}@ot.test`)
 })
 
 afterAll(async () => {
@@ -75,5 +79,32 @@ describe('búsqueda de clientes', () => {
     // Y NO todos: un buscador que sin texto vuelca la tabla entera es un scan
     // sobre la pantalla más caliente del módulo.
     expect(await buscarClientes(tenantId, '   ')).toHaveLength(0)
+  })
+})
+
+// Task 3 del rediseño de Servicio Técnico: el buscador de "Recibir equipo"
+// pide "N órdenes previas" (design/arandano.pen, nodos `zjJc0`/`C8k7w`), y
+// ese conteo se resuelve acá — no en la pantalla — para que la ficha de la
+// orden (Task 4) lo pida de la misma forma.
+describe('ordenesPrevias del resultado del buscador', () => {
+  it('cuenta las órdenes reales del cliente, no un número fijo', async () => {
+    const equipo = { equipoMarca: 'Samsung', equipoModelo: 'A54', fallaDeclarada: 'no carga' }
+    const c = await crearCliente({ tenantId, nombre: 'Marcos Conteo', telefono: '1155551111' })
+    await crearOrden({ tenantId, usuarioId, clienteId: c.id, ...equipo })
+    await crearOrden({ tenantId, usuarioId, clienteId: c.id, ...equipo })
+
+    const r = await buscarClientes(tenantId, 'Marcos Conteo')
+    expect(r).toHaveLength(1)
+    expect(r[0].ordenesPrevias).toBe(2)
+  })
+
+  // El caso que el brief pide explícitamente: sin órdenes, el conteo tiene
+  // que ser el 0 real, no un valor inventado (undefined coaccionado a texto,
+  // o un fallback que parezca un dato cuando no lo es).
+  it('un cliente sin ninguna orden todavía cuenta 0, no un conteo falso', async () => {
+    await crearCliente({ tenantId, nombre: 'Marcos Sin Ordenes', telefono: '1155552222' })
+    const r = await buscarClientes(tenantId, 'Marcos Sin Ordenes')
+    expect(r).toHaveLength(1)
+    expect(r[0].ordenesPrevias).toBe(0)
   })
 })
