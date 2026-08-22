@@ -335,4 +335,88 @@ describe('el punto de venta', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
     expect(fuente).toMatch(/hayFaltante=\{hayFaltante\}/)
   })
+
+  // --- Task 5: el chip de caja y los atajos de teclado ---
+
+  it('Enter es el atajo que cobra, y ninguna otra tecla lo es', async () => {
+    const { esAtajoDeCobro } = await import('./punto-de-venta')
+    expect(esAtajoDeCobro('Enter')).toBe(true)
+    expect(esAtajoDeCobro('F2')).toBe(false)
+    expect(esAtajoDeCobro('Escape')).toBe(false)
+    expect(esAtajoDeCobro('enter')).toBe(false)
+  })
+
+  it('Esc es el atajo que arma/confirma el vaciado, y ninguna otra tecla lo es', async () => {
+    const { esAtajoDeVaciar } = await import('./punto-de-venta')
+    expect(esAtajoDeVaciar('Escape')).toBe(true)
+    expect(esAtajoDeVaciar('Enter')).toBe(false)
+    expect(esAtajoDeVaciar('F2')).toBe(false)
+    expect(esAtajoDeVaciar('esc')).toBe(false)
+  })
+
+  // El requisito puntual de la task ("Enter en el buscador agrega, no
+  // cobra") se resuelve acá SIN un caso especial para el buscador —ver el
+  // comentario de la función—: el buscador es un INPUT como cualquier otro,
+  // y la regla general es que cualquier control nativo que ya sabe qué
+  // hacer con su propio Enter (INPUT, TEXTAREA, SELECT, BUTTON) deja pasar
+  // el atajo global en vez de competirle.
+  it('el atajo global de cobro no dispara con el foco en un control nativo (el buscador incluido)', async () => {
+    const { puedeDispararCobroDesdeFoco } = await import('./punto-de-venta')
+    expect(puedeDispararCobroDesdeFoco('INPUT')).toBe(false)
+    expect(puedeDispararCobroDesdeFoco('TEXTAREA')).toBe(false)
+    expect(puedeDispararCobroDesdeFoco('SELECT')).toBe(false)
+    expect(puedeDispararCobroDesdeFoco('BUTTON')).toBe(false)
+    // Nada en particular enfocado (el <body>, típicamente): ahí Enter
+    // todavía no significa nada, y es el único lugar donde corresponde que
+    // el atajo tenga trabajo.
+    expect(puedeDispararCobroDesdeFoco(undefined)).toBe(true)
+    expect(puedeDispararCobroDesdeFoco('DIV')).toBe(true)
+  })
+
+  // Cableado: el atajo global de Enter tiene que respetar la MISMA condición
+  // que ya apaga el botón (`disabled={!cierra || cobrando}`) antes de llamar
+  // a requestSubmit() — un <form>.requestSubmit() NO respeta por su cuenta
+  // que el submit esté disabled, así que sin este chequeo manual el atajo
+  // podría cobrar una venta que el botón, al lado, muestra apagada.
+  it('el atajo de Enter no cobra si la venta no cierra, mismo criterio que el botón', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    expect(fuente).toMatch(/esAtajoDeCobro\(e\.key\)/)
+    expect(fuente).toMatch(/if \(!cierra \|\| cobrando\) return/)
+    expect(fuente).toMatch(/formularioCobro\.current\?\.requestSubmit\(\)/)
+  })
+
+  // La leyenda de los atajos (design/arandano.pen, nodo `k1dDB`), en el
+  // único estado que este harness puede renderizar de verdad: el carrito
+  // vacío arranca con `vaciadoArmado` en false.
+  it('la leyenda de los atajos aparece bajo el botón', async () => {
+    const html = await render()
+    expect(html).toContain('Enter para cobrar · Esc para vaciar')
+  })
+
+  // Esc con el carrito vacío no puede armar la confirmación de vaciado: no
+  // hay nada que vaciar, y un cartel de "Esc de nuevo para vaciar" sobre un
+  // carrito ya vacío sería un aviso sin sentido.
+  it('Esc con el carrito vacío no arma la confirmación de vaciado', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    const posicion = fuente.indexOf('esAtajoDeVaciar(e.key)')
+    expect(posicion, 'el atajo de vaciar tiene que existir en el fuente').toBeGreaterThan(-1)
+    const contexto = fuente.slice(posicion, posicion + 200)
+    expect(
+      contexto,
+      'nada que vaciar tiene que cortar antes de armar cualquier confirmación',
+    ).toMatch(/if \(lineas\.length === 0\) return/)
+  })
+
+  // El segundo Esc (con la confirmación ya armada) es el único que de verdad
+  // vacía — y tiene que vaciar tanto el carrito como los pagos, no sólo uno
+  // de los dos: un pago viejo colgado sobre un carrito nuevo cobraría un
+  // total que no es el que se está mirando.
+  it('el segundo Esc vacía el carrito Y los pagos', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    const posicion = fuente.indexOf('if (vaciadoArmado) {')
+    expect(posicion, 'la rama de confirmación tiene que existir').toBeGreaterThan(-1)
+    const contexto = fuente.slice(posicion, posicion + 350)
+    expect(contexto).toMatch(/actualizarCarrito\(\(\) => \[\]\)/)
+    expect(contexto).toMatch(/setPagos\(\[\]\)/)
+  })
 })

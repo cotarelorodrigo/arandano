@@ -126,6 +126,51 @@ export function esAtajoDeBuscador(tecla: string): boolean {
 }
 
 /**
+ * Si esta tecla es el atajo que cobra (Enter), y ninguna otra.
+ *
+ * Sola no alcanza para decidir si el atajo TIENE que disparar — eso lo
+ * completa `puedeDispararCobroDesdeFoco`, la otra mitad de la regla, separada
+ * porque prueba algo distinto: ésta mira la tecla, aquélla mira dónde está
+ * el foco.
+ */
+export function esAtajoDeCobro(tecla: string): boolean {
+  return tecla === 'Enter'
+}
+
+/**
+ * Si el foco en un elemento con esta etiqueta deja pasar el atajo global de
+ * Enter-para-cobrar.
+ *
+ * La regla no es "todo menos el buscador": es "todo menos un control nativo
+ * que ya sabe qué hacer con su propio Enter". Un INPUT (el buscador, el
+ * stepper, cualquier campo de `FilaDePago`) usa Enter para lo suyo; un
+ * SELECT o un BUTTON (los selects de medio/moneda, el stepper, "Quitar",
+ * incluso el propio botón Cobrar) ya se activan solos con Enter cuando
+ * tienen el foco, sea por el navegador o por Radix. Dejarlos pasar TAMBIÉN
+ * por acá dispararía una segunda cosa a la vez que la persona no pidió.
+ *
+ * Esto es lo que resuelve, SIN un caso especial para el buscador, el
+ * requisito puntual de la task ("Enter no puede cobrar mientras el foco está
+ * en el buscador, ahí Enter agrega el artículo"): el buscador es un INPUT
+ * como cualquier otro, así que ya queda afuera por esta regla general.
+ *
+ * El atajo global sólo tiene trabajo cuando el foco está en cualquier OTRA
+ * parte de la pantalla —una fila de la cinta, el `<body>`, nada en
+ * particular—, que es exactamente donde Enter todavía no significa nada.
+ */
+export function puedeDispararCobroDesdeFoco(etiqueta: string | undefined): boolean {
+  return etiqueta !== 'INPUT' && etiqueta !== 'TEXTAREA' && etiqueta !== 'SELECT' && etiqueta !== 'BUTTON'
+}
+
+/**
+ * Si esta tecla es el atajo que arma/confirma el vaciado del carrito (Esc), y
+ * ninguna otra.
+ */
+export function esAtajoDeVaciar(tecla: string): boolean {
+  return tecla === 'Escape'
+}
+
+/**
  * "N artículos · N unidades" de la banda del total, con el singular que le
  * corresponde a cada mitad — en castellano cero y "muchos" comparten el
  * plural, así que 1 es la única excepción en los dos casos (mismo criterio ya
@@ -222,6 +267,19 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   // no hay que re-renderizar por esto, y un ref no entra en las reglas de
   // set-state que este archivo ya tuvo que esquivar.
   const consultando = useRef(false)
+  // El <form> de Cobro, para que el atajo global de Enter pueda dispararlo
+  // desde CUALQUIER parte de la pantalla (no sólo con el foco adentro del
+  // form) sin duplicar la lógica de envío: `requestSubmit()` es el mismo
+  // camino que ya usa el botón, con la misma validación de campos.
+  const formularioCobro = useRef<HTMLFormElement>(null)
+  // Si el primer Esc ya armó la confirmación de vaciado, esperando el
+  // segundo. Ver el comentario largo en el useEffect de abajo para el
+  // porqué de dos pasos.
+  const [vaciadoArmado, setVaciadoArmado] = useState(false)
+  // El timer que desarma la confirmación sola, para que un Esc de hace un
+  // rato no quede "cargado" esperando un segundo Esc que ya no tiene que ver
+  // con el primero.
+  const desarmarVaciado = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Buscar mientras se tipea, con un respiro para no pegarle al servidor en
   // cada tecla. 200ms es lo que separa "tipeando" de "terminó de tipear". El
@@ -371,6 +429,16 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   function actualizarCarrito(actualizar: (previas: Linea[]) => Linea[]) {
     setLineas(actualizar)
     setVentaProcesada((actual) => (actual ? null : actual))
+    // Cualquier cambio real en el carrito desarma una confirmación de
+    // vaciado que hubiera quedado pendiente: si la persona siguió vendiendo
+    // en vez de confirmar el segundo Esc, un vaciado que dispara solo unos
+    // segundos después sobre un carrito YA DISTINTO sería peor que el
+    // problema que el armado existe para evitar.
+    if (desarmarVaciado.current) {
+      clearTimeout(desarmarVaciado.current)
+      desarmarVaciado.current = null
+    }
+    setVaciadoArmado((actual) => (actual ? false : actual))
   }
 
   function agregar(a: ArticuloVendible) {
@@ -477,6 +545,68 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   // licencia para mostrarle vuelto a nadie, es exactamente el mismo criterio
   // conservador que ya usa `hayLineaInvalida` más arriba.
   const hayFaltante = Number.isNaN(faltanCentavos) || faltanCentavos > 0
+
+  // Enter cobra y Esc vacía el carrito — los otros dos atajos que promete la
+  // leyenda bajo el botón (design/arandano.pen, nodo `k1dDB`). Van en un
+  // efecto aparte del de F2 de arriba: ese no depende de nada del estado de
+  // la venta (deps `[]`), y este sí —si cierra, si ya está cobrando, cuántas
+  // líneas hay, si el vaciado ya está armado—, así que mezclarlos forzaría a
+  // re-enganchar también el listener de F2 en cada tecla.
+  //
+  // SIN TEST de este efecto en sí, mismo motivo que el de F2: enganchar
+  // `window`, leer `document.activeElement` y llamar `requestSubmit()` es
+  // DOM real, y este repo no corre jsdom salvo la excepción puntual de
+  // `ticket.test.tsx`. Lo que SÍ se prueba son las reglas puras que deciden
+  // cada atajo: `esAtajoDeCobro`, `puedeDispararCobroDesdeFoco` y
+  // `esAtajoDeVaciar`.
+  useEffect(() => {
+    function alApretarTecla(e: KeyboardEvent) {
+      if (esAtajoDeVaciar(e.key)) {
+        // Nada que vaciar: ni vale la pena armar la confirmación.
+        if (lineas.length === 0) return
+        e.preventDefault()
+        if (vaciadoArmado) {
+          // El desarme (timer + estado) lo hace `actualizarCarrito` mismo
+          // —cualquier cambio de carrito lo hace, ver su comentario—, así
+          // que acá no hay que repetirlo.
+          actualizarCarrito(() => [])
+          setPagos([])
+          return
+        }
+        // Primer Esc: arma la confirmación y NO borra nada todavía — ver el
+        // comentario de la leyenda, más abajo en el JSX, para el porqué de
+        // dos pasos en vez de un confirm() o un vaciado deshacible.
+        setVaciadoArmado(true)
+        if (desarmarVaciado.current) clearTimeout(desarmarVaciado.current)
+        desarmarVaciado.current = setTimeout(() => setVaciadoArmado(false), 3000)
+        return
+      }
+
+      if (esAtajoDeCobro(e.key)) {
+        const etiqueta = (document.activeElement as HTMLElement | null)?.tagName
+        if (!puedeDispararCobroDesdeFoco(etiqueta)) return
+        // Mismo chequeo que ya usa el atributo `disabled` del botón: el
+        // atajo no puede tener más permiso para cobrar que el botón que
+        // dice imitar. `requestSubmit()` sobre un <form> NO respeta por su
+        // cuenta que el submit esté disabled —ésa es la razón de este
+        // chequeo manual, no una prolijidad de más—.
+        if (!cierra || cobrando) return
+        e.preventDefault()
+        formularioCobro.current?.requestSubmit()
+      }
+    }
+    window.addEventListener('keydown', alApretarTecla)
+    // Sólo desengancha el listener, y a propósito no toca
+    // `desarmarVaciado.current` acá: este efecto se re-ejecuta cada vez que
+    // cambia una de sus dependencias —incluida `vaciadoArmado`, que cambia
+    // JUSTO al armar—, así que limpiar el timer en este cleanup lo
+    // cancelaría en el mismo instante en que se lo acaba de crear. El timer
+    // vive en un ref y sobrevive a los re-enganches de este efecto a
+    // propósito; si la pantalla se desmonta con el vaciado armado, el
+    // `setVaciadoArmado` que dispara 3 segundos después no rompe nada en
+    // React 18+ (dejó de advertir por setState de un componente desmontado).
+    return () => window.removeEventListener('keydown', alApretarTecla)
+  }, [lineas.length, vaciadoArmado, cierra, cobrando])
 
   return (
     // "Cuerpo": el buscador a todo el ancho, arriba de las dos columnas — el
@@ -816,7 +946,7 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
             </span>
           </div>
 
-          <form action={accion} className="flex flex-1 flex-col">
+          <form ref={formularioCobro} action={accion} className="flex flex-1 flex-col">
             <input type="hidden" name="clave" value={clave} />
             <input
               type="hidden"
@@ -951,6 +1081,40 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
                 {cobrando ? 'Cobrando…' : 'Cobrar'}
                 <ArrowRight className="size-[18px]" aria-hidden="true" />
               </Button>
+
+              {/* La leyenda de los atajos (design/arandano.pen, nodo
+                  `k1dDB`), que cambia de texto y de color mientras el Esc
+                  está armado: es la única señal de que hay una confirmación
+                  pendiente, y sin ella el primer Esc parecería no haber
+                  hecho nada.
+
+                  POR QUÉ DOS PASOS Y NO UN confirm() NI UN VACIADO
+                  DESHACIBLE. Esc es la tecla que este mismo atajo pone a un
+                  solo toque de distancia de vaciar un carrito de quince
+                  ítems sin red — la task lo pide explícito. Un `confirm()`
+                  del navegador bloquea el hilo y no se puede estilar; un
+                  diálogo (Sheet/Dialog) suma una capa de foco atrapado y
+                  Radix le pone su PROPIO manejo de Escape encima, que
+                  competiría con este mismo atajo por la misma tecla. Un
+                  vaciado "deshacible" (un toast con Deshacer) necesita una
+                  librería que este repo no tiene y un estado extra para
+                  guardar el carrito viejo mientras dura la ventana de
+                  deshacer. Confirmar con un SEGUNDO Esc, en cambio, reusa
+                  exactamente el mismo mecanismo que `AnularVenta`
+                  (app/(app)/ventas/formularios.tsx) ya eligió para "esto es
+                  irreversible pero frecuente": confirmación en dos pasos
+                  sobre la MISMA tecla/botón, sin diálogo y sin dependencia
+                  nueva. El desarme solo a los 3 segundos (o al tocar
+                  cualquier línea del carrito, ver `actualizarCarrito`) es lo
+                  que evita que un Esc de hace un rato "cargue" un vaciado
+                  que ya no tiene que ver con la intención actual. */}
+              <p
+                className={`text-center text-[11px] ${
+                  vaciadoArmado ? 'font-semibold text-destructive' : 'text-muted-foreground'
+                }`}
+              >
+                {vaciadoArmado ? 'Esc de nuevo para vaciar el carrito' : 'Enter para cobrar · Esc para vaciar'}
+              </p>
             </div>
           </form>
         </Card>
