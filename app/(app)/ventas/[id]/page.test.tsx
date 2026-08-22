@@ -1,10 +1,13 @@
 // Puro: importa sólo las funciones exportadas de page.tsx, nunca el
 // componente en sí — es un Server Component async que abre sesión y consulta
 // Prisma (mismo criterio que app/(app)/ventas/page.test.tsx, que documenta
-// el porqué con más detalle).
+// el porqué con más detalle). La única excepción es el bloque final, que lee
+// el FUENTE como texto (mismo criterio que app/(app)/vender/caja.test.tsx)
+// para cablear una regresión concreta que ningún test puro puede atrapar.
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import {
-  puedeAnular, cotizacionVisible, subtituloDeItem, filasDeResumen,
+  puedeAnular, cotizacionVisible, subtituloDeItem, filasDeResumen, notaDeAnulacion,
 } from './page'
 import { CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
 
@@ -66,5 +69,63 @@ describe('filasDeResumen', () => {
       cliente: { nombre: 'Martín Sosa' },
     })
     expect(filas.cliente).toBe('Martín Sosa')
+  })
+})
+
+describe('notaDeAnulacion', () => {
+  it('dice quién y cuándo', () => {
+    const texto = notaDeAnulacion({
+      anuladaEn: new Date('2026-08-20T15:00:00Z'),
+      anuladaPor: { nombre: 'Rodrigo Cotarelo' },
+    })
+    expect(texto).toMatch(/^Anulada el/)
+    expect(texto).toContain('Rodrigo Cotarelo')
+    expect(texto.endsWith('.')).toBe(true)
+  })
+
+  it('sin anuladaPor no inventa un nombre: sólo dice la fecha', () => {
+    const texto = notaDeAnulacion({
+      anuladaEn: new Date('2026-08-20T15:00:00Z'),
+      anuladaPor: null,
+    })
+    expect(texto).toMatch(/^Anulada el/)
+    expect(texto).not.toContain(' por ')
+  })
+})
+
+// Regresión concreta que motivó este bloque (hallazgo Critical de la review
+// final del rediseño): un diff anterior sacó `anuladaPor` del `select` y
+// borró el bloque que lo mostraba, y NADA lo notó — sólo quedó un chip que
+// dice QUE la venta está anulada, no quién ni cuándo. `notaDeAnulacion` de
+// arriba prueba el TEXTO; esto prueba que la pantalla todavía lo PIDE y lo
+// MUESTRA. Leer el fuente como texto es el mismo criterio que ya usa
+// app/(app)/vender/caja.test.tsx para cablear algo que ni jsdom ni una
+// sesión real de este repo pueden ejercitar.
+describe('el dato de quién anuló no se vuelve a perder', () => {
+  const fuente = readFileSync('app/(app)/ventas/[id]/page.tsx', 'utf8')
+
+  it('el select sigue pidiendo anuladaPor', () => {
+    expect(fuente).toContain('anuladaPor: { select: { nombre: true } }')
+  })
+
+  it('la pantalla llama a notaDeAnulacion con el dato real de la venta', () => {
+    expect(fuente).toContain(
+      'notaDeAnulacion({ anuladaEn: venta.anuladaEn, anuladaPor: venta.anuladaPor })',
+    )
+  })
+
+  it('esa nota vive dentro de un <Alert>, que es lo que emite role="alert"', () => {
+    // Un <Badge> —como el chip de Estado— no emite ningún role: por eso la
+    // nota tiene que estar en un <Alert> y no en un <span> suelto. Sin
+    // parsear JSX: alcanza con que el `<Alert` más cercano aparezca ANTES
+    // que la llamada, dentro de la misma rama condicional. `lastIndexOf` y
+    // no `indexOf` para ubicar la LLAMADA: la primera aparición de
+    // "notaDeAnulacion(" en el archivo es la propia declaración de la
+    // función (`export function notaDeAnulacion(`), no el sitio donde se usa.
+    const posLlamada = fuente.lastIndexOf('notaDeAnulacion(')
+    const posDeclaracion = fuente.indexOf('notaDeAnulacion(')
+    expect(posLlamada).toBeGreaterThan(posDeclaracion)
+    const posAlert = fuente.lastIndexOf('<Alert', posLlamada)
+    expect(posAlert).toBeGreaterThan(-1)
   })
 })

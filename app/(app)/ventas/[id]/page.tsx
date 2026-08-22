@@ -4,14 +4,18 @@ import { ArrowLeft, TriangleAlert } from 'lucide-react'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   formatearPrecio, formatearDolares, formatearCantidad, formatearHora, formatearFechaCorta,
+  formatearFecha,
 } from '@/lib/formato/mostrar'
-import { ROTULO_MEDIO, CONSUMIDOR_FINAL, type Medio } from '@/lib/ventas/medios'
+import { ROTULO_MEDIO, CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
+import { subtotalItem, montoEnPesos } from '@/lib/ventas/totales'
 import { ChipEstado } from '../chip-estado'
 import { AnularVenta } from '../formularios'
 import { esUuid } from '@/lib/uuid'
+import estilos from '../tipografia.module.css'
 
 export const dynamic = 'force-dynamic'
 
@@ -71,6 +75,25 @@ export function filasDeResumen(v: {
   }
 }
 
+/**
+ * "Anulada el ... por ...": quién y cuándo, no sólo que está anulada.
+ *
+ * Extraída y exportada por el mismo motivo que el resto de las funciones de
+ * este archivo —que un test la sostenga sin sesión ni request real—, y en
+ * este caso además porque un rediseño anterior de esta pantalla llegó a
+ * borrar el dato entero (el `select` dejó de pedir `anuladaPor` y el bloque
+ * que lo mostraba desapareció) sin que nada lo notara: anular revierte stock
+ * y da de baja plata cobrada, y `Venta.anuladaEn`/`anuladaPorId` existen en el
+ * schema justamente para responder esa pregunta más tarde.
+ *
+ * Sin nombre —dueño desactivado, o un dato viejo de antes de este campo— no
+ * inventa un "por alguien": dice sólo la fecha, igual que ya hacía la versión
+ * original de este texto.
+ */
+export function notaDeAnulacion(v: { anuladaEn: Date; anuladaPor: { nombre: string } | null }): string {
+  return `Anulada el ${formatearFecha(v.anuladaEn)}${v.anuladaPor ? ` por ${v.anuladaPor.nombre}` : ''}.`
+}
+
 /** Una fila clave/valor del panel Resumen. */
 function FilaResumen({ clave, children }: { clave: string; children: React.ReactNode }) {
   return (
@@ -94,6 +117,12 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
     select: {
       id: true, numero: true, total: true, creadoEn: true, anuladaEn: true,
       usuario: { select: { nombre: true } },
+      // Quién anuló, no sólo que esté anulada: `Venta.anuladaPorId` existe en
+      // el schema para responder esa pregunta (CLAUDE.md, el modelo `Pago`
+      // vecino explica el mismo criterio para lo que SÍ guarda cada fila), y
+      // test/ventas.test.ts la asevera en la base — sin este campo en el
+      // select no hay ninguna pantalla que la muestre.
+      anuladaPor: { select: { nombre: true } },
       cliente: { select: { nombre: true } },
       items: {
         select: {
@@ -130,12 +159,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
           <div className="flex flex-1 flex-col gap-4">
             <div className="flex flex-col overflow-hidden rounded-2xl border bg-card">
               <div className="border-b px-[18px] py-[13px]">
-                <h2
-                  style={{ fontFamily: 'var(--font-archivo)' }}
-                  className="text-[15px] font-semibold text-foreground"
-                >
-                  Qué se vendió
-                </h2>
+                <h2 className={`${estilos.tituloDeCard} text-foreground`}>Qué se vendió</h2>
               </div>
               <Table className="table-fixed">
                 <TableHeader>
@@ -159,7 +183,13 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
                       el artículo vale hoy. Es para lo que VentaItem guarda
                       copia — el subtotal sí se recalcula acá (cantidad ×
                       precioUnitario CONGELADO), no porque el dato falte sino
-                      porque es aritmética sobre lo que ya se guardó. */}
+                      porque es aritmética sobre lo que ya se guardó. Con
+                      `subtotalItem()` de lib/ventas/totales.ts, la MISMA
+                      función con la que `crearVenta` arma el total —ese
+                      archivo explica por qué los dos tienen que redondear en
+                      el mismo momento y de la misma forma, y reimplementarla
+                      acá a mano (`cantidad.mul(precio).toFixed(2)`) es
+                      exactamente el riesgo que ese comentario advierte. */}
                   {venta.items.map((i) => (
                     <TableRow key={i.id}>
                       <TableCell className="p-[11px] px-[7px] pl-[18px] whitespace-normal">
@@ -171,22 +201,19 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
                         </div>
                       </TableCell>
                       <TableCell
-                        style={{ fontFamily: 'var(--font-archivo)' }}
-                        className="p-[11px] px-[7px] text-right text-foreground tabular-nums"
+                        className={`${estilos.archivo} p-[11px] px-[7px] text-right text-foreground tabular-nums`}
                       >
                         {formatearCantidad(i.cantidad.toString())}
                       </TableCell>
                       <TableCell
-                        style={{ fontFamily: 'var(--font-archivo)' }}
-                        className="p-[11px] px-[7px] text-right text-foreground-soft tabular-nums"
+                        className={`${estilos.archivo} p-[11px] px-[7px] text-right text-foreground-soft tabular-nums`}
                       >
                         {formatearPrecio(i.precioUnitario.toString())}
                       </TableCell>
                       <TableCell
-                        style={{ fontFamily: 'var(--font-archivo)' }}
-                        className="p-[11px] px-[7px] pr-[18px] text-right font-semibold text-foreground tabular-nums"
+                        className={`${estilos.archivo} p-[11px] px-[7px] pr-[18px] text-right font-semibold text-foreground tabular-nums`}
                       >
-                        {formatearPrecio(i.cantidad.mul(i.precioUnitario).toFixed(2))}
+                        {formatearPrecio(subtotalItem(i.cantidad, i.precioUnitario).toString())}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -197,8 +224,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
                   Total
                 </span>
                 <span
-                  style={{ fontFamily: 'var(--font-archivo)' }}
-                  className="text-[22px] font-semibold text-foreground tabular-nums"
+                  className={`${estilos.archivo} text-[22px] font-semibold text-foreground tabular-nums`}
                 >
                   {formatearPrecio(venta.total.toString())}
                 </span>
@@ -207,12 +233,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
 
             <div className="flex flex-col overflow-hidden rounded-2xl border bg-card">
               <div className="border-b px-[18px] py-[13px]">
-                <h2
-                  style={{ fontFamily: 'var(--font-archivo)' }}
-                  className="text-[15px] font-semibold text-foreground"
-                >
-                  Cómo se pagó
-                </h2>
+                <h2 className={`${estilos.tituloDeCard} text-foreground`}>Cómo se pagó</h2>
               </div>
               <Table className="table-fixed">
                 <TableHeader>
@@ -238,14 +259,13 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
                   {venta.pagos.map((p) => (
                     <TableRow key={p.id}>
                       <TableCell className="p-[11px] px-[7px] pl-[18px] text-foreground">
-                        {ROTULO_MEDIO[p.medio as Medio]}
+                        {ROTULO_MEDIO[p.medio]}
                       </TableCell>
                       <TableCell className="p-[11px] px-[7px] text-foreground">
                         {ROTULO_MONEDA[p.moneda]}
                       </TableCell>
                       <TableCell
-                        style={{ fontFamily: 'var(--font-archivo)' }}
-                        className="p-[11px] px-[7px] text-right text-foreground-soft tabular-nums"
+                        className={`${estilos.archivo} p-[11px] px-[7px] text-right text-foreground-soft tabular-nums`}
                       >
                         {cotizacionVisible({ moneda: p.moneda, cotizacion: p.cotizacion.toString() })}
                       </TableCell>
@@ -253,18 +273,23 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
                           emite el `$` de pesos, así que anteponerle "US$ " a
                           mano daba "US$ $ 0,80". */}
                       <TableCell
-                        style={{ fontFamily: 'var(--font-archivo)' }}
-                        className="p-[11px] px-[7px] text-right text-foreground tabular-nums"
+                        className={`${estilos.archivo} p-[11px] px-[7px] text-right text-foreground tabular-nums`}
                       >
                         {p.moneda === 'USD'
                           ? formatearDolares(p.monto.toString())
                           : formatearPrecio(p.monto.toString())}
                       </TableCell>
+                      {/* montoEnPesos() de lib/ventas/totales.ts, no
+                          `p.monto.mul(p.cotizacion).toFixed(2)` a mano —
+                          mismo motivo que el subtotal de arriba: es la MISMA
+                          función con la que `componerPorMedio` arma "Cómo
+                          entró la plata" en /ventas, así que esta columna y
+                          ese panel redondean en el mismo momento y de la
+                          misma forma. */}
                       <TableCell
-                        style={{ fontFamily: 'var(--font-archivo)' }}
-                        className="p-[11px] px-[7px] pr-[18px] text-right font-semibold text-foreground tabular-nums"
+                        className={`${estilos.archivo} p-[11px] px-[7px] pr-[18px] text-right font-semibold text-foreground tabular-nums`}
                       >
-                        {formatearPrecio(p.monto.mul(p.cotizacion).toFixed(2))}
+                        {formatearPrecio(montoEnPesos(p.monto, p.cotizacion).toString())}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -276,12 +301,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
           <div className="flex w-[324px] shrink-0 flex-col gap-4">
             <div className="flex flex-col overflow-hidden rounded-2xl border bg-card">
               <div className="border-b px-[18px] py-[13px]">
-                <h2
-                  style={{ fontFamily: 'var(--font-archivo)' }}
-                  className="text-[15px] font-semibold text-foreground"
-                >
-                  Resumen
-                </h2>
+                <h2 className={`${estilos.tituloDeCard} text-foreground`}>Resumen</h2>
               </div>
               <div className="flex flex-col">
                 <FilaResumen clave="Fecha">{filas.fecha}</FilaResumen>
@@ -298,12 +318,28 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
                 sólo dibuja el texto de advertencia, sin ningún botón — no
                 existe ningún frame de venta anulada contra el que confirmar
                 si el botón va en otro lado, así que se lo deja exactamente
-                donde el texto lo ubica (ver relevamiento.md, punto 6). Se
-                oculta entera una vez anulada: no hay nada que advertir sobre
-                una acción que ya no se puede tomar. El texto queda visible
-                para cualquier rol —explica por qué un empleado no tiene el
-                botón—, y el botón mismo sigue restringido al dueño. */}
-            {!anulada && (
+                donde el texto lo ubica (ver relevamiento.md, punto 6). El
+                texto queda visible para cualquier rol —explica por qué un
+                empleado no tiene el botón—, y el botón mismo sigue
+                restringido al dueño.
+
+                Una vez anulada no hay nada que ADVERTIR —la acción ya no se
+                puede tomar—, pero sí algo que INFORMAR: quién y cuándo. La
+                maqueta no dice nada sobre este estado (no dibuja ningún frame
+                de venta anulada), y "no dice nada" no es "sacalo": el dato
+                vive en `Venta.anuladaEn`/`anuladaPorId` desde el schema
+                original, y una venta anulada revierte stock y da de baja
+                plata cobrada — perder de vista quién lo hizo y cuándo es
+                perder el único rastro de una operación que mueve caja e
+                inventario. Ocupa el mismo lugar que la advertencia, así que
+                la columna nunca queda con las dos cosas a la vez. */}
+            {venta.anuladaEn ? (
+              <Alert className="rounded-2xl bg-destructive-soft px-4 py-4">
+                <AlertDescription className="text-[11px] leading-[1.45] text-destructive opacity-85">
+                  {notaDeAnulacion({ anuladaEn: venta.anuladaEn, anuladaPor: venta.anuladaPor })}
+                </AlertDescription>
+              </Alert>
+            ) : (
               <div className="flex flex-col gap-[9px] rounded-2xl bg-destructive-soft p-4">
                 <div className="flex items-center gap-[7px]">
                   <TriangleAlert aria-hidden="true" className="size-[14px] text-destructive" />
