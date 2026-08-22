@@ -11,6 +11,7 @@ import { componerPorMedio } from '@/lib/ventas/composicion'
 import { ROTULO_MEDIO, CONSUMIDOR_FINAL, type Medio } from '@/lib/ventas/medios'
 import { ChipEstado } from './chip-estado'
 import { GraficoDeMedios } from './grafico'
+import estilos from './tipografia.module.css'
 
 export const dynamic = 'force-dynamic'
 
@@ -126,6 +127,30 @@ export function chipActivo(desde: string, hasta: string, hoy: string): Rango | n
   }) ?? null
 }
 
+/** El filtro de rango que arma esta pantalla: el mismo `donde` para el
+ *  listado, los tres tiles y el panel de medios. */
+type FiltroDePeriodo = { creadoEn: { gte: Date; lt: Date } }
+
+/**
+ * El total del tile "Total del período": la suma de lo NO anulado. Una venta
+ * anulada no es plata que entró, y esta regla es la única razón de ser de la
+ * función — extraída y exportada porque, a diferencia del resto de las
+ * funciones de este archivo, ésta SÍ toca la base (no hay forma de probar la
+ * regla sin eso), así que el test que la sostiene vive en test/ventas.test.ts,
+ * contra la base efímera, y no en page.test.tsx.
+ *
+ * Antes de esta extracción, sacar `anuladaEn: null` del `where` no rompía
+ * ningún test (785/785 en verde) — hallazgo I3 de la review final del
+ * rediseño. Que la función exista y se llame desde acá es lo que la deja
+ * protegida.
+ */
+export function totalDelPeriodo(
+  prisma: ReturnType<typeof prismaParaTenant>,
+  donde: FiltroDePeriodo,
+) {
+  return prisma.venta.aggregate({ where: { ...donde, anuladaEn: null }, _sum: { total: true } })
+}
+
 /**
  * El pie del tile "Ventas cobradas": el promedio por venta cobrada.
  *
@@ -215,8 +240,8 @@ function Tile({
           {rotulo}
         </div>
         <div
-          style={{ fontFamily: 'var(--font-archivo)', color: 'var(--marca-foreground)' }}
-          className="text-[32px] leading-none font-semibold tracking-[-0.6px] tabular-nums"
+          style={{ color: 'var(--marca-foreground)' }}
+          className={`${estilos.archivo} text-[32px] leading-none font-semibold tracking-[-0.6px] tabular-nums`}
         >
           {valor}
         </div>
@@ -236,8 +261,7 @@ function Tile({
       {/* tabular-nums en los tres, no sólo en el de plata: los tiles están uno
           al lado del otro y un dígito de ancho variable los descalza entre sí. */}
       <div
-        style={{ fontFamily: 'var(--font-archivo)' }}
-        className="text-[26px] leading-none font-semibold tracking-[-0.6px] tabular-nums text-foreground"
+        className={`${estilos.archivo} text-[26px] leading-none font-semibold tracking-[-0.6px] tabular-nums text-foreground`}
       >
         {valor}
       </div>
@@ -280,14 +304,20 @@ export default async function Ventas({
       select: {
         id: true, numero: true, total: true, creadoEn: true, anuladaEn: true,
         cliente: { select: { nombre: true } },
-        pagos: { select: { medio: true, moneda: true } },
+        // orderBy explícito: rotuloDeMedios() documenta "en el orden en que
+        // se cobraron", y sin esto Postgres no promete ningún orden — el
+        // resultado podía coincidir con la inserción por accidente, no por
+        // contrato.
+        pagos: { select: { medio: true, moneda: true }, orderBy: { creadoEn: 'asc' } },
         _count: { select: { items: true } },
       },
     }),
     prisma.venta.count({ where: donde }),
     // El total del período NO suma las anuladas: una venta anulada no es plata
-    // que entró. Se dice en pantalla para que nadie tenga que deducirlo.
-    prisma.venta.aggregate({ where: { ...donde, anuladaEn: null }, _sum: { total: true } }),
+    // que entró. Se dice en pantalla para que nadie tenga que deducirlo. La
+    // regla vive en totalDelPeriodo() y no acá — ver su comentario para el
+    // porqué de la extracción.
+    totalDelPeriodo(prisma, donde),
     // Se cuentan las anuladas y NO las cobradas: cobradas = total - anuladas es
     // aritmética sobre dos números que ya vienen de la misma transacción, así
     // que no puede dar una suma que no cierre contra el listado.
@@ -441,21 +471,19 @@ export default async function Ventas({
                 `niIY5`) — antes era una <table> suelta en la pantalla. */}
             <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border bg-card">
               <div className="flex items-center justify-between border-b px-[18px] py-[13px]">
-                <h2
-                  style={{ fontFamily: 'var(--font-archivo)' }}
-                  className="text-[15px] font-semibold text-foreground"
-                >
-                  Últimas ventas
-                </h2>
-                {/* "Ver todas →": la maqueta la dibuja, pero esta pantalla YA
-                    es el listado completo del período — no hay un "todas" más
-                    grande adonde ir sin sumar un modo sin rango, que es lógica
-                    de consulta nueva y este ciclo es sólo presentación (ver
-                    relevamiento.md, punto 3.a). Apunta a la propia ruta sin
-                    filtro, que es el único destino que no inventa nada. */}
-                <Link href="/ventas" className="text-[12px] font-semibold text-primary">
-                  Ver todas →
-                </Link>
+                <h2 className={`${estilos.tituloDeCard} text-foreground`}>Últimas ventas</h2>
+                {/* SIN "Ver todas →" (I7 de la review final): la maqueta la
+                    dibuja —probablemente residuo de un card de dashboard
+                    reusado, no una decisión sobre ESTA pantalla— pero esta
+                    pantalla YA es el listado completo del período que se está
+                    mirando, y no hay ningún destino más grande sin sumar un
+                    modo sin rango (lógica de consulta nueva, fuera de este
+                    ciclo). El link apuntaba a `/ventas` pelado, que resuelve a
+                    "hoy": parado en "Este mes" con 300 ventas, ese link dejaba
+                    con las 12 de hoy — MENOS ventas, no más. Si el
+                    razonamiento de por qué no hay un destino mejor es
+                    correcto, la conclusión es no dibujar el link, no dibujarlo
+                    apuntando a un subconjunto. */}
               </div>
 
               {ventas.length === 0 ? (
@@ -470,6 +498,13 @@ export default async function Ventas({
                   ) : (
                     <>
                       Esa página no tiene ventas.{' '}
+                      {/* Load-bearing, y más ahora que antes: el `<nav>` de
+                          paginación vive DENTRO de la rama `ventas.length > 0`
+                          de más abajo, así que en este vacío por página fuera
+                          de rango (`?p` clampeado a [1, 1.000.000], no a
+                          `paginas`) no se dibuja ningún control de página —
+                          este link es la ÚNICA salida de acá sin editar la
+                          URL a mano. */}
                       <Link href={conPagina(1)} className="underline">
                         Volver a la primera
                       </Link>
@@ -489,9 +524,15 @@ export default async function Ventas({
                           Hora
                         </TableHead>
                         <TableHead className="h-auto px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                          Vendió
+                          {/* "Cliente" y no "Vendió" (I5 de la review final):
+                              el dato de esta columna es el comprador —más útil
+                              en un historial de ventas que quién vendió—, y el
+                              rótulo tenía que decir eso, no lo contrario. Quién
+                              vendió sigue disponible, en el panel Resumen del
+                              detalle. */}
+                          Cliente
                         </TableHead>
-                        <TableHead className="h-auto w-[150px] px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                        <TableHead className="h-auto w-[168px] px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
                           Medios
                         </TableHead>
                         <TableHead className="h-auto w-[140px] px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
@@ -506,8 +547,7 @@ export default async function Ventas({
                       {ventas.map((v) => (
                         <TableRow key={v.id}>
                           <TableCell
-                            style={{ fontFamily: 'var(--font-archivo)' }}
-                            className="p-[11px] px-[7px] pl-[18px] font-semibold text-primary"
+                            className={`${estilos.archivo} p-[11px] px-[7px] pl-[18px] font-semibold text-primary`}
                           >
                             <Link href={`/ventas/${v.id}`}>#{v.numero}</Link>
                           </TableCell>
@@ -524,12 +564,25 @@ export default async function Ventas({
                               </span>
                             </div>
                           </TableCell>
-                          <TableCell className="p-[11px] px-[7px] text-foreground">
+                          {/* truncate (I4 de la review final): el pago
+                              partido es la norma acá, no la excepción (ver el
+                              comentario de `model Pago`), así que
+                              "Efectivo + Transferencia" (~155px) es un caso de
+                              todos los días, no un borde — y a 155px ya se
+                              derramaba sobre "Total" con el ancho viejo de
+                              150px. Ensanchar la columna atrasa el problema,
+                              no lo cierra: tres medios en la misma venta lo
+                              vuelve a desbordar. `title` deja el texto
+                              completo a un hover, para no perder el dato que
+                              el truncado esconde. */}
+                          <TableCell
+                            className="truncate p-[11px] px-[7px] text-foreground"
+                            title={rotuloDeMedios(v.pagos)}
+                          >
                             {rotuloDeMedios(v.pagos)}
                           </TableCell>
                           <TableCell
-                            style={{ fontFamily: 'var(--font-archivo)' }}
-                            className="p-[11px] px-[7px] text-right font-semibold text-foreground tabular-nums"
+                            className={`${estilos.archivo} p-[11px] px-[7px] text-right font-semibold text-foreground tabular-nums`}
                           >
                             {formatearPrecio(v.total.toString())}
                           </TableCell>
@@ -544,26 +597,34 @@ export default async function Ventas({
                     </TableBody>
                   </Table>
 
-                  <div className="flex-1" />
-
                   {paginas > 1 && (
                     <nav
                       aria-label="Paginación"
                       className="flex items-center justify-between border-t px-[18px] py-3"
                     >
+                      {/* Los tres números con el mismo formateador: antes sólo
+                          "de N" pasaba por formatearCantidad y el rango
+                          quedaba en dígitos crudos ("1001–1050 de 1.234
+                          ventas") — mezcla de formatos en la misma línea. */}
                       <span className="text-[12px] text-muted-foreground">
-                        {(pagina - 1) * POR_PAGINA + 1}–{Math.min(pagina * POR_PAGINA, total)} de{' '}
+                        {formatearCantidad(String((pagina - 1) * POR_PAGINA + 1))}–
+                        {formatearCantidad(String(Math.min(pagina * POR_PAGINA, total)))} de{' '}
                         {formatearCantidad(String(total))} {total === 1 ? 'venta' : 'ventas'}
                       </span>
                       <div className="flex items-center gap-[6px]">
                         {ventanaDePaginas(pagina, paginas).map((n) =>
                           n === pagina ? (
+                            // `type="button"` y sin `disabled`: un botón
+                            // disabled no es focusable, así que quien navega
+                            // por teclado perdía de vista en qué página
+                            // estaba parado apenas la pestañeaba. `aria-current`
+                            // es lo que la reemplaza como señal de "estás acá".
                             <Button
                               key={n}
-                              disabled
+                              type="button"
+                              aria-current="page"
                               size="icon-sm"
-                              style={{ fontFamily: 'var(--font-archivo)' }}
-                              className="size-[30px] rounded-lg text-[13px] font-semibold disabled:opacity-100"
+                              className={`${estilos.archivo} size-[30px] rounded-lg text-[13px] font-semibold`}
                             >
                               {n}
                             </Button>
@@ -573,8 +634,7 @@ export default async function Ventas({
                               asChild
                               variant="outline"
                               size="icon-sm"
-                              style={{ fontFamily: 'var(--font-archivo)' }}
-                              className="size-[30px] rounded-lg text-[13px] font-semibold text-foreground-soft"
+                              className={`${estilos.archivo} size-[30px] rounded-lg text-[13px] font-semibold text-foreground-soft`}
                             >
                               <Link href={conPagina(n)}>{n}</Link>
                             </Button>

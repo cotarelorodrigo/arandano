@@ -9,6 +9,7 @@
 // excepción vuelve a hacer falta algún día, se documenta en los DOS lugares
 // otra vez: acá y en vitest.config.mts — a medias es peor que no sacarla,
 // porque el próximo lector cree que sigue vigente.
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { GraficoDeMedios, porcentajesQueSuman100 } from './grafico'
@@ -57,19 +58,91 @@ describe('porcentajesQueSuman100', () => {
     expect(porcentajesQueSuman100([0, 0])).toEqual([0, 0])
     expect(porcentajesQueSuman100([])).toEqual([])
   })
+
+  it('un total explícito igual a la suma da el mismo resultado que omitirlo', () => {
+    // El caso real (GraficoDeMedios le pasa `Number(composicion.total)`, que
+    // en la práctica coincide con la suma de las barras) no puede darse contra
+    // valores que no sumen ~el total: el propio método del resto mayor asume
+    // que `faltan` (100 menos la suma de los pisos) entra en `valores.length`,
+    // así que un total muy distinto de la suma no es un caso que este método
+    // sostenga — no es el defecto que este parámetro corrige.
+    const valores = [612400, 389700, 182400, 100000]
+    const suma = valores.reduce((a, b) => a + b, 0)
+    expect(porcentajesQueSuman100(valores, suma)).toEqual(porcentajesQueSuman100(valores))
+  })
+
+  it('sin el segundo argumento, sigue sumando los valores (compatibilidad)', () => {
+    const pcts = porcentajesQueSuman100([1, 1, 2])
+    expect(pcts).toEqual([25, 25, 50])
+  })
 })
 
+// Que el segundo argumento no se agregue y se olvide de pasar: GraficoDeMedios
+// tiene que llamarlo con `Number(total)`, el de `composicion` — no con nada
+// recalculado a mano. Leer el fuente porque el propio método (resto mayor)
+// no puede ejercitarse con un total que difiera de la suma de sus valores
+// (ver el test de arriba), así que no hay forma de afirmar esto vía input/
+// output sin salirse de lo que el método soporta.
+describe('GraficoDeMedios no re-suma el total en float', () => {
+  it('llama a porcentajesQueSuman100 con el total ya exacto de la composición', () => {
+    const fuente = readFileSync('app/(app)/ventas/grafico.tsx', 'utf8')
+    expect(fuente).toContain(
+      'porcentajesQueSuman100(barras.map((b) => Number(b.total)), Number(total))',
+    )
+  })
+})
+
+// El contenedor de UNA barra en grafico.tsx: `<div className="flex flex-col
+// gap-[7px]">`, con el rótulo, el monto, el `<Progress>` (que emite el ancho
+// como `transform:translateX(-N%)`) y el "X% del total", en ese orden. Cortar
+// el HTML por ese marcador es lo que permite afirmar que el monto y el
+// porcentaje de CADA medio caen en SU propio bloque, y no sólo en algún lugar
+// del documento entero — un `toContain` sobre el HTML completo no distingue
+// "el 612.400 está en la fila de Efectivo" de "el 612.400 está en cualquier
+// fila", y ésa es la brecha que dejaba pasar dos medios con los índices
+// cruzados sin que ningún test lo notara (I2 de la review final).
+const MARCADOR_DE_BARRA = '<div class="flex flex-col gap-[7px]">'
+
+function bloquesDeBarra(html: string): string[] {
+  return html.split(MARCADOR_DE_BARRA).slice(1)
+}
+
 describe('el panel de medios de pago', () => {
-  it('dibuja una barra por medio, con el monto de cada una', () => {
+  it('cada barra queda con SU rótulo, SU monto, SU ancho y SU porcentaje juntos', () => {
     const html = renderToStaticMarkup(<GraficoDeMedios composicion={CUATRO_MEDIOS} />)
-    expect(html).toContain('Efectivo')
-    expect(html).toContain('612.400,00')
-    expect(html).toContain('Transferencia')
-    expect(html).toContain('389.700,00')
-    expect(html).toContain('Débito')
-    expect(html).toContain('182.400,00')
-    expect(html).toContain('Crédito')
-    expect(html).toContain('100.000,00')
+    const bloques = bloquesDeBarra(html)
+    expect(bloques).toHaveLength(4)
+
+    // El mismo orden que declara CUATRO_MEDIOS (48/30/14/8, ver
+    // porcentajesQueSuman100 arriba). Si `barras[barras.length - 1 - i]`
+    // volviera a colarse en el monto o en el porcentaje, el monto de
+    // Efectivo aparecería en el bloque de Crédito y este `forEach` lo
+    // atraparía ahí, no en "algún lugar del HTML".
+    const esperado = [
+      { rotulo: 'Efectivo', monto: '612.400,00', pct: 48 },
+      { rotulo: 'Transferencia', monto: '389.700,00', pct: 30 },
+      { rotulo: 'Débito', monto: '182.400,00', pct: 14 },
+      { rotulo: 'Crédito', monto: '100.000,00', pct: 8 },
+    ]
+
+    esperado.forEach((e, i) => {
+      const bloque = bloques[i]
+      expect(bloque).toContain(e.rotulo)
+      expect(bloque).toContain(e.monto)
+      expect(bloque).toContain(`${e.pct}% del total`)
+      // El ancho REAL de la barra, no el texto de al lado: `Progress` dibuja
+      // `value` como `translateX(-(100 - value)%)`, así que la mutación
+      // `value={0}` (las cuatro barras en ancho cero) se ve acá como
+      // `-100%` para las cuatro, sin que el texto del porcentaje —que no
+      // depende de `value`— delate nada.
+      expect(bloque).toContain(`translateX(-${100 - e.pct}%)`)
+      // `aria-valuenow`: components/ui/progress.tsx destructura `value` para
+      // calcular el ancho y por eso deja de viajar en `...props` hacia
+      // `ProgressPrimitive.Root` a menos que se reenvíe a mano — sin eso Radix
+      // se queda en su default indeterminado y un lector de pantalla anuncia
+      // "cargando", no el porcentaje real.
+      expect(bloque).toContain(`aria-valuenow="${e.pct}"`)
+    })
   })
 
   it('rotula los medios en castellano y no con el nombre del enum', () => {
@@ -86,14 +159,6 @@ describe('el panel de medios de pago', () => {
     expect(html).not.toContain('Débito')
     expect(html).not.toContain('Crédito')
     expect(html).not.toContain('Transferencia')
-  })
-
-  it('imprime el porcentaje de cada barra bajo su rótulo', () => {
-    const html = renderToStaticMarkup(<GraficoDeMedios composicion={CUATRO_MEDIOS} />)
-    expect(html).toContain('48% del total')
-    expect(html).toContain('30% del total')
-    expect(html).toContain('14% del total')
-    expect(html).toContain('8% del total')
   })
 
   it('la nota de la cotización siempre está', () => {

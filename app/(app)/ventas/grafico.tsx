@@ -7,6 +7,7 @@ import { Info } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
 import { formatearPrecio } from '@/lib/formato/mostrar'
 import { ROTULO_MEDIO, type Composicion } from '@/lib/ventas/medios'
+import estilos from './tipografia.module.css'
 
 /**
  * Cada monto como porcentaje ENTERO del total, garantizando que la suma dé
@@ -20,8 +21,16 @@ import { ROTULO_MEDIO, type Composicion } from '@/lib/ventas/medios'
  * estándar de redondear una distribución de porcentajes sin que la suma se
  * mueva del 100% que el panel promete.
  */
-export function porcentajesQueSuman100(valores: number[]): number[] {
-  const total = valores.reduce((acc, v) => acc + v, 0)
+export function porcentajesQueSuman100(
+  valores: number[],
+  // El total viene por parámetro y no siempre re-sumado acá — `total` default
+  // preserva el comportamiento de antes para quien no lo pasa (y para los
+  // tests de este archivo). El llamador real (GraficoDeMedios) SÍ lo pasa:
+  // `composicion.total` ya es exacto —sale de sumar `Decimal`s, no floats—, así
+  // que anclar el reparto a ESE número evita sumar de nuevo en float un valor
+  // que ya se sumó bien una vez.
+  total: number = valores.reduce((acc, v) => acc + v, 0),
+): number[] {
   if (total <= 0) return valores.map(() => 0)
 
   const brutos = valores.map((v) => (v / total) * 100)
@@ -56,18 +65,16 @@ export function porcentajesQueSuman100(valores: number[]): number[] {
  * JavaScript se pierdan.
  */
 export function GraficoDeMedios({ composicion }: { composicion: Composicion }) {
-  const { barras } = composicion
-  const porcentajes = porcentajesQueSuman100(barras.map((b) => Number(b.total)))
+  const { barras, total } = composicion
+  const porcentajes = porcentajesQueSuman100(barras.map((b) => Number(b.total)), Number(total))
 
   return (
-    <section className="flex w-[344px] flex-col overflow-hidden rounded-2xl border bg-card">
+    // shrink-0, igual que su equivalente de /ventas/[id] (`w-[324px]
+    // shrink-0`): sin esto, un vecino ancho en el mismo row flex podía
+    // angostar este panel por debajo de sus 344px de diseño.
+    <section className="flex w-[344px] shrink-0 flex-col overflow-hidden rounded-2xl border bg-card">
       <div className="flex items-center justify-between border-b px-[18px] py-[13px]">
-        <h2
-          style={{ fontFamily: 'var(--font-archivo)' }}
-          className="text-[15px] font-semibold text-foreground"
-        >
-          Cómo entró la plata
-        </h2>
+        <h2 className={`${estilos.tituloDeCard} text-foreground`}>Cómo entró la plata</h2>
       </div>
       <div className="flex flex-col gap-[18px] p-[18px]">
         {barras.map((b, i) => (
@@ -76,10 +83,7 @@ export function GraficoDeMedios({ composicion }: { composicion: Composicion }) {
               <span className="text-[13px] font-medium text-foreground">
                 {ROTULO_MEDIO[b.medio]}
               </span>
-              <span
-                style={{ fontFamily: 'var(--font-archivo)' }}
-                className="text-[13px] font-semibold text-foreground"
-              >
+              <span className={`${estilos.archivo} text-[13px] font-semibold text-foreground`}>
                 {formatearPrecio(b.total)}
               </span>
             </div>

@@ -203,8 +203,8 @@ El historial por período.
 - Ver tres tiles: total del período (el ancla de `--marca` de esta pantalla,
   ver `docs/sistema-de-diseno.md`), ventas cobradas con su promedio, y
   anuladas con lo devuelto.
-- Ver el listado dentro de su propia card ("Últimas ventas"), con quién compró
-  (el **cliente**, no quién la vendió — eso vive en el detalle), cuántos
+- Ver el listado dentro de su propia card ("Últimas ventas"), con la columna
+  "Cliente" (quién compró, no quién vendió — eso vive en el detalle), cuántos
   artículos, con qué medios se pagó y su estado.
 - Ver **"Cómo entró la plata"**: una barra por medio de pago, de un solo color,
   con los dólares convertidos a pesos a la cotización de cada pago —sin
@@ -227,6 +227,15 @@ El historial por período.
 - **La columna "Medios" de un pago partido** lista los medios distintos
   separados por "+" (`rotuloDeMedios()`) — decisión de UI sin equivalente en
   la maqueta, que no muestra ningún caso con más de un medio por venta.
+- **La columna dice "Cliente" y no "Vendió".** El dato que muestra —el
+  comprador— está bien: es más útil en un historial de ventas que quién la
+  vendió. El rótulo llegó a decir "Vendió" sobre esa misma columna con el dato
+  ya cambiado (hallazgo de la review final del rediseño): un error de la
+  maqueta, corregido en el `.pen` y no sólo en el código. **Y saber qué
+  empleado hizo cada venta ya no se puede desde este listado** — antes de este
+  rediseño la columna mostraba el vendedor, y esa capacidad se resignó a
+  cambio de mostrar el cliente: hoy hay que abrir venta por venta y mirar su
+  panel Resumen para verlo.
 - El filtro es `method="get"`: anda sin JavaScript y la URL con el rango se
   comparte. Los chips de rango rápido son links por el mismo motivo.
 - El "hoy" se calcula en el huso de Buenos Aires y no en el del servidor, que
@@ -236,10 +245,16 @@ El historial por período.
 - El panel de medios **no se dibuja si no hay pagos** — un período puede tener
   ventas y ningún pago si están todas anuladas, y un panel en blanco se lee
   como que algo se rompió.
-- **"Ver todas →"** apunta a `/ventas` sin filtro (vuelve al default de hoy):
-  esta pantalla ya es el listado completo del período que se está mirando, así
-  que no hay un "todas" más grande sin sumar un modo sin rango — que sería
-  lógica de consulta nueva, y este ciclo fue sólo presentación.
+- **No hay link "Ver todas".** La maqueta lo dibuja —probablemente el residuo
+  de un card de dashboard reusado, no una decisión sobre esta pantalla en
+  particular—, pero esta pantalla ya es el listado completo del período que se
+  está mirando: no hay un "todas" más grande adonde ir sin sumar un modo sin
+  rango, que es lógica de consulta nueva. Una versión anterior lo dibujaba
+  igual, apuntando a `/ventas` sin filtro (que resuelve al default de hoy) —
+  parado en un rango más amplio, ese link llevaba a MENOS ventas, no a más
+  (hallazgo de la review final). Si el razonamiento de por qué no hay un
+  destino mejor es correcto, la conclusión es no dibujar el link, no dibujarlo
+  apuntando a un subconjunto.
 
 ## `/ventas/[id]`
 
