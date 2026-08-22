@@ -52,6 +52,27 @@ formularios.
 
 ---
 
+## 3. El SKU de ejemplo usa un formato que el generador no produce
+
+- **Frames**: `B4O7t` (`App / Artículo nuevo`), `y4tEb` (`App / Artículo ficha`) y
+  `pb32f` (`App / Inventario`)
+- **Dicen**: códigos de seis dígitos sin prefijo — `000413`, `000412`, `000198`
+- **El generador produce**: `A-0043` — un prefijo y cuatro dígitos
+
+**Por qué.** `proximoSku()` en `lib/inventario/articulos.ts` arma el código con
+esa forma, y el ciclo de inventario decidió mostrar el número real en vez de
+copiar el estilo cosmético de la maqueta. El texto de ayuda del alta —"el
+próximo código libre es el…"— tiene que mostrar lo que el sistema va a generar,
+o le miente a quien lo lee.
+
+No es urgente: son números de ejemplo dentro de la maqueta y no cambian ninguna
+decisión de diseño. Pero conviene alinearlos para que nadie tome ese formato
+como especificación.
+
+Detectado en el ciclo de inventario (2026-08-22).
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el
