@@ -82,13 +82,33 @@ describe('los tiles de la ficha (Task 4 del rediseño)', () => {
 
   // El último costo sale del movimiento más reciente CON costo cargado, no
   // del ingreso más reciente a secas (que puede no tenerlo, CLAUDE.md).
+  //
+  // I1 de la review: `orderBy: { creadoEn: 'desc' }` sin más contexto también
+  // aparece en la consulta de "movimientos" de más abajo, así que esa sola
+  // aserción quedaba satisfecha por CUALQUIERA de las dos consultas — una
+  // mutación que cambiara el orden de ÉSTA a 'asc' (el tile mostraría el
+  // costo más VIEJO) seguía en verde. La aserción ahora ata el `orderBy` al
+  // mismo bloque `findFirst` que trae `costoUnitario: { not: null } }`, así
+  // que sólo esa consulta puede satisfacerla.
   it('la consulta de "Último costo" filtra por costoUnitario no nulo y ordena por fecha descendente', () => {
-    expect(FUENTE).toContain('where: { articuloId: id, costoUnitario: { not: null } }')
-    expect(FUENTE).toContain("orderBy: { creadoEn: 'desc' }")
+    expect(FUENTE).toContain(
+      "where: { articuloId: id, costoUnitario: { not: null } },\n          orderBy: { creadoEn: 'desc' },",
+    )
   })
 
   it('sin costo cargado, el tile muestra "—" y no un número inventado', () => {
     expect(FUENTE).toContain("ultimoCosto ? formatearPrecio(ultimoCosto.toString()) : '—'")
+  })
+
+  // I3 de la review: ningún caso verificaba que el valor mostrado saliera del
+  // artículo — un `valor={formatearCantidad('0')}` fijo pasaba los 22/22
+  // tests igual. Éstas atan cada tile a la columna real que lo alimenta.
+  it('el tile "En stock" muestra articulo.stock, no un valor fijo', () => {
+    expect(FUENTE).toContain('valor={formatearCantidad(articulo.stock.toString())}')
+  })
+
+  it('el tile "Precio de venta" muestra articulo.precio, no un valor fijo', () => {
+    expect(FUENTE).toContain('valor={formatearPrecio(articulo.precio.toString())}')
   })
 })
 

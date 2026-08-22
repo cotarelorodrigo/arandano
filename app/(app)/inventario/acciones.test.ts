@@ -117,6 +117,44 @@ async function cookieDe(email: string): Promise<string> {
   return cookie.split(';')[0]
 }
 
+/**
+ * Parsea una fila de CSV (RFC 4180): entiende comillas y comillas dobles
+ * escapadas. La usan las aserciones de `exportarHistorialCsv` de más abajo
+ * para mirar una COLUMNA exacta (I4 de la review): la fila también trae
+ * "DD/MM · HH:MM", así que buscar un número por `toContain` sobre la fila
+ * entera puede coincidir por casualidad con el día, el mes, la hora o el
+ * minuto en vez de con el saldo.
+ */
+function celdasDe(fila: string): string[] {
+  const celdas: string[] = []
+  let actual = ''
+  let entreComillas = false
+  for (let i = 0; i < fila.length; i++) {
+    const c = fila[i]
+    if (entreComillas) {
+      if (c === '"') {
+        if (fila[i + 1] === '"') {
+          actual += '"'
+          i++
+        } else {
+          entreComillas = false
+        }
+      } else {
+        actual += c
+      }
+    } else if (c === '"') {
+      entreComillas = true
+    } else if (c === ',') {
+      celdas.push(actual)
+      actual = ''
+    } else {
+      actual += c
+    }
+  }
+  celdas.push(actual)
+  return celdas
+}
+
 let contadorSku = 0
 
 /** Un artículo propio por test: evita que los casos de guardar/dar de baja/
@@ -379,8 +417,13 @@ describe('exportarHistorialCsv (Task 5 del rediseño)', () => {
     expect(filas[1]).toContain('Factura A 0001')
     expect(filas[1]).toContain('+5')
     // 10 (stock inicial de la fixture) + 5 (el ingreso) = 15: el saldo
-    // reconstruido tiene que cerrar contra el stock real de la base.
-    expect(filas[1]).toContain('15')
+    // reconstruido tiene que cerrar contra el stock real de la base. Columna
+    // "Queda" exacta (índice 4) y no `toContain('15')` sobre la fila entera:
+    // la fila también trae "DD/MM · HH:MM", así que un "15" en el día, el mes,
+    // la hora o el minuto de la corrida hacía pasar el test aunque el saldo
+    // fuera otro (mutación probada: un saldo constante "115" también
+    // contiene "15" como substring).
+    expect(celdasDe(filas[1])[4]).toBe('15')
     expect(nombreArchivo).toMatch(/^historial-.*\.csv$/)
   })
 
@@ -402,6 +445,42 @@ describe('exportarHistorialCsv (Task 5 del rediseño)', () => {
     // dobladas — RFC 4180. Sin esto, la coma de la nota partiría esta fila
     // en dos columnas de más.
     expect(filas[1]).toContain('"Factura A, 0001-00023145 ""urgente"""')
+  })
+
+  // I4 de la review: el caso de arriba sólo prueba la nota con COMA Y
+  // COMILLAS A LA VEZ, así que una regla de quoting rota que sólo mirara una
+  // de las dos condiciones (p. ej. `/[,]/` sin las comillas, o al revés)
+  // hubiera pasado igual. Estos dos casos aíslan cada condición.
+  it('una nota con coma pero sin comillas también se encierra entre comillas', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Con nota con coma sola', '0')
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('cantidad', '1')
+    datos.set('nota', 'Sin comillas, con coma')
+    await ingresarMercaderia(INICIAL, datos)
+
+    const { csv } = await exportarHistorialCsv(id)
+    const filas = csv.split('\r\n')
+    expect(filas).toHaveLength(2)
+    expect(celdasDe(filas[1])[2]).toContain('Sin comillas, con coma')
+    expect(filas[1]).toContain('"Sin comillas, con coma')
+  })
+
+  it('una nota con comillas pero sin coma también dobla las comillas internas', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Con nota con comillas sola', '0')
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('cantidad', '1')
+    datos.set('nota', 'Nota "con comillas" sin coma')
+    await ingresarMercaderia(INICIAL, datos)
+
+    const { csv } = await exportarHistorialCsv(id)
+    const filas = csv.split('\r\n')
+    expect(filas).toHaveLength(2)
+    expect(filas[1]).toContain('"Nota ""con comillas"" sin coma')
+    expect(celdasDe(filas[1])[2]).toContain('Nota "con comillas" sin coma')
   })
 
   it('un EMPLEADO también puede exportar: es de sólo lectura, sin restricción de dueño', async () => {
