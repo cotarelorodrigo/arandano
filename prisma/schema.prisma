@@ -204,6 +204,12 @@ model Articulo {
   sku           String
   nombre        String
   tipo          TipoArticulo
+  // Texto libre y no una tabla: un catálogo de local no necesita una taxonomía
+  // con integridad referencial, y una tabla obliga a un ABM que nadie pidió.
+  // La maqueta muestra dos niveles ("Accesorios · Protección"); si el dueño los
+  // quiere, los escribe en el campo. Nullable porque los artículos que ya
+  // existen no la tienen y ninguno se rompe sin ella.
+  categoria     String?
   // Decimal y nunca Float: un flotante binario no representa 0,10 y el error
   // se acumula en cada suma de una caja.
   precio        Decimal      @db.Decimal(12, 2)

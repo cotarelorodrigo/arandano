@@ -36,6 +36,7 @@ erDiagram
     text sku "único junto a tenant_id"
     text nombre
     tipo_articulo tipo
+    text categoria "opcional"
     decimal(12,2) precio
     decimal(12,3) stock
     timestamptz(3) desactivado_en "opcional"
