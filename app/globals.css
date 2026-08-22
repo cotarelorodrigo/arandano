@@ -133,13 +133,6 @@
   --border: #E3E0EC;
   --input: #CFCADD;
 
-  /* Las series del panel "Cómo entró la plata" de /ventas. Los dos en el hue
-     del arándano y separados por LUMINOSIDAD, que es la distancia que sobrevive
-     a cualquier daltonismo: en un gráfico de barras rotuladas el color no carga
-     identidad —la carga el eje—, sólo separa los tramos de la pila. */
-  --chart-1: #4A2AA5;
-  --chart-2: #8A6FD4;
-
   /* El sidebar de shadcn los referencia por nombre en sus clases, así que no
      alcanza con que los colores existan bajo otro token: tienen que existir con
      ESTOS nombres o `bg-sidebar` no resuelve a nada.

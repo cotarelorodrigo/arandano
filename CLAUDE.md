@@ -213,9 +213,14 @@ quedan abiertas se siguen encareciendo con cada mes que pasa.
   Decimal(12,2)?` existe y el ingreso de mercadería lo captura, opcional. Se
   cerró en el ciclo que construyó la pantalla que conoce ese número —el
   momento en que alguien tiene la factura del proveedor en la mano— y no
-  después, que es lo que la volvía una puerta de una sola dirección. **Nadie
-  la lee todavía**: no hay reportes de margen ni costo promedio, y eso sigue
-  siendo su propio ciclo. Lo que cambió es que el dato dejó de tirarse.
+  después, que es lo que la volvía una puerta de una sola dirección.
+  ~~**Nadie la lee todavía.**~~ **Cerrada** (2026-08-22, ciclo del rediseño de
+  inventario). El tile "Último costo" de `/inventario/[id]` es su primer
+  lector: busca el ingreso con costo cargado más reciente —no el ingreso más
+  reciente a secas, que puede no tenerlo— y calcula el margen contra el
+  precio de venta actual. Sigue sin haber reportes de margen ni costo
+  promedio agregados sobre todo el catálogo; eso sigue siendo su propio
+  ciclo, si alguna vez hace falta.
 - **La secuencia de SKU puede tener huecos, y es a propósito.** Decidido en el
   mismo ciclo (2026-08-11). `Tenant.proximoSkuArticulo` se incrementa en **su
   propia transacción comiteada**, separada de la que inserta el artículo, y no
@@ -525,8 +530,11 @@ Y del producto:
   (384 px) muestra chips de vuelto/faltante y la equivalencia en pesos de un
   pago en dólares. `/vender` es la **primera** de las diez pantallas de
   aplicación con su cuerpo tocado desde que el shell se instaló (ver la nota
-  de arriba) — las otras nueve siguen sirviendo su layout viejo con los
-  colores nuevos, cada una su propio ciclo. Ver
+  de arriba) — las demás seguían sirviendo su layout viejo con los colores
+  nuevos, cada una su propio ciclo. **Este contador ya no está al día**: con
+  `/ventas`, `/ventas/[id]`, `/inventario`, `/inventario/nuevo` e
+  `/inventario/[id]` (más abajo) van seis de las diez rediseñadas; quedan
+  `/servicio-tecnico` y sus dos pantallas más `/usuarios`. Ver
   `docs/superpowers/plans/2026-08-22-vender.md` y `docs/pantallas.md`
   (sección `/vender`) para el detalle completo de lo construido.
 
@@ -622,10 +630,7 @@ Y del producto:
   siempre. Efecto colateral: el componente dejó de necesitar `'use client'`, y
   con eso `grafico.test.tsx` dejó de ser el único archivo del repo que corría
   en jsdom —no hay nada que medir del lado del cliente, así que
-  `renderToStaticMarkup` alcanza para afirmar todo—. **`recharts` sigue en
-  `package.json` a propósito**: el ciclo de inventario tiene su propio bloque
-  de barras y es el próximo en decidir si lo sigue necesitando; recién cuando
-  ningún consumidor quede, el paquete se desinstala.
+  `renderToStaticMarkup` alcanza para afirmar todo—.
 
   **"Sin factura ARCA" es texto fijo, no leído de ningún campo**: no existe
   `model Factura` en el schema (ver *Decisiones abiertas del modelo de
@@ -633,6 +638,67 @@ Y del producto:
   el texto es exactamente cierto para todas. El disparador de cuándo deja de
   serlo: el día que ARCA se integre y exista un modelo de factura —recién ahí
   este campo pasa a leer de él, con su propia migración aditiva.
+
+  **Y el rediseño de `/inventario`, `/inventario/nuevo` e `/inventario/[id]`**
+  (2026-08-22, ciclo propio, posterior al de `/ventas`). El listado suma el
+  segmentado Todos/Productos/Servicios, la categoría de dos niveles bajo el
+  nombre y el chip "Queda poco" (umbral fijo para todo el catálogo,
+  `STOCK_BAJO_UMBRAL`, sin columna nueva en el schema). El alta pasa a tres
+  cards con tarjetas seleccionables Producto/Servicio en vez de un
+  `<select>`. La ficha gana dos columnas: a la izquierda los tiles de "En
+  stock" (pintado con `--marca`, el ancla de esta pantalla que
+  `docs/sistema-de-diseno.md` ya listaba sin que nadie la construyera),
+  "Precio de venta" y "Último costo"; a la derecha "Datos" y "Cómo se movió".
+
+  **`MovimientoStock.costoUnitario` dejó de ser un dato que nadie lee** (ver
+  *Decisiones abiertas del modelo de datos*, más arriba, donde queda cerrada
+  del todo): el tile "Último costo" es su primer lector, y el margen se
+  calcula contra el precio de venta actual, nunca contra un promedio.
+
+  **La columna "Queda" del historial se reconstruye, no se guarda.**
+  `MovimientoStock` no tiene columna de saldo por fila —`Articulo.stock` es
+  apenas el caché de la suma de sus movimientos—, así que `calcularSaldos`
+  (`app/(app)/inventario/historial.tsx`) recorre los deltas hacia atrás desde
+  el stock actual. Los motivos pasan de texto plano a chips con ícono, y
+  "Quién" + "Detalle" se funden en una sola celda cuya redacción cambia según
+  el motivo: una venta identifica a quién atendió, un ajuste a quién contó, un
+  ingreso prioriza la factura y el costo por sobre quién lo recibió.
+
+  **"Cómo se movió"** agrega seis barras con las unidades vendidas por mes,
+  **agregadas en JavaScript y no con un `$queryRaw`**: la extensión de
+  `lib/tenant/prisma.ts` intercepta operaciones de modelo para setear
+  `arandano.tenant_id`, no raw queries, y un `$queryRaw` sin esa variable
+  choca contra RLS y devuelve cero filas en silencio — el mismo hallazgo que
+  ya había dejado anotado `/ventas` para su panel de medios de pago, y que
+  este ciclo confirma que no era un caso aislado.
+
+  **"Exportar CSV" es un server action que arma el CSV en memoria y lo
+  devuelve como string**, sin librería, sin endpoint nuevo y sin streaming: el
+  botón lo convierte en una descarga con un `Blob` del lado del cliente,
+  porque un server action no puede fijar `Content-Disposition`. Las notas se
+  escapan por RFC 4180, y la acción no está restringida a dueño —es de sólo
+  lectura, de datos que la pantalla ya le muestra a cualquier sesión—.
+
+  **"Guardar cambios"/"Desactivar" (ficha) y "Cancelar"/"Guardar artículo"
+  (alta) subieron al Topbar**, como el resto de las pantallas ya rediseñadas.
+  La maqueta separa el botón (Topbar) del `<form>` con los campos (Cuerpo), y
+  eso exige que sea **un solo componente** el que llame a `useActionState` y
+  reparta `pendiente`/el estado a los dos lugares —dos componentes
+  separados, cada uno con su propio hook, hubieran dejado al botón del Topbar
+  sin enterarse nunca de que el `<form>` remoto (atado por el atributo HTML
+  `form={id}`) terminó de enviarse—. `FichaDeArticulo` y `FormularioDeAlta`
+  (`app/(app)/inventario/formularios.tsx`) son ese componente único.
+
+  **Y con este ciclo, `recharts` sale del repo entero.** El bloque de barras
+  de "Cómo se movió" —el único candidato que quedaba, según la nota del
+  rediseño de `/ventas`— se construyó con `div`s, igual que el panel de
+  medios de pago. Sin ningún consumidor real (`components/ui/chart.tsx`
+  estaba huérfano desde el rediseño de `/ventas`), se borró ese archivo, se
+  sacó `recharts` de `package.json`, y con él los tokens `--chart-1` y
+  `--chart-2` —el primero nunca tuvo consumidor propio, el segundo era la
+  serie de dólares que la maqueta nunca pidió—. La excepción de jsdom en
+  `vitest.config.mts` ya se había retirado en el ciclo de `/ventas` (arriba):
+  no había nada más que sacar ahí.
 - ~~Construir la UI de inventario.~~ **Hecho** (2026-08-11). Listado con
   buscador y paginación, alta con SKU autogenerado y stock inicial que nace
   como movimiento, ingreso de mercadería con su costo, corrección por conteo

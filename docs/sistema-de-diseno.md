@@ -147,8 +147,6 @@ profundo. Ahora el token dice sobre qué va.
 | `--destructive-soft` | `#FDE9E7` |
 | `--border` | `#E3E0EC` |
 | `--input` | `#CFCADD` |
-| `--chart-1` | `#4A2AA5` |
-| `--chart-2` | `#8A6FD4` |
 | `--sidebar` | `#FFFFFF` |
 | `--sidebar-foreground` | `#171221` |
 | `--sidebar-primary` | `#4A2AA5` |
@@ -269,9 +267,7 @@ de la decisión escrita:
 | `--destructive` sobre `--destructive-soft` | 5.67 | 4.5 | ok |
 | `--destructive` sobre `--card` | 6.62 | 4.5 | ok |
 | `--ring` sobre `--card` | 9.70 | 3.0 | ok |
-| `--chart-2` sobre `--card` | 3.96 | 3.0 | ok |
 | `--input` sobre `--card` | 1.60 | 3.0 | **excepción declarada** |
-| `--chart-1` sobre `--chart-2` | 2.45 | 3.0 | **excepción declarada** |
 
 **`--muted-foreground` es el token que más costó.** El valor de la maqueta
 (`#7A7389`) daba 4.17 sobre el fondo y 3.84 sobre el hundido: no llegaba en dos
@@ -280,26 +276,14 @@ cada tabla. Se oscureció a `#6B6478`, que deja 5.20 / 5.65 / 4.79. El cambio se
 hizo también en `design/arandano.pen`, para que la maqueta y el código no se
 separen en el primer día.
 
-**Las dos excepciones**, cada una con su razón y con lo que la haría caducar:
+**Una excepción**, con su razón y con lo que la haría caducar:
 
-1. **`--input` sobre `--card` da 1.60**, contra los 3:1 que WCAG 1.4.11 pide
-   para identificar un control. Es el mismo caso que ya traía la paleta anterior
-   (1.63) y se acepta por lo mismo: el borde tenue es deliberado, y todo campo
-   lleva `<Label>` asociado más anillo de foco de marca, así que el borde no es
-   el único indicio de que ahí hay un input. **Revisar** ante un reporte real de
-   gente que no encuentra los campos, o ante una auditoría formal.
-
-2. **`--chart-1` sobre `--chart-2` da 2.45**, y el par está acá para dejar dicho
-   que **los dos tramos no se tocan**: entre uno y otro va un separador de 2 px
-   pintado de `--card`, así que el par adyacente que el usuario mira de verdad es
-   cada tramo contra `--card`, que sí llega. El separador es load-bearing, no
-   decoración, y lo asegura un caso de `app/(app)/ventas/grafico.test.tsx`.
-
-**Lo que la paleta clara arregló solo**: la serie de dólares del gráfico
-(`--chart-2`) pasó de 2.52 a **3.96** contra la superficie. Era la excepción que
-la sección de gráficos declaraba con más incomodidad, y su propia nota decía
-*"revisar si alguna vez se define una paleta clara, donde la serie oscura pasaría
-a ser justamente la que contrasta"*. Eso pasó.
+**`--input` sobre `--card` da 1.60**, contra los 3:1 que WCAG 1.4.11 pide
+para identificar un control. Es el mismo caso que ya traía la paleta anterior
+(1.63) y se acepta por lo mismo: el borde tenue es deliberado, y todo campo
+lleva `<Label>` asociado más anillo de foco de marca, así que el borde no es
+el único indicio de que ahí hay un input. **Revisar** ante un reporte real de
+gente que no encuentra los campos, o ante una auditoría formal.
 
 ### El ticket de servicio técnico no usa tokens
 
@@ -315,59 +299,6 @@ térmica no puede quemar.
 
 **Qué la haría caducar**: que el ticket deje de imprimirse y pase a ser sólo una
 pantalla, o que aparezca una impresora a color. Ninguna de las dos está prevista.
-
-## Los colores del gráfico
-
-`--chart-1` y `--chart-2` son las dos series del panel **"Cómo entró la plata"**
-de `/ventas`: lo cobrado en pesos y lo cobrado en dólares, apilados en la misma
-barra. Son los únicos tokens del sistema donde **el color es el dato** y no la
-jerarquía — en todo el resto de la aplicación el color señala una acción o una
-superficie.
-
-| Token | Hex | Serie |
-|---|---|---|
-| `--chart-1` | `#4A2AA5` | Pesos. Es el arándano de `--primary`, con el mismo valor |
-| `--chart-2` | `#8A6FD4` | Dólares |
-
-**Las dos se separan por luminosidad, en el mismo hue.** No es fidelidad
-decorativa a la paleta monocroma: es la decisión que más protege al que mira. La
-distancia de luminosidad es la única que sobrevive a cualquier daltonismo, o sea
-que las dos barras se distinguen para todo el mundo. La alternativa se midió en
-vez de suponerse: separarlas por **hue** —un cian contra el arándano— pasaba el
-contraste contra la superficie con holgura y a cambio dejaba **ΔE 8.1 bajo
-deuteranopía**, dos barras que un daltónico no distingue. Se prefirió el par que
-todos distinguen.
-
-**Con la paleta clara se dieron vuelta, y eso arregló la excepción más
-incómoda.** Sobre fondo oscuro, separar por luminosidad obligaba a que una de
-las dos series fuera **la oscura**, y esa era la que no llegaba a 3:1 contra la
-superficie: `--chart-2` daba 2.52 y estaba declarada como excepción, con una
-nota que decía *"revisar si alguna vez se define una paleta clara, donde la
-serie oscura pasaría a ser justamente la que contrasta"*. Sobre papel, la serie
-secundaria es la **clara** y da **3.96**. La excepción dejó de existir sin que
-hubiera que aflojar nada.
-
-**Queda una, y es la de siempre**: `--chart-1` sobre `--chart-2` da 2.45, y el
-par está declarado para dejar dicho que **los dos tramos no se tocan** — entre
-uno y otro va un separador de 2 px pintado de `--card`, así que el par adyacente
-que el usuario mira de verdad es cada tramo contra `--card`. El separador es
-load-bearing, no decoración, y lo asegura un caso de
-`app/(app)/ventas/grafico.test.tsx`: borrarlo deja esta razón en falso y rompe
-el test.
-
-**La mitigación sigue puesta aunque la excepción se haya ido**, porque nunca fue
-solamente una mitigación: cada barra lleva su importe impreso al lado, la
-leyenda aparece apenas existe la segunda serie, el tooltip desglosa pesos y
-dólares, y `app/(app)/ventas/grafico.tsx` renderiza además una **tabla** con los
-mismos números — que es el componente y no un extra: recharts no dibuja nada en
-el servidor, así que sin ella el panel sería un rectángulo vacío para quien
-llegue antes de que hidrate o con el JavaScript caído.
-
-**Y no están en `@theme`**, a diferencia del resto de la paleta: no los consume
-ninguna utilidad de Tailwind sino el `color:` del `ChartConfig` de
-`components/ui/chart.tsx`, que emite `var(--chart-N)` directo. Es el mismo caso
-que `--marca`. Un token en `@theme` que nada referencia es un token muerto, y
-sumarlo ahí no compraría nada.
 
 ## Tipografía
 
@@ -849,12 +780,11 @@ son dos lugares donde el redondeo puede diferir.
 
 **Y está atado.** `test/maqueta.test.ts` compara el bloque de variables del
 `.pen` contra el `:root` del CSS en las dos direcciones, con un mapa explícito
-de equivalencias (`ar-primary` ↔ `--primary`, `--ring`, `--accent-foreground`,
-`--chart-1`) y dos listas de excepciones con su razón escrita: `SIN_TOKEN` para
-las variables de la maqueta que no son colores —las dos familias tipográficas— y
+de equivalencias (`ar-primary` ↔ `--primary`, `--ring`, `--accent-foreground`)
+y dos listas de excepciones con su razón escrita: `SIN_TOKEN` para las
+variables de la maqueta que no son colores —las dos familias tipográficas— y
 `SOLO_EN_CSS` para los tokens que se decidieron escribiendo código, que hoy son
-el hover del botón, los dos textos sobre el paño de marca y la segunda serie del
-gráfico.
+el hover del botón y los dos textos sobre el paño de marca.
 
 **Mira sólo las variables, nunca la geometría**, y eso es deliberado: un test que
 comparara posiciones o textos se rompería con cada movimiento de un frame, y un
@@ -1036,19 +966,28 @@ respuesta fuera un 404, los importes se verían anchos y el defecto parecería
 del código cuando sería del asset.
 
 **Las dos series del gráfico — miradas el 2026-08-14**, al cerrar el ciclo del
-panel "Cómo entró la plata". Confirmado a ojo lo que ningún test puede juzgar:
-que las barras tienen alto de verdad —el punto donde el `ResponsiveContainer`
-se rompería sin que jsdom lo note, porque ahí adentro mide un contenedor que no
-existe— y que el tramo de `--chart-2` se despega del fondo, que es exactamente
-el límite que su excepción de contraste declarada acepta.
+panel "Cómo entró la plata" que existía entonces. Confirmado a ojo lo que
+ningún test puede juzgar: que las barras tenían alto de verdad —el punto donde
+el `ResponsiveContainer` se rompía sin que jsdom lo notara, porque ahí adentro
+medía un contenedor que no existe— y que el tramo de `--chart-2` se despegaba
+del fondo, que era exactamente el límite que su excepción de contraste
+declarada aceptaba.
 
 **Los importes al lado de las barras quedaron pendientes de una segunda
 mirada**, y conviene que se sepa: cuando se hizo esta verificación, sólo se
-imprimían dos de los cuatro —recharts no emite rectángulo para un tramo de
-valor 0, y sin rectángulo tampoco su rótulo—. Lo levantó la review, está
-arreglado y cubierto por un caso, pero el arreglo cambió lo que se dibuja
+imprimían dos de los cuatro —recharts no emitía rectángulo para un tramo de
+valor 0, y sin rectángulo tampoco su rótulo—. Lo levantó la review, se
+arregló y quedó cubierto por un caso, pero el arreglo cambió lo que se dibujaba
 (cuatro rótulos en vez de dos, y más margen a la derecha para que el más largo
-no se corte), así que esa parte todavía no la miró nadie.
+no se cortara), así que esa parte quedó sin una segunda mirada.
+
+**Todo este bloque quedó superado, no vigente**: el panel se reescribió sin
+`recharts` (2026-08-22, `app/(app)/ventas/grafico.tsx`) —una barra `Progress`
+de shadcn por medio de pago, sin segunda serie ni apilado— y en el mismo ciclo
+se sacó `recharts` del repo entero (`components/ui/chart.tsx`, `--chart-1` y
+`--chart-2`, CLAUDE.md). Se deja el párrafo como registro de qué se verificó y
+cuándo, no como descripción del panel actual — borrarlo perdería la evidencia
+de que esta clase de verificación visual se hizo alguna vez.
 
 **Y cómo se llegó, que otra vez no fue lo obvio.** El stack de dev sirve
 `/root/arandano`, o sea la rama principal, así que una feature en un worktree

@@ -292,22 +292,32 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 
 ## `/inventario`
 
-El listado de artículos, con buscador.
+El listado de artículos, con buscador, filtro de tipo y chips de estado
+(rediseño de `design/arandano.pen`, frame `App / Inventario`).
 
 **Qué se puede hacer**
 
 - Buscar por nombre o SKU.
-- Ver stock, precio y tipo (producto o servicio).
+- Filtrar por tipo con el segmentado **Todos / Productos / Servicios**.
+- Ver stock, precio, tipo y la categoría (dos niveles, p. ej. "Accesorios ·
+  Protección" — texto libre que el dueño tipea al cargar el artículo).
 - Mostrar u ocultar los artículos desactivados.
-- Paginar de a 50.
+- Paginar de a 50, con botones numerados.
 
 **Decisiones**
 
 - El conteo de artículos con stock negativo se calcula sobre **lo que el
-  listado está mostrando**, no sobre toda la tabla: si no, el subtítulo diría
-  "3 con stock negativo" mientras la búsqueda filtrada no muestra ninguno.
-- Sólo los `PRODUCTO` cuentan para ese aviso: un servicio no lleva stock, y su
-  columna es un guion.
+  listado está mostrando** (búsqueda + tipo + desactivados), no sobre toda la
+  tabla: si no, el subtítulo diría "3 con stock negativo" mientras la búsqueda
+  filtrada no muestra ninguno. Con la tab "Servicios" activa el conteo se
+  fuerza a 0 sin consultar — ningún servicio tiene stock.
+- La celda de estado (`chip-estado.tsx`) es una de tres, con prioridad fija:
+  **Desactivado** gana siempre sobre **Stock negativo** o **Queda poco** —son
+  historia en ese punto, no una alerta de reponer—, y un servicio nunca lleva
+  chip de stock. "Queda poco" usa un umbral fijo para todo el catálogo
+  (`STOCK_BAJO_UMBRAL`, hoy 5 unidades): el modelo no tiene un umbral por
+  artículo, así que uno solo para todos es la opción barata frente a una
+  migración que este ciclo no toma.
 - La baja es **lógica** (`desactivadoEn`), nunca un `DELETE`: un artículo
   borrado se llevaría puesto el historial de las ventas que lo incluyen.
 - `?p` se trunca y se limita: `?p=2.3` daría un `skip` con decimales y
@@ -316,15 +326,20 @@ El listado de artículos, con buscador.
 
 ## `/inventario/nuevo`
 
-El alta de un artículo.
+El alta de un artículo, en tres cards: qué se está cargando, sus datos y el
+stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
 
 **Acciones**: `altaArticulo`.
 
 **Qué se puede hacer**
 
-- Crear un producto (con stock) o un servicio (sin stock).
-- Dejar el SKU vacío y que se genere solo.
-- Cargar stock inicial, que nace como movimiento y no como un número suelto.
+- Elegir Producto o Servicio con dos tarjetas seleccionables (no un
+  `<select>`): un servicio oculta la card de stock inicial entera.
+- Cargar nombre, categoría (opcional) y precio.
+- Dejar el SKU vacío y que se genere solo, con el próximo código libre
+  mostrado como ayuda.
+- Cargar stock inicial y su costo unitario, que nace como movimiento y no como
+  un número suelto.
 
 **Decisiones**
 
@@ -338,24 +353,38 @@ El alta de un artículo.
   teléfono.
 - El stock inicial entra como `MovimientoStock`, así que el historial del
   artículo arranca explicando de dónde salió cada unidad.
-- El encabezado (`components/shell/encabezado.tsx`, ciclo del shell) lleva el
-  subtítulo fijo "Se agrega al catálogo del local": no depende de ningún dato
-  de la pantalla, así que no hace falta una consulta para mostrarlo.
+- **"Cancelar" y "Guardar artículo" viven en el Topbar**, no al pie del
+  formulario: el `<form>` envuelve encabezado y cuerpo por igual
+  (`className="contents"`, sin alterar el layout de `SidebarInset`) porque el
+  botón que dispara vive arriba y el HTML exige que sea descendiente del
+  `<form>`. `FormularioDeAlta` (`formularios.tsx`) arma la pantalla entera,
+  ya no sólo el cuerpo.
 
 ## `/inventario/[id]`
 
-La ficha de un artículo: editarlo, moverle el stock y ver su historial.
+La ficha de un artículo, en dos columnas: a la izquierda las métricas, mover
+stock y el historial; a la derecha los datos editables y "Cómo se movió"
+(`design/arandano.pen`, frame `App / Artículo ficha`).
 
 **Acciones**: `guardarArticulo`, `ingresarMercaderia`, `corregirPorConteo`,
-`bajaArticulo`, `reactivarArticuloAccion`.
+`bajaArticulo`, `reactivarArticuloAccion`, `exportarHistorialCsv`.
 
 **Qué se puede hacer**
 
-- Editar nombre y precio.
+- Ver tres tiles: **En stock** (pintado con `--marca`, el ancla de esta
+  pantalla), **Precio de venta** (con hace cuánto se actualizó) y **Último
+  costo** (con el margen contra el precio actual). Un servicio sólo muestra el
+  de precio.
+- Editar nombre, categoría, precio y código desde la card "Datos".
 - **Ingresar mercadería** con su costo unitario y una nota (factura, proveedor).
 - **Corregir por conteo**: se escribe el stock contado, no el delta.
 - Desactivar y reactivar el artículo.
-- Ver el historial completo de movimientos.
+- Ver el historial completo de movimientos, con chip de motivo, la celda
+  "Detalle" (combina quién y qué, según el motivo) y la columna **Queda**
+  (el saldo después de cada movimiento).
+- Ver **"Cómo se movió"**: seis barras con las unidades vendidas por mes.
+- **Exportar CSV** con el historial completo (sin el límite de la tabla en
+  pantalla).
 
 **Decisiones**
 
@@ -363,10 +392,35 @@ La ficha de un artículo: editarlo, moverle el stock y ver su historial.
   transacción, contra el stock del momento**. Si lo calculara el navegador, una
   venta ocurrida entre que se abrió la pantalla y se apretó el botón quedaría
   pisada.
-- El costo unitario del ingreso es **opcional** y hoy **nadie lo lee**: no hay
-  reportes de margen todavía. Se captura igual porque el momento de conocerlo es
-  cuando alguien tiene la factura del proveedor en la mano — después no se puede
-  backfillear.
+- **El costo unitario del ingreso dejó de ser un dato que nadie lee.** Es
+  opcional, y el tile "Último costo" es su primer lector: busca el ingreso con
+  costo cargado más reciente (no el ingreso más reciente a secas, que puede no
+  tenerlo) y calcula el margen contra el precio de venta actual. Sin ningún
+  ingreso con costo, el tile muestra "—", nunca un número inventado.
+- **La columna "Queda" se reconstruye, no se guarda.** `MovimientoStock` no
+  tiene columna de saldo por fila, y `Articulo.stock` es apenas el caché de la
+  suma de sus movimientos. `calcularSaldos` (`historial.tsx`) recorre los
+  deltas hacia atrás desde el stock actual — ver el comentario de esa función
+  antes de sumarle una columna nueva para "optimizarla".
+- **"Cómo se movió" se agrega en JavaScript, no con `$queryRaw`**: la
+  extensión de `lib/tenant/prisma.ts` intercepta operaciones de modelo para
+  setear `arandano.tenant_id`, no raw queries — un `$queryRaw` sin esa
+  variable de sesión choca contra RLS y devuelve cero filas, en silencio
+  (mismo hallazgo que ya dejó anotado `/ventas` para su panel de medios).
+- **"Exportar CSV" es un server action que arma el CSV en memoria** y lo
+  devuelve como string — no hay librería, endpoint nuevo ni streaming. El
+  botón lo convierte en una descarga con un `Blob` del lado del cliente,
+  porque un server action no puede fijar `Content-Disposition`. Las notas se
+  escapan por RFC 4180 (comillas y comas), y no está restringido a dueño: es
+  de sólo lectura, de datos que la pantalla ya le muestra a cualquier sesión.
+- **"Guardar cambios" y "Desactivar"/"Reactivar" viven en el Topbar.** Como el
+  botón está lejos del `<form>` que dispara (el de "Guardar cambios" en la
+  card "Datos", el de "Desactivar" invisible), cada uno se asocia por el
+  atributo HTML `form={id}`. Los dos hooks de `useActionState` viven en un
+  único componente (`FichaDeArticulo`, `formularios.tsx`) que arma encabezado
+  y cuerpo juntos — repartir el hook entre dos componentes separados hubiera
+  dejado el botón del Topbar sin enterarse nunca de que el `<form>` remoto
+  terminó de enviarse.
 - Los movimientos llevan el motivo (`VENTA`, `ANULACION_VENTA`, `AJUSTE`,
   `INGRESO`). Sumar un motivo es una migración aditiva: es el punto de extensión
   que el núcleo le promete a los módulos.
