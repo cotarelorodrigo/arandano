@@ -60,8 +60,19 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   'Valor de tile': ['app/(app)/ventas/tipografia.module.css'],
   'Monto de tabla': ['app/(app)/ventas/tipografia.module.css'],
   'Banda de Total': ['app/(app)/ventas/tipografia.module.css'],
-  'Número de paginación': ['app/(app)/ventas/tipografia.module.css'],
+  // Mismo rótulo en negrita que la fila de /ventas (el texto entre `**` no
+  // lleva el "— /ventas"/"— /inventario" del final): las dos pantallas
+  // comparten el nombre del rol, cada una con su propio módulo, así que el
+  // arreglo suma el segundo archivo en vez de abrir una segunda clave.
+  'Número de paginación': [
+    'app/(app)/ventas/tipografia.module.css',
+    'app/(app)/inventario/tipografia.module.css',
+  ],
   Cotización: ['app/(app)/ventas/tipografia.module.css'],
+  // Rediseño de /inventario (Task 2): mismo motivo que Cobro/los roles de
+  // /ventas de arriba — sin font-stretch propio, así que sólo hace falta acá
+  // para que el chequeo de "consumidor fantasma" no lo marque.
+  'Código/precio/stock de tabla': ['app/(app)/inventario/tipografia.module.css'],
 }
 
 /** Rol → `font-stretch`, leído de la tabla normativa entre marcadores. */

@@ -437,6 +437,8 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | **Banda de Total** — pie de la tabla "Qué se vendió" en /ventas/[id] | Archivo | 22 px | 600, `tabular-nums` |
 | **Número de paginación** — /ventas | Archivo | 13 px | 600 |
 | **Cotización** — columna de la tabla "Cómo se pagó" en /ventas/[id] | Archivo | 14 px | 400, `tabular-nums` |
+| **Código/precio/stock de tabla** — listado de /inventario | Archivo | 14 px (heredado de `text-sm` de `<Table>`, sin tamaño propio) | 400 a 700 según la columna y el estado de la fila, `tabular-nums` |
+| **Número de paginación** — /inventario | Archivo | 13 px | 600 |
 
 <!-- escala:fin -->
 

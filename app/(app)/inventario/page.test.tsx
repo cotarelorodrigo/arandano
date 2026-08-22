@@ -1,17 +1,143 @@
-// Whitebox sobre el FUENTE, mismo criterio que
-// app/(app)/ventas/[id]/page.test.tsx: page.tsx es un Server Component async
-// que abre sesión y consulta Prisma, y este repo no tiene el arnés para
-// montarlo fuera de un request real. La cobertura de comportamiento real de
-// `categoria` de punta a punta ya la dan test/inventario.test.ts (la
-// columna) y acciones.test.ts (el alta/edición contra la base); esto sólo
-// cablea que la pantalla PIDE y MUESTRA el dato, que es lo que un refactor
-// silencioso podría perder sin que ningún otro test lo note.
+// Puro: importa las funciones exportadas de page.tsx, nunca el componente de
+// página en sí — es un Server Component async que abre sesión y consulta
+// Prisma, y este repo no tiene el arnés para montarlo fuera de un request
+// real (mismo criterio que app/(app)/ventas/page.test.tsx). La única
+// excepción es el bloque final, que lee el FUENTE como texto (mismo criterio
+// que app/(app)/ventas/[id]/page.test.tsx) para cablear la categoría, que
+// ningún test puro puede ejercitar sin una sesión real.
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { renderToStaticMarkup } from 'react-dom/server'
+import {
+  tipoDeQuery, construirDonde, hrefListado, ventanaDePaginas, FiltrosDeInventario,
+} from './page'
 
-const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
+describe('tipoDeQuery', () => {
+  it('reconoce PRODUCTO y SERVICIO', () => {
+    expect(tipoDeQuery('PRODUCTO')).toBe('PRODUCTO')
+    expect(tipoDeQuery('SERVICIO')).toBe('SERVICIO')
+  })
+
+  it('cualquier otra cosa es "Todos": sin filtro, no un error', () => {
+    expect(tipoDeQuery(undefined)).toBeNull()
+    expect(tipoDeQuery('')).toBeNull()
+    // Un query string escrito a mano no puede tirar un 500, mismo criterio
+    // que el clamp de `?p`.
+    expect(tipoDeQuery('CUALQUIER_COSA')).toBeNull()
+  })
+})
+
+describe('construirDonde', () => {
+  it('sin nada tildado, excluye los desactivados y no filtra por tipo', () => {
+    const donde = construirDonde({ busqueda: '', verInactivos: false, tipo: null })
+    expect(donde).toMatchObject({ desactivadoEn: null })
+    expect(donde).not.toHaveProperty('tipo')
+    expect(donde).not.toHaveProperty('OR')
+  })
+
+  // "Ver desactivados" tildado: el chip de Desactivado sólo puede aparecer en
+  // el listado si esta rama es la que corre — es la otra mitad del contrato
+  // que chip-estado.test.tsx no puede cablear solo.
+  it('con "ver desactivados", no excluye nada por desactivadoEn', () => {
+    const donde = construirDonde({ busqueda: '', verInactivos: true, tipo: null })
+    expect(donde).not.toHaveProperty('desactivadoEn')
+  })
+
+  it('cada tab filtra por su tipo', () => {
+    expect(construirDonde({ busqueda: '', verInactivos: false, tipo: 'PRODUCTO' })).toMatchObject({
+      tipo: 'PRODUCTO',
+    })
+    expect(construirDonde({ busqueda: '', verInactivos: false, tipo: 'SERVICIO' })).toMatchObject({
+      tipo: 'SERVICIO',
+    })
+  })
+
+  it('la búsqueda arma el OR de nombre y sku', () => {
+    const donde = construirDonde({ busqueda: 'vidrio', verInactivos: false, tipo: null })
+    expect(donde).toMatchObject({
+      OR: [
+        { nombre: { contains: 'vidrio', mode: 'insensitive' } },
+        { sku: { contains: 'vidrio', mode: 'insensitive' } },
+      ],
+    })
+  })
+})
+
+describe('hrefListado', () => {
+  it('sin ningún filtro, apunta a /inventario pelado', () => {
+    expect(hrefListado({ busqueda: '', verInactivos: false, tipo: null })).toBe('/inventario')
+  })
+
+  // La tab activa tiene que sobrevivir a un recarga: como vive en la URL y no
+  // en estado de cliente, "sobrevivir a recargar" es simplemente que esta
+  // función la incluya en el href.
+  it('la tab activa viaja en la URL', () => {
+    const href = hrefListado({ busqueda: '', verInactivos: false, tipo: 'SERVICIO' })
+    expect(href).toContain('tipo=SERVICIO')
+  })
+
+  it('preserva la búsqueda y "ver desactivados" al cambiar de tab', () => {
+    const href = hrefListado({ busqueda: 'vidrio', verInactivos: true, tipo: 'PRODUCTO' })
+    expect(href).toContain('q=vidrio')
+    expect(href).toContain('inactivos=1')
+    expect(href).toContain('tipo=PRODUCTO')
+  })
+
+  it('la página sólo aparece si es mayor a 1', () => {
+    expect(hrefListado({ busqueda: '', verInactivos: false, tipo: null, pagina: 1 })).toBe('/inventario')
+    expect(hrefListado({ busqueda: '', verInactivos: false, tipo: null, pagina: 2 })).toContain('p=2')
+  })
+})
+
+describe('ventanaDePaginas', () => {
+  it('centra la ventana en la página actual', () => {
+    expect(ventanaDePaginas(5, 10)).toEqual([3, 4, 5, 6, 7])
+  })
+
+  it('sin páginas, ventana vacía', () => {
+    expect(ventanaDePaginas(1, 0)).toEqual([])
+  })
+})
+
+describe('FiltrosDeInventario', () => {
+  it('la tab activa sale de la URL: "Productos" activo si tipo=PRODUCTO', () => {
+    const html = renderToStaticMarkup(
+      <FiltrosDeInventario busqueda="" verInactivos={false} tipo="PRODUCTO" />,
+    )
+    // asChild funde el <a> de Link con el <button> del trigger en un solo
+    // elemento: data-state="active" y el href conviven en la misma etiqueta.
+    expect(html).toMatch(/data-state="active"[^>]*href="\/inventario\?tipo=PRODUCTO"[^>]*>Productos/)
+    // Y las otras dos tabs, inactivas.
+    expect(html).toMatch(/data-state="inactive"[^>]*href="\/inventario"[^>]*>Todos/)
+    expect(html).toMatch(/data-state="inactive"[^>]*href="\/inventario\?tipo=SERVICIO"[^>]*>Servicios/)
+  })
+
+  it('cada tab arma su propio href, preservando búsqueda y desactivados', () => {
+    const html = renderToStaticMarkup(
+      <FiltrosDeInventario busqueda="vidrio" verInactivos={true} tipo={null} />,
+    )
+    expect(html).toContain('href="/inventario?q=vidrio&amp;inactivos=1&amp;tipo=SERVICIO"')
+  })
+
+  it('el tipo activo viaja como campo oculto, para que el buscador no lo pierda', () => {
+    const html = renderToStaticMarkup(
+      <FiltrosDeInventario busqueda="" verInactivos={false} tipo="SERVICIO" />,
+    )
+    expect(html).toContain('type="hidden"')
+    expect(html).toMatch(/name="tipo"\s+value="SERVICIO"/)
+  })
+
+  it('con "Todos" activo no hay ningún campo oculto de tipo que mandar', () => {
+    const html = renderToStaticMarkup(
+      <FiltrosDeInventario busqueda="" verInactivos={false} tipo={null} />,
+    )
+    expect(html).not.toContain('name="tipo"')
+  })
+})
 
 describe('el listado pide y muestra la categoría (Task 1 del rediseño)', () => {
+  const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
+
   it('el select de Prisma trae la columna categoria', () => {
     expect(FUENTE).toMatch(/select:\s*\{[\s\S]*?categoria:\s*true/)
   })
