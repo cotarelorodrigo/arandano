@@ -1,5 +1,3 @@
-import Link from 'next/link'
-import { Encabezado } from '@/components/shell/encabezado'
 import { exigirDuenio } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { FormularioDeAlta } from '../formularios'
@@ -39,21 +37,10 @@ export default async function ArticuloNuevo() {
     select: { proximoSkuArticulo: true },
   })
 
-  return (
-    <>
-      <Encabezado titulo="Artículo nuevo" subtitulo="Se agrega al catálogo del local" />
-      {/* alignItems center (design/arandano.pen, nodo `g9JyG`): el formulario
-          queda centrado en un ancho fijo, no ocupa todo el ancho disponible —
-          único Cuerpo de las tres pantallas de este ciclo con esta
-          propiedad. */}
-      <div className="flex flex-col items-center gap-4 p-6">
-        <div className="flex w-[760px] flex-col gap-4">
-          <Link href="/inventario" className="block text-sm underline">
-            ← Inventario
-          </Link>
-          <FormularioDeAlta proximoSku={formatearProximoSku(tenant?.proximoSkuArticulo ?? 1)} />
-        </div>
-      </div>
-    </>
-  )
+  // El título, el subtítulo, el layout centrado de 760px y el "Cancelar" que
+  // reemplaza al viejo link "← Inventario" viven ahora en FormularioDeAlta:
+  // "Guardar artículo" subió al Topbar (design/arandano.pen, frame `B4O7t`) y
+  // ese botón necesita el mismo <form> que envuelve el <Encabezado>, así que
+  // el componente entero pasó a armar la pantalla completa. Ver su comentario.
+  return <FormularioDeAlta proximoSku={formatearProximoSku(tenant?.proximoSkuArticulo ?? 1)} />
 }

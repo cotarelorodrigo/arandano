@@ -19,15 +19,23 @@ async function renderAlta() {
   return renderToStaticMarkup(<FormularioDeAlta proximoSku="A-0043" />)
 }
 
-async function renderEdicion(categoria: string | null) {
-  const { FormularioDeEdicion } = await import('./formularios')
+async function renderFicha(
+  categoria: string | null,
+  extra: Partial<{ desactivado: boolean; esDuenio: boolean }> = {},
+) {
+  const { FichaDeArticulo } = await import('./formularios')
   return renderToStaticMarkup(
-    <FormularioDeEdicion
+    <FichaDeArticulo
+      titulo="Vidrio templado 9H"
+      subtitulo="SKU 000412 · Producto"
       articuloId="a1"
       nombre="Vidrio templado 9H"
       sku="000412"
       precio="12000"
       categoria={categoria}
+      desactivado={extra.desactivado ?? false}
+      esDuenio={extra.esDuenio ?? true}
+      columnaIzquierda={<div>columna izquierda</div>}
     />,
   )
 }
@@ -112,9 +120,9 @@ describe('FormularioDeAlta', () => {
   })
 })
 
-describe('FormularioDeEdicion', () => {
+describe('FichaDeArticulo', () => {
   it('tiene un campo de categoría prellenado con el valor actual', async () => {
-    const html = await renderEdicion('Accesorios · Protección')
+    const html = await renderFicha('Accesorios · Protección')
     expect(html).toContain('name="categoria"')
     expect(html).toContain('value="Accesorios · Protección"')
   })
@@ -122,8 +130,75 @@ describe('FormularioDeEdicion', () => {
   // Nullable en el schema: un artículo sin categoría no puede romper el
   // formulario de edición.
   it('sin categoría, el campo queda vacío y no revienta', async () => {
-    const html = await renderEdicion(null)
+    const html = await renderFicha(null)
     expect(html).toContain('name="categoria"')
     expect(html).not.toContain('value="null"')
+  })
+
+  // Task 4 del rediseño: "Guardar cambios" y "Desactivar" suben al Topbar
+  // (design/arandano.pen, frame `y4tEb`), pero el <form> real —con los
+  // campos— sigue en el Cuerpo. El único jeroglífico que los ata es el
+  // atributo HTML `form`, y fijar el NOMBRE del argumento no fija su VALOR:
+  // hay que comprobar que sea el MISMO string en el botón y en el <form>.
+  describe('los botones del Topbar apuntan al <form> del Cuerpo por id', () => {
+    it('"Guardar cambios" referencia el id del <form> que trae el campo "nombre"', async () => {
+      const html = await renderFicha(null)
+      const botonGuardar = html.match(
+        /<button[^>]*form="([^"]+)"[^>]*>(?:(?!<\/button>)[\s\S])*Guardar cambios/,
+      )
+      expect(
+        botonGuardar,
+        'no se encontró el botón "Guardar cambios" con su atributo form',
+      ).not.toBeNull()
+      // El <form> que edita es el único de los dos que trae el campo
+      // "nombre" — el otro es el <form> oculto de baja, que sólo lleva el
+      // articuloId. Buscarlo por ESE contenido, y no asumir "cualquier form
+      // de la ficha", es lo que distingue apuntar al form correcto de
+      // apuntar al que sea.
+      const formConNombre = html.match(/<form id="([^"]+)"[^>]*>(?:(?!<\/form>)[\s\S])*name="nombre"/)
+      expect(formConNombre, 'no se encontró el <form> que trae el campo nombre').not.toBeNull()
+      expect(botonGuardar![1]).toBe(formConNombre![1])
+    })
+
+    it('"Desactivar" referencia el id del <form> oculto que da de baja', async () => {
+      const html = await renderFicha(null, { desactivado: false })
+      const botonDesactivar = html.match(
+        /<button[^>]*form="([^"]+)"[^>]*>(?:(?!<\/button>)[\s\S])*Desactivar/,
+      )
+      expect(botonDesactivar, 'no se encontró el botón "Desactivar" con su atributo form').not.toBeNull()
+      const formOculto = html.match(/<form id="([^"]+)"[^>]*class="hidden"/)
+      expect(formOculto, 'no se encontró el <form> oculto de baja').not.toBeNull()
+      expect(botonDesactivar![1]).toBe(formOculto![1])
+    })
+
+    // El id del botón de Guardar y el del form de Baja tienen que ser
+    // DISTINTOS: si por error compartieran el mismo string, "Guardar cambios"
+    // dispararía el <form> equivocado (o al revés).
+    it('el form de editar y el form de baja no comparten id', async () => {
+      const html = await renderFicha(null)
+      const formularios = [...html.matchAll(/<form id="([^"]+)"/g)].map((m) => m[1])
+      expect(new Set(formularios).size).toBe(formularios.length)
+    })
+  })
+
+  it('reactivado (desactivado=true) el botón dice "Reactivar", no "Desactivar"', async () => {
+    const html = await renderFicha(null, { desactivado: true })
+    expect(html).toContain('Reactivar')
+    expect(html).not.toContain('>Desactivar<')
+  })
+
+  // Sin esDuenio no hay nada que editar ni que desactivar: ni el botón del
+  // Topbar, ni el <form> oculto de baja, ni la card "Datos".
+  it('sin esDuenio no renderiza ninguna acción de edición', async () => {
+    const html = await renderFicha(null, { esDuenio: false })
+    expect(html).not.toContain('Guardar cambios')
+    expect(html).not.toContain('Desactivar')
+    expect(html).not.toContain('Datos')
+    expect(html).not.toMatch(/<form id="form-baja-articulo"/)
+  })
+
+  it('la columna izquierda que arma page.tsx se renderiza tal cual', async () => {
+    const html = await renderFicha(null)
+    expect(html).toContain('columna izquierda')
   })
 })
