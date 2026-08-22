@@ -106,6 +106,17 @@ model Tenant {
   proximoSkuArticulo Int          @default(1) @map("proximo_sku_articulo")
   // El tercer correlativo por tenant. Va SIN huecos, como el de ventas.
   proximoNumeroOrden Int          @default(1) @map("proximo_numero_orden")
+  // A cuánto está el dólar EN ESTE LOCAL, hoy. Lo fija el dueño.
+  //
+  // No duplica a Pago.cotizacion: aquélla es a cuánto se cobró UNA venta, es
+  // histórica y no se toca nunca más. Ésta es el precio de hoy, y cambia. Un
+  // ciclo futuro que quiera "unificarlas" estaría borrando la diferencia entre
+  // lo que valió y lo que vale.
+  cotizacionUsd      Decimal?     @map("cotizacion_usd") @db.Decimal(12, 2)
+  // De cuándo es la de arriba. La maqueta no lo dibuja y va igual: un dólar en
+  // el header sin saber de cuándo es, es peor que no mostrarlo — el que cobra
+  // no tiene forma de saber si está mirando el de hoy o el de la semana pasada.
+  cotizacionUsdEn    DateTime?    @map("cotizacion_usd_en") @db.Timestamptz(3)
   creadoEn           DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn      DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
@@ -246,11 +257,11 @@ model Articulo {
 // tengo 3 y no 5", que es la pregunta que un dueño hace cuando el inventario no
 // le cierra.
 model MovimientoStock {
-  id         String           @id @default(uuid(7)) @db.Uuid
-  tenantId   String           @map("tenant_id") @db.Uuid
-  articuloId String           @map("articulo_id") @db.Uuid
+  id            String           @id @default(uuid(7)) @db.Uuid
+  tenantId      String           @map("tenant_id") @db.Uuid
+  articuloId    String           @map("articulo_id") @db.Uuid
   // Con signo: negativo descuenta, positivo ingresa.
-  delta      Decimal          @db.Decimal(12, 3)
+  delta         Decimal          @db.Decimal(12, 3)
   // El costo del momento, no el actual. Es la única puerta de una sola
   // dirección que tenía el modelo: si un artículo se compró a 100 y hoy vale
   // 180, la venta de marzo se midió contra 100, y sin esta columna no hay dato
@@ -262,12 +273,12 @@ model MovimientoStock {
   // mercadería la escribe, y también ahí es opcional. Queda null en las ventas,
   // en las anulaciones y en las correcciones por conteo.
   costoUnitario Decimal?         @map("costo_unitario") @db.Decimal(12, 2)
-  motivo     MotivoMovimiento
+  motivo        MotivoMovimiento
   // Null en AJUSTE e INGRESO, que no vienen de una venta.
-  ventaId    String?          @map("venta_id") @db.Uuid
-  usuarioId  String           @map("usuario_id") @db.Uuid
-  nota       String?
-  creadoEn   DateTime         @default(now()) @map("creado_en") @db.Timestamptz(3)
+  ventaId       String?          @map("venta_id") @db.Uuid
+  usuarioId     String           @map("usuario_id") @db.Uuid
+  nota          String?
+  creadoEn      DateTime         @default(now()) @map("creado_en") @db.Timestamptz(3)
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   // Restrict y no Cascade: borrar un artículo no puede borrar la historia de lo
@@ -282,9 +293,9 @@ model MovimientoStock {
 }
 
 model Venta {
-  id           String    @id @default(uuid(7)) @db.Uuid
-  tenantId     String    @map("tenant_id") @db.Uuid
-  numero       Int
+  id                String    @id @default(uuid(7)) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  numero            Int
   // La clave que hace idempotente al cobro. La genera el punto de venta una vez
   // por venta y la manda escondida; si el mismo submit llega dos veces —doble
   // click, F5 sobre el POST, reintento de red— la segunda choca contra el
@@ -297,16 +308,16 @@ model Venta {
   claveIdempotencia String?   @map("clave_idempotencia")
   // Opcional: la venta de mostrador, sin cliente identificado, es la mayoría de
   // las ventas de un local.
-  clienteId    String?   @map("cliente_id") @db.Uuid
-  usuarioId    String    @map("usuario_id") @db.Uuid
+  clienteId         String?   @map("cliente_id") @db.Uuid
+  usuarioId         String    @map("usuario_id") @db.Uuid
   // En pesos. Lo calcula el motor sumando los ítems; no llega de afuera.
-  total        Decimal   @db.Decimal(12, 2)
+  total             Decimal   @db.Decimal(12, 2)
   // La venta anulada NO se borra: sus ítems y su total quedan intactos porque
   // el historial tiene que poder responder qué se cobró, y cuando llegue ARCA
   // ésta va a ser el comprobante que necesita su nota de crédito.
-  anuladaEn    DateTime? @map("anulada_en") @db.Timestamptz(3)
-  anuladaPorId String?   @map("anulada_por_id") @db.Uuid
-  creadoEn     DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
+  anuladaEn         DateTime? @map("anulada_en") @db.Timestamptz(3)
+  anuladaPorId      String?   @map("anulada_por_id") @db.Uuid
+  creadoEn          DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
 
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   cliente    Cliente? @relation(fields: [clienteId], references: [id], onDelete: Restrict)
@@ -408,12 +419,12 @@ model Caja {
 }
 
 model OrdenDeTrabajo {
-  id       String @id @default(uuid(7)) @db.Uuid
-  tenantId String @map("tenant_id") @db.Uuid
+  id                String  @id @default(uuid(7)) @db.Uuid
+  tenantId          String  @map("tenant_id") @db.Uuid
   // Sin huecos, por tenant: es el número que el cliente lee del ticket y dice
   // por teléfono. Mismo mecanismo que Venta.numero, y la decisión INVERSA a la
   // de proximoSkuArticulo, que sí tolera huecos porque un SKU no se recita.
-  numero   Int
+  numero            Int
   // El doble click acá no cobra dos veces: imprime dos tickets con números
   // distintos para un solo equipo, y el cliente se lleva uno de los dos.
   claveIdempotencia String? @map("clave_idempotencia")
@@ -424,10 +435,10 @@ model OrdenDeTrabajo {
   recibidaPorId String      @map("recibida_por_id") @db.Uuid
   estado        EstadoOrden @default(RECIBIDO)
 
-  equipoMarca  String  @map("equipo_marca")
-  equipoModelo String  @map("equipo_modelo")
+  equipoMarca     String  @map("equipo_marca")
+  equipoModelo    String  @map("equipo_modelo")
   // IMEI o número de serie. Opcional: hay equipos que entran sin encender.
-  equipoSerie  String? @map("equipo_serie")
+  equipoSerie     String? @map("equipo_serie")
   // Texto plano y legible a propósito: el técnico tiene que USARLA para probar
   // que el arreglo funcionó, no compararla, así que hashearla no es una opción.
   // NO se imprime nunca, ni en la copia del local — lo asegura un test.

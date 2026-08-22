@@ -156,6 +156,8 @@ erDiagram
     integer proximo_numero_venta
     integer proximo_sku_articulo
     integer proximo_numero_orden
+    decimal(12,2) cotizacion_usd "opcional"
+    timestamptz(3) cotizacion_usd_en "opcional"
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
