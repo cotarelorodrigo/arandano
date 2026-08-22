@@ -122,6 +122,7 @@ model Tenant {
   verificaciones Verification[]
   ordenes        OrdenDeTrabajo[]
   eventosOrden   EventoOrden[]
+  cajas          Caja[]
 
   @@map("tenants")
 }
@@ -174,6 +175,8 @@ model User {
   ordenesRecibidas OrdenDeTrabajo[]  @relation("OrdenesRecibidas")
   ordenesAnuladas  OrdenDeTrabajo[]  @relation("OrdenesAnuladas")
   eventosOrden     EventoOrden[]
+  cajasAbiertas    Caja[]            @relation("CajasAbiertas")
+  cajasCerradas    Caja[]            @relation("CajasCerradas")
 
   // Por tenant y no global: la misma persona puede trabajar en dos negocios.
   @@unique([tenantId, email])
@@ -370,6 +373,38 @@ model Pago {
   // bloqueo sobre datos de clientes.
   @@index([tenantId, moneda, creadoEn])
   @@map("pagos")
+}
+
+// La caja del turno: quién la abrió, con cuánto, y quién la cerró.
+//
+// Lo que NO tiene, a propósito: arqueo, movimientos de efectivo y cuadre contra
+// las ventas del turno. Eso es la pieza 6 del roadmap y su propio ciclo; acá
+// entra sólo lo que la maqueta muestra (el chip "Caja abierta" del header de
+// /vender), para que ese chip diga la verdad en vez de estar pintado.
+model Caja {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+
+  abiertaEn    DateTime @default(now()) @map("abierta_en") @db.Timestamptz(3)
+  abiertaPorId String   @map("abierta_por_id") @db.Uuid
+  // Con cuánto efectivo arranca el turno. Decimal y nunca Float: un flotante
+  // binario no representa 0,10 y el error se acumula en cada suma.
+  saldoInicial Decimal  @map("saldo_inicial") @db.Decimal(12, 2)
+
+  // Nullable es lo que define "abierta": la caja del turno en curso es la que
+  // tiene esto en NULL, y el índice único parcial de la migración usa
+  // exactamente esa condición para que no haya dos.
+  cerradaEn    DateTime? @map("cerrada_en") @db.Timestamptz(3)
+  cerradaPorId String?   @map("cerrada_por_id") @db.Uuid
+
+  creadoEn DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  abiertaPor User   @relation("CajasAbiertas", fields: [abiertaPorId], references: [id], onDelete: Restrict)
+  cerradaPor User?  @relation("CajasCerradas", fields: [cerradaPorId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, abiertaEn])
+  @@map("cajas")
 }
 
 model OrdenDeTrabajo {
