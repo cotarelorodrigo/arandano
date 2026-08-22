@@ -210,6 +210,25 @@ export function resumenDelCarrito(articulos: number, unidadesMilesimas: number):
 }
 
 /**
+ * Las unidades totales del carrito, en milésimas: la suma de cantidades de
+ * TODAS las líneas, no la cantidad de líneas (eso ya lo da `lineas.length`,
+ * el otro término de `resumenDelCarrito`). Una línea inválida (NaN) suma 0
+ * acá — no puede envenenar el conteo entero, a diferencia de `totalCentavos`,
+ * que si es el precio de esa línea el que importa se vuelve "—" más abajo.
+ *
+ * Extraída como función pura por el mismo motivo que `resumenDelCarrito`
+ * arriba: la review final de esta task encontró que forzar este resultado a
+ * una constante (0), escrito inline en el cuerpo del componente sin nombre
+ * propio, dejaba los tests de entonces en verde — el cableado que SÍ se
+ * probaba (`resumenDelCarrito(lineas.length, unidadesMilesimas)`, el caso de
+ * abajo) sigue intacto aunque la cuenta de adentro esté rota, porque ese
+ * caso nunca mira DE DÓNDE sale el segundo argumento.
+ */
+export function unidadesDelCarrito(enCentavos: { cantidadMilesimas: number }[]): number {
+  return enCentavos.reduce((acc, l) => acc + (Number.isNaN(l.cantidadMilesimas) ? 0 : l.cantidadMilesimas), 0)
+}
+
+/**
  * Cuántos pesos entran por un pago en dólares, para el renglón "Entran $X"
  * que sólo se muestra bajo un pago en USD (design/arandano.pen, nodo
  * `OTlAa`).
@@ -239,6 +258,25 @@ export function entranPesosCentavos(montoUsd: string, cotizacion: string): numbe
  */
 export function puedeMostrarVuelto(esEfectivoArs: boolean, hayFaltante: boolean): boolean {
   return esEfectivoArs && !hayFaltante
+}
+
+/**
+ * Si la VENTA completa tiene faltante, dado cuánto falta en centavos.
+ *
+ * NaN (un monto a medio tipear en CUALQUIER pago) cuenta como "sí hay
+ * faltante" — "no se sabe si cierra" no es licencia para mostrarle vuelto a
+ * nadie, mismo criterio conservador que ya usa `hayLineaInvalida` en el
+ * cuerpo de `PuntoDeVenta`.
+ *
+ * Extraída como función pura por el mismo motivo que `pasoDeCantidad` o
+ * `resumenDelCarrito` más arriba: la review final de esta task encontró que
+ * invertir esta cuenta a mano (adentro del cuerpo del componente, sin
+ * nombre propio) dejaba los tests de entonces en verde — nada la probaba
+ * aislada, y el cableado que SÍ se probaba (`hayFaltante={hayFaltante}`, más
+ * abajo) sigue intacto aunque la cuenta de adentro esté invertida.
+ */
+export function hayFaltanteDeVenta(faltanCentavos: number): boolean {
+  return Number.isNaN(faltanCentavos) || faltanCentavos > 0
 }
 
 /**
@@ -360,15 +398,10 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   const hayLineaInvalida = enCentavos.some((l) => Number.isNaN(l.cantidadMilesimas))
   const hayCarrito = lineas.length > 0 && totalCentavos > 0 && !hayLineaInvalida
 
-  // Unidades totales de la banda: la suma de cantidades, no la cantidad de
+  // unidadesDelCarrito (arriba): la suma de cantidades, no la cantidad de
   // líneas (eso ya lo da `lineas.length`, el otro término de
-  // `resumenDelCarrito`). Una línea inválida (NaN) suma 0 acá — no puede
-  // envenenar el conteo entero, a diferencia de `totalCentavos`, que si es
-  // el precio de esa línea el que importa se vuelve "—" más abajo.
-  const unidadesMilesimas = enCentavos.reduce(
-    (acc, l) => acc + (Number.isNaN(l.cantidadMilesimas) ? 0 : l.cantidadMilesimas),
-    0,
-  )
+  // `resumenDelCarrito`).
+  const unidadesMilesimas = unidadesDelCarrito(enCentavos)
 
   // Clave nueva en cuanto el carrito deja de ser el que la clave describe.
   // Ajuste durante el render, con la misma forma que los dos bloques de abajo:
@@ -586,11 +619,11 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   )
   const faltanCentavos = totalCentavos - pagadoCentavos
   const cierra = hayCarrito && faltanCentavos === 0
-  // Para `puedeMostrarVuelto`: NaN (un monto a medio tipear en CUALQUIER
+  // hayFaltanteDeVenta (arriba): NaN (un monto a medio tipear en CUALQUIER
   // pago) cuenta como "sí hay faltante" — "no se sabe si cierra" no es
   // licencia para mostrarle vuelto a nadie, es exactamente el mismo criterio
   // conservador que ya usa `hayLineaInvalida` más arriba.
-  const hayFaltante = Number.isNaN(faltanCentavos) || faltanCentavos > 0
+  const hayFaltante = hayFaltanteDeVenta(faltanCentavos)
 
   // Enter cobra y Esc vacía el carrito — los otros dos atajos que promete la
   // leyenda bajo el botón (design/arandano.pen, nodo `k1dDB`). Van en un

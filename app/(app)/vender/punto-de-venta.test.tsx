@@ -236,17 +236,26 @@ describe('el punto de venta', () => {
   // resumenDelCarrito en aislamiento: la pluralización de las dos mitades, en
   // los casos que el carrito vacío del harness no puede alcanzar.
   it('la banda del total muestra cuántos artículos y cuántas unidades', async () => {
-    const { resumenDelCarrito } = await import('./punto-de-venta')
+    const { resumenDelCarrito, unidadesDelCarrito } = await import('./punto-de-venta')
     expect(resumenDelCarrito(4, 5000)).toBe('4 artículos · 5 unidades')
     expect(resumenDelCarrito(1, 1000)).toBe('1 artículo · 1 unidad')
     expect(resumenDelCarrito(0, 0)).toBe('0 artículos · 0 unidades')
     expect(resumenDelCarrito(2, 2500)).toBe('2 artículos · 2,5 unidades')
+
+    // unidadesDelCarrito en aislamiento — el hallazgo IMPORTANT de la review
+    // final: forzada a 0 a mano, escrita inline sin nombre propio, esta
+    // cuenta no rompía ningún test de entonces. Una línea NaN suma 0, no
+    // envenena el total.
+    expect(unidadesDelCarrito([{ cantidadMilesimas: 1000 }, { cantidadMilesimas: 2500 }])).toBe(3500)
+    expect(unidadesDelCarrito([{ cantidadMilesimas: 1000 }, { cantidadMilesimas: NaN }])).toBe(1000)
+    expect(unidadesDelCarrito([])).toBe(0)
 
     // Cableado: lineas.length para artículos y la suma de cantidadMilesimas
     // para unidades — no al revés, y no un valor fijo. Mismo motivo que el
     // test de PASOS_STEPPER de arriba: la función pura no prueba de dónde
     // salen sus argumentos.
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    expect(fuente).toMatch(/const unidadesMilesimas = unidadesDelCarrito\(enCentavos\)/)
     expect(fuente).toMatch(/resumenDelCarrito\(lineas\.length,\s*unidadesMilesimas\)/)
   })
 
@@ -376,18 +385,39 @@ describe('el punto de venta', () => {
   // $X" en UN pago mientras la venta completa sigue corta por OTRO pago le
   // dice al cajero que dé vuelto sobre una venta que en conjunto no cerró.
   it('no muestra vuelto y faltante al mismo tiempo', async () => {
-    const { puedeMostrarVuelto } = await import('./punto-de-venta')
+    const { puedeMostrarVuelto, hayFaltanteDeVenta } = await import('./punto-de-venta')
     expect(puedeMostrarVuelto(true, true)).toBe(false)
     expect(puedeMostrarVuelto(true, false)).toBe(true)
     expect(puedeMostrarVuelto(false, false)).toBe(false)
     expect(puedeMostrarVuelto(false, true)).toBe(false)
+
+    // hayFaltanteDeVenta en aislamiento — el hallazgo IMPORTANT de la review
+    // final: invertida a mano (`&&` en vez de `||`, o un `!` de más) sobre
+    // esta misma cuenta, escrita inline en el cuerpo del componente sin
+    // nombre propio, no rompía ningún test de entonces: nada la probaba
+    // aislada. Extraerla es lo que hace posible este caso.
+    expect(hayFaltanteDeVenta(0)).toBe(false)
+    expect(hayFaltanteDeVenta(1)).toBe(true)
+    expect(hayFaltanteDeVenta(-1)).toBe(false)
+    expect(hayFaltanteDeVenta(NaN)).toBe(true)
 
     // Cableado: hayFaltante tiene que salir de faltanCentavos > 0 calculado
     // sobre TODOS los pagos, y viajar como prop a cada fila — no puede nacer
     // adentro de FilaDePago, o dejaría de describir "el conjunto", que es la
     // parte que este caso existe para proteger.
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    expect(fuente).toMatch(/const hayFaltante = hayFaltanteDeVenta\(faltanCentavos\)/)
     expect(fuente).toMatch(/hayFaltante=\{hayFaltante\}/)
+
+    // Y el guard que de verdad decide si el chip de Vuelto se pinta tiene
+    // que SER esta función, no `esEfectivoArs` solo: la review final
+    // encontró que mutar `{puedeMostrarVuelto(esEfectivoArs, hayFaltante) &&`
+    // a `{esEfectivoArs &&` dejaba los tests de entonces en verde —
+    // `puedeMostrarVuelto` probada aislada (arriba) nunca importa si el JSX
+    // la llama de verdad o simplemente ignora `hayFaltante` — y ésa es
+    // exactamente la regresión que este caso existe para proteger: "te
+    // sobran $X" volvería a aparecer con la venta completa corta.
+    expect(fuente).toMatch(/\{puedeMostrarVuelto\(esEfectivoArs, hayFaltante\) &&/)
   })
 
   // --- Task 5: el chip de caja y los atajos de teclado ---
@@ -446,9 +476,23 @@ describe('el punto de venta', () => {
   // podría cobrar una venta que el botón, al lado, muestra apagada.
   it('el atajo de Enter no cobra si la venta no cierra, mismo criterio que el botón', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
-    expect(fuente).toMatch(/esAtajoDeCobro\(e\.key\)/)
-    expect(fuente).toMatch(/if \(!cierra \|\| cobrando\) return/)
-    expect(fuente).toMatch(/formularioCobro\.current\?\.requestSubmit\(\)/)
+    const posicion = fuente.indexOf('if (esAtajoDeCobro(e.key)) {')
+    expect(posicion, 'la rama de Enter tiene que existir en el fuente').toBeGreaterThan(-1)
+    // Ventana ACOTADA y en ORDEN (con [\s\S]*? entre cada fragmento), no
+    // tres `toMatch` sueltos sobre el archivo entero. El hallazgo IMPORTANT
+    // de la review final: sin slice ni orden, esas tres aserciones sólo
+    // comprobaban que los tres fragmentos EXISTIERAN en algún lado del
+    // archivo, no que estuvieran EN ESTE ORDEN acá — así que borrar el
+    // chequeo de foco (Enter cobraría con el foco en el buscador) o mover
+    // requestSubmit() ANTES del "if (!cierra || cobrando) return" (cobraría
+    // con el botón apagado) dejaban las tres en verde igual.
+    const contexto = fuente.slice(posicion, posicion + 700)
+    expect(
+      contexto,
+      'las guardas de Enter tienen que ir en este orden: foco, cierra/cobrando, preventDefault, requestSubmit',
+    ).toMatch(
+      /if \(!puedeDispararCobroDesdeFoco\(etiqueta\)\) return[\s\S]*?if \(!cierra \|\| cobrando\) return[\s\S]*?e\.preventDefault\(\)[\s\S]*?formularioCobro\.current\?\.requestSubmit\(\)/,
+    )
   })
 
   // La leyenda de los atajos (design/arandano.pen, nodo `k1dDB`), en el
@@ -484,5 +528,40 @@ describe('el punto de venta', () => {
     const contexto = fuente.slice(posicion, posicion + 350)
     expect(contexto).toMatch(/actualizarCarrito\(\(\) => \[\]\)/)
     expect(contexto).toMatch(/setPagos\(\[\]\)/)
+  })
+
+  // El hallazgo IMPORTANT de la review final: borrar el desarme automático
+  // (cualquiera de sus dos caminos) dejaba TODOS los tests de entonces en
+  // verde — ninguno lo reclamaba. Sin esto, un Esc armado por error (o uno
+  // legítimo que la persona no confirma) queda "cargado" para siempre: el
+  // PRIMER Esc de la visita siguiente, minutos después y sin relación con
+  // el anterior, vaciaría el carrito de un tirón.
+  it('un cambio de carrito desarma el timer Y el estado de vaciado armado, no sólo uno de los dos', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    const posicion = fuente.indexOf('function actualizarCarrito(')
+    expect(posicion, 'actualizarCarrito tiene que existir en el fuente').toBeGreaterThan(-1)
+    const contexto = fuente.slice(posicion, posicion + 700)
+    // En ORDEN y con `[\s\S]*?` entre medio, no tres toMatch sueltos: lo que
+    // esta task encontró es que borrar el bloque del timer entero (el `if
+    // (desarmarVaciado.current) { clearTimeout(...); ...=null }`) no rompía
+    // ninguna aserción existente, porque nada exigía que las dos líneas
+    // convivieran con el `setVaciadoArmado` de al lado.
+    expect(
+      contexto,
+      'actualizarCarrito tiene que cortar el timer pendiente Y bajar la bandera de armado',
+    ).toMatch(
+      /clearTimeout\(desarmarVaciado\.current\)[\s\S]*?desarmarVaciado\.current = null[\s\S]*?setVaciadoArmado\(\(actual\) => \(actual \? false : actual\)\)/,
+    )
+  })
+
+  it('el primer Esc arma un timer que desarma solo a los 3 segundos', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    const posicion = fuente.indexOf('setVaciadoArmado(true)')
+    expect(posicion, 'el armado del primer Esc tiene que existir en el fuente').toBeGreaterThan(-1)
+    const contexto = fuente.slice(posicion, posicion + 200)
+    expect(
+      contexto,
+      'el primer Esc tiene que programar el desarme automático a los 3000ms, no dejar el armado colgado',
+    ).toMatch(/desarmarVaciado\.current = setTimeout\(\(\) => setVaciadoArmado\(false\), 3000\)/)
   })
 })
