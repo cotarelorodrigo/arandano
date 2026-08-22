@@ -95,6 +95,20 @@ describe('el punto de venta', () => {
     expect(html).toContain('Escaneá un código o buscá por nombre')
   })
 
+  // El listener de `window` en sí (enganchar keydown, preventDefault, mover
+  // el foco de verdad) NO está probado acá: es DOM real y este repo no corre
+  // jsdom salvo la excepción puntual de `ticket.test.tsx`. Lo que SÍ se
+  // puede probar sin jsdom es la regla pura que decide qué tecla dispara el
+  // atajo — y es lo único que un test de este archivo puede afirmar en
+  // verdad sin mentir sobre la cobertura.
+  it('F2 es el atajo que enfoca el buscador, y ninguna otra tecla lo es', async () => {
+    const { esAtajoDeBuscador } = await import('./punto-de-venta')
+    expect(esAtajoDeBuscador('F2')).toBe(true)
+    expect(esAtajoDeBuscador('F1')).toBe(false)
+    expect(esAtajoDeBuscador('Enter')).toBe(false)
+    expect(esAtajoDeBuscador('f2')).toBe(false)
+  })
+
   // Con el carrito vacío no hay ninguna fila que renderizar (lineas === []),
   // así que —igual que los dos casos de estilos.importe/estilos.total de
   // arriba— esto mira el FUENTE en vez del HTML. `SKU ${l.sku}` tiene que
@@ -137,8 +151,12 @@ describe('el punto de venta', () => {
   // tenía un <Input> de cantidad, pero sin ningún stepper alrededor).
   it('la cantidad se puede escribir a mano, no sólo con los botones', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
-    expect(fuente).toMatch(/aria-label=\{`Restar una unidad a/)
-    expect(fuente).toMatch(/aria-label=\{`Sumar una unidad a/)
+    // Los botones ya no llevan "Restar"/"Sumar" tipeado al lado de
+    // aria-label —eso ahora vive en PASOS_STEPPER, ver el test de más
+    // abajo—, así que lo que este caso puede comprobar es que existen (el
+    // .map sobre el array) y que el <Input> del valor sigue ahí, editable.
+    expect(fuente).toMatch(/PASOS_STEPPER\.map\(/)
+    expect(fuente).toMatch(/aria-label=\{`\$\{verbo\} una unidad a/)
     expect(fuente).toMatch(/<Input[\s\S]*?value=\{l\.cantidad\}/)
   })
 
@@ -156,5 +174,35 @@ describe('el punto de venta', () => {
     // sobre NaN propagaría basura al campo, mismo criterio que ya usa
     // `agregar()` al reescanear un artículo con la cantidad a medio tipear.
     expect(pasoDeCantidad('abc', 1)).toBe('abc')
+  })
+
+  // El defecto real que encontró la review de esta task: con dos <button>
+  // casi idénticos escritos a mano (uno con `-1`, el otro con `1`), invertir
+  // el signo de uno solo —el "−" suma, el "+" resta— dejaba los 722 tests de
+  // entonces en verde. `pasoDeCantidad` probada aislada (el caso de arriba)
+  // nunca importa QUÉ botón le pasa qué delta; eso es el CABLEADO, no la
+  // aritmética.
+  //
+  // La corrección: el cableado pasa a ser el array `PASOS_STEPPER`,
+  // renderizado con un `.map()` en vez de dos bloques JSX duplicados. Este
+  // test mira ESE array directo, sin jsdom ni fireEvent — si alguien invierte
+  // los dos deltas (o el orden de las entradas), esto se cae, porque ya no
+  // hay ningún -1/+1 hardcodeado en otro lado que pueda desincronizarse: el
+  // "los botones del stepper suben y bajan de a uno" de arriba" prueba la
+  // función; éste prueba el dato que decide qué botón la llama con qué
+  // signo.
+  it('el botón "−" resta y el botón "+" suma — el cableado, no sólo la aritmética', async () => {
+    const { PASOS_STEPPER } = await import('./punto-de-venta')
+    expect(PASOS_STEPPER).toHaveLength(2)
+    expect(PASOS_STEPPER[0]).toMatchObject({ verbo: 'Restar', delta: -1 })
+    expect(PASOS_STEPPER[1]).toMatchObject({ verbo: 'Sumar', delta: 1 })
+
+    // Y que el render use ese array (paso.delta) para llamar a
+    // pasoDeCantidad, en vez de un literal -1/1 escrito aparte: eso es lo que
+    // hace que invertir el array sea el ÚNICO lugar donde el signo se puede
+    // romper.
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    expect(fuente).toMatch(/PASOS_STEPPER\.map\(/)
+    expect(fuente).toMatch(/pasoDeCantidad\(x\.cantidad,\s*delta\)/)
   })
 })

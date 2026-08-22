@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useState, useRef, useEffect } from 'react'
+import { Fragment, useActionState, useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { Minus, Plus, ScanBarcode, TriangleAlert, X } from 'lucide-react'
 import { cobrar, buscarArticulos, type EstadoCobro } from './acciones'
@@ -81,6 +81,45 @@ export function pasoDeCantidad(cantidad: string, delta: 1 | -1): string {
   const actual = cantidadEnMilesimas(cantidad)
   if (Number.isNaN(actual)) return cantidad
   return deMilesimas(Math.max(0, actual + delta * 1000))
+}
+
+/**
+ * Los dos botones del stepper de cantidad, como DATO y no como dos bloques
+ * JSX casi idénticos escritos a mano.
+ *
+ * La review de esta task encontró el motivo de que sea un array: con dos
+ * <button> separados —cada uno con su propio `-1`/`1` tipeado al lado—,
+ * invertir el signo de uno solo (el "−" suma, el "+" resta) es un cambio de
+ * una palabra que ningún test atrapaba, porque `pasoDeCantidad` se probaba
+ * aislada y nunca importaba QUÉ botón le pasa qué `delta`. Con el cableado
+ * reducido a este array y renderizado con un `.map()` (ver más abajo), el
+ * único lugar donde el signo se puede romper es ACÁ, y
+ * `punto-de-venta.test.tsx` lo prueba directo, sin jsdom.
+ */
+export const PASOS_STEPPER: { verbo: string; delta: 1 | -1; Icono: typeof Minus }[] = [
+  { verbo: 'Restar', delta: -1, Icono: Minus },
+  { verbo: 'Sumar', delta: 1, Icono: Plus },
+]
+
+/**
+ * Si esta tecla es el atajo que enfoca el buscador (F2), y ninguna otra.
+ *
+ * Extraída como función pura —sin tocar `buscador.current` ni el DOM—
+ * porque es la ÚNICA parte del listener de F2 que se puede probar sin
+ * jsdom, que este repo no tiene salvo una excepción puntual (ver la nota de
+ * `ticket.test.tsx`). `punto-de-venta.test.tsx` prueba esta función.
+ *
+ * Lo que ESE test NO cubre, para que no se lea como cobertura completa: que
+ * el listener esté realmente enganchado a `window`, que dispare
+ * `preventDefault()`, y que `buscador.current?.focus()` mueva el foco de
+ * verdad — eso es el cableado del `useEffect` de abajo, y sin jsdom no hay
+ * forma de simular un `keydown` real ni de leer qué elemento quedó
+ * enfocado. Si algún día ese cableado se rompe (el listener se desengancha,
+ * o deja de llamar a `.focus()`), esta función seguiría en verde: prueba la
+ * REGLA ("¿es F2?"), no el efecto de apretarla.
+ */
+export function esAtajoDeBuscador(tecla: string): boolean {
+  return tecla === 'F2'
 }
 
 export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string | null }) {
@@ -236,9 +275,17 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   // que el chip de al lado promete, no sólo lo anuncia. En un mostrador que
   // se opera sin mouse, un chip que muestra un atajo que no hace nada es peor
   // que no tenerlo.
+  //
+  // SIN TEST de este efecto en sí —sólo de `esAtajoDeBuscador`, la regla que
+  // decide la tecla (ver su comentario)—. Enganchar `window`, disparar
+  // `preventDefault` y mover el foco de verdad son DOM real, y este repo no
+  // corre jsdom salvo la excepción puntual de `ticket.test.tsx`. Quede
+  // anotado así a propósito, para que la presencia de un test sobre
+  // `esAtajoDeBuscador` no se lea como si este bloque entero estuviera
+  // cubierto.
   useEffect(() => {
     function alApretarTecla(e: KeyboardEvent) {
-      if (e.key !== 'F2') return
+      if (!esAtajoDeBuscador(e.key)) return
       e.preventDefault()
       buscador.current?.focus()
     }
@@ -373,8 +420,14 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
           en foco—: design/arandano.pen lo pide así porque en este mostrador
           el cuadro es lo primero que se mira, y un borde que sólo aparece al
           enfocar no ayuda a encontrarlo de entrada. El resplandor
-          (shadow-[...]) también sale del .pen: un halo violeta muy tenue de
-          4px, no un valor inventado. */}
+          (shadow-[...]) también sale del .pen: un halo de 4px con --primary
+          al 12% de opacidad, armado con color-mix() y NO con un rgba()/hex
+          inventado — docs/sistema-de-diseno.md (vía
+          app/login/persiana.module.css) es explícito: "el brillo y el surco
+          salen de tokens con color-mix, no de rgba() inventados". Con la
+          paleta ya repintada una vez (2026-08-21), un halo con el violeta
+          viejo hardcodeado quedaría huérfano la próxima vez y nadie se
+          enteraría; con color-mix(var(--primary)) sigue al token. */}
       <div className="relative">
         {/* focus-within y no el focus-visible del <Input>: el ring por
             default aparecería sólo alrededor del campo de texto —que no
@@ -382,7 +435,7 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
             roto en medio de la barra. El <Input> de adentro apaga su propio
             ring (ver más abajo) para que sea ESTE, el de la barra entera, el
             que se vea al enfocar. */}
-        <div className="flex h-[58px] items-center gap-3 rounded-[14px] border-2 border-primary bg-card px-[18px] shadow-[0_0_0_4px_#4A2AA51F] focus-within:ring-3 focus-within:ring-ring/50">
+        <div className="flex h-[58px] items-center gap-3 rounded-[14px] border-2 border-primary bg-card px-[18px] shadow-[0_0_0_4px_color-mix(in_srgb,var(--primary)_12%,transparent)] focus-within:ring-3 focus-within:ring-ring/50">
           <ScanBarcode aria-hidden="true" className="size-[22px] shrink-0 text-primary" />
           <Input
             id="buscar"
@@ -510,7 +563,7 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
                           {!invalida && l.esProducto && quedaria < 0 && (
                             <Badge
                               variant="outline"
-                              className="h-auto gap-[5px] border-transparent bg-warn-soft px-[7px] py-[2px] text-[11px] font-semibold text-warn"
+                              className="h-auto gap-[5px] border-transparent bg-warn-soft px-[7px] py-[2px] text-[10px] font-semibold text-warn"
                             >
                               <TriangleAlert aria-hidden="true" />
                               sin stock suficiente
@@ -526,51 +579,50 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
                           cantidades con hasta tres decimales a propósito
                           (lib/formato/mostrar.ts: "Medio kilo de harina
                           necesita los decimales"), y +1/-1 no alcanza para
-                          tipear "0,5". */}
+                          tipear "0,5". Los dos botones salen de
+                          `PASOS_STEPPER.map(...)` y no de dos <button>
+                          escritos a mano: ver el porqué en la definición del
+                          array, un poco más arriba. */}
                       {/* focus-within por la misma razón que la barra del
                           buscador: el <Input> del medio apaga su propio ring
                           para que el foco se vea en el stepper entero, no en
                           un rectángulo que ignora los botones [-]/[+]. */}
                       <div className="flex h-9 w-[104px] items-center rounded-[9px] border border-input focus-within:ring-3 focus-within:ring-ring/50">
-                        <button
-                          type="button"
-                          aria-label={`Restar una unidad a ${l.descripcion}`}
-                          className="flex h-full w-8 items-center justify-center text-foreground-soft hover:bg-muted"
-                          onClick={() =>
-                            actualizarCarrito((p) =>
-                              p.map((x, j) =>
-                                j === i ? { ...x, cantidad: pasoDeCantidad(x.cantidad, -1) } : x,
-                              ),
-                            )
-                          }
-                        >
-                          <Minus className="size-[13px]" />
-                        </button>
-                        <Input
-                          inputMode="decimal"
-                          value={l.cantidad}
-                          onChange={(e) =>
-                            actualizarCarrito((p) =>
-                              p.map((x, j) => (j === i ? { ...x, cantidad: e.target.value } : x)),
-                            )
-                          }
-                          aria-label={`Cantidad de ${l.descripcion}`}
-                          className={`h-full flex-1 border-0 bg-transparent px-0 py-0 text-center font-semibold text-foreground shadow-none focus-visible:ring-0 ${estilos.importe}`}
-                        />
-                        <button
-                          type="button"
-                          aria-label={`Sumar una unidad a ${l.descripcion}`}
-                          className="flex h-full w-8 items-center justify-center text-foreground-soft hover:bg-muted"
-                          onClick={() =>
-                            actualizarCarrito((p) =>
-                              p.map((x, j) =>
-                                j === i ? { ...x, cantidad: pasoDeCantidad(x.cantidad, 1) } : x,
-                              ),
-                            )
-                          }
-                        >
-                          <Plus className="size-[13px]" />
-                        </button>
+                        {PASOS_STEPPER.map(({ verbo, delta, Icono }) => (
+                          <Fragment key={verbo}>
+                            <button
+                              type="button"
+                              aria-label={`${verbo} una unidad a ${l.descripcion}`}
+                              className="flex h-full w-8 items-center justify-center text-foreground-soft hover:bg-muted"
+                              onClick={() =>
+                                actualizarCarrito((p) =>
+                                  p.map((x, j) =>
+                                    j === i ? { ...x, cantidad: pasoDeCantidad(x.cantidad, delta) } : x,
+                                  ),
+                                )
+                              }
+                            >
+                              <Icono className="size-[13px]" />
+                            </button>
+                            {/* El valor editable va entre los dos botones:
+                                se intercala acá, después del primero
+                                (Restar), en vez de partir el .map en dos para
+                                no perder el orden visual [-] [valor] [+]. */}
+                            {delta === -1 && (
+                              <Input
+                                inputMode="decimal"
+                                value={l.cantidad}
+                                onChange={(e) =>
+                                  actualizarCarrito((p) =>
+                                    p.map((x, j) => (j === i ? { ...x, cantidad: e.target.value } : x)),
+                                  )
+                                }
+                                aria-label={`Cantidad de ${l.descripcion}`}
+                                className={`h-full flex-1 border-0 bg-transparent px-0 py-0 text-center font-semibold text-foreground shadow-none focus-visible:ring-0 ${estilos.importe}`}
+                              />
+                            )}
+                          </Fragment>
+                        ))}
                       </div>
                     </TableCell>
                     <TableCell className={`p-[11px] px-[7px] text-right text-foreground-soft ${estilos.importe}`}>
