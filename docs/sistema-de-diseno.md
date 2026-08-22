@@ -410,6 +410,7 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | Nombre de usuario, inicial del avatar — pie del sidebar | sistema | 13 px | 600 |
 | Rol del usuario (pie del sidebar), subtítulo del encabezado | sistema | 11 px | 400, `--muted-foreground` |
 | Rótulo "ARÁNDANO", stack · sha — pie del sidebar | sistema | 10 px | 700 el rótulo (`tracking-[0.16em]`); 400 stack · sha, `--muted-foreground` |
+| Meta — aclaración bajo un dato o un campo | sistema | 12 px | 400, `--muted-foreground` |
 | **Importe** — plata en el punto de venta | Archivo | 40 px el total; 14 px la columna | 600 el total, 400 la columna; `font-stretch: 85%`, `tabular-nums` |
 
 <!-- escala:fin -->
@@ -417,6 +418,41 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 Los marcadores no son decoración: el documento tiene varias tablas y un parser
 que agarre "la primera" se rompe el día que alguien reordene secciones. Es el
 mismo mecanismo que ya usa `<!-- tokens:inicio -->`.
+
+**La fila *Meta* volvió, pero no por el mismo motivo que se fue (ciclo de los
+residuales, 2026-08-21).** El ciclo del shell había borrado la fila "Identidad,
+meta, pie · sistema · 12 px · 400" porque describía el pie del shell viejo, y
+ese pie no existe más. Lo que no se fue con él es el tamaño: `text-xs` (12 px)
+sigue en el código, en la aclaración bajo la clave de desbloqueo y bajo el
+buscador de `app/(app)/servicio-tecnico/`, y en el pie y el formulario de
+`app/sitio/`. Los cuatro comparten la misma fórmula exacta —`text-xs
+text-muted-foreground`, sin tracking ni mayúsculas— y el `.pen` respalda el
+tamaño: en el cuerpo de `App / Vender` (frame `Fe3bW`), los nodos "Detalle"
+(`4 artículos · 5 unidades`, bajo la banda del total), "Conteo" (`2 pagos`, en
+el encabezado de la card de cobro) y "Entran" (la equivalencia de un pago en
+dólares) están los tres a 12 px, sistema, sin tracking, en el tono apagado de
+la superficie que los rodea — la misma aclaración menor junto a un dato
+principal, en cuatro lugares distintos del producto.
+
+**Y quedaron afuera, a propósito, otros cuatro usos de `text-xs` que el mismo
+grep encuentra y que NO son este rol** —forzarlos acá taparía la diferencia en
+vez de mostrarla:
+
+- Los encabezados de columna del carrito (`ARTÍCULO`/`CANTIDAD`/`PRECIO`/
+  `SUBTOTAL`, `app/(app)/vender/punto-de-venta.tsx:380`) y el rótulo "Total"
+  (`:472`) están en `text-xs` en el código, pero el `.pen` los dibuja a
+  **10 px**, peso 700, con tracking ancho y mayúsculas — el mismo tratamiento
+  que ya tiene el rótulo "ARÁNDANO" del pie del sidebar, no el de *Meta*. Hoy
+  hay un desvío real entre el código y la maqueta que esta task no corrige —no
+  toca `punto-de-venta.tsx`—, y queda anotado para decidir si se ensancha esa
+  fila de 10 px a estos dos usos nuevos o se corrige el componente.
+- El rótulo "Arándano" de `app/not-found.tsx` y el *kicker* de
+  `app/sitio/secciones.tsx` usan `text-xs tracking-[0.06em] uppercase` — una
+  firma trackeada, emparentada con `.firma` de `app/sitio/cierre.module.css`
+  (12 px, peso 500, tracking 0.18em, mayúsculas, `--marca-dim`), no con *Meta*.
+  Ninguno de los dos frames que este ciclo autorizaba mirar (`Fe3bW`, `yhuFd`)
+  contiene ese rol, así que se deja sin fila para no inventarle tamaño ni
+  nombre a partir de nada.
 
 **El *Importe* usa la otra punta del mismo eje.** Archivo se eligió por su eje
 `wdth` porque *"un local argentino tiene el nombre pintado a lo ancho del
@@ -617,8 +653,8 @@ más allá de chip y tile, así que —tal cual anticipaba el límite de arriba�
 que estaba mal era la enmienda, no la escala.** El shell trajo valores que no
 son un paso de la escala y que tampoco son el adentro de un elemento chico y
 repetido: `p-[9px]`, `gap-[11px]`, `rounded-[9px]` y `size-[17px]` en el ítem de
-navegación; `pt-[22px]` y `px-5` en el bloque Marca del sidebar; `pb-[18px]` y
-`px-4` en su pie; `px-7` y `h-[66px]` en el Topbar del encabezado
+navegación; `pt-[22px]` y `px-5` en el bloque Marca del sidebar; `pb-[18px]` en
+su pie; `px-7` y `h-[66px]` en el Topbar del encabezado
 (`components/shell/encabezado.tsx`). Ninguno se repite muchas veces en la misma
 pantalla como un chip o un tile —cada uno aparece una sola vez, porque el shell
 mismo es único—, así que "chico, repetido y autocontenido" no los describe.

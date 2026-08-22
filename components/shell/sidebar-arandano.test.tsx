@@ -55,6 +55,14 @@ describe('el sidebar de Arándano', () => {
     expect(render()).toContain('Quien sea')
   })
 
+  // El ciclo del shell perdió este landmark en silencio al pasar de <nav> con
+  // pestañas a <ul> de shadcn, y nadie se enteró hasta la review final. Un
+  // lector de pantalla se quedó sin la navegación de las diez pantallas.
+  it('la navegación es un landmark, no una lista suelta', () => {
+    const html = render()
+    expect(html).toMatch(/<nav[^>]*aria-label="[^"]+"/)
+  })
+
   it('traduce el rol al castellano que se lee en el pie', () => {
     expect(render({ rol: 'DUENO' })).toContain('Dueño')
     expect(render({ rol: 'EMPLEADO' })).toContain('Empleado')
