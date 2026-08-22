@@ -2,34 +2,59 @@ import { Prisma } from '@/generated/prisma/client'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { enTransaccionDeTenant } from '@/lib/tenant/transaccion'
 import { exigirUsuario } from '@/lib/ventas/pertenencia'
+import { ESCALA_DINERO, excedeEscala } from '@/lib/ventas/totales'
+import { aDecimal, ErrorDeFormato } from '@/lib/formato/numeros'
 import { ErrorDeCaja } from './errores'
 
 type Decimal = Prisma.Decimal
 
-// La misma escala que el resto de la plata del motor: Decimal(12,2). No
-// importamos ESCALA_DINERO de lib/ventas/totales.ts para no atar lib/caja a
-// lib/ventas por un número — este comentario es lo que evita que se
-// desincronicen si la columna cambia.
-const ESCALA_SALDO = 2
-// Decimal(12,2): 12 dígitos totales, 2 de escala, 10 que le quedan a la parte
-// entera. Sin este chequeo, un saldo con más dígitos enteros llega crudo a
-// Postgres y sale como un error de desborde sin código de dominio.
+// Decimal(12,2): 12 dígitos totales, ESCALA_DINERO (2) de escala, 10 que le
+// quedan a la parte entera. Sin este chequeo, un saldo con más dígitos
+// enteros llega crudo a Postgres y sale como un error de desborde sin código
+// de dominio.
 const DIGITOS_ENTEROS_MAXIMOS = 10
 
 /**
- * Valida el saldo con el que abre el turno. Nunca negativo (una caja no
- * arranca debiendo) y dentro de la precisión de la columna — las dos cosas
- * que antes entraban crudas.
+ * Valida el saldo con el que abre el turno.
+ *
+ * El texto pasa primero por `aDecimal` (lib/formato/numeros.ts) — la misma
+ * gramática que ya usan inventario y ventas para cualquier campo de plata—, y
+ * no por `new Prisma.Decimal()` crudo. Ese cambio es lo que hace que ya NO
+ * entren `'NaN'` (decimal.js lo acepta, y el signo de NaN es `null`: el
+ * chequeo de abajo decía que no era negativo), `'0x10'` ni `'1_000'`
+ * (decimal.js parsea hexadecimal y guiones bajos) ni `'Infinity'` — y lo que
+ * hace que sí entre `'1,50'`, que antes se rechazaba y así es como se escribe
+ * la plata en Argentina.
+ *
+ * `ErrorDeFormato` se traduce acá a `ErrorDeCaja/SALDO_INVALIDO`: el resto
+ * del módulo, y cualquier UI futura, sólo necesitan conocer un código de
+ * error para este campo, no dos.
+ *
+ * Lo que `aDecimal` no valida —porque no conoce la escala de esta columna en
+ * particular— son las dos reglas de abajo: nunca negativo (una caja no
+ * arranca debiendo) y dentro de la precisión de `Decimal(12,2)`. La gramática
+ * de `aDecimal` ya no deja pasar ningún signo, así que en la práctica el
+ * chequeo de negativo no tiene hoy ningún valor que lo dispare — se deja
+ * puesto porque es una regla de negocio propia de la caja, no un accidente de
+ * cómo está escrita la gramática, y no depende de que ésta se mantenga igual.
  */
 function validarSaldoInicial(saldoInicial: string): Decimal {
-  const monto = new Prisma.Decimal(saldoInicial)
+  let monto: Decimal
+  try {
+    monto = aDecimal(saldoInicial, 'el saldo inicial')
+  } catch (e) {
+    if (e instanceof ErrorDeFormato) {
+      throw new ErrorDeCaja('SALDO_INVALIDO', e.message, { cause: e })
+    }
+    throw e
+  }
   if (monto.isNegative()) {
     throw new ErrorDeCaja('SALDO_INVALIDO', 'el saldo inicial no puede ser negativo')
   }
-  if (monto.decimalPlaces() > ESCALA_SALDO) {
+  if (excedeEscala(monto, ESCALA_DINERO)) {
     throw new ErrorDeCaja(
       'SALDO_INVALIDO',
-      `el saldo inicial tiene a lo sumo ${ESCALA_SALDO} decimales`,
+      `el saldo inicial tiene a lo sumo ${ESCALA_DINERO} decimales`,
     )
   }
   const digitosEnteros = monto.trunc().abs().toFixed(0).length
@@ -81,10 +106,12 @@ export async function abrirCaja(
     })
   } catch (e) {
     // El choque del índice único no es "otro error de Postgres": es la
-    // carrera de arriba, resuelta. No hace falta discriminar qué unicidad
-    // chocó —a diferencia de `articulos`, `cajas` tiene un único índice
-    // único (el parcial de arriba)—, así que un P2002 acá sólo puede ser
-    // éste.
+    // carrera de arriba, resuelta. `cajas` tiene DOS índices únicos —
+    // `cajas_pkey` (el id) y `cajas_una_abierta_por_tenant` (el parcial de
+    // arriba), no uno solo—, pero no hace falta discriminar cuál chocó: el id
+    // lo generamos nosotros con `uuid(7)` recién acá adentro, así que un
+    // P2002 contra `cajas_pkey` no tiene forma de ocurrir en la práctica, y un
+    // P2002 real sólo puede ser el parcial.
     if (esP2002(e)) {
       throw new ErrorDeCaja('CAJA_YA_ABIERTA', 'ya hay una caja abierta en este local', {
         cause: e,
@@ -106,32 +133,40 @@ export async function cerrarCaja(tenantId: string, usuarioId: string): Promise<{
     // escrito en cerradaPorId sin que nada lo note.
     await exigirUsuario(tx, usuarioId)
 
-    const abierta = await tx.caja.findFirst({
+    // UN SOLO statement, sin `findFirst` previo: `cerradaEn: null` es el
+    // ÚNICO selector de la fila, así que no hay ventana entre "leer cuál está
+    // abierta" y "escribir el cierre" donde otra llamada se cuele. La versión
+    // de antes SÍ tenía esa ventana aunque el `updateMany` repitiera el
+    // filtro: la fila a actualizar ya quedaba fijada por el id que trajo la
+    // lectura previa, así que ese `updateMany` protegía contra un cierre
+    // concurrente de OTRA transacción, pero la propia función seguía atada a
+    // dos round-trips separados — exactamente lo que este comentario, en la
+    // versión anterior, no dejaba ver. `updateManyAndReturn` (Prisma 7)
+    // devuelve la fila afectada en el mismo viaje, así que no hace falta
+    // ninguna lectura aparte para saber qué id cerramos.
+    //
+    // Sobre qué prueba y qué no prueba esto contra cierres concurrentes DE
+    // VERDAD: el pool de lib/db.ts está en `max: 5`, así que llamadas
+    // concurrentes por encima de eso se serializan en la cola del pool y no
+    // llegan a competir por la misma fila al mismo tiempo — es lo que explica
+    // por qué los tests de este archivo no usan promesas concurrentes contra
+    // `cerrarCaja` para ejercitar la carrera (ver el comentario del test 'el
+    // mecanismo' más abajo, que sí la ejercita con dos conexiones propias).
+    const cerradas = await tx.caja.updateManyAndReturn({
       where: { cerradaEn: null },
+      data: { cerradaEn: new Date(), cerradaPorId: usuarioId },
       select: { id: true },
     })
-    if (!abierta) {
+    // El índice único parcial garantiza a lo sumo una fila con `cerradaEn`
+    // null por tenant, así que esto nunca da más de un elemento. Vacío
+    // significa "no había ninguna caja abierta" y también "otra llamada ya la
+    // cerró antes de que esta corriera" — mismo código para las dos, igual
+    // que documenta `errores.ts`.
+    if (cerradas.length === 0) {
       throw new ErrorDeCaja('SIN_CAJA_ABIERTA', 'no hay ninguna caja abierta para cerrar')
     }
 
-    // `updateMany` con `cerradaEn: null` REPETIDO en el where —no un
-    // `update({ where: { id } })` liso— es lo que cierra la carrera de varios
-    // cierres concurrentes: el `findFirst` de arriba puede ver la misma fila
-    // abierta desde varias llamadas a la vez, pero sólo la que llegue primero a
-    // este UPDATE todavía encuentra `cerrada_en IS NULL` — el resto actualiza
-    // cero filas, en vez de pisarle la fecha y el usuario a la primera. Medido:
-    // con `update({ where: { id } })` liso, 15 cierres concurrentes sobre la
-    // misma caja daban 15 "éxitos" — Prisma actualiza por id sin mirar ninguna
-    // otra condición, así que cada uno pisaba al anterior sin quejarse.
-    const resultado = await tx.caja.updateMany({
-      where: { id: abierta.id, cerradaEn: null },
-      data: { cerradaEn: new Date(), cerradaPorId: usuarioId },
-    })
-    if (resultado.count === 0) {
-      throw new ErrorDeCaja('SIN_CAJA_ABIERTA', 'no hay ninguna caja abierta para cerrar')
-    }
-
-    return { id: abierta.id }
+    return { id: cerradas[0].id }
   })
 }
 

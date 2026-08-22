@@ -4,10 +4,18 @@ export type CodigoErrorDeCaja =
   // produce chocar contra él.
   | 'CAJA_YA_ABIERTA'
   // Mismo código para "no hay ninguna al arrancar" y para "otra request ya
-  // la cerró justo antes" (ver el `updateMany` de `cerrarCaja`): las dos
-  // situaciones son, para quien llama, "no hay nada que cerrar".
+  // la cerró justo antes" (ver el `updateManyAndReturn` de `cerrarCaja`): las
+  // dos situaciones son, para quien llama, "no hay nada que cerrar".
   | 'SIN_CAJA_ABIERTA'
   | 'SALDO_INVALIDO'
+  // Lo tira `exigirUsuario` (lib/ventas/pertenencia.ts) y lo hace con
+  // `ErrorDeVenta`, no con esta clase: la función se comparte con el motor de
+  // ventas y duplicarla para cambiarle la clase al error sería tener dos
+  // chequeos de pertenencia que se pueden desincronizar. El CÓDIGO está en
+  // este union porque es un código que `abrirCaja` y `cerrarCaja`
+  // efectivamente hacen salir, y los tests de este módulo assertean por él.
+  // Mismo razonamiento que ya está escrito en lib/inventario/errores.ts.
+  | 'USUARIO_INEXISTENTE'
 
 /**
  * Con código y no sólo con mensaje, mismo criterio que `ErrorDeVenta`

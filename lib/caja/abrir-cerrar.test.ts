@@ -220,13 +220,17 @@ describe('abrir y cerrar la caja', () => {
     expect(fila.rows[0].cerrada_por_id).toBe(usuarioA)
   })
 
-  // Complementario al de arriba, y más débil a propósito: prueba que el
-  // CAMINO PÚBLICO (llamar a cerrarCaja dos veces, sin concurrencia) también
-  // se comporta bien — sin corromper nada—, aunque esto en particular pasa
-  // igual con el código de antes del fix (ver el comentario de arriba: el
-  // `findFirst` inicial ya alcanza para rechazarlo sin concurrencia real). Vale
-  // tenerlo igual como red contra una regresión más grosera —por ejemplo, que
-  // alguien saque el filtro `cerradaEn: null` del `findFirst` inicial.
+  // Complementario al de arriba, y ahora sí cubre el MECANISMO de verdad
+  // llamando a la función pública (no a SQL a mano): `cerrarCaja` ya no tiene
+  // ningún `findFirst` previo (I3, ronda de fix 3) — `cerradaEn: null` es el
+  // ÚNICO selector del `updateManyAndReturn`, así que este caso es la única
+  // forma en que la función puede pasar. Antes, con un `findFirst` previo más
+  // un `updateMany` con el filtro repetido, este mismo test pasaba igual
+  // aunque se le sacara el filtro al `findFirst` —la aserción real la
+  // sostenía el chequeo de `resultado.count === 0`, no este test—, y el
+  // comentario de esta sección afirmaba lo contrario. Eliminar el `findFirst`
+  // en vez de sólo corregir el comentario es lo que lo vuelve cierto: ya no
+  // hay un segundo camino por el que colarse.
   it('cerrar una caja ya cerrada (llamando dos veces, sin concurrencia) no la reescribe', async () => {
     const { id } = await abrirCaja(tenantA, usuarioA, '15000.00')
     await cerrarCaja(tenantA, usuarioA)
@@ -272,6 +276,44 @@ describe('abrir y cerrar la caja', () => {
     it('acepta cero: un turno puede arrancar sin efectivo', async () => {
       const { id } = await abrirCaja(tenantA, usuarioA, '0.00')
       expect((await cajaAbierta(tenantA))?.id).toBe(id)
+    })
+
+    // I1/I2 de la review: antes de pasar por `aDecimal`, cada uno de estos se
+    // escapaba de un modo distinto y sin código de dominio — 'NaN' quedaba
+    // PERSISTIDO como `saldo_inicial = NaN` (el signo de NaN en decimal.js es
+    // `null`, así que `isNegative()` no lo atajaba), '0x10' y '1_000' se leían
+    // como 16 y 1000 (decimal.js parsea hexadecimal y guiones bajos),
+    // 'Infinity' tiraba un `PrismaClientKnownRequestError` pelado al llegar a
+    // Postgres, y 'abc'/''/'   ' tiraban un `Error: [DecimalError]` pelado.
+    // Ahora los cinco salen por el mismo `SALDO_INVALIDO` que ya usan los
+    // otros tres casos de arriba, porque `aDecimal` los rechaza a todos ANTES
+    // de que decimal.js o Postgres los vean.
+    it.each(['NaN', '0x10', '1_000', 'Infinity', 'abc', '', '   '])(
+      'rechaza "%s" con el mismo código que el resto del saldo inválido, no un error pelado',
+      async (saldo) => {
+        await expect(abrirCaja(tenantA, usuarioA, saldo)).rejects.toMatchObject({
+          codigo: 'SALDO_INVALIDO',
+        })
+        // Y no queda una caja huérfana con un saldo basura adentro.
+        expect(await cajaAbierta(tenantA)).toBeNull()
+      },
+    )
+
+    // El caso que más importa de los ocho que midió la review: hoy FALLA y
+    // debería funcionar, porque así se escribe la plata en Argentina. Antes
+    // de `aDecimal`, `new Prisma.Decimal('1,50')` tiraba `DecimalError`.
+    it('acepta la coma decimal argentina', async () => {
+      const { id } = await abrirCaja(tenantA, usuarioA, '1,50')
+      expect((await cajaAbierta(tenantA))?.id).toBe(id)
+      expect((await cajaAbierta(tenantA))?.saldoInicial.toFixed(2)).toBe('1.50')
+    })
+
+    // decimal.js tampoco toleraba espacios alrededor del número; `aDecimal`
+    // los limpia antes de parsear.
+    it('ignora los espacios alrededor', async () => {
+      const { id } = await abrirCaja(tenantA, usuarioA, '  15000.00  ')
+      expect((await cajaAbierta(tenantA))?.id).toBe(id)
+      expect((await cajaAbierta(tenantA))?.saldoInicial.toFixed(2)).toBe('15000.00')
     })
   })
 })
