@@ -141,36 +141,113 @@ describe('abrir y cerrar la caja', () => {
     })
   })
 
-  // I3 de la review: sin el `updateMany` con `cerradaEn: null` repetido en el
-  // where, dos cierres concurrentes A VECES alcanzan a mostrar la carrera y a
-  // veces no —depende de si el segundo `findFirst` corre antes o después de
-  // que el primero comitee, y con sólo dos llamadas el timing de este entorno
-  // (Postgres en Docker, localhost) tiende a serializarlas por casualidad—.
-  // Con QUINCE concurrentes sobre la misma caja el efecto deja de depender de
-  // la suerte: medido a mano con `update({ where: { id } })` liso (sin el
-  // `cerradaEn: null` del fix), las quince "ganaban" —Prisma actualiza por id
-  // sin mirar ninguna otra condición, así que cada una pisaba a la anterior
-  // sin quejarse—. Con el fix puesto, siempre gana exactamente una.
-  it('quince cierres concurrentes de la misma caja: gana exactamente uno', async () => {
-    await abrirCaja(tenantA, usuarioA, '15000.00')
+  // I3 de la review, ronda de fix 2: NI 2 NI 15 llamadas concurrentes alcanzan
+  // a mostrar la carrera en este entorno. El re-reviewer corrió el test de 15
+  // ocho veces contra el código de ANTES del fix y las ocho dieron el mismo
+  // resultado "correcto" (1 fulfilled, 14 rejected) que el código arreglado:
+  // `lib/db.ts` limita el pool a `max: 5`, así que con más llamadas que
+  // conexiones el resto queda ENCOLADO, y para cuando a una encolada le toca
+  // correr su `findFirst` la caja YA está cerrada por otra que corrió entera
+  // primero — la cola del pool serializa la carrera, no el código. Un test
+  // que da el mismo resultado con el código roto y con el arreglado no prueba
+  // nada, así que se sacó (junto con el de 2 concurrentes, que fallaba por el
+  // mismo motivo — verificado con cinco corridas repetidas, cinco en verde
+  // contra el código roto).
+  //
+  // Tampoco sirve una versión SECUENCIAL de dos llamadas a `cerrarCaja` (abrir,
+  // cerrar, cerrar de nuevo): se probó y pasa igual contra el código roto,
+  // porque el `findFirst({ where: { cerradaEn: null } })` —que existe en las
+  // DOS versiones, la rota y la arreglada— ya rechaza la segunda llamada antes
+  // de llegar al `update`. Sin concurrencia real no hay forma de que dos
+  // llamadas pasen las dos ese `findFirst` antes de que cualquiera escriba, que
+  // es exactamente la ventana que el fix cierra.
+  //
+  // Lo que SÍ es determinístico, y no depende de que el scheduler intercale
+  // nada por casualidad, es probar el MECANISMO en sí —el mismo UPDATE que usa
+  // `cerrarCaja`— con dos conexiones propias cuyo orden fijamos a mano: las dos
+  // "leen" la caja como abierta ANTES de que cualquiera escriba (lo que verían
+  // dos `findFirst` concurrentes de verdad), una cierra y comitea, y la otra
+  // corre el UPDATE con `cerrada_en IS NULL` repetido en el where —el que
+  // `cerrarCaja` usa desde el fix—. Si esa condición no estuviera (el `update
+  // ({ where: { id } })` liso de ANTES del fix), este segundo UPDATE
+  // encontraría la fila igual —por id, sin mirar su estado— y la reescribiría;
+  // con la condición, no encuentra nada. Verificado sacando la condición de
+  // este mismo query (dejando sólo `WHERE id = $2`): `rowCount` pasa de 0 a 1,
+  // o sea que el test SÍ falla contra el patrón de antes del fix.
+  it('el mecanismo: un UPDATE con cerrada_en IS NULL no reescribe una caja que otra transacción ya cerró', async () => {
+    const { id } = await abrirCaja(tenantA, usuarioA, '15000.00')
 
-    const N = 15
-    const resultados = await Promise.allSettled(
-      Array.from({ length: N }, () => cerrarCaja(tenantA, usuarioA)),
-    )
-    const estados = resultados.map((r) => r.status)
-    expect(estados.filter((s) => s === 'fulfilled')).toHaveLength(1)
-    expect(estados.filter((s) => s === 'rejected')).toHaveLength(N - 1)
+    const c1 = new Client({ connectionString: urlApp() })
+    const c2 = new Client({ connectionString: urlApp() })
+    await c1.connect()
+    await c2.connect()
 
-    for (const r of resultados) {
-      if (r.status === 'rejected') {
-        expect(r.reason).toMatchObject({ codigo: 'SIN_CAJA_ABIERTA' })
-      }
+    try {
+      await c1.query('BEGIN')
+      await c1.query(`SELECT set_config('arandano.tenant_id', $1, true)`, [tenantA])
+      await c2.query('BEGIN')
+      await c2.query(`SELECT set_config('arandano.tenant_id', $1, true)`, [tenantA])
+
+      // Las dos ven la caja como abierta, ANTES de que ninguna escriba — es
+      // exactamente lo que verían dos `findFirst` concurrentes de verdad.
+      const l1 = await c1.query('SELECT 1 FROM cajas WHERE id = $1 AND cerrada_en IS NULL', [id])
+      const l2 = await c2.query('SELECT 1 FROM cajas WHERE id = $1 AND cerrada_en IS NULL', [id])
+      expect(l1.rows).toHaveLength(1)
+      expect(l2.rows).toHaveLength(1)
+
+      // c1 "gana": cierra y comitea primero.
+      await c1.query(
+        `UPDATE cajas SET cerrada_en = now(), cerrada_por_id = $1 WHERE id = $2 AND cerrada_en IS NULL`,
+        [usuarioA, id],
+      )
+      await c1.query('COMMIT')
+
+      // c2 recién ahora corre el MISMO patrón que usa cerrarCaja — con la
+      // condición cerrada_en IS NULL repetida en el where.
+      const r2 = await c2.query(
+        `UPDATE cajas SET cerrada_en = now(), cerrada_por_id = $1 WHERE id = $2 AND cerrada_en IS NULL`,
+        [usuarioB, id],
+      )
+      expect(r2.rowCount, 'el where con cerrada_en IS NULL tiene que impedir esta escritura').toBe(0)
+      await c2.query('COMMIT')
+    } finally {
+      await c1.end()
+      await c2.end()
     }
 
-    // Y la caja quedó cerrada UNA vez, no reescrita por ninguno de los catorce
-    // que perdieron.
-    expect(await cajaAbierta(tenantA)).toBeNull()
+    // Y la fila quedó con el cierre de c1, no reescrita por c2.
+    const fila = await owner.query('SELECT cerrada_por_id FROM cajas WHERE id = $1', [id])
+    expect(fila.rows[0].cerrada_por_id).toBe(usuarioA)
+  })
+
+  // Complementario al de arriba, y más débil a propósito: prueba que el
+  // CAMINO PÚBLICO (llamar a cerrarCaja dos veces, sin concurrencia) también
+  // se comporta bien — sin corromper nada—, aunque esto en particular pasa
+  // igual con el código de antes del fix (ver el comentario de arriba: el
+  // `findFirst` inicial ya alcanza para rechazarlo sin concurrencia real). Vale
+  // tenerlo igual como red contra una regresión más grosera —por ejemplo, que
+  // alguien saque el filtro `cerradaEn: null` del `findFirst` inicial.
+  it('cerrar una caja ya cerrada (llamando dos veces, sin concurrencia) no la reescribe', async () => {
+    const { id } = await abrirCaja(tenantA, usuarioA, '15000.00')
+    await cerrarCaja(tenantA, usuarioA)
+
+    const antes = await owner.query(
+      'SELECT cerrada_en, cerrada_por_id FROM cajas WHERE id = $1',
+      [id],
+    )
+
+    const otroUsuario = await crearUsuario(owner, tenantA, 'segundo@caja-a.test')
+    await expect(cerrarCaja(tenantA, otroUsuario)).rejects.toMatchObject({
+      codigo: 'SIN_CAJA_ABIERTA',
+    })
+
+    const despues = await owner.query(
+      'SELECT cerrada_en, cerrada_por_id FROM cajas WHERE id = $1',
+      [id],
+    )
+    expect(despues.rows[0].cerrada_en).toEqual(antes.rows[0].cerrada_en)
+    expect(despues.rows[0].cerrada_por_id).toBe(antes.rows[0].cerrada_por_id)
+    expect(despues.rows[0].cerrada_por_id).toBe(usuarioA)
   })
 
   describe('el saldo inicial', () => {
