@@ -15,6 +15,7 @@
     "ventas:sembrar": "tsx scripts/sembrar-ventas-dev.mts",
     "catalogo:sembrar": "tsx scripts/sembrar-catalogo-dev.mts",
     "ordenes:sembrar": "tsx scripts/sembrar-ordenes-dev.mts",
+    "predev": "npm run generate",
     "pretest": "npm run generate",
     "prebuild": "npm run generate"
   },
