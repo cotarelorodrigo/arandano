@@ -103,4 +103,14 @@ describe('el grafo de estados de una orden', () => {
   it('APROBADO se lee "Aprobado" en castellano', () => {
     expect(NOMBRE_ESTADO.APROBADO).toBe('Aprobado')
   })
+
+  // Task 2 del ciclo 6: el tablero pinta sus chips recorriendo ESTADOS
+  // directamente, así que el orden de este array pasó a ser el orden visual
+  // de la fila de chips. La maqueta (design/arandano.pen, nodo `G5b3dG`)
+  // termina esa fila en Entregado, no en su posición "natural" del flujo de
+  // trabajo — el relevamiento lo marcaba como divergencia contra el código
+  // viejo, y este caso es lo que impide que vuelva sin que nadie lo note.
+  it('ENTREGADO es el último del array: así lo dibuja la maqueta del tablero', () => {
+    expect(ESTADOS.indexOf('ENTREGADO')).toBe(ESTADOS.length - 1)
+  })
 })

@@ -56,9 +56,15 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   // que Cobro, arriba): ninguno le pide un ancho al eje `wdth`, así que
   // ninguno aparece vía anchosDelDoc() — están acá sólo para que el chequeo
   // de "consumidor fantasma" los reconozca.
+  // La cuarta pantalla, servicio-tecnico/tipografia.module.css, se sumó acá
+  // mismo en el rediseño de /servicio-tecnico (Task 2 del ciclo de las tres
+  // pantallas) en vez de abrir una segunda clave — mismo criterio que ya
+  // explica el comentario de "Número de paginación" más abajo: es el MISMO
+  // rol (15 px, peso 600), no uno nuevo por pantalla.
   'Título de card': [
     'app/(app)/ventas/tipografia.module.css',
     'app/(app)/inventario/tipografia.module.css',
+    'app/(app)/servicio-tecnico/tipografia.module.css',
   ],
   'Valor de tile': ['app/(app)/ventas/tipografia.module.css'],
   'Monto de tabla': ['app/(app)/ventas/tipografia.module.css'],
@@ -76,6 +82,12 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   // /ventas de arriba — sin font-stretch propio, así que sólo hace falta acá
   // para que el chequeo de "consumidor fantasma" no lo marque.
   'Código/precio/stock de tabla': ['app/(app)/inventario/tipografia.module.css'],
+  // Dos roles nuevos del rediseño de /servicio-tecnico (Task 2 del ciclo de
+  // las tres pantallas), mismo motivo que Cobro/los de /ventas e /inventario
+  // de arriba — sin font-stretch propio, sólo hace falta acá para que el
+  // chequeo de "consumidor fantasma" no marque este módulo.
+  'Número de orden': ['app/(app)/servicio-tecnico/tipografia.module.css'],
+  'Conteo de chip': ['app/(app)/servicio-tecnico/tipografia.module.css'],
 }
 
 /**
