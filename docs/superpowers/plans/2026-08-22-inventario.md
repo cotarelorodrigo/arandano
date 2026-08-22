@@ -131,7 +131,9 @@ grep -rn "recharts\|components/ui/chart" app components lib test scripts | grep 
 
 Esperado: **cero resultados**. Si aparece alguno, **no borres nada** — decímelo: significa que algún ciclo dejó un uso que no estaba relevado.
 
-- [ ] **Step 2:** Sacá `recharts` de `package.json`, borrá `components/ui/chart.tsx`, y corré `npm install` para actualizar el lock.
+- [ ] **Step 2:** Sacá `recharts` de `package.json`, **borrá `components/ui/chart.tsx`** —que ya quedó huérfano en el ciclo anterior y es la pieza que de verdad arrastra la librería— y corré `npm install` para actualizar el lock.
+
+  **Y podá `--chart-2` de una vez**: sale de `app/globals.css`, de la tabla de tokens de `docs/sistema-de-diseno.md`, y de `SOLO_EN_CSS` en `test/maqueta.test.ts` — cuya razón, además, describe hoy *"la serie de dólares del panel de /ventas"*, que ya no existe. Los tres archivos están atados por tests que fallan si lo hacés a medias. `--chart-1` es otra cosa: es un alias de `--primary` en `EQUIVALENCIAS` que nunca tuvo consumidor propio, así que decidí vos si vale sacarlo.
 - [ ] **Step 3: Retirá la excepción de jsdom.** `grafico.test.tsx` era el único archivo del repo que la necesitaba, y tanto `vitest.config.ts` como el propio archivo tienen su documentación. **Sacá las dos**: una excepción retirada a medias deja al próximo creyendo que sigue vigente.
 - [ ] **Step 4:** `npm test && npm run lint && npx tsc --noEmit`. Ojo acá: si algo se rompe, es porque quedaba un consumidor que el grep no vio.
 - [ ] **Step 5:** Actualizá las tres secciones de inventario en `docs/pantallas.md`, y anotá el ciclo en `CLAUDE.md` — incluido que `MovimientoStock.costoUnitario` **dejó de ser un dato que nadie lee**, que es una de las decisiones abiertas que ese archivo tiene registradas.
