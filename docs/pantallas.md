@@ -47,13 +47,15 @@ La misma ruta hace las dos cosas porque lo que la decide es el `Host`.
 
 ## `/login`
 
-Entrar a un local. Usuario y contraseña, sin magic link ni OAuth.
+Entrar a un local. Usuario y contraseña, sin magic link ni OAuth (rediseño de
+`design/arandano.pen`, frame `App / Login`).
 
 **Acciones**: `entrar`.
 
 **Qué se puede hacer**
 
 - Entrar con mail y contraseña.
+- Mostrar u ocultar la contraseña con el ícono de "ojo" dentro del campo.
 
 **Decisiones**
 
@@ -64,13 +66,30 @@ Entrar a un local. Usuario y contraseña, sin magic link ni OAuth.
 - **No hay "olvidé mi contraseña".** No hay proveedor de mail, y una pantalla de
   recupero que promete un mail que nunca sale es peor que no tenerla. El
   recupero real es `npm run usuario:clave` en el servidor, o el dueño desde
-  `/usuarios`.
+  `/usuarios` — el texto de ayuda bajo el botón lo dice así, literal.
 - Un tenant `SUSPENDIDO` recibe 403, no 404: existe, pero no puede entrar.
 - El `redirect()` de esta action es el único camino que Next resuelve haciendo
   un `fetch()` contra sí mismo, con un `Host` distinto del que pidió el
   navegador. Ahí vivió un bug que dejaba la home en 404 después de cada login,
   y por eso `scripts/smoke.sh` entra **por la pantalla** además de por el
   endpoint.
+- **El paño suma marca, bajada y pie** (Task 2 del cierre del rediseño): un
+  logo cuadrado junto a "Arándano" (los dos en `--marca-soft`, no
+  `--marca-dim` — consultado en vivo con el MCP de Pencil, contra lo que decía
+  el relevamiento escrito), una bajada bajo el nombre del local, y un pie con
+  el subdominio del tenant (`${subdominio}.${dominioBase}`, armado con
+  `piezasDeOrigen()`) más la nota "Cada local entra por su propia dirección."
+  `justify-content` del paño pasa de `center` a `space-between` para anclar
+  estas tres piezas — la animación de la persiana en sí no se tocó.
+- **El formulario suma su propio título** ("Entrar" + "Usuario y contraseña
+  del local."), un rol nuevo de la escala tipográfica ("H1 de login", Archivo
+  28px/600). No es la Card que un ciclo anterior sacó a propósito: aquélla
+  repetía el nombre del local adentro del panel, éste es un rótulo del
+  formulario en sí.
+- El botón "Entrar" suma el ícono `arrow-right`; el campo de contraseña, el
+  ícono `eye`/`eye-off` de mostrar/ocultar — mismo patrón que `ScanBarcode` en
+  `punto-de-venta.tsx`: un botón con ícono DENTRO del `Input`, sin sumar
+  ningún componente de shadcn nuevo.
 
 ## `/vender`
 
