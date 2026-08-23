@@ -32,7 +32,11 @@ export function AvisoClaveGenerada({ nombre, clave }: { nombre: string; clave: s
         <p className="text-sm font-bold text-warn">
           La contraseña de {nombre} quedó en {clave}
         </p>
-        <p className="text-xs text-warn opacity-85">
+        {/* Sin opacity-85 (Minor 17 de la review final): el .pen (nodo
+            `U3uO1I`) no la pide, y --warn ya es un tono más apagado que
+            --foreground — la opacidad encima era una atenuación que nadie
+            diseñó. */}
+        <p className="text-xs text-warn">
           Se muestra una sola vez: dictásela ahora. Sus sesiones abiertas se cerraron.
         </p>
       </div>

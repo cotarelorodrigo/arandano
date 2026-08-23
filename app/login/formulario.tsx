@@ -101,15 +101,20 @@ export function FormularioLogin() {
     if (estado.error) clave.current?.focus()
   }, [estado])
 
+  // Minor 11 de la review final, consultado en vivo (nodos wxmdz/r70Sp/PK27T/
+  // frBAX/vXQs2): la Caja mide 360px fijos, no max-w-sm (384); el gap del
+  // Título es 5, no 4 (gap-1); el de Campos es 14, no 16 (gap-4); y cada
+  // campo individual (Mail, Contraseña) es 5, no 8 (gap-2). El gap de la
+  // Caja en sí (20, gap-5) ya estaba bien y no se toca.
   return (
-    <form action={accion} className="flex w-full max-w-sm flex-col gap-5">
-      <div className="flex flex-col gap-1">
+    <form action={accion} className="flex w-[360px] flex-col gap-5">
+      <div className="flex flex-col gap-[5px]">
         <h1 className={estilos.tituloEntrar}>Entrar</h1>
         <p className="text-[13px] text-muted-foreground">Usuario y contraseña del local.</p>
       </div>
 
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-[14px]">
+        <div className="flex flex-col gap-[5px]">
           <Label htmlFor="email" className="text-[11px] font-semibold text-foreground-soft">
             Mail
           </Label>
@@ -130,7 +135,7 @@ export function FormularioLogin() {
             className="h-11 rounded-[9px] px-[11px]"
           />
         </div>
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-[5px]">
           <Label htmlFor="clave" className="text-[11px] font-semibold text-foreground-soft">
             Contraseña
           </Label>

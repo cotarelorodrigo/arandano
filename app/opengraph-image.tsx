@@ -40,8 +40,12 @@ export default function Imagen() {
         <div style={{ fontSize: 28, letterSpacing: 6, textTransform: 'uppercase', opacity: 0.7 }}>
           Arándano
         </div>
+        {/* Minor 17 de la review final: esta frase seguía siendo la vieja
+            propuesta de valor, mientras el H1 de la landing (app/sitio/
+            secciones.tsx, Hero) ya decía otra desde el rediseño de la Task
+            4 — es la vista previa social de la única página pública. */}
         <div style={{ fontSize: 76, lineHeight: 1.1, marginTop: 32 }}>
-          Abrís, vendés, cerrás la caja.
+          Todo el local en un solo lugar
         </div>
       </div>
     ),

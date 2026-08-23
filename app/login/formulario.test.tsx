@@ -90,6 +90,19 @@ describe('geometría contra design/arandano.pen (I4 de la review final)', () => 
       expect(clases).toContain('text-foreground-soft')
     }
   })
+
+  // Minor 11 de la review final, consultado en vivo (nodos wxmdz/r70Sp/PK27T/
+  // frBAX/vXQs2): la Caja mide 360px fijos (no max-w-sm=384), el gap del
+  // Título es 5px (no 4), el de Campos 14px (no 16) y el de cada campo
+  // individual 5px (no 8).
+  it('la Caja mide 360px; los gaps de Título/Campos/cada campo son 5/14/5', async () => {
+    const html = await render()
+    expect(html).toContain('w-[360px]')
+    expect(html).not.toContain('max-w-sm')
+    // Título, el campo Mail y el campo Contraseña: los tres con gap-[5px].
+    expect(html.match(/gap-\[5px\]/g)).toHaveLength(3)
+    expect(html).toContain('gap-[14px]')
+  })
 })
 
 describe('tipoDelCampoClave — la regla pura detrás del ojo', () => {

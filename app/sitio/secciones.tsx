@@ -63,8 +63,11 @@ function TituloDeSeccion({ children }: { children: React.ReactNode }) {
 }
 
 export function Nav({ base }: { base: BaseDeTenant }) {
+  // Sin border-b (Minor 7 de la review final): el .pen (nodo g3oxH) no
+  // dibuja stroke acá. El Pie sí lo lleva (border-t, más abajo) y ahí
+  // corresponde: son nodos distintos con decisiones distintas.
   return (
-    <header className="border-b">
+    <header>
       <div className={`${ANCHO} flex h-[76px] items-center justify-between`}>
         <div className="flex items-center gap-[9px]">
           <span aria-hidden="true" className="size-[26px] rounded-full bg-primary" />
@@ -89,7 +92,10 @@ export function Nav({ base }: { base: BaseDeTenant }) {
               revela el campo de subdominio—, mismo patrón que ya usan
               "Cambiar clave" en /usuarios y los mini-forms de caja.tsx. */}
           <EntradaDeSubdominio base={base} />
-          <Button asChild size="sm">
+          {/* h-[38px]/rounded-[9px]/gap-[7px]/px-[15px]: la geometría real de
+              o0Cl42 (Minor 8 de la review final, consultado en vivo) —
+              `size="sm"` da 28px de alto, r=12, gap=4, pad-x=10. */}
+          <Button asChild className="h-[38px] gap-[7px] rounded-[9px] px-[15px]">
             <a href="#contacto">Probar 5 días</a>
           </Button>
         </div>
@@ -136,11 +142,23 @@ export function Hero({ whatsapp }: { whatsapp: string }) {
               declara en hex crudo sin ningún token asociado (son chrome
               decorativo de ventana, no marca), así que en vez de inventar un
               color se reusan los tres tokens semánticos que YA significan
-              exactamente eso en el resto de la app: destructive/warn/ok. */}
+              exactamente eso en el resto de la app: destructive/warn/ok.
+              Reusar el SIGNIFICADO es la decisión más defendible de las tres
+              de este bloque como criterio — y la peor en resultado (Minor 5
+              de la review final): los tres tokens están pensados para texto
+              sobre claro, y son bastante más oscuros y pesados que los
+              pasteles del .pen. Se acepta la diferencia de VALOR (no sólo de
+              nombre) para no sumar tres tokens nuevos por tres puntos
+              decorativos de 9px. */}
           <span aria-hidden="true" className="size-[9px] rounded-full bg-destructive" />
           <span aria-hidden="true" className="size-[9px] rounded-full bg-warn" />
           <span aria-hidden="true" className="size-[9px] rounded-full bg-ok" />
-          <span className="font-mono text-[11px] text-muted-foreground">flor.arandano.app/vender</span>
+          {/* $ar-font, 11px — no font-mono (Minor 6 de la review final): el
+              precedente que justificaba el monoespaciado era la sección
+              Direccion (la caja con la URL de ejemplo), que la decisión 3 del
+              plan del cierre borró; sin ella no queda ningún motivo para que
+              esta URL sea la única pieza monoespaciada del sitio. */}
+          <span className="text-[11px] text-muted-foreground">flor.arandano.app/vender</span>
         </div>
 
         <Retrato />
@@ -499,7 +517,11 @@ export function Planes() {
                   {plan.accion}
                 </a>
               ) : (
-                <Button asChild variant="outline" className="h-[42px]">
+                // bg-card border-input: la superficie real de uYEg4 (Minor 9
+                // de la review final, consultado en vivo) — variant="outline"
+                // solo pinta bg-background + border-border, un blanco/gris
+                // distinto del $ar-surface + $ar-line-strong que pide el .pen.
+                <Button asChild variant="outline" className="h-[42px] border-input bg-card">
                   <a href="#contacto">{plan.accion}</a>
                 </Button>
               )}

@@ -34,6 +34,29 @@ describe('Nav', () => {
     expect(html()).toContain('Probar 5 días')
   })
 
+  // Minor 8 de la review final: size="sm" daba 28px de alto; o0Cl42 (el .pen,
+  // consultado en vivo) mide h=38, r=9, gap=7, pad-x=15.
+  it('el botón "Probar 5 días" mide h=38/r=9/gap=7/pad-x=15 (nodo o0Cl42)', () => {
+    const markup = html()
+    const idx = markup.indexOf('>Probar 5 días<')
+    const inicio = markup.lastIndexOf('<a', idx)
+    const clasesA = markup.slice(inicio, markup.indexOf('>', inicio))
+    // <Button asChild> pasa sus clases al <a> hijo (Slot de Radix).
+    expect(clasesA).toContain('h-[38px]')
+    expect(clasesA).toContain('gap-[7px]')
+    expect(clasesA).toContain('rounded-[9px]')
+    expect(clasesA).toContain('px-[15px]')
+  })
+
+  // El header en sí no lleva stroke (Minor 7 de la review final: el .pen,
+  // nodo g3oxH, no dibuja uno acá — a diferencia del Pie, que sí lo lleva).
+  it('el <header> no lleva border-b', () => {
+    const markup = html()
+    const inicio = markup.indexOf('<header')
+    const cierre = markup.indexOf('>', inicio)
+    expect(markup.slice(inicio, cierre)).not.toContain('border-b')
+  })
+
   // design/arandano.pen (nodo `BEen9`) dibuja "Entrar a mi local" como texto
   // en reposo, no un campo de subdominio siempre visible — el click que lo
   // revela es interacción que la maqueta no puede dibujar (mismo criterio que
@@ -76,6 +99,17 @@ describe('Hero', () => {
     // El retrato en sí (role="img") viene de app/sitio/retrato.tsx y ya
     // tiene su propio test — acá sólo se comprueba que Hero lo renderiza.
     expect(markup).toContain('role="img"')
+  })
+
+  // Minor 6 de la review final: el .pen (nodo udK1D) pide $ar-font para la
+  // URL de la barra, no font-mono — el precedente que justificaba el
+  // monoespaciado (la sección Direccion) se borró en este mismo ciclo.
+  it('la URL de la barra NO es monoespaciada', () => {
+    const markup = html()
+    const idx = markup.indexOf('flor.arandano.app/vender')
+    const inicio = markup.lastIndexOf('<span', idx)
+    const clases = markup.slice(inicio, markup.indexOf('>', inicio))
+    expect(clases).not.toContain('font-mono')
   })
 
   // Task 5: el formulario de un solo campo ya está en pie acá, con el texto
@@ -193,6 +227,24 @@ describe('Planes', () => {
     const markup = html()
     expect(markup).toContain('Hablemos')
     expect(markup.match(/Probar 5 días/g)).toHaveLength(3)
+  })
+
+  // Minor 9 de la review final: variant="outline" sólo pinta bg-background +
+  // border-border; uYEg4 (el .pen, consultado en vivo) pide $ar-surface
+  // (--card) + $ar-line-strong (--input) para el botón NO destacado. El
+  // destacado (Profesional) es un <a> con `style` inline propio (background
+  // var(--marca-foreground)) — filtrar por su AUSENCIA aísla los botones
+  // <Button asChild> sin depender de qué texto o qué posición tienen.
+  it('el botón de cada plan NO destacado pinta bg-card y border-input (nodo uYEg4)', () => {
+    const markup = html()
+    const anchors = [...markup.matchAll(/<a href="#contacto"[^>]*>/g)].map((m) => m[0])
+    const noDestacados = anchors.filter((a) => !a.includes('style='))
+    // Básico, Negocio y Premium: los tres planes sin destacado.
+    expect(noDestacados).toHaveLength(3)
+    for (const a of noDestacados) {
+      expect(a).toContain('bg-card')
+      expect(a).toContain('border-input')
+    }
   })
 })
 

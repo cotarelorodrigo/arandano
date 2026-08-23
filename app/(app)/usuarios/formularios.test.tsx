@@ -92,7 +92,9 @@ describe('CuerpoUsuarios', () => {
     return renderToStaticMarkup(<CuerpoUsuarios usuarios={USUARIOS} usuarioActualId="u1" />)
   }
 
-  it('arma las cuatro cards: Equipo, Alta y Reglas (el aviso de clave no está sin clave generada)', async () => {
+  // Minor 16 de la review final: este nombre decía "cuatro" y la lista de al
+  // lado nombra tres cards.
+  it('arma las tres cards: Equipo, Alta y Reglas (el aviso de clave no está sin clave generada)', async () => {
     const html = await render()
     expect(html).toContain('El equipo del local')
     expect(html).toContain('Agregar a alguien')

@@ -44,6 +44,16 @@ describe('AvisoClaveGenerada', () => {
     expect(html).toMatch(/role="alert"/)
   })
 
+  // Minor 17 de la review final: el .pen (nodo U3uO1I) no pide opacity-85 en
+  // este párrafo — --warn ya es un tono apagado por sí solo, y la opacidad
+  // encima era una atenuación que nadie diseñó.
+  it('el detalle de "se muestra una sola vez" no lleva opacity-85', () => {
+    const inicio = html.indexOf('Se muestra una sola vez')
+    const apertura = html.lastIndexOf('<p', inicio)
+    const etiqueta = html.slice(apertura, html.indexOf('>', apertura))
+    expect(etiqueta).not.toContain('opacity-85')
+  })
+
   // Wiring del botón de copiar: no se puede simular el click sin jsdom (ver
   // vitest.config.mts, environment: 'node'), así que se verifica en el
   // FUENTE que el botón copia la CLAVE y no otra cosa (p. ej. la oración

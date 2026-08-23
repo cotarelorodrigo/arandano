@@ -93,6 +93,10 @@ export function Formulario({
   }
 
   const oscura = variante === 'oscura'
+  // 46px en el Hero (nodos EtDRA/HfYKR), 48px en el Cierre (nodos
+  // V9xSVB/sUETx) — Minor 10 de la review final: el código tenía 46 en los
+  // dos.
+  const altura = oscura ? 'h-[48px]' : 'h-[46px]'
 
   return (
     <div className="flex w-full flex-col gap-2">
@@ -135,7 +139,7 @@ export function Formulario({
           maxLength={200}
           placeholder="Tu WhatsApp o tu mail"
           autoComplete="off"
-          className="h-[46px] flex-1 rounded-[10px] px-3.5"
+          className={`${altura} flex-1 rounded-[10px] px-3.5`}
           style={{ backgroundColor: oscura ? 'var(--marca-foreground)' : 'var(--card)' }}
         />
 
@@ -158,14 +162,14 @@ export function Formulario({
           <button
             type="submit"
             disabled={enviando}
-            className="flex h-[46px] items-center justify-center gap-2 rounded-[10px] px-5 text-sm font-bold disabled:opacity-60"
+            className={`flex ${altura} items-center justify-center gap-2 rounded-[10px] px-5 text-sm font-bold disabled:opacity-60`}
             style={{ backgroundColor: 'var(--marca-soft)', color: 'var(--marca)' }}
           >
             {enviando ? 'Enviando...' : textoBoton}
             <ArrowRight aria-hidden="true" className="size-4" />
           </button>
         ) : (
-          <Button type="submit" disabled={enviando} className="h-[46px] gap-2 rounded-[10px] px-5">
+          <Button type="submit" disabled={enviando} className={`${altura} gap-2 rounded-[10px] px-5`}>
             {enviando ? 'Enviando...' : textoBoton}
             <ArrowRight aria-hidden="true" className="size-4" />
           </Button>

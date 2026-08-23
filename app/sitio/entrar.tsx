@@ -84,6 +84,12 @@ export function Entrar({ base }: { base: BaseDeTenant }) {
         placeholder="tunegocio"
         aria-invalid={error}
         className="w-40"
+        // El click que revela este campo (EntradaDeSubdominio, más abajo) es la
+        // única interacción del visitante hasta acá: enfocarlo de entrada evita
+        // un segundo click que no aporta nada — mismo criterio que "Cambiar
+        // clave" en /usuarios, que ya usa autoFocus (Minor 17 de la review
+        // final: éste no lo tenía).
+        autoFocus
       />
       <Button type="submit" variant="secondary">
         Entrar

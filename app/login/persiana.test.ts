@@ -39,6 +39,23 @@ describe('.arandano — 14px/600, sin tracking ni mayúsculas (I4 de la review f
 })
 
 /**
+ * El ancho del paño en escritorio — Minor 2 de la review final: el `.pen`
+ * (frame `App / Login`, consultado en vivo) fija el lado "Formulario"
+ * (`cwd1V`) en 600px sobre un frame de 1440 y deja el `Paño` (`mLbTM`) como
+ * `fill_container`, o sea 840/1440 = 58,33% — no el 50/50 que el código
+ * tenía.
+ */
+describe('el paño mide 58.33% en escritorio (840/1440, Minor 2 de la review final)', () => {
+  const css = readFileSync('app/login/persiana.module.css', 'utf8')
+
+  it('el media query de escritorio fija 58.3333%, no 50%', () => {
+    const bloque = css.match(/@media \(min-width: 768px\) \{\s*\.pano \{([^}]*)\}/)?.[1]
+    expect(bloque, 'no se encontró el media query de .pano').toBeTruthy()
+    expect(bloque).toContain('58.3333%')
+  })
+})
+
+/**
  * El halo del paño — hallazgo (b) de la review final del cierre: la
  * aproximación anterior (`color-mix(in srgb, var(--marca-foreground) 30%,
  * var(--primary))`, un color-mix ANIDADO adentro del radial-gradient) daba

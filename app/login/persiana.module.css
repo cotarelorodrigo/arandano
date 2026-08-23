@@ -28,13 +28,13 @@
  */
 
 /*
- * El paño ocupa la mitad exacta en escritorio, y el ancho vive acá y no en una
- * utilidad de Tailwind porque es una proporción del diseño, no un layout
- * genérico. La primera versión le daba 7/12 y anclaba el cartel abajo: sobre
- * 1440×900 eso dejaba 840×900 de color plano con una línea de texto en una
- * esquina — se veía sin terminar, no espacioso. Centrado y a la mitad, el
- * cartel comparte eje vertical con el formulario y el paño se lee como lo que
- * es, la cara del local.
+ * El ancho del paño vive acá y no en una utilidad de Tailwind porque es una
+ * proporción del diseño, no un layout genérico. La primera versión le daba
+ * 7/12 y anclaba el cartel abajo: sobre 1440×900 eso dejaba 840×900 de color
+ * plano con una línea de texto en una esquina — se veía sin terminar, no
+ * espacioso. Centrarlo y ponerlo a la mitad era lo que hacía que el cartel
+ * compartiera eje vertical con el formulario y que el paño se leyera como lo
+ * que es, la cara del local.
  *
  * `justify-content` pasa de `center` a `space-between` en este ciclo, y es
  * una decisión que vale dejar escrita porque contradice la de arriba: cuando
@@ -44,6 +44,17 @@
  * ya no aplica — hay tres piezas para anclar, no una. El `.pen` manda: no es
  * la animación de la persiana la que cambia (eso sigue intacto), es un
  * layout que se había fijado antes de que estas piezas existieran.
+ *
+ * **El ancho, en cambio, quedó en 50% sin que nadie lo mirara (Minor 2 de la
+ * review final).** El `.pen` (frame `App / Login`, `yEJ9v`, consultado en
+ * vivo) no reparte el paño y el formulario a la mitad: el nodo `Formulario`
+ * (`cwd1V`) mide 600px FIJOS sobre un frame de 1440, y el `Paño` (`mLbTM`) es
+ * `fill_container` — o sea que ocupa los 840px restantes, 840/1440 = 58,33%.
+ * El ciclo que sumó `space-between` tomó esa propiedad del nodo pero no miró
+ * el ancho de su hermano. Como el lado del formulario en `page.tsx` ya es
+ * `flex-1` (crece para llenar lo que sobra), fijar acá el 58,33% alcanza para
+ * que el formulario quede en los 600/1440 = 41,67% que le corresponden, sin
+ * tocar `page.tsx`.
  */
 .pano {
   background-color: var(--marca);
@@ -71,7 +82,7 @@
 
 @media (min-width: 768px) {
   .pano {
-    width: 50%;
+    width: 58.3333%;
   }
 }
 
@@ -156,11 +167,13 @@
   color: var(--marca-soft);
 }
 
-/* El logo (design/arandano.pen, nodo `K0PRd`): cuadrado de 26px, esquinas
-   redondeadas, relleno sólido — mismo color que el texto "Arándano" de al
-   lado (ver arriba). Sin ícono adentro: la maqueta lo dibuja como un
-   rectángulo relleno sin ningún glifo, así que agregar uno sería inventar
-   contenido que el .pen no pide. */
+/* El logo (design/arandano.pen, nodo `K0PRd`): un CÍRCULO de 26px —
+   border-radius 13px sobre 26px es la mitad exacta, no una esquina
+   redondeada (Minor 15 de la review final: la docs y este comentario lo
+   llamaban "cuadrado"). Relleno sólido, mismo color que el texto "Arándano"
+   de al lado (ver arriba). Sin ícono adentro: la maqueta lo dibuja sin
+   ningún glifo, así que agregar uno sería inventar contenido que el .pen no
+   pide. */
 .logo {
   width: 26px;
   height: 26px;
@@ -193,9 +206,13 @@
   /* El .pen pinta esta nota en #7A67B8 — un violeta más apagado que
      --marca-dim, sin token $ar-* propio. Se aproxima mezclando los dos
      tokens de marca más cercanos (70% --marca-dim, 30% --marca) en vez de
-     escribir el hex a mano: da #7A68B3, a menos de dos unidades por canal
-     del valor del .pen — ningún hex crudo, mismo criterio que el halo de
-     .pano más arriba. */
+     escribir el hex a mano: da #7A68B3 — R exacto, G +1, B −5 contra el
+     valor del .pen (Minor 4 de la review final: el comentario anterior decía
+     "a menos de dos unidades por canal", y el azul se va 5). A 11px de texto
+     apagado sobre violeta profundo la diferencia es invisible, así que no
+     amerita un token nuevo — pero el comentario tiene que decir la
+     diferencia real, no una que suena mejor. Ningún hex crudo, mismo
+     criterio que el halo de .pano más arriba. */
   color: color-mix(in srgb, var(--marca-dim) 70%, var(--marca) 30%);
 }
 

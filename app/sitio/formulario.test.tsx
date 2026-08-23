@@ -139,4 +139,20 @@ describe('formulario de la landing', () => {
       'background-color:color-mix(in srgb, var(--marca-foreground) 8%, transparent)',
     )
   })
+
+  // Minor 10 de la review final: el .pen pide 46px en el Hero (nodos
+  // EtDRA/HfYKR) y 48px en el Cierre (nodos V9xSVB/sUETx) — el código tenía
+  // 46 en los dos. Se afirma sobre el <input> Y el botón, en las dos
+  // variantes.
+  it('mide 46px en "clara" (Hero) y 48px en "oscura" (Cierre) — input y botón', () => {
+    const clara = html({ variante: 'clara' })
+    const oscura = html({ variante: 'oscura' })
+    expect(clara).toContain('h-[46px]')
+    expect(clara).not.toContain('h-[48px]')
+    expect(oscura).toContain('h-[48px]')
+    expect(oscura).not.toContain('h-[46px]')
+    // Las dos piezas (input y botón) de CADA variante, no sólo una de las dos.
+    expect(clara.match(/h-\[46px\]/g)).toHaveLength(2)
+    expect(oscura.match(/h-\[48px\]/g)).toHaveLength(2)
+  })
 })

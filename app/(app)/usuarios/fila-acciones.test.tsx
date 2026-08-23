@@ -71,11 +71,12 @@ describe('FilaAcciones', () => {
     expect(html).not.toContain('Baja')
   })
 
-  // Los cuatro casos de arriba tienen que rendir HTML distinto entre sí: si
-  // alguien rompiera el condicional y devolviera siempre la misma rama, un
-  // test que sólo mirara "contiene Reactivar" en el caso de desactivado
-  // seguiría en verde con las otras tres filas rotas.
-  it('los cuatro casos rinden HTML distinto entre sí', async () => {
+  // Los tres casos de arriba tienen que rendir HTML distinto entre sí (Minor
+  // 16 de la review final: este nombre decía "cuatro" y el cuerpo siempre
+  // rindió tres): si alguien rompiera el condicional y devolviera siempre la
+  // misma rama, un test que sólo mirara "contiene Reactivar" en el caso de
+  // desactivado seguiría en verde con las otras dos filas rotas.
+  it('los tres casos rinden HTML distinto entre sí', async () => {
     const casos = await Promise.all([
       render(EMPLEADA_ACTIVA, false),
       render(DUENA_ACTIVA, true),
