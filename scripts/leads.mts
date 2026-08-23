@@ -87,11 +87,27 @@ async function listar(): Promise<void> {
       // día a todo lo que entra después de las 21. Es la misma función que usa
       // la aplicación, con el mismo huso declarado.
       const fecha = formatearFecha(new Date(l.creado_en))
-      const nombre = sinControles(l.nombre)
-      const email = sinControles(l.email)
-      const rubro = sinControles(l.rubro)
+      // nombre, email y rubro son nullable desde la Task 5 del cierre del
+      // rediseño (migración `lead_de_un_campo`): el formulario pasó a un solo
+      // campo, así que un lead nuevo no trae nombre ni rubro, y trae SÓLO uno
+      // de los dos contactos. Un lead viejo (de cuando el formulario pedía
+      // los cinco campos) puede seguir trayendo todo — sinControles() nunca
+      // se llama sobre null, que es lo que antes hacía reventar este comando
+      // apenas llegara el primer lead de un solo campo.
+      const nombre = l.nombre ? sinControles(l.nombre) : null
+      const email = l.email ? sinControles(l.email) : null
       const whatsapp = l.whatsapp ? sinControles(l.whatsapp) : null
-      console.log(`${fecha}  ${nombre} <${email}>  ${rubro}${whatsapp ? `  ${whatsapp}` : ''}`)
+      const rubro = l.rubro ? sinControles(l.rubro) : null
+
+      // El contacto: el que haya. `join(' / ')` y no un `??` porque un lead
+      // viejo puede traer los dos a la vez (el formulario de cinco campos
+      // pedía mail y WhatsApp por separado), y ahí interesa mostrar ambos, no
+      // sólo el primero.
+      const contacto = [email, whatsapp].filter((v): v is string => v !== null).join(' / ') || '(sin contacto)'
+
+      const partes = [fecha, nombre ?? '(sin nombre)', contacto]
+      if (rubro) partes.push(rubro)
+      console.log(partes.join('  '))
       if (l.mensaje) console.log(`             ${sinControles(l.mensaje)}`)
     }
     console.log(`\n${rows.length} lead(s).`)

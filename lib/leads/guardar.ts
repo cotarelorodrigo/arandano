@@ -1,11 +1,18 @@
 import { prisma } from '@/lib/db'
 import { notificarLead } from './notificar'
 
+/**
+ * `nombre`, `email` y `rubro` son nullable desde la Task 5 del cierre del
+ * rediseño: el formulario de la landing pasó a un solo campo, y ese campo se
+ * clasifica y se guarda en `email` O en `whatsapp` (nunca los dos a la vez)
+ * — ver `app/sitio/acciones.ts`. `nombre` y `rubro` ya no tienen de dónde
+ * salir. Ver el comentario del modelo `Lead` en prisma/schema.prisma.
+ */
 export type LeadNuevo = {
-  nombre: string
-  email: string
+  nombre: string | null
+  email: string | null
   whatsapp: string | null
-  rubro: string
+  rubro: string | null
   mensaje: string | null
 }
 

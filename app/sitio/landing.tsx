@@ -32,7 +32,10 @@ export function Landing({ base, whatsapp }: { base: BaseDeTenant; whatsapp: stri
         <Rubros />
         <Planes />
         <Cierre>
-          <Formulario whatsapp={whatsapp} />
+          {/* variante="oscura": este Formulario vive sobre la franja
+              --marca del Cierre, no sobre un fondo claro como el del Hero —
+              ver el comentario de formulario.tsx. */}
+          <Formulario whatsapp={whatsapp} variante="oscura" />
         </Cierre>
       </main>
 

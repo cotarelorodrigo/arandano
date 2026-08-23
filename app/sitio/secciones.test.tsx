@@ -78,10 +78,12 @@ describe('Hero', () => {
     expect(markup).toContain('role="img"')
   })
 
-  // Ruling del plan del cierre: la Task 4 NO toca el formulario. Tiene que
-  // seguir siendo el de 5 campos que existe hoy (la Task 5 lo achica).
-  it('incluye el <Formulario> tal cual existe hoy, sin tocarlo', () => {
-    expect(html()).toContain('name="nombre"')
+  // Task 5: el formulario de un solo campo ya está en pie acá, con el texto
+  // de botón que el .pen le pone a ESTE lugar en particular.
+  it('incluye el <Formulario> de un solo campo, con "Quiero probarlo"', () => {
+    const markup = html()
+    expect(markup).toContain('name="contacto"')
+    expect(markup).toContain('Quiero probarlo')
   })
 })
 

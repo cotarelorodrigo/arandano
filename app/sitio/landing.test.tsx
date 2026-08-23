@@ -51,9 +51,15 @@ describe('la landing', () => {
     }
   })
 
+  // Task 5: el formulario de un solo campo aparece dos veces —Hero y
+  // Cierre— con un texto de botón distinto en cada uno, tal como pide
+  // design/arandano.pen.
   it('el formulario aparece dos veces: en el Hero y en el Cierre', () => {
-    const apariciones = html().match(/name="nombre"/g) ?? []
+    const markup = html()
+    const apariciones = markup.match(/name="contacto"/g) ?? []
     expect(apariciones).toHaveLength(2)
+    expect(markup).toContain('Quiero probarlo')
+    expect(markup).toContain('Empezar')
   })
 
   // El marcador que distingue una página de tenant de una del ápex, y que

@@ -1,12 +1,10 @@
 'use client'
 
 import { useActionState } from 'react'
+import { ArrowRight } from 'lucide-react'
 import { enviarLead, type EstadoLead } from './acciones'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent } from '@/components/ui/card'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 
 // El estado inicial vive acá y no en acciones.ts: ese archivo es 'use server' y
 // sólo puede exportar funciones async. Mismo patrón que login, usuarios,
@@ -45,84 +43,135 @@ export function PantallaDeGracias({ whatsapp }: { whatsapp: string }) {
   )
 }
 
-export function Formulario({ whatsapp }: { whatsapp: string }) {
+type Variante = 'clara' | 'oscura'
+
+/**
+ * El formulario de un solo campo — decisión 1 del plan del cierre del
+ * rediseño (Task 5). Antes pedía nombre, mail, WhatsApp, rubro y mensaje;
+ * ahora pide UN valor ("Tu WhatsApp o tu mail", design/arandano.pen) que
+ * `enviarLead` clasifica solo. El motivo no es sólo la maqueta: CLAUDE.md
+ * describe un trial de cinco días "con muchos registros que no convierten" —
+ * un formulario de cinco campos delante de eso es fricción pura, y "el alta
+ * es instantánea" con cinco campos no se sostiene.
+ *
+ * `variante` porque el MISMO componente vive en dos superficies con
+ * tratamiento distinto: 'clara' en el Hero (fondo claro, design/arandano.pen
+ * nodo `P2ZVg6`) y 'oscura' en el Cierre (sobre --marca, nodo `zruu5`) — el
+ * campo y el contrato con `enviarLead` no cambian, sólo cómo se pinta.
+ *
+ * `textoBoton` porque el `.pen` pone un texto DISTINTO en cada lugar:
+ * "Quiero probarlo" en el Hero, "Empezar" en el Cierre (default de esta
+ * prop, porque el Cierre es donde más importa que un consumidor de esta
+ * función no se olvide de pasarlo).
+ */
+export function Formulario({
+  whatsapp,
+  textoBoton = 'Empezar',
+  variante = 'clara',
+}: {
+  whatsapp: string
+  textoBoton?: string
+  variante?: Variante
+}) {
   const [estado, accion, enviando] = useActionState(enviarLead, INICIAL)
 
+  if (estado.enviado) {
+    return <PantallaDeGracias whatsapp={whatsapp} />
+  }
+
+  const oscura = variante === 'oscura'
+
   return (
-    <Card>
-      <CardContent>
-        {estado.enviado ? (
-          <PantallaDeGracias whatsapp={whatsapp} />
+    <div className="flex w-full flex-col gap-2">
+      {estado.error ? (
+        <p
+          role="alert"
+          className={`text-sm ${oscura ? '' : 'text-destructive'}`}
+          style={oscura ? { color: 'var(--marca-soft)' } : undefined}
+        >
+          {estado.error}
+        </p>
+      ) : null}
+
+      <form
+        action={accion}
+        className="flex w-full flex-col gap-2.5 rounded-[14px] border p-[7px] sm:flex-row sm:items-center"
+        style={
+          oscura
+            ? {
+                backgroundColor: 'color-mix(in srgb, var(--marca-foreground) 8%, transparent)',
+                borderColor: 'color-mix(in srgb, var(--marca-foreground) 15%, transparent)',
+              }
+            : undefined
+        }
+      >
+        <label htmlFor="contacto" className="sr-only">
+          Tu WhatsApp o tu mail
+        </label>
+        <Input
+          id="contacto"
+          name="contacto"
+          required
+          maxLength={200}
+          placeholder="Tu WhatsApp o tu mail"
+          autoComplete="off"
+          className="h-[46px] flex-1 rounded-[10px] px-3.5"
+          style={oscura ? { backgroundColor: 'var(--marca-foreground)' } : undefined}
+        />
+
+        {/* El honeypot. Escondido con posición absoluta y no con display:none
+            ni hidden: varios bots saltean los campos ocultos por CSS obvio y
+            completan el resto. tabIndex y aria-hidden lo sacan del camino de
+            quien navega con teclado o con lector de pantalla — si una persona
+            lo completa, su lead se pierde en silencio, que es la peor falla
+            posible de esta pantalla. */}
+        <div className="absolute top-0 left-[-9999px] h-0 w-0 overflow-hidden" aria-hidden="true">
+          <label htmlFor="sitio-web">No completar</label>
+          <input id="sitio-web" name="sitio-web" type="text" tabIndex={-1} autoComplete="off" />
+        </div>
+
+        {oscura ? (
+          // Botón marca-soft/marca-deep, NO el par "on-primary" de un botón de
+          // acción normal (ese nombre de token sólo puede aparecer adentro de
+          // components/ui/): sobre la banda --marca, --primary compite mal con
+          // el fondo — el .pen elige el par de texto propio de esta superficie.
+          <button
+            type="submit"
+            disabled={enviando}
+            className="flex h-[46px] items-center justify-center gap-2 rounded-[10px] px-5 text-sm font-bold disabled:opacity-60"
+            style={{ backgroundColor: 'var(--marca-soft)', color: 'var(--marca)' }}
+          >
+            {enviando ? 'Enviando...' : textoBoton}
+            <ArrowRight aria-hidden="true" className="size-4" />
+          </button>
         ) : (
-          <form action={accion} className="space-y-4">
-            {estado.error ? (
-              <Alert variant="destructive">
-                <AlertDescription>{estado.error}</AlertDescription>
-              </Alert>
-            ) : null}
-
-            <div className="space-y-2">
-              <Label htmlFor="nombre">Tu nombre</Label>
-              <Input id="nombre" name="nombre" required autoComplete="name" maxLength={120} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="email">Mail</Label>
-              <Input id="email" name="email" type="email" required autoComplete="email" maxLength={200} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="whatsapp">WhatsApp (opcional)</Label>
-              <Input id="whatsapp" name="whatsapp" autoComplete="tel" maxLength={40} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="rubro">¿De qué es tu negocio?</Label>
-              <Input id="rubro" name="rubro" required placeholder="Kiosco, peluquería, service..." maxLength={120} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="mensaje">Contanos algo más (opcional)</Label>
-              <Input id="mensaje" name="mensaje" maxLength={2000} />
-            </div>
-
-            {/* El honeypot. Escondido con posición absoluta y no con display:none
-                ni hidden: varios bots saltean los campos ocultos por CSS obvio y
-                completan el resto. tabIndex y aria-hidden lo sacan del camino de
-                quien navega con teclado o con lector de pantalla — si una persona
-                lo completa, su lead se pierde en silencio, que es la peor falla
-                posible de esta pantalla. */}
-            <div className="absolute left-[-9999px] top-0 h-0 w-0 overflow-hidden" aria-hidden="true">
-              <label htmlFor="sitio-web">No completar</label>
-              <input id="sitio-web" name="sitio-web" type="text" tabIndex={-1} autoComplete="off" />
-            </div>
-
-            <Button type="submit" disabled={enviando} className="w-full">
-              {enviando ? 'Enviando...' : 'Quiero que me muestren'}
-            </Button>
-
-            {/* Gris de texto secundario y NO estilos.firma: esa clase es el rol
-                de FIRMA DE MARCA —--foreground al 70%, tracking ancho, mayúsculas—
-                y ese rol pertenece al paño de --marca de la franja, no a una card
-                de contenido. Con la paleta oscura ni siquiera se apoya en la
-                legibilidad: casi blanco al 70% sobre --card se ve de sobra, así
-                que lo único que sigue decidiendo acá es el rol. Dos firmas
-                "Arándano" a treinta píxeles una de otra, además, es la plataforma
-                firmando dos veces la misma franja.
-
-                Sólo se dibuja con whatsapp presente: sin número real todavía
-                (ver docker/compose.*.yml), un wa.me vacío apuntaría a la nada. */}
-            {whatsapp ? (
-              <p className="pt-2 text-center text-xs text-muted-foreground">
-                o escribinos por{' '}
-                <a className="text-primary underline" href={`https://wa.me/${whatsapp}`}>
-                  WhatsApp
-                </a>
-              </p>
-            ) : null}
-          </form>
+          <Button type="submit" disabled={enviando} className="h-[46px] gap-2 rounded-[10px] px-5">
+            {enviando ? 'Enviando...' : textoBoton}
+            <ArrowRight aria-hidden="true" className="size-4" />
+          </Button>
         )}
-      </CardContent>
-    </Card>
+      </form>
+
+      {/* La salida directa por WhatsApp. El `.pen` no la dibuja adentro del
+          Lead en reposo —ni en Hero ni en Cierre—, pero es una capacidad
+          real que ya existía antes de este ciclo (ruling del controlador,
+          Task 6 del ciclo anterior: sin número real, un wa.me vacío
+          mandaría a la nada) y el silencio de una maqueta estática sobre un
+          link auxiliar no es instrucción de sacarlo — ver el criterio de
+          lectura del .pen en CLAUDE.md ("qué pierde el producto si se
+          saca"). Sigue mostrándose sólo con `whatsapp` presente. */}
+      {whatsapp ? (
+        <p className="text-center text-xs" style={{ color: oscura ? 'var(--marca-dim)' : undefined }}>
+          <span className={oscura ? undefined : 'text-muted-foreground'}>o escribinos por </span>
+          <a
+            className="underline"
+            style={{ color: oscura ? 'var(--marca-soft)' : 'var(--primary)' }}
+            href={`https://wa.me/${whatsapp}`}
+          >
+            WhatsApp
+          </a>
+        </p>
+      ) : null}
+    </div>
   )
 }

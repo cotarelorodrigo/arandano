@@ -119,11 +119,10 @@ export function Hero({ whatsapp }: { whatsapp: string }) {
           WhatsApp conectado a los datos reales del negocio. Sobre eso, cada rubro suma lo suyo.
         </p>
 
-        {/* El formulario de un solo campo (decisión 1) lo cambia la Task 5, no
-            ésta: acá se deja el <Formulario> tal cual existe hoy, en los dos
-            lugares donde va (acá y en Cierre). Ver el ruling del plan del
-            cierre. */}
-        <Formulario whatsapp={whatsapp} />
+        {/* "Quiero probarlo": el .pen le pone un texto de botón distinto al
+            del Cierre ("Empezar", el default) — mismo campo, mismo action,
+            invitación distinta según dónde aparece. */}
+        <Formulario whatsapp={whatsapp} textoBoton="Quiero probarlo" />
 
         <p className="text-xs text-muted-foreground">
           5 días gratis · sin tarjeta · el alta es instantánea

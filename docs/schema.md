@@ -81,10 +81,10 @@ erDiagram
   }
   leads {
     uuid id PK
-    text nombre
-    text email
+    text nombre "opcional"
+    text email "opcional"
     text whatsapp "opcional"
-    text rubro
+    text rubro "opcional"
     text mensaje "opcional"
     timestamptz(3) creado_en
   }

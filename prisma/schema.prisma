@@ -595,12 +595,22 @@ model Verification {
 // `rubro` es texto y no un enum: los rubros son ilimitados por diseño (son
 // presets, no código), y un enum obligaría a una migración cada vez que alguien
 // escriba "florería".
+//
+// `nombre`, `email` y `rubro` son nullable desde la Task 5 del cierre del
+// rediseño (migración `lead_de_un_campo`): el formulario de la landing pasó
+// de cinco campos a uno solo ("Tu WhatsApp o tu mail", design/arandano.pen).
+// Ese único valor se clasifica y se guarda en `email` o en `whatsapp` según su
+// forma —`app/sitio/acciones.ts`—, y `nombre`/`rubro`/`mensaje` quedan en
+// NULL: ya no hay de dónde sacarlos. Los leads viejos (los cinco campos
+// completos) conviven sin problema con los nuevos; lo único que cambió es
+// que ya no se puede asumir que estas columnas vienen con datos —scripts/leads.mts
+// las lee con esa guarda.
 model Lead {
   id       String   @id @default(uuid(7)) @db.Uuid
-  nombre   String
-  email    String
+  nombre   String?
+  email    String?
   whatsapp String?
-  rubro    String
+  rubro    String?
   mensaje  String?
   creadoEn DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
 

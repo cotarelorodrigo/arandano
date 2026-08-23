@@ -4,10 +4,18 @@ import { Formulario, PantallaDeGracias } from './formulario'
 
 // El action no se ejercita acá —tiene su propio archivo, contra la base—: lo
 // que este test cuida es el contrato del FORMULARIO con el action, que es el
-// que se rompe en silencio si alguien renombra un campo.
+// que se rompe en silencio si alguien renombra el campo.
 vi.mock('./acciones', () => ({ enviarLead: vi.fn() }))
 
-const html = (whatsapp = '5491155555555') => renderToStaticMarkup(<Formulario whatsapp={whatsapp} />)
+function html(props: { whatsapp?: string; textoBoton?: string; variante?: 'clara' | 'oscura' } = {}) {
+  return renderToStaticMarkup(
+    <Formulario
+      whatsapp={props.whatsapp ?? '5491155555555'}
+      textoBoton={props.textoBoton}
+      variante={props.variante}
+    />,
+  )
+}
 
 // PantallaDeGracias es la rama de estado.enviado === true, a la que
 // renderToStaticMarkup no puede llegar renderizando <Formulario> (no hay
@@ -16,12 +24,31 @@ const html = (whatsapp = '5491155555555') => renderToStaticMarkup(<Formulario wh
 // exportado, que es la razón por la que existe separado.
 const gracias = (whatsapp: string) => renderToStaticMarkup(<PantallaDeGracias whatsapp={whatsapp} />)
 
+/**
+ * Reescrito para la Task 5 del cierre del rediseño: el formulario pasó de
+ * cinco campos (nombre, mail, whatsapp, rubro, mensaje) a uno solo
+ * ("contacto"), design/arandano.pen. `enviarLead` clasifica ese único valor
+ * en email o whatsapp — este archivo sólo cuida el contrato del FORM con el
+ * action (el nombre del campo, el honeypot), no la clasificación en sí, que
+ * tiene su propio archivo (`acciones.test.ts`).
+ */
 describe('formulario de la landing', () => {
-  it('emite los cinco campos con los nombres que el action lee', () => {
+  it('emite un solo campo, "contacto" — ninguno de los cinco viejos sigue existiendo', () => {
     const markup = html()
-    for (const campo of ['nombre', 'email', 'whatsapp', 'rubro', 'mensaje']) {
-      expect(markup).toContain(`name="${campo}"`)
+    expect(markup).toContain('name="contacto"')
+    for (const campoViejo of ['nombre', 'email', 'rubro', 'mensaje']) {
+      expect(markup).not.toContain(`name="${campoViejo}"`)
     }
+  })
+
+  it('el placeholder del campo es el de la maqueta, literal', () => {
+    expect(html()).toContain('Tu WhatsApp o tu mail')
+  })
+
+  it('el campo es accesible: tiene su etiqueta asociada aunque no se vea', () => {
+    const markup = html()
+    expect(markup).toContain('for="contacto"')
+    expect(markup).toContain('id="contacto"')
   })
 
   // El honeypot tiene que existir Y estar escondido de la gente: si lo ve un
@@ -40,6 +67,20 @@ describe('formulario de la landing', () => {
     expect(markup).toContain('autoComplete="off"')
   })
 
+  // El .pen pone un texto de botón DISTINTO en el Hero ("Quiero probarlo")
+  // y en el Cierre ("Empezar", el default de esta prop) — mismo campo, mismo
+  // action, invitación distinta según dónde aparece.
+  it('el botón dice "Empezar" por default', () => {
+    expect(html()).toContain('Empezar')
+    expect(html()).not.toContain('Quiero probarlo')
+  })
+
+  it('el botón dice lo que le pasen, cuando se lo pasan', () => {
+    const markup = html({ textoBoton: 'Quiero probarlo' })
+    expect(markup).toContain('Quiero probarlo')
+    expect(markup).not.toContain('>Empezar<')
+  })
+
   it('ofrece el WhatsApp como salida directa', () => {
     expect(html()).toContain('https://wa.me/5491155555555')
   })
@@ -47,7 +88,7 @@ describe('formulario de la landing', () => {
   // Ruling del controlador (Task 6): sin número real todavía, un wa.me vacío
   // mandaría a la nada. Sin whatsapp, el link no se dibuja en ningún lado.
   it('sin whatsapp, no hay link a wa.me', () => {
-    expect(html('')).not.toContain('wa.me')
+    expect(html({ whatsapp: '' })).not.toContain('wa.me')
   })
 
   // Fix de review de la Task 6: el caso de arriba sólo cubre el pie del
@@ -61,11 +102,12 @@ describe('formulario de la landing', () => {
     expect(gracias('')).not.toContain('wa.me')
   })
 
-  it('todos los campos visibles tienen su etiqueta asociada', () => {
-    const markup = html()
-    for (const campo of ['nombre', 'email', 'whatsapp', 'rubro', 'mensaje']) {
-      expect(markup).toContain(`for="${campo}"`)
-      expect(markup).toContain(`id="${campo}"`)
-    }
+  // 'clara' es el default (Hero, fondo claro); 'oscura' es el Cierre, sobre
+  // --marca — las dos pintan el input sobre un fondo sólido para que se lea
+  // contra la franja oscura (design/arandano.pen, nodo `V9xSVB`), la 'clara'
+  // no necesita ese fondo propio porque ya está sobre uno claro.
+  it('variante "oscura" pinta el input con --marca-foreground; "clara" no lo fuerza', () => {
+    expect(html({ variante: 'oscura' })).toContain('background-color:var(--marca-foreground)')
+    expect(html({ variante: 'clara' })).not.toContain('background-color:var(--marca-foreground)')
   })
 })
