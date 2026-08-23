@@ -583,13 +583,15 @@ Y del producto:
   pago en dólares. `/vender` es la **primera** de las diez pantallas de
   aplicación con su cuerpo tocado desde que el shell se instaló (ver la nota
   de arriba) — las demás seguían sirviendo su layout viejo con los colores
-  nuevos, cada una su propio ciclo. **Este contador ya no está al día**: con
-  `/ventas`, `/ventas/[id]`, `/inventario`, `/inventario/nuevo`,
-  `/inventario/[id]` (más abajo) y las tres de `/servicio-tecnico` (ciclo
-  posterior, ver más abajo) van nueve de las diez rediseñadas; sólo queda
-  `/usuarios`. Ver `docs/superpowers/plans/2026-08-22-vender.md` y
-  `docs/pantallas.md` (sección `/vender`) para el detalle completo de lo
-  construido.
+  nuevos, cada una su propio ciclo. **Sin contador acá, a propósito**: un
+  número mantenido a mano en este párrafo ya quedó viejo dos veces en este
+  mismo rediseño (Hallazgo de la review final del cierre, Minor 12) — es la
+  misma regla que este documento aplica para el `version` de `package.json`
+  contra el tag de git, y por la que la sección de arriba dice, sin números,
+  que **las trece pantallas de la maqueta ya están construidas**. Ver
+  `docs/superpowers/plans/2026-08-22-vender.md` y `docs/pantallas.md`
+  (sección `/vender`) para el detalle completo de lo construido en este
+  ciclo puntual.
 
   **El chip de caja entra con estado real y control, no sólo con el dato.**
   `cajaAbierta()` (`lib/caja/abrir-cerrar.ts`) ya existía desde el ciclo de
@@ -823,11 +825,21 @@ Y del producto:
   protege RLS sino el privilegio: `arandano_app` sólo inserta, y los leads se
   leen con `npm run leads`. El aviso sale por `notificarLead()` detrás de una
   interfaz —hoy loguea, el adaptador de la Cloud API entra cuando exista la
-  cuenta de Meta—. `--marca` gana su segunda y última superficie: la franja de
-  cierre, declarada en `docs/sistema-de-diseno.md` con la condición que la
-  hace caducar. **Decisión consciente**: la landing describe el producto
-  completo, incluido lo que todavía no está construido (caja, ARCA, catálogo,
-  bot, módulos). Ver `docs/superpowers/specs/2026-08-12-landing-design.md`.
+  cuenta de Meta—. `--marca` gana su segunda superficie de este ciclo: la
+  franja de cierre, declarada en `docs/sistema-de-diseno.md` con la condición
+  que la hace caducar. **Decisión consciente**: la landing describe el
+  producto completo, incluido lo que todavía no está construido (caja, ARCA,
+  catálogo, bot, módulos). Ver
+  `docs/superpowers/specs/2026-08-12-landing-design.md`.
+
+  **"Y última" no se sostuvo (Minor 13 de la review final del cierre):** el
+  ciclo del cierre del rediseño (2026-08-22) sumó dos superficies más en esta
+  misma pantalla —la card "Núcleo" en Módulos y la card "Profesional" en
+  Planes—, y `docs/sistema-de-diseno.md` se actualizó en su momento; esta
+  entrada, que describe el estado de 2026-08-12, no. Queda como registro
+  histórico de lo que era cierto ese día, no como el conteo vigente — para
+  eso está `docs/sistema-de-diseno.md`, sección "El arándano como
+  superficie".
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

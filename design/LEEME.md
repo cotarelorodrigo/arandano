@@ -27,9 +27,10 @@ hace cada una vive en `docs/pantallas.md`, no acá:
 | `App / Login` | `/login` |
 | `Sitio / Landing` | `/` en el ápex |
 
-Más `Shell/Sidebar`, que es un componente reusable: las once pantallas de
-aplicación lo instancian y sólo overridean cuál entrada está activa. Si la
-navegación cambia, cambia en un lugar.
+Más `Shell/Sidebar`, que es un componente reusable: de los doce frames
+`App /`, las **diez** pantallas de aplicación lo instancian y sólo overridean
+cuál entrada está activa —el ticket de 80 mm y el login no llevan shell—. Si
+la navegación cambia, cambia en un lugar.
 
 ## Los colores
 

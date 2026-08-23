@@ -33,7 +33,9 @@ copy literal de la maqueta; ahora son las siete que la maqueta dibuja, en
 
 - En `arandano.app`: leer qué es el producto —siete secciones: Nav, Hero,
   Módulos, Rubros, Planes, Cierre, Pie— y dejar un contacto (WhatsApp o mail,
-  un solo campo).
+  un solo campo). "Entrar a mi local" (Nav) revela un campo de subdominio
+  para quien ya es cliente y se olvidó de su dirección (Minor 15 de la
+  review final: esta sección no lo mencionaba).
 - En `flor.arandano.app`: nada — redirige a `/vender` si hay sesión, o a
   `/login` si no.
 
@@ -122,13 +124,18 @@ Entrar a un local. Usuario y contraseña, sin magic link ni OAuth (rediseño de
   y por eso `scripts/smoke.sh` entra **por la pantalla** además de por el
   endpoint.
 - **El paño suma marca, bajada y pie** (Task 2 del cierre del rediseño): un
-  logo cuadrado junto a "Arándano" (los dos en `--marca-soft`, no
-  `--marca-dim` — consultado en vivo con el MCP de Pencil, contra lo que decía
-  el relevamiento escrito), una bajada bajo el nombre del local, y un pie con
-  el subdominio del tenant (`${subdominio}.${dominioBase}`, armado con
-  `piezasDeOrigen()`) más la nota "Cada local entra por su propia dirección."
-  `justify-content` del paño pasa de `center` a `space-between` para anclar
-  estas tres piezas — la animación de la persiana en sí no se tocó.
+  logo **circular** junto a "Arándano" (Minor 15 de la review final: esta
+  sección lo llamaba "cuadrado" — `border-radius: 13px` sobre 26px es la
+  mitad exacta, un círculo, no una esquina redondeada; los dos en
+  `--marca-soft`, no `--marca-dim` — consultado en vivo con el MCP de Pencil,
+  contra lo que decía el relevamiento escrito), una bajada bajo el nombre del
+  local, y un pie con el subdominio del tenant (`${subdominio}.${dominioBase}`,
+  armado con `piezasDeOrigen()`) más la nota "Cada local entra por su propia
+  dirección." `justify-content` del paño pasa de `center` a `space-between`
+  para anclar estas tres piezas — la animación de la persiana en sí no se
+  tocó. Y el ancho del paño en escritorio pasa de 50% a 58,33% (840/1440,
+  Minor 2 de la review final): el nodo `Formulario` del `.pen` mide 600px
+  fijos sobre un frame de 1440, no la mitad.
 - **El formulario suma su propio título** ("Entrar" + "Usuario y contraseña
   del local."), un rol nuevo de la escala tipográfica ("H1 de login", Archivo
   28px/600). No es la Card que un ciclo anterior sacó a propósito: aquélla
@@ -323,6 +330,12 @@ El historial por período.
   (hallazgo de la review final). Si el razonamiento de por qué no hay un
   destino mejor es correcto, la conclusión es no dibujar el link, no dibujarlo
   apuntando a un subconjunto.
+- **"Volver a la primera" (hallazgo M8 del barrido final, sin documentar hasta
+  este commit):** con `total > 0` la página puede haber quedado fuera de
+  rango (`?p` se clampea a [1, 1.000.000], no a `paginas`), y el `<nav>` de
+  paginación vive DENTRO de la rama con resultados — sin este link, ese vacío
+  por página fuera de rango no ofrece ningún control para volver. `/inventario`
+  y `/servicio-tecnico` usan el mismo criterio.
 
 ## `/ventas/[id]`
 
@@ -391,6 +404,12 @@ El listado de artículos, con buscador, filtro de tipo y chips de estado
 - `?p` se trunca y se limita: `?p=2.3` daría un `skip` con decimales y
   `?p=1e300` uno fuera del rango de un `Int`, y Prisma rechaza los dos con un
   error que nadie atrapa — un 500 servido desde la barra de direcciones.
+- **"Volver a la primera" (hallazgo M8 del barrido final, sin documentar hasta
+  este commit):** con `total > 0` la página puede haber quedado fuera de
+  rango (`?p` clampeado, no `paginas`), y el `<nav>` de paginación vive DENTRO
+  de la rama con artículos — sin este link, ese vacío por página fuera de
+  rango no ofrece ningún control para volver. Mismo criterio que ya usaba
+  `/ventas`.
 
 ## `/inventario/nuevo`
 
@@ -532,6 +551,10 @@ El tablero de órdenes: qué equipos hay en el local y en qué anda cada uno.
   primer camino que iba a recorrer alguien leyendo el placeholder, que dice
   "IMEI".
 - `?p` se trunca y se limita, por lo mismo que en `/inventario`.
+- **"Volver a la primera" (hallazgo M8 del barrido final, sin documentar hasta
+  este commit):** mismo criterio que `/inventario` y `/ventas` — con
+  `total > 0` la página puede haber quedado fuera de rango, y el `<nav>` de
+  paginación vive DENTRO de la rama con órdenes.
 
 **Rediseño contra `design/arandano.pen`** (ciclo de las tres pantallas de
 Servicio Técnico):
