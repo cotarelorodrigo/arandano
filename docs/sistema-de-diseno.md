@@ -92,6 +92,8 @@ sistema— y no el dato que cada pantalla en particular existe para mostrar.
 | Tile "Total del período" en `/ventas` | Lo que entró en el período |
 | Bloque de stock en la ficha de un artículo | Cuánto hay |
 | Estado actual en la ficha de una orden | En qué anda el equipo |
+| Card "Núcleo" en la landing (`app/sitio/secciones.tsx`, sección Módulos) | El núcleo del producto — la landing no tiene un dato operativo que anclar |
+| Card "Profesional" en Planes, landing (`app/sitio/secciones.tsx`) | El plan recomendado |
 
 **Y eso reescribe "no se usa dos veces en la misma vista", sin aflojarlo.** La
 regla sigue rigiendo entera entre las seis anclas de **contenido**: dos de
@@ -104,6 +106,26 @@ del total de `/vender` esa pantalla va a mostrar **dos** superficies de
 una regresión de esta regla: una ancla quién sos, la otra ancla qué estás
 mirando. `--marca` **sigue sin ser** un fondo de pantalla y **sigue sin**
 entrar en nada que no sea una identidad o un dato principal — eso no cambió.
+
+**Y la landing del ápex suma dos superficies más (Task 4 del cierre del
+rediseño, 2026-08-22), sin que la cuenta se rompa por otro motivo.** Antes de
+este ciclo la franja de Cierre era la única marca del sitio público; ahora
+`design/arandano.pen` (frame `Sitio / Landing`, consultado en vivo) dibuja
+además la card "Núcleo" —dentro de la sección Módulos— y la card
+"Profesional" —la destacada de Planes— con el mismo `$ar-primary-deep`, o sea
+`--marca`. Tres superficies en un solo documento HTML, y la regla de arriba
+sigue sin aflojarse: lo que cambia es la unidad de cuenta. Una pantalla de
+aplicación es un solo encuadre que se mira entero de una vez —por eso "dos
+anclas ahí" es sin remedio un problema de jerarquía—, pero la landing es una
+página que se recorre con scroll, banda por banda, y el Cierre nunca está a
+la vista al mismo tiempo que Módulos o Planes. La cuenta que importa —"¿hay
+dos cosas compitiendo por la misma mirada, en el mismo momento?"— sigue dando
+como máximo una por vez, igual que en cualquier pantalla de la aplicación; lo
+que deja de valer, sólo acá, es medirla contra el documento entero en lugar de
+contra la banda visible. Y ninguna de las dos ancla un número: la card
+Núcleo ancla la idea que sostiene el producto (núcleo + módulos), la card
+Profesional ancla la recomendación de precio — ninguna compite con la
+conversión, que sigue siendo lo único que el Cierre ancla.
 
 **Y lleva sus propios colores de texto encima** — `--marca-foreground`,
 `--marca-soft` y `--marca-dim`— en vez de reusar `--foreground`. La confusión
