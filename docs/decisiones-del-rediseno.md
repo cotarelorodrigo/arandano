@@ -189,6 +189,46 @@ rediseño encontró más de quince tests que no podían ponerse rojos, incluido 
 cuyo *nombre* prometía una aserción que su cuerpo no hacía. La única defensa que
 funcionó fue romper el código a propósito y mirar.
 
+### El gate sólo ve lo que mide, y eso hay que auditarlo
+
+Dos veces en el último ciclo el mismo problema, con dos disfraces.
+
+**El bundle.** Un Client Component importaba —como valor, no como tipo— una
+función de un módulo que abre transacciones, y eso arrastró `pg` al navegador.
+Cuatro pantallas quedaron en 500. **`npm test`, `npm run lint` y `npx tsc
+--noEmit` pasaron los tres**: el harness renderiza con `renderToStaticMarkup`
+en Node, donde importar `pg` es perfectamente legal. Sólo un bundle real lo
+atrapa, y ninguno de los tres bundlea. Pasó por una review final entera sin que
+nadie lo viera, y la review fue buena — la herramienta no alcanzaba.
+
+Desde entonces `npm run build` es parte del gate de cada ciclo. Pero el build
+depende de que alguien se acuerde de correrlo, así que además está
+`test/limite-cliente-servidor.test.ts`: recorre todo archivo con `'use client'`,
+sigue sus imports de valor —por alias, relativos y a través de `export … from`—
+y falla si alguno llega a la base.
+
+**El smoke test.** `scripts/smoke.sh` verificaba que la landing fuera la de
+verdad buscando `name="nombre"` en el HTML. El formulario pasó a un campo y
+dejó de emitir ese campo. El paso 9 de `deploy.sh` habría fallado en el próximo
+deploy **diciendo que la home no responde, mientras la home respondía
+perfecto** — que es el peor modo de falla que puede tener un gate, porque manda
+a diagnosticar el lugar equivocado.
+
+**La lección que vale para lo que venga**: una aserción de gate que cita el HTML
+de una pantalla es una dependencia oculta de esa pantalla, y no hay ningún
+mecanismo que avise cuando se rompe. Cada vez que se rediseña algo que el gate
+mira, hay que ir a leer el gate.
+
+### Un contador mantenido a mano se desincroniza
+
+`CLAUDE.md` llevaba una cuenta de cuántas pantallas iban rediseñadas. Se
+corrigió dos veces durante el rediseño y quedó vieja las dos. La tercera vez no
+se actualizó el número: se borró el contador, porque el documento ya decía lo
+durable unas líneas más arriba.
+
+Es la misma regla que ese archivo ya escribía para el número de versión contra
+el tag de git, aplicada a sí mismo.
+
 ### Toda migración con SQL propio va con `--create-only`
 
 Sin eso, `migrate dev` aplica la migración apenas la genera; editarla después
