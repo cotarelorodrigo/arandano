@@ -63,17 +63,12 @@ export type ClienteEncontrado = {
   ordenesPrevias: number
 }
 
-/**
- * "3 órdenes previas" / "1 orden previa" (design/arandano.pen, nodos
- * `zjJc0`/`C8k7w`). Vive acá, junto con `buscarClientes`, y no en ninguna de
- * las dos pantallas que lo consumen: el CONTEO no se puede compartir —son dos
- * consultas de Prisma distintas, una por cliente encontrado y otra por la
- * relación del cliente de una orden ya cargada—, pero la REDACCIÓN sí, y hoy
- * no existía en ningún helper de texto del proyecto (relevamiento, §9.4).
- */
-export function rotuloOrdenesPrevias(n: number): string {
-  return n === 1 ? '1 orden previa' : `${n} órdenes previas`
-}
+// `rotuloOrdenesPrevias` ("3 órdenes previas" / "1 orden previa",
+// design/arandano.pen, nodos `zjJc0`/`C8k7w`) se mudó a `./rotulos.ts`: es
+// una función pura, pero un Client Component ('use client') que la importe
+// de ACÁ arrastra `enTransaccionDeTenant` (y con él `pg`) a su bundle del
+// navegador. Ver el comentario largo de `./rotulos.ts` para el bug real que
+// esto causó y por qué no vuelve.
 
 /**
  * Busca por nombre o por teléfono.

@@ -11,7 +11,12 @@ import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Encabezado } from '@/components/shell/encabezado'
 import { cn } from '@/lib/utils'
-import { rotuloOrdenesPrevias, type ClienteEncontrado } from '@/lib/clientes/administrar'
+// Dos módulos y no uno: `ClienteEncontrado` es un import de TIPO desde
+// administrar.ts (no arrastra nada), pero `rotuloOrdenesPrevias` tiene que
+// venir de rotulos.ts — ese archivo explica largo por qué, con el bug real
+// que costó importar la función desde administrar.ts en un Client Component.
+import type { ClienteEncontrado } from '@/lib/clientes/administrar'
+import { rotuloOrdenesPrevias } from '@/lib/clientes/rotulos'
 import { ESTADO_VISUAL } from '@/lib/ordenes-de-trabajo/estados'
 import type { EstadoServicio } from './acciones'
 // El tipo del enum, no `string`: así el compilador atrapa que la pantalla le

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { rotuloOrdenesPrevias } from './administrar'
+import { rotuloOrdenesPrevias } from './rotulos'
 
 describe('rotuloOrdenesPrevias', () => {
   it('singular con exactamente una orden previa', () => {
