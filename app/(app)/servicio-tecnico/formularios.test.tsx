@@ -215,4 +215,37 @@ describe('FormularioDiagnostico (Task 4 del rediseño: fila diagnóstico + presu
     expect(html).not.toContain('value="145000"')
     expect(html).toContain('Guardar diagnóstico')
   })
+
+  // Barrido final del cierre del rediseño (hallazgo M1): estos dos rótulos
+  // usaban el <Label> pelado de shadcn mientras el resto de la pantalla
+  // (Nombre, Teléfono en FormularioRecepcion) ya pagaba la maqueta —
+  // 11px/600/--foreground-soft. Ver nuevo/formularios.test.tsx para el
+  // mismo caso sobre los otros siete rótulos de esta pantalla.
+  it('"Diagnóstico del técnico" y "Presupuesto" pagan el mismo tratamiento que el resto de la pantalla', () => {
+    const html = renderToStaticMarkup(
+      <FormularioDiagnostico accion={accionFalsa} ordenId="o-1" diagnostico="" montoEstimado="" />,
+    )
+    for (const rotulo of ['Diagnóstico del técnico', 'Presupuesto']) {
+      const inicio = html.lastIndexOf('<label', html.indexOf(`>${rotulo}<`))
+      const cierre = html.indexOf('>', inicio)
+      expect(inicio, `no se encontró el <label> de "${rotulo}"`).toBeGreaterThan(-1)
+      expect(
+        html.slice(inicio, cierre),
+        `el rótulo "${rotulo}" no paga text-[11px] font-semibold text-foreground-soft`,
+      ).toContain('text-[11px] font-semibold text-foreground-soft')
+    }
+  })
+
+  // Hallazgo M2: el campo "Presupuesto" heredaba el h-8 (32px) por default de
+  // shadcn Input; design/arandano.pen (frame `App / Orden ficha`, nodo
+  // `XVOe5`) lo mide a 40px, verificado en vivo con el MCP de Pencil.
+  it('"Presupuesto" mide 40px (h-10), no el h-8 por default de shadcn', () => {
+    const html = renderToStaticMarkup(
+      <FormularioDiagnostico accion={accionFalsa} ordenId="o-1" diagnostico="" montoEstimado="" />,
+    )
+    const inicio = html.lastIndexOf('<input', html.indexOf('name="montoEstimado"'))
+    const cierre = html.indexOf('/>', inicio)
+    expect(inicio).toBeGreaterThan(-1)
+    expect(html.slice(inicio, cierre)).toContain('h-10')
+  })
 })

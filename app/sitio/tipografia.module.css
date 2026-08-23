@@ -1,0 +1,29 @@
+/*
+ * Archivo sin font-stretch propio, mismo caso que los módulos de tipografía
+ * de /ventas, /inventario y /servicio-tecnico: los siete roles de la landing
+ * (H1 del Hero, título de sección de Módulos/Rubros/Planes, H2 del Cierre,
+ * marca del Nav, título de la card Núcleo, título de card de módulo, monto
+ * del plan — todos `fontFamily: "$ar-display"` en design/arandano.pen, frame
+ * `Sitio / Landing`) piden la MISMA cara que Cartel e Importe, pero ninguno
+ * le pide un ancho propio al eje `wdth`: se quedan en el 100% por default.
+ * `docs/sistema-de-diseno.md`, sección *La escala*, los documenta con este
+ * módulo. `test/tipografia.test.ts` lo cuida con el mismo mecanismo que los
+ * demás módulos de tipografía.
+ *
+ * POR QUÉ UN MÓDULO CSS Y NO `style={{ fontFamily: 'var(--font-archivo)' }}`
+ * A MANO: `test/tipografia.test.ts` sólo inspecciona archivos `.module.css`
+ * (`usaArchivo()`/`modulosDelRepo()`) — un `style={{ fontFamily: ... }}`
+ * suelto en un `.tsx` consume la cara de display sin que la vigilancia lo
+ * vea nunca, exactamente el agujero que ese test existe para cerrar. La Task
+ * 6 del cierre del rediseño encontró esta landing usándolo así (una
+ * constante `ARCHIVO` con `style={ARCHIVO}` repetida en secciones.tsx) y lo
+ * corrigió antes de cerrar el ciclo.
+ *
+ * Sin clase compuesta por rol, igual que el número de orden y el conteo de
+ * chip de servicio-tecnico: cada elemento ya trae tamaño y peso propios como
+ * utilidades de Tailwind (`text-[Npx] font-bold tracking-[...]`), así que
+ * sólo hace falta la familia.
+ */
+.archivo {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+}

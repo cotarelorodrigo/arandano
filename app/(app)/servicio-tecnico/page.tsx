@@ -448,9 +448,27 @@ export default async function ServicioTecnico({
 
           {ordenes.length === 0 ? (
             <p className="p-[18px] text-sm text-muted-foreground">
-              {buscandoEnTodas
-                ? `No apareció ninguna orden con «${busqueda}».`
-                : 'No hay equipos que mostrar con estos filtros.'}
+              {/* Los dos vacíos no son el mismo vacío (hallazgo M8 del
+                  barrido final): con `total > 0` la página quedó fuera de
+                  rango (`?p` se clampea a [1, 1.000.000], no a `paginas`), y
+                  el <nav> de paginación vive DENTRO de la rama
+                  `ordenes.length > 0` de más abajo — sin este link, ese vacío
+                  por página fuera de rango no ofrece ningún control para
+                  volver. Mismo criterio que ya usa `/ventas` para el mismo
+                  caso. */}
+              {total > 0 ? (
+                <>
+                  Esta página no tiene equipos.{' '}
+                  <Link href={hrefTablero({ busqueda, estado: filtro, pagina: 1 })} className="underline">
+                    Volver a la primera
+                  </Link>
+                  .
+                </>
+              ) : buscandoEnTodas ? (
+                `No apareció ninguna orden con «${busqueda}».`
+              ) : (
+                'No hay equipos que mostrar con estos filtros.'
+              )}
             </p>
           ) : (
             <>

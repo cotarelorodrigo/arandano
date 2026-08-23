@@ -522,6 +522,58 @@ Y del producto:
   distinguir ahí "el dólar de hoy" de "hace cuánto que nadie lo actualiza" —
   unificar los dos campos borraría justo esa diferencia, entre lo que valió y
   lo que vale.
+
+  **El cierre del rediseño (2026-08-22): Usuarios, Login y la landing del
+  ápex, contra `design/arandano.pen`.** `/usuarios` gana chips de rol y
+  estado, el aviso de clave generada en un bloque ámbar propio y el alta con
+  un control segmentado en vez de un `<select>`. `/login` gana la marca (logo
+  + "Arándano") y una bajada bajo el nombre del local en el paño, un pie con
+  el subdominio del tenant, y el formulario suma su título ("Entrar") y los
+  íconos de mostrar/ocultar la contraseña y de enviar. La landing se
+  reescribe entera: de nueve piezas sin copy literal de la maqueta a las
+  **siete** que design/arandano.pen dibuja (Nav, Hero, Módulos, Rubros,
+  Planes, Cierre, Pie), con precio real en Planes por primera vez y el estado
+  de cada módulo (Disponible/En camino) como dato en vez de tres bloques de
+  JSX escritos a mano.
+
+  **El formulario de captura pasa de cinco campos a uno solo** ("Tu WhatsApp
+  o tu mail"): `enviarLead` clasifica el valor por su forma —con arroba va a
+  `email`, si no va a `whatsapp`— y `nombre`/`rubro` quedan en NULL
+  (migración `lead_de_un_campo`, `nombre`/`email`/`rubro` nullable en
+  `Lead`). El motivo no es sólo la maqueta: este mismo documento describe un
+  trial de cinco días "con muchos registros que no convierten", y un
+  formulario de cinco campos delante de eso es fricción pura — "el alta es
+  instantánea" no se sostenía con cinco campos.
+
+  **El retrato de la landing (`app/sitio/retrato.tsx`) vuelve a seguir al
+  `/vender` real.** Se había quedado atrás del rediseño del carrito de ese
+  ciclo (tabla pelada, sin stepper, sin chip de stock, sin banda de total) —
+  la landing publicitaba un producto que ya no se veía así. Se reconstruye
+  con los mismos componentes de shadcn y el mismo formateo de plata
+  (`lib/formato/mostrar.ts`), sin importar `punto-de-venta.tsx` directo: ese
+  archivo lleva `'use client'`, y un export de un módulo cliente le llega a
+  un componente de servidor como un proxy no invocable.
+
+  **Con esto, las trece pantallas que dibuja `design/arandano.pen` están
+  construidas.** `docs/decisiones-del-rediseno.md` reúne las decisiones que
+  el rediseño tomó sin nadie a quien preguntarle —interpretaciones del
+  `.pen`, criterios que se repitieron ciclo a ciclo— para que no queden
+  dispersas en commits sueltos. Lo que sigue pendiente, explícitamente:
+
+  - **La verificación visual de las trece pantallas contra la maqueta.**
+    Ningún test puede juzgar si un color, un espaciado o una tipografía se
+    ven bien de verdad — eso depende de que una persona las mire, una por
+    una, y quedó sin hacer en este cierre.
+  - **El arqueo de caja** (apertura y cierre ya existen desde el ciclo de
+    `Caja`; el arqueo, los movimientos de efectivo sueltos y la pantalla
+    `/caja` siguen siendo la pieza 6 del roadmap).
+  - **Los repuestos de servicio técnico**, que es el ciclo que va a cerrar la
+    decisión abierta de `MovimientoStock` (ver *Decisiones abiertas del
+    modelo de datos*, más arriba).
+  - **La pregunta abierta del grafo de estados** que dejó el ciclo de
+    Servicio Técnico sobre qué botones dibuja el paño de `EN_REPARACION` —
+    ver el párrafo "Pregunta abierta para el dueño del producto" unas
+    páginas más arriba, en el rediseño de esas tres pantallas.
 - ~~Rediseñar el cuerpo de `/vender` contra la maqueta.~~ **Hecho**
   (2026-08-22). `design/arandano.pen`, frame `App / Vender`: el buscador pasó
   a barra prominente a todo el ancho con su propio atajo (`F2`), la cinta del

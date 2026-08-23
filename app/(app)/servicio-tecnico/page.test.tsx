@@ -371,3 +371,23 @@ describe('el listado pide y usa lo que la fila del rediseño necesita (Task 2 de
     expect(FUENTE).toMatch(/<Table\b/)
   })
 })
+
+describe('el vacío por página fuera de rango ofrece una salida (hallazgo M8 del barrido final)', () => {
+  const FUENTE = readFileSync('app/(app)/servicio-tecnico/page.tsx', 'utf8')
+
+  // El <nav> de paginación vive DENTRO de la rama `ordenes.length > 0` (más
+  // abajo en el mismo archivo), así que una página fuera de rango con
+  // `total > 0` mostraba el mensaje de "no hay equipos" SIN ningún control
+  // para volver — indistinguible de un filtro sin resultados de verdad.
+  it('con total > 0 ofrece un link "Volver a la primera", distinto del mensaje de cero resultados', () => {
+    const inicio = FUENTE.indexOf('{ordenes.length === 0 ? (')
+    const fin = FUENTE.indexOf('</p>', inicio)
+    expect(inicio, 'no se encontró la rama ordenes.length === 0').toBeGreaterThan(-1)
+    const bloque = FUENTE.slice(inicio, fin)
+    expect(bloque).toMatch(/total > 0 \? \(/)
+    expect(bloque).toContain('Volver a la primera')
+    // pagina: 1 y no `pagina` a secas: el link tiene que apuntar SIEMPRE a la
+    // primera página, no a la página fuera de rango que causó el vacío.
+    expect(bloque).toMatch(/hrefTablero\(\{[^}]*pagina:\s*1[^}]*\}\)/)
+  })
+})

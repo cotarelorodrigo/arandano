@@ -119,6 +119,22 @@ describe('FormularioDeAlta', () => {
       expect(FUENTE).toContain("tipo === 'PRODUCTO' && (")
     })
   })
+
+  // Barrido final del cierre del rediseño (hallazgo M2): estos campos
+  // heredaban el h-8 (32px) por default de shadcn Input, y design/arandano.pen
+  // (frame `App / Artículo nuevo`, nodo `LBhdp`) mide sus campos a 40px —
+  // verificado en vivo con el MCP de Pencil. Sin `h-10`, la pantalla se veía
+  // más baja de lo que la maqueta dibuja, y nadie lo notaba: los tests
+  // existentes no miraban altura, sólo `name`/`value`.
+  it('los campos del alta miden 40px (h-10), no el h-8 por default de shadcn', async () => {
+    const html = await renderAlta()
+    for (const campo of ['name="nombre"', 'name="categoria"', 'name="sku"', 'name="precio"']) {
+      const inicio = html.lastIndexOf('<input', html.indexOf(campo))
+      const cierre = html.indexOf('/>', inicio)
+      expect(inicio, `no se encontró el campo ${campo}`).toBeGreaterThan(-1)
+      expect(html.slice(inicio, cierre), `${campo} no mide h-10`).toContain('h-10')
+    }
+  })
 })
 
 describe('FichaDeArticulo', () => {
@@ -237,6 +253,40 @@ describe('FichaDeArticulo', () => {
   it('la columna izquierda que arma page.tsx se renderiza tal cual', async () => {
     const html = await renderFicha(null)
     expect(html).toContain('columna izquierda')
+  })
+
+  // Mismo hallazgo M2 que FormularioDeAlta: los campos de la card "Datos"
+  // heredaban el h-8 por default en vez de los 40px que mide el .pen.
+  it('los campos de "Datos" miden 40px (h-10)', async () => {
+    const html = await renderFicha('Accesorios')
+    for (const campo of ['name="nombre"', 'name="precio"', 'name="sku"', 'name="categoria"']) {
+      const inicio = html.lastIndexOf('<input', html.indexOf(campo))
+      const cierre = html.indexOf('/>', inicio)
+      expect(inicio, `no se encontró el campo ${campo}`).toBeGreaterThan(-1)
+      expect(html.slice(inicio, cierre), `${campo} no mide h-10`).toContain('h-10')
+    }
+  })
+})
+
+describe('MoverStock', () => {
+  async function renderMoverStock() {
+    const { MoverStock } = await import('./formularios')
+    return renderToStaticMarkup(<MoverStock articuloId="a1" />)
+  }
+
+  // Mismo hallazgo M2: "Ingresar mercadería" y "Corregir por conteo" son las
+  // otras dos cards de esta pantalla con campos de texto, y ninguna
+  // declaraba su altura — heredaban el h-8 por default de shadcn Input.
+  it('los campos de las dos cards miden 40px (h-10)', async () => {
+    const html = await renderMoverStock()
+    for (const campo of [
+      'name="cantidad"', 'name="costoUnitario"', 'name="nota"', 'name="stockContado"',
+    ]) {
+      const inicio = html.lastIndexOf('<input', html.indexOf(campo))
+      const cierre = html.indexOf('/>', inicio)
+      expect(inicio, `no se encontró el campo ${campo}`).toBeGreaterThan(-1)
+      expect(html.slice(inicio, cierre), `${campo} no mide h-10`).toContain('h-10')
+    }
   })
 })
 

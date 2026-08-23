@@ -43,6 +43,47 @@ delante de eso es fricción pura.
 `Lead.nombre`, `.email` y `.rubro` pasan a nullable. **Reversible en las dos
 direcciones**: el código viejo sigue insertando valores y la base los acepta.
 
+### El retrato de la landing pierde el cartel con el nombre del local
+
+`app/sitio/retrato.tsx` mostraba "Flor Celulares" en Archivo, encima del
+carrito. La reconstrucción contra el `.pen` (nodo `qjo7l`, "Carrito real")
+arranca directo en el encabezado hundido, sin cartel adentro — pero antes de
+sacarlo se buscó a dónde había ido a parar (la lección que ya dejó el ciclo
+6, más abajo): se mudó a la barra de navegador que envuelve al retrato, con
+la URL `flor.arandano.app/vender`. No es una pérdida, es la misma
+información en otro lugar del mismo frame.
+
+### Los tres puntos de la barra de navegador no inventan un color
+
+El `.pen` los declara en hex crudo (rojo/ámbar/verde), sin ningún token
+`$ar-*` asociado — decoración de ventana, no marca. En vez de aproximar con
+`color-mix` (el recurso que ya usaron Login y otros hex sueltos del `.pen`),
+se reusaron los tres tokens semánticos que ya significan exactamente eso en
+el resto de la app: `--destructive`/`--warn`/`--ok`. Ningún color nuevo, y el
+significado coincide.
+
+### La landing pasa a tener tres superficies de `--marca`, no una
+
+`docs/sistema-de-diseno.md` documentaba dos superficies de marca en el sitio
+público (login, franja de cierre) con la regla "una por pantalla, alrededor
+del dato principal". El `.pen` de la landing dibuja una tercera y una cuarta
+(la card "Núcleo" de Módulos, la card "Profesional" destacada de Planes) en
+el mismo documento HTML. La lectura que resuelve la tensión: una landing que
+se recorre con scroll no es una pantalla que se mira de un vistazo como
+`/vender` — la unidad de cuenta pasa a ser la banda visible, no el
+documento entero, y ninguna de las dos ancla un número (una ancla la idea
+del producto, la otra el plan recomendado). Quedó escrito en
+`docs/sistema-de-diseno.md`, sección "El arándano como superficie", no sólo
+acá.
+
+### `Formulario` gana `variante` y `textoBoton` sin romper el contrato con `enviarLead`
+
+El mismo componente vive en el Hero (fondo claro, botón "Quiero probarlo") y
+en el Cierre (sobre `--marca`, botón "Empezar") — mismo campo, mismo
+`action`, dos superficies y dos invitaciones distintas que el `.pen` no deja
+resolver con un solo tratamiento fijo. Dos props opcionales en vez de dos
+componentes separados: el campo y la lógica de envío no se duplican.
+
 ### La sección `Direccion` de la landing se borra
 
 La caja con la URL de ejemplo no tiene equivalente en la maqueta. No es un

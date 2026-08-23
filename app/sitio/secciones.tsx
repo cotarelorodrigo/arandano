@@ -8,6 +8,7 @@ import { Retrato } from './retrato'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import estilos from './cierre.module.css'
+import tipografia from './tipografia.module.css'
 
 /**
  * Las secciones de la landing, en el orden en que se leen.
@@ -43,12 +44,6 @@ import estilos from './cierre.module.css'
 
 const ANCHO = 'mx-auto w-full max-w-5xl px-6'
 
-// Archivo, la única cara de display del sistema — se usa directo con
-// var(--font-archivo) porque next/font ya la emite sobre el <html> (ver el
-// comentario de components/importe.module.css para el porqué de usarla así y
-// no como utilidad de Tailwind, que acá no existe fuera de un módulo CSS).
-const ARCHIVO = { fontFamily: 'var(--font-archivo)' } as const
-
 /**
  * El H2 que comparten Módulos, Rubros y Planes: 38px/700 Archivo, tracking
  * -1px, line-height 1.12 (design/arandano.pen: nodos `zJXxh`, `htFds`,
@@ -59,7 +54,9 @@ const ARCHIVO = { fontFamily: 'var(--font-archivo)' } as const
  */
 function TituloDeSeccion({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="text-[38px] leading-[1.12] font-bold tracking-[-1px] text-foreground" style={ARCHIVO}>
+    <h2
+      className={`${tipografia.archivo} text-[38px] leading-[1.12] font-bold tracking-[-1px] text-foreground`}
+    >
       {children}
     </h2>
   )
@@ -71,7 +68,7 @@ export function Nav({ base }: { base: BaseDeTenant }) {
       <div className={`${ANCHO} flex h-[76px] items-center justify-between`}>
         <div className="flex items-center gap-[9px]">
           <span aria-hidden="true" className="size-[26px] rounded-full bg-primary" />
-          <span className="text-[17px] font-bold text-foreground" style={ARCHIVO}>
+          <span className={`${tipografia.archivo} text-[17px] font-bold text-foreground`}>
             Arándano
           </span>
         </div>
@@ -110,7 +107,9 @@ export function Hero({ whatsapp }: { whatsapp: string }) {
           <span className="text-xs font-semibold text-primary">Hecho para el mercado argentino</span>
         </span>
 
-        <h1 className="text-[62px] leading-[1.03] font-bold tracking-[-2px] text-foreground" style={ARCHIVO}>
+        <h1
+          className={`${tipografia.archivo} text-[62px] leading-[1.03] font-bold tracking-[-2px] text-foreground`}
+        >
           Todo el local en un solo lugar
         </h1>
 
@@ -233,7 +232,10 @@ export function Modulos() {
         <div className="rounded-[18px] p-[26px]" style={{ backgroundColor: 'var(--marca)' }}>
           <div className="flex items-center gap-2.5">
             <Box aria-hidden="true" className="size-[19px]" style={{ color: 'var(--marca-soft)' }} />
-            <span className="text-xl font-semibold" style={{ ...ARCHIVO, color: 'var(--marca-foreground)' }}>
+            <span
+              className={`${tipografia.archivo} text-xl font-semibold`}
+              style={{ color: 'var(--marca-foreground)' }}
+            >
               Núcleo
             </span>
             <span className="text-[13px]" style={{ color: 'var(--marca-dim)' }}>
@@ -267,7 +269,9 @@ export function Modulos() {
                   </span>
                   <ChipDeEstado estado={modulo.estado} />
                 </div>
-                <span className="text-[19px] leading-[1.2] font-semibold text-foreground" style={ARCHIVO}>
+                <span
+                  className={`${tipografia.archivo} text-[19px] leading-[1.2] font-semibold text-foreground`}
+                >
                   {modulo.titulo}
                 </span>
                 <p className="text-[13px] leading-[1.5] text-foreground-soft">{modulo.detalle}</p>
@@ -443,8 +447,8 @@ export function Planes() {
 
               <div className="flex flex-col gap-0.5">
                 <span
-                  className="text-[32px] leading-none font-bold tracking-[-1px]"
-                  style={{ ...ARCHIVO, color: plan.destacado ? 'var(--marca-foreground)' : undefined }}
+                  className={`${tipografia.archivo} text-[32px] leading-none font-bold tracking-[-1px]`}
+                  style={{ color: plan.destacado ? 'var(--marca-foreground)' : undefined }}
                 >
                   {plan.precio}
                 </span>
@@ -512,8 +516,7 @@ export function Cierre({ children }: { children: React.ReactNode }) {
     <section id="contacto" className={`${estilos.franja} py-[72px]`}>
       <div className={`${ANCHO} flex flex-col items-center gap-[22px] text-center`}>
         <h2
-          className={`${estilos.titulo} max-w-[720px] text-[44px] leading-[1.1] font-bold tracking-[-1.4px]`}
-          style={ARCHIVO}
+          className={`${estilos.titulo} ${tipografia.archivo} max-w-[720px] text-[44px] leading-[1.1] font-bold tracking-[-1.4px]`}
         >
           El alta es instantánea
         </h2>

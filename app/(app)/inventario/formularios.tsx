@@ -159,7 +159,7 @@ export function FormularioDeAlta({ proximoSku }: { proximoSku: string }) {
           <CardDelFormulario titulo="Datos del artículo">
             <div className="flex flex-col gap-2">
               <Label htmlFor="nombre">Nombre</Label>
-              <Input id="nombre" name="nombre" required autoFocus />
+              <Input id="nombre" name="nombre" required autoFocus className="h-10 rounded-[9px]" />
             </div>
             {/* La maqueta (design/arandano.pen) no trae este campo en ninguno de
                 los dos formularios, y a propósito se aparta acá: muestra la
@@ -169,12 +169,12 @@ export function FormularioDeAlta({ proximoSku }: { proximoSku: string }) {
                 tabla ni jerarquía (comentario del schema). */}
             <div className="flex flex-col gap-2">
               <Label htmlFor="categoria">Categoría (opcional)</Label>
-              <Input id="categoria" name="categoria" placeholder="Accesorios · Protección" />
+              <Input id="categoria" name="categoria" placeholder="Accesorios · Protección" className="h-10 rounded-[9px]" />
             </div>
             <div className="flex gap-3">
               <div className="flex flex-1 flex-col gap-2">
                 <Label htmlFor="sku">Código (SKU)</Label>
-                <Input id="sku" name="sku" placeholder="Se genera solo si lo dejás vacío" />
+                <Input id="sku" name="sku" placeholder="Se genera solo si lo dejás vacío" className="h-10 rounded-[9px]" />
               </div>
               <div className="flex w-60 flex-col gap-2">
                 <Label htmlFor="precio">Precio de venta</Label>
@@ -182,7 +182,14 @@ export function FormularioDeAlta({ proximoSku }: { proximoSku: string }) {
                     teclado numérico aparece igual en el celular, pero la coma
                     llega sin que el navegador la descarte. El parseo lo hace
                     lib/formato/numeros.ts. */}
-                <Input id="precio" name="precio" inputMode="decimal" placeholder="15000,50" required />
+                <Input
+                  id="precio"
+                  name="precio"
+                  inputMode="decimal"
+                  placeholder="15000,50"
+                  required
+                  className="h-10 rounded-[9px]"
+                />
               </div>
             </div>
             {/* El número real, no un texto genérico: sale de
@@ -201,7 +208,7 @@ export function FormularioDeAlta({ proximoSku }: { proximoSku: string }) {
               <div className="flex gap-3">
                 <div className="flex w-[220px] flex-col gap-2">
                   <Label htmlFor="stockInicial">Cantidad (opcional)</Label>
-                  <Input id="stockInicial" name="stockInicial" inputMode="decimal" />
+                  <Input id="stockInicial" name="stockInicial" inputMode="decimal" className="h-10 rounded-[9px]" />
                 </div>
                 {/* flex-1 y no un ancho fijo como en la maqueta: ahí un tercer
                     campo ("Nota") ocupa el resto de la fila, y ese campo queda
@@ -211,7 +218,7 @@ export function FormularioDeAlta({ proximoSku }: { proximoSku: string }) {
                     vacío a la derecha. */}
                 <div className="flex flex-1 flex-col gap-2">
                   <Label htmlFor="costoUnitario">Costo unitario (opcional)</Label>
-                  <Input id="costoUnitario" name="costoUnitario" inputMode="decimal" />
+                  <Input id="costoUnitario" name="costoUnitario" inputMode="decimal" className="h-10 rounded-[9px]" />
                 </div>
               </div>
               <div className="flex items-start gap-[9px] rounded-[10px] bg-background p-3">
@@ -372,7 +379,7 @@ export function FichaDeArticulo({
                     <input type="hidden" name="articuloId" value={articuloId} />
                     <div className="flex flex-col gap-2">
                       <Label htmlFor="e-nombre">Nombre</Label>
-                      <Input id="e-nombre" name="nombre" defaultValue={nombre} required />
+                      <Input id="e-nombre" name="nombre" defaultValue={nombre} required className="h-10 rounded-[9px]" />
                     </div>
                     <div className="flex flex-col gap-2">
                       <Label htmlFor="e-precio">Precio de venta</Label>
@@ -382,19 +389,20 @@ export function FichaDeArticulo({
                         inputMode="decimal"
                         defaultValue={precio}
                         required
+                        className="h-10 rounded-[9px]"
                       />
                     </div>
                     <div className="flex gap-2">
                       <div className="flex flex-1 flex-col gap-2">
                         <Label htmlFor="e-sku">Código</Label>
-                        <Input id="e-sku" name="sku" defaultValue={sku} required />
+                        <Input id="e-sku" name="sku" defaultValue={sku} required className="h-10 rounded-[9px]" />
                       </div>
                       <div className="flex flex-1 flex-col gap-2">
                         <Label htmlFor="e-categoria">Categoría</Label>
                         {/* '' y no `categoria` crudo: un <input> no controlado
                             con defaultValue={null} tira la advertencia de React
                             de pasar de no-controlado a controlado. */}
-                        <Input id="e-categoria" name="categoria" defaultValue={categoria ?? ''} />
+                        <Input id="e-categoria" name="categoria" defaultValue={categoria ?? ''} className="h-10 rounded-[9px]" />
                       </div>
                     </div>
                     {/* El tipo no está y no es un olvido: pasar un PRODUCTO con
@@ -440,15 +448,15 @@ export function MoverStock({ articuloId }: { articuloId: string }) {
             <input type="hidden" name="articuloId" value={articuloId} />
             <div className="flex flex-col gap-2">
               <Label htmlFor="i-cantidad">Cantidad que entra</Label>
-              <Input id="i-cantidad" name="cantidad" inputMode="decimal" required />
+              <Input id="i-cantidad" name="cantidad" inputMode="decimal" required className="h-10 rounded-[9px]" />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="i-costo">Costo unitario (opcional)</Label>
-              <Input id="i-costo" name="costoUnitario" inputMode="decimal" />
+              <Input id="i-costo" name="costoUnitario" inputMode="decimal" className="h-10 rounded-[9px]" />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="i-nota">Nota (opcional)</Label>
-              <Input id="i-nota" name="nota" placeholder="Factura, proveedor…" />
+              <Input id="i-nota" name="nota" placeholder="Factura, proveedor…" className="h-10 rounded-[9px]" />
             </div>
             <Resultado estado={ingreso} />
             <Button type="submit" disabled={ingresando}>
@@ -467,11 +475,11 @@ export function MoverStock({ articuloId }: { articuloId: string }) {
             <input type="hidden" name="articuloId" value={articuloId} />
             <div className="flex flex-col gap-2">
               <Label htmlFor="c-contado">Cuánto hay realmente</Label>
-              <Input id="c-contado" name="stockContado" inputMode="decimal" required />
+              <Input id="c-contado" name="stockContado" inputMode="decimal" required className="h-10 rounded-[9px]" />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="c-nota">Nota (opcional)</Label>
-              <Input id="c-nota" name="nota" placeholder="Conteo del lunes…" />
+              <Input id="c-nota" name="nota" placeholder="Conteo del lunes…" className="h-10 rounded-[9px]" />
             </div>
             <Resultado estado={conteo} />
             <Button type="submit" variant="secondary" disabled={contando}>

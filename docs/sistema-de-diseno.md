@@ -398,8 +398,26 @@ esta tabla. Lo que sí es nuevo es el H1 "Entrar" del login (28 px/600, sin
 `font-stretch` propio, en `app/login/persiana.module.css`). Con este último
 son **quince** los roles que Archivo cubre en total.
 
+**La landing (Tasks 3-5 del cierre del rediseño) sumó siete roles más**,
+todos en `app/sitio/secciones.tsx` salvo donde se aclara, y ninguno con
+`font-stretch` propio (mismo motivo que Cobro y los roles de /ventas: no le
+piden nada al eje `wdth`): el H1 del Hero (62 px/700, tracking -2 px); el
+título de sección que comparten Módulos, Rubros y Planes (38 px/700, tracking
+-1 px — una sola fila para los tres, porque es literalmente el mismo
+componente, `TituloDeSeccion`, no tres tamaños elegidos por separado); el H2
+del Cierre (44 px/700, tracking -1.4 px, `app/sitio/cierre.module.css`); la
+marca "Arándano" del Nav (17 px/700); el título de la card "Núcleo" (20 px,
+`text-xl`, sin tamaño arbitrario propio); el título de cada card de módulo
+—Órdenes de trabajo, Turnos, Gastronomía— (19 px/600); y el monto de cada
+plan en Planes (32 px/700, tracking -1 px). El retrato del carrito
+(`app/sitio/retrato.tsx`, Task 3) **no** suma un rol nuevo: reusa *Importe*
+letra por letra, con el mismo `components/importe.module.css` que
+`punto-de-venta.tsx` — es una reconstrucción del carrito real, no una
+pantalla con su propia decisión tipográfica. Con los siete de la landing son
+**veintidós** los roles que Archivo cubre en total.
+
 `--font-heading: var(--font-sans)`: los demás títulos —los que no son ninguno
-de los quince roles ya contados— usan la misma familia.
+de los veintidós roles ya contados— usan la misma familia.
 
 ### La escala
 
@@ -431,6 +449,13 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | **Número de orden** — columna ORDEN del listado de /servicio-tecnico | Archivo | 14 px (heredado de `text-sm` de `<Table>`, sin tamaño propio) | 700 |
 | **Conteo de chip** — chips de filtro del tablero de /servicio-tecnico | Archivo | 12 px | 700 |
 | **H1 de login** — título "Entrar" del formulario | Archivo | 28 px | 600 |
+| **H1 del Hero** — "Todo el local en un solo lugar", landing | Archivo | 62 px | 700, tracking -2 px |
+| **Título de sección** — H2 compartido por Módulos, Rubros y Planes, landing | Archivo | 38 px | 700, tracking -1 px |
+| **H2 del Cierre** — "El alta es instantánea", landing | Archivo | 44 px | 700, tracking -1.4 px |
+| **Marca del Nav** — "Arándano", landing | Archivo | 17 px | 700 |
+| **Título de la card Núcleo** — landing | Archivo | 20 px (`text-xl`) | 600 |
+| **Título de card de módulo** — Órdenes de trabajo / Turnos / Gastronomía, landing | Archivo | 19 px | 600 |
+| **Monto del plan** — precio de cada card en Planes, landing | Archivo | 32 px | 700, tracking -1 px |
 
 <!-- escala:fin -->
 
@@ -465,12 +490,16 @@ meta, pie · sistema · 12 px · 400" porque describía el pie del shell viejo, 
 ese pie no existe más. Lo que no se fue con él es el tamaño: `text-xs` (12 px)
 sigue en el código, en la aclaración bajo la clave de desbloqueo y bajo el
 buscador de `app/(app)/servicio-tecnico/`, bajo el botón del formulario de
-`app/sitio/formulario.tsx` y en el pie de página de `app/sitio/landing.tsx`.
-Los cuatro comparten la misma fórmula exacta —`text-xs text-muted-foreground`,
-sin tracking ni mayúsculas—, pero no comparten una posición: uno cuelga bajo
-un campo, otro bajo un botón, el último es la leyenda de toda la página. Lo
-que los une no es dónde caen sino qué son: texto secundario que acompaña a un
-dato o a una pantalla sin competirle por atención.
+`app/sitio/formulario.tsx`, bajo la letra chica del Hero ("5 días gratis · sin
+tarjeta...") y en el pie de la landing (`Pie()`, `app/sitio/secciones.tsx` —
+se movió de `landing.tsx` en el cierre del rediseño, y pasó de una línea a
+dos: la marca y los links, cada una su propio `<span>`). Todos comparten la
+misma fórmula exacta —`text-xs text-muted-foreground`, sin tracking ni
+mayúsculas—, pero no comparten una posición: uno cuelga bajo un campo, otro
+bajo un botón, otro es la letra chica de una sección, el último es la leyenda
+de toda la página. Lo que los une no es dónde caen sino qué son: texto
+secundario que acompaña a un dato o a una pantalla sin competirle por
+atención.
 
 **Y por eso el nombre del rol no dice "bajo".** El `.pen` respalda el tamaño
 con tres nodos del cuerpo de `App / Vender` (frame `Fe3bW`), y los tres están
@@ -503,14 +532,19 @@ vez de mostrarla:
   encabezados en el ciclo del stepper de cantidad, y el rótulo "Total" en el
   rediseño de la banda del total. **Y el tracking de los dos es distinto a
   propósito**: `0.8px` los encabezados, `1.4px` el rótulo "Total" — el `.pen`
-  no los iguala, así que el código tampoco.
-- El rótulo "Arándano" de `app/not-found.tsx` y el *kicker* de
-  `app/sitio/secciones.tsx` usan `text-xs tracking-[0.06em] uppercase` — una
-  firma trackeada, emparentada con `.firma` de `app/sitio/cierre.module.css`
-  (12 px, peso 500, tracking 0.18em, mayúsculas, `--marca-dim`), no con *Meta*.
-  Ninguno de los dos frames que este ciclo autorizaba mirar (`Fe3bW`, `yhuFd`)
-  contiene ese rol, así que se deja sin fila para no inventarle tamaño ni
-  nombre a partir de nada.
+  no los iguala, así que el código tampoco. **El retrato de la landing
+  (`app/sitio/retrato.tsx`, Task 3 del cierre) es el segundo consumidor de las
+  dos**, letra por letra: es una reconstrucción del mismo carrito con los
+  mismos valores, no un tamaño elegido de nuevo.
+- El rótulo "Arándano" de `app/not-found.tsx` usa `text-xs
+  tracking-[0.06em] uppercase` — una firma trackeada, emparentada con
+  `.firma` de `app/sitio/cierre.module.css` (12 px, peso 500, tracking
+  0.18em, mayúsculas, `--marca-dim`), no con *Meta*. **El otro consumidor que
+  este párrafo citaba —el *kicker* de `app/sitio/secciones.tsx`— se borró en
+  la Task 4 del cierre del rediseño**, junto con toda la sección "Lo que
+  hace" que lo usaba: la landing nueva no tiene ningún bloque de eyebrow +
+  título con rayita, así que `not-found.tsx` queda como el único consumidor
+  de este patrón, no como uno de dos.
 
 **El *Importe* usa la otra punta del mismo eje.** Archivo se eligió por su eje
 `wdth` porque *"un local argentino tiene el nombre pintado a lo ancho del
@@ -678,13 +712,17 @@ cualquier valor que no esté en la lista.
 
 **Tampoco son espaciado las dimensiones dibujadas.** El ancho de una regla
 decorativa o de una pista de grilla es una medida de la cosa, no un hueco entre
-cosas: se elige contra lo que tiene al lado y no contra la escala. Los casos son
-de `app/sitio/secciones.tsx` — el `w-11` de la rayita del kicker (44 px de
-regla, medidos contra el texto que acompaña) y las pistas
-`grid-cols-[2.5rem_minmax(0,12rem)_minmax(0,1fr)]` de las filas numeradas, donde
-2.5rem es el ancho fijo del número de orden y 12rem el tope del título, elegido
-sobre el más largo. Los **huecos** de esa misma grilla sí están en la escala
-(`gap-x-8`), y ahí es donde la regla manda.
+cosas: se elige contra lo que tiene al lado y no contra la escala. Los dos
+casos que este párrafo citaba —el `w-11` de la rayita del *kicker* y las pistas
+`grid-cols-[2.5rem_minmax(0,12rem)_minmax(0,1fr)]` de "Lo que hace"— vivían los
+dos en `app/sitio/secciones.tsx`, y los dos se borraron en la Task 4 del
+cierre del rediseño: la landing entera se reescribió contra las siete
+secciones de `design/arandano.pen`, y ninguna de las dos estructuras
+sobrevivió al cambio de copy. El principio sigue valiendo, con un caso que sí
+sigue en pie: las columnas de `app/sitio/retrato.tsx` (`w-[104px]` la
+cantidad, `w-[110px]` el precio, `w-[130px]` el subtotal, réplica exacta de
+`punto-de-venta.tsx`) están medidas contra lo que cada una tiene que
+contener —un stepper, un monto, un monto más ancho—, no contra la escala.
 
 El recorte importa y no es una escapatoria: los componentes copiados de shadcn
 que viven en `components/ui/` traen medios pasos adentro (`gap-1.5`, `px-2.5`,

@@ -203,3 +203,27 @@ describe('el listado pide y muestra la categoría (Task 1 del rediseño)', () =>
     expect(FUENTE).toContain('{a.categoria &&')
   })
 })
+
+describe('el vacío por página fuera de rango ofrece una salida (hallazgo M8 del barrido final)', () => {
+  const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
+
+  // El <nav> de paginación vive DENTRO de la rama `articulos.length > 0`
+  // (más abajo en el mismo archivo), así que una página fuera de rango con
+  // `total > 0` mostraba el mensaje de "no hay artículos" SIN ningún control
+  // para volver — indistinguible de una búsqueda sin resultados de verdad.
+  it('con total > 0 ofrece un link "Volver a la primera", distinto del mensaje de cero resultados', () => {
+    // El bloque entero del vacío, aislado del resto del archivo por sus dos
+    // marcadores más cercanos: el comentario que lo antecede y el cierre del
+    // <p>. Sin acotar así, un `toContain` de "Volver a la primera" pasaría
+    // aunque el link estuviera en cualquier otro lugar del archivo.
+    const inicio = FUENTE.indexOf('{articulos.length === 0 ? (')
+    const fin = FUENTE.indexOf('</p>', inicio)
+    expect(inicio, 'no se encontró la rama articulos.length === 0').toBeGreaterThan(-1)
+    const bloque = FUENTE.slice(inicio, fin)
+    expect(bloque).toMatch(/total > 0 \? \(/)
+    expect(bloque).toContain('Volver a la primera')
+    // pagina: 1 y no `pagina` a secas: el link tiene que apuntar SIEMPRE a la
+    // primera página, no a la página fuera de rango que causó el vacío.
+    expect(bloque).toMatch(/hrefListado\(\{[^}]*pagina:\s*1[^}]*\}\)/)
+  })
+})

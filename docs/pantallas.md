@@ -24,9 +24,16 @@ regla es: si cambiás lo que una pantalla hace, la sección va en el mismo commi
 La landing del ápex y, en un subdominio de tenant, el redirect a la aplicación.
 La misma ruta hace las dos cosas porque lo que la decide es el `Host`.
 
+Reescrita entera en las Tasks 3-5 del cierre del rediseño (2026-08-22) contra
+`design/arandano.pen`, frame `Sitio / Landing`. Antes tenía nueve piezas sin
+copy literal de la maqueta; ahora son las siete que la maqueta dibuja, en
+`app/sitio/secciones.tsx`.
+
 **Qué se puede hacer**
 
-- En `arandano.app`: leer qué es el producto y dejar un lead (mail y WhatsApp).
+- En `arandano.app`: leer qué es el producto —siete secciones: Nav, Hero,
+  Módulos, Rubros, Planes, Cierre, Pie— y dejar un contacto (WhatsApp o mail,
+  un solo campo).
 - En `flor.arandano.app`: nada — redirige a `/vender` si hay sesión, o a
   `/login` si no.
 
@@ -37,13 +44,54 @@ La misma ruta hace las dos cosas porque lo que la decide es el `Host`.
   acá y no en un `robots.txt`, que sería el mismo archivo para el ápex y para
   todos los subdominios — justamente la distinción que hay que hacer.
   `test/indexacion.test.ts` lo fija.
-- La landing muestra un fragmento **real** del punto de venta —los mismos
-  componentes y el mismo formateo de plata, atados por test—, no una captura.
+- **El retrato del carrito (Hero → Muestra) sigue al `/vender` real** —Task 3—.
+  Se había quedado atrás del rediseño del carrito (tabla pelada, sin stepper,
+  sin chip de stock, sin banda de total): ahora reconstruye el marcado nuevo
+  con los mismos componentes de shadcn y el mismo formateo de plata
+  (`lib/formato/mostrar.ts`), atado por test. **No** importa
+  `app/(app)/vender/punto-de-venta.tsx` directo: ese archivo lleva `'use
+  client'`, y un export de un módulo cliente le llega a un componente de
+  servidor como un proxy no invocable (mismo motivo por el que
+  `lib/formato/mostrar.ts` es el punto de encuentro). El cartel con el nombre
+  del local que mostraba antes se sacó: el `.pen` ya no lo dibuja adentro de
+  la card — se mudó a la barra de navegador que envuelve al retrato, con la
+  URL `flor.arandano.app/vender`.
+- **Módulos** (arquitectura núcleo + tres módulos) y **Rubros** (grilla de doce
+  rubros con qué módulos activa cada uno) reemplazan a las viejas "Lo que
+  hace" (seis filas numeradas) y "Rubros" (tres cards de módulo sin grilla).
+  El estado de cada módulo ("Disponible" para Órdenes de trabajo, "En camino"
+  para Turnos y Gastronomía) sale de un dato (`MODULOS`, con su campo
+  `estado`), no de tres bloques de JSX con el texto escrito a mano — el día
+  que Turnos se entregue, cambia en un solo lugar.
+- **Planes muestra precio real por primera vez** ($ 24.900 / $ 44.900 /
+  $ 79.900 / "A medida"), con el checklist de features de cada uno y el botón
+  "Hablemos" del Premium (los demás dicen "Probar 5 días").
+- **La sección `Direccion`** (la caja con la URL de ejemplo
+  `https://florcelulares.{dominio}`) **se eliminó** — decisión 3 del plan del
+  cierre: el `.pen` no la dibuja en ningún lado del frame, no es un silencio de
+  estado de reposo, es una sección entera que el rediseño no incluye.
+- **El formulario de captura pasó de cinco campos a uno** (decisión 1): "Tu
+  WhatsApp o tu mail". `enviarLead` clasifica el valor por su forma —con
+  arroba va a `email`, si no va a `whatsapp`— y `nombre`/`rubro` quedan en
+  NULL. El motivo no es sólo la maqueta: un trial de cinco días "con muchos
+  registros que no convierten" (CLAUDE.md) no se sostiene con cinco campos
+  delante. El mismo `<Formulario>` vive en el Hero (`textoBoton="Quiero
+  probarlo"`, variante clara) y en el Cierre (`textoBoton="Empezar"` default,
+  variante oscura sobre `--marca`) — un solo componente, dos invitaciones a
+  la acción, porque el `.pen` le pone un texto de botón distinto a cada una.
+- **La landing tiene tres superficies de `--marca`** (la card "Núcleo" en
+  Módulos, la card "Profesional" destacada en Planes, y la franja de Cierre),
+  no una — `docs/sistema-de-diseno.md` explica por qué eso no afloja la regla
+  de "una por pantalla": la unidad de cuenta para una página que se recorre
+  con scroll es la banda visible, no el documento entero.
 - Describe el producto completo, **incluido lo que todavía no está
-  construido** (caja, ARCA, catálogo, bot, módulos). Es una decisión consciente.
+  construido** (caja, ARCA, catálogo, bot, Turnos, Gastronomía). Es una
+  decisión consciente.
 - `leads` es la primera tabla del schema **sin `tenant_id`**, así que no la
   protege RLS sino el privilegio: `arandano_app` sólo inserta, y los leads se
-  leen con `npm run leads`.
+  leen con `npm run leads`. `nombre`, `email` y `rubro` son nullable desde la
+  migración `lead_de_un_campo` — un lead nuevo trae sólo el contacto que se
+  clasificó, un lead viejo (de los cinco campos) sigue trayendo todo.
 
 ## `/login`
 

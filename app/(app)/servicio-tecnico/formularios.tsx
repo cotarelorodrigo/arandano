@@ -266,6 +266,7 @@ export function FormularioRecepcion({
                       name="clienteNombre"
                       form={FORM_RECEPCION}
                       placeholder="Nombre y apellido"
+                      className="h-10 rounded-[9px]"
                       // Tipear acá significa "no, es otro cliente": si había
                       // uno elegido de la lista, se deselecciona solo. Sin
                       // esto, crearOrden ignoraría en silencio lo tipeado acá
@@ -284,6 +285,7 @@ export function FormularioRecepcion({
                       form={FORM_RECEPCION}
                       inputMode="tel"
                       placeholder="11 0000-0000"
+                      className="h-10 rounded-[9px]"
                       onFocus={() => setClienteId('')}
                     />
                   </div>
@@ -294,22 +296,30 @@ export function FormularioRecepcion({
             <CardConEncabezado titulo="2 · Equipo">
               <div className="flex gap-[10px]">
                 <div className="flex flex-1 flex-col gap-[5px]">
-                  <Label htmlFor={`${id}-marca`}>Marca</Label>
-                  <Input id={`${id}-marca`} name="equipoMarca" form={FORM_RECEPCION} required />
+                  <Label htmlFor={`${id}-marca`} className="text-[11px] font-semibold text-foreground-soft">
+                    Marca
+                  </Label>
+                  <Input id={`${id}-marca`} name="equipoMarca" form={FORM_RECEPCION} required className="h-10 rounded-[9px]" />
                 </div>
                 <div className="flex flex-1 flex-col gap-[5px]">
-                  <Label htmlFor={`${id}-modelo`}>Modelo</Label>
-                  <Input id={`${id}-modelo`} name="equipoModelo" form={FORM_RECEPCION} required />
+                  <Label htmlFor={`${id}-modelo`} className="text-[11px] font-semibold text-foreground-soft">
+                    Modelo
+                  </Label>
+                  <Input id={`${id}-modelo`} name="equipoModelo" form={FORM_RECEPCION} required className="h-10 rounded-[9px]" />
                 </div>
               </div>
               <div className="flex gap-[10px]">
                 <div className="flex flex-1 flex-col gap-[5px]">
-                  <Label htmlFor={`${id}-serie`}>IMEI o número de serie</Label>
-                  <Input id={`${id}-serie`} name="equipoSerie" form={FORM_RECEPCION} />
+                  <Label htmlFor={`${id}-serie`} className="text-[11px] font-semibold text-foreground-soft">
+                    IMEI o número de serie
+                  </Label>
+                  <Input id={`${id}-serie`} name="equipoSerie" form={FORM_RECEPCION} className="h-10 rounded-[9px]" />
                 </div>
                 <div className="flex w-[190px] flex-col gap-[5px]">
-                  <Label htmlFor={`${id}-clave`}>Clave de desbloqueo</Label>
-                  <Input id={`${id}-clave`} name="claveDesbloqueo" form={FORM_RECEPCION} />
+                  <Label htmlFor={`${id}-clave`} className="text-[11px] font-semibold text-foreground-soft">
+                    Clave de desbloqueo
+                  </Label>
+                  <Input id={`${id}-clave`} name="claveDesbloqueo" form={FORM_RECEPCION} className="h-10 rounded-[9px]" />
                 </div>
               </div>
               <div className="flex items-start gap-2 rounded-[9px] bg-warn-soft p-[11px]">
@@ -326,7 +336,9 @@ export function FormularioRecepcion({
           <div className="flex w-[420px] shrink-0 flex-col gap-4">
             <CardConEncabezado titulo="3 · Qué le pasa">
               <div className="flex flex-col gap-[5px]">
-                <Label htmlFor={`${id}-falla`}>Falla declarada por el cliente</Label>
+                <Label htmlFor={`${id}-falla`} className="text-[11px] font-semibold text-foreground-soft">
+                  Falla declarada por el cliente
+                </Label>
                 <Textarea
                   id={`${id}-falla`}
                   name="fallaDeclarada"
@@ -336,17 +348,22 @@ export function FormularioRecepcion({
                 />
               </div>
               <div className="flex flex-col gap-[5px]">
-                <Label htmlFor={`${id}-acc`}>Accesorios entregados</Label>
+                <Label htmlFor={`${id}-acc`} className="text-[11px] font-semibold text-foreground-soft">
+                  Accesorios entregados
+                </Label>
                 <Input
                   id={`${id}-acc`}
                   name="accesorios"
                   form={FORM_RECEPCION}
                   placeholder="cargador, funda, chip"
+                  className="h-10 rounded-[9px]"
                 />
               </div>
               <div className="flex flex-col gap-[5px]">
-                <Label htmlFor={`${id}-danos`}>Daños visibles</Label>
-                <Input id={`${id}-danos`} name="danosVisibles" form={FORM_RECEPCION} />
+                <Label htmlFor={`${id}-danos`} className="text-[11px] font-semibold text-foreground-soft">
+                  Daños visibles
+                </Label>
+                <Input id={`${id}-danos`} name="danosVisibles" form={FORM_RECEPCION} className="h-10 rounded-[9px]" />
               </div>
             </CardConEncabezado>
 
@@ -574,12 +591,22 @@ export function FormularioDiagnostico({
       <input type="hidden" name="ordenId" value={ordenId} />
       <div className="flex items-end gap-3">
         <div className="flex flex-1 flex-col gap-[5px]">
-          <Label htmlFor={`${id}-diag`}>Diagnóstico del técnico</Label>
+          <Label htmlFor={`${id}-diag`} className="text-[11px] font-semibold text-foreground-soft">
+            Diagnóstico del técnico
+          </Label>
           <Textarea id={`${id}-diag`} name="diagnostico" defaultValue={diagnostico} className="h-16" />
         </div>
         <div className="flex w-[190px] flex-col gap-[5px]">
-          <Label htmlFor={`${id}-monto`}>Presupuesto</Label>
-          <Input id={`${id}-monto`} name="montoEstimado" inputMode="decimal" defaultValue={montoEstimado} />
+          <Label htmlFor={`${id}-monto`} className="text-[11px] font-semibold text-foreground-soft">
+            Presupuesto
+          </Label>
+          <Input
+            id={`${id}-monto`}
+            name="montoEstimado"
+            inputMode="decimal"
+            defaultValue={montoEstimado}
+            className="h-10 rounded-[9px]"
+          />
         </div>
       </div>
       <div className="flex justify-end">

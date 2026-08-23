@@ -300,14 +300,34 @@ export default async function Inventario({
             `BT29h`) — antes era una <table> suelta en la pantalla. */}
         <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border bg-card">
           {articulos.length === 0 ? (
-            // Un local recién dado de alta llega acá con cero artículos, y ésta es
-            // la primera pantalla que ve. En blanco no diría qué hacer.
             <p className="p-[18px] text-sm text-muted-foreground">
-              {busqueda
-                ? `No hay artículos que coincidan con "${busqueda}".`
-                : sesion.usuario.rol === 'DUENO'
-                  ? 'Todavía no cargaste ningún artículo. Empezá por «Artículo nuevo».'
-                  : 'Todavía no hay artículos cargados.'}
+              {/* Los dos vacíos no son el mismo vacío (hallazgo M8 del
+                  barrido final): con `total > 0` la página quedó fuera de
+                  rango (`?p` se clampea a [1, 1.000.000], no a `paginas`), y
+                  el <nav> de paginación vive DENTRO de la rama
+                  `articulos.length > 0` de más abajo — sin este link, ese
+                  vacío por página fuera de rango no ofrece ningún control
+                  para volver, y quien llegó ahí (un link viejo, una URL
+                  editada a mano) queda sin forma de ver el listado salvo
+                  editando la URL de nuevo. Mismo criterio que ya usa
+                  `/ventas` para el mismo caso. */}
+              {total > 0 ? (
+                <>
+                  Esta página no tiene artículos.{' '}
+                  <Link href={hrefListado({ busqueda, verInactivos, tipo, pagina: 1 })} className="underline">
+                    Volver a la primera
+                  </Link>
+                  .
+                </>
+              ) : busqueda ? (
+                // Un local recién dado de alta llega acá con cero artículos, y ésta es
+                // la primera pantalla que ve. En blanco no diría qué hacer.
+                `No hay artículos que coincidan con "${busqueda}".`
+              ) : sesion.usuario.rol === 'DUENO' ? (
+                'Todavía no cargaste ningún artículo. Empezá por «Artículo nuevo».'
+              ) : (
+                'Todavía no hay artículos cargados.'
+              )}
             </p>
           ) : (
             <>

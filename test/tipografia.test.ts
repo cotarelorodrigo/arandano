@@ -105,6 +105,18 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   // chequeo de "consumidor fantasma" no marque este módulo.
   'Número de orden': ['app/(app)/servicio-tecnico/tipografia.module.css'],
   'Conteo de chip': ['app/(app)/servicio-tecnico/tipografia.module.css'],
+  // Los siete roles de la landing (Tasks 3-5 del cierre del rediseño),
+  // mismo motivo que todos los de arriba — sin font-stretch propio, sólo
+  // hace falta acá para que el chequeo de "consumidor fantasma" no marque
+  // este módulo. Un solo archivo para los siete: ninguno tiene ancho propio
+  // ni clase compuesta (ver el comentario del propio módulo).
+  'H1 del Hero': ['app/sitio/tipografia.module.css'],
+  'Título de sección': ['app/sitio/tipografia.module.css'],
+  'H2 del Cierre': ['app/sitio/tipografia.module.css'],
+  'Marca del Nav': ['app/sitio/tipografia.module.css'],
+  'Título de la card Núcleo': ['app/sitio/tipografia.module.css'],
+  'Título de card de módulo': ['app/sitio/tipografia.module.css'],
+  'Monto del plan': ['app/sitio/tipografia.module.css'],
 }
 
 /**

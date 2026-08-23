@@ -163,4 +163,45 @@ describe('FormularioRecepcion — el buscador de cliente (Task 3 del rediseño)'
     expect(formBuscador).toBeGreaterThan(-1)
     expect(formBuscador).toBeGreaterThan(cierreFormInvisible)
   })
+
+  // Barrido final del cierre del rediseño (hallazgo M1): la mitad de los
+  // rótulos de esta pantalla pagaban la maqueta (11px/600/--foreground-soft)
+  // y la otra mitad usaba el <Label> pelado de shadcn (14px/500, sin color
+  // propio) — una inconsistencia visual entre campos de la MISMA card. Los
+  // nueve rótulos de la card "2 · Equipo" y "3 · Qué le pasa" (Marca, Modelo,
+  // IMEI, Clave, Falla, Accesorios, Daños) tienen que pagar el mismo
+  // tratamiento que ya usaban Nombre y Teléfono.
+  it('todos los rótulos de campo pagan el mismo tratamiento: 11px/600/--foreground-soft', () => {
+    const html = render([])
+    for (const rotulo of [
+      'Nombre', 'Teléfono', 'Marca', 'Modelo', 'IMEI o número de serie',
+      'Clave de desbloqueo', 'Falla declarada por el cliente', 'Accesorios entregados',
+      'Daños visibles',
+    ]) {
+      const inicio = html.lastIndexOf('<label', html.indexOf(`>${rotulo}<`))
+      const cierre = html.indexOf('>', inicio)
+      expect(inicio, `no se encontró el <label> de "${rotulo}"`).toBeGreaterThan(-1)
+      expect(
+        html.slice(inicio, cierre),
+        `el rótulo "${rotulo}" no paga text-[11px] font-semibold text-foreground-soft`,
+      ).toContain('text-[11px] font-semibold text-foreground-soft')
+    }
+  })
+
+  // Hallazgo M2: los mismos nueve campos heredaban el h-8 (32px) por default
+  // de shadcn Input, y design/arandano.pen (frame `App / Recibir equipo`,
+  // nodo `lIt3K`) mide los ocho campos de esta pantalla a 40px — verificado
+  // en vivo con el MCP de Pencil.
+  it('los campos de texto miden 40px (h-10), no el h-8 por default de shadcn', () => {
+    const html = render([])
+    for (const campo of [
+      'name="clienteNombre"', 'name="clienteTelefono"', 'name="equipoMarca"', 'name="equipoModelo"',
+      'name="equipoSerie"', 'name="claveDesbloqueo"', 'name="accesorios"', 'name="danosVisibles"',
+    ]) {
+      const inicio = html.lastIndexOf('<input', html.indexOf(campo))
+      const cierre = html.indexOf('/>', inicio)
+      expect(inicio, `no se encontró el campo ${campo}`).toBeGreaterThan(-1)
+      expect(html.slice(inicio, cierre), `${campo} no mide h-10`).toContain('h-10')
+    }
+  })
 })
