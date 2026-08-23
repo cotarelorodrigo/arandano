@@ -109,6 +109,12 @@ esperando el paño de "Estado actual" que construyó el ciclo 6.
   `getServerSnapshot`. Peor: el resultado en SSR (`false`) coincide con lo que
   esos tests esperan, así que la falta de cobertura queda encubierta. Testearlo
   pide jsdom, que es una decisión de infraestructura propia.
+- **Elegir un cliente existente al recibir un equipo ya no anda sin
+  JavaScript.** Era un `<select>` nativo y pasó a tarjetas seleccionables con
+  estado de React, como pide la maqueta. Falla ruidosa (el alta rechaza el
+  nombre vacío), no en silencio. Lo que fue un accidente y se corrigió: el
+  commit borró el comentario que afirmaba que la pantalla andaba sin una línea
+  de JavaScript, sin declarar la pérdida.
 - **El campo "Nota" del stock inicial** no se construyó: necesita un parámetro
   nuevo en `EntradaCrearArticulo`, fuera del alcance del ciclo.
 - **El line-height del cartel** quedó como está: `components/cartel.module.css`
@@ -161,6 +167,20 @@ caído.
 `.superpowers/` está en `.gitignore`. Un pendiente anotado sólo ahí se pierde
 con un `git clean -fdx`, y el ciclo siguiente redescubre lo que ya se había
 medido — o no lo redescubre. Este archivo existe por esa regla.
+
+### Una card más corta no manda borrar
+
+La regla del reposo —el silencio del `.pen` no es instrucción de borrar— tiene
+una contracara que costó un Critical descubrir. El ciclo 6 sacó "Daños
+visibles" de la ficha de una orden porque la maqueta dibujaba la card con
+cuatro filas y el código tenía cinco. La lectura de la card era correcta; lo
+que faltó fue mirar **a dónde había ido a parar la quinta**: la maqueta no
+tiraba el dato, lo **mudaba** a la nota del evento de apertura de la bitácora,
+donde el nodo dice literalmente "Marco golpeado en la esquina inferior
+derecha".
+
+**Antes de sacar un dato porque la maqueta no lo dibuja donde estaba, buscalo
+en el resto del frame.**
 
 ### El `.pen` se lee pero no se escribe
 
