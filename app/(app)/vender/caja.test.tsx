@@ -87,4 +87,17 @@ describe('el chip de caja', () => {
     const html = await render({ caja: null, cotizacionUsd: '1485.00', cotizacionUsdEn: null })
     expect(html).toContain('1.485,00')
   })
+  // Cuarta aparición del mismo defecto en el rediseño: un mensaje de error que
+  // el lector de pantalla nunca anuncia porque nadie le puso el rol al
+  // convertirlo de forma. Acá son dos —cerrar y abrir la caja—, y por eso el
+  // caso NO pregunta "¿hay algún role=alert?": cuenta. Un test que se conforma
+  // con encontrar uno se pone verde con el otro roto, que es exactamente cómo
+  // este defecto sobrevivió tres veces.
+  it('TODOS los mensajes de error del chip llevan role="alert"', () => {
+    const errores = FUENTE.match(/<span[^>]*>\{estado\.error\}<\/span>/g) ?? []
+    expect(errores.length).toBe(2)
+    for (const span of errores) {
+      expect(span).toContain('role="alert"')
+    }
+  })
 })

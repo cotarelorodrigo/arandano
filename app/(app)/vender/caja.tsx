@@ -122,7 +122,7 @@ function ConfirmarCierre({ caja, onCancelar }: { caja: CajaDelChip; onCancelar: 
         ¿Cerrar la caja abierta desde las {formatearFecha(caja.abiertaEn)}?
       </span>
       {estado.error && (
-        <span className="text-xs font-semibold text-destructive">{estado.error}</span>
+        <span role="alert" className="text-xs font-semibold text-destructive">{estado.error}</span>
       )}
       <Button type="submit" size="sm" variant="destructive" disabled={cerrando}>
         {cerrando ? 'Cerrando…' : 'Sí, cerrar'}
@@ -177,7 +177,7 @@ function FormularioDeApertura({ onCancelar }: { onCancelar: () => void }) {
         className={`h-7 w-20 border-0 bg-transparent p-0 text-right shadow-none focus-visible:ring-0 ${estilos.importe}`}
       />
       {estado.error && (
-        <span className="text-xs font-semibold text-destructive">{estado.error}</span>
+        <span role="alert" className="text-xs font-semibold text-destructive">{estado.error}</span>
       )}
       <Button type="submit" size="sm" disabled={enviando}>
         {enviando ? 'Abriendo…' : 'Abrir'}
