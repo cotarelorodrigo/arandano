@@ -705,15 +705,20 @@ cargar.
 
 ## `/usuarios`
 
-El equipo del local.
+El equipo del local (rediseño de `design/arandano.pen`, frame `App /
+Usuarios`).
 
 **Acciones**: `altaEmpleado`, `nuevaClave`, `baja`, `alta`.
 
 **Qué se puede hacer**
 
-- Agregar a alguien como `EMPLEADO` o `DUENO`, con su contraseña inicial.
-- Cambiarle la contraseña a cualquier usuario del local, **incluido uno mismo**.
-- Desactivar y reactivar personas.
+- Agregar a alguien como `EMPLEADO` o `DUENO` con un control segmentado (no un
+  `<select>`), con su contraseña inicial.
+- Cambiarle la contraseña a cualquier usuario del local, **incluido uno mismo**
+  —el link "Cambiar clave" abre un formulario inline en la propia fila.
+- Dar de baja y reactivar personas — "Baja" queda disponible para cualquier
+  fila activa que no sea la propia, dueños incluidos (ver más abajo).
+- Copiar la clave recién generada con un botón, desde el aviso ámbar.
 
 **Decisiones**
 
@@ -728,7 +733,12 @@ El equipo del local.
   que volver a entrar.
 - La contraseña se muestra **en texto plano** una sola vez, al crearla o
   resetearla: el dueño se la tiene que poder dictar a un empleado. No hay otra
-  forma de recuperarla después.
+  forma de recuperarla después. El rediseño le suma un bloque ámbar propio
+  (`aviso-clave.tsx`, `--warn`/`--warn-soft`) que dice explícitamente las dos
+  cosas que antes la pantalla no contaba: que se muestra una sola vez y que las
+  sesiones de esa persona ya se cerraron — el servidor ya lo hacía, la
+  pantalla no lo decía. `role="alert"` a mano, porque este bloque reemplaza al
+  `<Alert>` de shadcn que lo traía siempre.
 - El mínimo son **8 caracteres**, y el número no está escrito acá ni en el
   formulario: sale de `ctx.password.config` de Better Auth, para que la
   validación del servidor y la de la librería no puedan desincronizarse.
@@ -736,6 +746,19 @@ El equipo del local.
   derivados: cuánta gente hay y cuántos dueños activos (`contarDuenosActivos`,
   `lib/usuarios/resumen.ts`). Se calculan sobre el mismo `findMany` que ya trae
   la tabla, no con una consulta aparte.
+- **"Baja" no se esconde para los dueños.** La maqueta sólo dibuja "Cambiar
+  clave" en las dos filas de dueño de su ejemplo, pero esconder "Baja" ahí
+  quitaría una capacidad que ya existía (dar de baja a OTRO dueño) y dejaría
+  sin forma de ejercitar desde la pantalla la regla del último dueño. Se
+  interpretó como variedad ilustrativa del mockup, no como una regla nueva.
+- **La card "Dos reglas que el sistema no deja romper" es texto fijo, no
+  reimplementado**: las dos reglas ya existen en `lib/usuarios/administrar.ts`
+  (el lock del último dueño en `desactivar()`, el `session.deleteMany` de
+  `resetearClave()`); la pantalla sólo las cuenta.
+- Consultado en vivo con el MCP de Pencil: a diferencia de los otros dos
+  títulos de card de esta pantalla ("El equipo del local", "Agregar a
+  alguien", en Archivo 15px/600), el título de la card de Reglas usa la pila
+  del sistema a 13px/700 — el relevamiento escrito los agrupaba a los tres.
 
 <!-- pantallas:fin -->
 

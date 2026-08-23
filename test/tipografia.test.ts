@@ -43,6 +43,12 @@ const FIN = '<!-- escala:fin -->'
  */
 const MODULOS_POR_ROL: Record<string, string[]> = {
   Cartel: ['app/login/persiana.module.css', 'components/cartel.module.css'],
+  // Task 2 del cierre: el H1 "Entrar" vive en el mismo módulo que el Cartel
+  // (persiana.module.css es el único CSS module que admite el brief de esa
+  // task), sin font-stretch propio — mismo motivo que Cobro/Título de card
+  // más arriba, sólo hace falta acá para que el chequeo de "consumidor
+  // fantasma" no lo marque.
+  'H1 de login': ['app/login/persiana.module.css'],
   Importe: ['components/importe.module.css'],
   'Título de pantalla': ['components/shell/encabezado.module.css'],
   // Sin font-stretch (ver el comentario del propio módulo), así que nunca
@@ -61,10 +67,16 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   // pantallas) en vez de abrir una segunda clave — mismo criterio que ya
   // explica el comentario de "Número de paginación" más abajo: es el MISMO
   // rol (15 px, peso 600), no uno nuevo por pantalla.
+  // La quinta pantalla (Task 1 del cierre): app/(app)/usuarios/
+  // tipografia.module.css, sumado igual que las tres anteriores — sólo dos
+  // de los tres títulos de card de esa pantalla pagan Archivo (ver el
+  // comentario del propio módulo: "Dos reglas..." usa la pila del sistema,
+  // hallazgo de consultar el .pen en vivo).
   'Título de card': [
     'app/(app)/ventas/tipografia.module.css',
     'app/(app)/inventario/tipografia.module.css',
     'app/(app)/servicio-tecnico/tipografia.module.css',
+    'app/(app)/usuarios/tipografia.module.css',
   ],
   'Valor de tile': ['app/(app)/ventas/tipografia.module.css'],
   'Monto de tabla': ['app/(app)/ventas/tipografia.module.css'],

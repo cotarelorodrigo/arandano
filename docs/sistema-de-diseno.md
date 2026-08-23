@@ -365,8 +365,19 @@ reusan *Título de card* y *Número de paginación* respectivamente, que suman
 así su cuarta y su tercera pantalla. Con los dos roles nuevos son **catorce**
 los roles que Archivo cubre en total.
 
+**El cierre del rediseño (Usuarios y Login) sumó un rol más.** El título de
+card de `/usuarios` ("El equipo del local", "Agregar a alguien") no es un rol
+nuevo: reusa *Título de card* (`app/(app)/usuarios/tipografia.module.css`),
+que suma así su quinta pantalla. Consultado en vivo con el MCP de Pencil —y a
+diferencia de lo que decía el relevamiento escrito de ese ciclo—, la tercera
+card de esa misma pantalla ("Dos reglas que el sistema no deja romper") NO
+paga Archivo: usa la pila del sistema a 13 px/700, así que queda fuera de
+esta tabla. Lo que sí es nuevo es el H1 "Entrar" del login (28 px/600, sin
+`font-stretch` propio, en `app/login/persiana.module.css`). Con este último
+son **quince** los roles que Archivo cubre en total.
+
 `--font-heading: var(--font-sans)`: los demás títulos —los que no son ninguno
-de los catorce roles ya contados— usan la misma familia.
+de los quince roles ya contados— usan la misma familia.
 
 ### La escala
 
@@ -386,7 +397,7 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | Meta — texto que acompaña a un dato sin competirle | sistema | 12 px | 400; `--muted-foreground` en superficie clara, `--marca-dim` sobre la banda oscura del total |
 | **Importe** — plata en el punto de venta | Archivo | 42 px el monto de la banda del total; 24 px su signo; 15 px los chips de vuelto y faltante; 14 px la columna | 600 el monto y los chips, 500 el signo, 400 la columna; `font-stretch: 85%`, `tabular-nums` |
 | **Cobro** — título de la card y texto del botón "Cobrar" | Archivo | 16 px el título; 17 px el botón | 600 |
-| **Título de card** — encabezados de card en /ventas, /ventas/[id], /inventario/nuevo, /inventario/[id] y /servicio-tecnico | Archivo | 15 px | 600 |
+| **Título de card** — encabezados de card en /ventas, /ventas/[id], /inventario/nuevo, /inventario/[id], /servicio-tecnico y /usuarios | Archivo | 15 px | 600 |
 | **Valor de tile** — resumen del período en /ventas; ficha de /inventario/[id] | Archivo | 32 px el tile de marca y 26 px los otros dos, en /ventas; 34 px el tile de marca y 24 px el otro, en la ficha de /inventario/[id] — la maqueta de esa pantalla usa un tamaño distinto para su tile de marca | 600, tracking -0.6 px, `tabular-nums` |
 | **Monto de tabla** — listado de /ventas y detalle de /ventas/[id] | Archivo | 14 px (heredado de `text-sm` de `<Table>`, sin tamaño propio) | 400 a 600 según la columna, `tabular-nums` |
 | **Banda de Total** — pie de la tabla "Qué se vendió" en /ventas/[id] | Archivo | 22 px | 600, `tabular-nums` |
@@ -397,6 +408,7 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | **Número de paginación** — /servicio-tecnico | Archivo | 13 px | 600 |
 | **Número de orden** — columna ORDEN del listado de /servicio-tecnico | Archivo | 14 px (heredado de `text-sm` de `<Table>`, sin tamaño propio) | 700 |
 | **Conteo de chip** — chips de filtro del tablero de /servicio-tecnico | Archivo | 12 px | 700 |
+| **H1 de login** — título "Entrar" del formulario | Archivo | 28 px | 600 |
 
 <!-- escala:fin -->
 

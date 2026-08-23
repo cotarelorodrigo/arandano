@@ -1,0 +1,32 @@
+/*
+ * Archivo sin font-stretch propio, mismo caso que app/(app)/inventario/
+ * tipografia.module.css y app/(app)/servicio-tecnico/tipografia.module.css:
+ * los títulos de card "El equipo del local" (design/arandano.pen, nodo
+ * `mjM0P`) y "Agregar a alguien" (nodo `Ba366`) piden la MISMA cara que
+ * Cartel e Importe, pero ninguno le pide un ancho propio al eje `wdth` — se
+ * quedan en el 100% por default. test/tipografia.test.ts lo cuida con el
+ * mismo mecanismo que esos módulos.
+ *
+ * La card "Dos reglas que el sistema no deja romper" (nodo `H15LFi`) queda
+ * AFUERA a propósito: consultado en vivo con el MCP de Pencil, ese título usa
+ * `$ar-font` (13px/700), no `$ar-display` — a diferencia de lo que decía el
+ * relevamiento escrito, que lo agrupaba con los otros dos títulos de card.
+ * El .pen manda: sólo dos de los tres títulos de esta pantalla pagan Archivo.
+ *
+ * POR QUÉ UN MÓDULO CSS Y NO `style={{ fontFamily: 'var(--font-archivo)' }}`
+ * A MANO: evadiría la vigilancia de test/tipografia.test.ts, que sólo
+ * inspecciona archivos `.module.css` — ver CLAUDE.md, "Nada de
+ * `style={{ fontFamily: ... }}` suelto".
+ */
+.archivo {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Título de card: mismo tamaño y peso que .tituloDeCard de /ventas,
+   /inventario y /servicio-tecnico, en su propia clase porque son módulos CSS
+   distintos. */
+.tituloDeCard {
+  composes: archivo;
+  font-weight: 600;
+  font-size: 0.9375rem; /* 15px */
+}
