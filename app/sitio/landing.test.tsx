@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { Landing } from './landing'
 
 vi.mock('./acciones', () => ({ enviarLead: vi.fn() }))
@@ -66,5 +68,53 @@ describe('la landing', () => {
   // scripts/smoke.sh usa: la landing NO puede tenerlo.
   it('no se hace pasar por una página de tenant', () => {
     expect(html()).not.toContain('data-testid="tenant-nombre"')
+  })
+
+  // Critical C2 de la review final: `Formulario` cableaba `id="contacto"` a
+  // mano, y esta página lo renderiza dos veces (Hero y Cierre) más el
+  // `<section id="contacto">` del propio Cierre — tres elementos con el mismo
+  // id. Como un fragmento resuelve al PRIMERO en orden de documento, los
+  // cinco `href="#contacto"` (el CTA del Nav y los cuatro de Planes) saltaban
+  // al input del Hero en vez de bajar al Cierre, y el `<label>` del Cierre
+  // quedaba asociado al input equivocado. La regla general —ningún id se
+  // repite en el documento— es más fuerte que afirmar sólo el caso de
+  // "contacto": también hubiera atrapado el mismo choque en "sitio-web" (el
+  // honeypot, que también se duplica).
+  it('ningún id se repite en toda la página (Critical C2 del cierre)', () => {
+    const markup = html()
+    const ids = [...markup.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1])
+    expect(ids.length).toBeGreaterThan(0)
+    const duplicados = ids.filter((id, i) => ids.indexOf(id) !== i)
+    expect(duplicados).toEqual([])
+  })
+
+  // Y en particular, el único id="contacto" que sobrevive es el de la
+  // <section> del Cierre —el ancla de los cinco CTA—, no el de ningún input.
+  it('id="contacto" lo lleva sólo la <section> del Cierre, no ningún input', () => {
+    const markup = html()
+    const apariciones = markup.match(/\sid="contacto"/g) ?? []
+    expect(apariciones).toHaveLength(1)
+    const idx = markup.indexOf('id="contacto"')
+    expect(markup.slice(Math.max(0, idx - 12), idx)).toContain('<section')
+  })
+
+  // Ata scripts/smoke.sh (paso 9 del gate de deploy) al markup real: C1 de la
+  // review final fue exactamente este acople roto — smoke.sh buscaba
+  // `name="nombre"`, un campo que la Task 5 de este mismo ciclo había
+  // borrado, y ningún `npm test` lo vio porque nada corre smoke.sh. Este test
+  // no copia el patrón a mano: lo LEE del script y lo corre contra el HTML de
+  // verdad, así que un futuro cambio de campo en cualquiera de los dos lados
+  // se nota acá, no en el próximo deploy.
+  it('el patrón que scripts/smoke.sh busca en la home (caso_home_responde) existe de verdad', () => {
+    const smoke = readFileSync(path.join(process.cwd(), 'scripts/smoke.sh'), 'utf8')
+    const funcion = smoke.match(/caso_home_responde\(\) \{[\s\S]*?\n\}/)?.[0]
+    expect(funcion, 'no se encontró caso_home_responde() en scripts/smoke.sh').toBeTruthy()
+    const patrones = [...funcion!.matchAll(/grep -q '([^']+)'/g)].map((m) => m[1])
+    expect(patrones, 'caso_home_responde no tiene los dos grep -q esperados').toHaveLength(2)
+    const [negado, exigido] = patrones
+    expect(negado).toBe('data-testid="tenant-nombre"')
+    expect(exigido).toBe('name="contacto"')
+    expect(html()).not.toContain(negado)
+    expect(html()).toContain(exigido)
   })
 })

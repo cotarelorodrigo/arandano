@@ -45,10 +45,22 @@ describe('formulario de la landing', () => {
     expect(html()).toContain('Tu WhatsApp o tu mail')
   })
 
-  it('el campo es accesible: tiene su etiqueta asociada aunque no se vea', () => {
+  // El id sale de useId() y no está escrito a mano (Critical C2 de la review
+  // final): landing.tsx renderiza <Formulario> dos veces, así que un id fijo
+  // "contacto" chocaba con el id="contacto" de la propia <section> del
+  // Cierre. Acá se afirma la ASOCIACIÓN —el id que sea, pero el mismo en el
+  // <label> y en el <input>— y no el literal "contacto", que dejó de ser el
+  // id real. La cobertura de que la landing entera no repite ningún id vive
+  // en landing.test.tsx, que es donde el choque de las tres piezas es visible.
+  it('el campo es accesible: su etiqueta apunta al MISMO id que el input, sea cual sea', () => {
     const markup = html()
-    expect(markup).toContain('for="contacto"')
-    expect(markup).toContain('id="contacto"')
+    const inputTag = markup.match(/<input[^>]*name="contacto"[^>]*>/)?.[0]
+    expect(inputTag, 'no se encontró el <input name="contacto"> en el markup').toBeTruthy()
+    const idInput = inputTag!.match(/id="([^"]+)"/)?.[1]
+    expect(idInput, 'el <input> de contacto no tiene id').toBeTruthy()
+    expect(markup).toContain(`for="${idInput}"`)
+    // Y ya no es el literal fijo que generaba el choque de ids.
+    expect(idInput).not.toBe('contacto')
   })
 
   // El honeypot tiene que existir Y estar escondido de la gente: si lo ve un

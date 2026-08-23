@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useId } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { enviarLead, type EstadoLead } from './acciones'
 import { Button } from '@/components/ui/button'
@@ -63,6 +63,17 @@ type Variante = 'clara' | 'oscura'
  * "Quiero probarlo" en el Hero, "Empezar" en el Cierre (default de esta
  * prop, porque el Cierre es donde más importa que un consumidor de esta
  * función no se olvide de pasarlo).
+ *
+ * Los `id` del campo y del honeypot salen de `useId()` y no están escritos a
+ * mano (Critical C2 de la review final del cierre): landing.tsx renderiza
+ * este componente DOS VECES (Hero y Cierre), y `id="contacto"`/`id="sitio-web"`
+ * fijos chocaban con el `id="contacto"` de la propia `<section>` del Cierre —
+ * tres elementos con el mismo id en un documento. Los cinco `href="#contacto"`
+ * de la landing resuelven al PRIMERO en orden de documento, así que quien leía
+ * los precios y apretaba "Probar 5 días" saltaba al input del Hero en vez de
+ * bajar al Cierre, y el `<label>` del Cierre quedaba asociado al input
+ * equivocado. `useId()` da un id único por instancia sin tocar el contrato con
+ * `enviarLead`: `name="contacto"` y `name="sitio-web"` no cambian.
  */
 export function Formulario({
   whatsapp,
@@ -74,6 +85,8 @@ export function Formulario({
   variante?: Variante
 }) {
   const [estado, accion, enviando] = useActionState(enviarLead, INICIAL)
+  const idContacto = useId()
+  const idHoneypot = useId()
 
   if (estado.enviado) {
     return <PantallaDeGracias whatsapp={whatsapp} />
@@ -105,11 +118,11 @@ export function Formulario({
             : undefined
         }
       >
-        <label htmlFor="contacto" className="sr-only">
+        <label htmlFor={idContacto} className="sr-only">
           Tu WhatsApp o tu mail
         </label>
         <Input
-          id="contacto"
+          id={idContacto}
           name="contacto"
           required
           maxLength={200}
@@ -126,8 +139,8 @@ export function Formulario({
             lo completa, su lead se pierde en silencio, que es la peor falla
             posible de esta pantalla. */}
         <div className="absolute top-0 left-[-9999px] h-0 w-0 overflow-hidden" aria-hidden="true">
-          <label htmlFor="sitio-web">No completar</label>
-          <input id="sitio-web" name="sitio-web" type="text" tabIndex={-1} autoComplete="off" />
+          <label htmlFor={idHoneypot}>No completar</label>
+          <input id={idHoneypot} name="sitio-web" type="text" tabIndex={-1} autoComplete="off" />
         </div>
 
         {oscura ? (
