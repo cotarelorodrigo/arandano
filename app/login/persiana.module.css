@@ -54,13 +54,16 @@
      estático, porque los elementos posicionados se pintan después que los de
      flujo normal sin importar el orden en el DOM. El fondo de una caja, en
      cambio, siempre pinta antes que cualquier hijo.
-     El color sale de mezclar --primary con --marca-foreground (ningún hex
-     crudo): el .pen usa ahí un violeta más claro que --marca sin nombrarlo
-     con un token $ar-*, así que se aproxima con los dos tokens de marca más
-     cercanos en vez de inventar un valor nuevo. */
+     `--marca-halo` (app/globals.css) y no un color-mix anidado a mano —
+     hallazgo (b) de la review final del cierre: la primera aproximación
+     mezclaba --marca-foreground 30% con --primary, y eso da #806AC0 contra el
+     #6B45D9 del .pen (+21 R, +25 G, −25 B). El token nuevo (--primary 70% +
+     --marca-soft 30% = #6A4FB9) queda bastante más cerca, y al ser un token
+     lo ata test/maqueta.test.ts — un color enterrado en un color-mix anidado
+     dentro de un radial-gradient era invisible para ese mecanismo entero. */
   background-image: radial-gradient(
     circle at 15% 88%,
-    color-mix(in srgb, color-mix(in srgb, var(--marca-foreground) 30%, var(--primary)) 55%, transparent) 0%,
+    color-mix(in srgb, var(--marca-halo) 55%, transparent) 0%,
     transparent 62%
   );
   justify-content: space-between;
@@ -132,10 +135,16 @@
 }
 
 .arandano {
-  font-size: 0.75rem;
-  font-weight: 500;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  /* 14px/600, caja mixta, SIN tracking ni mayúsculas — consultado en vivo con
+     el MCP de Pencil (nodo `EqVux`: fontSize 14, fontWeight "600", sin
+     letterSpacing y sin ningún transform de caja). La versión anterior tenía
+     los cuatro valores mal (12px/500, tracking .18em, uppercase) porque se
+     diseñó como "la firma" leyendo el archivo viejo en vez del nodo — I4 de
+     la review final del cierre: este ciclo tocó esta misma regla para el
+     color y dejó las otras cuatro propiedades contradiciendo al `.pen`. La
+     maqueta dice "Arándano", no "A R Á N D A N O".*/
+  font-size: 0.875rem;
+  font-weight: 600;
   /* --marca-soft y no --marca-dim: consultado en vivo con el MCP de Pencil,
      el nodo `EqVux` ("Arándano") pinta con #B6A6E8, que es exactamente
      --marca-soft — no el --marca-dim que este archivo usaba antes de este

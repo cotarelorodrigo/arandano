@@ -1,4 +1,6 @@
+import { UserPlus } from 'lucide-react'
 import { Encabezado } from '@/components/shell/encabezado'
+import { Button } from '@/components/ui/button'
 import { exigirDuenio } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { contarDuenosActivos } from '@/lib/usuarios/resumen'
@@ -25,6 +27,25 @@ export default async function Usuarios() {
             {' · '}
             {duenosActivos === 1 ? '1 dueño activo' : `${duenosActivos} dueños activos`}
           </>
+        }
+        // "Agregar persona" (design/arandano.pen, nodo `tr89h`): consultado en
+        // vivo, hallazgo I3 de la review final — el Topbar de esta pantalla no
+        // lo tenía, sin que ninguna nota declarara por qué. No es redundante
+        // con "Agregar al equipo" de la card de Alta: la maqueta dibuja los
+        // dos, y éste es el que se ve sin scrollear cuando la tabla del equipo
+        // es larga. Sin condicional de rol: exigirDuenio() ya restringe TODA
+        // esta pantalla al dueño, a diferencia de /inventario, donde el botón
+        // del Topbar sí lo necesita porque la pantalla la ve cualquiera.
+        // `<a href="#alta">` y no un botón con JS: la maqueta no dibuja la
+        // interacción, sólo el control, y un ancla a la card de Alta
+        // (formularios.tsx, id="alta") alcanza sin sumar estado de cliente acá.
+        acciones={
+          <Button asChild>
+            <a href="#alta">
+              <UserPlus aria-hidden="true" className="size-[15px]" />
+              Agregar persona
+            </a>
+          </Button>
         }
       />
       {/* El cuerpo entero es un único Client Component: el bloque "Clave

@@ -25,19 +25,46 @@ import path from 'node:path'
  * atrapa, y nada de este gate lo corría antes de este ciclo. Este test es la
  * red que no depende de que alguien se acuerde de buildear.
  *
- * Qué hace: recorre todo archivo con `'use client'`, junta sus imports de
- * VALOR (no de tipo) que empiecen con `@/`, los sigue transitivamente —sólo
- * por imports de valor, que es lo único que un bundler arrastra de verdad— y
- * falla si la cadena llega a alguno de los tres módulos que tocan Postgres a
- * nivel de módulo: `lib/db.ts` (el propio `pg`), `lib/tenant/transaccion.ts` y
- * `lib/tenant/prisma.ts` (los dos importan `lib/db` a nivel de módulo).
+ * Qué hace: recorre todo archivo con `'use client'`, junta sus imports (y
+ * re-exports) de VALOR, los sigue transitivamente —sólo por lo que un bundler
+ * arrastra de verdad— y falla si la cadena llega a alguno de los tres módulos
+ * que tocan Postgres a nivel de módulo: `lib/db.ts` (el propio `pg`),
+ * `lib/tenant/transaccion.ts` y `lib/tenant/prisma.ts` (los dos importan
+ * `lib/db` a nivel de módulo).
  *
- * Lo que este test NO hace: no arma un bundle de verdad ni resuelve imports
- * dinámicos (`import()`) o de paquetes externos (`pg`, `react`, etc.) — sólo
- * seguir `@/...` alcanza para este agujero, porque los tres módulos
- * sensibles son siempre internos. Sigue habiendo un motivo para correr
- * `npm run build` antes de cerrar un ciclo: este test cubre EXACTAMENTE este
- * modo de falla, no reemplaza al build real.
+ * **I1 de la review final del cierre (2026-08-23): la primera versión de este
+ * archivo sólo seguía especificadores con alias `@/`, y el razonamiento
+ * escrito acá ("los tres módulos sensibles son siempre internos") no cerraba
+ * — lo que tiene que ser interno no es el DESTINO, sino CADA SALTO del
+ * camino. El mismo bug exacto, escrito como
+ * `import { rotuloOrdenesPrevias } from '../../../lib/clientes/administrar'`
+ * en vez de con `@/`, pasaba en verde.** Se corrigieron los tres agujeros que
+ * la review encontró leyendo el código, los tres reales una vez mutados a
+ * mano:
+ *
+ * - **Especificadores relativos.** `resolverEspecificador` ahora resuelve
+ *   `./foo`/`../foo` contra el directorio del archivo que los escribe, no
+ *   sólo `@/…` contra la raíz del repo. Un Client Component que importe
+ *   `./helpers`, con `helpers.ts` importando `@/lib/db`, ahora SÍ se sigue —
+ *   antes el BFS nunca llegaba a `helpers.ts` porque el especificador que lo
+ *   nombraba no arrancaba con `@/`.
+ * - **`export … from`.** Un módulo intermedio que re-exporta un valor
+ *   sensible (`export { x } from '@/lib/db'`) lo arrastra al bundle exactamente
+ *   igual que un `import`, así que ahora cuenta igual. Un `export { A, B }`
+ *   SIN `from` (re-exportar nombres locales, patrón real de
+ *   `components/ui/card.tsx` y varios más) no tiene módulo que seguir: se
+ *   detecta por BALANCE DE LLAVES, no buscando `from` a ciegas — buscarlo a
+ *   ciegas repetiría el bug que el comentario de `importsDeValor` ya describe
+ *   para imports (cruzar de largo hasta el próximo `from` de OTRO import/export
+ *   más abajo).
+ * - **Alcance del barrido.** Se suma `lib/` (y `modules/`, si llega a existir)
+ *   además de `app/` y `components/`: un `'use client'` ahí quedaba afuera.
+ *
+ * Lo que este test SIGUE sin hacer: no arma un bundle de verdad ni resuelve
+ * imports dinámicos (`import()`) ni paquetes externos (`pg`, `react`, etc.).
+ * Sigue habiendo un motivo para correr `npm run build` antes de cerrar un
+ * ciclo: este test cubre un modo de falla conocido con imports/re-exports
+ * estáticos, no reemplaza al build real.
  */
 
 const RAIZ = path.resolve(import.meta.dirname, '..')
@@ -66,17 +93,44 @@ function fuentesDelRepo(dir: string, acumulado: string[] = []): string[] {
   return acumulado
 }
 
-/** Si la primera línea no vacía del archivo declara 'use client'. */
-function esUseClient(ruta: string): boolean {
-  const primera = readFileSync(ruta, 'utf8')
+/** La primera línea no vacía de un archivo, o undefined si está vacío. */
+function primeraLinea(ruta: string): string | undefined {
+  return readFileSync(ruta, 'utf8')
     .split('\n')
     .find((l) => l.trim() !== '')
-  return primera !== undefined && /^['"]use client['"]/.test(primera.trim())
+    ?.trim()
+}
+
+/** Si la primera línea no vacía del archivo declara 'use client'. */
+function esUseClient(ruta: string): boolean {
+  const primera = primeraLinea(ruta)
+  return primera !== undefined && /^['"]use client['"]/.test(primera)
 }
 
 /**
- * Los especificadores de import de VALOR que empiezan con `@/`, de un
- * archivo fuente.
+ * Si la primera línea no vacía del archivo declara 'use server'.
+ *
+ * Load-bearing para el BFS de más abajo: un Client Component importando por
+ * RUTA RELATIVA a su propio `acciones.ts` (`'use server'`, patrón de TODA
+ * pantalla con formulario de este repo) es exactamente el caso que sumar
+ * especificadores relativos iba a convertir en un falso positivo masivo —lo
+ * fue, en la primera corrida de este fix: ocho Client Components señalados
+ * por "arrastrar" `lib/tenant/prisma.ts`/`lib/db.ts` a través de su propio
+ * `acciones.ts`. Y es un falso positivo real: Next.js reemplaza, en build,
+ * cada función exportada de un archivo `'use server'` por una REFERENCIA
+ * serializable — no incluye el cuerpo de la función ni sus imports en el
+ * bundle de cliente. Seguir la cadena PASADO un `'use server'` mediría un
+ * bundle que Next nunca arma. El BFS trata estos archivos como frontera: los
+ * visita (para no volver a encolarlos) pero no sigue sus propios imports.
+ */
+function esUseServer(ruta: string): boolean {
+  const primera = primeraLinea(ruta)
+  return primera !== undefined && /^['"]use server['"]/.test(primera)
+}
+
+/**
+ * Los especificadores de import/export de VALOR —con alias `@/` o
+ * relativos (`./`, `../`)— de un archivo fuente.
  *
  * Barrido LÍNEA POR LÍNEA y no una sola regex sobre el archivo entero: la
  * primera versión de esta función usaba `/^import\s+([^;]*?)\s+from\s+.../gm`,
@@ -95,41 +149,96 @@ function esUseClient(ruta: string): boolean {
  * imports de paquetes externos. Acumular línea por línea y cerrar el import
  * apenas aparece un `from '...'` —sin poder cruzar al próximo `import`— es
  * lo que lo evita.
+ *
+ * `export … from` se suma con el MISMO mecanismo (I1 de la review final),
+ * pero con un cierre distinto: un import siempre termina en `from '...'`, así
+ * que basta esperarlo. Un `export { A, B }` puede terminar SIN `from`
+ * (re-exportar nombres locales — patrón real de `components/ui/card.tsx` y
+ * varios más), así que esperar un `from` a ciegas repetiría el bug de arriba:
+ * seguiría de largo hasta enganchar el PRÓXIMO `from` del archivo, de un
+ * import/export completamente distinto. Un export cierra en cambio cuando el
+ * BALANCE DE LLAVES de su propia cláusula vuelve a 0 —recién ahí se sabe si
+ * hubo o no un `from` de verdad— salvo el caso `export * from '...'`, que no
+ * abre ninguna llave y cierra en su propia línea.
  */
-function importsDeValor(ruta: string): string[] {
+function especificadoresDeValor(ruta: string): string[] {
   const lineas = readFileSync(ruta, 'utf8').split('\n')
   const especificadores: string[] = []
   let dentro = false
+  let esImport = false
   let buffer = ''
+  let profundidad = 0
   for (const linea of lineas) {
     if (!dentro) {
-      if (!/^import\b/.test(linea.trim())) continue
-      dentro = true
-      buffer = linea
+      const t = linea.trim()
+      if (/^import\b/.test(t)) {
+        dentro = true
+        esImport = true
+        buffer = linea
+        profundidad = 0
+      } else if (/^export\s+(type\s+)?[*{]/.test(t)) {
+        dentro = true
+        esImport = false
+        buffer = linea
+        profundidad = 0
+      } else {
+        continue
+      }
     } else {
       buffer += '\n' + linea
     }
-    const m = buffer.match(/from\s+['"]([^'"]+)['"]/)
-    if (!m) continue // Sigue siendo el mismo import, todavía sin cerrar.
-    const clausula = buffer
-      .replace(/^import\s+/, '')
-      .replace(/\s*from[\s\S]*$/, '')
-      .trim()
-    if (m[1].startsWith('@/') && !/^type\b/.test(clausula)) {
-      especificadores.push(m[1])
+
+    for (const caracter of linea) {
+      if (caracter === '{') profundidad++
+      else if (caracter === '}') profundidad--
     }
+
+    const m = buffer.match(/from\s+['"]([^'"]+)['"]/)
+    if (esImport) {
+      if (!m) continue // Sigue siendo el mismo import, todavía sin cerrar.
+    } else {
+      if (profundidad > 0) continue // El export { ... todavía no cerró sus llaves.
+    }
+
     dentro = false
+    if (m) {
+      const clausula = buffer
+        .replace(/^(import|export)\s+/, '')
+        .replace(/\s*from[\s\S]*$/, '')
+        .trim()
+      const especificador = m[1]
+      const esRelativo = especificador.startsWith('./') || especificador.startsWith('../')
+      if ((especificador.startsWith('@/') || esRelativo) && !/^type\b/.test(clausula)) {
+        especificadores.push(especificador)
+      }
+    }
+    // Si no hubo `m`, era un `export { ... }` sin `from` — nombres locales,
+    // nada que seguir. Se descarta el buffer entero y se sigue barriendo.
     buffer = ''
+    profundidad = 0
   }
   return especificadores
 }
 
-/** `@/lib/foo` -> ruta absoluta del archivo, probando extensiones e
- *  `index`. Devuelve null si no resuelve a nada (paquete externo, .css, etc. —
- *  no hay nada que seguir ahí). */
-function resolverEspecificador(especificador: string): string | null {
-  const sinAlias = especificador.replace(/^@\//, '')
-  const base = path.join(RAIZ, sinAlias)
+/**
+ * Un especificador de import/export -> ruta absoluta del archivo, probando
+ * extensiones e `index`. Devuelve null si no resuelve a nada (paquete
+ * externo, `.css`, etc. — no hay nada que seguir ahí).
+ *
+ * `actual` es el archivo que ESCRIBE el especificador: imprescindible para
+ * los relativos (`./foo`, `../foo`), que se resuelven contra SU directorio,
+ * no contra la raíz del repo — a diferencia de `@/...`, que siempre cuelga
+ * de `RAIZ` sin importar quién lo escribe.
+ */
+function resolverEspecificador(especificador: string, actual: string): string | null {
+  let base: string
+  if (especificador.startsWith('@/')) {
+    base = path.join(RAIZ, especificador.replace(/^@\//, ''))
+  } else if (especificador.startsWith('.')) {
+    base = path.resolve(path.dirname(actual), especificador)
+  } else {
+    return null // Paquete externo (react, next/link, pg, ...): nada que seguir.
+  }
   for (const ext of EXTENSIONES) {
     if (existsSync(base + ext)) return base + ext
   }
@@ -140,29 +249,39 @@ function resolverEspecificador(especificador: string): string | null {
 }
 
 /**
- * Si desde `ruta` se puede llegar a alguno de `SENSIBLES` siguiendo sólo
- * imports de VALOR con alias `@/`. BFS con visitados para no ciclar.
+ * Si desde `rutaInicial` se puede llegar a alguno de `SENSIBLES` siguiendo
+ * sólo imports/re-exports de VALOR (alias `@/` o relativos). BFS con
+ * visitados para no ciclar.
  */
 function arrastraSensible(rutaInicial: string): string | null {
   const visitados = new Set<string>([rutaInicial])
   const cola = [rutaInicial]
   while (cola.length > 0) {
     const actual = cola.shift()!
-    for (const especificador of importsDeValor(actual)) {
-      const resuelto = resolverEspecificador(especificador)
+    for (const especificador of especificadoresDeValor(actual)) {
+      const resuelto = resolverEspecificador(especificador, actual)
       if (!resuelto || visitados.has(resuelto)) continue
       if (SENSIBLES.includes(resuelto)) return resuelto
       visitados.add(resuelto)
+      if (esUseServer(resuelto)) continue // Frontera: ver el comentario de esUseServer.
       cola.push(resuelto)
     }
   }
   return null
 }
 
+// Las cuatro carpetas donde puede vivir un 'use client': app/ y components/
+// ya se barrían; lib/ se suma acá (I1 de la review final — un 'use client'
+// ahí quedaba afuera) y modules/ queda anotado para cuando exista de verdad
+// (CLAUDE.md, "monolito modular con registry") — el filter de abajo lo
+// saltea sin romper mientras la carpeta no esté, en vez de que readdirSync
+// tire ENOENT el día que se cree con un solo archivo adentro.
+const CARPETAS_A_BARRER = ['app', 'components', 'lib', 'modules']
+  .map((carpeta) => path.join(RAIZ, carpeta))
+  .filter((ruta) => existsSync(ruta))
+
 describe('ningún Client Component arrastra Postgres a su bundle', () => {
-  const archivos = fuentesDelRepo(path.join(RAIZ, 'app')).concat(
-    fuentesDelRepo(path.join(RAIZ, 'components')),
-  )
+  const archivos = CARPETAS_A_BARRER.flatMap((carpeta) => fuentesDelRepo(carpeta))
 
   it('encuentra archivos; si no, el test no prueba nada', () => {
     expect(archivos.length).toBeGreaterThan(0)

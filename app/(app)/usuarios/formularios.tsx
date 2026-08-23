@@ -49,10 +49,14 @@ function Resultado({ estado }: { estado: EstadoUsuarios }) {
  * `CardDelFormulario` en inventario/formularios.tsx.
  */
 function CardConEncabezado({
+  id,
   titulo,
   children,
   accesorio,
 }: {
+  /** El botón "Agregar persona" del Topbar (page.tsx, hallazgo I3 de la
+   *  review final) apunta a `#alta`: esta card es su único destino posible. */
+  id?: string
   titulo: string
   children: React.ReactNode
   /** Lo que va a la derecha del título, dentro del mismo encabezado — hoy sin
@@ -61,7 +65,7 @@ function CardConEncabezado({
   accesorio?: React.ReactNode
 }) {
   return (
-    <div className="flex flex-col overflow-hidden rounded-2xl border bg-card">
+    <div id={id} className="flex flex-col overflow-hidden rounded-2xl border bg-card">
       <div className="flex items-center justify-between border-b px-[18px] py-[13px]">
         <h2 className={`${estilos.tituloDeCard} text-foreground`}>{titulo}</h2>
         {accesorio}
@@ -163,7 +167,7 @@ export function AltaDeEmpleado({
   }, [estado])
 
   return (
-    <CardConEncabezado titulo="Agregar a alguien">
+    <CardConEncabezado id="alta" titulo="Agregar a alguien">
       {/* Sin reset manual: desde React 19, un <form action={...}> resetea los
           campos no controlados por su cuenta cuando la action termina bien,
           así que nombre/mail/clave no quedan pegados tras un alta exitosa. El

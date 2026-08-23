@@ -58,6 +58,49 @@ export function FormularioCambiarClave({
   )
 }
 
+/**
+ * El mensaje de error de una acción de fila (alta/baja/cambio de clave), como
+ * su propio componente presentacional — igual que `AvisoClaveGenerada` en
+ * `aviso-clave.tsx`. Separado así, y no un `<p>` inline dentro de
+ * `FilaAcciones`, es lo que permite testearlo sin simular el submit que
+ * dispara el error vía `useActionState` (este harness no tiene jsdom).
+ *
+ * `role="alert"` a mano — I2 de la review final del cierre—: esta celda no
+ * usa `<Alert>` de shadcn (que lo trae por default), así que perderlo al
+ * armar el marcado a mano es exactamente el defecto que `aviso-clave.tsx` ya
+ * dejó anotado dos veces antes en este mismo rediseño ("cambiar de
+ * componente sin repetirlo"). La tercera vez fue este archivo, tres líneas
+ * más allá del bloque que sí se cuidó.
+ */
+export function ErrorDeFila({ mensaje }: { mensaje: string }) {
+  return (
+    <p role="alert" className="text-[11px] font-medium text-destructive">
+      {mensaje}
+    </p>
+  )
+}
+
+/**
+ * La confirmación de "Baja"/"Reactivar", en texto — el chip Activo/Desactivado
+ * ya cambia como feedback visual, pero eso no le sirve a quien usa lector de
+ * pantalla y no ve la fila repintarse. `baja`/`alta` (acciones.ts) devuelven
+ * este texto desde antes de este ciclo (`aviso: 'Usuario desactivado.'` /
+ * `'Usuario reactivado.'`), pero ninguna pantalla lo renderizaba: `Resultado`
+ * (formularios.tsx) sí sabe pintar `estado.aviso`, pero sólo lo invocan como
+ * `{estado.error && <Resultado estado={estado} />}` en el alta, así que su
+ * rama de aviso quedaba muerta en todo el archivo (hallazgo de la review
+ * final, "efecto colateral" de I2). `role="status"` y no "alert": es una
+ * confirmación, no un error — no compite por la atención inmediata de quien
+ * usa lector de pantalla de la misma forma.
+ */
+export function AvisoDeFila({ mensaje }: { mensaje: string }) {
+  return (
+    <p role="status" className="text-[11px] text-muted-foreground">
+      {mensaje}
+    </p>
+  )
+}
+
 // El tipo lleva email y rol aunque esta celda no los use: es el mismo objeto
 // que ya trae la fila entera (CardEquipo, en formularios.tsx, es quien
 // pinta esos dos), y separar un tipo más angosto sólo para esta celda
@@ -150,7 +193,8 @@ export function FilaAcciones({
             {altaEnCurso ? 'Reactivando…' : 'Reactivar'}
           </button>
         </form>
-        {estadoAlta.error && <p className="text-[11px] font-medium text-destructive">{estadoAlta.error}</p>}
+        {estadoAlta.error && <ErrorDeFila mensaje={estadoAlta.error} />}
+        {estadoAlta.aviso && <AvisoDeFila mensaje={estadoAlta.aviso} />}
       </div>
     )
   }
@@ -187,8 +231,9 @@ export function FilaAcciones({
           </>
         )}
       </div>
-      {estadoClave.error && <p className="text-[11px] font-medium text-destructive">{estadoClave.error}</p>}
-      {estadoBaja.error && <p className="text-[11px] font-medium text-destructive">{estadoBaja.error}</p>}
+      {estadoClave.error && <ErrorDeFila mensaje={estadoClave.error} />}
+      {estadoBaja.error && <ErrorDeFila mensaje={estadoBaja.error} />}
+      {estadoBaja.aviso && <AvisoDeFila mensaje={estadoBaja.aviso} />}
     </div>
   )
 }

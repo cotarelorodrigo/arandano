@@ -29,10 +29,17 @@ describe('FormularioLogin', () => {
     expect(html).not.toContain('type="text"')
   })
 
+  // I6 de la review final: la versión anterior sólo afirmaba `<svg` (que
+  // aporta el ícono del OJO de CampoClave) y `Entrar` (que aporta el <h1> del
+  // título) — ninguna de las dos tocaba el botón, así que sacarle el
+  // `<ArrowRight>` de verdad no lo ponía en rojo. Se acota al `<button>` que
+  // contiene el texto "Entrar" (el submit, no el botón del ojo) y se busca la
+  // clase real del ícono (`lucide-arrow-right`) adentro de ESE recorte.
   it('el botón lleva el ícono arrow-right junto al texto "Entrar"', async () => {
     const html = await render()
-    expect(html).toContain('<svg')
-    expect(html).toContain('Entrar')
+    const inicio = html.lastIndexOf('<button', html.lastIndexOf('>Entrar<'))
+    const boton = html.slice(inicio, html.indexOf('</button>', inicio))
+    expect(boton).toContain('lucide-arrow-right')
   })
 
   // El texto de ayuda tiene que decir la VERDAD del producto: no hay
@@ -42,6 +49,46 @@ describe('FormularioLogin', () => {
     expect(html).toContain('Te la resetea el dueño del local desde Usuarios')
     expect(html).toContain('No mandamos')
     expect(html).toContain('mails de recupero')
+  })
+})
+
+// I4 de la review final del cierre: los dos <Input>, el botón "Entrar" y los
+// dos <Label> no pagaban la geometría/tipografía de design/arandano.pen (el
+// barrido de la Task 6 buscaba `text-xs|text-\[1[0-9]px\]`, y estos campos no
+// declaraban NINGÚN tamaño, así que el grep no los encontraba). Valores
+// consultados en vivo con el MCP de Pencil (nodos `Wz7cZ`/`GmOfQ` los
+// inputs, `E5gfx` el botón, `aSxqO`/`UiPiY` los rótulos).
+describe('geometría contra design/arandano.pen (I4 de la review final)', () => {
+  it('los dos <Input> miden 44px con r=9 (nodos Wz7cZ/GmOfQ)', async () => {
+    const html = await render()
+    const inputs = [...html.matchAll(/<input[^>]*class="([^"]*)"[^>]*>/g)].map((m) => m[1])
+    expect(inputs).toHaveLength(2)
+    for (const clases of inputs) {
+      expect(clases).toContain('h-11')
+      expect(clases).toContain('rounded-[9px]')
+    }
+  })
+
+  it('el botón "Entrar" mide 48px, r=11, gap=7, pad-x=15 (nodo E5gfx)', async () => {
+    const html = await render()
+    const boton = html.match(/<button[^>]*type="submit"[^>]*>/)?.[0]
+    expect(boton, 'no se encontró el <button type="submit">').toBeTruthy()
+    expect(boton).toContain('h-12')
+    expect(boton).toContain('gap-[7px]')
+    expect(boton).toContain('rounded-[11px]')
+    expect(boton).toContain('px-[15px]')
+  })
+
+  it('los rótulos "Mail" y "Contraseña" son 11px/600 en --foreground-soft (nodos aSxqO/UiPiY)', async () => {
+    const html = await render()
+    const rotulos = [...html.matchAll(/<label[^>]*class="([^"]*)"[^>]*>([^<]*)<\/label>/g)]
+    const textos = rotulos.map((m) => m[2])
+    expect(textos).toEqual(['Mail', 'Contraseña'])
+    for (const [, clases] of rotulos) {
+      expect(clases).toContain('text-[11px]')
+      expect(clases).toContain('font-semibold')
+      expect(clases).toContain('text-foreground-soft')
+    }
   })
 })
 

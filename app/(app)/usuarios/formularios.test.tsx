@@ -59,6 +59,14 @@ describe('AltaDeEmpleado', () => {
     const html = await renderAlta()
     expect(html).toMatch(/name="rol"\s+value="EMPLEADO"/)
   })
+
+  // I3 de la review final: el botón "Agregar persona" del Topbar (page.tsx)
+  // apunta a `#alta`. Esta card es su único destino posible, así que el id
+  // tiene que estar de verdad en el markup, no sólo en el fuente.
+  it('la card lleva id="alta": es el destino del botón del Topbar', async () => {
+    const html = await renderAlta()
+    expect(html).toContain('id="alta"')
+  })
 })
 
 describe('CuerpoUsuarios', () => {

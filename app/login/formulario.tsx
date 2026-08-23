@@ -53,7 +53,7 @@ export function CampoClave({
         autoComplete="current-password"
         required
         ref={inputRef}
-        className="pr-9"
+        className="h-11 rounded-[9px] pr-9 pl-[11px]"
       />
       <button
         type="button"
@@ -110,7 +110,9 @@ export function FormularioLogin() {
 
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="email">Mail</Label>
+          <Label htmlFor="email" className="text-[11px] font-semibold text-foreground-soft">
+            Mail
+          </Label>
           {/* autoFocus: en un mostrador se entra tipeando, sin tocar el mouse.
               defaultValue y no value: el campo sigue siendo no controlado, y lo
               que hace que el mail sobreviva a un error es que React, al resetear
@@ -125,10 +127,13 @@ export function FormularioLogin() {
             required
             placeholder="flor@celularesflor.com.ar"
             defaultValue={estado.email ?? ''}
+            className="h-11 rounded-[9px] px-[11px]"
           />
         </div>
         <div className="flex flex-col gap-2">
-          <Label htmlFor="clave">Contraseña</Label>
+          <Label htmlFor="clave" className="text-[11px] font-semibold text-foreground-soft">
+            Contraseña
+          </Label>
           <CampoClave
             mostrar={mostrarClave}
             onAlternar={() => setMostrarClave((m) => !m)}
@@ -143,7 +148,11 @@ export function FormularioLogin() {
         </Alert>
       )}
 
-      <Button type="submit" disabled={pendiente}>
+      <Button
+        type="submit"
+        disabled={pendiente}
+        className="h-12 gap-[7px] rounded-[11px] px-[15px]"
+      >
         {pendiente ? (
           'Entrando…'
         ) : (

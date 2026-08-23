@@ -115,6 +115,17 @@
   --marca-foreground: #FFFFFF;
   --marca-soft: #B6A6E8;
   --marca-dim: #9C8BD6;
+  /* El halo del paño de login (persiana.module.css, nodo `E3Jah` del .pen):
+     un violeta más claro que --marca que la maqueta no nombra con ningún
+     token $ar-*, así que se aproxima mezclando los dos tokens de marca más
+     cercanos — --primary al 70% + --marca-soft al 30% — en vez de escribir
+     un hex suelto. Token propio (I2/(b) de la review final del cierre) y no
+     un color-mix anidado adentro del radial-gradient, que era invisible para
+     test/maqueta.test.ts: ese test sólo ata el bloque de variables, y un
+     color que vive sólo dentro de un color-mix dentro de un fill nunca se
+     comparaba contra nada. Con el token, si diverge de la maqueta el test lo
+     nota. Va en SOLO_EN_CSS (test/maqueta.test.ts): el .pen no lo nombra. */
+  --marca-halo: #6A4FB9;
 
   /* Los tres estados, cada uno con su fondo tenue. Existen como tokens —y no
      como colores de Tailwind sueltos— porque son la diferencia entre un aviso

@@ -115,7 +115,14 @@ export function Formulario({
                 backgroundColor: 'color-mix(in srgb, var(--marca-foreground) 8%, transparent)',
                 borderColor: 'color-mix(in srgb, var(--marca-foreground) 15%, transparent)',
               }
-            : undefined
+            : // 'clara' (Hero): el .pen pinta el marco (nodo P2ZVg6) con
+              // $ar-bg y el input (EtDRA) con $ar-surface — divergencia
+              // hermana de I5 en la review final. Sin esto, el <Input> de
+              // shadcn es bg-transparent y el marco no pintaba nada propio,
+              // así que los dos terminaban del mismo color que la página de
+              // fondo (antes gris por el bug de arriba, ahora blanco): el
+              // campo dejaba de leerse como su propia pieza.
+              { backgroundColor: 'var(--background)' }
         }
       >
         <label htmlFor={idContacto} className="sr-only">
@@ -129,7 +136,7 @@ export function Formulario({
           placeholder="Tu WhatsApp o tu mail"
           autoComplete="off"
           className="h-[46px] flex-1 rounded-[10px] px-3.5"
-          style={oscura ? { backgroundColor: 'var(--marca-foreground)' } : undefined}
+          style={{ backgroundColor: oscura ? 'var(--marca-foreground)' : 'var(--card)' }}
         />
 
         {/* El honeypot. Escondido con posición absoluta y no con display:none

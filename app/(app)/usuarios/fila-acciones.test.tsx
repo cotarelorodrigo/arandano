@@ -85,6 +85,25 @@ describe('FilaAcciones', () => {
   })
 })
 
+describe('ErrorDeFila — I2 de la review final: role="alert" en los tres errores de fila', () => {
+  it('lleva role="alert" y el mensaje', async () => {
+    const { ErrorDeFila } = await import('./fila-acciones')
+    const html = renderToStaticMarkup(<ErrorDeFila mensaje="No podés dar de baja al último dueño activo." />)
+    expect(html).toContain('role="alert"')
+    expect(html).toContain('No podés dar de baja al último dueño activo.')
+  })
+})
+
+describe('AvisoDeFila — la confirmación de Baja/Reactivar que antes no se veía', () => {
+  it('lleva role="status" y el mensaje, no role="alert" (no es un error)', async () => {
+    const { AvisoDeFila } = await import('./fila-acciones')
+    const html = renderToStaticMarkup(<AvisoDeFila mensaje="Usuario desactivado." />)
+    expect(html).toContain('role="status"')
+    expect(html).not.toContain('role="alert"')
+    expect(html).toContain('Usuario desactivado.')
+  })
+})
+
 describe('FormularioCambiarClave', () => {
   it('lleva el input de la nueva contraseña, con el usuarioId y el nombre ocultos', async () => {
     const { FormularioCambiarClave } = await import('./fila-acciones')

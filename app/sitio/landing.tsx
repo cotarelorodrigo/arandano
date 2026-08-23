@@ -23,7 +23,14 @@ import { Nav, Hero, Modulos, Rubros, Planes, Cierre, Pie } from './secciones'
  */
 export function Landing({ base, whatsapp }: { base: BaseDeTenant; whatsapp: string }) {
   return (
-    <div className="min-h-full">
+    // bg-card, no sólo min-h-full: el .pen pinta el frame raíz (vDLU8) con
+    // $ar-surface y sólo DOS secciones (Módulos, Planes) con $ar-bg — I5 de
+    // la review final. El <body> de app/globals.css es bg-background, así
+    // que sin este fondo propio la página entera terminaba en el gris de
+    // fondo, y las dos declaraciones bg-background de Módulos/Planes no
+    // pintaban nada distinto de lo que ya había. Con esto, el bandeado
+    // blanco/gris/blanco/gris/marca/blanco del .pen vuelve a existir.
+    <div className="min-h-full bg-card">
       <Nav base={base} />
 
       <main>

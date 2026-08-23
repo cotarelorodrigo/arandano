@@ -114,12 +114,29 @@ describe('formulario de la landing', () => {
     expect(gracias('')).not.toContain('wa.me')
   })
 
-  // 'clara' es el default (Hero, fondo claro); 'oscura' es el Cierre, sobre
-  // --marca — las dos pintan el input sobre un fondo sólido para que se lea
-  // contra la franja oscura (design/arandano.pen, nodo `V9xSVB`), la 'clara'
-  // no necesita ese fondo propio porque ya está sobre uno claro.
-  it('variante "oscura" pinta el input con --marca-foreground; "clara" no lo fuerza', () => {
+  // 'clara' es el default (Hero); 'oscura' es el Cierre, sobre --marca. Las
+  // dos pintan el input con un fondo sólido PROPIO —no `bg-transparent`, el
+  // default de shadcn— para que se lea como su propia pieza y no se confunda
+  // con lo que tenga detrás: --marca-foreground en 'oscura' (contra la franja
+  // oscura, nodo `V9xSVB`), --card en 'clara' (divergencia "hermana" de I5 de
+  // la review final: el .pen pinta el marco con $ar-bg y el input con
+  // $ar-surface — nodos `P2ZVg6`/`EtDRA` — y antes de este fix ninguno de los
+  // dos se pintaba, así que el campo y su marco quedaban del mismo color que
+  // la página de fondo, sea cual sea ese color).
+  it('el input pinta --marca-foreground en "oscura" y --card en "clara" — nunca transparente', () => {
     expect(html({ variante: 'oscura' })).toContain('background-color:var(--marca-foreground)')
+    expect(html({ variante: 'clara' })).toContain('background-color:var(--card)')
     expect(html({ variante: 'clara' })).not.toContain('background-color:var(--marca-foreground)')
+  })
+
+  // El marco (el <form> en sí) también pinta un fondo propio en 'clara' —
+  // --background, el mismo $ar-bg del nodo P2ZVg6— para que el input en
+  // --card se distinga de su marco. En 'oscura' el marco sigue con la
+  // mezcla translúcida que ya tenía (sin tocar).
+  it('el marco de "clara" pinta --background; el de "oscura" sigue con su mezcla translúcida', () => {
+    expect(html({ variante: 'clara' })).toContain('background-color:var(--background)')
+    expect(html({ variante: 'oscura' })).toContain(
+      'background-color:color-mix(in srgb, var(--marca-foreground) 8%, transparent)',
+    )
   })
 })

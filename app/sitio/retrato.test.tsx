@@ -107,4 +107,56 @@ describe('el retrato del punto de venta', () => {
     expect(markup).not.toContain('<button')
     expect(markup).not.toContain('<input')
   })
+
+  // I7 de la review final: el plan (Task 3) enumera SEIS piezas que el
+  // retrato tiene que mostrar, y las dos de acá no tenían ninguna aserción.
+  // Comprobado con la misma mutación que usó el reviewer: reemplazar el
+  // stepper por un <span> de texto plano (el carrito ANTERIOR al rediseño,
+  // que es literalmente el defecto que esta task existía para arreglar)
+  // ponía los 10 casos viejos en verde. Éstos, no.
+  it('el stepper existe: un ícono minus y uno plus por línea, no un <span> de texto plano', () => {
+    const markup = html()
+    expect(markup.match(/lucide-minus /g) ?? []).toHaveLength(ITEMS.length)
+    expect(markup.match(/lucide-plus /g) ?? []).toHaveLength(ITEMS.length)
+  })
+
+  it('el encabezado hundido: <TableHeader> con sus cuatro rótulos en 10px/700', () => {
+    const markup = html()
+    expect(markup).toContain('<thead')
+    for (const rotulo of ['Artículo', 'Cantidad', 'Precio', 'Subtotal']) {
+      // El rótulo tiene que estar DENTRO de un <th> con el par de clases que
+      // paga el rol: buscar el texto suelto en cualquier lado del documento
+      // no distinguiría un encabezado hundido de un rótulo puesto en
+      // cualquier otro lugar de la página.
+      const pos = markup.indexOf(`>${rotulo}<`)
+      expect(pos, `no se encontró el rótulo "${rotulo}"`).toBeGreaterThan(-1)
+      const inicioCelda = markup.lastIndexOf('<th', pos)
+      const celda = markup.slice(inicioCelda, pos)
+      expect(celda).toContain('text-[10px]')
+      expect(celda).toContain('font-bold')
+    }
+  })
+
+  // El acoplamiento que SÍ se puede afirmar sin importar el módulo cliente
+  // (arreglo propuesto por la review): comparar las clases de ANCHO de las
+  // columnas Cantidad/Precio/Subtotal contra las de /vender, leyendo los DOS
+  // fuentes. Detecta la deriva que motivó esta task en primer lugar —el
+  // retrato quedándose atrás de un rediseño de /vender— de una forma que las
+  // aserciones de arriba, por construcción, no pueden: ésas sólo miran que
+  // ESTE archivo sea internamente consistente, no que siga pareciéndose al
+  // real.
+  it('las columnas Cantidad/Precio/Subtotal miden lo mismo que en /vender (acoplamiento real, leyendo los dos fuentes)', () => {
+    const fuenteVender = readFileSync(
+      path.join(__dirname, '../(app)/vender/punto-de-venta.tsx'),
+      'utf8',
+    )
+    const anchosDe = (src: string) =>
+      [...src.matchAll(/<TableHead className="[^"]*\b(w-\[\d+px\])[^"]*"/g)].map((m) => m[1])
+    const anchosRetrato = anchosDe(fuente())
+    const anchosVender = anchosDe(fuenteVender)
+    // Tres columnas con ancho fijo en el encabezado: Cantidad, Precio,
+    // Subtotal (Artículo y la de "Quitar" no llevan w-[…px]).
+    expect(anchosRetrato).toEqual(['w-[104px]', 'w-[110px]', 'w-[130px]'])
+    expect(anchosRetrato).toEqual(anchosVender)
+  })
 })

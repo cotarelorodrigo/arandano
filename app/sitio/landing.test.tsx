@@ -22,6 +22,18 @@ describe('la landing', () => {
     expect(html()).toContain('Todo el local en un solo lugar')
   })
 
+  // I5 de la review final: el frame raíz del .pen (vDLU8) pinta $ar-surface
+  // (--card); sin esto la landing entera terminaba en --background (el
+  // <body> es bg-background), y las dos bg-background de Módulos/Planes no
+  // pintaban nada distinto de lo que ya había — el bandeado blanco/gris de
+  // la maqueta desaparecía por completo.
+  it('la raíz pinta bg-card: sin esto el bandeado blanco/gris desaparece', () => {
+    const markup = html()
+    const raiz = markup.match(/^<div class="([^"]*)"/)?.[1]
+    expect(raiz, 'no se encontró el <div> raíz de la landing').toBeTruthy()
+    expect(raiz).toContain('bg-card')
+  })
+
   it('las siete secciones aparecen, en orden', () => {
     const markup = html()
     const titulares = [

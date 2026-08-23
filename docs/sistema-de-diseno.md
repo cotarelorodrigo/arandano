@@ -127,6 +127,18 @@ Núcleo ancla la idea que sostiene el producto (núcleo + módulos), la card
 Profesional ancla la recomendación de precio — ninguna compite con la
 conversión, que sigue siendo lo único que el Cierre ancla.
 
+**Lo que esto NO habilita** (hallazgo (a) de la review final del cierre: una
+regla que no puede rechazar nada no es una regla). En la landing: como máximo
+**una** superficie de marca por sección, nunca dos secciones **consecutivas**
+—Planes y Cierre lo son, y conviven en pantalla en ciertas posiciones de
+scroll; ahí el argumento de "la banda visible" es más débil de lo que este
+documento admitía antes de esta vuelta—, y la superficie tiene que anclar algo
+propio de ESA sección (la idea que la sostiene, o su recomendación), no
+"decorar la pantalla porque quedaba sosa". Una card violeta puesta porque
+"convenía un poco de color acá" —sin una idea, un precio o un dato propios de
+la sección detrás— es exactamente la deriva que esta regla existe para frenar,
+no una tercera excepción más.
+
 **Y lleva sus propios colores de texto encima** — `--marca-foreground`,
 `--marca-soft` y `--marca-dim`— en vez de reusar `--foreground`. La confusión
 que eso evita ya costó un bug: sobre la paleta oscura, `--foreground` servía
@@ -161,6 +173,7 @@ profundo. Ahora el token dice sobre qué va.
 | `--marca-foreground` | `#FFFFFF` |
 | `--marca-soft` | `#B6A6E8` |
 | `--marca-dim` | `#9C8BD6` |
+| `--marca-halo` | `#6A4FB9` |
 | `--ok` | `#0F7048` |
 | `--ok-soft` | `#E1F3EA` |
 | `--warn` | `#9A5B00` |

@@ -92,6 +92,13 @@ const SOLO_EN_CSS: Record<string, string> = {
     'como #B6A6E8 en los frames que lo usan, sin variable propia — es el color ' +
     'que más se repite sin variable y el candidato número uno a promoverse.',
   '--marca-dim': 'lo mismo que --marca-soft, un escalón más apagado (#9C8BD6).',
+  '--marca-halo':
+    'el halo del paño de login (persiana.module.css, nodo `E3Jah`). El .pen pinta ' +
+    'ahí un violeta más claro que --marca sin nombrarlo con ningún token $ar-*, así ' +
+    'que se aproxima mezclando dos tokens de marca (--primary 70% + --marca-soft ' +
+    '30%) en vez de escribir el hex a mano — hallazgo (b) de la review final del ' +
+    'cierre. Antes vivía como color-mix anidado dentro del radial-gradient, ' +
+    'invisible para este mismo test; como token, si diverge de la maqueta se nota.',
   '--radius': 'no es un color; la maqueta lleva el radio en cada frame.',
 }
 
