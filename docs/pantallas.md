@@ -379,14 +379,51 @@ El listado de artículos, con buscador, filtro de tipo y chips de estado
 **Qué se puede hacer**
 
 - Buscar por nombre o SKU.
+- **Recorrer el árbol de categorías** desde la columna de la izquierda: un
+  rubro arriba (Celulares, Fundas, Cables) y la marca abajo. Clic en un rubro
+  filtra a todo el rubro; clic en una marca, a esa marca.
+- **Crear, renombrar, mover y borrar categorías** en esa misma columna (sólo
+  dueño). No hay pantalla de ABM aparte.
 - Filtrar por tipo con el segmentado **Todos / Productos / Servicios**.
 - Ver stock, precio, tipo y la categoría (dos niveles, p. ej. "Accesorios ·
-  Protección" — texto libre que el dueño tipea al cargar el artículo).
+  Protección").
 - Mostrar u ocultar los artículos desactivados.
 - Paginar de a 50, con botones numerados.
 
 **Decisiones**
 
+- **El conteo de una rama incluye el de sus marcas**, más los artículos
+  colgados del rubro mismo. Si no cerrara, el número de arriba no coincidiría
+  con la suma de abajo y el árbol dejaría de servir para decidir.
+- **El conteo del árbol responde al catálogo, no al resultado de la búsqueda.**
+  Sigue el mismo criterio de activos/desactivados que el listado, pero ignora
+  `?q` y `?tipo`: si siguiera la búsqueda, apenas se escribe algo que matchea
+  una sola rama todas las demás mostrarían 0, y el árbol dejaría de servir para
+  navegar justo cuando más se lo necesita. Es **a propósito distinto** del
+  conteo de stock negativo del subtítulo, que sí habla de lo que se muestra —
+  son dos preguntas: "de esto que veo, cuánto está mal" y "cuánto tengo de cada
+  cosa".
+- **`?cat` que no corresponde a ninguna rama cae en "Todos"**, igual que
+  `?tipo` inválido: una categoría borrada o de otro tenant filtraría a cero sin
+  explicación.
+- **El vacío con una rama activa es el único con salida.** Ofrece "Buscar en
+  todo el inventario", que limpia la rama y conserva la búsqueda: sin eso,
+  buscar algo que existe pero está en otra rama se ve igual que buscar algo que
+  no existe.
+- **Elegir una rama vuelve a la página 1**; sólo la paginación conserva `?p`.
+- **El colapso de un rubro no persiste** entre navegaciones, y el rubro de la
+  rama activa se fuerza abierto: una marca seleccionada dentro de un rubro
+  colapsado sería una selección invisible.
+- **El ABM es del dueño**, mismo criterio que el alta de artículo — el catálogo
+  es decisión del negocio. Que el panel no le dibuje los controles a un
+  empleado no alcanza: las cuatro acciones exigen dueño, porque un server
+  action es un endpoint.
+- **Borrar exige la rama vacía y sin marcas**, y el mensaje dice **cuántos**
+  artículos hay: un "no se puede" sin el número no dice si mover uno o cuarenta.
+- **El query string vive en `consulta.ts`**, un módulo sin `'use client'`: el
+  panel es un Client Component y necesita `hrefListado`, y Next no deja pasarle
+  una función como prop ni invocar desde el servidor una función que vive del
+  lado del cliente. Las dos cosas dieron 500 con el gate entero en verde.
 - El conteo de artículos con stock negativo se calcula sobre **lo que el
   listado está mostrando** (búsqueda + tipo + desactivados), no sobre toda la
   tabla: si no, el subtítulo diría "3 con stock negativo" mientras la búsqueda
@@ -422,7 +459,9 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
 
 - Elegir Producto o Servicio con dos tarjetas seleccionables (no un
   `<select>`): un servicio oculta la card de stock inicial entera.
-- Cargar nombre, categoría (opcional) y precio.
+- Cargar nombre y precio, y **elegir** categoría y marca de dos selectores
+  encadenados: el de marca ofrece las hijas del rubro elegido.
+- Anotar la **factura del proveedor** del stock inicial.
 - Dejar el SKU vacío y que se genere solo, con el próximo código libre
   mostrado como ayuda.
 - Cargar stock inicial y su costo unitario, que nace como movimiento y no como
@@ -440,14 +479,31 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
   teléfono.
 - El stock inicial entra como `MovimientoStock`, así que el historial del
   artículo arranca explicando de dónde salió cada unidad.
-- **El campo de categoría es texto libre en la pantalla, pero por detrás arma
-  un árbol.** Desde el 2026-08-23 existe la tabla `categorias` (dos niveles:
-  rubro → marca), y al guardar, `asegurarCategoria`
-  (`lib/inventario/categorias.ts`) parte el texto por el `·` y deja el artículo
-  colgado de la rama que corresponde, creándola si no existía. **La pantalla no
-  cambió a propósito**: por expand/contract, el modelo viaja un deploy antes que
-  la UI que lo muestra. El selector de categoría y el árbol lateral son el ciclo
-  siguiente.
+- **La categoría se elige, no se tipea**, y eso **quita una capacidad que
+  existía**: hasta el 2026-08-24 el campo era texto libre y escribir
+  "Fundas · Samsung" creaba las dos ramas al vuelo. Ahora se elige de lo que
+  hay, y para crear una categoría se va al panel de `/inventario` — de ahí el
+  link bajo los selectores. Es la consecuencia directa de haber elegido
+  "catálogo propio" sobre "catálogo creable al vuelo".
+- **Cambiar de rubro limpia la marca elegida**: dejarla puesta guardaría una
+  marca de otro rubro, y el servidor la aceptaría sin chistar porque el id
+  existe.
+- **El selector de marca nace deshabilitado** con un rubro sin marcas, en vez
+  de vacío y clickeable: un selector que se abre para no mostrar nada invita a
+  buscar algo que no está.
+- **Sin JavaScript no se puede elegir categoría.** El `Select` de Radix
+  renderiza sus opciones del lado del cliente, así que el `<select>` oculto que
+  viaja en el form nace con una sola opción vacía. Es el mismo trade-off que ya
+  se aceptó en `/vender` al pasar medio y moneda a Radix, y una **regresión
+  respecto del campo de texto**, que sí funcionaba sin JS. Se acepta porque la
+  maqueta pide el chevron que ningún `<select>` nativo dibuja.
+- **La factura del proveedor no es una columna nueva**: va como nota del
+  movimiento de stock inicial (`'stock inicial · <factura>'`), que es
+  exactamente para lo que `MovimientoStock.nota` existe y lo que el ingreso de
+  mercadería de la ficha ya hace.
+- **El texto de `Articulo.categoria` se sigue escribiendo**, ahora derivado de
+  la rama en vez de tipeado. Es lo que hace que un rollback a la imagen
+  anterior encuentre el dato; muere en el deploy del contract.
 - **"Cancelar" y "Guardar artículo" viven en el Topbar**, no al pie del
   formulario: el `<form>` envuelve encabezado y cuerpo por igual
   (`className="contents"`, sin alterar el layout de `SidebarInset`) porque el

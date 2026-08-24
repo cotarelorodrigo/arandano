@@ -907,6 +907,66 @@ Y del producto:
   `design/arandano.pen` no dibuja ningún panel de categorías, así que ese ciclo
   va a construir algo que el `.pen` no tiene — anotado en
   `docs/correcciones-pendientes-del-pen.md`.
+- ~~Construir la UI de categorías.~~ **Hecho** (2026-08-24), el segundo de los
+  dos ciclos. El panel de `/inventario` —navegar, filtrar y administrar— y los
+  dos selectores del alta. Ver
+  `docs/superpowers/specs/2026-08-24-categorias-ui-design.md`.
+
+  **La maqueta se diseñó DESPUÉS del ciclo del modelo, y corrigió cinco cosas
+  que el spec anterior había especificado mal.** Ese spec describía la pantalla
+  antes de que existiera el diseño, y decía "copiá el ítem de Nav del sidebar";
+  la maqueta eligió filas más compactas (30 px contra 36, `padding [0,8]`,
+  radio 8), un hueco de 14 px donde iría el chevron en los rubros sin marcas
+  —el spec decía explícitamente lo contrario—, y tipografía propia para las
+  marcas (12.5/normal contra 13/500). Manda la maqueta. Vale como recordatorio
+  de que **describir una pantalla antes de dibujarla produce medidas que hay
+  que tirar**.
+
+  **El conteo del árbol responde al catálogo, no a la búsqueda**, y es la regla
+  que más fácil se implementa mal. Un rubro suma sus marcas más lo colgado de
+  él mismo —si no, el número de arriba no cierra con la suma de abajo—, y
+  `?q`/`?tipo` no lo tocan: si lo hicieran, escribir algo que matchea una sola
+  rama dejaría todas las demás en 0, y el árbol dejaría de servir para navegar
+  justo cuando más se lo necesita. Es a propósito **distinto** del conteo de
+  stock negativo del subtítulo, que sí habla de lo que el listado muestra.
+
+  **El alta pasó de tipear a elegir, y eso quita una capacidad.** Hasta este
+  ciclo, escribir "Fundas · Samsung" en el campo de texto **creaba** las dos
+  ramas al vuelo. Ahora se elige de lo que hay, y para crear una categoría se
+  va al panel — es la consecuencia directa de haber elegido "catálogo propio"
+  sobre "catálogo creable al vuelo", y el costo es real: un local nuevo carga
+  su primer artículo sin categoría o interrumpe para crearla. La mitigación es
+  el link al panel, bajo los selectores. **Y con `Select` de Radix, elegir
+  categoría deja de funcionar sin JavaScript** — el texto libre sí funcionaba:
+  es el mismo trade-off ya aceptado en `/vender`, ahora con una regresión
+  concreta anotada.
+
+  **`Articulo.categoria` (el texto) sigue vivo y sigue escribiéndose**, ahora
+  derivado de la rama. El `DROP COLUMN` es un deploy posterior. Y la entrada de
+  `crearArticulo` acepta **los dos** caminos —`categoriaId` y `categoria`— no
+  por transición: el texto lo usa `scripts/sembrar-catalogo-dev.mts`, y un seed
+  no es una pantalla.
+
+  **Los dos bugs que este ciclo dejó como lección, porque el gate entero estaba
+  en verde mientras la pantalla servía 500 en cada visita**: un Server
+  Component no puede **invocar** una función exportada por un módulo
+  `'use client'`, ni **pasarle una función como prop** a un componente cliente.
+  Ni `npm test`, ni `tsc`, ni `lint`, ni siquiera `npm run build` los ven —el
+  primero es de runtime y el segundo también—; lo único que los vio fue abrir
+  la pantalla. Quedó `test/servidor-llama-a-cliente.test.ts` como red para el
+  primero, que es la **dirección inversa** de lo que cubría
+  `test/limite-cliente-servidor.test.ts` (aquél vigila que un módulo cliente no
+  arrastre `pg` al bundle). Para el segundo no hay red estática razonable: la
+  única es el barrido de pantallas de `scripts/smoke.sh`.
+
+  **Queda pendiente**, anotado en `docs/correcciones-pendientes-del-pen.md`:
+  tres estados del árbol que la maqueta no dibuja (rubro y marca
+  seleccionados, la fila en edición, el menú `⋯`) y que el código derivó; **la
+  ficha `/inventario/[id]`, que quedó contradiciendo al alta** —sigue con un
+  campo de texto único, sin Marca—; y dos campos que la maqueta del alta dibuja
+  y no se construyeron: el código de barras (columna nueva, y el buscador de
+  `/vender` debería mirarla) y el toggle de catálogo público (que viaja con el
+  catálogo, cuando exista).
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~
