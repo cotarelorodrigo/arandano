@@ -32,6 +32,24 @@ async function stockDe(articuloId: string): Promise<string> {
   return new Prisma.Decimal(rows[0].stock).toString()
 }
 
+/** La rama del árbol a la que quedó colgado un artículo, o `null` si no cuelga
+ *  de ninguna. Se lee con el OWNER, así que ve el árbol entero: lo que se está
+ *  probando es qué escribió el motor, no qué deja ver RLS —eso es
+ *  test/rls.test.ts—. */
+async function categoriaDe(
+  articuloId: string,
+): Promise<{ nombre: string; padre: string | null } | null> {
+  const { rows } = await owner.query(
+    `SELECT c.nombre, p.nombre AS padre
+       FROM articulos a
+       JOIN categorias c ON c.id = a.categoria_id
+       LEFT JOIN categorias p ON p.id = c.padre_id
+      WHERE a.id = $1`,
+    [articuloId],
+  )
+  return rows.length === 0 ? null : { nombre: rows[0].nombre, padre: rows[0].padre }
+}
+
 beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
@@ -618,5 +636,158 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
     await expect(
       desactivarArticulo({ tenantId, articuloId: 'no-es-uuid' }),
     ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
+  })
+})
+
+
+/**
+ * El árbol de categorías se arma desde el texto que el formulario ya manda —
+ * ninguna pantalla cambió en este ciclo. Es lo que evita que el ciclo de la UI
+ * tenga que correr un segundo backfill para juntar lo cargado en el medio.
+ */
+describe('el árbol de categorías', () => {
+  it('el alta arma la rama desde el texto', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Funda Galaxy A52', tipo: 'PRODUCTO', precio: d('9000'),
+      categoria: 'Fundas · Samsung',
+    })
+    expect(await categoriaDe(a.id)).toEqual({ nombre: 'Samsung', padre: 'Fundas' })
+  })
+
+  // El texto NO deja de escribirse, y eso es lo que sostiene el rollback: el
+  // código de la imagen anterior lee esta columna y encuentra el dato. Si este
+  // caso se cae, el contract se adelantó a su deploy.
+  it('y sigue escribiendo el texto igual que antes', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Funda Moto G54', tipo: 'PRODUCTO', precio: d('8000'),
+      categoria: 'Fundas · Motorola',
+    })
+    const { rows } = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [a.id])
+    expect(rows[0].categoria).toBe('Fundas · Motorola')
+  })
+
+  // "Cables" y "Cargadores" los nombró el cliente sueltos, sin marca: un
+  // artículo colgado de una raíz es un caso normal, no un dato a medio cargar.
+  it('una categoría sin marca cuelga de la raíz, y eso es válido', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Cable USB-C 1m', tipo: 'PRODUCTO', precio: d('4000'),
+      categoria: 'Cables',
+    })
+    expect(await categoriaDe(a.id)).toEqual({ nombre: 'Cables', padre: null })
+  })
+
+  it('sin categoría no crea ninguna fila y categoria_id queda null', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Sin clasificar', tipo: 'PRODUCTO', precio: d('1000'),
+    })
+    expect(await categoriaDe(a.id)).toBeNull()
+    const { rows } = await owner.query(
+      `SELECT categoria_id FROM articulos WHERE id = $1`, [a.id],
+    )
+    expect(rows[0].categoria_id).toBeNull()
+  })
+
+  it('una categoría de sólo espacios tampoco arma nada', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'En blanco del árbol', tipo: 'PRODUCTO', precio: d('1000'),
+      categoria: '   ',
+    })
+    expect(await categoriaDe(a.id)).toBeNull()
+  })
+
+  // Dos altas de la misma categoría tienen que REUSAR la fila. Si no, el árbol
+  // crece una rama por artículo y la pantalla del ciclo siguiente es ilegible.
+  it('dos artículos de la misma categoría comparten la fila', async () => {
+    const uno = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Vidrio A52', tipo: 'PRODUCTO', precio: d('5000'),
+      categoria: 'Vidrios templados · Samsung',
+    })
+    const dos = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Vidrio A54', tipo: 'PRODUCTO', precio: d('5500'),
+      categoria: 'Vidrios templados · Samsung',
+    })
+    const { rows } = await owner.query(
+      `SELECT id, categoria_id FROM articulos WHERE id = ANY($1::uuid[])`,
+      [[uno.id, dos.id]],
+    )
+    expect(rows[0].categoria_id).toBe(rows[1].categoria_id)
+
+    const { rows: cuenta } = await owner.query(
+      `SELECT count(*)::int AS n FROM categorias
+        WHERE tenant_id = $1 AND nombre = 'Vidrios templados' AND padre_id IS NULL`,
+      [tenantId],
+    )
+    expect(cuenta[0].n).toBe(1)
+  })
+
+  // La misma marca bajo dos rubros distintos son DOS filas, no una: "Samsung"
+  // de Fundas y "Samsung" de Vidrios templados no son la misma categoría, y
+  // fundirlas haría que filtrar por una trajera los artículos de la otra.
+  it('la misma marca bajo dos rubros son dos hijas distintas', async () => {
+    const { rows } = await owner.query(
+      `SELECT p.nombre AS padre FROM categorias c
+         JOIN categorias p ON p.id = c.padre_id
+        WHERE c.tenant_id = $1 AND c.nombre = 'Samsung' ORDER BY p.nombre`,
+      [tenantId],
+    )
+    expect(rows.map((r) => r.padre)).toEqual(['Fundas', 'Vidrios templados'])
+  })
+
+  it('el tercer nivel se pliega dentro de la hija, sin perder texto', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Funda con tres niveles', tipo: 'PRODUCTO', precio: d('7000'),
+      categoria: 'Accesorios · Fundas · Samsung',
+    })
+    expect(await categoriaDe(a.id)).toEqual({ nombre: 'Fundas · Samsung', padre: 'Accesorios' })
+  })
+
+  it('la edición mueve el artículo de rama', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Cargador 33W', tipo: 'PRODUCTO', precio: d('12000'),
+      categoria: 'Cables',
+    })
+    await editarArticulo({
+      tenantId, articuloId: a.id, nombre: 'Cargador 33W', sku: a.sku, precio: d('12000'),
+      categoria: 'Cargadores · Xiaomi',
+    })
+    expect(await categoriaDe(a.id)).toEqual({ nombre: 'Xiaomi', padre: 'Cargadores' })
+  })
+
+  // Vaciar el campo despeja las dos columnas a la vez. Dejar `categoria_id`
+  // apuntando a la rama vieja con el texto ya en null sería el peor de los dos
+  // mundos: la pantalla de hoy diría "sin categoría" y el árbol del ciclo
+  // siguiente lo seguiría contando adentro de "Cables".
+  it('y vaciar la categoría al editar despeja las dos columnas', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Se despeja', tipo: 'PRODUCTO', precio: d('1000'),
+      categoria: 'Cables',
+    })
+    await editarArticulo({
+      tenantId, articuloId: a.id, nombre: 'Se despeja', sku: a.sku, precio: d('1000'),
+      categoria: '',
+    })
+    expect(await categoriaDe(a.id)).toBeNull()
+    const { rows } = await owner.query(
+      `SELECT categoria, categoria_id FROM articulos WHERE id = $1`, [a.id],
+    )
+    expect(rows[0].categoria).toBeNull()
+    expect(rows[0].categoria_id).toBeNull()
+  })
+
+  // El árbol es POR TENANT: el local de al lado que use la misma categoría
+  // tiene su propia fila. Lo garantiza el índice único, que lleva tenant_id
+  // adentro; esto lo ejercita por el camino real, el del motor.
+  it('el árbol de otro tenant no se comparte', async () => {
+    const ajeno = await crearArticulo({
+      tenantId: otroTenantId, usuarioId: usuarioAjeno, nombre: 'Funda del vecino',
+      tipo: 'PRODUCTO', precio: d('9000'), categoria: 'Fundas · Samsung',
+    })
+    const { rows } = await owner.query(
+      `SELECT count(*)::int AS n FROM categorias
+        WHERE nombre = 'Fundas' AND padre_id IS NULL AND tenant_id = ANY($1::uuid[])`,
+      [[tenantId, otroTenantId]],
+    )
+    expect(rows[0].n).toBe(2)
+    expect(await categoriaDe(ajeno.id)).toEqual({ nombre: 'Samsung', padre: 'Fundas' })
   })
 })
