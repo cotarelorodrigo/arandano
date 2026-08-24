@@ -14,10 +14,17 @@
 >
 > **Tampoco muestra los índices únicos escritos a mano en una migración**, por
 > el mismo motivo: `migrate diff` compara contra `schema.prisma`, no contra el
-> SQL de `prisma/migrations/`. `cajas_una_abierta_por_tenant` —el índice único
-> PARCIAL (`WHERE cerrada_en IS NULL`) que es la invariante que define la
-> tabla `cajas`— es hoy el único caso, y no aparece en ninguna parte de este
-> documento.
+> SQL de `prisma/migrations/`. Hoy son dos, y los dos son índices únicos
+> PARCIALES que sostienen una invariante que el schema no puede expresar:
+>
+> - `cajas_una_abierta_por_tenant` (`WHERE cerrada_en IS NULL`) — no hay dos
+>   turnos abiertos a la vez.
+> - `categorias_raiz_unica_por_tenant` (`WHERE padre_id IS NULL`) — no hay dos
+>   categorías raíz con el mismo nombre. El `@@unique` que sí está en el schema
+>   lleva `padre_id` adentro, y en Postgres NULL <> NULL, así que a las raíces
+>   no las alcanza.
+>
+> Ninguno de los dos aparece en ninguna parte de este documento.
 
 ```mermaid
 erDiagram
@@ -44,6 +51,7 @@ erDiagram
     text nombre
     tipo_articulo tipo
     text categoria "opcional"
+    uuid categoria_id FK "opcional"
     decimal(12,2) precio
     decimal(12,3) stock
     timestamptz(3) desactivado_en "opcional"
@@ -59,6 +67,14 @@ erDiagram
     timestamptz(3) cerrada_en "opcional"
     uuid cerrada_por_id FK "opcional"
     timestamptz(3) creado_en
+  }
+  categorias {
+    uuid id PK
+    uuid tenant_id FK "único junto a padre_id, nombre"
+    text nombre "único junto a tenant_id, padre_id"
+    uuid padre_id FK "opcional; único junto a tenant_id, nombre"
+    timestamptz(3) creado_en
+    timestamptz(3) actualizado_en
   }
   clientes {
     uuid id PK
@@ -205,12 +221,15 @@ erDiagram
   }
   articulos ||--o{ movimientos_stock : "ON DELETE RESTRICT"
   articulos ||--o{ venta_items : "ON DELETE RESTRICT"
+  categorias |o--o{ articulos : "ON DELETE RESTRICT"
+  categorias |o--o{ categorias : "ON DELETE RESTRICT"
   clientes |o--o{ ventas : "ON DELETE RESTRICT"
   clientes ||--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
   ordenes_de_trabajo ||--o{ eventos_orden : "ON DELETE CASCADE"
   tenants ||--o{ accounts : "ON DELETE CASCADE"
   tenants ||--o{ articulos : "ON DELETE CASCADE"
   tenants ||--o{ cajas : "ON DELETE CASCADE"
+  tenants ||--o{ categorias : "ON DELETE CASCADE"
   tenants ||--o{ clientes : "ON DELETE CASCADE"
   tenants ||--o{ eventos_orden : "ON DELETE CASCADE"
   tenants ||--o{ movimientos_stock : "ON DELETE CASCADE"
@@ -251,7 +270,9 @@ erDiagram
 ## Índices no únicos
 
 - **accounts**: `accounts_tenant_id_user_id_idx` sobre (`tenant_id`, `user_id`)
+- **articulos**: `articulos_tenant_id_categoria_id_idx` sobre (`tenant_id`, `categoria_id`)
 - **cajas**: `cajas_tenant_id_abierta_en_idx` sobre (`tenant_id`, `abierta_en`)
+- **categorias**: `categorias_tenant_id_padre_id_idx` sobre (`tenant_id`, `padre_id`)
 - **clientes**: `clientes_tenant_id_idx` sobre (`tenant_id`)
 - **eventos_orden**: `eventos_orden_tenant_id_orden_id_creado_en_idx` sobre (`tenant_id`, `orden_id`, `creado_en`)
 - **movimientos_stock**: `movimientos_stock_tenant_id_articulo_id_idx` sobre (`tenant_id`, `articulo_id`)

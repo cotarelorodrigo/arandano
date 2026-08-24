@@ -3,6 +3,7 @@ import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import { excedeEscala, ESCALA_DINERO, ESCALA_CANTIDAD } from '@/lib/ventas/totales'
 import { exigirUsuario } from '@/lib/ventas/pertenencia'
 import { ErrorDeInventario, traducirErrorDeBase } from './errores'
+import { asegurarCategoria, ramaElegida, textoDeCategoria } from './categorias'
 
 type Decimal = Prisma.Decimal
 
@@ -16,21 +17,54 @@ export type EntradaCrearArticulo = {
   tipo: 'PRODUCTO' | 'SERVICIO'
   precio: Decimal
   sku?: string
-  // String libre, sin tabla ni jerarquía (comentario del schema): "Accesorios
-  // · Protección" es el valor completo, con el " · " tipeado a mano por quien
-  // carga el artículo. Nullable: la mayoría de los artículos que ya existen no
-  // la tienen y ninguno se rompe sin ella.
+  // Sigue llegando como texto libre —"Accesorios · Protección", con el " · "
+  // tipeado a mano por quien carga el artículo—, pero ya no se guarda sólo
+  // como texto: `asegurarCategoria` lo parte y arma con él la rama del árbol
+  // (tabla `categorias`), y el artículo queda apuntando a la hoja. El texto se
+  // sigue escribiendo igual mientras dure el expand/contract — es lo que hace
+  // que un rollback a la imagen anterior encuentre el dato. Nullable: la
+  // mayoría de los artículos que ya existen no la tienen y ninguno se rompe
+  // sin ella.
   categoria?: string | null
+  /**
+   * La rama ELEGIDA del árbol, que es como manda la pantalla desde que existe
+   * el panel de categorías. Cuando llega, **gana sobre `categoria`**: el texto
+   * pasa a derivarse del nombre de la rama en vez de crearla.
+   *
+   * Los dos caminos conviven a propósito y no es transitorio: `categoria`
+   * (texto) lo sigue usando `scripts/sembrar-catalogo-dev.mts`, y un seed no
+   * es una pantalla — pedirle que resuelva ids antes de sembrar sería
+   * complicarlo por nada.
+   */
+  categoriaId?: string | null
   stockInicial?: Decimal | null
   costoUnitario?: Decimal | null
+  /**
+   * El comprobante con el que entró la mercadería. No es una columna: va como
+   * NOTA del movimiento de stock inicial, que es exactamente para lo que
+   * `MovimientoStock.nota` existe y lo que el ingreso de mercadería de la
+   * ficha ya hace.
+   */
+  facturaProveedor?: string | null
 }
 
-/** Vacío o sólo espacios se guarda como NULL, no como cadena vacía: son la
- *  misma "no hay categoría" y el listado y la ficha sólo tienen que chequear
- *  un caso, no dos. */
-function limpiarCategoria(categoria: string | null | undefined): string | null {
-  const limpio = categoria?.trim()
-  return limpio ? limpio : null
+/**
+ * El texto de categoría tal como se guarda.
+ *
+ * Vacío o sólo espacios va como NULL y no como cadena vacía: son la misma "no
+ * hay categoría" y el listado y la ficha sólo tienen que chequear un caso, no
+ * dos. Desde que existe el árbol, además NORMALIZA a la forma canónica de la
+ * rama —ver `textoDeCategoria`—, así el texto y `categoria_id` nunca se
+ * contradicen mientras los dos convivan.
+ */
+const limpiarCategoria = textoDeCategoria
+
+/** La nota del movimiento de stock inicial, con el comprobante si lo hay.
+ *  Concatenada y no en un campo propio: `MovimientoStock.nota` es texto libre
+ *  a propósito, y el historial de la ficha ya lo muestra tal cual. */
+function notaDelStockInicial(factura: string | null | undefined): string {
+  const limpia = factura?.trim()
+  return limpia ? `stock inicial · ${limpia}` : 'stock inicial'
 }
 
 // Cuántas veces se salta el correlativo antes de rendirse. Agotar cinco
@@ -221,8 +255,23 @@ export async function crearArticulo(
       return await enTransaccionDeTenant(tenantId, async (tx) => {
         await exigirUsuario(tx, usuarioId)
 
+        // Antes del create y en la MISMA transacción: si el alta se cae por
+        // el choque de SKU de más abajo, la rama recién creada se va con el
+        // rollback en vez de quedar colgando vacía en el árbol.
+        //
+        // Con `categoriaId` no se crea nada: la rama ya existe y sólo se toma
+        // su nombre para el texto. Sin él, el texto libre la crea, que es el
+        // camino que usa el seed.
+        const rama = entrada.categoriaId
+          ? await ramaElegida(tx, entrada.categoriaId)
+          : { id: await asegurarCategoria(tx, tenantId, categoria), texto: categoria }
+
         const articulo = await tx.articulo.create({
-          data: { tenantId, sku, nombre, tipo, precio, categoria },
+          data: {
+            tenantId, sku, nombre, tipo, precio,
+            categoria: rama.texto,
+            categoriaId: rama.id,
+          },
         })
 
         // El stock inicial NO se escribe en la columna: nace como movimiento,
@@ -239,7 +288,7 @@ export async function crearArticulo(
               motivo: 'INGRESO',
               usuarioId,
               costoUnitario: costoUnitario ?? null,
-              nota: 'stock inicial',
+              nota: notaDelStockInicial(entrada.facturaProveedor),
             },
           })
           await tx.articulo.update({
@@ -298,9 +347,11 @@ export async function editarArticulo(entrada: {
       // `updateMany` y no `update`: con RLS, un id de otro tenant no existe
       // para esta conexión, y `update` tira P2025 — un error de Prisma sin
       // `codigo`. Contar filas afectadas deja decirlo con el error del módulo.
+      const categoriaId = await asegurarCategoria(tx, tenantId, categoria)
+
       const { count } = await tx.articulo.updateMany({
         where: { id: articuloId },
-        data: { nombre, sku, precio, categoria },
+        data: { nombre, sku, precio, categoria, categoriaId },
       })
       if (count === 0) {
         throw new ErrorDeInventario(

@@ -25,6 +25,22 @@ export type CodigoErrorDeInventario =
   | 'PRECIO_INVALIDO'
   | 'SKU_REPETIDO'
   | 'SKU_VACIO'
+  // Lo tira `asegurarCategoria` cuando el INSERT no insertó (o sea: ya
+  // existía) y el SELECT que sigue tampoco la encuentra. Adentro de una
+  // transacción eso no puede pasar, así que si sale es un bug y tiene que
+  // verse como tal — está acá para que el llamador reciba un error con
+  // código en vez del TypeError de leer `[0].id` sobre un array vacío.
+  | 'CATEGORIA_INDETERMINADA'
+  // Los del ABM del árbol. `CATEGORIA_ANIDADA` es la validación explícita de
+  // los dos niveles: el ciclo del modelo la dejó sin escribir a propósito
+  // —no tenía un solo llamador, porque `asegurarCategoria` no puede producir
+  // un tercer nivel— y entra recién con `moverCategoria`, que es el primer
+  // escritor capaz de violarla.
+  | 'CATEGORIA_INEXISTENTE'
+  | 'CATEGORIA_REPETIDA'
+  | 'CATEGORIA_ANIDADA'
+  | 'CATEGORIA_CON_HIJAS'
+  | 'CATEGORIA_CON_ARTICULOS'
   // Lo tira `traducirErrorDeBase` de acá abajo ante el desborde numérico de
   // Postgres. Es el único fallo de la base que el motor NO puede anticipar con
   // una validación previa: el stock se escribe con un UPDATE relativo

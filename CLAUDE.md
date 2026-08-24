@@ -485,7 +485,9 @@ Y del producto:
   pendientes.~~ **Hecho** (2026-08-22): `Articulo.categoria` (texto libre, no
   una tabla — un rubro con veinte artículos no necesita un catálogo de
   categorías para mantener, y agregar la tabla más adelante sigue siendo
-  aditivo si hiciera falta), el modelo `Caja` (sólo apertura y cierre) y
+  aditivo si hiciera falta; **esa puerta se cruzó el 2026-08-23**, ver la
+  entrada del árbol de categorías más abajo), el modelo `Caja` (sólo apertura
+  y cierre) y
   `Tenant.cotizacionUsd` junto con `cotizacionUsdEn`. **Sin UI a propósito, por
   expand/contract**: la columna viaja primero y el código que la lee llega
   recién en el ciclo de cada pantalla, así el rollback automático de un deploy
@@ -621,6 +623,14 @@ Y del producto:
     frecuente": sin diálogo —que además competiría por la misma tecla con el
     manejo propio de Escape de cualquier panel modal futuro— y sin sumar una
     librería de toasts sólo para un vaciado deshacible.
+
+    **Esa última mitad caducó el 2026-08-24**, y conviene leer por qué antes
+    de creer que la decisión se dio vuelta sola: el argumento nunca fue "los
+    toasts no sirven", fue **"no por un caso"**. El ABM de categorías trajo
+    seis errores accionables de una, y ahí el cálculo se invierte. `sonner`
+    está en el repo desde entonces (ver la entrada de la UI de categorías más
+    abajo). El vaciado del carrito **no cambió** — sigue con su confirmación
+    en dos Esc, porque sigue sin ser un aviso sino una confirmación.
 
   **Corregido después** (2026-08-22, review final del rediseño): la primera
   versión de las dos reglas de arriba era una deny-list de tagNames
@@ -840,6 +850,186 @@ Y del producto:
   histórico de lo que era cierto ese día, no como el conteo vigente — para
   eso está `docs/sistema-de-diseno.md`, sección "El arándano como
   superficie".
+- ~~Convertir las categorías de artículo en un árbol con tabla propia.~~
+  **El modelo, hecho** (2026-08-23). Sale de feedback de un cliente: *"para ver
+  el stock organizado por categorías, como celulares, dentro de celulares por
+  marca, y después productos tipo, fundas también después por marcas, vidrios
+  templados, cables, cargadores"*. **Revierte a propósito** la decisión de
+  texto libre que este mismo documento cerró el 2026-08-22 — el párrafo dejaba
+  la puerta abierta ("agregar la tabla más adelante sigue siendo aditivo si
+  hiciera falta") y llegó el "si hiciera falta", tres semanas después y no tres
+  años: sigue siendo barato justamente porque todavía no hay tenants reales.
+  Ver `docs/superpowers/specs/2026-08-23-categorias-design.md`.
+
+  **Dos niveles fijos, con auto-relación y no con dos tablas.** `padre_id` NULL
+  es una raíz ("Celulares", "Cables"), con padre es una hoja ("Samsung"). La
+  restricción a dos niveles **no vive en el schema** —nada impide colgar una
+  hija de una hija— sino en el servidor: hoy estructuralmente, porque el único
+  escritor busca la raíz con padre NULL y cuelga de ella, y con el ABM va a ser
+  una validación explícita. Se descartó el par de tablas separadas
+  (`Categoria` + `Marca`), que garantiza los dos niveles por estructura, porque
+  duplica el ABM entero y convierte "mover Samsung de Celulares a Fundas" —un
+  `UPDATE` de una columna— en un caso especial.
+
+  **Un artículo cuelga de una raíz o de una hoja, indistinto**, y eso es lo que
+  hace que "Cables" sin marca sea válido — el cliente nombró tres rubros sin
+  marca detrás. Forzar que todo cuelgue de una hoja obligaría a inventar una
+  marca falsa ("Cables · Genérico") para cada rubro que no las usa.
+
+  **La unicidad necesita DOS índices, y esto es lo que alguien va a querer
+  simplificar en seis meses.** El `@@unique([tenantId, padreId, nombre])` de
+  Prisma **no alcanza**: en Postgres `NULL ≠ NULL`, así que dos raíces
+  homónimas lo pasan sin chistar, porque su `padre_id` es NULL en las dos. El
+  índice único parcial `WHERE padre_id IS NULL` es lo único que las frena —
+  mismo mecanismo, y por la misma razón, que "una sola caja abierta por
+  tenant".
+
+  **Sin UI, otra vez a propósito y por expand/contract**: no cambia ninguna
+  pantalla. El campo de categoría de los formularios sigue siendo texto libre;
+  lo que cambió es que al guardar, ese texto además arma la rama del árbol
+  (`asegurarCategoria`, `lib/inventario/categorias.ts`). **Y `articulos.categoria`
+  —el texto— se sigue escribiendo igual**: es lo que hace que un rollback a la
+  imagen anterior encuentre el dato. El `DROP COLUMN` es un deploy **posterior
+  al de la UI**, no el siguiente. Mientras dure esa ventana, renombrar una
+  categoría no actualiza el texto de sus artículos: es un vestigio con fecha de
+  defunción, no una segunda fuente de verdad.
+
+  **Un hallazgo que este ciclo destapó y NO arregla**, porque no es suyo: **las
+  FK de Postgres saltean RLS**. Un artículo del tenant A puede apuntar por SQL
+  crudo a una categoría del tenant B — la verificación de integridad
+  referencial corre por fuera de las policies. No es propio de esta tabla: es
+  el comportamiento de **todas** las FK del schema (`cajas.abierta_por_id`,
+  `movimientos_stock.articulo_id`, `ventas.cliente_id`), ninguna de las cuales
+  es compuesta con `tenant_id`. Lo que RLS sí garantiza, y `test/rls.test.ts`
+  ahora afirma explícitamente, es que **el nombre ajeno no se lee desde el otro
+  lado**: el JOIN se queda sin la fila y la pantalla muestra un artículo sin
+  categoría, no la categoría del local de al lado. Cerrarlo de verdad —FK
+  compuestas contra `(tenant_id, id)`— es un ciclo propio sobre el schema
+  entero; hacerlo sólo acá dejaría una asimetría que el próximo ciclo copiaría
+  al revés.
+
+  **Queda para el ciclo siguiente**: el árbol lateral de `/inventario` con su
+  conteo por rama, el filtro, y el ABM in-place (crear, renombrar, mover,
+  borrar) — con la validación explícita de los dos niveles, que es el primer
+  escritor capaz de violarla. Y una deuda con la maqueta:
+  `design/arandano.pen` no dibuja ningún panel de categorías, así que ese ciclo
+  va a construir algo que el `.pen` no tiene — anotado en
+  `docs/correcciones-pendientes-del-pen.md`.
+- ~~Construir la UI de categorías.~~ **Hecho** (2026-08-24), el segundo de los
+  dos ciclos. El panel de `/inventario` —navegar, filtrar y administrar— y los
+  dos selectores del alta. Ver
+  `docs/superpowers/specs/2026-08-24-categorias-ui-design.md`.
+
+  **La maqueta se diseñó DESPUÉS del ciclo del modelo, y corrigió cinco cosas
+  que el spec anterior había especificado mal.** Ese spec describía la pantalla
+  antes de que existiera el diseño, y decía "copiá el ítem de Nav del sidebar";
+  la maqueta eligió filas más compactas (30 px contra 36, `padding [0,8]`,
+  radio 8), un hueco de 14 px donde iría el chevron en los rubros sin marcas
+  —el spec decía explícitamente lo contrario—, y tipografía propia para las
+  marcas (12.5/normal contra 13/500). Manda la maqueta. Vale como recordatorio
+  de que **describir una pantalla antes de dibujarla produce medidas que hay
+  que tirar**.
+
+  **El conteo del árbol responde al catálogo, no a la búsqueda**, y es la regla
+  que más fácil se implementa mal. Un rubro suma sus marcas más lo colgado de
+  él mismo —si no, el número de arriba no cierra con la suma de abajo—, y
+  `?q`/`?tipo` no lo tocan: si lo hicieran, escribir algo que matchea una sola
+  rama dejaría todas las demás en 0, y el árbol dejaría de servir para navegar
+  justo cuando más se lo necesita. Es a propósito **distinto** del conteo de
+  stock negativo del subtítulo, que sí habla de lo que el listado muestra.
+
+  **El alta pasó de tipear a elegir, y eso quita una capacidad.** Hasta este
+  ciclo, escribir "Fundas · Samsung" en el campo de texto **creaba** las dos
+  ramas al vuelo. Ahora se elige de lo que hay, y para crear una categoría se
+  va al panel — es la consecuencia directa de haber elegido "catálogo propio"
+  sobre "catálogo creable al vuelo", y el costo es real: un local nuevo carga
+  su primer artículo sin categoría o interrumpe para crearla. La mitigación es
+  el link al panel, bajo los selectores. **Y con `Select` de Radix, elegir
+  categoría deja de funcionar sin JavaScript** — el texto libre sí funcionaba:
+  es el mismo trade-off ya aceptado en `/vender`, ahora con una regresión
+  concreta anotada.
+
+  **`Articulo.categoria` (el texto) sigue vivo y sigue escribiéndose**, ahora
+  derivado de la rama. El `DROP COLUMN` es un deploy posterior. Y la entrada de
+  `crearArticulo` acepta **los dos** caminos —`categoriaId` y `categoria`— no
+  por transición: el texto lo usa `scripts/sembrar-catalogo-dev.mts`, y un seed
+  no es una pantalla.
+
+  **Los dos bugs que este ciclo dejó como lección, porque el gate entero estaba
+  en verde mientras la pantalla servía 500 en cada visita**: un Server
+  Component no puede **invocar** una función exportada por un módulo
+  `'use client'`, ni **pasarle una función como prop** a un componente cliente.
+  Ni `npm test`, ni `tsc`, ni `lint`, ni siquiera `npm run build` los ven —el
+  primero es de runtime y el segundo también—; lo único que los vio fue abrir
+  la pantalla. Quedó `test/servidor-llama-a-cliente.test.ts` como red para el
+  primero, que es la **dirección inversa** de lo que cubría
+  `test/limite-cliente-servidor.test.ts` (aquél vigila que un módulo cliente no
+  arrastre `pg` al bundle). Para el segundo no hay red estática razonable: la
+  única es el barrido de pantallas de `scripts/smoke.sh`.
+
+  **Los avisos del ABM van por toast, y eso revierte una decisión escrita**
+  (2026-08-24, a pedido del dueño del producto). La primera versión mostraba
+  el error anclado a la fila que falló: en una columna de 248 px dos líneas
+  quedan apretadas, y con el panel scrolleado el cartel podía quedar cortado.
+  Entró `sonner` —el toast de shadcn—, montado una sola vez en
+  `app/(app)/layout.tsx`, **sin `next-themes`**: el componente del registry lo
+  trae para leer el tema, y el producto tiene una sola paleta desde el
+  rediseño, así que arrastrar una dependencia entera para caer en el mismo
+  default no se paga.
+
+  **Los errores no se auto-descartan y los avisos de éxito sí.** "Fundas tiene
+  2 marcas adentro. Borralas o movelas antes." es accionable —dice qué hacer
+  antes de reintentar— y un aviso que se va solo a los cuatro segundos se lleva
+  justamente la instrucción; "Categoría creada" no hay que releerlo, y además
+  la categoría apareciendo en el árbol ya es la confirmación. Cada toast lleva
+  **clave estable por acción y por rama**: `useActionState` retiene su último
+  estado mientras el componente viva, así que el efecto que dispara el aviso
+  vuelve a correr en cada render, y sin clave sonner apilaría una copia por vez.
+
+  **Y el bug que eso destapó, que vale más que la feature**: los avisos
+  "desaparecían rápido" con `duration: Infinity` puesto, y tuvo **dos** causas
+  encadenadas que hay que separar para entenderlo.
+
+  **La primera**: el `<Toaster>` estaba en `app/(app)/layout.tsx` —el lugar
+  "natural", al lado del sidebar—. Sonner guarda los toasts visibles en un
+  `useState([])` propio y se suscribe al store recién en su `useEffect`: nunca
+  lee los que ya existen, así que remontarlo los borra de la pantalla. Vive
+  ahora en el root layout, y `test/toaster.test.ts` lo fija.
+
+  **La segunda, y la que de verdad lo causaba**: el aviso se disparaba desde un
+  `useEffect` sobre `useActionState`, o sea **colgado del ciclo de vida de la
+  fila** — y las filas del árbol se re-renderizan y se desmontan con cada
+  `revalidatePath`. Ahora el toast se lanza en el mismo handler que ejecuta la
+  acción, con el resultado ya en la mano, y desde ahí vive en el store de
+  sonner sin depender de ningún componente. Eso además borró el warning de
+  React que el patrón anterior producía ("An async function with
+  useActionState was called outside of a transition"), porque un `onSelect` de
+  un menú no es un `<form action>`.
+
+  **Lo que hace falta recordar no es dónde va el Toaster sino cómo se
+  diagnostica**: el síntoma se lee como un problema de duración, y la duración
+  era lo único que no tenía nada que ver. Lo que partió el problema al medio
+  fue un botón temporal que lanzaba un toast persistente **sin tocar el
+  servidor**: ése se quedaba perfecto, y eso descartó a sonner de una y dejó
+  como sospechoso al único otro camino. Dos hipótesis mías —la duración, y
+  después el remonte por `revalidatePath`— habían fallado antes de eso, y la
+  segunda encima era falsa por una razón verificable en el código: el camino de
+  error ni siquiera llama a `revalidatePath`.
+
+  **Lo que NO se migró**: los `Alert` inline de los formularios de artículo
+  (`Resultado`, en `formularios.tsx`). Ahí el mensaje habla del formulario que
+  la persona está mirando y aparece al lado del campo que falló — moverlo a una
+  esquina sería alejarlo de su contexto. Que exista `sonner` no lo convierte en
+  el único lugar donde avisar.
+
+  **Queda pendiente**, anotado en `docs/correcciones-pendientes-del-pen.md`:
+  tres estados del árbol que la maqueta no dibuja (rubro y marca
+  seleccionados, la fila en edición, el menú `⋯`) y que el código derivó; **la
+  ficha `/inventario/[id]`, que quedó contradiciendo al alta** —sigue con un
+  campo de texto único, sin Marca—; y dos campos que la maqueta del alta dibuja
+  y no se construyeron: el código de barras (columna nueva, y el buscador de
+  `/vender` debería mirarla) y el toggle de catálogo público (que viaja con el
+  catálogo, cuando exista).
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

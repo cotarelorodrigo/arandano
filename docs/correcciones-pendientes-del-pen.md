@@ -35,20 +35,16 @@ dice "Cliente".
 
 ---
 
-## 2. El formulario de alta de artículo y el card "Datos" no tienen el campo de categoría
+## 2. ~~Los formularios no tienen el campo de categoría~~ — RESUELTA A MEDIAS
 
 - **Frames**: `B4O7t` (`App / Artículo nuevo`) y `y4tEb` (`App / Artículo ficha`)
-- **Falta**: un campo de texto para la categoría, con el mismo tratamiento que
-  sus campos vecinos
 
-**Por qué.** La maqueta muestra la categoría en el listado de `/inventario` y en
-el subtítulo de la ficha —"SKU 000412 · Producto · Accesorios"— pero no la ofrece
-en ningún formulario. Un campo que se muestra y no se puede cargar **nace siempre
-vacío**.
+**El alta quedó resuelta el 2026-08-24**: el frame ahora trae **dos**
+selectores, "Categoría" y "Marca", que es más de lo que esta entrada pedía y
+lo correcto desde que las categorías son un árbol de dos niveles.
 
-Detectado al escribir el spec del rediseño (2026-08-21) y confirmado por el
-relevamiento del ciclo de inventario. El código va a tener el campo en los dos
-formularios.
+**La ficha sigue sin resolverse**, y ahora además quedó contradiciendo al alta:
+ver la entrada 7.
 
 ---
 
@@ -73,30 +69,27 @@ Detectado en el ciclo de inventario (2026-08-22).
 
 ---
 
-## 4. El frame "Artículo nuevo" perdió su columna: en Pencil se ve vacío
+## 4. ~~El frame "Artículo nuevo" perdió su columna~~ — RESUELTA
 
 - **Frame**: `B4O7t` (`App / Artículo nuevo`)
-- **Tiene**: un solo hijo, el `ref` del Sidebar (`jr0Ww`)
-- **Le falta**: el hijo `Columna` (`LBhdp`), que contiene el `Topbar` y el `Cuerpo`
 
-**Qué pasó.** El nodo `LBhdp` **existe y está entero** —sus dos hijos siguen ahí,
-con las tres cards del formulario— pero está **desenganchado del frame**. Las
-otras cuatro pantallas de aplicación (`y4tEb`, `pb32f`, `yhuFd`, `Fe3bW`) tienen
-sus dos hijos normalmente.
+**Resuelta el 2026-08-24.** El frame se rediseñó entero y ya no está vacío:
+Topbar con Cancelar/Guardar, y el cuerpo en dos columnas —"Qué es" y "Datos del
+artículo" a la izquierda, "Stock inicial" y "Catálogo público" en 420 a la
+derecha—. El código lo siguió en el ciclo de la UI de categorías.
 
-La consecuencia práctica: **quien abra "Artículo nuevo" en Pencil hoy no va a ver
-ni el topbar ni el cuerpo dibujados en el lienzo**, aunque el contenido no se
-haya perdido.
+**Lo que ese rediseño trajo y NO se construyó**, decidido con el dueño del
+producto:
 
-**No lo causó el rediseño.** Verificado: el MD5 de `design/arandano.pen` es el
-mismo desde el inicio del trabajo, y el único commit que tocó el archivo es
-`87973d4`, el que lo trajo al repo. Ya venía así.
+- **Código de barras**, dibujado al lado del SKU. Es una columna nueva en
+  `Articulo`, y el buscador de `/vender` debería mirarla además del SKU: su
+  propio ciclo.
+- **"Mostrarlo en el catálogo"**, la card entera de Catálogo público. El
+  catálogo no está construido; un toggle que no publica nada es una promesa
+  vacía en la pantalla.
 
-Se arregla en Pencil arrastrando `LBhdp` de vuelta adentro de `B4O7t`. El
-contenido se pudo relevar igual navegando por id, así que el rediseño de esa
-pantalla se hizo contra los valores correctos.
-
-Detectado en el ciclo de inventario (2026-08-22).
+Las dos quedan como divergencia conocida entre la maqueta y el código: la
+maqueta las dibuja, la pantalla no las tiene.
 
 ---
 
@@ -119,6 +112,63 @@ edita —fondo hundido, sin borde, con candado, lo que sea— y aplicarlo al Có
 y al Tipo. Recién ahí el código puede mostrarlos sin mentir.
 
 Detectado en el ciclo de inventario (2026-08-22).
+
+---
+
+## 6. Los tres estados del árbol de categorías que la maqueta no dibuja
+
+- **Frame**: `pb32f` (`App / Inventario`)
+
+**El árbol se dibujó el 2026-08-24** y el código lo siguió al pie: columna de
+248, filas de 30 con `padding [0,8]` y radio 8, marcas con sangría 24 y texto
+12.5/normal, seleccionada en `$ar-primary-soft` con el texto en
+`$ar-primary-deep`. Lo que la maqueta dibuja está construido.
+
+**Lo que falta dibujar** son tres estados que el código tuvo que derivar, y que
+por lo tanto hoy existen sin referencia:
+
+1. **Rubro y marca seleccionados.** Sólo está dibujado "Todos los artículos"
+   activo. El código los derivó del mismo tratamiento (`$ar-primary-soft` de
+   fondo, texto en `$ar-primary-deep`, weight 600), y la marca **conserva su
+   12.5** al seleccionarse: agrandarla movería la fila.
+2. **La fila en modo edición**, que es cómo se renombra y cómo se crea. El
+   código usa un input inline del mismo alto que la fila (30) con borde
+   `$ar-line-strong` y radio 8 — **no** el campo de 40 del resto de la
+   aplicación, que haría saltar la lista diez píxeles cada vez que alguien
+   empieza a editar.
+3. **El menú `⋯` de cada fila** (Renombrar / Agregar marca / Mover a… /
+   Borrar), que aparece al hover **en el lugar de la cuenta**. Correr el texto
+   cada vez que pasa el mouse haría bailar la lista entera.
+
+Si al dibujarlos la maqueta decide otra cosa, manda la maqueta y se corrige el
+código: son tres tratamientos, no tres decisiones de producto.
+
+Detectado al cerrar el ciclo de la UI de categorías (2026-08-24). Ver
+`docs/superpowers/specs/2026-08-24-categorias-ui-design.md`.
+
+---
+
+## 7. La ficha de artículo quedó atrás del alta
+
+- **Frame**: `y4tEb` (`App / Artículo ficha`)
+- **Dice**: un solo campo "Categoría", de texto, en la card "Datos"; y el
+  subtítulo `SKU 000412 · Producto · Accesorios`
+- **Tiene que decir**: dos selectores, **Categoría** y **Marca**, como los que
+  el mismo `.pen` ya dibuja en `App / Artículo nuevo`; y el subtítulo con la
+  rama completa (`Vidrios templados · Apple`)
+
+**Por qué.** El 2026-08-24 el alta pasó a dos selectores encadenados y la ficha
+no se tocó. Quedan contradiciéndose dentro de la propia maqueta: la misma
+categoría se carga de dos formas distintas según por dónde se entre, y en la
+ficha se puede tipear texto libre que ya no crea ninguna rama.
+
+El código **no** siguió a la ficha, a propósito y con el dueño del producto: sin
+el frame dibujado, habría que inventar el tratamiento. Hasta que se dibuje, la
+ficha sigue con su campo de texto, que ahora arma el árbol por detrás
+(`asegurarCategoria`) — o sea que las dos pantallas escriben la misma columna
+por caminos distintos.
+
+Detectado al leer la maqueta del ciclo de categorías (2026-08-24).
 
 ---
 

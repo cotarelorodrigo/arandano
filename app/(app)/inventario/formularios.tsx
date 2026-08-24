@@ -20,6 +20,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import type { RamaConHijas } from '@/lib/inventario/categorias'
 import estilos from './tipografia.module.css'
 
 // Acá y no en acciones.ts: aquel archivo es 'use server' y sólo puede exportar
@@ -93,9 +97,25 @@ const ICONO_TARJETA_TIPO = 'size-[19px] text-muted-foreground group-has-[:checke
  * `<button type="submit">` necesita ser descendiente del `<form>` que
  * dispara, y acá el botón vive arriba.
  */
-export function FormularioDeAlta({ proximoSku }: { proximoSku: string }) {
+export function FormularioDeAlta({
+  proximoSku,
+  arbol,
+}: {
+  proximoSku: string
+  arbol: RamaConHijas[]
+}) {
   const [estado, accion, pendiente] = useActionState(altaArticulo, INICIAL)
   const [tipo, setTipo] = useState<'PRODUCTO' | 'SERVICIO'>('PRODUCTO')
+  /**
+   * El rubro elegido, que es lo que decide qué marcas ofrece el segundo
+   * selector. Vive acá y no adentro del bloque de categoría porque cambiar de
+   * rubro tiene que LIMPIAR la marca: dejarla puesta guardaría una marca que
+   * pertenece a otro rubro, y el servidor la aceptaría sin chistar porque el
+   * id existe.
+   */
+  const [rubroId, setRubroId] = useState<string>('')
+  const [marcaId, setMarcaId] = useState<string>('')
+  const marcasDelRubro = arbol.find((r) => r.id === rubroId)?.hijas ?? []
 
   return (
     <form action={accion} className="contents">
@@ -114,8 +134,11 @@ export function FormularioDeAlta({ proximoSku }: { proximoSku: string }) {
           </>
         }
       />
-      <div className="flex flex-col items-center gap-4 p-6">
-        <div className="flex w-[760px] flex-col gap-4">
+      {/* Dos columnas, como el frame `B4O7t` de design/arandano.pen: a la
+          izquierda "Qué es" y "Datos del artículo", a la derecha el stock
+          inicial en 420 fijos. Antes era una sola columna de 760 centrada. */}
+      <div className="flex items-start gap-4 p-6">
+        <div className="flex flex-1 flex-col gap-4">
           <CardDelFormulario titulo="Qué estás cargando">
             <div className="flex gap-3">
               {/* Dos tarjetas seleccionables y no un <select>: la maqueta pide
@@ -161,16 +184,72 @@ export function FormularioDeAlta({ proximoSku }: { proximoSku: string }) {
               <Label htmlFor="nombre">Nombre</Label>
               <Input id="nombre" name="nombre" required autoFocus className="h-10 rounded-[9px]" />
             </div>
-            {/* La maqueta (design/arandano.pen) no trae este campo en ninguno de
-                los dos formularios, y a propósito se aparta acá: muestra la
-                categoría en el listado y en el subtítulo de la ficha, y un dato
-                que se ve pero no se puede cargar nace siempre vacío. String
-                libre, sin catálogo de opciones: Articulo.categoria no tiene
-                tabla ni jerarquía (comentario del schema). */}
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="categoria">Categoría (opcional)</Label>
-              <Input id="categoria" name="categoria" placeholder="Accesorios · Protección" className="h-10 rounded-[9px]" />
+            {/* Dos selectores y no un campo de texto (design/arandano.pen,
+                frame `B4O7t`: "Categoría" y "Marca", cada uno con su
+                chevron-down). Es el cambio que trae el árbol, y **quita una
+                capacidad que existía**: hasta ahora, escribir "Fundas ·
+                Samsung" acá CREABA las dos ramas al vuelo. Ahora se elige de
+                lo que hay, y para crear una categoría se va al panel de
+                /inventario — de ahí el link de abajo, que es la mitigación de
+                esa fricción. Es la consecuencia directa de haber elegido
+                "catálogo propio" sobre "catálogo creable al vuelo". */}
+            <div className="flex gap-3">
+              <div className="flex flex-1 flex-col gap-2">
+                <Label htmlFor="categoriaId">Categoría</Label>
+                <Select
+                  name="categoriaId"
+                  value={rubroId}
+                  onValueChange={(v) => {
+                    setRubroId(v)
+                    // Cambiar de rubro limpia la marca: si no, quedaría
+                    // elegida una marca de otro rubro.
+                    setMarcaId('')
+                  }}
+                >
+                  <SelectTrigger id="categoriaId" className="h-10 w-full rounded-[9px]">
+                    <SelectValue placeholder="Sin categoría" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {arbol.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.nombre}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-1 flex-col gap-2">
+                <Label htmlFor="marcaId">Marca</Label>
+                <Select
+                  name="marcaId"
+                  value={marcaId}
+                  onValueChange={setMarcaId}
+                  // Deshabilitado y no vacío-y-clickeable: un selector que se
+                  // abre para no mostrar nada invita a buscar algo que no está.
+                  disabled={marcasDelRubro.length === 0}
+                >
+                  <SelectTrigger id="marcaId" className="h-10 w-full rounded-[9px]">
+                    <SelectValue
+                      placeholder={rubroId === '' ? 'Elegí una categoría' : 'Sin marca'}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {marcasDelRubro.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.nombre}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+            <p className="text-[11px] leading-[1.4] text-muted-foreground">
+              Las categorías se crean y se ordenan en{' '}
+              <Link href="/inventario" className="underline">
+                el panel de Inventario
+              </Link>
+              .
+            </p>
             <div className="flex gap-3">
               <div className="flex flex-1 flex-col gap-2">
                 <Label htmlFor="sku">Código (SKU)</Label>
@@ -203,6 +282,10 @@ export function FormularioDeAlta({ proximoSku }: { proximoSku: string }) {
             </p>
           </CardDelFormulario>
 
+          <Resultado estado={estado} />
+        </div>
+
+        <div className="flex w-[420px] shrink-0 flex-col gap-4">
           {tipo === 'PRODUCTO' && (
             <CardDelFormulario titulo="Stock inicial">
               <div className="flex gap-3">
@@ -210,16 +293,24 @@ export function FormularioDeAlta({ proximoSku }: { proximoSku: string }) {
                   <Label htmlFor="stockInicial">Cantidad (opcional)</Label>
                   <Input id="stockInicial" name="stockInicial" inputMode="decimal" className="h-10 rounded-[9px]" />
                 </div>
-                {/* flex-1 y no un ancho fijo como en la maqueta: ahí un tercer
-                    campo ("Nota") ocupa el resto de la fila, y ese campo queda
-                    fuera de este ciclo (ver el comentario de EntradaCrearArticulo
-                    en lib/inventario/articulos.ts, que este ciclo no toca). Sin
-                    él, dejarle un ancho fijo a Costo unitario abría un hueco
-                    vacío a la derecha. */}
                 <div className="flex flex-1 flex-col gap-2">
                   <Label htmlFor="costoUnitario">Costo unitario (opcional)</Label>
                   <Input id="costoUnitario" name="costoUnitario" inputMode="decimal" className="h-10 rounded-[9px]" />
                 </div>
+              </div>
+              {/* El tercer campo que la maqueta dibuja en esta card
+                  (design/arandano.pen, frame `B4O7t`). **No es una columna
+                  nueva**: va como nota del movimiento de stock inicial, que es
+                  exactamente para lo que `MovimientoStock.nota` existe y lo
+                  que el ingreso de mercadería de la ficha ya hace. */}
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="facturaProveedor">Factura del proveedor (opcional)</Label>
+                <Input
+                  id="facturaProveedor"
+                  name="facturaProveedor"
+                  placeholder="A 0001-00023456"
+                  className="h-10 rounded-[9px]"
+                />
               </div>
               <div className="flex items-start gap-[9px] rounded-[10px] bg-background p-3">
                 <Info
@@ -233,8 +324,6 @@ export function FormularioDeAlta({ proximoSku }: { proximoSku: string }) {
               </div>
             </CardDelFormulario>
           )}
-
-          <Resultado estado={estado} />
         </div>
       </div>
     </form>

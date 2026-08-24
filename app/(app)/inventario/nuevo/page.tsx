@@ -1,6 +1,7 @@
 import { exigirDuenio } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { FormularioDeAlta } from '../formularios'
+import { arbolDeCategorias } from '@/lib/inventario/categorias'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,15 +33,28 @@ export default async function ArticuloNuevo() {
   // número; el que de verdad importa se pide recién al guardar, adentro de
   // `crearArticulo`. Puede haber huecos en la numeración y es a propósito
   // (CLAUDE.md) — este texto se lo dice a quien está cargando el artículo.
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: sesion.tenant.id },
-    select: { proximoSkuArticulo: true },
-  })
+  const [tenant, arbol] = await Promise.all([
+    prisma.tenant.findUnique({
+      where: { id: sesion.tenant.id },
+      select: { proximoSkuArticulo: true },
+    }),
+    // Con `verInactivos: true` a propósito: acá el árbol es una LISTA DE
+    // OPCIONES, no un informe. Un rubro cuyos únicos artículos están dados de
+    // baja sigue siendo una opción válida para el que se está cargando, y
+    // esconderlo obligaría a recrearlo con el mismo nombre — que además
+    // chocaría contra el índice único.
+    arbolDeCategorias(sesion.tenant.id, { verInactivos: true }),
+  ])
 
   // El título, el subtítulo, el layout centrado de 760px y el "Cancelar" que
   // reemplaza al viejo link "← Inventario" viven ahora en FormularioDeAlta:
   // "Guardar artículo" subió al Topbar (design/arandano.pen, frame `B4O7t`) y
   // ese botón necesita el mismo <form> que envuelve el <Encabezado>, así que
   // el componente entero pasó a armar la pantalla completa. Ver su comentario.
-  return <FormularioDeAlta proximoSku={formatearProximoSku(tenant?.proximoSkuArticulo ?? 1)} />
+  return (
+    <FormularioDeAlta
+      proximoSku={formatearProximoSku(tenant?.proximoSkuArticulo ?? 1)}
+      arbol={arbol}
+    />
+  )
 }

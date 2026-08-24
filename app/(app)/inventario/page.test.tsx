@@ -10,7 +10,9 @@ import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   tipoDeQuery, construirDonde, hrefListado, ventanaDePaginas, FiltrosDeInventario,
+  ramaDelArbol,
 } from './page'
+import { SIN_CATEGORIA } from './consulta'
 
 describe('tipoDeQuery', () => {
   it('reconoce PRODUCTO y SERVICIO', () => {
@@ -85,7 +87,13 @@ describe('hrefListado', () => {
 
   it('la página sólo aparece si es mayor a 1', () => {
     expect(hrefListado({ busqueda: '', verInactivos: false, tipo: null, pagina: 1 })).toBe('/inventario')
-    expect(hrefListado({ busqueda: '', verInactivos: false, tipo: null, pagina: 2 })).toContain('p=2')
+    // `conservarPagina` explícito: desde que existe el filtro por rama, cambiar
+    // de filtro descarta la página y sólo la paginación la conserva.
+    expect(
+      hrefListado({ busqueda: '', verInactivos: false, tipo: null, pagina: 2, conservarPagina: true }),
+    ).toContain('p=2')
+    // Y sin el flag, no la lleva.
+    expect(hrefListado({ busqueda: '', verInactivos: false, tipo: null, pagina: 2 })).toBe('/inventario')
   })
 })
 
@@ -225,5 +233,119 @@ describe('el vacío por página fuera de rango ofrece una salida (hallazgo M8 de
     // pagina: 1 y no `pagina` a secas: el link tiene que apuntar SIEMPRE a la
     // primera página, no a la página fuera de rango que causó el vacío.
     expect(bloque).toMatch(/hrefListado\(\{[^}]*pagina:\s*1[^}]*\}\)/)
+  })
+})
+
+describe('el filtro por categoría', () => {
+  const ARBOL = [
+    { id: 'id-cables', nombre: 'Cables', cuenta: 3, hijas: [] },
+    {
+      id: 'id-fundas', nombre: 'Fundas', cuenta: 12,
+      hijas: [
+        { id: 'id-apple', nombre: 'Apple', cuenta: 7 },
+        { id: 'id-samsung', nombre: 'Samsung', cuenta: 4 },
+      ],
+    },
+  ]
+
+  it('sin categoría elegida no filtra', () => {
+    const donde = construirDonde({ busqueda: '', verInactivos: false, tipo: null, categoria: null })
+    expect(donde).not.toHaveProperty('categoriaId')
+  })
+
+  // Filtrar por un rubro tiene que traer también sus marcas: si no, elegir
+  // "Fundas" mostraría sólo las que no tienen marca, que es casi ninguna.
+  it('por un rubro trae el rubro Y sus marcas', () => {
+    const donde = construirDonde({
+      busqueda: '', verInactivos: false, tipo: null,
+      categoria: ramaDelArbol(ARBOL, 'id-fundas'),
+    })
+    expect(donde.categoriaId).toEqual({ in: ['id-fundas', 'id-apple', 'id-samsung'] })
+  })
+
+  it('por una marca trae sólo esa marca', () => {
+    const donde = construirDonde({
+      busqueda: '', verInactivos: false, tipo: null,
+      categoria: ramaDelArbol(ARBOL, 'id-samsung'),
+    })
+    expect(donde.categoriaId).toEqual({ in: ['id-samsung'] })
+  })
+
+  it('por un rubro sin marcas trae sólo el rubro', () => {
+    const donde = construirDonde({
+      busqueda: '', verInactivos: false, tipo: null,
+      categoria: ramaDelArbol(ARBOL, 'id-cables'),
+    })
+    expect(donde.categoriaId).toEqual({ in: ['id-cables'] })
+  })
+
+  it('"sin categoría" filtra por categoriaId nulo', () => {
+    const donde = construirDonde({
+      busqueda: '', verInactivos: false, tipo: null,
+      categoria: ramaDelArbol(ARBOL, SIN_CATEGORIA),
+    })
+    expect(donde.categoriaId).toBeNull()
+  })
+
+  // Un id bien formado que ya no existe —una categoría borrada, o de otro
+  // tenant— cae en "Todos" en vez de filtrar a cero sin explicación.
+  it('un id que no está en el árbol cae en "Todos"', () => {
+    expect(ramaDelArbol(ARBOL, '0199c0d4-1f2b-7a3c-8d4e-5f6a7b8c9d0e')).toBeNull()
+  })
+
+  it('combina en AND con la búsqueda y el tipo', () => {
+    const donde = construirDonde({
+      busqueda: 'a54', verInactivos: false, tipo: 'PRODUCTO',
+      categoria: ramaDelArbol(ARBOL, 'id-samsung'),
+    })
+    expect(donde.categoriaId).toEqual({ in: ['id-samsung'] })
+    expect(donde.tipo).toBe('PRODUCTO')
+    expect(donde).toHaveProperty('OR')
+    expect(donde).toMatchObject({ desactivadoEn: null })
+  })
+})
+
+describe('hrefListado con categoría', () => {
+  it('lleva la categoría en el query string', () => {
+    expect(hrefListado({ busqueda: '', verInactivos: false, tipo: null, cat: 'id-fundas' }))
+      .toBe('/inventario?cat=id-fundas')
+  })
+
+  // Elegir una rama vuelve a la página 1: quedarse en la página 3 de un
+  // listado que ahora tiene ocho artículos muestra un vacío que parece un error.
+  it('cambiar de rama descarta la página', () => {
+    const href = hrefListado({
+      busqueda: 'funda', verInactivos: false, tipo: null, cat: 'id-apple', pagina: 4,
+    })
+    expect(href).not.toContain('p=4')
+    expect(href).toContain('cat=id-apple')
+    expect(href).toContain('q=funda')
+  })
+
+  it('la paginación sí conserva la rama activa', () => {
+    const href = hrefListado({
+      busqueda: '', verInactivos: false, tipo: null, cat: 'id-apple', pagina: 3, conservarPagina: true,
+    })
+    expect(href).toContain('p=3')
+    expect(href).toContain('cat=id-apple')
+  })
+})
+
+describe('el vacío con una rama activa', () => {
+  const FUENTE = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8')
+
+  // Sin esta salida, buscar algo que existe pero está en otra rama se ve
+  // exactamente igual que buscar algo que no existe.
+  it('ofrece salir de la rama conservando la búsqueda', () => {
+    expect(FUENTE).toContain('Buscar en todo el inventario')
+    expect(FUENTE).toMatch(/hrefListado\(\{ busqueda, verInactivos, tipo, cat: null \}\)/)
+  })
+
+  // El caso de la rama va ANTES que el de búsqueda en la cadena de ternarios:
+  // si fuera al revés, una búsqueda sin resultados dentro de una rama caería
+  // en el mensaje genérico y perdería la salida.
+  it('el caso de la rama se evalúa antes que el de la búsqueda', () => {
+    expect(FUENTE.indexOf(') : cat ? (')).toBeGreaterThan(-1)
+    expect(FUENTE.indexOf(') : cat ? (')).toBeLessThan(FUENTE.indexOf(') : busqueda ? ('))
   })
 })
