@@ -174,3 +174,165 @@ describe('la migración de idempotencia de la venta', () => {
     expect(rows[0].n).toBe(2)
   })
 })
+
+describe('categorias', () => {
+  it('la tabla existe con las columnas en snake_case', async () => {
+    const { rows } = await cliente.query(
+      `SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'categorias'
+        ORDER BY column_name`,
+    )
+    const columnas = rows.map((r) => r.column_name)
+    expect(columnas).toEqual(['actualizado_en', 'creado_en', 'id', 'nombre', 'padre_id', 'tenant_id'])
+  })
+
+  it('articulos tiene la FK a categorias, nullable', async () => {
+    const { rows } = await cliente.query(
+      `SELECT is_nullable FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='articulos' AND column_name='categoria_id'`,
+    )
+    expect(rows[0].is_nullable).toBe('YES')
+  })
+
+  // Sin el índice PARCIAL, dos raíces homónimas pasan: en Postgres NULL <>
+  // NULL, así que el @@unique de Prisma —que lleva padre_id— no las alcanza.
+  // Este caso es lo único que separa "el árbol tiene una Celulares" de "tiene
+  // tres".
+  it('rechaza dos raíces con el mismo nombre en el mismo tenant', async () => {
+    const t = await crearTenantCrudo('cat-raiz-unica')
+    await cliente.query(
+      `INSERT INTO categorias (id, tenant_id, nombre, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Celulares', now(), now())`,
+      [t],
+    )
+    await expect(
+      cliente.query(
+        `INSERT INTO categorias (id, tenant_id, nombre, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, 'Celulares', now(), now())`,
+        [t],
+      ),
+    ).rejects.toMatchObject({ code: '23505' })
+  })
+
+  // La otra mitad del mismo índice: sin `tenant_id` adentro, el local de al
+  // lado no podría tener su propia "Fundas".
+  it('pero la misma raíz convive en dos tenants distintos', async () => {
+    const a = await crearTenantCrudo('cat-raiz-a')
+    const b = await crearTenantCrudo('cat-raiz-b')
+    for (const t of [a, b]) {
+      await cliente.query(
+        `INSERT INTO categorias (id, tenant_id, nombre, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, 'Fundas', now(), now())`,
+        [t],
+      )
+    }
+    const { rows } = await cliente.query(
+      `SELECT count(*)::int AS n FROM categorias WHERE nombre = 'Fundas' AND tenant_id = ANY($1::uuid[])`,
+      [[a, b]],
+    )
+    expect(rows[0].n).toBe(2)
+  })
+
+  it('rechaza dos hijas con el mismo nombre bajo el mismo padre', async () => {
+    const t = await crearTenantCrudo('cat-hija-unica')
+    const { rows } = await cliente.query(
+      `INSERT INTO categorias (id, tenant_id, nombre, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Celulares', now(), now()) RETURNING id`,
+      [t],
+    )
+    const padre = rows[0].id
+    await cliente.query(
+      `INSERT INTO categorias (id, tenant_id, nombre, padre_id, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Samsung', $2, now(), now())`,
+      [t, padre],
+    )
+    await expect(
+      cliente.query(
+        `INSERT INTO categorias (id, tenant_id, nombre, padre_id, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, 'Samsung', $2, now(), now())`,
+        [t, padre],
+      ),
+    ).rejects.toMatchObject({ code: '23505' })
+  })
+
+  // ...pero la misma marca bajo OTRO rubro es otra categoría, y tiene que
+  // entrar. Es la mitad que prueba que el @@unique lleva padre_id adentro.
+  it('y deja la misma marca bajo dos padres distintos', async () => {
+    const t = await crearTenantCrudo('cat-marca-dos-padres')
+    const padres: string[] = []
+    for (const rubro of ['Fundas', 'Vidrios templados']) {
+      const { rows } = await cliente.query(
+        `INSERT INTO categorias (id, tenant_id, nombre, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, $2, now(), now()) RETURNING id`,
+        [t, rubro],
+      )
+      padres.push(rows[0].id)
+    }
+    for (const padre of padres) {
+      await cliente.query(
+        `INSERT INTO categorias (id, tenant_id, nombre, padre_id, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, 'Samsung', $2, now(), now())`,
+        [t, padre],
+      )
+    }
+    const { rows } = await cliente.query(
+      `SELECT count(*)::int AS n FROM categorias WHERE tenant_id = $1 AND nombre = 'Samsung'`,
+      [t],
+    )
+    expect(rows[0].n).toBe(2)
+  })
+
+  // Restrict y no Cascade: borrar "Celulares" no puede llevarse puesto el
+  // trabajo de clasificar todas sus marcas.
+  it('no deja borrar una categoría con hijas', async () => {
+    const t = await crearTenantCrudo('cat-con-hijas')
+    const { rows } = await cliente.query(
+      `INSERT INTO categorias (id, tenant_id, nombre, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Celulares', now(), now()) RETURNING id`,
+      [t],
+    )
+    const padre = rows[0].id
+    await cliente.query(
+      `INSERT INTO categorias (id, tenant_id, nombre, padre_id, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Motorola', $2, now(), now())`,
+      [t, padre],
+    )
+    await expect(
+      cliente.query(`DELETE FROM categorias WHERE id = $1`, [padre]),
+    ).rejects.toMatchObject({ code: '23503' })
+  })
+
+  it('no deja borrar una categoría con artículos', async () => {
+    const t = await crearTenantCrudo('cat-con-articulos')
+    const { rows } = await cliente.query(
+      `INSERT INTO categorias (id, tenant_id, nombre, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Cables', now(), now()) RETURNING id`,
+      [t],
+    )
+    const cat = rows[0].id
+    await cliente.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, categoria_id, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'A-9001', 'Cable USB-C', 'PRODUCTO', 1000, 0, $2, now(), now())`,
+      [t, cat],
+    )
+    await expect(
+      cliente.query(`DELETE FROM categorias WHERE id = $1`, [cat]),
+    ).rejects.toMatchObject({ code: '23503' })
+  })
+
+  // El tenant se borra entero y se lleva su árbol: es la única cascada del
+  // modelo, la misma que ya tiene toda tabla del núcleo.
+  it('borrar el tenant se lleva sus categorías', async () => {
+    const t = await crearTenantCrudo('cat-cascada')
+    await cliente.query(
+      `INSERT INTO categorias (id, tenant_id, nombre, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Cargadores', now(), now())`,
+      [t],
+    )
+    await cliente.query(`DELETE FROM tenants WHERE id = $1`, [t])
+    const { rows } = await cliente.query(
+      `SELECT count(*)::int AS n FROM categorias WHERE tenant_id = $1`, [t],
+    )
+    expect(rows[0].n).toBe(0)
+  })
+})

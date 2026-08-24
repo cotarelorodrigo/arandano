@@ -329,6 +329,39 @@ abren. Ningún otro punto del código cambia.
   como mecanismo (`CLAUDE.md`, *Próximos pasos técnicos*). El árbol de cada
   local nace de lo que ya cargó.
 
+## Un hallazgo que este ciclo destapó y NO arregla
+
+Escribiendo el test de aislamiento apareció esto: **un artículo del tenant A
+puede apuntar por SQL crudo a una categoría del tenant B**, y RLS no lo impide.
+La verificación de integridad referencial de Postgres corre por fuera de las
+policies, así que el `INSERT` encuentra la fila de B aunque el `SELECT` de esa
+misma sesión no la vea.
+
+**No es propio de esta tabla.** Es el comportamiento de **todas** las FK del
+schema — `cajas.abierta_por_id`, `movimientos_stock.articulo_id`,
+`ventas.cliente_id`, `venta_items.articulo_id` —, ninguna de las cuales es
+compuesta con `tenant_id`. La primera versión del test esperaba un rechazo y
+falló; el rechazo era la expectativa equivocada, no la base.
+
+**Por qué no se arregla acá.** La salida conocida es la FK compuesta: un
+`UNIQUE (tenant_id, id)` en la tabla referida y una FK
+`(tenant_id, categoria_id) → (tenant_id, id)`, que hace estructuralmente
+imposible cruzar tenants. Aplicarla **sólo a categorías** dejaría una asimetría
+inexplicable en un schema donde otras diez FKs siguen abiertas, y la asimetría
+es peor que el agujero: el próximo ciclo copia el patrón de al lado, y el de al
+lado sería el viejo. Cerrarlo de verdad es un ciclo propio sobre todo el
+schema.
+
+**Qué protege RLS mientras tanto, que es lo que importa**: aunque esa fila
+exista, el nombre de la categoría de B **no se lee desde A** — el JOIN se queda
+sin la fila y la pantalla muestra un artículo sin categoría, no la categoría
+del local de al lado. El aislamiento es de datos visibles, y ése está entero.
+`test/rls.test.ts` lo afirma explícitamente en vez de dejarlo supuesto.
+
+**Y desde la aplicación la fila no se puede crear**: `asegurarCategoria`
+resuelve siempre dentro del tenant de la transacción, así que el id que
+devuelve es de ese tenant o de ninguno.
+
 ## Deuda que este ciclo crea, dicha en voz alta
 
 `design/arandano.pen` **no dibuja ningún panel de categorías**. La regla del

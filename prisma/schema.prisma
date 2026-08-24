@@ -139,6 +139,7 @@ model Tenant {
   ordenes        OrdenDeTrabajo[]
   eventosOrden   EventoOrden[]
   cajas          Caja[]
+  categorias     Categoria[]
 
   @@map("tenants")
 }
@@ -229,6 +230,16 @@ model Articulo {
   // quiere, los escribe en el campo. Nullable porque los artículos que ya
   // existen no la tienen y ninguno se rompe sin ella.
   categoria     String?
+  // La FK al árbol de categorías. Convive con `categoria` (el texto de arriba)
+  // a propósito y por un tiempo acotado: expand/contract. Mientras haya código
+  // desplegado que lea el texto, el texto se sigue escribiendo — es lo que
+  // hace que el rollback a la imagen anterior encuentre el dato. El drop de la
+  // columna vieja es un deploy POSTERIOR al de la UI, no el siguiente.
+  //
+  // Apunta a una RAÍZ o a una HOJA, indistinto: "Cables" sin marca es válido,
+  // y forzar que todo cuelgue de una hoja obligaría a inventar una marca falsa
+  // ("Cables · Genérico") para cada rubro que no usa marcas.
+  categoriaId   String?      @map("categoria_id") @db.Uuid
   // Decimal y nunca Float: un flotante binario no representa 0,10 y el error
   // se acumula en cada suma de una caja.
   precio        Decimal      @db.Decimal(12, 2)
@@ -250,12 +261,56 @@ model Articulo {
   actualizadoEn DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Restrict: una categoría con artículos colgando no se borra. SetNull los
+  // dejaría sin clasificar sin que nadie se entere, que es la misma pérdida
+  // silenciosa con otro nombre.
+  categoriaArbol Categoria? @relation(fields: [categoriaId], references: [id], onDelete: Restrict)
 
   movimientos MovimientoStock[]
   ventaItems  VentaItem[]
 
   @@unique([tenantId, sku])
+  @@index([tenantId, categoriaId])
   @@map("articulos")
+}
+
+// El árbol de categorías del local: dos niveles, el rubro arriba ("Celulares",
+// "Fundas", "Cables") y la marca abajo. `padreId` NULL es una raíz.
+//
+// **Dos niveles y no un árbol libre.** La restricción NO está en el schema —
+// nada acá impide colgar una hija de una hija—: vive en el servidor. En este
+// ciclo es estructural, porque el único escritor (`asegurarCategoria`, en
+// lib/inventario/categorias.ts) busca la raíz con padre NULL y cuelga de ella
+// siempre; con el ABM va a ser una validación explícita, porque mover una raíz
+// debajo de otra es lo primero que puede violarla.
+//
+// Se eligió sobre dos tablas separadas (`Categoria` y `Marca`, que garantizan
+// los dos niveles por estructura) porque ésas duplican el ABM entero y
+// convierten "mover Samsung de Celulares a Fundas" —un UPDATE de una columna—
+// en un caso especial.
+model Categoria {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  nombre        String
+  padreId       String?  @map("padre_id") @db.Uuid
+  creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Restrict en las dos direcciones, igual que con los artículos: borrar
+  // "Celulares" no puede llevarse puestas sus marcas.
+  padre Categoria?  @relation("Jerarquia", fields: [padreId], references: [id], onDelete: Restrict)
+  hijas Categoria[] @relation("Jerarquia")
+
+  articulos Articulo[]
+
+  // NO alcanza solo. En Postgres NULL <> NULL, así que dos RAÍCES homónimas lo
+  // pasan sin chistar: la migración suma un índice único PARCIAL
+  // (WHERE padre_id IS NULL) que Prisma no sabe expresar acá. Éste cubre las
+  // hijas; aquél, las raíces.
+  @@unique([tenantId, padreId, nombre])
+  @@index([tenantId, padreId])
+  @@map("categorias")
 }
 
 // Append-only: nada se edita ni se borra. Es lo que permite responder "por qué

@@ -440,4 +440,106 @@ describe('aislamiento por RLS', () => {
       expect(rows, 'la caja de B desapareció').toHaveLength(1)
     })
   })
+
+  describe('las categorías', () => {
+    let raizB: string
+
+    beforeAll(async () => {
+      const c = await owner.query(
+        `INSERT INTO categorias (id, tenant_id, nombre, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, 'Celulares', now(), now())
+         RETURNING id`,
+        [tenantB],
+      )
+      raizB = c.rows[0].id
+    })
+
+    it('categorias: el otro tenant no ve la fila, y su dueño sí', async () => {
+      const { rows: deA } = await comoTenant(tenantA, 'SELECT 1 FROM categorias')
+      expect(deA, 'categorias filtró filas de otro tenant').toHaveLength(0)
+
+      // La mitad que falta, igual que en los otros bloques: sin ella, una
+      // tabla vacía para todos daría 0 y el test quedaría verde sin haber
+      // probado ningún aislamiento.
+      const { rows: deB } = await comoTenant(tenantB, 'SELECT 1 FROM categorias')
+      expect(deB, 'categorias no es legible por su propio tenant').toHaveLength(1)
+    })
+
+    it('categorias: rechaza insertar con el tenant_id de otro', async () => {
+      await expect(
+        comoTenant(
+          tenantA,
+          `INSERT INTO categorias (id, tenant_id, nombre, creado_en, actualizado_en)
+           VALUES (gen_random_uuid(), $1, 'Robada', now(), now())`,
+          [tenantB],
+        ),
+      ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+    })
+
+    it('categorias: A no puede renombrar (UPDATE) la categoría de B', async () => {
+      const { rowCount } = await comoTenant(
+        tenantA,
+        `UPDATE categorias SET nombre = 'Renombrada' WHERE id = $1`,
+        [raizB],
+      )
+      expect(rowCount, 'el UPDATE de A afectó una fila que no es suya').toBe(0)
+
+      const { rows } = await owner.query('SELECT nombre FROM categorias WHERE id = $1', [raizB])
+      expect(rows[0].nombre).toBe('Celulares')
+    })
+
+    it('categorias: A no puede borrar (DELETE) la categoría de B', async () => {
+      const { rowCount } = await comoTenant(tenantA, `DELETE FROM categorias WHERE id = $1`, [raizB])
+      expect(rowCount, 'el DELETE de A afectó una fila que no es suya').toBe(0)
+
+      const { rows } = await owner.query('SELECT 1 FROM categorias WHERE id = $1', [raizB])
+      expect(rows, 'la categoría de B desapareció').toHaveLength(1)
+    })
+
+    /**
+     * **Las FK no las frena RLS, y este caso lo deja escrito en vez de fingir
+     * lo contrario.**
+     *
+     * Un artículo de A SÍ puede apuntar a una categoría de B por SQL crudo: la
+     * verificación de integridad referencial de Postgres corre por fuera de
+     * las policies, así que el `INSERT` encuentra la fila de B aunque el
+     * `SELECT` de esa misma sesión no la vea. No es propio de esta tabla — es
+     * el comportamiento de TODAS las FK del schema (`cajas.abierta_por_id`,
+     * `movimientos_stock.articulo_id`, `ventas.cliente_id`), ninguna de las
+     * cuales es compuesta con `tenant_id`. La primera versión de este caso
+     * esperaba un rechazo y falló; el rechazo era la expectativa equivocada.
+     *
+     * Lo que SÍ protege RLS, y es lo que este caso afirma: aunque esa fila
+     * exista, **el nombre de la categoría de B no se lee desde A**. El JOIN se
+     * queda sin la fila y la pantalla muestra un artículo sin categoría, no la
+     * categoría del local de al lado. Eso es lo que importa: el aislamiento es
+     * de datos visibles, no de integridad referencial.
+     *
+     * Desde la aplicación esa fila no se puede crear: `asegurarCategoria`
+     * resuelve siempre dentro del tenant de la transacción, así que el id que
+     * devuelve es de ese tenant o de ninguno.
+     */
+    it('categorias: una referencia cruzada no filtra el nombre a la pantalla', async () => {
+      // Con el owner, que es el único camino por el que esta fila puede
+      // existir — RLS no lo impide, pero ningún código de la app lo produce.
+      const { rows: creado } = await owner.query(
+        `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, categoria_id, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, 'A-7777', 'Prestado', 'PRODUCTO', 1000, 0, $2, now(), now())
+         RETURNING id`,
+        [tenantA, raizB],
+      )
+
+      const { rows } = await comoTenant(
+        tenantA,
+        `SELECT a.nombre AS articulo, c.nombre AS categoria
+           FROM articulos a
+           LEFT JOIN categorias c ON c.id = a.categoria_id
+          WHERE a.id = $1`,
+        [creado[0].id],
+      )
+      expect(rows).toHaveLength(1)
+      expect(rows[0].articulo).toBe('Prestado')
+      expect(rows[0].categoria, 'el nombre de la categoría de B se filtró a A').toBeNull()
+    })
+  })
 })
