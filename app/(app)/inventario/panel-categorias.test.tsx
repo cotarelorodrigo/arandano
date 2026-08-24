@@ -126,3 +126,36 @@ describe('PanelDeCategorias', () => {
     expect(pintar({ esDuenio: true })).toContain('Categoría nueva')
   })
 })
+
+describe('los controles del ABM', () => {
+  // El servidor ya rechaza a un empleado (acciones-categorias.test.ts), pero
+  // dibujarle botones que van a fallar es ofrecerle algo que no puede hacer.
+  it('un empleado no ve el menú de ninguna rama', () => {
+    const html = pintar({ esDuenio: false })
+    expect(html).not.toContain('Opciones de la categoría')
+  })
+
+  it('el dueño ve un menú por rama, rubros y marcas', () => {
+    const html = pintar({ esDuenio: true })
+    // Dos rubros más dos marcas.
+    expect(html.match(/Opciones de la categoría/g)).toHaveLength(4)
+  })
+
+  // El ⋯ ocupa el lugar de la cuenta al hover en vez de sumar una columna:
+  // correr el texto haría bailar la lista entera cada vez que pasa el mouse.
+  it('el menú aparece en el lugar de la cuenta, no en una columna nueva', () => {
+    const html = pintar({ esDuenio: true })
+    expect(html).toContain('group-hover/rama:hidden')
+  })
+
+  // "Mover a…" no se le ofrece a un rubro: mover uno debajo de otro crearía un
+  // tercer nivel. El servidor lo valida igual, pero no ofrecerlo es lo que
+  // evita que alguien reciba un error por algo que la pantalla le sugirió.
+  it('"Mover a…" no se ofrece en los rubros', () => {
+    const html = pintar({ esDuenio: true })
+    // Las dos marcas pueden moverse; los dos rubros no, así que el submenú
+    // aparece a lo sumo una vez por marca.
+    const veces = (html.match(/Mover a…/g) ?? []).length
+    expect(veces).toBeLessThanOrEqual(2)
+  })
+})

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
+import { FilaDeAlta, FilaEnEdicion, MenuDeRama } from './abm-categorias'
 import { cn } from '@/lib/utils'
 import { esUuid } from '@/lib/uuid'
 import type { RamaConHijas } from '@/lib/inventario/categorias'
@@ -59,6 +60,7 @@ function Fila({
   href,
   esMarca = false,
   chevron,
+  menu,
 }: {
   id: string
   nombre: string
@@ -67,8 +69,10 @@ function Fila({
   href: string
   esMarca?: boolean
   chevron?: React.ReactNode
+  menu?: React.ReactNode
 }) {
   return (
+    <div className="group/rama relative">
     <Link
       href={href}
       data-rama={id}
@@ -87,8 +91,22 @@ function Fila({
       >
         {nombre}
       </span>
-      <Cuenta n={cuenta} activa={activa} />
+      {/* El ⋯ ocupa el LUGAR de la cuenta al hover, no una columna propia:
+          correr el texto cada vez que el mouse pasa por encima haría bailar
+          la lista entera. */}
+      {menu ? (
+        <>
+          <span className="group-hover/rama:hidden">
+            <Cuenta n={cuenta} activa={activa} />
+          </span>
+          <span className="hidden w-8 shrink-0 justify-end group-hover/rama:flex" />
+        </>
+      ) : (
+        <Cuenta n={cuenta} activa={activa} />
+      )}
     </Link>
+    {menu && <div className="absolute top-0 right-2 flex h-[30px] items-center">{menu}</div>}
+    </div>
   )
 }
 
@@ -123,6 +141,19 @@ export function PanelDeCategorias({
    */
   const [cerrados, setCerrados] = useState<Set<string>>(new Set())
 
+  /**
+   * Qué fila está en modo edición, si alguna. Una sola por vez: dos campos
+   * abiertos a la vez en una columna de 248 no se entienden, y el segundo
+   * tapa el error del primero.
+   *
+   * `renombrar` lleva el id de la rama; `marca` lleva el del rubro que la va a
+   * contener; `rubro` no lleva ninguno.
+   */
+  const [edicion, setEdicion] = useState<
+    { modo: 'renombrar' | 'marca'; id: string } | { modo: 'rubro' } | null
+  >(null)
+  const cerrarEdicion = () => setEdicion(null)
+
   const alternar = (id: string) =>
     setCerrados((previos) => {
       const proximos = new Set(previos)
@@ -142,6 +173,7 @@ export function PanelDeCategorias({
             type="button"
             aria-label="Categoría nueva"
             title="Categoría nueva"
+            onClick={() => setEdicion({ modo: 'rubro' })}
             className="flex size-[22px] items-center justify-center rounded-[7px] bg-muted text-foreground-soft"
           >
             <Plus aria-hidden="true" className="size-[13px]" />
@@ -172,6 +204,17 @@ export function PanelDeCategorias({
         // adentro de un rubro colapsado sería una selección invisible.
         const tieneLaActiva = rubro.hijas.some((h) => h.id === activa)
         const abierto = !cerrados.has(rubro.id) || tieneLaActiva
+        if (edicion?.modo === 'renombrar' && edicion.id === rubro.id) {
+          return (
+            <FilaEnEdicion
+              key={rubro.id}
+              categoriaId={rubro.id}
+              nombre={rubro.nombre}
+              esMarca={false}
+              onCerrar={cerrarEdicion}
+            />
+          )
+        }
         return (
           <div key={rubro.id} className="contents">
             <Fila
@@ -180,6 +223,18 @@ export function PanelDeCategorias({
               cuenta={rubro.cuenta}
               activa={activa === rubro.id}
               href={href(rubro.id)}
+              menu={
+                esDuenio ? (
+                  <MenuDeRama
+                    categoriaId={rubro.id}
+                    esMarca={false}
+                    rubros={arbol}
+                    padreActual={null}
+                    onRenombrar={() => setEdicion({ modo: 'renombrar', id: rubro.id })}
+                    onAgregarMarca={() => setEdicion({ modo: 'marca', id: rubro.id })}
+                  />
+                ) : undefined
+              }
               chevron={
                 rubro.hijas.length > 0 ? (
                   <button
@@ -204,22 +259,52 @@ export function PanelDeCategorias({
               }
             />
             {abierto &&
-              rubro.hijas.map((marca) => (
-                <Fila
-                  key={marca.id}
-                  id={marca.id}
-                  nombre={marca.nombre}
-                  cuenta={marca.cuenta}
-                  activa={activa === marca.id}
-                  href={href(marca.id)}
-                  esMarca
-                />
-              ))}
+              rubro.hijas.map((marca) =>
+                edicion?.modo === 'renombrar' && edicion.id === marca.id ? (
+                  <FilaEnEdicion
+                    key={marca.id}
+                    categoriaId={marca.id}
+                    nombre={marca.nombre}
+                    esMarca
+                    onCerrar={cerrarEdicion}
+                  />
+                ) : (
+                  <Fila
+                    key={marca.id}
+                    id={marca.id}
+                    nombre={marca.nombre}
+                    cuenta={marca.cuenta}
+                    activa={activa === marca.id}
+                    href={href(marca.id)}
+                    esMarca
+                    menu={
+                      esDuenio ? (
+                        <MenuDeRama
+                          categoriaId={marca.id}
+                          esMarca
+                          rubros={arbol}
+                          padreActual={rubro.id}
+                          onRenombrar={() => setEdicion({ modo: 'renombrar', id: marca.id })}
+                        />
+                      ) : undefined
+                    }
+                  />
+                ),
+              )}
+            {/* El alta de una marca se dibuja DENTRO de su rubro, donde va a
+                quedar: es lo que hace obvio de cuál va a colgar. */}
+            {edicion?.modo === 'marca' && edicion.id === rubro.id && (
+              <FilaDeAlta padreId={rubro.id} onCerrar={cerrarEdicion} sangria="marca" />
+            )}
           </div>
         )
       })}
 
-      {arbol.length === 0 && (
+      {edicion?.modo === 'rubro' && (
+        <FilaDeAlta padreId={null} onCerrar={cerrarEdicion} sangria="rubro" />
+      )}
+
+      {arbol.length === 0 && edicion === null && (
         <p className="px-2 py-3 text-[11px] leading-[1.5] text-muted-foreground">
           Todavía no creaste categorías.
           {esDuenio && ' Empezá con el + de arriba.'}

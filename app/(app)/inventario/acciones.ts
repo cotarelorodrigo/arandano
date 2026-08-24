@@ -9,6 +9,12 @@ import {
   desactivarArticulo,
   reactivarArticulo,
 } from '@/lib/inventario/articulos'
+import {
+  crearCategoria,
+  renombrarCategoria,
+  moverCategoria,
+  borrarCategoria,
+} from '@/lib/inventario/categorias'
 import { ingresarStock, corregirStock } from '@/lib/inventario/stock'
 import { ErrorDeInventario } from '@/lib/inventario/errores'
 import { aDecimal, aDecimalOpcional, ErrorDeFormato } from '@/lib/formato/numeros'
@@ -345,4 +351,87 @@ export async function exportarHistorialCsv(
     const csv = [ENCABEZADO_CSV, ...filas].map(filaCsv).join('\r\n')
     return { csv, nombreArchivo: `historial-${articulo.sku}.csv` }
   })
+}
+
+/**
+ * El ABM del árbol de categorías, las cuatro por `comoDuenio`.
+ *
+ * **Que el panel no le dibuje los controles a un empleado no alcanza**: un
+ * server action es un endpoint, y se puede llamar sin pasar por la pantalla.
+ * El criterio es el mismo que ya rige para el alta y la edición de artículo —
+ * el catálogo es decisión del negocio, igual que el precio.
+ *
+ * Los cinco códigos que puede tirar el módulo (`NOMBRE_VACIO`,
+ * `CATEGORIA_REPETIDA`, `CATEGORIA_ANIDADA`, `CATEGORIA_CON_HIJAS`,
+ * `CATEGORIA_CON_ARTICULOS`) son de dominio y la persona puede actuar sobre
+ * ellos, así que salen por `traducir` y llegan como cartel, no como 500.
+ */
+export async function crearCategoriaAccion(
+  _e: EstadoInventario,
+  datos: FormData,
+): Promise<EstadoInventario> {
+  try {
+    const padre = texto(datos, 'padreId')
+    await comoDuenio((tenantId) =>
+      crearCategoria({ tenantId, nombre: texto(datos, 'nombre'), padreId: padre || null }),
+    )
+    revalidatePath('/inventario')
+    return { error: null, aviso: padre ? 'Marca creada.' : 'Categoría creada.' }
+  } catch (e) {
+    return traducir(e)
+  }
+}
+
+export async function renombrarCategoriaAccion(
+  _e: EstadoInventario,
+  datos: FormData,
+): Promise<EstadoInventario> {
+  try {
+    await comoDuenio((tenantId) =>
+      renombrarCategoria({
+        tenantId,
+        categoriaId: texto(datos, 'categoriaId'),
+        nombre: texto(datos, 'nombre'),
+      }),
+    )
+    revalidatePath('/inventario')
+    return { error: null, aviso: 'Nombre actualizado.' }
+  } catch (e) {
+    return traducir(e)
+  }
+}
+
+export async function moverCategoriaAccion(
+  _e: EstadoInventario,
+  datos: FormData,
+): Promise<EstadoInventario> {
+  try {
+    const destino = texto(datos, 'padreId')
+    await comoDuenio((tenantId) =>
+      moverCategoria({
+        tenantId,
+        categoriaId: texto(datos, 'categoriaId'),
+        padreId: destino || null,
+      }),
+    )
+    revalidatePath('/inventario')
+    return { error: null, aviso: 'Marca movida.' }
+  } catch (e) {
+    return traducir(e)
+  }
+}
+
+export async function borrarCategoriaAccion(
+  _e: EstadoInventario,
+  datos: FormData,
+): Promise<EstadoInventario> {
+  try {
+    await comoDuenio((tenantId) =>
+      borrarCategoria({ tenantId, categoriaId: texto(datos, 'categoriaId') }),
+    )
+    revalidatePath('/inventario')
+    return { error: null, aviso: 'Categoría borrada.' }
+  } catch (e) {
+    return traducir(e)
+  }
 }
