@@ -9,41 +9,31 @@
    devDependencies rompe el build sin que el motivo quede a la vista acá. */
 @import "shadcn/tailwind.css";
 
-/* Se queda aunque el bloque .dark se haya borrado, y no es un olvido — tampoco
-   ahora que la paleta de :root es oscura. button.tsx e input.tsx traen 5 clases
-   `dark:` de shadcn. Con esta línea, el variante apunta a una clase que ya no
-   pone nadie y esas reglas quedan inertes. SIN esta línea, `dark:` vuelve al
-   default de Tailwind v4 —prefers-color-scheme— y se activarían solas en
-   cualquiera con el sistema en oscuro. Que la paleta hoy SEA oscura no las
-   vuelve correctas: se escribieron para otra paleta oscura, la de shadcn, y
-   pisarían estos tokens con los de ella. test/sistema-de-diseno.test.ts lo
-   cuida. */
+/* button.tsx e input.tsx traen 5 clases `dark:` de shadcn. Con esta línea, el
+   variante apunta a una clase que no pone nadie y esas reglas quedan inertes.
+   SIN esta línea, `dark:` vuelve al default de Tailwind v4
+   —prefers-color-scheme— y se activarían solas en cualquiera con el sistema en
+   oscuro, pisando estos tokens con los de la paleta oscura de shadcn, que no es
+   ésta. test/sistema-de-diseno.test.ts lo cuida. */
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  /* El init generaba acá --font-sans: var(--font-sans), pensado para que lo
-     llenara next/font/google (Geist) en app/layout.tsx. Esta task no trae
-     ninguna fuente propia (ver commit), así que se saca: si se dejaba, tapaba
-     el --font-sans real de Tailwind con una variable sin quien la resuelva,
-     y la tipografía caía en el default del navegador en vez de en la pila de
-     fuentes del sistema. */
   --font-heading: var(--font-sans);
-  /* No hay --font-display ni --color-marca acá, y sigue siendo a propósito.
-     --color-marca lo usan dos superficies de marca —el login y la franja de
-     cierre de la landing—, las dos desde un módulo de CSS con var(--marca)
-     directo, así que ninguna utilidad de Tailwind lo referenciaría.
-     --font-display lo usan TRES —el cartel del login, el del header de la
-     aplicación y el importe del punto de venta— y aun así no entra: los tres
-     lo consumen desde un módulo CSS con var(--font-archivo) directo, porque
-     además de la familia cada uno necesita su propio font-stretch (y los dos
-     cartel, también su tracking), o sea que ninguna utilidad de Tailwind lo
-     referenciaría igual. Un token en @theme que ninguna utilidad referencia es
-     un token muerto, que es lo que el caso "no quedan tokens de sidebar" de
-     test/sistema-de-diseno.test.ts existe para evitar. */
+  /* No hay --font-display, --color-marca ni --color-chart-N acá, y es a
+     propósito: los consumen módulos de CSS y el ChartConfig con var(--token)
+     directo, así que ninguna utilidad de Tailwind los referenciaría. Un token
+     en @theme que ninguna utilidad referencia es un token muerto, que es lo que
+     el caso "no quedan tokens de sidebar" de test/sistema-de-diseno.test.ts
+     existe para evitar. */
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -57,6 +47,7 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-foreground-soft: var(--foreground-soft);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
   --radius-sm: calc(var(--radius) * 0.6);
@@ -68,51 +59,81 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+ * La paleta, en hex y no en oklch.
+ *
+ * Los mismos valores están en design/arandano.pen, que es donde se diseñan las
+ * pantallas antes de escribirlas. Dos representaciones del mismo color son dos
+ * lugares donde el redondeo puede diferir; una sola no. El porqué de cada uno
+ * vive en docs/sistema-de-diseno.md, que test/sistema-de-diseno.test.ts compara
+ * contra este bloque en las dos direcciones.
+ */
 :root {
-  --background: oklch(0.214 0.025 287);
-  --foreground: oklch(0.935 0.008 287);
-  --card: oklch(0.245 0.028 287);
-  --card-foreground: oklch(0.935 0.008 287);
-  --popover: oklch(0.245 0.028 287);
-  --popover-foreground: oklch(0.935 0.008 287);
-  --primary: oklch(0.66 0.124 287);
-  --primary-foreground: oklch(0.20 0.03 287);
-  /* El hover del botón de acción. Es un token y no `bg-primary/80` porque sobre
-     fondo oscuro la opacidad acerca el botón AL FONDO: el control retrocedía
-     cuando lo apuntabas, y encima el par daba 4.08. Éste aclara, y da 7.11. */
-  --primary-hover: oklch(0.72 0.105 287);
-  /* El arándano como SUPERFICIE, no como control: el paño de la persiana del
-     login y la franja de cierre del sitio. Sube de 0.28 a 0.32 porque contra un
-     fondo de 0.214 el valor viejo no se despegaba — el paño y el fondo eran el
-     mismo material. Ver docs/sistema-de-diseno.md, "El arándano como
-     superficie". */
-  --marca: oklch(0.32 0.095 287);
-  --secondary: oklch(0.30 0.025 287);
-  --secondary-foreground: oklch(0.935 0.008 287);
-  --muted: oklch(0.268 0.024 287);
-  --muted-foreground: oklch(0.70 0.030 287);
-  /* El único neutral que pasa de croma 0.030: es la fila seleccionada, y tiene
-     que distinguirse de --muted sin depender sólo de la luminosidad. */
-  --accent: oklch(0.27 0.060 287);
-  --accent-foreground: oklch(0.66 0.124 287);
-  --destructive: oklch(0.70 0.160 22);
-  --border: oklch(0.381 0.019 287);
-  --input: oklch(0.381 0.019 287);
-  --ring: oklch(0.66 0.124 287);
-  /* Las series del panel "Cómo entró la plata" de /ventas. No están en @theme,
-     igual que --marca y por la misma razón: no las consume ninguna utilidad de
-     Tailwind sino el `color:` del ChartConfig, que emite var(--chart-N) directo.
-     Un token en @theme que nada referencia es un token muerto.
+  /* Tres superficies, no dos: el fondo del lienzo, el papel de los paneles y el
+     hundido de los encabezados de tabla. Es lo que deja separar una tabla de su
+     encabezado sin sumar un borde más. */
+  --background: #F6F5F9;
+  --card: #FFFFFF;
+  --popover: #FFFFFF;
+  --secondary: #EEEBF4;
+  --muted: #EEEBF4;
 
-     Los dos en el hue del arándano, y no una paleta multicolor: en un gráfico de
-     barras rotuladas el color no carga identidad —la carga el eje—, sólo separa
-     los dos tramos de la pila. La distancia entre ellos es de luminosidad, que
-     es la que sobrevive a cualquier daltonismo. Los valores NO se eligieron a
-     ojo: salen del validador de paletas, que exige L dentro de [0.48, 0.67] y
-     croma >= 0.10 sobre fondo oscuro, y ΔE >= 15 entre las dos. Ver
-     docs/sistema-de-diseno.md, "Los colores del gráfico". */
-  --chart-1: oklch(0.66 0.124 287);
-  --chart-2: oklch(0.49 0.115 287);
+  /* Tres niveles de texto, no dos. La paleta anterior tenía --foreground y
+     --muted-foreground, y todo lo del medio —rótulos de campo, texto de nav,
+     claves de una ficha— caía en uno de los dos extremos: o competía con el
+     dato o se leía como deshabilitado. */
+  --foreground: #171221;
+  --foreground-soft: #4A4358;
+  --muted-foreground: #6B6478;
+  --card-foreground: #171221;
+  --popover-foreground: #171221;
+  --secondary-foreground: #171221;
+
+  /* El arándano. Entra en acciones, foco y selección — no como fondo. La regla
+     y su excepción están en docs/sistema-de-diseno.md. */
+  --primary: #4A2AA5;
+  --primary-foreground: #FFFFFF;
+  /* El hover del botón de acción. Es un token y no `bg-primary/80` porque la
+     opacidad sobre fondo claro ACLARA el botón, o sea que el control retrocede
+     cuando lo apuntás. Éste oscurece. */
+  --primary-hover: #3B2183;
+  --accent: #EDE8FB;
+  --accent-foreground: #4A2AA5;
+  --ring: #4A2AA5;
+
+  /* El arándano como SUPERFICIE, no como control: el paño de la persiana del
+     login, la franja de cierre del sitio, la banda del total de /vender y el
+     tile que ancla cada pantalla. Es el violeta profundo de la fruta, y lo que
+     va encima son los tres de abajo. */
+  --marca: #2A1760;
+  --marca-foreground: #FFFFFF;
+  --marca-soft: #B6A6E8;
+  --marca-dim: #9C8BD6;
+
+  /* Los tres estados, cada uno con su fondo tenue. Existen como tokens —y no
+     como colores de Tailwind sueltos— porque son la diferencia entre un aviso
+     que se lee y un `<p>` gris: el faltante del cobro, el vuelto, el stock
+     negativo, la clave que se muestra una sola vez. */
+  --ok: #0F7048;
+  --ok-soft: #E1F3EA;
+  --warn: #9A5B00;
+  --warn-soft: #FBF0DC;
+  --destructive: #B32318;
+  --destructive-soft: #FDE9E7;
+
+  /* Dos líneas: la de separación entre filas y la del borde de un control, que
+     tiene que pesar más. Con una sola, o las tablas quedaban rayadas o los
+     campos no se veían. */
+  --border: #E3E0EC;
+  --input: #CFCADD;
+
+  /* Las series del panel "Cómo entró la plata" de /ventas. Los dos en el hue
+     del arándano y separados por LUMINOSIDAD, que es la distancia que sobrevive
+     a cualquier daltonismo: en un gráfico de barras rotuladas el color no carga
+     identidad —la carga el eje—, sólo separa los tramos de la pila. */
+  --chart-1: #4A2AA5;
+  --chart-2: #8A6FD4;
+
   --radius: 0.625rem;
 }
 
@@ -125,17 +146,16 @@
   }
   html {
     @apply font-sans;
-    /* Le dice al navegador que pinte de oscuro lo que la hoja de estilos no
+    /* Le dice al navegador que pinte de claro lo que la hoja de estilos no
        controla: scrollbars, el selector nativo de <input type="date"> —que
-       /ventas usa en Desde y Hasta— y el lienzo antes del primer paint, que
-       sin esto es un flash blanco en cada carga. Va acá y no en :root para que
-       el bloque de tokens siga conteniendo tokens y nada más. */
-    color-scheme: dark;
+       /ventas usa en Desde y Hasta— y el lienzo antes del primer paint. Va acá
+       y no en :root para que el bloque de tokens siga conteniendo tokens y nada
+       más. */
+    color-scheme: light;
   }
 }
 
-/* El html/body al 100% sostiene el layout de columna que usan las pantallas.
-   Estaba en la versión anterior de este archivo y se conserva. */
+/* El html/body al 100% sostiene el layout de columna que usan las pantallas. */
 html,
 body {
   height: 100%;

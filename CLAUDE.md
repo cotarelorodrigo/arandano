@@ -382,21 +382,7 @@ Y del producto:
   `test/sistema-de-diseno.test.ts` lo ata a ese archivo **en las dos
   direcciones**: todo token del documento existe en el CSS con el mismo valor,
   y todo token del CSS está documentado — un color que sólo viva en uno de los
-  dos archivos rompe el build. El contraste no se transcribe a mano:
-  `scripts/contraste.mts` lo calcula desde los tokens reales (oklch → sRGB
-  lineal → el byte que se pinta → luminancia → ratio WCAG) y
-  `test/contraste.test.ts` compara esa salida contra la tabla del documento. El
-  redondeo a 8 bits no es un detalle: es lo que hace que el número sea el mismo
-  que reporta axe, y midiendo en continuo un par pasaba con 4.51 cuando sobre
-  los bytes reales daba 4.48. Los pares con opacidad —el hover del botón de
-  acción, la descripción de un error— se componen sobre el color de abajo y se
-  miden como cualquier otro, porque son los que el usuario efectivamente mira.
-  La única excepción de accesibilidad
-  —el borde de `--input` da 1.26 contra los 3:1 que pide WCAG 1.4.11— está
-  declarada en `EXCEPCIONES` con su razón por escrito, y el mismo test
-  rechaza tanto una excepción sin razón como una que ya no corresponda. El
-  modo oscuro se borró en el mismo ciclo: definía 28 variables y nada
-  aplicaba la clase `.dark`. La evidencia de que el mecanismo atrapa de
+  dos archivos rompe el build. La evidencia de que el mecanismo atrapa de
   verdad —cuatro defectos metidos a mano y revertidos, uno por vez, más la
   tabla vacía— vive en la sección *Cómo se verifica* del propio documento.
   **Y la aplicación ya se miró** (2026-08-13, al cerrar el ciclo del punto de
@@ -412,6 +398,37 @@ Y del producto:
   de dev arranca sin catálogo, así que hay que sembrarlo antes y con importes
   de distinta cantidad de dígitos: con montos parejos no se puede ver si las
   columnas de números bailan.
+
+  **La paleta se repintó entera** (2026-08-21), y el ciclo cambió tres cosas
+  que valen como decisiones y no como ajustes:
+
+  - **De oscura a clara.** El motivo escrito de la paleta oscura era "lo que
+    menos cansa en una pantalla que se mira ocho horas", y no sobrevivió al
+    lugar donde el producto se usa: un mostrador de calle, con vidriera detrás
+    y luz de día encima. Sobre una pantalla que compite con el sol, el fondo
+    oscuro no descansa — refleja. Los tokens se escriben ahora en **hex** y no
+    en `oklch`, porque los mismos strings están en `design/arandano.pen`.
+  - **`design/arandano.pen` entra al repo**, con las trece pantallas diseñadas
+    antes de escribirse, y `test/maqueta.test.ts` lo ata a `app/globals.css` en
+    las dos direcciones — sólo el bloque de variables, nunca la geometría: un
+    test que se rompa al mover una card es el que se termina ignorando. Ver
+    `design/LEEME.md`.
+  - **`scripts/contraste.mts` y `test/contraste.test.ts` se borraron.** Medían
+    los ratios WCAG desde los tokens reales contra una lista de pares declarada
+    a mano, y funcionaron para lo que se construyeron — pero el único bug de
+    accesibilidad real que tuvo el producto (dos utilidades usando
+    `--primary-foreground` como "el color claro" sobre el paño de marca, en
+    1.39:1) **no lo atrapó el script**: no podía, porque medía sólo los pares
+    que alguien previó. Lo encontró un grep. Lo que quedó es el caso que
+    prohíbe el **nombre** del token fuera de `components/ui/`, que es la parte
+    que de verdad atrapa, más `tokensDelCss()` —ahora en `scripts/tokens.mts`—
+    que exige un único `:root` de primer nivel. La tabla de contraste sigue en
+    el documento, medida una vez al elegir la paleta, como decisión escrita y
+    no como aserción que el gate sostenga.
+
+  **Pendiente**: nadie miró todavía la paleta nueva en un navegador, y las
+  once pantallas de la maqueta **no están construidas** — el código sigue
+  sirviendo el layout viejo con los colores nuevos.
 - ~~Construir la UI de inventario.~~ **Hecho** (2026-08-11). Listado con
   buscador y paginación, alta con SKU autogenerado y stock inicial que nace
   como movimiento, ingreso de mercadería con su costo, corrección por conteo

@@ -223,10 +223,10 @@ export function Cierre({ children }: { children: React.ReactNode }) {
       <div className={ANCHO}>
         <div className="grid items-center gap-8 md:grid-cols-2">
           <div>
-            <h2 className="text-3xl font-semibold text-foreground">
+            <h2 className={`${estilos.titulo} text-3xl font-semibold`}>
               Contanos de tu negocio
             </h2>
-            <p className="mt-4 text-foreground/70">
+            <p className={`${estilos.bajada} mt-4`}>
               Te mostramos el sistema andando con tus productos y tus precios, y respondemos lo que
               haga falta antes de que decidas nada.
             </p>

@@ -4,9 +4,9 @@ import { join } from 'node:path'
 // Una sola implementación del parser del :root, no dos idénticas. Estaba
 // copiada acá y en el script, y la copia no es gratis: el arreglo que las obliga
 // a exigir un único :root de primer nivel habría que hacerlo en dos lugares, y
-// el día que alguien toque uno solo, el otro sigue midiendo la paleta vieja sin
+// el día que alguien toque uno solo, el otro sigue leyendo la paleta vieja sin
 // decir nada.
-import { tokensDelCss } from '@/scripts/contraste.mts'
+import { tokensDelCss } from '@/scripts/tokens.mts'
 
 const CSS = 'app/globals.css'
 
@@ -73,18 +73,20 @@ describe('el CSS no arrastra tokens muertos', () => {
     ).toEqual([])
   })
 
-  it('declara color-scheme: dark', () => {
-    // Sin esta declaración el navegador pinta de claro todo lo que la hoja de
-    // estilos no controla: los scrollbars, el selector nativo de
-    // <input type="date"> —que /ventas usa en Desde y Hasta— y el lienzo antes
-    // del primer paint, que es un flash blanco en cada carga. Es un modo de
-    // falla que sólo se ve en un navegador de verdad, nunca en jsdom, así que
-    // el único lugar donde puede quedar atrapado es acá.
+  it('declara color-scheme: light', () => {
+    // Sin una declaración explícita, el navegador elige por preferencia del
+    // sistema todo lo que la hoja de estilos no controla: los scrollbars, el
+    // selector nativo de <input type="date"> —que /ventas usa en Desde y
+    // Hasta— y el lienzo antes del primer paint. Con la paleta clara y el
+    // sistema en oscuro eso deja controles negros adentro de paneles blancos.
+    // Es un modo de falla que sólo se ve en un navegador de verdad, nunca en
+    // jsdom, así que el único lugar donde puede quedar atrapado es acá.
     expect(
       css,
-      'app/globals.css no declara color-scheme: dark. La paleta es oscura, así ' +
-        'que los controles nativos y el lienzo del primer paint quedan claros.',
-    ).toMatch(/color-scheme:\s*dark/)
+      'app/globals.css no declara color-scheme: light. La paleta es clara, así ' +
+        'que sin esto los controles nativos siguen la preferencia del sistema y ' +
+        'quedan oscuros adentro de paneles blancos.',
+    ).toMatch(/color-scheme:\s*light/)
   })
 })
 
@@ -208,8 +210,15 @@ describe('nadie toma --primary-foreground por "el color claro"', () => {
   // dos utilidades de Tailwind en app/sitio/secciones.tsx lo usaban sobre el
   // paño de --marca porque era "el color claro". Quedaron en 1.39:1 sobre el
   // título que convierte, y ningún test lo vio: los dos colores seguían siendo
-  // colores válidos, y la tabla de contraste sólo mide los pares que alguien se
-  // acordó de declarar. Lo encontró un grep a mano.
+  // colores válidos. Lo encontró un grep a mano, y por eso el caso mira el
+  // NOMBRE del token y no su contraste — es la parte del mecanismo que de
+  // verdad atrapó algo, y la razón por la que sobrevivió al borrado de
+  // scripts/contraste.mts.
+  //
+  // Que hoy --primary-foreground vuelva a ser blanco no lo vuelve inocuo: es
+  // justamente cuando el token "funciona" como color claro que alguien lo
+  // agarra por eso, y el día que la paleta se mueva otra vez se lleva puestas
+  // las mismas pantallas. El token vale sobre --primary y en ningún otro lado.
   //
   // El token es legítimo SÓLO sobre --primary, que es el botón de acción, y ese
   // par vive en components/ui/. Fuera de ahí, nombrarlo es la señal de que

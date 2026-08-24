@@ -13,8 +13,8 @@
     "usuario:clave": "tsx scripts/definir-clave.mts",
     "leads": "tsx scripts/leads.mts",
     "ventas:sembrar": "tsx scripts/sembrar-ventas-dev.mts",
+    "catalogo:sembrar": "tsx scripts/sembrar-catalogo-dev.mts",
     "ordenes:sembrar": "tsx scripts/sembrar-ordenes-dev.mts",
-    "contraste": "tsx scripts/contraste.mts",
     "pretest": "npm run generate",
     "prebuild": "npm run generate"
   },

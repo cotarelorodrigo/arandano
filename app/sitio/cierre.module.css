@@ -3,12 +3,12 @@
  * como superficie, y la segunda superficie de marca del producto entero
  * (la primera es la persiana del login).
  *
- * La regla de docs/sistema-de-diseno.md dice que el arándano se contiene a
- * acciones, foco y selección porque es "lo que menos cansa en una pantalla que
- * se mira ocho horas". Ni el login ni una landing se miran ocho horas, así que
- * la razón no aplica y la excepción está declarada allá con su alcance y con la
- * condición que la hace caducar: si aparece una TERCERA superficie, se vuelve a
- * discutir la regla en vez de estirar la excepción.
+ * La regla de docs/sistema-de-diseno.md cambió con el rediseño, y esta franja
+ * fue parte del motivo: dejó de ser "dos superficies de marca y no más" y pasó
+ * a ser UNA POR PANTALLA, siempre alrededor del dato principal. Acá el dato
+ * principal es la conversión. Lo que la regla sigue prohibiendo es lo que
+ * importa: --marca no es un fondo de página y no aparece dos veces en la misma
+ * vista.
  *
  * Vive en un módulo de CSS y no en una utilidad de Tailwind por lo mismo que
  * persiana.module.css: --marca no está en el @theme, así que no hay bg-marca.
@@ -17,12 +17,34 @@
   background-color: var(--marca);
 }
 
-/* La firma sobre el paño, al pie de la franja. 6.13:1 sobre --marca, medido en
-   scripts/contraste.mts — es el mismo par que ya usa el login. */
+/* La firma sobre el paño, al pie de la franja. --marca-dim, que es el token de
+   texto secundario sobre esta superficie — el mismo par que usa el login, 5.09:1
+   sobre --marca. Antes era una opacidad sobre --foreground, y con la paleta
+   clara eso deja texto casi negro sobre violeta profundo. */
 .firma {
   font-size: 0.75rem;
   font-weight: 500;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  color: var(--marca-dim);
+}
+
+/*
+ * El texto sobre el paño. Vive acá y no como utilidades de Tailwind por lo
+ * mismo que .franja: los tokens del paño no están en @theme, así que no hay
+ * `text-marca-foreground`.
+ *
+ * Y es exactamente el lugar donde ya vivió un bug: estas dos líneas eran
+ * `text-foreground` y `text-foreground/70`, tomados por "el color claro" cuando
+ * la paleta era clara. Al pasar a la oscura quedaron en 1.39:1 sobre el título
+ * que convierte, y ningún test lo vio. Con la paleta clara el mismo error
+ * volvería a dar texto casi negro sobre violeta profundo. El token dice sobre
+ * qué va: --marca-foreground y --marca-dim son los colores DE ESTA SUPERFICIE.
+ */
+.titulo {
+  color: var(--marca-foreground);
+}
+
+.bajada {
+  color: var(--marca-soft);
 }
