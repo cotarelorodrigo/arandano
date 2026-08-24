@@ -440,6 +440,14 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
   teléfono.
 - El stock inicial entra como `MovimientoStock`, así que el historial del
   artículo arranca explicando de dónde salió cada unidad.
+- **El campo de categoría es texto libre en la pantalla, pero por detrás arma
+  un árbol.** Desde el 2026-08-23 existe la tabla `categorias` (dos niveles:
+  rubro → marca), y al guardar, `asegurarCategoria`
+  (`lib/inventario/categorias.ts`) parte el texto por el `·` y deja el artículo
+  colgado de la rama que corresponde, creándola si no existía. **La pantalla no
+  cambió a propósito**: por expand/contract, el modelo viaja un deploy antes que
+  la UI que lo muestra. El selector de categoría y el árbol lateral son el ciclo
+  siguiente.
 - **"Cancelar" y "Guardar artículo" viven en el Topbar**, no al pie del
   formulario: el `<form>` envuelve encabezado y cuerpo por igual
   (`className="contents"`, sin alterar el layout de `SidebarInset`) porque el
@@ -479,6 +487,12 @@ stock y el historial; a la derecha los datos editables y "Cómo se movió"
   transacción, contra el stock del momento**. Si lo calculara el navegador, una
   venta ocurrida entre que se abrió la pantalla y se apretó el botón quedaría
   pisada.
+- **El campo de categoría es texto libre en la pantalla, pero al guardar arma
+  el árbol.** Igual que en `/inventario/nuevo`: `guardarArticulo` lo pasa por
+  `asegurarCategoria`, que parte el texto por el `·` y mueve el artículo a la
+  rama que corresponda — o despeja las dos columnas si el campo se vacía. El
+  selector es el ciclo siguiente; el modelo viaja un deploy antes por
+  expand/contract.
 - **El costo unitario del ingreso dejó de ser un dato que nadie lee.** Es
   opcional, y el tile "Último costo" es su primer lector: busca el ingreso con
   costo cargado más reciente (no el ingreso más reciente a secas, que puede no

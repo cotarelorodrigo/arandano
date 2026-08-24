@@ -485,7 +485,9 @@ Y del producto:
   pendientes.~~ **Hecho** (2026-08-22): `Articulo.categoria` (texto libre, no
   una tabla — un rubro con veinte artículos no necesita un catálogo de
   categorías para mantener, y agregar la tabla más adelante sigue siendo
-  aditivo si hiciera falta), el modelo `Caja` (sólo apertura y cierre) y
+  aditivo si hiciera falta; **esa puerta se cruzó el 2026-08-23**, ver la
+  entrada del árbol de categorías más abajo), el modelo `Caja` (sólo apertura
+  y cierre) y
   `Tenant.cotizacionUsd` junto con `cotizacionUsdEn`. **Sin UI a propósito, por
   expand/contract**: la columna viaja primero y el código que la lee llega
   recién en el ciclo de cada pantalla, así el rollback automático de un deploy
@@ -840,6 +842,71 @@ Y del producto:
   histórico de lo que era cierto ese día, no como el conteo vigente — para
   eso está `docs/sistema-de-diseno.md`, sección "El arándano como
   superficie".
+- ~~Convertir las categorías de artículo en un árbol con tabla propia.~~
+  **El modelo, hecho** (2026-08-23). Sale de feedback de un cliente: *"para ver
+  el stock organizado por categorías, como celulares, dentro de celulares por
+  marca, y después productos tipo, fundas también después por marcas, vidrios
+  templados, cables, cargadores"*. **Revierte a propósito** la decisión de
+  texto libre que este mismo documento cerró el 2026-08-22 — el párrafo dejaba
+  la puerta abierta ("agregar la tabla más adelante sigue siendo aditivo si
+  hiciera falta") y llegó el "si hiciera falta", tres semanas después y no tres
+  años: sigue siendo barato justamente porque todavía no hay tenants reales.
+  Ver `docs/superpowers/specs/2026-08-23-categorias-design.md`.
+
+  **Dos niveles fijos, con auto-relación y no con dos tablas.** `padre_id` NULL
+  es una raíz ("Celulares", "Cables"), con padre es una hoja ("Samsung"). La
+  restricción a dos niveles **no vive en el schema** —nada impide colgar una
+  hija de una hija— sino en el servidor: hoy estructuralmente, porque el único
+  escritor busca la raíz con padre NULL y cuelga de ella, y con el ABM va a ser
+  una validación explícita. Se descartó el par de tablas separadas
+  (`Categoria` + `Marca`), que garantiza los dos niveles por estructura, porque
+  duplica el ABM entero y convierte "mover Samsung de Celulares a Fundas" —un
+  `UPDATE` de una columna— en un caso especial.
+
+  **Un artículo cuelga de una raíz o de una hoja, indistinto**, y eso es lo que
+  hace que "Cables" sin marca sea válido — el cliente nombró tres rubros sin
+  marca detrás. Forzar que todo cuelgue de una hoja obligaría a inventar una
+  marca falsa ("Cables · Genérico") para cada rubro que no las usa.
+
+  **La unicidad necesita DOS índices, y esto es lo que alguien va a querer
+  simplificar en seis meses.** El `@@unique([tenantId, padreId, nombre])` de
+  Prisma **no alcanza**: en Postgres `NULL ≠ NULL`, así que dos raíces
+  homónimas lo pasan sin chistar, porque su `padre_id` es NULL en las dos. El
+  índice único parcial `WHERE padre_id IS NULL` es lo único que las frena —
+  mismo mecanismo, y por la misma razón, que "una sola caja abierta por
+  tenant".
+
+  **Sin UI, otra vez a propósito y por expand/contract**: no cambia ninguna
+  pantalla. El campo de categoría de los formularios sigue siendo texto libre;
+  lo que cambió es que al guardar, ese texto además arma la rama del árbol
+  (`asegurarCategoria`, `lib/inventario/categorias.ts`). **Y `articulos.categoria`
+  —el texto— se sigue escribiendo igual**: es lo que hace que un rollback a la
+  imagen anterior encuentre el dato. El `DROP COLUMN` es un deploy **posterior
+  al de la UI**, no el siguiente. Mientras dure esa ventana, renombrar una
+  categoría no actualiza el texto de sus artículos: es un vestigio con fecha de
+  defunción, no una segunda fuente de verdad.
+
+  **Un hallazgo que este ciclo destapó y NO arregla**, porque no es suyo: **las
+  FK de Postgres saltean RLS**. Un artículo del tenant A puede apuntar por SQL
+  crudo a una categoría del tenant B — la verificación de integridad
+  referencial corre por fuera de las policies. No es propio de esta tabla: es
+  el comportamiento de **todas** las FK del schema (`cajas.abierta_por_id`,
+  `movimientos_stock.articulo_id`, `ventas.cliente_id`), ninguna de las cuales
+  es compuesta con `tenant_id`. Lo que RLS sí garantiza, y `test/rls.test.ts`
+  ahora afirma explícitamente, es que **el nombre ajeno no se lee desde el otro
+  lado**: el JOIN se queda sin la fila y la pantalla muestra un artículo sin
+  categoría, no la categoría del local de al lado. Cerrarlo de verdad —FK
+  compuestas contra `(tenant_id, id)`— es un ciclo propio sobre el schema
+  entero; hacerlo sólo acá dejaría una asimetría que el próximo ciclo copiaría
+  al revés.
+
+  **Queda para el ciclo siguiente**: el árbol lateral de `/inventario` con su
+  conteo por rama, el filtro, y el ABM in-place (crear, renombrar, mover,
+  borrar) — con la validación explícita de los dos niveles, que es el primer
+  escritor capaz de violarla. Y una deuda con la maqueta:
+  `design/arandano.pen` no dibuja ningún panel de categorías, así que ese ciclo
+  va a construir algo que el `.pen` no tiene — anotado en
+  `docs/correcciones-pendientes-del-pen.md`.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

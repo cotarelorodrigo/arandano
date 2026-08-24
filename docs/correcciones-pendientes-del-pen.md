@@ -122,6 +122,42 @@ Detectado en el ciclo de inventario (2026-08-22).
 
 ---
 
+## 6. El listado de inventario no tiene dónde vivir el árbol de categorías
+
+- **Frame**: `pb32f` (`App / Inventario`)
+- **Falta**: la columna lateral con el árbol de categorías, y su relación con
+  el listado
+
+**Por qué.** El 2026-08-23 se decidió, con el dueño del producto, que las
+categorías pasan a ser un árbol de dos niveles (rubro → marca) y que **se
+recorren desde una columna a la izquierda del listado**: cada rama con su
+conteo, clic en "Celulares" filtra a todo el rubro, clic en "Samsung" filtra a
+esa marca. Esa columna además es donde se crean, renombran y mueven las
+categorías — no hay pantalla de ABM aparte.
+
+La maqueta no dibuja nada de eso. Hoy `App / Inventario` es la fila de filtros
+más la card del listado a todo el ancho, y la categoría aparece sólo como texto
+bajo el nombre del artículo.
+
+**Qué hace falta decidir en Pencil**, porque el código no lo puede inventar sin
+contradecir la regla de que la maqueta manda:
+
+- El ancho de la columna y qué le queda al listado.
+- Cómo se ve una rama seleccionada, y cómo se ve el estado "todas".
+- Dónde va el conteo por rama y si cuenta artículos o unidades.
+- Cómo se ve "Sin categoría", que es una rama más y va a existir siempre.
+- Los controles del ABM: crear una raíz, crear una marca adentro, renombrar,
+  mover, borrar.
+
+Hasta que eso esté dibujado, el ciclo de la UI va a estar construyendo contra
+un frame que no existe. Es la única entrada de esta lista donde falta una
+pantalla entera y no un detalle.
+
+Detectado al cerrar el ciclo del modelo de categorías (2026-08-23). Ver
+`docs/superpowers/specs/2026-08-23-categorias-design.md`.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

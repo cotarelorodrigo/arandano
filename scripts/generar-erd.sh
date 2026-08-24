@@ -80,10 +80,17 @@ componer() {
 >
 > **Tampoco muestra los índices únicos escritos a mano en una migración**, por
 > el mismo motivo: \`migrate diff\` compara contra \`schema.prisma\`, no contra el
-> SQL de \`prisma/migrations/\`. \`cajas_una_abierta_por_tenant\` —el índice único
-> PARCIAL (\`WHERE cerrada_en IS NULL\`) que es la invariante que define la
-> tabla \`cajas\`— es hoy el único caso, y no aparece en ninguna parte de este
-> documento.
+> SQL de \`prisma/migrations/\`. Hoy son dos, y los dos son índices únicos
+> PARCIALES que sostienen una invariante que el schema no puede expresar:
+>
+> - \`cajas_una_abierta_por_tenant\` (\`WHERE cerrada_en IS NULL\`) — no hay dos
+>   turnos abiertos a la vez.
+> - \`categorias_raiz_unica_por_tenant\` (\`WHERE padre_id IS NULL\`) — no hay dos
+>   categorías raíz con el mismo nombre. El \`@@unique\` que sí está en el schema
+>   lleva \`padre_id\` adentro, y en Postgres NULL <> NULL, así que a las raíces
+>   no las alcanza.
+>
+> Ninguno de los dos aparece en ninguna parte de este documento.
 
 EOF
   erd_desde_ddl "$ddl"
