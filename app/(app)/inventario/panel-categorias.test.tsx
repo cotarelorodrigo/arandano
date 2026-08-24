@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { PanelDeCategorias, SIN_CATEGORIA, categoriaDeQuery } from './panel-categorias'
+import { PanelDeCategorias } from './panel-categorias'
+import { SIN_CATEGORIA, categoriaDeQuery } from './consulta'
 import type { RamaConHijas } from '@/lib/inventario/categorias'
 
 const ARBOL: RamaConHijas[] = [
@@ -29,7 +30,7 @@ const pintar = (props: Partial<Parameters<typeof PanelDeCategorias>[0]> = {}) =>
       sinCategoria={1}
       activa={null}
       esDuenio
-      href={() => '/inventario'}
+      filtros={{ busqueda: '', verInactivos: false, tipo: null }}
       {...props}
     />,
   )

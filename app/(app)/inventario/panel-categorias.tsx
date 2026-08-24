@@ -5,29 +5,12 @@ import Link from 'next/link'
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { FilaDeAlta, FilaEnEdicion, MenuDeRama } from './abm-categorias'
 import { cn } from '@/lib/utils'
-import { esUuid } from '@/lib/uuid'
 import type { RamaConHijas } from '@/lib/inventario/categorias'
-
-/** El valor reservado de `?cat` para "los que no cuelgan de ninguna rama". No
- *  es un uuid a propósito: `categoriaDeQuery` los distingue por la forma. */
-export const SIN_CATEGORIA = 'sin'
-
-/**
- * El `?cat=` del query string, o `null` para "Todos".
- *
- * Mismo criterio que `tipoDeQuery` y que el clamp de `?p`: cualquier valor que
- * no sea un uuid o la palabra reservada cae en "Todos" en vez de filtrar por
- * algo que no existe. Un query string escrito a mano no puede servir un 500 ni
- * un listado vacío por un typo.
- *
- * Que el uuid EXISTA no se chequea acá: un id bien formado de una categoría
- * borrada —o de otro tenant, que RLS vuelve invisible— filtra a cero
- * resultados, y de eso se encarga el estado vacío, que además ofrece salida.
- */
-export function categoriaDeQuery(valor: string | undefined): string | null {
-  if (valor === SIN_CATEGORIA) return SIN_CATEGORIA
-  return valor && esUuid(valor) ? valor : null
-}
+// De `./rama` y no declarados acá: este archivo lleva 'use client', y una
+// función exportada desde un módulo cliente NO se puede invocar desde un
+// Server Component. Tampoco se re-exportan desde acá — re-exportar no mueve el
+// borde, sólo lo esconde para el que importe.
+import { SIN_CATEGORIA, hrefListado, type FiltrosActivos } from './consulta'
 
 /** Las medidas salen de design/arandano.pen (nodos `t56Gp`, `pjcob`, `Xtq8S`):
  *  alto 30, padding lateral 8, radio 8, gap 6. Más compactas que el ítem de
@@ -124,15 +107,22 @@ export function PanelDeCategorias({
   sinCategoria,
   activa,
   esDuenio,
-  href,
+  filtros,
 }: {
   arbol: RamaConHijas[]
   total: number
   sinCategoria: number
   activa: string | null
   esDuenio: boolean
-  href: (cat: string | null) => string
+  /**
+   * Los filtros que ya están puestos, para que cada link del panel los
+   * conserve. **Datos y no una función `href`**: Next rechaza pasarle una
+   * función a un Client Component, y este panel lo es — el árbol se pliega y
+   * las filas se editan del lado del cliente.
+   */
+  filtros: FiltrosActivos
 }) {
+  const href = (cat: string | null) => hrefListado({ ...filtros, cat })
   /**
    * Qué rubros están colapsados. Arrancan TODOS abiertos y esto no persiste
    * entre navegaciones: guardarlo pediría una columna o una cookie por algo

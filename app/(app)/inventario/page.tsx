@@ -10,7 +10,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { cn } from '@/lib/utils'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
 import { estadoDeFila, ChipEstado, type EstadoDeFila } from './chip-estado'
-import { PanelDeCategorias, SIN_CATEGORIA, categoriaDeQuery } from './panel-categorias'
+import { PanelDeCategorias } from './panel-categorias'
+import {
+  SIN_CATEGORIA, categoriaDeQuery, tipoDeQuery, hrefListado, type TipoFiltro,
+} from './consulta'
+
+// Re-export para los tests y para quien ya los importaba de acá. Los VALORES
+// viven en `./consulta`, que no lleva 'use client' ni toca la base: el panel
+// de categorías es un Client Component y necesita `hrefListado`, y Next no
+// deja pasarle una función como prop.
+export { tipoDeQuery, hrefListado, type TipoFiltro }
 import { arbolDeCategorias, cuentaSinCategoria, type RamaConHijas } from '@/lib/inventario/categorias'
 import estilos from './tipografia.module.css'
 
@@ -18,21 +27,6 @@ export const dynamic = 'force-dynamic'
 
 const POR_PAGINA = 50
 const PAGINA_MAXIMA = 1_000_000
-
-/** El filtro de tipo (design/arandano.pen, nodo `OgOlK`): `null` es "Todos". */
-export type TipoFiltro = 'PRODUCTO' | 'SERVICIO'
-
-/**
- * El `?tipo=` del query string, o `null` para "Todos".
- *
- * Cualquier valor que no sea uno de los dos válidos cae en "Todos" en vez de
- * filtrar por algo que no existe: mismo criterio que `fechaOhoy` en
- * `/ventas` y el clamp de `?p` acá mismo — un query string escrito a mano no
- * puede servir un 500 ni un listado vacío por un typo.
- */
-export function tipoDeQuery(valor: string | undefined): TipoFiltro | null {
-  return valor === 'PRODUCTO' || valor === 'SERVICIO' ? valor : null
-}
 
 /** La rama elegida, ya resuelta contra el árbol: qué ids de categoría entran
  *  en el filtro. `null` es "Todos". */
@@ -103,35 +97,6 @@ export function construirDonde({
  * `verInactivos` y la paginación por query string: las tabs son un filtro
  * más, del mismo tipo, no un mecanismo nuevo.
  */
-export function hrefListado({
-  busqueda,
-  verInactivos,
-  tipo,
-  cat = null,
-  pagina,
-  conservarPagina = false,
-}: {
-  busqueda: string
-  verInactivos: boolean
-  tipo: TipoFiltro | null
-  cat?: string | null
-  pagina?: number
-  /** Sólo la paginación la conserva. Ver el comentario de abajo. */
-  conservarPagina?: boolean
-}): string {
-  const u = new URLSearchParams()
-  if (busqueda) u.set('q', busqueda)
-  if (verInactivos) u.set('inactivos', '1')
-  if (tipo) u.set('tipo', tipo)
-  if (cat) u.set('cat', cat)
-  // Cambiar de rama o de filtro DESCARTA la página, y sólo la paginación pide
-  // conservarla: quedarse en la página 3 de un listado que ahora tiene ocho
-  // artículos muestra un vacío que parece un error.
-  if (conservarPagina && pagina && pagina > 1) u.set('p', String(pagina))
-  const s = u.toString()
-  return s ? `/inventario?${s}` : '/inventario'
-}
-
 /**
  * Hasta 5 números de página centrados en `actual`, recortados a `[1, total]`.
  *
@@ -384,7 +349,7 @@ export default async function Inventario({
             sinCategoria={sinCategoria}
             activa={cat}
             esDuenio={sesion.usuario.rol === 'DUENO'}
-            href={(destino) => hrefListado({ busqueda, verInactivos, tipo, cat: destino })}
+            filtros={{ busqueda, verInactivos, tipo }}
           />
 
         {/* El listado, dentro de su propia card (design/arandano.pen, nodo

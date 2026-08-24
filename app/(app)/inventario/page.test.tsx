@@ -12,7 +12,7 @@ import {
   tipoDeQuery, construirDonde, hrefListado, ventanaDePaginas, FiltrosDeInventario,
   ramaDelArbol,
 } from './page'
-import { SIN_CATEGORIA } from './panel-categorias'
+import { SIN_CATEGORIA } from './consulta'
 
 describe('tipoDeQuery', () => {
   it('reconoce PRODUCTO y SERVICIO', () => {
