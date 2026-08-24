@@ -986,18 +986,35 @@ Y del producto:
   estado mientras el componente viva, así que el efecto que dispara el aviso
   vuelve a correr en cada render, y sin clave sonner apilaría una copia por vez.
 
-  **Y el bug que eso destapó, que vale más que la feature**: montado en
-  `app/(app)/layout.tsx` —el lugar "natural", al lado del sidebar— **los avisos
-  desaparecían al instante**, con `duration: Infinity` puesto. El `<Toaster>`
-  de sonner guarda los toasts visibles en un `useState([])` propio y se
-  suscribe al store recién en su `useEffect`: nunca lee los que ya existen, así
-  que **remontarlo los borra de la pantalla**. Y cada acción del ABM termina en
-  `revalidatePath('/inventario')`, que invalida la ruta **con todos sus
-  layouts** — el aviso moría en el mismo refresh que lo disparaba. Vive ahora
-  en el root layout, que ningún `revalidatePath` de pantalla toca, y
-  `test/toaster.test.ts` lo fija. **Lo que hace falta recordar no es dónde va
-  sino cómo se ve el síntoma**: parece un problema de duración, y la duración
-  es lo único que no tenía nada que ver.
+  **Y el bug que eso destapó, que vale más que la feature**: los avisos
+  "desaparecían rápido" con `duration: Infinity` puesto, y tuvo **dos** causas
+  encadenadas que hay que separar para entenderlo.
+
+  **La primera**: el `<Toaster>` estaba en `app/(app)/layout.tsx` —el lugar
+  "natural", al lado del sidebar—. Sonner guarda los toasts visibles en un
+  `useState([])` propio y se suscribe al store recién en su `useEffect`: nunca
+  lee los que ya existen, así que remontarlo los borra de la pantalla. Vive
+  ahora en el root layout, y `test/toaster.test.ts` lo fija.
+
+  **La segunda, y la que de verdad lo causaba**: el aviso se disparaba desde un
+  `useEffect` sobre `useActionState`, o sea **colgado del ciclo de vida de la
+  fila** — y las filas del árbol se re-renderizan y se desmontan con cada
+  `revalidatePath`. Ahora el toast se lanza en el mismo handler que ejecuta la
+  acción, con el resultado ya en la mano, y desde ahí vive en el store de
+  sonner sin depender de ningún componente. Eso además borró el warning de
+  React que el patrón anterior producía ("An async function with
+  useActionState was called outside of a transition"), porque un `onSelect` de
+  un menú no es un `<form action>`.
+
+  **Lo que hace falta recordar no es dónde va el Toaster sino cómo se
+  diagnostica**: el síntoma se lee como un problema de duración, y la duración
+  era lo único que no tenía nada que ver. Lo que partió el problema al medio
+  fue un botón temporal que lanzaba un toast persistente **sin tocar el
+  servidor**: ése se quedaba perfecto, y eso descartó a sonner de una y dejó
+  como sospechoso al único otro camino. Dos hipótesis mías —la duración, y
+  después el remonte por `revalidatePath`— habían fallado antes de eso, y la
+  segunda encima era falsa por una razón verificable en el código: el camino de
+  error ni siquiera llama a `revalidatePath`.
 
   **Lo que NO se migró**: los `Alert` inline de los formularios de artículo
   (`Resultado`, en `formularios.tsx`). Ahí el mensaje habla del formulario que

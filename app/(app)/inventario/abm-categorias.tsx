@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MoreHorizontal, Pencil, FolderInput, Trash2, Plus, Check, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -26,27 +26,33 @@ import type { RamaConHijas } from '@/lib/inventario/categorias'
 const INICIAL: EstadoInventario = { error: null, aviso: null }
 
 /**
- * Lanza el toast que corresponda cuando una acción del ABM termina.
+ * Lanza el toast que corresponda con el resultado de una acción del ABM.
  *
- * **Los errores NO se auto-descartan** (`duration: Infinity` + botón de
+ * **Es una función normal, llamada en el mismo handler que ejecuta la acción,
+ * y NO un `useEffect` sobre `useActionState`.** La primera versión era lo
+ * segundo, y los avisos "desaparecían rápido" sin importar su `duration`: el
+ * efecto está atado al ciclo de vida del componente, y las filas del árbol se
+ * re-renderizan y se desmontan con cada `revalidatePath` — el aviso quedaba
+ * colgado de un componente que dejaba de existir mientras el toast todavía
+ * tenía que estar en pantalla. Que sonner funcionaba se comprobó aparte, con
+ * un botón que lanzaba un toast persistente sin tocar el servidor: ése se
+ * quedaba.
+ *
+ * Acá el toast se lanza UNA vez, cuando la acción ya devolvió, y desde ese
+ * momento vive en el store de sonner —global, fuera de React— sin depender de
+ * que el componente que lo pidió siga montado.
+ *
+ * **Los errores no se auto-descartan** (`duration: Infinity` + botón de
  * cerrar): "Fundas tiene 2 marcas adentro. Borralas o movelas antes." es
  * accionable —dice qué hacer antes de reintentar— y un aviso que se va solo a
  * los cuatro segundos se lleva justamente la instrucción. Los de éxito sí se
- * van: "Categoría creada" no hay que releerlo, y además la categoría
- * apareciendo en el árbol ya es la confirmación.
- *
- * **La clave (`id`) es estable por acción y por rama**, y eso no es un
- * detalle: `useActionState` retiene su último estado mientras el componente
- * viva, así que este efecto vuelve a correr en cada render. Con una clave
- * fija, sonner reemplaza el aviso que ya está en pantalla en vez de apilar una
- * copia por render.
+ * van: "Categoría creada" no hay que releerlo, y la categoría apareciendo en
+ * el árbol ya es la confirmación.
  */
-function useAvisoDeAccion(estado: EstadoInventario, pendiente: boolean, clave: string) {
-  useEffect(() => {
-    if (pendiente) return
-    if (estado.error) toast.error(estado.error, { id: clave, duration: Infinity })
-    else if (estado.aviso) toast.success(estado.aviso, { id: clave })
-  }, [estado, pendiente, clave])
+function avisar(resultado: EstadoInventario): EstadoInventario {
+  if (resultado.error) toast.error(resultado.error, { duration: Infinity })
+  else if (resultado.aviso) toast.success(resultado.aviso)
+  return resultado
 }
 
 /**
@@ -98,32 +104,45 @@ function CampoInline({
   )
 }
 
-/** Un `<form>` de una acción del ABM, con su cartel de error. */
+/**
+ * Un `<form>` de una acción del ABM.
+ *
+ * **Sin `useActionState`**: maneja el submit a mano, llama al server action y
+ * avisa con el resultado en el mismo handler. Ver el comentario de `avisar`
+ * para el porqué — con el efecto de por medio, los toasts morían junto con la
+ * fila que los había pedido.
+ *
+ * El costo es que este formulario **necesita JavaScript**, cosa que el resto
+ * de los formularios del producto evita. Acá ya era así: el campo aparece por
+ * un estado de cliente y el menú que lo abre es de Radix, así que no había
+ * ningún camino sin JS que perder.
+ */
 function FormularioDeAbm({
   accion,
   children,
   onListo,
-  clave,
 }: {
-  accion: typeof crearCategoriaAccion
+  accion: (estado: EstadoInventario, datos: FormData) => Promise<EstadoInventario>
   children: (pendiente: boolean) => React.ReactNode
-  onListo?: () => void
-  /** La clave del toast. Ver `useAvisoDeAccion`. */
-  clave: string
+  onListo: () => void
 }) {
-  const [estado, ejecutar, pendiente] = useActionState(accion, INICIAL)
-  useAvisoDeAccion(estado, pendiente, clave)
-
-  // Cerrar el campo recién cuando la acción terminó BIEN: si se cerrara
-  // siempre, un nombre repetido haría desaparecer lo que la persona escribió
-  // mientras el toast explica por qué no se guardó — y con el campo cerrado no
-  // le quedaría dónde corregirlo.
-  useEffect(() => {
-    if (!pendiente && estado.aviso && onListo) onListo()
-  }, [pendiente, estado.aviso, onListo])
+  const [pendiente, setPendiente] = useState(false)
 
   return (
-    <form action={ejecutar} className="contents">
+    <form
+      className="contents"
+      onSubmit={async (e) => {
+        e.preventDefault()
+        if (pendiente) return
+        setPendiente(true)
+        const resultado = avisar(await accion(INICIAL, new FormData(e.currentTarget)))
+        setPendiente(false)
+        // Cerrar el campo sólo si salió bien: con un nombre repetido, cerrarlo
+        // haría desaparecer lo que la persona escribió justo cuando el toast
+        // le explica que lo corrija, y no le quedaría dónde hacerlo.
+        if (!resultado.error) onListo()
+      }}
+    >
       {children(pendiente)}
     </form>
   )
@@ -190,11 +209,7 @@ export function FilaDeAlta({
   sangria: 'rubro' | 'marca'
 }) {
   return (
-    <FormularioDeAbm
-      accion={crearCategoriaAccion}
-      onListo={onCerrar}
-      clave={`categoria-alta-${padreId ?? 'raiz'}`}
-    >
+    <FormularioDeAbm accion={crearCategoriaAccion} onListo={onCerrar}>
       {(pendiente) => (
         <>
           <input type="hidden" name="padreId" value={padreId ?? ''} />
@@ -222,11 +237,7 @@ export function FilaEnEdicion({
   onCerrar: () => void
 }) {
   return (
-    <FormularioDeAbm
-      accion={renombrarCategoriaAccion}
-      onListo={onCerrar}
-      clave={`categoria-nombre-${categoriaId}`}
-    >
+    <FormularioDeAbm accion={renombrarCategoriaAccion} onListo={onCerrar}>
       {(pendiente) => (
         <>
           <input type="hidden" name="categoriaId" value={categoriaId} />
@@ -267,23 +278,29 @@ export function MenuDeRama({
   onRenombrar: () => void
   onAgregarMarca?: () => void
 }) {
-  const [borrado, ejecutarBorrado, borrandoPendiente] = useActionState(
-    borrarCategoriaAccion,
-    INICIAL,
-  )
   /**
-   * Mover TAMBIÉN puede fallar, y su error importa: mover "Samsung" a un rubro
-   * que ya tiene una "Samsung" choca contra el índice único. Una versión
-   * anterior descartaba este estado, así que la marca no se movía y la
-   * pantalla no decía por qué.
+   * Las dos acciones del menú se llaman DIRECTO, sin `useActionState`.
+   *
+   * Con él, además del warning de React —"An async function with
+   * useActionState was called outside of a transition", porque un `onSelect`
+   * no es un `<form action>`—, el aviso quedaba colgado de un `useEffect`, y
+   * eso es lo que hacía que los toasts murieran antes de poder leerlos: la
+   * fila se re-renderiza y se desmonta con cada `revalidatePath`. Acá el
+   * resultado se avisa en el mismo handler, una sola vez, y desde ahí el toast
+   * vive en el store de sonner sin depender de este componente.
+   *
+   * `pendiente` alcanza para no disparar dos veces el mismo borrado con un
+   * doble clic; no hace falta el estado completo de la acción, porque el
+   * resultado ya no se renderiza en ningún lado.
    */
-  const [movida, ejecutarMovida, moviendoPendiente] = useActionState(
-    moverCategoriaAccion,
-    INICIAL,
-  )
+  const [pendiente, setPendiente] = useState(false)
 
-  useAvisoDeAccion(borrado, borrandoPendiente, `categoria-borrar-${categoriaId}`)
-  useAvisoDeAccion(movida, moviendoPendiente, `categoria-mover-${categoriaId}`)
+  const ejecutar = async (accion: typeof borrarCategoriaAccion, datos: FormData) => {
+    if (pendiente) return
+    setPendiente(true)
+    avisar(await accion(INICIAL, datos))
+    setPendiente(false)
+  }
 
   const otrosRubros = rubros.filter((r) => r.id !== padreActual && r.id !== categoriaId)
 
@@ -321,7 +338,7 @@ export function MenuDeRama({
                       const datos = new FormData()
                       datos.set('categoriaId', categoriaId)
                       datos.set('padreId', r.id)
-                      ejecutarMovida(datos)
+                      void ejecutar(moverCategoriaAccion, datos)
                     }}
                   >
                     {r.nombre}
@@ -333,11 +350,11 @@ export function MenuDeRama({
           <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"
-            disabled={borrandoPendiente}
+            disabled={pendiente}
             onSelect={() => {
               const datos = new FormData()
               datos.set('categoriaId', categoriaId)
-              ejecutarBorrado(datos)
+              void ejecutar(borrarCategoriaAccion, datos)
             }}
           >
             <Trash2 aria-hidden="true" className="size-[15px]" />

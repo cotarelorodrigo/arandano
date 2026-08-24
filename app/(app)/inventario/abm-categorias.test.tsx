@@ -90,13 +90,13 @@ describe('los errores del menú no se pierden', () => {
    * error no llegaba a ninguna parte: la marca simplemente no se movía y la
    * pantalla no decía por qué.
    */
-  it('mover no descarta su estado', () => {
-    // Sobre el USO y no sobre la forma del destructuring: una versión anterior
-    // de este caso buscaba el patrón viejo (`const [, ejecutarMovida]`) con un
-    // regex, y se atrapaba a sí misma — el comentario que documenta el bug lo
-    // menciona textualmente. Que el estado de mover LLEGUE al aviso es lo que
-    // importa.
-    expect(FUENTE).toMatch(/useAvisoDeAccion\(\s*movida\s*,/)
+  it('mover avisa su resultado, igual que borrar', () => {
+    // Las dos acciones del menú pasan por el mismo `ejecutar`, que avisa
+    // siempre. Una versión anterior descartaba el estado de mover, así que un
+    // choque de nombre en el rubro destino no llegaba a ninguna parte.
+    expect(FUENTE).toContain('ejecutar(moverCategoriaAccion')
+    expect(FUENTE).toContain('ejecutar(borrarCategoriaAccion')
+    expect(FUENTE).toMatch(/avisar\(await accion\(/)
   })
 
   /**
@@ -105,14 +105,27 @@ describe('los errores del menú no se pierden', () => {
    * volvería a lanzar en cada render. La clave del toast lo resuelve: sonner
    * reemplaza el que ya está en pantalla en vez de apilar copias.
    */
-  it('cada acción avisa con una clave estable, para no apilar copias', () => {
-    // El toast se identifica por `clave`, y cada llamador arma la suya con el
-    // id de la rama: sin eso, dos ramas con el mismo error se pisarían el
-    // aviso entre sí.
-    expect(FUENTE).toContain('id: clave')
-    for (const familia of ['categoria-alta-', 'categoria-nombre-', 'categoria-borrar-', 'categoria-mover-']) {
-      expect(FUENTE, `falta la clave ${familia}`).toContain(familia)
-    }
+  /**
+   * El bug que costó dos idas y vueltas (2026-08-24): los toasts
+   * "desaparecían rápido" sin importar su `duration`. La causa no era sonner
+   * —un botón de prueba que lanzaba un toast persistente sin tocar el servidor
+   * se quedaba perfecto— sino que el aviso colgaba de un `useEffect` sobre
+   * `useActionState`: las filas del árbol se re-renderizan y se desmontan con
+   * cada `revalidatePath`, y el efecto se iba con ellas.
+   *
+   * Ahora el toast se lanza en el mismo handler que ejecuta la acción, una
+   * sola vez y con el resultado ya en la mano.
+   */
+  it('el aviso no cuelga de un efecto ni de useActionState', () => {
+    // Sobre los IMPORTS y no sobre el texto del archivo: es la tercera vez en
+    // este ciclo que un caso escrito con `toContain` se atrapa con el
+    // comentario que documenta el bug — la prosa que explica por qué algo NO
+    // se usa contiene, necesariamente, su nombre.
+    expect(FUENTE).not.toMatch(/import\s*\{[^}]*\buseActionState\b/)
+    expect(FUENTE).not.toMatch(/^\s*useAvisoDeAccion\(/m)
+    // El único useEffect que queda es el del foco del campo, que sí es de
+    // ciclo de vida.
+    expect(FUENTE.match(/useEffect\(/g) ?? []).toHaveLength(1)
   })
 })
 
