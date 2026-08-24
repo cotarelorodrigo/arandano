@@ -395,8 +395,9 @@ export async function borrarCategoria({
       if (hijas > 0) {
         throw new ErrorDeInventario(
           'CATEGORIA_CON_HIJAS',
-          `${propia.nombre} tiene ${hijas === 1 ? '1 marca' : `${hijas} marcas`} adentro. ` +
-            'Borralas o movelas antes.',
+          hijas === 1
+            ? `${propia.nombre} tiene 1 marca adentro. Borrala o movela antes.`
+            : `${propia.nombre} tiene ${hijas} marcas adentro. Borralas o movelas antes.`,
         )
       }
 
@@ -407,8 +408,9 @@ export async function borrarCategoria({
       if (articulos > 0) {
         throw new ErrorDeInventario(
           'CATEGORIA_CON_ARTICULOS',
-          `${propia.nombre} tiene ${articulos === 1 ? '1 artículo' : `${articulos} artículos`}. ` +
-            'Movelos antes de borrarla.',
+          articulos === 1
+            ? `${propia.nombre} tiene 1 artículo. Movelo antes de borrarla.`
+            : `${propia.nombre} tiene ${articulos} artículos. Movelos antes de borrarla.`,
         )
       }
 

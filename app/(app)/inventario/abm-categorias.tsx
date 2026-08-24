@@ -1,7 +1,8 @@
 'use client'
 
 import { useActionState, useEffect, useRef, useState } from 'react'
-import { MoreHorizontal, Pencil, FolderInput, Trash2, Plus } from 'lucide-react'
+import { MoreHorizontal, Pencil, FolderInput, Trash2, Plus, Check, X } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -103,24 +104,50 @@ function FormularioDeAbm({
   )
 }
 
-/** El `+` del encabezado: crea un rubro. */
-export function CrearRubro() {
-  const [abierto, setAbierto] = useState(false)
-
-  if (!abierto) {
-    return (
-      <button
-        type="button"
-        aria-label="Categoría nueva"
-        title="Categoría nueva"
-        onClick={() => setAbierto(true)}
-        className="flex size-[22px] items-center justify-center rounded-[7px] bg-muted text-foreground-soft"
+/**
+ * Guardar y cancelar, del alto de la fila.
+ *
+ * **Existen porque sin ellos la única salida era Enter**, y no había nada que
+ * lo dijera: quien escribiera un nombre y tocara otra parte de la pantalla
+ * perdía lo escrito sin ninguna señal —no hay `onBlur` que guarde— y la
+ * maqueta no dibuja este estado, así que tampoco había de dónde deducirlo.
+ *
+ * Miden 22 como el `+` del encabezado, que es el otro control chico de esta
+ * columna.
+ */
+function BotonesDeEdicion({ pendiente, onCancelar }: { pendiente: boolean; onCancelar: () => void }) {
+  return (
+    <>
+      {/* `Button` de components/ui/ y no un <button> a mano con las clases
+          copiadas: el color de texto del botón de acción sólo se nombra ahí
+          adentro, y `test/sistema-de-diseno.test.ts` lo exige por el único
+          bug de accesibilidad real que tuvo el producto — dos utilidades que
+          lo tomaron por "el color claro" y quedaron en 1.39:1. El tamaño sí
+          va por className: 22, como el `+` del encabezado, que es el otro
+          control chico de esta columna. */}
+      <Button
+        type="submit"
+        size="icon-sm"
+        disabled={pendiente}
+        aria-label="Guardar"
+        title="Guardar"
+        className="size-[22px] shrink-0 rounded-[7px]"
       >
-        <Plus aria-hidden="true" className="size-[13px]" />
-      </button>
-    )
-  }
-  return null
+        <Check aria-hidden="true" className="size-[13px]" />
+      </Button>
+      <Button
+        type="button"
+        variant="secondary"
+        size="icon-sm"
+        onClick={onCancelar}
+        aria-label="Cancelar"
+        title="Cancelar"
+        className="size-[22px] shrink-0 rounded-[7px]"
+      >
+        <X aria-hidden="true" className="size-[13px]" />
+      </Button>
+    </>
+  )
 }
 
 /**
@@ -145,6 +172,7 @@ export function FilaDeAlta({
           <div className="flex h-[30px] w-full items-center gap-1.5 px-2">
             <span aria-hidden="true" className={sangria === 'marca' ? 'w-[24px] shrink-0' : 'w-[14px] shrink-0'} />
             <CampoInline onCancelar={onCerrar} pendiente={pendiente} />
+            <BotonesDeEdicion pendiente={pendiente} onCancelar={onCerrar} />
           </div>
         </>
       )}
@@ -172,6 +200,7 @@ export function FilaEnEdicion({
           <div className="flex h-[30px] w-full items-center gap-1.5 px-2">
             <span aria-hidden="true" className={esMarca ? 'w-[24px] shrink-0' : 'w-[14px] shrink-0'} />
             <CampoInline defecto={nombre} onCancelar={onCerrar} pendiente={pendiente} />
+            <BotonesDeEdicion pendiente={pendiente} onCancelar={onCerrar} />
           </div>
         </>
       )}
@@ -205,17 +234,36 @@ export function MenuDeRama({
   onRenombrar: () => void
   onAgregarMarca?: () => void
 }) {
-  const [borrando, ejecutarBorrado, borrandoPendiente] = useActionState(
+  const [borrado, ejecutarBorrado, borrandoPendiente] = useActionState(
     borrarCategoriaAccion,
     INICIAL,
   )
-  const [, ejecutarMovida] = useActionState(moverCategoriaAccion, INICIAL)
+  /**
+   * Mover TAMBIÉN puede fallar, y su error importa: mover "Samsung" a un rubro
+   * que ya tiene una "Samsung" choca contra el índice único. La primera
+   * versión descartaba este estado (`const [, ejecutarMovida] = …`), así que
+   * la marca no se movía y la pantalla no decía por qué.
+   */
+  const [movida, ejecutarMovida] = useActionState(moverCategoriaAccion, INICIAL)
+
+  /**
+   * `useActionState` no tiene reset: una vez que devuelve un error, lo retiene
+   * mientras el componente viva. Sin esto, el cartel de "tiene 4 artículos"
+   * queda pegado bajo la fila aunque después se muevan los artículos y el
+   * borrado ya sea posible — diciendo algo que dejó de ser cierto. Se apaga al
+   * reabrir el menú, que es el momento en que la persona vuelve a intentar.
+   */
+  const [silenciado, setSilenciado] = useState(false)
+
+  // Una sola caja para las dos acciones que pueden fallar: dos cajas
+  // superpuestas en una columna de 248 se pisan.
+  const errorDelMenu = silenciado ? null : (borrado.error ?? movida.error)
 
   const otrosRubros = rubros.filter((r) => r.id !== padreActual && r.id !== categoriaId)
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={(abierto) => abierto && setSilenciado(true)}>
         <DropdownMenuTrigger
           aria-label="Opciones de la categoría"
           className="hidden size-5 shrink-0 items-center justify-center rounded text-muted-foreground group-hover/rama:flex data-[state=open]:flex"
@@ -247,6 +295,7 @@ export function MenuDeRama({
                       const datos = new FormData()
                       datos.set('categoriaId', categoriaId)
                       datos.set('padreId', r.id)
+                      setSilenciado(false)
                       ejecutarMovida(datos)
                     }}
                   >
@@ -263,6 +312,7 @@ export function MenuDeRama({
             onSelect={() => {
               const datos = new FormData()
               datos.set('categoriaId', categoriaId)
+              setSilenciado(false)
               ejecutarBorrado(datos)
             }}
           >
@@ -271,12 +321,12 @@ export function MenuDeRama({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {/* El error del borrado se muestra ACÁ y no en un toast: es el que dice
-          cuántos artículos hay que mover, y desaparecer solo a los tres
-          segundos sería justo el mensaje que conviene poder releer. */}
-      {borrando.error && (
+      {/* El error se muestra ACÁ y no en un toast: el del borrado dice cuántos
+          artículos hay que mover, y desaparecer solo a los tres segundos sería
+          justo el mensaje que conviene poder releer. */}
+      {errorDelMenu && (
         <p role="alert" className="absolute top-full right-0 z-10 mt-0.5 w-max max-w-[232px] rounded-md border bg-card px-2 py-1 text-[11px] leading-tight text-destructive shadow-sm">
-          {borrando.error}
+          {errorDelMenu}
         </p>
       )}
     </>

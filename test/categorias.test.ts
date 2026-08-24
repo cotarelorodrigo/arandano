@@ -240,7 +240,8 @@ describe('el ABM del árbol', () => {
 
     const error = await borrarCategoria({ tenantId, categoriaId: propia.id }).catch((e) => e)
     expect(error.codigo).toBe('CATEGORIA_CON_ARTICULOS')
-    expect(error.message).toMatch(/1 artículo/)
+    // Singular completo, no "1 artículo. Movelos": el mensaje se lee entero.
+    expect(error.message).toContain('1 artículo. Movelo antes')
   })
 
   it('no toca una categoría de otro tenant', async () => {
