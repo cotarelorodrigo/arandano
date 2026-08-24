@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { SidebarArandano } from '@/components/shell/sidebar-arandano'
+import { Toaster } from '@/components/ui/sonner'
 import { salir } from './acciones'
 
 // Todas las pantallas de adentro heredan este guard: una ruta nueva bajo (app)
@@ -32,6 +33,9 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
         <SidebarTrigger className="m-2 md:hidden" />
         {children}
       </SidebarInset>
+      {/* Una sola instancia para toda la aplicación, acá y no por pantalla:
+          dos Toaster montados a la vez dibujan cada aviso dos veces. */}
+      <Toaster position="bottom-right" richColors closeButton />
     </SidebarProvider>
   )
 }

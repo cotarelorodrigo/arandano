@@ -624,6 +624,14 @@ Y del producto:
     manejo propio de Escape de cualquier panel modal futuro— y sin sumar una
     librería de toasts sólo para un vaciado deshacible.
 
+    **Esa última mitad caducó el 2026-08-24**, y conviene leer por qué antes
+    de creer que la decisión se dio vuelta sola: el argumento nunca fue "los
+    toasts no sirven", fue **"no por un caso"**. El ABM de categorías trajo
+    seis errores accionables de una, y ahí el cálculo se invierte. `sonner`
+    está en el repo desde entonces (ver la entrada de la UI de categorías más
+    abajo). El vaciado del carrito **no cambió** — sigue con su confirmación
+    en dos Esc, porque sigue sin ser un aviso sino una confirmación.
+
   **Corregido después** (2026-08-22, review final del rediseño): la primera
   versión de las dos reglas de arriba era una deny-list de tagNames
   (`INPUT`, `TEXTAREA`, `SELECT`, `BUTTON`) para Enter, y la rama de Esc no
@@ -958,6 +966,31 @@ Y del producto:
   `test/limite-cliente-servidor.test.ts` (aquél vigila que un módulo cliente no
   arrastre `pg` al bundle). Para el segundo no hay red estática razonable: la
   única es el barrido de pantallas de `scripts/smoke.sh`.
+
+  **Los avisos del ABM van por toast, y eso revierte una decisión escrita**
+  (2026-08-24, a pedido del dueño del producto). La primera versión mostraba
+  el error anclado a la fila que falló: en una columna de 248 px dos líneas
+  quedan apretadas, y con el panel scrolleado el cartel podía quedar cortado.
+  Entró `sonner` —el toast de shadcn—, montado una sola vez en
+  `app/(app)/layout.tsx`, **sin `next-themes`**: el componente del registry lo
+  trae para leer el tema, y el producto tiene una sola paleta desde el
+  rediseño, así que arrastrar una dependencia entera para caer en el mismo
+  default no se paga.
+
+  **Los errores no se auto-descartan y los avisos de éxito sí.** "Fundas tiene
+  2 marcas adentro. Borralas o movelas antes." es accionable —dice qué hacer
+  antes de reintentar— y un aviso que se va solo a los cuatro segundos se lleva
+  justamente la instrucción; "Categoría creada" no hay que releerlo, y además
+  la categoría apareciendo en el árbol ya es la confirmación. Cada toast lleva
+  **clave estable por acción y por rama**: `useActionState` retiene su último
+  estado mientras el componente viva, así que el efecto que dispara el aviso
+  vuelve a correr en cada render, y sin clave sonner apilaría una copia por vez.
+
+  **Lo que NO se migró**: los `Alert` inline de los formularios de artículo
+  (`Resultado`, en `formularios.tsx`). Ahí el mensaje habla del formulario que
+  la persona está mirando y aparece al lado del campo que falló — moverlo a una
+  esquina sería alejarlo de su contexto. Que exista `sonner` no lo convierte en
+  el único lugar donde avisar.
 
   **Queda pendiente**, anotado en `docs/correcciones-pendientes-del-pen.md`:
   tres estados del árbol que la maqueta no dibuja (rubro y marca

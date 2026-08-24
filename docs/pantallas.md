@@ -420,6 +420,12 @@ El listado de artículos, con buscador, filtro de tipo y chips de estado
   action es un endpoint.
 - **Borrar exige la rama vacía y sin marcas**, y el mensaje dice **cuántos**
   artículos hay: un "no se puede" sin el número no dice si mover uno o cuarenta.
+- **Los avisos del ABM van por toast** (`sonner`, montado una vez en el layout
+  de `(app)`), no anclados a la fila: 248 px de ancho es poco para dos líneas y
+  con el panel scrolleado el cartel quedaba cortado. **Los errores no se
+  auto-descartan** —son accionables, y un aviso que se va solo se lleva la
+  instrucción—; los de éxito sí. Cada uno con clave estable por acción y rama,
+  o `useActionState` los apilaría en cada render.
 - **El query string vive en `consulta.ts`**, un módulo sin `'use client'`: el
   panel es un Client Component y necesita `hrefListado`, y Next no deja pasarle
   una función como prop ni invocar desde el servidor una función que vive del

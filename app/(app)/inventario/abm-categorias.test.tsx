@@ -49,6 +49,39 @@ describe('la fila en edición se puede guardar con el mouse', () => {
   })
 })
 
+describe('los avisos van por toast', () => {
+  /**
+   * Antes el error vivía anclado a la fila, en una columna de 248 px: dos
+   * líneas ahí quedan apretadas, y con el panel scrolleado el cartel podía
+   * quedar cortado. El dueño del producto pidió toasts (2026-08-24), y eso
+   * revierte la decisión escrita en CLAUDE.md — que decía "sin sumar una
+   * librería de toasts **sólo para un vaciado deshacible**". Eran seis casos,
+   * no uno.
+   */
+  it('el ABM no dibuja carteles propios', () => {
+    expect(FUENTE).not.toContain('role="alert"')
+  })
+
+  /**
+   * **Los errores NO se auto-descartan.** "Fundas tiene 2 marcas adentro" es
+   * accionable: dice qué hacer antes de reintentar, y un toast que se va solo
+   * a los cuatro segundos se lleva justamente la instrucción. Los avisos de
+   * éxito sí se van — "Categoría creada" no hay que releerlo, y además la
+   * categoría apareciendo en el árbol ya es la confirmación.
+   */
+  it('los errores son persistentes y los éxitos no', () => {
+    expect(FUENTE).toContain('duration: Infinity')
+    // Y el éxito no arrastra la misma opción.
+    const exito = FUENTE.slice(FUENTE.indexOf('toast.success'))
+    expect(exito.slice(0, 120)).not.toContain('Infinity')
+  })
+
+  it('el error usa toast.error y el aviso toast.success', () => {
+    expect(FUENTE).toContain('toast.error')
+    expect(FUENTE).toContain('toast.success')
+  })
+})
+
 describe('los errores del menú no se pierden', () => {
   /**
    * `moverCategoriaAccion` puede fallar de verdad: mover "Samsung" a un rubro
@@ -58,27 +91,28 @@ describe('los errores del menú no se pierden', () => {
    * pantalla no decía por qué.
    */
   it('mover no descarta su estado', () => {
-    // Sobre el USO y no sobre la forma del destructuring: la primera versión
+    // Sobre el USO y no sobre la forma del destructuring: una versión anterior
     // de este caso buscaba el patrón viejo (`const [, ejecutarMovida]`) con un
     // regex, y se atrapaba a sí misma — el comentario que documenta el bug lo
-    // menciona textualmente. Que el error se lea es lo que importa.
-    expect(FUENTE).toContain('movida.error')
-  })
-
-  it('el mensaje que se muestra cubre las dos acciones del menú', () => {
-    // Una sola caja de error para borrar y mover: son las dos acciones del
-    // menú que pueden fallar, y dos cajas en una columna de 248 se pisan.
-    expect(FUENTE).toContain('errorDelMenu')
+    // menciona textualmente. Que el estado de mover LLEGUE al aviso es lo que
+    // importa.
+    expect(FUENTE).toMatch(/useAvisoDeAccion\(\s*movida\s*,/)
   })
 
   /**
-   * `useActionState` no tiene reset: una vez que muestra un error, lo retiene
-   * para siempre. Sin apagarlo, el cartel de "tiene 4 artículos" queda pegado
-   * bajo la fila aunque después se muevan los artículos y el borrado ya sea
-   * posible — diciendo algo que dejó de ser cierto.
+   * `useActionState` retiene su último estado mientras el componente viva, así
+   * que un efecto que dispare el toast con `[estado]` como dependencia lo
+   * volvería a lanzar en cada render. La clave del toast lo resuelve: sonner
+   * reemplaza el que ya está en pantalla en vez de apilar copias.
    */
-  it('el error se apaga al reabrir el menú', () => {
-    expect(FUENTE).toContain('onOpenChange')
+  it('cada acción avisa con una clave estable, para no apilar copias', () => {
+    // El toast se identifica por `clave`, y cada llamador arma la suya con el
+    // id de la rama: sin eso, dos ramas con el mismo error se pisarían el
+    // aviso entre sí.
+    expect(FUENTE).toContain('id: clave')
+    for (const familia of ['categoria-alta-', 'categoria-nombre-', 'categoria-borrar-', 'categoria-mover-']) {
+      expect(FUENTE, `falta la clave ${familia}`).toContain(familia)
+    }
   })
 })
 

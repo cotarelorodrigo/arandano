@@ -1,7 +1,8 @@
 'use client'
 
-import { useActionState, useEffect, useRef, useState } from 'react'
+import { useActionState, useEffect, useRef } from 'react'
 import { MoreHorizontal, Pencil, FolderInput, Trash2, Plus, Check, X } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -23,6 +24,30 @@ import {
 import type { RamaConHijas } from '@/lib/inventario/categorias'
 
 const INICIAL: EstadoInventario = { error: null, aviso: null }
+
+/**
+ * Lanza el toast que corresponda cuando una acción del ABM termina.
+ *
+ * **Los errores NO se auto-descartan** (`duration: Infinity` + botón de
+ * cerrar): "Fundas tiene 2 marcas adentro. Borralas o movelas antes." es
+ * accionable —dice qué hacer antes de reintentar— y un aviso que se va solo a
+ * los cuatro segundos se lleva justamente la instrucción. Los de éxito sí se
+ * van: "Categoría creada" no hay que releerlo, y además la categoría
+ * apareciendo en el árbol ya es la confirmación.
+ *
+ * **La clave (`id`) es estable por acción y por rama**, y eso no es un
+ * detalle: `useActionState` retiene su último estado mientras el componente
+ * viva, así que este efecto vuelve a correr en cada render. Con una clave
+ * fija, sonner reemplaza el aviso que ya está en pantalla en vez de apilar una
+ * copia por render.
+ */
+function useAvisoDeAccion(estado: EstadoInventario, pendiente: boolean, clave: string) {
+  useEffect(() => {
+    if (pendiente) return
+    if (estado.error) toast.error(estado.error, { id: clave, duration: Infinity })
+    else if (estado.aviso) toast.success(estado.aviso, { id: clave })
+  }, [estado, pendiente, clave])
+}
 
 /**
  * El campo de texto de crear y renombrar, inline en la fila.
@@ -78,16 +103,21 @@ function FormularioDeAbm({
   accion,
   children,
   onListo,
+  clave,
 }: {
   accion: typeof crearCategoriaAccion
   children: (pendiente: boolean) => React.ReactNode
   onListo?: () => void
+  /** La clave del toast. Ver `useAvisoDeAccion`. */
+  clave: string
 }) {
   const [estado, ejecutar, pendiente] = useActionState(accion, INICIAL)
+  useAvisoDeAccion(estado, pendiente, clave)
 
   // Cerrar el campo recién cuando la acción terminó BIEN: si se cerrara
   // siempre, un nombre repetido haría desaparecer lo que la persona escribió
-  // junto con el cartel que explica por qué no se guardó.
+  // mientras el toast explica por qué no se guardó — y con el campo cerrado no
+  // le quedaría dónde corregirlo.
   useEffect(() => {
     if (!pendiente && estado.aviso && onListo) onListo()
   }, [pendiente, estado.aviso, onListo])
@@ -95,11 +125,6 @@ function FormularioDeAbm({
   return (
     <form action={ejecutar} className="contents">
       {children(pendiente)}
-      {estado.error && (
-        <p role="alert" className="px-2 pb-1 text-[11px] leading-tight text-destructive">
-          {estado.error}
-        </p>
-      )}
     </form>
   )
 }
@@ -165,7 +190,11 @@ export function FilaDeAlta({
   sangria: 'rubro' | 'marca'
 }) {
   return (
-    <FormularioDeAbm accion={crearCategoriaAccion} onListo={onCerrar}>
+    <FormularioDeAbm
+      accion={crearCategoriaAccion}
+      onListo={onCerrar}
+      clave={`categoria-alta-${padreId ?? 'raiz'}`}
+    >
       {(pendiente) => (
         <>
           <input type="hidden" name="padreId" value={padreId ?? ''} />
@@ -193,7 +222,11 @@ export function FilaEnEdicion({
   onCerrar: () => void
 }) {
   return (
-    <FormularioDeAbm accion={renombrarCategoriaAccion} onListo={onCerrar}>
+    <FormularioDeAbm
+      accion={renombrarCategoriaAccion}
+      onListo={onCerrar}
+      clave={`categoria-nombre-${categoriaId}`}
+    >
       {(pendiente) => (
         <>
           <input type="hidden" name="categoriaId" value={categoriaId} />
@@ -240,30 +273,23 @@ export function MenuDeRama({
   )
   /**
    * Mover TAMBIÉN puede fallar, y su error importa: mover "Samsung" a un rubro
-   * que ya tiene una "Samsung" choca contra el índice único. La primera
-   * versión descartaba este estado (`const [, ejecutarMovida] = …`), así que
-   * la marca no se movía y la pantalla no decía por qué.
+   * que ya tiene una "Samsung" choca contra el índice único. Una versión
+   * anterior descartaba este estado, así que la marca no se movía y la
+   * pantalla no decía por qué.
    */
-  const [movida, ejecutarMovida] = useActionState(moverCategoriaAccion, INICIAL)
+  const [movida, ejecutarMovida, moviendoPendiente] = useActionState(
+    moverCategoriaAccion,
+    INICIAL,
+  )
 
-  /**
-   * `useActionState` no tiene reset: una vez que devuelve un error, lo retiene
-   * mientras el componente viva. Sin esto, el cartel de "tiene 4 artículos"
-   * queda pegado bajo la fila aunque después se muevan los artículos y el
-   * borrado ya sea posible — diciendo algo que dejó de ser cierto. Se apaga al
-   * reabrir el menú, que es el momento en que la persona vuelve a intentar.
-   */
-  const [silenciado, setSilenciado] = useState(false)
-
-  // Una sola caja para las dos acciones que pueden fallar: dos cajas
-  // superpuestas en una columna de 248 se pisan.
-  const errorDelMenu = silenciado ? null : (borrado.error ?? movida.error)
+  useAvisoDeAccion(borrado, borrandoPendiente, `categoria-borrar-${categoriaId}`)
+  useAvisoDeAccion(movida, moviendoPendiente, `categoria-mover-${categoriaId}`)
 
   const otrosRubros = rubros.filter((r) => r.id !== padreActual && r.id !== categoriaId)
 
   return (
     <>
-      <DropdownMenu onOpenChange={(abierto) => abierto && setSilenciado(true)}>
+      <DropdownMenu>
         <DropdownMenuTrigger
           aria-label="Opciones de la categoría"
           className="hidden size-5 shrink-0 items-center justify-center rounded text-muted-foreground group-hover/rama:flex data-[state=open]:flex"
@@ -295,7 +321,6 @@ export function MenuDeRama({
                       const datos = new FormData()
                       datos.set('categoriaId', categoriaId)
                       datos.set('padreId', r.id)
-                      setSilenciado(false)
                       ejecutarMovida(datos)
                     }}
                   >
@@ -312,7 +337,6 @@ export function MenuDeRama({
             onSelect={() => {
               const datos = new FormData()
               datos.set('categoriaId', categoriaId)
-              setSilenciado(false)
               ejecutarBorrado(datos)
             }}
           >
@@ -321,14 +345,6 @@ export function MenuDeRama({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {/* El error se muestra ACÁ y no en un toast: el del borrado dice cuántos
-          artículos hay que mover, y desaparecer solo a los tres segundos sería
-          justo el mensaje que conviene poder releer. */}
-      {errorDelMenu && (
-        <p role="alert" className="absolute top-full right-0 z-10 mt-0.5 w-max max-w-[232px] rounded-md border bg-card px-2 py-1 text-[11px] leading-tight text-destructive shadow-sm">
-          {errorDelMenu}
-        </p>
-      )}
     </>
   )
 }
