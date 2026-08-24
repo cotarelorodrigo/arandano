@@ -132,6 +132,14 @@ ON CONFLICT DO NOTHING;
 -- Y cada artículo apuntando a su hoja — o a su raíz, si el texto no traía
 -- marca. El LEFT JOIN de la hija es lo que hace ese coalesce: con `hija` NULL
 -- no matchea ninguna fila, así que queda el id de la raíz.
+--
+-- **Y de paso NORMALIZA el texto**, por lo mismo que `textoDeCategoria` en el
+-- alta: mientras las dos columnas convivan (expand/contract), tienen que decir
+-- lo mismo. Un artículo cargado como "Cargadores·Xiaomi" queda enganchado bien,
+-- pero sin esto se vería distinto en el listado que su hermano
+-- "Cargadores · Xiaomi" — con el árbol diciendo que son la misma categoría y
+-- la pantalla diciendo que no. Normalizar no pierde nada: los segmentos son los
+-- mismos, cambia el espaciado alrededor del separador.
 WITH nombres AS (
   SELECT DISTINCT
          a.tenant_id,
@@ -153,7 +161,8 @@ WITH nombres AS (
      AND array_length(s.segs, 1) >= 1
 )
 UPDATE articulos a
-   SET categoria_id = coalesce(h.id, p.id)
+   SET categoria_id = coalesce(h.id, p.id),
+       categoria    = n.raiz || coalesce(' · ' || n.hija, '')
   FROM nombres n
   JOIN categorias p
     ON p.tenant_id = n.tenant_id AND p.nombre = n.raiz AND p.padre_id IS NULL
@@ -162,4 +171,26 @@ UPDATE articulos a
  WHERE a.tenant_id = n.tenant_id
    AND a.categoria = n.categoria
    AND a.categoria_id IS NULL;
+
+-- Los que tenían texto pero NO producen ninguna rama —"·", " · · ", puros
+-- espacios— quedan con las dos columnas en null. Es la otra mitad de la misma
+-- regla: o las dos dicen "sin categoría", o ninguna lo dice. Sin esto, el
+-- listado mostraría un "·" suelto bajo el nombre del artículo y el árbol no
+-- tendría dónde ponerlo.
+--
+-- No borra nada que se pueda extrañar: un texto sin ningún segmento no nombra
+-- ninguna categoría, ni antes de este ciclo ni después.
+UPDATE articulos a
+   SET categoria = NULL
+ WHERE a.categoria IS NOT NULL
+   AND a.categoria_id IS NULL
+   AND coalesce(array_length(
+         array_remove(
+           array(
+             SELECT btrim(t)
+               FROM unnest(string_to_array(a.categoria, '·')) WITH ORDINALITY AS u(t, i)
+              ORDER BY i
+           ),
+           ''
+         ), 1), 0) = 0;
 -- <<< BACKFILL

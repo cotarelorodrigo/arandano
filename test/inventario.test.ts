@@ -774,6 +774,50 @@ describe('el árbol de categorías', () => {
     expect(rows[0].categoria_id).toBeNull()
   })
 
+  /**
+   * El texto guardado se NORMALIZA a la misma forma que el árbol.
+   *
+   * Sin esto, dos artículos de la misma rama se ven distinto en el listado —uno
+   * "Fundas·Samsung" y el otro "Fundas · Samsung"— aunque `categoria_id` apunte
+   * a la misma fila: el árbol dice que son lo mismo y la pantalla dice que no.
+   * Mientras las dos columnas convivan (expand/contract), tienen que decir
+   * siempre lo mismo.
+   */
+  it('normaliza el texto a la forma del árbol', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Funda pegada', tipo: 'PRODUCTO', precio: d('9000'),
+      categoria: 'Fundas·Samsung',
+    })
+    const b = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Funda espaciada', tipo: 'PRODUCTO', precio: d('9000'),
+      categoria: '  Fundas   ·   Samsung  ',
+    })
+    const { rows } = await owner.query(
+      `SELECT categoria, categoria_id FROM articulos WHERE id = ANY($1::uuid[])`,
+      [[a.id, b.id]],
+    )
+    expect(rows[0].categoria).toBe('Fundas · Samsung')
+    expect(rows[1].categoria).toBe('Fundas · Samsung')
+    expect(rows[0].categoria_id).toBe(rows[1].categoria_id)
+  })
+
+  // Un texto que no produce ninguna rama tampoco puede quedar como texto: si
+  // no, el listado muestra "·" bajo el nombre y el árbol no tiene dónde
+  // ponerlo. Las dos columnas dicen "sin categoría" o ninguna lo dice.
+  it('un texto que no produce ninguna rama deja las dos columnas en null', async () => {
+    for (const [i, basura] of ['·', ' · · ', '   '].entries()) {
+      const a = await crearArticulo({
+        tenantId, usuarioId, nombre: `Basura ${i}`, tipo: 'PRODUCTO', precio: d('1000'),
+        categoria: basura,
+      })
+      const { rows } = await owner.query(
+        `SELECT categoria, categoria_id FROM articulos WHERE id = $1`, [a.id],
+      )
+      expect(rows[0].categoria, `"${basura}" quedó como texto`).toBeNull()
+      expect(rows[0].categoria_id).toBeNull()
+    }
+  })
+
   // El árbol es POR TENANT: el local de al lado que use la misma categoría
   // tiene su propia fila. Lo garantiza el índice único, que lleva tenant_id
   // adentro; esto lo ejercita por el camino real, el del motor.

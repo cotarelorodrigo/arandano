@@ -38,6 +38,28 @@ export function partirCategoria(texto: string | null | undefined): CategoriaPart
 }
 
 /**
+ * El texto tal como queda guardado: la forma canónica de la rama, o `null` si
+ * el texto no produce ninguna.
+ *
+ * **Normaliza a propósito, no sólo trimea.** Mientras `articulos.categoria` (el
+ * texto) y `articulos.categoria_id` (el árbol) convivan —expand/contract—,
+ * tienen que decir siempre lo mismo. Sin esto, "Fundas·Samsung" y
+ * "Fundas · Samsung" crean UNA sola rama, correctamente, pero el listado los
+ * muestra distinto: el árbol dice que son la misma categoría y la pantalla dice
+ * que no.
+ *
+ * Y un texto que no produce ninguna rama —"·", " · · "— tampoco puede quedar
+ * como texto: dejaría un "·" suelto bajo el nombre del artículo, con el árbol
+ * sin ningún lugar donde ponerlo. O las dos columnas dicen "sin categoría", o
+ * ninguna lo dice.
+ */
+export function textoDeCategoria(texto: string | null | undefined): string | null {
+  const partida = partirCategoria(texto)
+  if (partida === null) return null
+  return partida.hija === null ? partida.raiz : partida.raiz + SEPARADOR_VISIBLE + partida.hija
+}
+
+/**
  * Busca o crea la rama del árbol que corresponde al texto, y devuelve el id de
  * la HOJA — o el de la raíz si el texto no trae hija, o `null` si no trae nada.
  *

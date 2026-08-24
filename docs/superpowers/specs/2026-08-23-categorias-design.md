@@ -188,6 +188,31 @@ segmento deja `categoria` y `categoriaId` los dos en NULL, que es el
 comportamiento que `limpiarCategoria` ya tiene para el texto: el árbol lo
 hereda en vez de inventar el suyo.
 
+### El texto guardado se normaliza a la forma del árbol
+
+Apareció revisando el propio diff de este ciclo, y es el defecto que más
+fácilmente habría llegado a producción sin que ningún test lo mirara.
+
+`"Fundas·Samsung"` y `"Fundas · Samsung"` crean **una sola** rama — correcto,
+porque `partirCategoria` trimea los segmentos. Pero si el texto se guarda tal
+como se tipeó, el listado muestra los dos artículos distinto: **el árbol dice
+que son la misma categoría y la pantalla dice que no.** Mientras las dos
+columnas convivan, eso es una contradicción visible.
+
+Así que `limpiarCategoria` pasa a ser `textoDeCategoria`: guarda la forma
+canónica derivada de `partirCategoria` (`raíz` o `raíz · hija`), no el texto
+crudo. Normalizar no pierde nada — los segmentos son los mismos, cambia el
+espaciado alrededor del separador.
+
+La otra mitad de la misma regla: un texto que **no produce ninguna rama**
+(`"·"`, `" · · "`) tampoco puede quedar como texto. Dejaría un `·` suelto bajo
+el nombre del artículo con el árbol sin nada que le corresponda. O las dos
+columnas dicen "sin categoría", o ninguna lo dice.
+
+**El backfill hace lo mismo**, y por eso son dos sentencias y no una: la que
+engancha normaliza de paso, y una segunda despeja el texto de los que no
+producen rama.
+
 ### El `INSERT` de la categoría va con `ON CONFLICT DO NOTHING`, y eso es load-bearing
 
 `crearArticulo` tiene una invariante **escrita en un comentario largo** que hay

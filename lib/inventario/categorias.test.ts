@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { partirCategoria } from './categorias'
+import { partirCategoria, textoDeCategoria } from './categorias'
 
 describe('partirCategoria', () => {
   it('parte "raíz · hija" en sus dos niveles', () => {
@@ -43,6 +43,34 @@ describe('partirCategoria', () => {
   it('sin ningún segmento no hay categoría', () => {
     for (const vacio of ['', '   ', '·', ' · · ', null, undefined]) {
       expect(partirCategoria(vacio)).toBeNull()
+    }
+  })
+})
+
+describe('textoDeCategoria', () => {
+  // Es lo que hace que el texto guardado y el árbol no se contradigan nunca
+  // mientras las dos columnas convivan: las tres formas de escribir lo mismo
+  // se guardan igual, y apuntan a la misma rama.
+  it('normaliza las tres formas de escribir la misma rama', () => {
+    for (const forma of ['Fundas · Samsung', 'Fundas·Samsung', '  Fundas   ·   Samsung  ']) {
+      expect(textoDeCategoria(forma)).toBe('Fundas · Samsung')
+    }
+  })
+
+  it('deja una raíz sola tal cual, trimeada', () => {
+    expect(textoDeCategoria('  Cables  ')).toBe('Cables')
+  })
+
+  it('reescribe el tercer nivel plegado, igual que el árbol', () => {
+    expect(textoDeCategoria('Accesorios·Fundas·Samsung')).toBe('Accesorios · Fundas · Samsung')
+  })
+
+  // Un texto que no produce rama tampoco puede quedar como texto: dejaría un
+  // "·" suelto bajo el nombre del artículo, sin nada en el árbol que le
+  // corresponda.
+  it('lo que no produce ninguna rama va a null', () => {
+    for (const basura of ['', '   ', '·', ' · · ', null, undefined]) {
+      expect(textoDeCategoria(basura)).toBeNull()
     }
   })
 })

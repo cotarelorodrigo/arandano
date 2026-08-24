@@ -3,7 +3,7 @@ import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import { excedeEscala, ESCALA_DINERO, ESCALA_CANTIDAD } from '@/lib/ventas/totales'
 import { exigirUsuario } from '@/lib/ventas/pertenencia'
 import { ErrorDeInventario, traducirErrorDeBase } from './errores'
-import { asegurarCategoria } from './categorias'
+import { asegurarCategoria, textoDeCategoria } from './categorias'
 
 type Decimal = Prisma.Decimal
 
@@ -30,13 +30,16 @@ export type EntradaCrearArticulo = {
   costoUnitario?: Decimal | null
 }
 
-/** Vacío o sólo espacios se guarda como NULL, no como cadena vacía: son la
- *  misma "no hay categoría" y el listado y la ficha sólo tienen que chequear
- *  un caso, no dos. */
-function limpiarCategoria(categoria: string | null | undefined): string | null {
-  const limpio = categoria?.trim()
-  return limpio ? limpio : null
-}
+/**
+ * El texto de categoría tal como se guarda.
+ *
+ * Vacío o sólo espacios va como NULL y no como cadena vacía: son la misma "no
+ * hay categoría" y el listado y la ficha sólo tienen que chequear un caso, no
+ * dos. Desde que existe el árbol, además NORMALIZA a la forma canónica de la
+ * rama —ver `textoDeCategoria`—, así el texto y `categoria_id` nunca se
+ * contradicen mientras los dos convivan.
+ */
+const limpiarCategoria = textoDeCategoria
 
 // Cuántas veces se salta el correlativo antes de rendirse. Agotar cinco
 // seguidos significa que alguien tipeó a mano una racha de códigos con esta

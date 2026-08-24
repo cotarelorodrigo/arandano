@@ -135,6 +135,40 @@ describe('el backfill de categorías', () => {
     expect(await ramaDe(ajeno)).toBe('Fundas · Samsung')
   })
 
+  /**
+   * El backfill NORMALIZA el texto además de armar el árbol, por lo mismo que
+   * `textoDeCategoria` en el alta: mientras las dos columnas convivan, tienen
+   * que decir lo mismo. Un artículo cargado como "Cargadores·Xiaomi" queda
+   * enganchado bien pero se vería distinto en el listado que su hermano
+   * "Cargadores · Xiaomi", con el árbol diciendo que son la misma categoría.
+   */
+  it('normaliza el texto de los que engancha', async () => {
+    const { rows } = await cliente.query(
+      `SELECT sku, categoria FROM articulos
+        WHERE sku = ANY($1::text[]) ORDER BY sku`,
+      [[['B-005'], ['B-007'], ['B-008']].flat()],
+    )
+    expect(rows.map((r) => r.categoria)).toEqual([
+      'Cargadores · Xiaomi',   // B-005 entró pegado, sin espacios
+      'Genéricos',             // B-007 entró como "· Genéricos"
+      'Vidrios templados · Samsung', // B-008 entró con espacios de sobra
+    ])
+  })
+
+  // Y el que no produce ninguna rama queda con las DOS columnas en null, no
+  // con un "·" suelto en el texto y nada en el árbol.
+  it('despeja el texto de los que no producen ninguna rama', async () => {
+    const { rows } = await cliente.query(
+      `SELECT sku, categoria, categoria_id FROM articulos
+        WHERE sku = ANY($1::text[]) ORDER BY sku`,
+      [['B-010', 'B-011']],
+    )
+    for (const fila of rows) {
+      expect(fila.categoria, `${fila.sku} conservó texto sin rama`).toBeNull()
+      expect(fila.categoria_id).toBeNull()
+    }
+  })
+
   // Idempotente: el `deploy.sh` puede reintentar, y una migración que no se
   // puede repetir es una que hay que arreglar a mano a las 11 de la noche.
   it('correrlo dos veces no duplica ni mueve nada', async () => {
