@@ -48,7 +48,7 @@ Función pura, sin base de datos. Es donde vive toda la regla y donde se prueba.
 - Produces: `export type CategoriaPartida = { raiz: string; hija: string | null }`
   y `export function partirCategoria(texto: string | null | undefined): CategoriaPartida | null`
 
-- [ ] **Step 1: Escribir el test que falla**
+- [x] **Step 1: Escribir el test que falla**
 
 Crear `lib/inventario/categorias.test.ts`:
 
@@ -103,12 +103,12 @@ describe('partirCategoria', () => {
 })
 ```
 
-- [ ] **Step 2: Correr el test y verificar que falla**
+- [x] **Step 2: Correr el test y verificar que falla**
 
 Run: `npx vitest run lib/inventario/categorias.test.ts`
 Expected: FAIL — no existe el módulo `./categorias`.
 
-- [ ] **Step 3: Escribir la implementación mínima**
+- [x] **Step 3: Escribir la implementación mínima**
 
 Crear `lib/inventario/categorias.ts`:
 
@@ -150,12 +150,12 @@ export function partirCategoria(texto: string | null | undefined): CategoriaPart
 }
 ```
 
-- [ ] **Step 4: Correr el test y verificar que pasa**
+- [x] **Step 4: Correr el test y verificar que pasa**
 
 Run: `npx vitest run lib/inventario/categorias.test.ts`
 Expected: PASS, 7 casos.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/inventario/categorias.ts lib/inventario/categorias.test.ts
@@ -179,7 +179,7 @@ rechazar el otro.
 **Interfaces:**
 - Produces: la tabla `categorias` y `articulos.categoria_id`, que Task 3 usa.
 
-- [ ] **Step 1: Escribir los tests que fallan**
+- [x] **Step 1: Escribir los tests que fallan**
 
 En `test/schema.test.ts`, agregar un `describe` al final del archivo:
 
@@ -310,12 +310,12 @@ copiar la forma exacta de sus casos, incluido cómo obtiene los clientes de cada
 tenant): con la GUC del tenant A, un `SELECT` sobre `categorias` devuelve las
 del tenant A y **cero** del tenant B.
 
-- [ ] **Step 2: Correr los tests y verificar que fallan**
+- [x] **Step 2: Correr los tests y verificar que fallan**
 
 Run: `npx vitest run test/schema.test.ts`
 Expected: FAIL — `relation "categorias" does not exist`.
 
-- [ ] **Step 3: Agregar los modelos a `prisma/schema.prisma`**
+- [x] **Step 3: Agregar los modelos a `prisma/schema.prisma`**
 
 En `model Tenant`, sumar a la lista de relaciones inversas:
 
@@ -385,7 +385,7 @@ model Categoria {
 }
 ```
 
-- [ ] **Step 4: Generar la migración SIN aplicarla**
+- [x] **Step 4: Generar la migración SIN aplicarla**
 
 ```bash
 # La URL de dev vive en .env.local, que no se versiona. Se exporta así:
@@ -397,7 +397,7 @@ npx prisma migrate dev --create-only --name categorias
 se pueda editar el SQL a mano, y salir de ahí exige un `migrate reset`, que
 está prohibido contra cualquier base que importe.
 
-- [ ] **Step 5: Editar el SQL a mano — el índice parcial y la RLS**
+- [x] **Step 5: Editar el SQL a mano — el índice parcial y la RLS**
 
 Agregar al final de `prisma/migrations/<timestamp>_categorias/migration.sql`:
 
@@ -426,13 +426,13 @@ Revisar que el SQL generado por Prisma **no traiga ningún `DROP`**. Si lo trae,
 el schema quedó desalineado con las migraciones previas y hay que resolver eso
 antes de seguir.
 
-- [ ] **Step 6: Correr los tests y verificar que pasan**
+- [x] **Step 6: Correr los tests y verificar que pasan**
 
 Run: `npx vitest run test/schema.test.ts test/rls.test.ts test/rls-cobertura.test.ts`
 Expected: PASS. `rls-cobertura` es el que confirma solo que la tabla nueva no
 se quedó sin policy.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add prisma/schema.prisma prisma/migrations test/schema.test.ts test/rls.test.ts
@@ -452,7 +452,7 @@ git commit -m "feat(categorías): la tabla, con RLS y las dos unicidades"
 - Consumes: `partirCategoria` (Task 1), la tabla `categorias` (Task 2).
 - Produces: `export async function asegurarCategoria(tx: ClienteTx, tenantId: string, texto: string | null | undefined): Promise<string | null>`
 
-- [ ] **Step 1: Escribir los tests que fallan**
+- [x] **Step 1: Escribir los tests que fallan**
 
 En `test/inventario.test.ts`, dentro del `describe` del alta de artículo (junto
 a los casos de categoría que ya existen), agregar. `categoriaDe` es un helper
@@ -570,13 +570,13 @@ it('y vaciar la categoría al editar deja categoria_id en null', async () => {
 })
 ```
 
-- [ ] **Step 2: Correr los tests y verificar que fallan**
+- [x] **Step 2: Correr los tests y verificar que fallan**
 
 Run: `npx vitest run test/inventario.test.ts`
 Expected: FAIL — `categoriaDe` devuelve `null` donde se espera una rama, porque
 nadie escribe `categoria_id` todavía.
 
-- [ ] **Step 3: Escribir `asegurarCategoria`**
+- [x] **Step 3: Escribir `asegurarCategoria`**
 
 Agregar a `lib/inventario/categorias.ts`:
 
@@ -665,7 +665,7 @@ Sumar el import de `ErrorDeInventario` desde `./errores` al principio del
 archivo. Verificar que `lib/inventario/errores.ts` acepte un código nuevo; si
 los códigos son un tipo cerrado, agregar `CATEGORIA_INDETERMINADA` a la unión.
 
-- [ ] **Step 4: Engancharla en `crearArticulo` y `editarArticulo`**
+- [x] **Step 4: Engancharla en `crearArticulo` y `editarArticulo`**
 
 En `lib/inventario/articulos.ts`:
 
@@ -696,13 +696,13 @@ Actualizar el comentario de `EntradaCrearArticulo.categoria`, que hoy dice
 "String libre, sin tabla ni jerarquía": dejó de ser cierto. Sigue llegando como
 texto, pero ahora además arma el árbol.
 
-- [ ] **Step 5: Correr los tests y verificar que pasan**
+- [x] **Step 5: Correr los tests y verificar que pasan**
 
 Run: `npx vitest run test/inventario.test.ts lib/inventario/categorias.test.ts`
 Expected: PASS, incluidos los casos de categoría que ya existían — el texto se
 tiene que seguir guardando igual.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add lib/inventario/categorias.ts lib/inventario/articulos.ts test/inventario.test.ts
@@ -720,7 +720,7 @@ git commit -m "feat(categorías): el alta y la edición arman el árbol desde el
 **Interfaces:**
 - Consumes: la tabla de Task 2.
 
-- [ ] **Step 1: Escribir el test que falla**
+- [x] **Step 1: Escribir el test que falla**
 
 La base de los tests arranca vacía, así que `migrate deploy` nunca ejercita este
 SQL con datos adentro. El test **lee el bloque del archivo de migración y lo
@@ -862,12 +862,12 @@ describe('el backfill de categorías', () => {
 })
 ```
 
-- [ ] **Step 2: Correr el test y verificar que falla**
+- [x] **Step 2: Correr el test y verificar que falla**
 
 Run: `npx vitest run test/categorias-backfill.test.ts`
 Expected: FAIL — "la migración no tiene el marcador de inicio del backfill".
 
-- [ ] **Step 3: Escribir el backfill en la migración**
+- [x] **Step 3: Escribir el backfill en la migración**
 
 Agregar al final de `prisma/migrations/<timestamp>_categorias/migration.sql`:
 
@@ -975,7 +975,7 @@ UPDATE articulos a
 -- <<< BACKFILL
 ```
 
-- [ ] **Step 4: Correr el test y verificar que pasa**
+- [x] **Step 4: Correr el test y verificar que pasa**
 
 La migración ya se aplicó a la base efímera en la corrida anterior, así que hay
 que forzar que se recree: `npx vitest run test/categorias-backfill.test.ts`
@@ -984,13 +984,13 @@ levanta el contenedor de cero en el `globalSetup`.
 Run: `npx vitest run test/categorias-backfill.test.ts`
 Expected: PASS, los dos casos.
 
-- [ ] **Step 5: Verificar que el hook de pre-commit no frena la migración**
+- [x] **Step 5: Verificar que el hook de pre-commit no frena la migración**
 
 Run: `git add prisma/migrations && bash .githooks/pre-commit`
 Expected: sale 0. Si frena, el mensaje dice qué patrón lo disparó — resolverlo
 sin `--no-verify`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add prisma/migrations test/categorias-backfill.test.ts
@@ -1007,7 +1007,7 @@ git commit -m "feat(categorías): el backfill de lo que ya estaba cargado"
 - Modify: `docs/pantallas.md`
 - Modify: `docs/correcciones-pendientes-del-pen.md`
 
-- [ ] **Step 1: Regenerar el diagrama de la base**
+- [x] **Step 1: Regenerar el diagrama de la base**
 
 ```bash
 scripts/generar-erd.sh --schema=prisma/schema.prisma --salida=docs/schema.md
@@ -1016,7 +1016,7 @@ scripts/generar-erd.sh --schema=prisma/schema.prisma --salida=docs/schema.md
 Verificar después con `--verificar`, que es lo que corre el paso 3 de
 `deploy.sh`: sin esto, el gate del deploy falla por un archivo desactualizado.
 
-- [ ] **Step 2: Corregir `CLAUDE.md`**
+- [x] **Step 2: Corregir `CLAUDE.md`**
 
 El documento hoy dice, en *Próximos pasos técnicos*, que `Articulo.categoria`
 es **"texto libre, no una tabla — un rubro con veinte artículos no necesita un
@@ -1030,14 +1030,14 @@ Agregar también la entrada del ciclo con lo que decidió: dos niveles fijos con
 auto-relación, un artículo colgando de raíz o de hoja, la unicidad en dos
 índices, y que el texto se sigue escribiendo hasta el deploy del contract.
 
-- [ ] **Step 3: Anotar la deuda con la maqueta**
+- [x] **Step 3: Anotar la deuda con la maqueta**
 
 En `docs/correcciones-pendientes-del-pen.md`, agregar una entrada nueva:
 `design/arandano.pen` no dibuja ningún panel de categorías, y el ciclo de la UI
 va a construir uno. Decir qué frame lo necesita (`pb32f`, `App / Inventario`) y
 qué tiene que aparecer, para que quien lo abra en Pencil sepa qué dibujar.
 
-- [ ] **Step 4: Actualizar `docs/pantallas.md`**
+- [x] **Step 4: Actualizar `docs/pantallas.md`**
 
 Ninguna pantalla cambia de comportamiento visible, así que **no** hay sección
 nueva. Sí corresponde una línea en las decisiones de `/inventario/nuevo` y de
@@ -1047,19 +1047,59 @@ pantalla, pero al guardar arma el árbol por detrás.
 Correr `npx vitest run test/pantallas.test.ts` para confirmar que el archivo
 sigue atado a `app/**/page.tsx` en las dos direcciones.
 
-- [ ] **Step 5: La suite completa**
+- [x] **Step 5: La suite completa**
 
 Run: `npm test`
 Expected: todo verde, tests de bash incluidos.
 
-- [ ] **Step 6: Typecheck y lint**
+- [x] **Step 6: Typecheck y lint**
 
 Run: `npx tsc --noEmit && npm run lint`
 Expected: sin errores. Son dos pasos del gate de `deploy.sh`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add docs CLAUDE.md
 git commit -m "docs(categorías): el schema, la decisión revertida y la deuda con la maqueta"
 ```
+
+---
+
+## Lo que salió distinto de lo planeado
+
+El plan se ejecutó entero el 2026-08-23/24. Cuatro cosas no estaban escritas
+acá y valen más que los checkboxes:
+
+**1. El test de aislamiento de la FK esperaba lo contrario de lo que pasa.**
+Task 2 pedía un caso que afirmara que un artículo de A no puede apuntar a una
+categoría de B. Falló: **sí puede**. Las FK de Postgres saltean RLS, y no es
+propio de esta tabla — ninguna FK del schema es compuesta con `tenant_id`. El
+caso se reescribió para afirmar la garantía real (el nombre ajeno no se lee
+desde el otro lado) y el hallazgo quedó anotado en el spec y en `CLAUDE.md`.
+Cerrarlo de verdad es un ciclo propio sobre el schema entero.
+
+**2. El texto guardado se normaliza, y eso no estaba en el plan.** Apareció
+revisando el propio diff: `"Fundas·Samsung"` y `"Fundas · Samsung"` crean una
+sola rama —correcto— pero se guardaban distinto, así que el listado mostraba
+dos textos para la misma categoría del árbol. `limpiarCategoria` pasó a ser
+`textoDeCategoria` y el backfill ganó una segunda sentencia. Es el defecto que
+más fácil habría llegado a producción sin que ningún test lo mirara.
+
+**3. El seed de dev entró al alcance.** Usaba `crearArticulo` pero no cargaba
+ninguna categoría, así que el ciclo de la UI habría arrancado contra un árbol
+vacío. Se le agregaron categorías elegidas para ejercitar los cuatro casos que
+la pantalla va a dibujar distinto, y un octavo artículo (`A-0008`) que existe
+sólo para que un rubro tenga dos marcas hermanas.
+
+**4. `@@index([tenantId, categoriaId])` en `Articulo`**, que el plan no
+mencionaba. Filtrar por rama es el propósito entero de la feature; sin él, el
+árbol del ciclo siguiente hace seq scan, y agregarlo después es otra migración.
+
+**Verificación que no está en ningún test**, corrida a mano contra la base de
+dev: la migración aplicada de verdad, el backfill convirtiendo siete categorías
+de texto en un árbol de 11 filas, el alta creando una rama nueva por el camino
+real de la aplicación, la edición moviendo un artículo de rama, y el chequeo de
+drift del paso 3 de `deploy.sh` reproducido contra una shadow database
+("No difference detected"). Más dos defectos metidos a mano en el backfill y
+revertidos, para probar que su test tiene mordida.
