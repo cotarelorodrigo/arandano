@@ -81,7 +81,18 @@ export function Retrato() {
       aria-label="Una venta en el punto de venta de Arándano: cuatro artículos, uno con aviso de stock insuficiente, total de ciento tres mil novecientos pesos."
     >
       <div aria-hidden="true">
-        <Table className="table-fixed">
+        {/* `min-w`: las cuatro columnas de la derecha miden en PÍXELES (son
+            las mismas de /vender), así que lo único elástico es la del
+            nombre — y cuando el contenedor se angosta, se lleva todo el
+            recorte ella sola. A 1440px de viewport la Muestra mide los 720
+            del `.pen` y sobran 306 para el nombre; abajo de ~1100 quedaban
+            33, y "Vidrio templado 9H · iPhone 13" se leía una palabra por
+            renglón. El piso de 520 le deja siempre ~148 —dos renglones
+            legibles— y por debajo de eso el envoltorio de `Table` scrollea,
+            que es exactamente lo que hace la tabla de verdad en /vender.
+            Una tabla cortada se lee como una ventana angosta; una tabla con
+            la columna colapsada se lee como un producto roto. */}
+        <Table className="table-fixed min-w-[520px]">
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
               <TableHead className="h-auto px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
@@ -106,7 +117,9 @@ export function Retrato() {
                 <TableCell className="p-[11px] px-[7px] pl-[18px] whitespace-normal">
                   <div className="flex flex-col gap-0.5">
                     <span className="text-sm font-medium text-foreground">{item.descripcion}</span>
-                    <div className="flex items-center gap-2">
+                    {/* `flex-wrap`: el chip de stock no entra al lado del SKU cuando
+                        la columna se angosta, y sin esto se desbordaba sobre el stepper. */}
+                    <div className="flex flex-wrap items-center gap-2">
                       {/* El SKU bajo el nombre, o "Servicio" si no tiene —
                           mismo texto que ya usa la lista de resultados y las
                           filas del carrito real. */}

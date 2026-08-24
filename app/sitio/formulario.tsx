@@ -112,7 +112,15 @@ export function Formulario({
 
       <form
         action={accion}
-        className="flex w-full flex-col gap-2.5 rounded-[14px] border p-[7px] sm:flex-row sm:items-center"
+        // `sm:flex-wrap` + el piso del input: el botón es `shrink-0` y el
+        // `Input` de shadcn trae `min-w-0`, así que cuando la fila no entra
+        // el recorte se lo come entero el campo — medido en 38px de ancho,
+        // sin lugar ni para el placeholder. El breakpoint `sm` mira el
+        // VIEWPORT y acá lo que se angosta es la COLUMNA del Hero, que a
+        // 1440px son 560 y bastante menos en una ventana a medio abrir: son
+        // dos cosas distintas y por eso `sm:flex-row` solo no alcanza. Con
+        // wrap, el botón se va abajo en vez de aplastar el campo.
+        className="flex w-full flex-col gap-2.5 rounded-[14px] border p-[7px] sm:flex-row sm:flex-wrap sm:items-center"
         style={
           oscura
             ? {
@@ -139,7 +147,7 @@ export function Formulario({
           maxLength={200}
           placeholder="Tu WhatsApp o tu mail"
           autoComplete="off"
-          className={`${altura} flex-1 rounded-[10px] px-3.5`}
+          className={`${altura} min-w-[8rem] flex-1 rounded-[10px] px-3.5`}
           style={{ backgroundColor: oscura ? 'var(--marca-foreground)' : 'var(--card)' }}
         />
 

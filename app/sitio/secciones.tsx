@@ -35,14 +35,21 @@ import tipografia from './tipografia.module.css'
  * local" del Nav (`./entrar`, un componente cliente aparte) y el formulario de
  * captura (`./formulario`) — las únicas dos partes interactivas del sitio.
  *
- * El ritmo vertical y el ancho del contenido (`ANCHO`) se mantienen del
- * código anterior a este ciclo: la maqueta es 1440px con 56px de padding
- * lateral; este sitio ya normalizaba eso a un contenedor centrado de
- * max-w-5xl (1024px) con su propio padding, decisión de un ciclo anterior que
- * este no reabre.
+ * `ANCHO` es la geometría de la maqueta, no una normalización nuestra: el
+ * frame `Sitio / Landing` (nodo `vDLU8`) es de 1440px y todas sus secciones
+ * miden 1328 de ancho, o sea 56px de padding lateral. Antes acá había un
+ * `max-w-5xl` (1024px) heredado de un ciclo anterior al `.pen`, sostenido con
+ * el argumento de que era "una decisión que este ciclo no reabre" — y no era
+ * una decisión sobre nada, era código escrito antes de que existiera la
+ * maqueta. Lo que costó: el Hero le da a la Muestra la mitad del ancho, y a
+ * 1024px esa mitad son 464px contra los 720 del `.pen`. El carrito de
+ * `retrato.tsx` copia los anchos de columna de /vender en píxeles, así que la
+ * columna del nombre quedaba con ~25px útiles y cada artículo se leía una
+ * palabra por renglón. Un contenedor demasiado angosto no se ve angosto: se
+ * ve como una tabla rota.
  */
 
-const ANCHO = 'mx-auto w-full max-w-5xl px-6'
+const ANCHO = 'mx-auto w-full max-w-[1440px] px-14'
 
 /**
  * El H2 que comparten Módulos, Rubros y Planes: 38px/700 Archivo, tracking
@@ -106,7 +113,11 @@ export function Nav({ base }: { base: BaseDeTenant }) {
 
 export function Hero({ whatsapp }: { whatsapp: string }) {
   return (
-    <section className={`${ANCHO} grid gap-12 py-12 md:grid-cols-2 md:items-center`}>
+    // Las dos columnas del Hero NO son iguales: el `.pen` le da 560px al texto
+    // (`eUCUn`) y 720 a la Muestra (`g5k1vK`), con 48 de gap — 560:720 es 7:9.
+    // En `fr` en vez de píxeles para que la proporción se sostenga sola cuando
+    // el contenedor no llega a 1328.
+    <section className={`${ANCHO} grid gap-12 py-12 md:grid-cols-[7fr_9fr] md:items-center`}>
       <div className="flex flex-col gap-[22px]">
         <span className="flex w-fit items-center gap-[7px] rounded-full bg-accent px-3 py-1.5">
           <Sparkles aria-hidden="true" className="size-[13px] text-primary" />

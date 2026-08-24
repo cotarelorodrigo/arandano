@@ -159,4 +159,43 @@ describe('el retrato del punto de venta', () => {
     expect(anchosRetrato).toEqual(['w-[104px]', 'w-[110px]', 'w-[130px]'])
     expect(anchosRetrato).toEqual(anchosVender)
   })
+  // La aritmética que se rompió de verdad, y que ninguna de las aserciones de
+  // arriba podía ver: el retrato copia de /vender los anchos de columna EN
+  // PÍXELES, así que sólo se lee bien si el contenedor le da el ancho que la
+  // maqueta le da. El `.pen` (nodo `g5k1vK`) mide la Muestra en 720px y el
+  // `Carrito real` (`qjo7l`) en 680; la columna del nombre (`FN5bU`) queda en
+  // 216. Cuando la landing vivía en un `max-w-5xl` heredado, esa columna
+  // terminaba con ~25px útiles y cada artículo se leía una palabra por
+  // renglón — la tabla se veía rota sin que nada estuviera roto.
+  //
+  // Este caso ata las dos puntas leyendo `secciones.tsx`: si alguien angosta
+  // el contenedor o ensancha una columna fija, se pone rojo acá y no en una
+  // captura de pantalla tres meses después.
+  it('el contenedor le deja a la columna del nombre el ancho que pide la maqueta', () => {
+    const fuenteSecciones = readFileSync(path.join(__dirname, './secciones.tsx'), 'utf8')
+
+    const anchoMax = fuenteSecciones.match(/max-w-\[(\d+)px\]/)
+    const padding = fuenteSecciones.match(/const ANCHO = '[^']*\bpx-(\d+)\b/)
+    expect(anchoMax, 'ANCHO dejó de declarar un max-w en píxeles').not.toBeNull()
+    expect(padding, 'ANCHO dejó de declarar un px-N').not.toBeNull()
+    // Tailwind: px-N son N × 4px, a cada lado.
+    const contenido = Number(anchoMax![1]) - Number(padding![1]) * 4 * 2
+    expect(contenido).toBe(1328) // las secciones del .pen miden 1328
+
+    // El Hero reparte ese ancho 7:9 (560:720 en el .pen) con 48px de gap.
+    const proporcion = fuenteSecciones.match(/md:grid-cols-\[(\d+)fr_(\d+)fr\]/)
+    expect(proporcion, 'el Hero dejó de repartirse en fr').not.toBeNull()
+    const [izq, der] = [Number(proporcion![1]), Number(proporcion![2])]
+    const muestra = ((contenido - 48) * der) / (izq + der)
+    expect(Math.round(muestra)).toBe(720)
+
+    // La Muestra lleva p-5 (20px por lado) y la card, 1px de borde por lado.
+    const tabla = muestra - 20 * 2 - 1 * 2
+    // Las tres columnas fijas más la de "Quitar" (w-7 = 28px).
+    const fijas = [...fuente().matchAll(/<TableHead className="[^"]*\bw-\[(\d+)px\][^"]*"/g)]
+      .reduce((total, m) => total + Number(m[1]), 28)
+    const nombre = tabla - fijas
+    // 216 es lo que pide el .pen; el margen absorbe el borde y el redondeo.
+    expect(nombre).toBeGreaterThanOrEqual(216)
+  })
 })
