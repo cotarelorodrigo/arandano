@@ -835,3 +835,111 @@ describe('el árbol de categorías', () => {
     expect(await categoriaDe(ajeno.id)).toEqual({ nombre: 'Samsung', padre: 'Fundas' })
   })
 })
+
+/**
+ * Desde que existe el panel de categorías, el alta manda `categoriaId` en vez
+ * de texto: se elige de lo que hay. El texto libre NO se borra —lo sigue
+ * usando `scripts/sembrar-catalogo-dev.mts`, y un seed no es una pantalla—,
+ * pero cuando llegan los dos, gana el id.
+ */
+describe('el alta con categoriaId', () => {
+  let rubro: string
+  let marca: string
+
+  beforeAll(async () => {
+    const { crearCategoria } = await import('@/lib/inventario/categorias')
+    const r = await crearCategoria({ tenantId, nombre: 'Auriculares', padreId: null })
+    const m = await crearCategoria({ tenantId, nombre: 'JBL', padreId: r.id })
+    rubro = r.id
+    marca = m.id
+  })
+
+  it('cuelga el artículo de la rama elegida', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Auricular JBL Tune', tipo: 'PRODUCTO', precio: d('30000'),
+      categoriaId: marca,
+    })
+    expect(await categoriaDe(a.id)).toEqual({ nombre: 'JBL', padre: 'Auriculares' })
+  })
+
+  // El texto se sigue escribiendo hasta el deploy del contract, ahora derivado
+  // del árbol en vez de tipeado: es lo que hace que un rollback a la imagen
+  // anterior encuentre el dato.
+  it('y escribe el texto derivado de la rama', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Auricular con texto', tipo: 'PRODUCTO', precio: d('30000'),
+      categoriaId: marca,
+    })
+    const { rows } = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [a.id])
+    expect(rows[0].categoria).toBe('Auriculares · JBL')
+  })
+
+  it('un rubro sin marca también es válido', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Auricular sin marca', tipo: 'PRODUCTO', precio: d('30000'),
+      categoriaId: rubro,
+    })
+    expect(await categoriaDe(a.id)).toEqual({ nombre: 'Auriculares', padre: null })
+  })
+
+  // RLS vuelve invisible la categoría del vecino, así que el id no resuelve a
+  // ninguna fila. Tiene que salir como error de dominio y no como una FK
+  // reventando con un código que nadie atrapa.
+  it('rechaza una categoría de otro tenant', async () => {
+    const { crearCategoria } = await import('@/lib/inventario/categorias')
+    const ajena = await crearCategoria({ tenantId: otroTenantId, nombre: 'Ajena', padreId: null })
+    await expect(
+      crearArticulo({
+        tenantId, usuarioId, nombre: 'Con categoría prestada', tipo: 'PRODUCTO', precio: d('1000'),
+        categoriaId: ajena.id,
+      }),
+    ).rejects.toMatchObject({ codigo: 'CATEGORIA_INEXISTENTE' })
+  })
+
+  it('el id gana sobre el texto cuando llegan los dos', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Con los dos', tipo: 'PRODUCTO', precio: d('1000'),
+      categoriaId: rubro, categoria: 'Otra cosa · Que no es',
+    })
+    expect(await categoriaDe(a.id)).toEqual({ nombre: 'Auriculares', padre: null })
+  })
+})
+
+/**
+ * La factura del proveedor entra como NOTA del movimiento de stock inicial, no
+ * como columna nueva: `MovimientoStock.nota` ya existe y es exactamente para
+ * esto. El ingreso de mercadería de la ficha ya la usa así.
+ */
+describe('la factura del proveedor en el alta', () => {
+  const notaDe = async (articuloId: string) => {
+    const { rows } = await owner.query(
+      `SELECT nota FROM movimientos_stock WHERE articulo_id = $1 ORDER BY creado_en LIMIT 1`,
+      [articuloId],
+    )
+    return rows[0]?.nota ?? null
+  }
+
+  it('queda en la nota del movimiento', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Con factura', tipo: 'PRODUCTO', precio: d('1000'),
+      stockInicial: d('10'), costoUnitario: d('500'), facturaProveedor: 'A 0001-00023456',
+    })
+    expect(await notaDe(a.id)).toBe('stock inicial · A 0001-00023456')
+  })
+
+  it('sin factura, la nota sigue siendo la de siempre', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Sin factura', tipo: 'PRODUCTO', precio: d('1000'),
+      stockInicial: d('10'),
+    })
+    expect(await notaDe(a.id)).toBe('stock inicial')
+  })
+
+  it('una factura de sólo espacios no ensucia la nota', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Factura en blanco', tipo: 'PRODUCTO', precio: d('1000'),
+      stockInicial: d('10'), facturaProveedor: '   ',
+    })
+    expect(await notaDe(a.id)).toBe('stock inicial')
+  })
+})

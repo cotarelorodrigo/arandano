@@ -289,22 +289,66 @@ describe('el rol de cada action de inventario', () => {
     expect(r.error).toMatch(/no se entiende/)
   })
 
-  // De punta a punta: el campo nuevo del formulario de alta (Task 1 del
-  // rediseño) tiene que llegar tal cual hasta la columna.
-  it('el alta guarda la categoría cuando se la manda', async () => {
+  /**
+   * De punta a punta con el contrato NUEVO: desde que existe el árbol, el
+   * formulario manda `categoriaId`/`marcaId` en vez del texto que se tipeaba.
+   * La columna de texto se sigue llenando —hasta el deploy del contract— pero
+   * derivada de la rama, no de lo que alguien escribió.
+   */
+  it('el alta cuelga el artículo de la rama elegida y deriva el texto', async () => {
+    const rubro = await owner.query(
+      `INSERT INTO categorias (id, tenant_id, nombre, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Accesorios', now(), now()) RETURNING id`,
+      [estado.tenantId],
+    )
+    const marca = await owner.query(
+      `INSERT INTO categorias (id, tenant_id, nombre, padre_id, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Protección', $2, now(), now()) RETURNING id`,
+      [estado.tenantId, rubro.rows[0].id],
+    )
+
     estado.cookie = cookieDuenio
     const datos = new FormData()
     datos.set('nombre', 'Con categoría')
     datos.set('tipo', 'PRODUCTO')
     datos.set('precio', '5000')
-    datos.set('categoria', 'Accesorios · Protección')
+    datos.set('categoriaId', rubro.rows[0].id)
+    datos.set('marcaId', marca.rows[0].id)
     await altaArticulo(INICIAL, datos)
 
     const { rows } = await owner.query(
-      `SELECT categoria FROM articulos WHERE nombre = 'Con categoría' AND tenant_id = $1`,
+      `SELECT categoria, categoria_id FROM articulos WHERE nombre = 'Con categoría' AND tenant_id = $1`,
       [estado.tenantId],
     )
     expect(rows[0].categoria).toBe('Accesorios · Protección')
+    // La MARCA gana sobre el rubro: es la rama más específica de las dos que
+    // el formulario manda, y es la que el artículo tiene que ocupar.
+    expect(rows[0].categoria_id).toBe(marca.rows[0].id)
+  })
+
+  // Con el rubro solo —un rubro sin marcas, o alguien que no eligió una— el
+  // artículo cuelga del rubro. Es un caso normal, no un dato a medio cargar.
+  it('con el rubro solo, el artículo cuelga del rubro', async () => {
+    const rubro = await owner.query(
+      `INSERT INTO categorias (id, tenant_id, nombre, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Cables', now(), now()) RETURNING id`,
+      [estado.tenantId],
+    )
+    estado.cookie = cookieDuenio
+    const datos = new FormData()
+    datos.set('nombre', 'Cable sin marca')
+    datos.set('tipo', 'PRODUCTO')
+    datos.set('precio', '900')
+    datos.set('categoriaId', rubro.rows[0].id)
+    datos.set('marcaId', '')
+    await altaArticulo(INICIAL, datos)
+
+    const { rows } = await owner.query(
+      `SELECT categoria, categoria_id FROM articulos WHERE nombre = 'Cable sin marca' AND tenant_id = $1`,
+      [estado.tenantId],
+    )
+    expect(rows[0].categoria).toBe('Cables')
+    expect(rows[0].categoria_id).toBe(rubro.rows[0].id)
   })
 
   // Un artículo sin categoría no puede romper nada (CLAUDE.md): el alta sin

@@ -15,9 +15,17 @@ vi.mock('./acciones', () => ({
   exportarHistorialCsv: vi.fn(),
 }))
 
-async function renderAlta() {
+const ARBOL = [
+  { id: 'id-cables', nombre: 'Cables', cuenta: 3, hijas: [] },
+  {
+    id: 'id-fundas', nombre: 'Fundas', cuenta: 12,
+    hijas: [{ id: 'id-apple', nombre: 'Apple', cuenta: 7 }],
+  },
+]
+
+async function renderAlta(arbol = ARBOL) {
   const { FormularioDeAlta } = await import('./formularios')
-  return renderToStaticMarkup(<FormularioDeAlta proximoSku="A-0043" />)
+  return renderToStaticMarkup(<FormularioDeAlta proximoSku="A-0043" arbol={arbol} />)
 }
 
 async function renderFicha(
@@ -42,14 +50,13 @@ async function renderFicha(
 }
 
 describe('FormularioDeAlta', () => {
-  // Task 1 del rediseño: Articulo.categoria existe en el schema y nadie la
-  // escribe todavía. La maqueta la muestra en el listado y en la ficha pero
-  // no en este formulario — a propósito se aparta acá: un campo que se
-  // muestra y no se puede cargar nace siempre vacío.
-  it('tiene un campo de categoría, y es opcional', () => {
+  // La categoría se elige, no se tipea, desde que existe el árbol: el detalle
+  // vive en el describe "los selectores de categoría del alta", más abajo.
+  // Este caso conserva lo único que no cambió — que sigue siendo OPCIONAL.
+  it('la categoría es opcional', () => {
     return renderAlta().then((html) => {
-      expect(html).toContain('name="categoria"')
-      expect(html).not.toMatch(/name="categoria"[^>]*required/)
+      expect(html).toContain('name="categoriaId"')
+      expect(html).not.toMatch(/name="categoriaId"[^>]*required/)
     })
   })
 
@@ -63,7 +70,12 @@ describe('FormularioDeAlta', () => {
 
   it('Producto y Servicio son tarjetas seleccionables (radio), no un <select>', async () => {
     const html = await renderAlta()
-    expect(html).not.toContain('<select')
+    // `name="tipo"` y no "<select>" a secas: desde que la categoría se elige
+    // con el Select de shadcn, hay `<select>` en la pantalla — Radix renderiza
+    // uno oculto para que el valor viaje en un form nativo, que es justamente
+    // lo que hace que estos campos funcionen sin JavaScript. Lo que este caso
+    // afirma es que el TIPO no es uno de ellos.
+    expect(html).not.toMatch(/<select[^>]*name="tipo"/)
     expect(html).toMatch(/type="radio"[^>]*name="tipo"[^>]*value="PRODUCTO"/)
     expect(html).toMatch(/type="radio"[^>]*name="tipo"[^>]*value="SERVICIO"/)
     expect(html).toContain('Lleva stock y se descuenta al vender')
@@ -128,7 +140,10 @@ describe('FormularioDeAlta', () => {
   // existentes no miraban altura, sólo `name`/`value`.
   it('los campos del alta miden 40px (h-10), no el h-8 por default de shadcn', async () => {
     const html = await renderAlta()
-    for (const campo of ['name="nombre"', 'name="categoria"', 'name="sku"', 'name="precio"']) {
+    // `categoria` salió de la lista: dejó de ser un <input> — ahora son dos
+    // Select. Su alto lo fija el className del SelectTrigger, que el describe
+    // de los selectores cubre aparte.
+    for (const campo of ['name="nombre"', 'name="sku"', 'name="precio"', 'name="facturaProveedor"']) {
       const inicio = html.lastIndexOf('<input', html.indexOf(campo))
       const cierre = html.indexOf('/>', inicio)
       expect(inicio, `no se encontró el campo ${campo}`).toBeGreaterThan(-1)
@@ -322,5 +337,61 @@ describe('la descarga del CSV: inserta el <a> en el DOM y difiere el revoke (min
     expect(FUENTE).toMatch(
       /enlace\.click\(\)[\s\S]{0,400}setTimeout\(\(\) => URL\.revokeObjectURL\(url\), 0\)/,
     )
+  })
+})
+
+/**
+ * El alta pasó de un campo de texto libre a dos selectores encadenados
+ * (design/arandano.pen, frame `B4O7t`). Es el cambio que trae el árbol.
+ */
+describe('los selectores de categoría del alta', () => {
+  it('ofrece los rubros y ya no un campo de texto libre', async () => {
+    const html = await renderAlta()
+    expect(html).toContain('name="categoriaId"')
+    expect(html).toContain('name="marcaId"')
+    // El texto libre creaba ramas al vuelo; ahora se elige de lo que hay.
+    expect(html).not.toContain('name="categoria"')
+  })
+
+  // Un selector que se abre para no mostrar nada invita a buscar algo que no
+  // está: sin rubro elegido, el de marca nace deshabilitado.
+  it('el selector de marca nace deshabilitado', async () => {
+    const html = await renderAlta()
+    // El `<button>` del trigger, no un selector de atributos en orden: Radix
+    // emite `disabled` ANTES del `id`, así que un regex que los pida en ese
+    // orden pasa por casualidad o falla por casualidad.
+    const trigger = html.slice(html.lastIndexOf('<button', html.indexOf('id="marcaId"')))
+    expect(trigger.slice(0, trigger.indexOf('>'))).toContain('disabled')
+  })
+
+  // Los dos triggers miden 40 como el resto de los campos del alta: la
+  // maqueta los dibuja a la misma altura y un selector más bajo que su vecino
+  // se nota enseguida.
+  it('los dos selectores miden 40px, como los demás campos', async () => {
+    const html = await renderAlta()
+    for (const id of ['categoriaId', 'marcaId']) {
+      const trigger = html.slice(html.lastIndexOf('<button', html.indexOf(`id="${id}"`)))
+      expect(trigger.slice(0, trigger.indexOf('>')), `${id} no mide h-10`).toContain('h-10')
+    }
+  })
+
+  // La fricción que introduce elegir en vez de tipear tiene su salida a la
+  // vista: sin esto, un local nuevo no sabe dónde se crean.
+  it('dice dónde se crean las categorías', async () => {
+    const html = await renderAlta()
+    expect(html).toContain('el panel de Inventario')
+  })
+
+  it('con el árbol vacío igual se puede cargar un artículo', async () => {
+    const html = await renderAlta([])
+    expect(html).toContain('name="nombre"')
+    expect(html).toContain('name="categoriaId"')
+  })
+
+  // La factura del proveedor no es una columna nueva: entra como nota del
+  // movimiento de stock inicial.
+  it('trae el campo de factura del proveedor', async () => {
+    const html = await renderAlta()
+    expect(html).toContain('name="facturaProveedor"')
   })
 })

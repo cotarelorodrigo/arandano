@@ -82,7 +82,11 @@ export async function altaArticulo(
         tipo,
         precio: aDecimal(texto(datos, 'precio'), 'el precio'),
         sku: texto(datos, 'sku'),
-        categoria: texto(datos, 'categoria') || null,
+        // La marca gana sobre el rubro cuando hay las dos: la rama más
+        // específica es la que el artículo tiene que ocupar. Con el rubro
+        // solo, el artículo cuelga del rubro, que es un caso válido.
+        categoriaId: texto(datos, 'marcaId') || texto(datos, 'categoriaId') || null,
+        facturaProveedor: texto(datos, 'facturaProveedor') || null,
         // Un servicio no lleva stock, y sin JavaScript los campos se ven
         // igual: se ignoran acá en vez de rechazar el alta por algo que la
         // persona no eligió mandar.

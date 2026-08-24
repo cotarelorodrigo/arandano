@@ -418,3 +418,36 @@ export async function borrarCategoria({
     throw traducirErrorDeBase(e)
   }
 }
+
+/**
+ * Resuelve una rama ELEGIDA (por id) a su id validado y su texto canónico.
+ *
+ * Es la contraparte de `asegurarCategoria` para el camino de la pantalla: allá
+ * el texto crea la rama, acá la rama ya existe y se toma su nombre. Devuelve
+ * las dos cosas juntas porque el llamador necesita las dos —el id para la FK y
+ * el texto para la columna que sigue viva hasta el contract— y resolverlas por
+ * separado sería consultar dos veces lo mismo.
+ *
+ * Un id de otro tenant no resuelve a ninguna fila (RLS lo vuelve invisible) y
+ * sale como `CATEGORIA_INEXISTENTE`, no como una FK reventando con un código
+ * que nadie atrapa.
+ */
+export async function ramaElegida(
+  tx: ClienteTx,
+  categoriaId: string,
+): Promise<{ id: string; texto: string }> {
+  const propia = await tx.categoria.findFirst({
+    where: { id: categoriaId },
+    select: { id: true, nombre: true, padre: { select: { nombre: true } } },
+  })
+  if (!propia) {
+    throw new ErrorDeInventario(
+      'CATEGORIA_INEXISTENTE',
+      `la categoría ${categoriaId} no existe en este tenant`,
+    )
+  }
+  return {
+    id: propia.id,
+    texto: propia.padre ? `${propia.padre.nombre}${SEPARADOR_VISIBLE}${propia.nombre}` : propia.nombre,
+  }
+}

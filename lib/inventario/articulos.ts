@@ -3,7 +3,7 @@ import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import { excedeEscala, ESCALA_DINERO, ESCALA_CANTIDAD } from '@/lib/ventas/totales'
 import { exigirUsuario } from '@/lib/ventas/pertenencia'
 import { ErrorDeInventario, traducirErrorDeBase } from './errores'
-import { asegurarCategoria, textoDeCategoria } from './categorias'
+import { asegurarCategoria, ramaElegida, textoDeCategoria } from './categorias'
 
 type Decimal = Prisma.Decimal
 
@@ -26,8 +26,26 @@ export type EntradaCrearArticulo = {
   // mayoría de los artículos que ya existen no la tienen y ninguno se rompe
   // sin ella.
   categoria?: string | null
+  /**
+   * La rama ELEGIDA del árbol, que es como manda la pantalla desde que existe
+   * el panel de categorías. Cuando llega, **gana sobre `categoria`**: el texto
+   * pasa a derivarse del nombre de la rama en vez de crearla.
+   *
+   * Los dos caminos conviven a propósito y no es transitorio: `categoria`
+   * (texto) lo sigue usando `scripts/sembrar-catalogo-dev.mts`, y un seed no
+   * es una pantalla — pedirle que resuelva ids antes de sembrar sería
+   * complicarlo por nada.
+   */
+  categoriaId?: string | null
   stockInicial?: Decimal | null
   costoUnitario?: Decimal | null
+  /**
+   * El comprobante con el que entró la mercadería. No es una columna: va como
+   * NOTA del movimiento de stock inicial, que es exactamente para lo que
+   * `MovimientoStock.nota` existe y lo que el ingreso de mercadería de la
+   * ficha ya hace.
+   */
+  facturaProveedor?: string | null
 }
 
 /**
@@ -40,6 +58,14 @@ export type EntradaCrearArticulo = {
  * contradicen mientras los dos convivan.
  */
 const limpiarCategoria = textoDeCategoria
+
+/** La nota del movimiento de stock inicial, con el comprobante si lo hay.
+ *  Concatenada y no en un campo propio: `MovimientoStock.nota` es texto libre
+ *  a propósito, y el historial de la ficha ya lo muestra tal cual. */
+function notaDelStockInicial(factura: string | null | undefined): string {
+  const limpia = factura?.trim()
+  return limpia ? `stock inicial · ${limpia}` : 'stock inicial'
+}
 
 // Cuántas veces se salta el correlativo antes de rendirse. Agotar cinco
 // seguidos significa que alguien tipeó a mano una racha de códigos con esta
@@ -232,10 +258,20 @@ export async function crearArticulo(
         // Antes del create y en la MISMA transacción: si el alta se cae por
         // el choque de SKU de más abajo, la rama recién creada se va con el
         // rollback en vez de quedar colgando vacía en el árbol.
-        const categoriaId = await asegurarCategoria(tx, tenantId, categoria)
+        //
+        // Con `categoriaId` no se crea nada: la rama ya existe y sólo se toma
+        // su nombre para el texto. Sin él, el texto libre la crea, que es el
+        // camino que usa el seed.
+        const rama = entrada.categoriaId
+          ? await ramaElegida(tx, entrada.categoriaId)
+          : { id: await asegurarCategoria(tx, tenantId, categoria), texto: categoria }
 
         const articulo = await tx.articulo.create({
-          data: { tenantId, sku, nombre, tipo, precio, categoria, categoriaId },
+          data: {
+            tenantId, sku, nombre, tipo, precio,
+            categoria: rama.texto,
+            categoriaId: rama.id,
+          },
         })
 
         // El stock inicial NO se escribe en la columna: nace como movimiento,
@@ -252,7 +288,7 @@ export async function crearArticulo(
               motivo: 'INGRESO',
               usuarioId,
               costoUnitario: costoUnitario ?? null,
-              nota: 'stock inicial',
+              nota: notaDelStockInicial(entrada.facturaProveedor),
             },
           })
           await tx.articulo.update({
