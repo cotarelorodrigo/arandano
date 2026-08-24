@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import type { Prisma } from '@/generated/prisma/client'
 import { Search } from 'lucide-react'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
@@ -9,6 +10,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { cn } from '@/lib/utils'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
 import { estadoDeFila, ChipEstado, type EstadoDeFila } from './chip-estado'
+import { PanelDeCategorias, SIN_CATEGORIA, categoriaDeQuery } from './panel-categorias'
+import { arbolDeCategorias, cuentaSinCategoria, type RamaConHijas } from '@/lib/inventario/categorias'
 import estilos from './tipografia.module.css'
 
 export const dynamic = 'force-dynamic'
@@ -31,6 +34,32 @@ export function tipoDeQuery(valor: string | undefined): TipoFiltro | null {
   return valor === 'PRODUCTO' || valor === 'SERVICIO' ? valor : null
 }
 
+/** La rama elegida, ya resuelta contra el árbol: qué ids de categoría entran
+ *  en el filtro. `null` es "Todos". */
+export type RamaElegida = { ids: string[] } | { sinCategoria: true }
+
+/**
+ * Traduce el `?cat` a la rama del árbol, o `null` si no corresponde a ninguna.
+ *
+ * **Filtrar por un rubro incluye a sus marcas**: elegir "Fundas" y ver sólo las
+ * que no tienen marca sería casi ninguna, y no es lo que nadie espera. Es un
+ * `OR` de un solo nivel —no una consulta recursiva— porque el árbol tiene dos.
+ *
+ * Un id bien formado que NO está en el árbol —una categoría borrada, o de otro
+ * tenant, que RLS vuelve invisible— cae en "Todos". Filtrar a cero resultados
+ * sin explicación es peor que ignorar el parámetro.
+ */
+export function ramaDelArbol(arbol: RamaConHijas[], cat: string | null): RamaElegida | null {
+  if (cat === null) return null
+  if (cat === SIN_CATEGORIA) return { sinCategoria: true }
+  for (const rubro of arbol) {
+    if (rubro.id === cat) return { ids: [rubro.id, ...rubro.hijas.map((h) => h.id)] }
+    const marca = rubro.hijas.find((h) => h.id === cat)
+    if (marca) return { ids: [marca.id] }
+  }
+  return null
+}
+
 /** El `where` de Prisma para el listado: el mismo para la página, el conteo
  *  total y el conteo de negativos, así que las tres cosas de la pantalla
  *  hablan siempre del mismo conjunto de filas. */
@@ -38,12 +67,22 @@ export function construirDonde({
   busqueda,
   verInactivos,
   tipo,
+  categoria = null,
 }: {
   busqueda: string
   verInactivos: boolean
   tipo: TipoFiltro | null
-}) {
+  categoria?: RamaElegida | null
+}): Prisma.ArticuloWhereInput {
   return {
+    // `null` literal y no `undefined`: acá el null ES el filtro ("los que no
+    // cuelgan de ninguna rama"), mientras undefined le diría a Prisma que no
+    // filtre. Son dos cosas distintas y el spread de abajo las distingue.
+    ...(categoria === null
+      ? {}
+      : 'sinCategoria' in categoria
+        ? { categoriaId: null }
+        : { categoriaId: { in: categoria.ids } }),
     // `null` y no `undefined`: undefined le diría a Prisma "no filtres".
     ...(verInactivos ? {} : { desactivadoEn: null }),
     ...(busqueda
@@ -68,18 +107,27 @@ export function hrefListado({
   busqueda,
   verInactivos,
   tipo,
+  cat = null,
   pagina,
+  conservarPagina = false,
 }: {
   busqueda: string
   verInactivos: boolean
   tipo: TipoFiltro | null
+  cat?: string | null
   pagina?: number
+  /** Sólo la paginación la conserva. Ver el comentario de abajo. */
+  conservarPagina?: boolean
 }): string {
   const u = new URLSearchParams()
   if (busqueda) u.set('q', busqueda)
   if (verInactivos) u.set('inactivos', '1')
   if (tipo) u.set('tipo', tipo)
-  if (pagina && pagina > 1) u.set('p', String(pagina))
+  if (cat) u.set('cat', cat)
+  // Cambiar de rama o de filtro DESCARTA la página, y sólo la paginación pide
+  // conservarla: quedarse en la página 3 de un listado que ahora tiene ocho
+  // artículos muestra un vacío que parece un error.
+  if (conservarPagina && pagina && pagina > 1) u.set('p', String(pagina))
   const s = u.toString()
   return s ? `/inventario?${s}` : '/inventario'
 }
@@ -143,15 +191,21 @@ export function FiltrosDeInventario({
   busqueda,
   verInactivos,
   tipo,
+  cat = null,
 }: {
   busqueda: string
   verInactivos: boolean
   tipo: TipoFiltro | null
+  cat?: string | null
 }) {
   return (
     <div className="flex items-center gap-[10px]">
       <form method="get" className="flex flex-1 items-center gap-[10px]">
         {tipo && <input type="hidden" name="tipo" value={tipo} />}
+        {/* Por lo mismo que el tipo: sin esto, tipear una búsqueda desde una
+            rama seleccionada la pierde, y el resultado sale de todo el
+            catálogo cuando la persona creía estar buscando adentro del rubro. */}
+        {cat && <input type="hidden" name="cat" value={cat} />}
         <div className="relative flex-1">
           <Search
             aria-hidden="true"
@@ -183,7 +237,7 @@ export function FiltrosDeInventario({
         {OPCIONES_TIPO.map((o) => (
           <Link
             key={o.valor ?? VALOR_TODOS}
-            href={hrefListado({ busqueda, verInactivos, tipo: o.valor })}
+            href={hrefListado({ busqueda, verInactivos, tipo: o.valor, cat })}
             className={
               o.valor === tipo
                 ? 'rounded-lg bg-card px-[13px] py-[7px] text-[12px] font-semibold text-foreground shadow-sm'
@@ -225,10 +279,12 @@ function claseStock(estado: EstadoDeFila): string {
 export default async function Inventario({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; p?: string; inactivos?: string; tipo?: string }>
+  searchParams: Promise<{
+    q?: string; p?: string; inactivos?: string; tipo?: string; cat?: string
+  }>
 }) {
   const sesion = await exigirSesion()
-  const { q = '', p = '1', inactivos, tipo: tipoQuery } = await searchParams
+  const { q = '', p = '1', inactivos, tipo: tipoQuery, cat: catQuery } = await searchParams
 
   const busqueda = q.trim()
   // Truncado y con techo, no sólo `Math.max`: `?p=2.3` daría un `skip` con
@@ -241,7 +297,21 @@ export default async function Inventario({
   const tipo = tipoDeQuery(tipoQuery)
 
   const prisma = prismaParaTenant(sesion.tenant.id)
-  const donde = construirDonde({ busqueda, verInactivos, tipo })
+
+  // El árbol va primero y solo: `ramaDelArbol` lo necesita para saber qué ids
+  // entran en el filtro —un rubro arrastra a sus marcas—, así que no puede
+  // ir en el Promise.all de abajo.
+  const [arbol, sinCategoria] = await Promise.all([
+    arbolDeCategorias(sesion.tenant.id, { verInactivos }),
+    cuentaSinCategoria(sesion.tenant.id, { verInactivos }),
+  ])
+  const catPedida = categoriaDeQuery(catQuery)
+  const rama = ramaDelArbol(arbol, catPedida)
+  // Si el id no correspondía a ninguna rama, la pantalla se comporta como
+  // "Todos" — y el panel tampoco marca ninguna fila como activa.
+  const cat = rama === null ? null : catPedida
+
+  const donde = construirDonde({ busqueda, verInactivos, tipo, categoria: rama })
 
   const [articulos, total, negativos] = await Promise.all([
     prisma.articulo.findMany({
@@ -265,6 +335,13 @@ export default async function Inventario({
       ? 0
       : prisma.articulo.count({ where: { ...donde, tipo: 'PRODUCTO', stock: { lt: 0 } } }),
   ])
+
+  // La cuenta de "Todos los artículos" del panel: el CATÁLOGO, no el resultado.
+  // `total` está filtrado por búsqueda, tipo y rama; usarlo acá haría que
+  // todas las ramas mostraran 0 apenas se escribe algo en el buscador, y el
+  // árbol dejaría de servir para navegar justo cuando más se lo necesita.
+  const totalDelCatalogo =
+    arbol.reduce((t, rubro) => t + rubro.cuenta, 0) + sinCategoria
 
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA))
 
@@ -294,7 +371,21 @@ export default async function Inventario({
         }
       />
       <div className="flex flex-col gap-4 p-6">
-        <FiltrosDeInventario busqueda={busqueda} verInactivos={verInactivos} tipo={tipo} />
+        <FiltrosDeInventario busqueda={busqueda} verInactivos={verInactivos} tipo={tipo} cat={cat} />
+
+        {/* El frame `Contenido` de la maqueta (design/arandano.pen): el panel
+            de 248 a la izquierda y el listado ocupando lo que queda. Los
+            filtros quedan ARRIBA, cruzando las dos columnas, porque el
+            buscador manda sobre las dos. */}
+        <div className="flex flex-1 items-stretch gap-4">
+          <PanelDeCategorias
+            arbol={arbol}
+            total={totalDelCatalogo}
+            sinCategoria={sinCategoria}
+            activa={cat}
+            esDuenio={sesion.usuario.rol === 'DUENO'}
+            href={(destino) => hrefListado({ busqueda, verInactivos, tipo, cat: destino })}
+          />
 
         {/* El listado, dentro de su propia card (design/arandano.pen, nodo
             `BT29h`) — antes era una <table> suelta en la pantalla. */}
@@ -314,8 +405,27 @@ export default async function Inventario({
               {total > 0 ? (
                 <>
                   Esta página no tiene artículos.{' '}
-                  <Link href={hrefListado({ busqueda, verInactivos, tipo, pagina: 1 })} className="underline">
+                  <Link href={hrefListado({ busqueda, verInactivos, tipo, cat, pagina: 1 })} className="underline">
                     Volver a la primera
+                  </Link>
+                  .
+                </>
+              ) : cat ? (
+                /* El vacío CON una rama activa necesita salida, y por eso es su
+                   propio caso y no el mensaje de búsqueda de abajo: sin este
+                   link, buscar algo que existe pero está en otra rama se ve
+                   exactamente igual que buscar algo que no existe. El link
+                   limpia la rama y CONSERVA la búsqueda, que es lo que la
+                   persona quería hacer. */
+                <>
+                  {busqueda
+                    ? `No hay artículos que coincidan con "${busqueda}" en esta categoría.`
+                    : 'Esta categoría todavía no tiene artículos.'}{' '}
+                  <Link
+                    href={hrefListado({ busqueda, verInactivos, tipo, cat: null })}
+                    className="underline"
+                  >
+                    Buscar en todo el inventario
                   </Link>
                   .
                 </>
@@ -459,7 +569,7 @@ export default async function Inventario({
                           size="icon-sm"
                           className={`${estilos.archivo} size-[30px] rounded-lg text-[13px] font-semibold text-foreground-soft`}
                         >
-                          <Link href={hrefListado({ busqueda, verInactivos, tipo, pagina: n })}>{n}</Link>
+                          <Link href={hrefListado({ busqueda, verInactivos, tipo, cat, pagina: n, conservarPagina: true })}>{n}</Link>
                         </Button>
                       ),
                     )}
@@ -468,6 +578,7 @@ export default async function Inventario({
               )}
             </>
           )}
+        </div>
         </div>
       </div>
     </>
