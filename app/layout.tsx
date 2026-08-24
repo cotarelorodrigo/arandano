@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import { Toaster } from "@/components/ui/sonner";
 
 /**
  * Archivo, de Omnibus-Type (Buenos Aires). La cara de display, y la única
@@ -53,7 +54,26 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" className={archivo.variable}>
-      <body>{children}</body>
+      <body>
+        {children}
+        {/*
+          Los avisos flotantes, montados UNA sola vez y **acá y no en
+          `app/(app)/layout.tsx`**, que es donde estaban primero.
+
+          El `<Toaster>` de sonner guarda los toasts visibles en un
+          `useState([])` propio y se suscribe al store recién en su `useEffect`:
+          nunca lee los que ya existen. O sea que **remontarlo los borra de la
+          pantalla**. Y el layout de `(app)` se remonta justo cuando más duele:
+          cada acción del ABM termina en `revalidatePath('/inventario')`, que
+          invalida la ruta con todos sus layouts — el aviso moría en el mismo
+          refresh que lo disparaba, "al instante", sin importar su `duration`.
+
+          El root layout no lo toca ningún `revalidatePath` de una pantalla, así
+          que el toast sobrevive al refresh. Que aparezca también en /login y en
+          la landing no cuesta nada: sin toasts que mostrar, no dibuja nada.
+        */}
+        <Toaster position="bottom-right" richColors closeButton />
+      </body>
     </html>
   );
 }

@@ -986,6 +986,19 @@ Y del producto:
   estado mientras el componente viva, así que el efecto que dispara el aviso
   vuelve a correr en cada render, y sin clave sonner apilaría una copia por vez.
 
+  **Y el bug que eso destapó, que vale más que la feature**: montado en
+  `app/(app)/layout.tsx` —el lugar "natural", al lado del sidebar— **los avisos
+  desaparecían al instante**, con `duration: Infinity` puesto. El `<Toaster>`
+  de sonner guarda los toasts visibles en un `useState([])` propio y se
+  suscribe al store recién en su `useEffect`: nunca lee los que ya existen, así
+  que **remontarlo los borra de la pantalla**. Y cada acción del ABM termina en
+  `revalidatePath('/inventario')`, que invalida la ruta **con todos sus
+  layouts** — el aviso moría en el mismo refresh que lo disparaba. Vive ahora
+  en el root layout, que ningún `revalidatePath` de pantalla toca, y
+  `test/toaster.test.ts` lo fija. **Lo que hace falta recordar no es dónde va
+  sino cómo se ve el síntoma**: parece un problema de duración, y la duración
+  es lo único que no tenía nada que ver.
+
   **Lo que NO se migró**: los `Alert` inline de los formularios de artículo
   (`Resultado`, en `formularios.tsx`). Ahí el mensaje habla del formulario que
   la persona está mirando y aparece al lado del campo que falló — moverlo a una
