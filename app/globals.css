@@ -22,9 +22,8 @@
   /* No hay --font-display, --color-marca ni --color-chart-N acá, y es a
      propósito: los consumen módulos de CSS y el ChartConfig con var(--token)
      directo, así que ninguna utilidad de Tailwind los referenciaría. Un token
-     en @theme que ninguna utilidad referencia es un token muerto, que es lo que
-     el caso "no quedan tokens de sidebar" de test/sistema-de-diseno.test.ts
-     existe para evitar. */
+     en @theme que ninguna utilidad referencia es un token muerto, y sumarlo acá
+     sólo agregaría uno más. */
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -50,6 +49,13 @@
   --color-foreground-soft: var(--foreground-soft);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -109,6 +115,17 @@
   --marca-foreground: #FFFFFF;
   --marca-soft: #B6A6E8;
   --marca-dim: #9C8BD6;
+  /* El halo del paño de login (persiana.module.css, nodo `E3Jah` del .pen):
+     un violeta más claro que --marca que la maqueta no nombra con ningún
+     token $ar-*, así que se aproxima mezclando los dos tokens de marca más
+     cercanos — --primary al 70% + --marca-soft al 30% — en vez de escribir
+     un hex suelto. Token propio (I2/(b) de la review final del cierre) y no
+     un color-mix anidado adentro del radial-gradient, que era invisible para
+     test/maqueta.test.ts: ese test sólo ata el bloque de variables, y un
+     color que vive sólo dentro de un color-mix dentro de un fill nunca se
+     comparaba contra nada. Con el token, si diverge de la maqueta el test lo
+     nota. Va en SOLO_EN_CSS (test/maqueta.test.ts): el .pen no lo nombra. */
+  --marca-halo: #6A4FB9;
 
   /* Los tres estados, cada uno con su fondo tenue. Existen como tokens —y no
      como colores de Tailwind sueltos— porque son la diferencia entre un aviso
@@ -127,12 +144,29 @@
   --border: #E3E0EC;
   --input: #CFCADD;
 
-  /* Las series del panel "Cómo entró la plata" de /ventas. Los dos en el hue
-     del arándano y separados por LUMINOSIDAD, que es la distancia que sobrevive
-     a cualquier daltonismo: en un gráfico de barras rotuladas el color no carga
-     identidad —la carga el eje—, sólo separa los tramos de la pila. */
-  --chart-1: #4A2AA5;
-  --chart-2: #8A6FD4;
+  /* El sidebar de shadcn los referencia por nombre en sus clases, así que no
+     alcanza con que los colores existan bajo otro token: tienen que existir con
+     ESTOS nombres o `bg-sidebar` no resuelve a nada.
+     Ninguno inventa un color. Cada uno toma el de la variable de
+     design/arandano.pen que la maqueta ya usa en ese lugar del paño, y
+     test/maqueta.test.ts los ata a esa variable.
+     Son siete y no ocho: `shadcn add sidebar` trae también
+     --sidebar-primary-foreground, pero acá no queda ningún fondo pintado con
+     --sidebar-primary —el único uso de --sidebar-primary es texto, en el
+     rótulo "ARÁNDANO" de la marca del sidebar (sidebar-arandano.tsx), que no
+     es el cartel (ese es el nombre del local, debajo, y paga otro token)—
+     así que no hay superficie que necesite un color "encima". El avatar del
+     pie, que sería el candidato, pinta su fondo con --marca y su texto con
+     --marca-foreground, no con este par. Se podó en el cierre del ciclo del
+     shell (2026-08-21): declararlo sin que nada lo pinte es exactamente lo
+     que el caso borrado `no quedan tokens de sidebar` existía para atrapar. */
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #171221;
+  --sidebar-primary: #4A2AA5;
+  --sidebar-accent: #EDE8FB;
+  --sidebar-accent-foreground: #4A2AA5;
+  --sidebar-border: #E3E0EC;
+  --sidebar-ring: #4A2AA5;
 
   --radius: 0.625rem;
 }

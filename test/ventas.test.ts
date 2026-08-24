@@ -17,6 +17,12 @@ let anularVenta: typeof import('@/lib/ventas/anular').anularVenta
 let ajustarStock: typeof import('@/lib/inventario/stock').ajustarStock
 let buscarArticulosVendibles: typeof import('@/lib/ventas/buscar').buscarArticulosVendibles
 let ultimaCotizacionUsd: typeof import('@/lib/ventas/buscar').ultimaCotizacionUsd
+let prismaParaTenant: typeof import('@/lib/tenant/prisma').prismaParaTenant
+// De app/(app)/ventas/page.tsx, no de lib/: es la regla de negocio que arma
+// el tile "Total del período" de esa pantalla, y este archivo es donde vive
+// el arnés de base efímera que la puede ejercitar de verdad — page.test.tsx
+// (colocado con la pantalla) sólo prueba funciones que no tocan la base.
+let totalDelPeriodo: typeof import('@/app/(app)/ventas/page').totalDelPeriodo
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -47,6 +53,8 @@ beforeAll(async () => {
   ;({ anularVenta } = await import('@/lib/ventas/anular'))
   ;({ ajustarStock } = await import('@/lib/inventario/stock'))
   ;({ buscarArticulosVendibles, ultimaCotizacionUsd } = await import('@/lib/ventas/buscar'))
+  ;({ prismaParaTenant } = await import('@/lib/tenant/prisma'))
+  ;({ totalDelPeriodo } = await import('@/app/(app)/ventas/page'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -696,6 +704,51 @@ describe('anularVenta', () => {
     )
     expect(movs).toHaveLength(1)
     expect(movs[0].delta.toString()).toBe('2')
+  })
+})
+
+describe('totalDelPeriodo (app/(app)/ventas/page.tsx)', () => {
+  // I3 de la review final del rediseño de /ventas: sacar `anuladaEn: null`
+  // del `aggregate` de esa pantalla dejaba 785/785 en verde — nada sostenía
+  // la regla de que una venta anulada no cuenta como plata que entró. Este
+  // test corre la función de verdad, contra la base, con un servicio (sin
+  // stock que descontar) para no pisar los fixtures de stock de los demás
+  // tests de este archivo.
+  //
+  // Contra el `antes`/`después` y no contra un número fijo: el tenant es
+  // compartido por todo el archivo, así que otros tests ya sumaron ventas
+  // propias antes de que éste corra — lo único estable es el DELTA que
+  // produce este escenario puntual.
+  it('no cuenta el total de una venta anulada del mismo período', async () => {
+    const prisma = prismaParaTenant(tenantId)
+    const donde = { creadoEn: { gte: new Date('2000-01-01T00:00:00Z'), lt: new Date('2999-01-01T00:00:00Z') } }
+
+    const antes = await totalDelPeriodo(prisma, donde)
+    const sumaAntes = new Prisma.Decimal(antes._sum.total ?? 0)
+
+    await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: servicio, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('500'), cotizacion: d('1') }],
+    })
+    // 1.4 unidades del servicio de $500 = $700: el total de una venta sale de
+    // cantidad × precio del artículo (crearVenta lo congela ahí, no lo toma de
+    // los pagos), así que no alcanza con pedir un pago de $700 sobre 1 unidad.
+    const { id: idAAnular } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: servicio, cantidad: d('1.4') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('700'), cotizacion: d('1') }],
+    })
+    await anularVenta({ tenantId, ventaId: idAAnular, usuarioId })
+
+    const despues = await totalDelPeriodo(prisma, donde)
+    const sumaDespues = new Prisma.Decimal(despues._sum.total ?? 0)
+
+    // Sólo entró el $500 cobrado: el $700 se anuló y no cuenta, aunque la
+    // venta siga existiendo (crearVenta no la borra).
+    expect(sumaDespues.minus(sumaAntes).toString()).toBe('500')
   })
 })
 

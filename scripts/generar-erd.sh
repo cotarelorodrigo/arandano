@@ -77,6 +77,13 @@ componer() {
 > aísla un tenant de otro. Viven en el SQL escrito a mano de las migraciones, no
 > en el schema, así que \`migrate diff\` no las ve. El modelo de aislamiento está
 > explicado en \`docs/superpowers/specs/2026-08-04-schema-nucleo-design.md\`.
+>
+> **Tampoco muestra los índices únicos escritos a mano en una migración**, por
+> el mismo motivo: \`migrate diff\` compara contra \`schema.prisma\`, no contra el
+> SQL de \`prisma/migrations/\`. \`cajas_una_abierta_por_tenant\` —el índice único
+> PARCIAL (\`WHERE cerrada_en IS NULL\`) que es la invariante que define la
+> tabla \`cajas\`— es hoy el único caso, y no aparece en ninguna parte de este
+> documento.
 
 EOF
   erd_desde_ddl "$ddl"

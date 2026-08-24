@@ -84,10 +84,45 @@ export function Entrar({ base }: { base: BaseDeTenant }) {
         placeholder="tunegocio"
         aria-invalid={error}
         className="w-40"
+        // El click que revela este campo (EntradaDeSubdominio, más abajo) es la
+        // única interacción del visitante hasta acá: enfocarlo de entrada evita
+        // un segundo click que no aporta nada — mismo criterio que "Cambiar
+        // clave" en /usuarios, que ya usa autoFocus (Minor 17 de la review
+        // final: éste no lo tenía).
+        autoFocus
       />
       <Button type="submit" variant="secondary">
         Entrar
       </Button>
     </form>
+  )
+}
+
+/**
+ * El trigger del Nav: design/arandano.pen (nodo `BEen9`, frame `Sitio /
+ * Landing`) dibuja "Entrar a mi local" como texto plano, en reposo — la
+ * maqueta no puede dibujar un click, así que ese silencio no es instrucción
+ * de mostrar el campo siempre. Un click revela el `<Entrar>` de arriba tal
+ * cual, sin tocar su lógica: mismo patrón que ya usan "Cambiar clave" en
+ * /usuarios y los mini-forms de `app/(app)/vender/caja.tsx` para interacción
+ * que la maqueta no dibuja.
+ *
+ * Separado de `Entrar` (y no un `if` adentro de ese mismo componente) para
+ * que el texto en reposo pueda vivir en Nav sin arrastrar el estado del
+ * formulario completo hasta que alguien lo pida.
+ */
+export function EntradaDeSubdominio({ base }: { base: BaseDeTenant }) {
+  const [abierto, setAbierto] = useState(false)
+
+  if (abierto) return <Entrar base={base} />
+
+  return (
+    <button
+      type="button"
+      onClick={() => setAbierto(true)}
+      className="text-[13px] font-semibold text-foreground-soft"
+    >
+      Entrar a mi local
+    </button>
   )
 }

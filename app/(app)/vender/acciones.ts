@@ -5,6 +5,8 @@ import { exigirSesion } from '@/lib/auth/sesion'
 import { crearVenta } from '@/lib/ventas/crear'
 import { ErrorDeVenta } from '@/lib/ventas/errores'
 import { buscarArticulosVendibles, type ArticuloVendible } from '@/lib/ventas/buscar'
+import { abrirCaja, cerrarCaja } from '@/lib/caja/abrir-cerrar'
+import { ErrorDeCaja } from '@/lib/caja/errores'
 import { aDecimal, ErrorDeFormato } from '@/lib/formato/numeros'
 import { esUuid } from '@/lib/uuid'
 import type { MedioPago, Moneda } from '@/generated/prisma/client'
@@ -122,4 +124,58 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
 export async function buscarArticulos(texto: string): Promise<ArticuloVendible[]> {
   const sesion = await exigirSesion()
   return buscarArticulosVendibles(sesion.tenant.id, texto)
+}
+
+export type EstadoCaja = { error: string | null }
+
+/** `abrirCaja`/`cerrarCaja` tiran `ErrorDeCaja`, salvo la pertenencia del
+ *  usuario (`exigirUsuario`, compartida con el motor de ventas), que tira
+ *  `ErrorDeVenta` — ver el comentario de `errores.ts` sobre por qué esa
+ *  función no duplica su propia clase de error para esto. Cualquier otra
+ *  cosa se relanza: un bug de verdad tiene que llegar al log, no aplanarse
+ *  en un cartel genérico. */
+function traducirErrorDeCaja(e: unknown): EstadoCaja {
+  if (e instanceof ErrorDeCaja || e instanceof ErrorDeVenta) {
+    return { error: e.message }
+  }
+  throw e
+}
+
+/**
+ * Abre la caja del turno desde el chip del header de `/vender`.
+ *
+ * Cualquiera del local abre, dueño o empleado — decisión ya tomada en
+ * `lib/caja/abrir-cerrar.ts`, esta action sólo la expone al formulario del
+ * chip y traduce el resultado.
+ */
+export async function abrirCajaDesdeVender(_e: EstadoCaja, datos: FormData): Promise<EstadoCaja> {
+  try {
+    const sesion = await exigirSesion()
+    const saldoInicial = String(datos.get('saldoInicial') ?? '0')
+    await abrirCaja(sesion.tenant.id, sesion.usuario.id, saldoInicial)
+    // Revalida /vender y no /caja: no existe esa pantalla todavía, y este
+    // chip vive únicamente acá.
+    revalidatePath('/vender')
+    return { error: null }
+  } catch (e) {
+    return traducirErrorDeCaja(e)
+  }
+}
+
+/** Cierra la caja del turno en curso, mismo chip.
+ *
+ * Sin ningún parámetro: no necesita ni el estado previo ni ningún campo del
+ * formulario, y `useActionState` la acepta igual como action —una función
+ * con MENOS parámetros que los que el llamador puede pasar es asignable al
+ * tipo que React espera—, así que declarar `_e`/`datos` sin usarlos sería
+ * puro ruido para el linter. */
+export async function cerrarCajaDesdeVender(): Promise<EstadoCaja> {
+  try {
+    const sesion = await exigirSesion()
+    await cerrarCaja(sesion.tenant.id, sesion.usuario.id)
+    revalidatePath('/vender')
+    return { error: null }
+  } catch (e) {
+    return traducirErrorDeCaja(e)
+  }
 }

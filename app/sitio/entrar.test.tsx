@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { destinoDeSubdominio } from './entrar'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { destinoDeSubdominio, Entrar } from './entrar'
 
 /**
  * La navegación en sí es del navegador y no se prueba acá; lo que se prueba es
@@ -48,5 +49,15 @@ describe('destinoDeSubdominio', () => {
     expect(
       destinoDeSubdominio('flor', { protocolo: 'http', dominio: 'dev.arandano.app', puerto: ':3000' } as const),
     ).toBe('http://flor.dev.arandano.app:3000')
+  })
+})
+
+// Minor 17 de la review final: el campo que un click revela no enfocaba
+// solo, a diferencia de "Cambiar clave" en /usuarios (que sí usa autoFocus)
+// para el mismo patrón de "un click revela un formulario".
+describe('Entrar — el campo se enfoca solo al revelarse (Minor 17 de la review final)', () => {
+  it('el <Input> lleva autoFocus', () => {
+    const html = renderToStaticMarkup(<Entrar base={PROD} />)
+    expect(html).toContain('autofocus=""')
   })
 })

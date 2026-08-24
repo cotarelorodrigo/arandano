@@ -139,7 +139,7 @@ describe('página raíz', () => {
     expect(exigirSesion).not.toHaveBeenCalled()
     expect(redirect).not.toHaveBeenCalled()
     const html = renderToStaticMarkup(elemento)
-    expect(html).toContain('Abrís, vendés, cerrás la caja.')
+    expect(html).toContain('Todo el local en un solo lugar')
     expect(html).not.toContain('data-testid="tenant-nombre"')
   })
 

@@ -18,25 +18,71 @@
  * NINGÚN COLOR CRUDO. El brillo y el surco salen de tokens con color-mix, no
  * de rgba() inventados: un color que no está escrito en ningún lado es
  * exactamente lo que el sistema de diseño existe para impedir.
+ *
+ * TASK 2 DEL CIERRE (2026-08-22): el paño gana marca (logo + "Arándano"), una
+ * bajada bajo el nombre del local, un halo decorativo y un pie con la URL del
+ * tenant — las cuatro piezas que el relevamiento marcaba como bloques enteros
+ * faltantes contra design/arandano.pen, frame `App / Login`. Ninguna toca la
+ * mecánica de la persiana en sí (la animación, el travesaño, el acanalado):
+ * son contenido nuevo DEBAJO de ella, visible recién cuando termina de subir.
  */
 
 /*
- * El paño ocupa la mitad exacta en escritorio, y el ancho vive acá y no en una
- * utilidad de Tailwind porque es una proporción del diseño, no un layout
- * genérico. La primera versión le daba 7/12 y anclaba el cartel abajo: sobre
- * 1440×900 eso dejaba 840×900 de color plano con una línea de texto en una
- * esquina — se veía sin terminar, no espacioso. Centrado y a la mitad, el
- * cartel comparte eje vertical con el formulario y el paño se lee como lo que
- * es, la cara del local.
+ * El ancho del paño vive acá y no en una utilidad de Tailwind porque es una
+ * proporción del diseño, no un layout genérico. La primera versión le daba
+ * 7/12 y anclaba el cartel abajo: sobre 1440×900 eso dejaba 840×900 de color
+ * plano con una línea de texto en una esquina — se veía sin terminar, no
+ * espacioso. Centrarlo y ponerlo a la mitad era lo que hacía que el cartel
+ * compartiera eje vertical con el formulario y que el paño se leyera como lo
+ * que es, la cara del local.
+ *
+ * `justify-content` pasa de `center` a `space-between` en este ciclo, y es
+ * una decisión que vale dejar escrita porque contradice la de arriba: cuando
+ * el paño sólo tenía el cartel, centrarlo era lo que le daba peso. Ahora
+ * design/arandano.pen agrega marca arriba y un pie abajo (`justifyContent:
+ * "space_between"` en el nodo `mLbTM`), así que centrar el bloque de en medio
+ * ya no aplica — hay tres piezas para anclar, no una. El `.pen` manda: no es
+ * la animación de la persiana la que cambia (eso sigue intacto), es un
+ * layout que se había fijado antes de que estas piezas existieran.
+ *
+ * **El ancho, en cambio, quedó en 50% sin que nadie lo mirara (Minor 2 de la
+ * review final).** El `.pen` (frame `App / Login`, `yEJ9v`, consultado en
+ * vivo) no reparte el paño y el formulario a la mitad: el nodo `Formulario`
+ * (`cwd1V`) mide 600px FIJOS sobre un frame de 1440, y el `Paño` (`mLbTM`) es
+ * `fill_container` — o sea que ocupa los 840px restantes, 840/1440 = 58,33%.
+ * El ciclo que sumó `space-between` tomó esa propiedad del nodo pero no miró
+ * el ancho de su hermano. Como el lado del formulario en `page.tsx` ya es
+ * `flex-1` (crece para llenar lo que sobra), fijar acá el 58,33% alcanza para
+ * que el formulario quede en los 600/1440 = 41,67% que le corresponden, sin
+ * tocar `page.tsx`.
  */
 .pano {
   background-color: var(--marca);
-  justify-content: center;
+  /* El halo (design/arandano.pen, nodo `E3Jah`): un brillo radial decorativo
+     cerca de la esquina inferior-izquierda. Como `background-image`, no como
+     un div aparte — un div absoluto compite en el orden de pintado con
+     `.persiana` (también absoluto) y terminaría pintándose ENCIMA del texto
+     estático, porque los elementos posicionados se pintan después que los de
+     flujo normal sin importar el orden en el DOM. El fondo de una caja, en
+     cambio, siempre pinta antes que cualquier hijo.
+     `--marca-halo` (app/globals.css) y no un color-mix anidado a mano —
+     hallazgo (b) de la review final del cierre: la primera aproximación
+     mezclaba --marca-foreground 30% con --primary, y eso da #806AC0 contra el
+     #6B45D9 del .pen (+21 R, +25 G, −25 B). El token nuevo (--primary 70% +
+     --marca-soft 30% = #6A4FB9) queda bastante más cerca, y al ser un token
+     lo ata test/maqueta.test.ts — un color enterrado en un color-mix anidado
+     dentro de un radial-gradient era invisible para ese mecanismo entero. */
+  background-image: radial-gradient(
+    circle at 15% 88%,
+    color-mix(in srgb, var(--marca-halo) 55%, transparent) 0%,
+    transparent 62%
+  );
+  justify-content: space-between;
 }
 
 @media (min-width: 768px) {
   .pano {
-    width: 50%;
+    width: 58.3333%;
   }
 }
 
@@ -100,15 +146,74 @@
 }
 
 .arandano {
+  /* 14px/600, caja mixta, SIN tracking ni mayúsculas — consultado en vivo con
+     el MCP de Pencil (nodo `EqVux`: fontSize 14, fontWeight "600", sin
+     letterSpacing y sin ningún transform de caja). La versión anterior tenía
+     los cuatro valores mal (12px/500, tracking .18em, uppercase) porque se
+     diseñó como "la firma" leyendo el archivo viejo en vez del nodo — I4 de
+     la review final del cierre: este ciclo tocó esta misma regla para el
+     color y dejó las otras cuatro propiedades contradiciendo al `.pen`. La
+     maqueta dice "Arándano", no "A R Á N D A N O".*/
+  font-size: 0.875rem;
+  font-weight: 600;
+  /* --marca-soft y no --marca-dim: consultado en vivo con el MCP de Pencil,
+     el nodo `EqVux` ("Arándano") pinta con #B6A6E8, que es exactamente
+     --marca-soft — no el --marca-dim que este archivo usaba antes de este
+     ciclo. El relevamiento escrito no marcaba esta diferencia de color (sólo
+     avisaba que faltaba el logo); vino de mirar el .pen directo. Con el logo
+     nuevo al lado (mismo color, ver .logo más abajo), el conjunto pasa a leer
+     como una mini-marca, un escalón más visible que la firma sola de antes.
+     6.91:1 sobre --marca (docs/sistema-de-diseno.md ya lo documentaba). */
+  color: var(--marca-soft);
+}
+
+/* El logo (design/arandano.pen, nodo `K0PRd`): un CÍRCULO de 26px —
+   border-radius 13px sobre 26px es la mitad exacta, no una esquina
+   redondeada (Minor 15 de la review final: la docs y este comentario lo
+   llamaban "cuadrado"). Relleno sólido, mismo color que el texto "Arándano"
+   de al lado (ver arriba). Sin ícono adentro: la maqueta lo dibuja sin
+   ningún glifo, así que agregar uno sería inventar contenido que el .pen no
+   pide. */
+.logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 13px;
+  background-color: var(--marca-soft);
+  flex-shrink: 0;
+}
+
+/* La bajada (design/arandano.pen, nodo `H3uyf9`), bajo el nombre del local:
+   mismo color que la marca de arriba, --marca-soft — el .pen la pinta con el
+   mismo #B6A6E8. Sistema y no Archivo: sólo el cartel paga la cara de
+   display en esta pantalla. */
+.bajada {
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--marca-soft);
+}
+
+/* El pie (design/arandano.pen, nodo `y8KkFc`): la URL del tenant en
+   --marca-dim (el .pen la pinta con #9C8BD6, que es exactamente ese token) y
+   la nota en un tinte más apagado todavía. */
+.pieUrl {
   font-size: 0.75rem;
-  font-weight: 500;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  /* --marca-dim y no una opacidad sobre --foreground: el paño es una superficie
-     de marca y tiene sus propios colores de texto. Con la paleta clara,
-     --foreground es casi negro, así que la versión anterior de esta línea
-     dejaba la firma ilegible. 5.09:1 sobre --marca. */
+  font-weight: 600;
   color: var(--marca-dim);
+}
+
+.pieNota {
+  font-size: 0.6875rem;
+  /* El .pen pinta esta nota en #7A67B8 — un violeta más apagado que
+     --marca-dim, sin token $ar-* propio. Se aproxima mezclando los dos
+     tokens de marca más cercanos (70% --marca-dim, 30% --marca) en vez de
+     escribir el hex a mano: da #7A68B3 — R exacto, G +1, B −5 contra el
+     valor del .pen (Minor 4 de la review final: el comentario anterior decía
+     "a menos de dos unidades por canal", y el azul se va 5). A 11px de texto
+     apagado sobre violeta profundo la diferencia es invisible, así que no
+     amerita un token nuevo — pero el comentario tiene que decir la
+     diferencia real, no una que suena mejor. Ningún hex crudo, mismo
+     criterio que el halo de .pano más arriba. */
+  color: color-mix(in srgb, var(--marca-dim) 70%, var(--marca) 30%);
 }
 
 /*
@@ -137,6 +242,28 @@
   /* Mismo motivo que la firma: el texto que va sobre el paño sale de los tokens
      del paño. 15.11:1 sobre --marca. */
   color: var(--marca-foreground);
+}
+
+/*
+ * El H1 "Entrar" del formulario (design/arandano.pen, nodo `M6mNY`): rol
+ * nuevo de la escala tipográfica ("H1 de login", docs/sistema-de-diseno.md),
+ * 28px/600, sin font-stretch propio — Archivo a su ancho normal, no el eje
+ * expandido del cartel de arriba.
+ *
+ * Vive en el mismo módulo que el cartel porque es el único CSS module que
+ * esta pantalla tiene, no porque tenga algo que ver con la persiana. Lo usa
+ * formulario.tsx, no page.tsx.
+ *
+ * Este título NO reintroduce lo que un ciclo anterior sacó a propósito: aquel
+ * <CardTitle> repetía el NOMBRE DEL LOCAL adentro del panel del formulario,
+ * redundante con el <h1> del paño (ver el comentario de formulario.tsx). Éste
+ * dice "Entrar" — un rótulo del formulario, no una segunda copia del nombre.
+ */
+.tituloEntrar {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 1.75rem; /* 28px */
+  color: var(--foreground);
 }
 
 @media (prefers-reduced-motion: reduce) {

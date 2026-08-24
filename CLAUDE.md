@@ -213,9 +213,14 @@ quedan abiertas se siguen encareciendo con cada mes que pasa.
   Decimal(12,2)?` existe y el ingreso de mercadería lo captura, opcional. Se
   cerró en el ciclo que construyó la pantalla que conoce ese número —el
   momento en que alguien tiene la factura del proveedor en la mano— y no
-  después, que es lo que la volvía una puerta de una sola dirección. **Nadie
-  la lee todavía**: no hay reportes de margen ni costo promedio, y eso sigue
-  siendo su propio ciclo. Lo que cambió es que el dato dejó de tirarse.
+  después, que es lo que la volvía una puerta de una sola dirección.
+  ~~**Nadie la lee todavía.**~~ **Cerrada** (2026-08-22, ciclo del rediseño de
+  inventario). El tile "Último costo" de `/inventario/[id]` es su primer
+  lector: busca el ingreso con costo cargado más reciente —no el ingreso más
+  reciente a secas, que puede no tenerlo— y calcula el margen contra el
+  precio de venta actual. Sigue sin haber reportes de margen ni costo
+  promedio agregados sobre todo el catálogo; eso sigue siendo su propio
+  ciclo, si alguna vez hace falta.
 - **La secuencia de SKU puede tener huecos, y es a propósito.** Decidido en el
   mismo ciclo (2026-08-11). `Tenant.proximoSkuArticulo` se incrementa en **su
   propia transacción comiteada**, separada de la que inserta el artículo, y no
@@ -426,9 +431,378 @@ Y del producto:
     el documento, medida una vez al elegir la paleta, como decisión escrita y
     no como aserción que el gate sostenga.
 
-  **Pendiente**: nadie miró todavía la paleta nueva en un navegador, y las
-  once pantallas de la maqueta **no están construidas** — el código sigue
-  sirviendo el layout viejo con los colores nuevos.
+  **El shell ya está construido** (2026-08-21). El sidebar de 248 px de la
+  maqueta reemplazó al header horizontal, y las diez pantallas de aplicación
+  —no las trece que diseña `design/arandano.pen`: `/login`, el ticket y la
+  landing no llevan shell— abren con el encabezado de 66 px. Ver
+  `docs/superpowers/specs/2026-08-21-maqueta-shell-design.md`.
+
+  De los ocho tokens `--sidebar-*` que trae `shadcn add sidebar`, **volvieron
+  siete**. El caso `no quedan tokens de sidebar` —que existía porque estos
+  ocho estaban declarados sin que ningún componente los usara, y se borró al
+  reintroducirlos con el sidebar— exigía auditar el uso real antes de darlo
+  por bueno, y esa auditoría encontró que `--sidebar-primary-foreground` no lo
+  pinta nada: ni el rótulo "ARÁNDANO" de la marca del sidebar (usa
+  `--sidebar-primary` como texto, sin ningún fondo pintado con él — y no es el
+  cartel, que es el nombre del local y paga otro token), ni el avatar del pie
+  (pinta con `--marca` / `--marca-foreground`, no con este par, aunque ambos
+  resuelvan al mismo blanco). Se podó, con la razón escrita junto a los siete
+  que quedan en `app/globals.css`. **Vale la pena dejar anotado el punto ciego
+  del propio grep de auditoría**, porque el próximo componente de shadcn que
+  sume tokens va a repetir la pregunta: buscar en `app/` incluye
+  `app/globals.css`, y la línea de `@theme inline` que expone cada token a Tailwind
+  (`--color-X: var(--X)`) hace que ese token se "encuentre a sí mismo" — el
+  conteo nunca puede dar cero para un token ya declarado, lo consuma o no
+  algún componente real. La corrección fue excluir esa auto-referencia y
+  contar sólo el consumo en `.tsx`.
+
+  **La regla más importante que dejó el ciclo**: el dueño del producto fijó
+  que `design/arandano.pen` es la autoridad, y que cuando contradice al
+  código, a la documentación o a un test, **se modifica lo otro**. Ya obligó a
+  dos correcciones: el título de pantalla pasó a pagar Archivo (la cara de
+  display pasó de dos superficies a tres) y se corrigió la tabla de
+  `docs/sistema-de-diseno.md`.
+
+  **El punto ciego que hace falta nombrar**: `test/maqueta.test.ts` ata el
+  `.pen` con el CSS **sólo en los colores**, a propósito. Todo lo que no sea
+  color —tipografía, geometría, espaciado— puede divergir sin que nada avise.
+  Este ciclo hizo el primer barrido manual completo y encontró once
+  divergencias en total —seis de geometría en el sidebar, una de tipografía en
+  el encabezado, cinco más de gaps y tracking en el barrido final— y no doce:
+  una de las seis del sidebar, el `line-height` del cartel, se había diferido
+  ahí por error (se creyó que ese archivo se compartía con el login) y recién
+  se cerró entre las cinco del barrido final, así que cuenta una sola vez.
+  Mientras dependa de que alguien vaya a mirar, la regla se sostiene sola hasta
+  que alguien se olvide.
+  Y una limitación que conviene dejar escrita: **`font-stretch` no es
+  representable en el schema del `.pen`**, así que el `112%` del cartel no se
+  puede verificar contra la maqueta en ninguna dirección.
+
+  **Queda para los ciclos siguientes**: las tres migraciones aditivas
+  (`Articulo.categoria`, `Caja`, `Tenant.cotizacionUsd`) y después el cuerpo de
+  cada pantalla, una por ciclo, en el orden que fija ese spec.
+- ~~Sumar las tres migraciones aditivas que el ítem de arriba dejó
+  pendientes.~~ **Hecho** (2026-08-22): `Articulo.categoria` (texto libre, no
+  una tabla — un rubro con veinte artículos no necesita un catálogo de
+  categorías para mantener, y agregar la tabla más adelante sigue siendo
+  aditivo si hiciera falta), el modelo `Caja` (sólo apertura y cierre) y
+  `Tenant.cotizacionUsd` junto con `cotizacionUsdEn`. **Sin UI a propósito, por
+  expand/contract**: la columna viaja primero y el código que la lee llega
+  recién en el ciclo de cada pantalla, así el rollback automático de un deploy
+  siempre tiene a dónde volver — revertir la imagen no sirve de nada si el
+  código que ya está en producción depende de una columna que la base todavía
+  no tiene, y ninguna migración de este ciclo crea esa dependencia.
+
+  **La caja entra sólo con apertura y cierre.** El arqueo, los movimientos de
+  efectivo sueltos y la pantalla `/caja` siguen siendo la pieza 6 del roadmap:
+  lo que hay hoy es el modelo y la garantía de que no hay dos turnos abiertos
+  a la vez, no el flujo completo de manejo de efectivo. Y esa garantía —**una
+  sola caja abierta por tenant**— la sostiene un índice único parcial en la
+  base (`CREATE UNIQUE INDEX … WHERE cerrada_en IS NULL`), no un chequeo de
+  aplicación: dos pestañas apretando "Abrir caja" en el mismo segundo pasan
+  las dos por cualquier `if` previo, y sólo la base ve las dos transacciones a
+  la vez. Una decisión de producto que vale registrar junto con el modelo:
+  **cualquiera del local abre y cierra la caja, dueño o empleado**. En un
+  mostrador abre el que llega primero a la mañana; la fila registra quién fue,
+  y sin arqueo todavía no hay plata que cuadrar contra nadie, que sería lo
+  único que justificaría restringirlo a un rol.
+
+  **La distinción que hay que dejar más clara, porque es la que alguien va a
+  querer borrar en seis meses**: `Tenant.cotizacionUsd` no es lo mismo que
+  `Pago.cotizacion`, que ya existía. `Pago.cotizacion` es a cuánto se cobró
+  *aquella* venta — histórico e inmutable, una venta de la semana pasada
+  tiene que seguir diciendo su cotización para siempre, aunque el dólar haya
+  cambiado tres veces desde entonces. `Tenant.cotizacionUsd` es a cuánto está
+  el dólar en el local *hoy*, el número que el dueño fija y que cambia.
+  Confundirlos no es un detalle: `lib/ventas/buscar.ts` ya calculaba
+  `ultimaCotizacionUsd()` desde el último `Pago`, y ésa es exactamente la
+  cotización vieja del jueves pasado si nadie volvió a pagar en dólares desde
+  entonces, mostrada en el header de `/vender` sin decir que es vieja. El
+  campo nuevo, con su `cotizacionUsdEn` al lado, es lo que permite algún día
+  distinguir ahí "el dólar de hoy" de "hace cuánto que nadie lo actualiza" —
+  unificar los dos campos borraría justo esa diferencia, entre lo que valió y
+  lo que vale.
+
+  **El cierre del rediseño (2026-08-22): Usuarios, Login y la landing del
+  ápex, contra `design/arandano.pen`.** `/usuarios` gana chips de rol y
+  estado, el aviso de clave generada en un bloque ámbar propio y el alta con
+  un control segmentado en vez de un `<select>`. `/login` gana la marca (logo
+  + "Arándano") y una bajada bajo el nombre del local en el paño, un pie con
+  el subdominio del tenant, y el formulario suma su título ("Entrar") y los
+  íconos de mostrar/ocultar la contraseña y de enviar. La landing se
+  reescribe entera: de nueve piezas sin copy literal de la maqueta a las
+  **siete** que design/arandano.pen dibuja (Nav, Hero, Módulos, Rubros,
+  Planes, Cierre, Pie), con precio real en Planes por primera vez y el estado
+  de cada módulo (Disponible/En camino) como dato en vez de tres bloques de
+  JSX escritos a mano.
+
+  **El formulario de captura pasa de cinco campos a uno solo** ("Tu WhatsApp
+  o tu mail"): `enviarLead` clasifica el valor por su forma —con arroba va a
+  `email`, si no va a `whatsapp`— y `nombre`/`rubro` quedan en NULL
+  (migración `lead_de_un_campo`, `nombre`/`email`/`rubro` nullable en
+  `Lead`). El motivo no es sólo la maqueta: este mismo documento describe un
+  trial de cinco días "con muchos registros que no convierten", y un
+  formulario de cinco campos delante de eso es fricción pura — "el alta es
+  instantánea" no se sostenía con cinco campos.
+
+  **El retrato de la landing (`app/sitio/retrato.tsx`) vuelve a seguir al
+  `/vender` real.** Se había quedado atrás del rediseño del carrito de ese
+  ciclo (tabla pelada, sin stepper, sin chip de stock, sin banda de total) —
+  la landing publicitaba un producto que ya no se veía así. Se reconstruye
+  con los mismos componentes de shadcn y el mismo formateo de plata
+  (`lib/formato/mostrar.ts`), sin importar `punto-de-venta.tsx` directo: ese
+  archivo lleva `'use client'`, y un export de un módulo cliente le llega a
+  un componente de servidor como un proxy no invocable.
+
+  **Con esto, las trece pantallas que dibuja `design/arandano.pen` están
+  construidas.** `docs/decisiones-del-rediseno.md` reúne las decisiones que
+  el rediseño tomó sin nadie a quien preguntarle —interpretaciones del
+  `.pen`, criterios que se repitieron ciclo a ciclo— para que no queden
+  dispersas en commits sueltos. Lo que sigue pendiente, explícitamente:
+
+  - **La verificación visual de las trece pantallas contra la maqueta.**
+    Ningún test puede juzgar si un color, un espaciado o una tipografía se
+    ven bien de verdad — eso depende de que una persona las mire, una por
+    una, y quedó sin hacer en este cierre.
+  - **El arqueo de caja** (apertura y cierre ya existen desde el ciclo de
+    `Caja`; el arqueo, los movimientos de efectivo sueltos y la pantalla
+    `/caja` siguen siendo la pieza 6 del roadmap).
+  - **Los repuestos de servicio técnico**, que es el ciclo que va a cerrar la
+    decisión abierta de `MovimientoStock` (ver *Decisiones abiertas del
+    modelo de datos*, más arriba).
+  - **La pregunta abierta del grafo de estados** que dejó el ciclo de
+    Servicio Técnico sobre qué botones dibuja el paño de `EN_REPARACION` —
+    ver el párrafo "Pregunta abierta para el dueño del producto" unas
+    páginas más arriba, en el rediseño de esas tres pantallas.
+- ~~Rediseñar el cuerpo de `/vender` contra la maqueta.~~ **Hecho**
+  (2026-08-22). `design/arandano.pen`, frame `App / Vender`: el buscador pasó
+  a barra prominente a todo el ancho con su propio atajo (`F2`), la cinta del
+  carrito vive dentro de una card con un stepper `[−] [valor] [+]` de
+  cantidad, la banda del total se pinta con `--marca`, y el panel de cobro
+  (384 px) muestra chips de vuelto/faltante y la equivalencia en pesos de un
+  pago en dólares. `/vender` es la **primera** de las diez pantallas de
+  aplicación con su cuerpo tocado desde que el shell se instaló (ver la nota
+  de arriba) — las demás seguían sirviendo su layout viejo con los colores
+  nuevos, cada una su propio ciclo. **Sin contador acá, a propósito**: un
+  número mantenido a mano en este párrafo ya quedó viejo dos veces en este
+  mismo rediseño (Hallazgo de la review final del cierre, Minor 12) — es la
+  misma regla que este documento aplica para el `version` de `package.json`
+  contra el tag de git, y por la que la sección de arriba dice, sin números,
+  que **las trece pantallas de la maqueta ya están construidas**. Ver
+  `docs/superpowers/plans/2026-08-22-vender.md` y `docs/pantallas.md`
+  (sección `/vender`) para el detalle completo de lo construido en este
+  ciclo puntual.
+
+  **El chip de caja entra con estado real y control, no sólo con el dato.**
+  `cajaAbierta()` (`lib/caja/abrir-cerrar.ts`) ya existía desde el ciclo de
+  arriba sin que ninguna pantalla la llamara — un chip que mostrara "sin
+  caja" para siempre habría sido peor que no tenerlo. Ahora el header de
+  `/vender` la muestra y ofrece abrir o cerrar el turno ahí mismo. **Sigue
+  sin entrar** una pantalla `/caja`, el arqueo, y `crearVenta` sigue **sin**
+  exigir caja abierta para cobrar — a propósito: eso rompería el cobro de
+  cualquier tenant que no use la caja. Las tres siguen siendo la pieza 6 del
+  roadmap.
+
+  **Entraron tres atajos de teclado** (`F2` enfoca el buscador, `Enter`
+  cobra, `Esc` vacía el carrito), con dos reglas que vale dejar escritas
+  porque no son obvias mirando sólo la maqueta:
+  - **`Enter` no dispara salvo con el foco en `<body>` (o sin ningún foco)**,
+    no sólo fuera del buscador. La regla general —el atajo global sólo tiene
+    trabajo donde Enter todavía no significa nada para nadie— es más simple
+    que un caso especial para el buscador, y lo cubre igual: ahí Enter
+    agrega el artículo, no cobra, sin que el código tenga que nombrarlo
+    aparte.
+  - **`Esc` vacía con confirmación en dos pasos sobre la MISMA tecla** —el
+    primer Esc arma la confirmación (la leyenda bajo el botón cambia), el
+    segundo confirma, y se desarma solo a los 3 segundos o apenas se toca una
+    línea del carrito—, no con un `confirm()` del navegador ni con un
+    vaciado deshacible. Es el mismo mecanismo que ya elegía `AnularVenta`
+    (`app/(app)/ventas/formularios.tsx`) para "esto es irreversible pero
+    frecuente": sin diálogo —que además competiría por la misma tecla con el
+    manejo propio de Escape de cualquier panel modal futuro— y sin sumar una
+    librería de toasts sólo para un vaciado deshacible.
+
+  **Corregido después** (2026-08-22, review final del rediseño): la primera
+  versión de las dos reglas de arriba era una deny-list de tagNames
+  (`INPUT`, `TEXTAREA`, `SELECT`, `BUTTON`) para Enter, y la rama de Esc no
+  tenía guarda de foco alguna. Las dos tenían el mismo bug de runtime,
+  expuesto por la propia decisión (más abajo en este documento) de pasar los
+  `<select>` de medio/moneda a `Select` de shadcn (Radix): Radix no
+  renderiza ningún `<select>` — el trigger es un `<button>` y la opción
+  resaltada de un dropdown abierto es un `<div role="option">` —, y ni
+  `@radix-ui/react-select` ni `DismissableLayer` cortan la propagación del
+  evento hacia `window`. Con el carrito armado, abrir "Medio", bajar a
+  "Transferencia" y apretar Enter **cobraba la venta con el medio anterior**
+  (la deny-list dejaba pasar el `<div>`); cerrar ese mismo dropdown con Esc
+  armaba el vaciado del carrito, y hacerlo una segunda vez sobre "Moneda" lo
+  confirmaba — dos Esc sin relación con el carrito alcanzaban para vaciarlo.
+  El arreglo: `puedeDispararCobroDesdeFoco` pasó a allow-list (sólo `BODY` o
+  ningún foco dejan pasar Enter) y el listener compartido se abstiene entero
+  cuando `hayOverlayDeRadixAbierto()` encuentra un overlay de Radix montado
+  (`[role="listbox"]`/`[role="dialog"]`/`[role="menu"]`). El mismo problema,
+  sin overlay de Radix de por medio, alcanzaba también al mini-form de caja
+  del header (`caja.tsx`): apretar Escape ahí armaba el vaciado del carrito
+  de al lado, así que esos dos mini-forms cortan Escape con
+  `stopPropagation()` en su propio `onKeyDown`.
+
+  **La lectura del `.pen` que este ciclo deja escrita, porque los ciclos
+  siguientes la van a necesitar**: la maqueta modela estados de **reposo**,
+  no de interacción, y su silencio sobre algo no es una instrucción de
+  borrarlo. La lista de resultados del buscador (el typeahead) no tiene
+  ningún frame en `App / Vender`, y se mantuvo igual — es el mismo criterio
+  que ya regía para `--primary-hover`, un token que tampoco aparece en la
+  maqueta porque un frame estático no puede dibujar un hover. Borrar el
+  typeahead porque "el `.pen` no lo dibuja" habría sacado una capacidad real
+  —buscar por nombre cuando no hay código de barras— a cambio de nada. La
+  pregunta correcta ante un silencio del `.pen` es qué pierde el producto si
+  se saca, no si el archivo lo dibuja.
+
+  Una decisión más chica pero real, en el mismo espíritu de leer la maqueta a
+  conciencia: **`Select` de shadcn (Radix) reemplazó los `<select>` nativos**
+  de medio de pago y moneda, revirtiendo una decisión que un comentario de un
+  ciclo anterior había diferido a propósito —Radix trae popover propio y
+  navegación por teclado, costo real—. Se aceptó porque la maqueta pide un
+  chip con `chevron-down` que ningún `<select>` nativo dibuja en ningún
+  browser, y porque `/vender` es, de las diez pantallas, la que más se opera
+  sin mouse: ahí el manejo de Radix es mejor que el nativo, no peor.
+
+  **Y el rediseño de `/ventas` y `/ventas/[id]`** (2026-08-22, ciclo propio,
+  posterior al del shell y al de `/vender`). El tile "Total del período" pasa
+  a pintarse con `--marca` —`docs/sistema-de-diseno.md` ya lo listaba entre
+  las anclas de marca del producto, así que el código venía contradiciendo su
+  propio sistema de diseño escrito, no sólo la maqueta—. El listado suma
+  chips de rango rápido (Hoy / 7 días / Este mes), pasa a vivir dentro de su
+  propia card, cambia "Vendió" de empleado a **cliente** y suma la columna
+  Medios. El detalle suma el panel "Resumen" que no existía (Fecha, Vendió,
+  Cliente, Estado, Comprobante) y la columna Subtotal en "Qué se vendió".
+
+  **El panel "Cómo entró la plata" se reescribió sin recharts**: la maqueta
+  siempre dibujó una barra de un solo color por medio de pago, nunca dos
+  series apiladas por moneda —la segunda serie (`--chart-2`) se había elegido
+  escribiendo el código, no diseñando la pantalla, y `test/maqueta.test.ts` ya
+  lo dejaba anotado—. La reescritura usa `Progress` de shadcn más un reparto
+  por el método del resto mayor para que los porcentajes cierren en 100
+  siempre. Efecto colateral: el componente dejó de necesitar `'use client'`, y
+  con eso `grafico.test.tsx` dejó de ser el único archivo del repo que corría
+  en jsdom —no hay nada que medir del lado del cliente, así que
+  `renderToStaticMarkup` alcanza para afirmar todo—.
+
+  **"Sin factura ARCA" es texto fijo, no leído de ningún campo**: no existe
+  `model Factura` en el schema (ver *Decisiones abiertas del modelo de
+  datos*, más arriba), y hoy ninguna venta tiene comprobante fiscal, así que
+  el texto es exactamente cierto para todas. El disparador de cuándo deja de
+  serlo: el día que ARCA se integre y exista un modelo de factura —recién ahí
+  este campo pasa a leer de él, con su propia migración aditiva.
+
+  **Y el rediseño de `/inventario`, `/inventario/nuevo` e `/inventario/[id]`**
+  (2026-08-22, ciclo propio, posterior al de `/ventas`). El listado suma el
+  segmentado Todos/Productos/Servicios, la categoría de dos niveles bajo el
+  nombre y el chip "Queda poco" (umbral fijo para todo el catálogo,
+  `STOCK_BAJO_UMBRAL`, sin columna nueva en el schema). El alta pasa a tres
+  cards con tarjetas seleccionables Producto/Servicio en vez de un
+  `<select>`. La ficha gana dos columnas: a la izquierda los tiles de "En
+  stock" (pintado con `--marca`, el ancla de esta pantalla que
+  `docs/sistema-de-diseno.md` ya listaba sin que nadie la construyera),
+  "Precio de venta" y "Último costo"; a la derecha "Datos" y "Cómo se movió".
+
+  **`MovimientoStock.costoUnitario` dejó de ser un dato que nadie lee** (ver
+  *Decisiones abiertas del modelo de datos*, más arriba, donde queda cerrada
+  del todo): el tile "Último costo" es su primer lector, y el margen se
+  calcula contra el precio de venta actual, nunca contra un promedio.
+
+  **La columna "Queda" del historial se reconstruye, no se guarda.**
+  `MovimientoStock` no tiene columna de saldo por fila —`Articulo.stock` es
+  apenas el caché de la suma de sus movimientos—, así que `calcularSaldos`
+  (`app/(app)/inventario/historial.tsx`) recorre los deltas hacia atrás desde
+  el stock actual. Los motivos pasan de texto plano a chips con ícono, y
+  "Quién" + "Detalle" se funden en una sola celda cuya redacción cambia según
+  el motivo: una venta identifica a quién atendió, un ajuste a quién contó, un
+  ingreso prioriza la factura y el costo por sobre quién lo recibió.
+
+  **"Cómo se movió"** agrega seis barras con las unidades vendidas por mes,
+  **agregadas en JavaScript y no con un `$queryRaw`**: la extensión de
+  `lib/tenant/prisma.ts` intercepta operaciones de modelo para setear
+  `arandano.tenant_id`, no raw queries, y un `$queryRaw` sin esa variable
+  choca contra RLS y devuelve cero filas en silencio — el mismo hallazgo que
+  ya había dejado anotado `/ventas` para su panel de medios de pago, y que
+  este ciclo confirma que no era un caso aislado.
+
+  **"Exportar CSV" es un server action que arma el CSV en memoria y lo
+  devuelve como string**, sin librería, sin endpoint nuevo y sin streaming: el
+  botón lo convierte en una descarga con un `Blob` del lado del cliente,
+  porque un server action no puede fijar `Content-Disposition`. Las notas se
+  escapan por RFC 4180, y la acción no está restringida a dueño —es de sólo
+  lectura, de datos que la pantalla ya le muestra a cualquier sesión—.
+
+  **"Guardar cambios"/"Desactivar" (ficha) y "Cancelar"/"Guardar artículo"
+  (alta) subieron al Topbar**, como el resto de las pantallas ya rediseñadas.
+  La maqueta separa el botón (Topbar) del `<form>` con los campos (Cuerpo), y
+  eso exige que sea **un solo componente** el que llame a `useActionState` y
+  reparta `pendiente`/el estado a los dos lugares —dos componentes
+  separados, cada uno con su propio hook, hubieran dejado al botón del Topbar
+  sin enterarse nunca de que el `<form>` remoto (atado por el atributo HTML
+  `form={id}`) terminó de enviarse—. `FichaDeArticulo` y `FormularioDeAlta`
+  (`app/(app)/inventario/formularios.tsx`) son ese componente único.
+
+  **Y con este ciclo, `recharts` sale del repo entero.** El bloque de barras
+  de "Cómo se movió" —el único candidato que quedaba, según la nota del
+  rediseño de `/ventas`— se construyó con `div`s, igual que el panel de
+  medios de pago. Sin ningún consumidor real (`components/ui/chart.tsx`
+  estaba huérfano desde el rediseño de `/ventas`), se borró ese archivo, se
+  sacó `recharts` de `package.json`, y con él los tokens `--chart-1` y
+  `--chart-2` —el primero nunca tuvo consumidor propio, el segundo era la
+  serie de dólares que la maqueta nunca pidió—. La excepción de jsdom en
+  `vitest.config.mts` ya se había retirado en el ciclo de `/ventas` (arriba):
+  no había nada más que sacar ahí.
+
+  **Y el rediseño de las tres pantallas de Servicio Técnico** (2026-08-22,
+  ciclo propio, posterior al de `/inventario`): el tablero
+  (`/servicio-tecnico`), la recepción (`/servicio-tecnico/nuevo`) y la ficha
+  de una orden (`/servicio-tecnico/[id]`).
+
+  **Entró el estado `APROBADO`, entre `PRESUPUESTADO` y `EN_REPARACION`.**
+  Antes de este ciclo, un presupuesto pasaba directo a reparación
+  (`PRESUPUESTADO → EN_REPARACION`) y la aceptación del cliente **no quedaba
+  registrada en ningún lado** — ni en el estado, ni en la bitácora. En un
+  service eso importa de verdad: es justo lo que hay que poder probar (a un
+  cliente que dice "yo no autoricé esto") antes de haber gastado un repuesto
+  que después nadie paga. `APROBADO` es aditivo al enum y **no reemplaza** el
+  camino directo: `PRESUPUESTADO → EN_REPARACION` se mantiene, porque hay
+  locales donde el cliente aprueba de palabra en el mostrador y el paso extra
+  no hace falta — es un registro que se puede usar, no uno obligatorio. Las
+  tres transiciones nuevas son `PRESUPUESTADO → APROBADO`, `APROBADO →
+  EN_REPARACION` y `APROBADO → SIN_REPARACION` (se abre el equipo y aparece
+  que no tiene arreglo incluso después de aprobado). El resto del grafo
+  —incluidas las transiciones de `EN_REPARACION`— **no se tocó**.
+
+  **Pregunta abierta para el dueño del producto, que este ciclo dejó
+  explícitamente sin responder**: `design/arandano.pen` dibuja, para el paño
+  de estado en `EN_REPARACION`, los botones Listo / Sin reparación /
+  Rechazado. El grafo real (`TRANSICIONES.EN_REPARACION`,
+  `lib/ordenes-de-trabajo/estados.ts`) es Listo / Presupuestado / Sin
+  reparación — sin `Rechazado` ahí, y con `Presupuestado` en su lugar (la
+  vuelta a presupuestar cuando se abre el equipo y aparece algo más). La
+  pantalla dibuja **lo que `TRANSICIONES` devuelve de verdad, no lo que
+  muestra la maqueta**, a propósito: agregar un estado que falta al enum
+  (como `APROBADO`, arriba) es llenar un hueco evidente que nadie discute;
+  cambiar a qué estados se puede pasar desde uno que ya existe es rediseñar
+  el flujo de trabajo del service, y esa decisión la tiene que tomar quien
+  entiende el negocio, no un ciclo de presentación que sólo tenía la maqueta
+  en la mano. Si la intención real es que `EN_REPARACION` pueda ir a
+  `RECHAZADO` (y no a `PRESUPUESTADO`), es un cambio de una línea en
+  `TRANSICIONES` — pero alguien tiene que decidirlo primero.
+
+  El resto del ciclo es presentación pura contra el `.pen`: los chips de
+  estado del tablero ganan color e ícono propios (`ESTADO_VISUAL`, un único
+  mapeo que también pinta la bitácora de la ficha), el listado pasa a vivir
+  en una card con `<Table>` real, el buscador de cliente de la recepción
+  pasa de `<select>` a cards seleccionables con "N órdenes previas" (dato
+  que no se calculaba: `Cliente.ordenes` ya era una relación, así que fue un
+  `_count`, no una migración), y la ficha suma el paño violeta "ESTADO
+  ACTUAL" con los botones de transición adentro, más la bitácora como línea
+  de tiempo (más nueva primero, al revés que antes). El detalle completo de
+  cada pantalla vive en `docs/pantallas.md`, no acá — éste es el resumen de
+  las decisiones que valen para releer más adelante.
 - ~~Construir la UI de inventario.~~ **Hecho** (2026-08-11). Listado con
   buscador y paginación, alta con SKU autogenerado y stock inicial que nace
   como movimiento, ingreso de mercadería con su costo, corrección por conteo
@@ -451,11 +825,21 @@ Y del producto:
   protege RLS sino el privilegio: `arandano_app` sólo inserta, y los leads se
   leen con `npm run leads`. El aviso sale por `notificarLead()` detrás de una
   interfaz —hoy loguea, el adaptador de la Cloud API entra cuando exista la
-  cuenta de Meta—. `--marca` gana su segunda y última superficie: la franja de
-  cierre, declarada en `docs/sistema-de-diseno.md` con la condición que la
-  hace caducar. **Decisión consciente**: la landing describe el producto
-  completo, incluido lo que todavía no está construido (caja, ARCA, catálogo,
-  bot, módulos). Ver `docs/superpowers/specs/2026-08-12-landing-design.md`.
+  cuenta de Meta—. `--marca` gana su segunda superficie de este ciclo: la
+  franja de cierre, declarada en `docs/sistema-de-diseno.md` con la condición
+  que la hace caducar. **Decisión consciente**: la landing describe el
+  producto completo, incluido lo que todavía no está construido (caja, ARCA,
+  catálogo, bot, módulos). Ver
+  `docs/superpowers/specs/2026-08-12-landing-design.md`.
+
+  **"Y última" no se sostuvo (Minor 13 de la review final del cierre):** el
+  ciclo del cierre del rediseño (2026-08-22) sumó dos superficies más en esta
+  misma pantalla —la card "Núcleo" en Módulos y la card "Profesional" en
+  Planes—, y `docs/sistema-de-diseno.md` se actualizó en su momento; esta
+  entrada, que describe el estado de 2026-08-12, no. Queda como registro
+  histórico de lo que era cierto ese día, no como el conteo vigente — para
+  eso está `docs/sistema-de-diseno.md`, sección "El arándano como
+  superficie".
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

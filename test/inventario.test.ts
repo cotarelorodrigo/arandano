@@ -404,6 +404,36 @@ describe('crearArticulo', () => {
     expect(movs[0].costoUnitario?.toString()).toBe('52000')
   })
 
+  it('guarda la categoría cuando se manda', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Vidrio templado 9H', tipo: 'PRODUCTO', precio: d('12000'),
+      categoria: 'Accesorios · Protección',
+    })
+    const { rows } = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [a.id])
+    expect(rows[0].categoria).toBe('Accesorios · Protección')
+  })
+
+  // Nullable a propósito (CLAUDE.md): un artículo sin categoría no puede
+  // romper nada, ni en el alta ni después, en el listado o la ficha.
+  it('sin categoría, la columna queda en null y no en cadena vacía', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Sin categoría', tipo: 'PRODUCTO', precio: d('1000'),
+    })
+    const { rows } = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [a.id])
+    expect(rows[0].categoria).toBeNull()
+  })
+
+  // Espacios sueltos tipeados por error no deberían quedar como si fueran un
+  // valor real: mismo criterio que exigirNombre.
+  it('una categoría de sólo espacios se guarda como null', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Categoría en blanco', tipo: 'PRODUCTO', precio: d('1000'),
+      categoria: '   ',
+    })
+    const { rows } = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [a.id])
+    expect(rows[0].categoria).toBeNull()
+  })
+
   it('sin stock inicial no escribe ningún movimiento', async () => {
     const a = await crearArticulo({
       tenantId, usuarioId, nombre: 'Sin stock todavía', tipo: 'PRODUCTO', precio: d('1000'),
@@ -503,6 +533,26 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
     // El tipo NO se edita: cambiarlo dejaría stock huérfano que el motor de
     // ventas ya no descuenta ni explica. No hay parámetro para hacerlo.
     expect(rows[0].tipo).toBe('PRODUCTO')
+  })
+
+  it('edita la categoría, incluido vaciarla de vuelta a null', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Con categoría', tipo: 'PRODUCTO', precio: d('100'),
+      categoria: 'Repuestos',
+    })
+    await editarArticulo({
+      tenantId, articuloId: a.id, nombre: 'Con categoría', sku: a.sku, precio: d('100'),
+      categoria: 'Audio',
+    })
+    const { rows } = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [a.id])
+    expect(rows[0].categoria).toBe('Audio')
+
+    await editarArticulo({
+      tenantId, articuloId: a.id, nombre: 'Con categoría', sku: a.sku, precio: d('100'),
+      categoria: '',
+    })
+    const vacia = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [a.id])
+    expect(vacia.rows[0].categoria).toBeNull()
   })
 
   it('rechaza mover el SKU a uno ya usado', async () => {

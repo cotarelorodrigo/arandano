@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound, forbidden, redirect } from 'next/navigation'
 import { tenantDelRequest } from '@/lib/tenant/desde-request'
 import { sesionActual } from '@/lib/auth/sesion'
+import { piezasDeOrigen } from '@/lib/auth/origen'
 import { FormularioLogin } from './formulario'
 import estilos from './persiana.module.css'
 
@@ -21,25 +22,52 @@ export default async function Login() {
   // desde que / redirige a /vender, pasar por ahí sería un salto de más.
   if (await sesionActual()) redirect('/vender')
 
+  // Sólo el dominio base: el pie (design/arandano.pen, nodo `y8KkFc`) muestra
+  // "flor.arandano.app", sin protocolo ni puerto — es una etiqueta para leer,
+  // no un link. piezasDeOrigen() y no DOMINIO_BASE crudo: es la misma fuente
+  // que arma el baseURL de Better Auth, y ya vive detrás de la lista blanca de
+  // protocolo que ese archivo explica.
+  const { dominioBase } = await piezasDeOrigen()
+  const dominio = `${resolucion.subdominio}.${dominioBase}`
+
   return (
     <main className="flex min-h-full flex-col md:flex-row">
       {/* El paño. La jerarquía es la decisión: el nombre del local grande y
           "Arándano" chico arriba. Quien entra acá labura en su negocio, no en
-          nuestra plataforma — el cartel es del local y la marca firma abajo. */}
+          nuestra plataforma — el cartel es del local y la marca firma abajo.
+          Tres bloques con justify-content: space-between (ver persiana.module.css):
+          Marca arriba, el nombre del local + su bajada en el medio, el pie
+          abajo. */}
       <section
         className={`${estilos.pano} relative flex flex-col overflow-hidden p-8 md:p-12`}
       >
         <div className={estilos.persiana} aria-hidden="true" />
-        <p className={`${estilos.arandano} mb-3`}>Arándano</p>
-        {/* El testid lo consume scripts/smoke.sh (caso_tenant_resuelve) para
-            verificar que el subdominio resolvió al tenant correcto. Dos cosas
-            no se pueden tocar sin mover ese caso en el mismo commit: el
-            atributo tiene que ser el ÚLTIMO antes de los hijos —el grep busca
-            `data-testid="tenant-nombre">` pegado al nombre— y el nombre tiene
-            que ser texto directo, sin un <span> en el medio. */}
-        <h1 className={estilos.nombre} data-testid="tenant-nombre">
-          {resolucion.tenant.nombre}
-        </h1>
+
+        <div className="flex items-center gap-[9px]">
+          <span className={estilos.logo} aria-hidden="true" />
+          <p className={estilos.arandano}>Arándano</p>
+        </div>
+
+        <div className="flex max-w-[560px] flex-col gap-[14px]">
+          {/* El testid lo consume scripts/smoke.sh (caso_tenant_resuelve) para
+              verificar que el subdominio resolvió al tenant correcto. Dos cosas
+              no se pueden tocar sin mover ese caso en el mismo commit: el
+              atributo tiene que ser el ÚLTIMO antes de los hijos —el grep busca
+              `data-testid="tenant-nombre">` pegado al nombre— y el nombre tiene
+              que ser texto directo, sin un <span> en el medio. */}
+          <h1 className={estilos.nombre} data-testid="tenant-nombre">
+            {resolucion.tenant.nombre}
+          </h1>
+          <p className={estilos.bajada}>
+            Ventas, stock, caja y servicio técnico del local. Entrá con tu usuario para empezar el
+            día.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <p className={estilos.pieUrl}>{dominio}</p>
+          <p className={estilos.pieNota}>Cada local entra por su propia dirección.</p>
+        </div>
       </section>
 
       {/* Arriba en el teléfono, centrado en escritorio. Centrarlo también en el

@@ -1,6 +1,6 @@
-import { Entrar, type BaseDeTenant } from './entrar'
+import type { BaseDeTenant } from './entrar'
 import { Formulario } from './formulario'
-import { Cartel, Prueba, Direccion, LoQueHace, Rubros, Planes, Cierre } from './secciones'
+import { Nav, Hero, Modulos, Rubros, Planes, Cierre, Pie } from './secciones'
 
 /**
  * El sitio público del ápex.
@@ -15,39 +15,38 @@ import { Cartel, Prueba, Direccion, LoQueHace, Rubros, Planes, Cierre } from './
  * dónde salen esos valores es la página. `base` son las tres piezas con las que
  * se direcciona un tenant (protocolo, dominio y puerto), que la página saca de
  * `piezasDeOrigen()` — las mismas que usa el baseURL de Better Auth.
+ *
+ * Las siete secciones (Nav, Hero, Módulos, Rubros, Planes, Cierre, Pie) siguen
+ * el orden de design/arandano.pen, frame `Sitio / Landing` — ver el comentario
+ * largo al principio de `secciones.tsx` para el porqué de cada cambio contra
+ * lo que había antes de la Task 4 del cierre del rediseño.
  */
 export function Landing({ base, whatsapp }: { base: BaseDeTenant; whatsapp: string }) {
   return (
-    <div className="min-h-full">
-      {/* La barra: Arándano firma chico, igual que en el login. La plataforma no
-          se pone el cartel del cliente. */}
-      <header className="border-b">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-6 px-6 py-3">
-          <span className="text-sm font-medium tracking-widest uppercase">Arándano</span>
-          <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-muted-foreground md:inline">Ya tengo cuenta</span>
-            <Entrar base={base} />
-          </div>
-        </div>
-      </header>
+    // bg-card, no sólo min-h-full: el .pen pinta el frame raíz (vDLU8) con
+    // $ar-surface y sólo DOS secciones (Módulos, Planes) con $ar-bg — I5 de
+    // la review final. El <body> de app/globals.css es bg-background, así
+    // que sin este fondo propio la página entera terminaba en el gris de
+    // fondo, y las dos declaraciones bg-background de Módulos/Planes no
+    // pintaban nada distinto de lo que ya había. Con esto, el bandeado
+    // blanco/gris/blanco/gris/marca/blanco del .pen vuelve a existir.
+    <div className="min-h-full bg-card">
+      <Nav base={base} />
 
       <main>
-        <Cartel />
-        <Prueba />
-        <Direccion dominio={base.dominio} />
-        <LoQueHace />
+        <Hero whatsapp={whatsapp} />
+        <Modulos />
         <Rubros />
         <Planes />
         <Cierre>
-          <Formulario whatsapp={whatsapp} />
+          {/* variante="oscura": este Formulario vive sobre la franja
+              --marca del Cierre, no sobre un fondo claro como el del Hero —
+              ver el comentario de formulario.tsx. */}
+          <Formulario whatsapp={whatsapp} variante="oscura" />
         </Cierre>
       </main>
 
-      <footer className="border-t">
-        <div className="mx-auto w-full max-w-5xl px-6 py-6 text-xs text-muted-foreground">
-          Arándano — sistema de gestión para comercios argentinos.
-        </div>
-      </footer>
+      <Pie />
     </div>
   )
 }

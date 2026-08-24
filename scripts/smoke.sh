@@ -115,14 +115,26 @@ caso_check_tenant() {
 #
 # El ápex sirve la landing, y eso son DOS afirmaciones que hay que hacer
 # juntas: que no es una página de tenant (el testid ausente) y que es la
-# landing de verdad (el formulario presente). Sin la segunda, un ápex que
+# landing de verdad (el <Formulario> presente). Sin la segunda, un ápex que
 # sirviera una página en blanco pasaba igual — que es exactamente lo que
 # servía antes de este ciclo.
+#
+# `name="contacto"` y no `name="nombre"`: la Task 5 del cierre del rediseño
+# achicó el formulario de cinco campos a uno solo, y este grep se quedó
+# buscando un campo que ya no existe (Critical de la review final). El caso
+# se llama caso_home_responde, así que el rojo hablaba de "la home no
+# responde" mientras la home respondía perfecto — el peor modo de falla
+# posible en un gate. Y como `npm test` no corre este script, nada lo vio
+# hasta que alguien deployó. `app/sitio/landing.test.tsx` ata este mismo
+# patrón al markup real, para que la próxima vez que diverja se note acá.
+# Y ahora es "el <Formulario>" en singular ya no aplica: la landing lo
+# renderiza DOS veces (Hero y Cierre) desde este mismo ciclo, pero un solo
+# grep alcanza para las dos porque el campo se llama igual en las dos.
 caso_home_responde() {
   local cuerpo
   cuerpo=$(curl -fsS --max-time 10 -H "Host: ${DOMINIO_BASE}" "$URL_BASE/") || return 1
   ! grep -q 'data-testid="tenant-nombre"' <<<"$cuerpo" || return 1
-  grep -q 'name="nombre"' <<<"$cuerpo"
+  grep -q 'name="contacto"' <<<"$cuerpo"
 }
 
 # El Host es obligatorio a partir de la resolución por subdominio: sin él, la

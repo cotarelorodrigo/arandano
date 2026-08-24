@@ -1,0 +1,38 @@
+/*
+ * Archivo sin font-stretch propio: los seis roles que este ciclo sumó en
+ * /ventas y /ventas/[id] —título de card, valor de tile, monto de tabla,
+ * banda de Total, número de paginación y cotización— piden la MISMA cara que
+ * Cartel e Importe (design/arandano.pen), pero ninguno le pide un ancho
+ * propio al eje `wdth`: se quedan en el 100% por default, igual que el
+ * Título de pantalla de components/shell/encabezado.module.css.
+ * test/tipografia.test.ts lo cuida con el mismo mecanismo que ese módulo: un
+ * font-stretch que apareciera acá sin fila en la tabla de la escala rompería
+ * el gate.
+ *
+ * POR QUÉ UN MÓDULO CSS Y NO `style={{ fontFamily: 'var(--font-archivo)' }}`
+ * A MANO. Así vivía hasta este arreglo, 19 veces entre page.tsx,
+ * [id]/page.tsx y grafico.tsx, y sin la pila de fallback que sí lleva
+ * components/importe.module.css: si `--font-archivo` no resolviera por lo
+ * que sea, el navegador caía al default de la plataforma en vez de a
+ * `ui-sans-serif, system-ui, sans-serif`, sin que nadie lo notara. Y al vivir
+ * en `style` y no en un módulo, evadía la vigilancia de
+ * test/tipografia.test.ts, que sólo inspecciona archivos `.module.css`.
+ *
+ * `.archivo` es la base —familia y fallback, nada de tamaño ni peso: esos
+ * siguen como utilidades de Tailwind (`text-[14px]`, `font-semibold`,
+ * `tabular-nums`), igual que ya estaban, porque varían de un uso a otro y
+ * duplicarlos acá sería una segunda fuente de verdad. `.tituloDeCard` es la
+ * única excepción: los cinco encabezados de card ("Qué se vendió", "Cómo se
+ * pagó", "Resumen", "Últimas ventas", "Cómo entró la plata") comparten
+ * tamaño y peso exactos, así que van compuestos en una sola clase — mismo
+ * criterio que `.titulo` de encabezado.module.css.
+ */
+.archivo {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+}
+
+.tituloDeCard {
+  composes: archivo;
+  font-weight: 600;
+  font-size: 0.9375rem; /* 15px */
+}

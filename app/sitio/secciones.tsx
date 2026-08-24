@@ -1,217 +1,544 @@
+import {
+  Box, CalendarClock, Car, Check, Coffee, Dog, Hammer, HeartPulse, Leaf,
+  Scissors, Shirt, Smartphone, Sparkles, Stethoscope, Store, Utensils, Wrench, Zap,
+} from 'lucide-react'
+import { EntradaDeSubdominio, type BaseDeTenant } from './entrar'
+import { Formulario } from './formulario'
 import { Retrato } from './retrato'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import estilos from './cierre.module.css'
+import tipografia from './tipografia.module.css'
 
 /**
  * Las secciones de la landing, en el orden en que se leen.
  *
- * El orden sigue el día de un local —abrís, vendés, reponés, cerrás— y no el
- * índice de features, que es lo que hace que una promesa amplia se lea concreta.
+ * Reescrito entero en la Task 4 del cierre del rediseño contra
+ * design/arandano.pen, frame `Sitio / Landing` (nodo `vDLU8`, consultado en
+ * vivo). La maqueta dibuja SIETE secciones —Nav, Hero, Módulos, Rubros,
+ * Planes, Cierre, Pie— y ninguna comparte el copy con lo que había antes: el
+ * código viejo tenía nueve piezas (header, Cartel, Prueba, Direccion,
+ * LoQueHace, Rubros, Planes, Cierre, footer) porque Cartel+Prueba eran dos
+ * secciones donde la maqueta pone una sola (Hero), y `Direccion`/`LoQueHace`
+ * no tienen equivalente en las siete de la maqueta —el `.pen` no las dibuja
+ * ESTADO DE REPOSO ni las MUDA a otro lado del frame (se buscaron, no están):
+ * `Direccion` la elimina la decisión 3 del plan del cierre; `LoQueHace` (seis
+ * filas numeradas de "qué hace" la app) queda reemplazada por lo que ahora
+ * cuenta la misma historia distinto — Módulos (arquitectura: núcleo + tres
+ * módulos) y Rubros (la grilla de doce rubros con qué módulos activa cada
+ * uno).
  *
- * Todas son server components sin estado: la única parte interactiva del sitio
- * es el formulario y el campo de "ya tengo cuenta".
+ * El copy es LITERAL del `.pen`, no reescrito ni "mejorado": es el texto que
+ * el dueño del producto escribió en la maqueta.
  *
- * El ritmo vertical sale de `py-12` por sección, o sea 96 px entre bloques, sin
- * salirse del subconjunto de la escala que declara docs/sistema-de-diseno.md.
+ * Todas son server components sin estado, salvo el trigger de "Entrar a mi
+ * local" del Nav (`./entrar`, un componente cliente aparte) y el formulario de
+ * captura (`./formulario`) — las únicas dos partes interactivas del sitio.
+ *
+ * `ANCHO` es la geometría de la maqueta, no una normalización nuestra: el
+ * frame `Sitio / Landing` (nodo `vDLU8`) es de 1440px y todas sus secciones
+ * miden 1328 de ancho, o sea 56px de padding lateral. Antes acá había un
+ * `max-w-5xl` (1024px) heredado de un ciclo anterior al `.pen`, sostenido con
+ * el argumento de que era "una decisión que este ciclo no reabre" — y no era
+ * una decisión sobre nada, era código escrito antes de que existiera la
+ * maqueta. Lo que costó: el Hero le da a la Muestra la mitad del ancho, y a
+ * 1024px esa mitad son 464px contra los 720 del `.pen`. El carrito de
+ * `retrato.tsx` copia los anchos de columna de /vender en píxeles, así que la
+ * columna del nombre quedaba con ~25px útiles y cada artículo se leía una
+ * palabra por renglón. Un contenedor demasiado angosto no se ve angosto: se
+ * ve como una tabla rota.
  */
 
-const ANCHO = 'mx-auto w-full max-w-5xl px-6'
+const ANCHO = 'mx-auto w-full max-w-[1440px] px-14'
 
 /**
- * El kicker: la etiqueta chica que dice de qué habla la sección, arriba del
- * título. La rayita va INLINE y no absolute a la izquierda como en la
- * maqueta: estas secciones viven adentro del contenedor de ancho de la
- * página, así que una rayita en offset negativo se sale de él — en una
- * pantalla angosta eso es una barra de scroll horizontal en la landing
- * pública, y ningún test de este repo la vería. aria-hidden en la rayita
- * porque no dice nada: lo dice el texto de al lado.
+ * El H2 que comparten Módulos, Rubros y Planes: 38px/700 Archivo, tracking
+ * -1px, line-height 1.12 (design/arandano.pen: nodos `zJXxh`, `htFds`,
+ * `Z4a34E` — los tres, medidos en vivo, son el mismo estilo letra por letra).
+ * Un solo lugar para las tres en vez de repetir la clase tres veces: si la
+ * maqueta cambia este tamaño, cambia acá y no en tres sitios que se pueden
+ * desincronizar.
  */
-function Kicker({ children }: { children: React.ReactNode }) {
+function TituloDeSeccion({ children }: { children: React.ReactNode }) {
   return (
-    <span className="mb-4 flex items-center gap-3 text-xs tracking-[0.06em] text-primary uppercase">
-      <span aria-hidden className="h-px w-11 bg-primary" />
+    <h2
+      className={`${tipografia.archivo} text-[38px] leading-[1.12] font-bold tracking-[-1px] text-foreground`}
+    >
       {children}
-    </span>
+    </h2>
   )
 }
 
-export function Cartel() {
+export function Nav({ base }: { base: BaseDeTenant }) {
+  // Sin border-b (Minor 7 de la review final): el .pen (nodo g3oxH) no
+  // dibuja stroke acá. El Pie sí lo lleva (border-t, más abajo) y ahí
+  // corresponde: son nodos distintos con decisiones distintas.
   return (
-    <section className={`${ANCHO} py-12`}>
-      <h1 className="max-w-3xl text-4xl font-semibold tracking-tight md:text-6xl">
-        Abrís, vendés, cerrás la caja.
-        <br />
-        Arándano lleva la cuenta.
-      </h1>
-      <p className="mt-6 max-w-2xl text-lg text-muted-foreground">
-        Ventas, stock, caja en pesos y dólares, facturación y un bot que atiende por WhatsApp.
-        Para cualquier negocio, en un solo lugar.
-      </p>
-      <div className="mt-8">
-        <Button asChild size="lg">
-          <a href="#contacto">Quiero que me muestren</a>
-        </Button>
+    <header>
+      <div className={`${ANCHO} flex h-[76px] items-center justify-between`}>
+        <div className="flex items-center gap-[9px]">
+          <span aria-hidden="true" className="size-[26px] rounded-full bg-primary" />
+          <span className={`${tipografia.archivo} text-[17px] font-bold text-foreground`}>
+            Arándano
+          </span>
+        </div>
+        <nav className="hidden items-center gap-[26px] md:flex">
+          <a href="#que-hace" className="text-[13px] font-medium text-foreground-soft">
+            Qué hace
+          </a>
+          <a href="#rubros" className="text-[13px] font-medium text-foreground-soft">
+            Rubros
+          </a>
+          <a href="#precios" className="text-[13px] font-medium text-foreground-soft">
+            Precios
+          </a>
+        </nav>
+        <div className="flex items-center gap-2.5">
+          {/* El toggle de "Entrar a mi local" es su propio componente cliente
+              (./entrar): la maqueta sólo dibuja el texto en reposo —un click
+              revela el campo de subdominio—, mismo patrón que ya usan
+              "Cambiar clave" en /usuarios y los mini-forms de caja.tsx. */}
+          <EntradaDeSubdominio base={base} />
+          {/* h-[38px]/rounded-[9px]/gap-[7px]/px-[15px]: la geometría real de
+              o0Cl42 (Minor 8 de la review final, consultado en vivo) —
+              `size="sm"` da 28px de alto, r=12, gap=4, pad-x=10. */}
+          <Button asChild className="h-[38px] gap-[7px] rounded-[9px] px-[15px]">
+            <a href="#contacto">Probar 5 días</a>
+          </Button>
+        </div>
+      </div>
+    </header>
+  )
+}
+
+export function Hero({ whatsapp }: { whatsapp: string }) {
+  return (
+    // Las dos columnas del Hero NO son iguales: el `.pen` le da 560px al texto
+    // (`eUCUn`) y 720 a la Muestra (`g5k1vK`), con 48 de gap — 560:720 es 7:9.
+    // En `fr` en vez de píxeles para que la proporción se sostenga sola cuando
+    // el contenedor no llega a 1328.
+    <section className={`${ANCHO} grid gap-12 py-12 md:grid-cols-[7fr_9fr] md:items-center`}>
+      <div className="flex flex-col gap-[22px]">
+        <span className="flex w-fit items-center gap-[7px] rounded-full bg-accent px-3 py-1.5">
+          <Sparkles aria-hidden="true" className="size-[13px] text-primary" />
+          <span className="text-xs font-semibold text-primary">Hecho para el mercado argentino</span>
+        </span>
+
+        <h1
+          className={`${tipografia.archivo} text-[62px] leading-[1.03] font-bold tracking-[-2px] text-foreground`}
+        >
+          Todo el local en un solo lugar
+        </h1>
+
+        <p className="text-[17px] leading-[1.6] text-foreground-soft">
+          Ventas, stock, caja en pesos y dólares, facturación ARCA, catálogo público y un bot de
+          WhatsApp conectado a los datos reales del negocio. Sobre eso, cada rubro suma lo suyo.
+        </p>
+
+        {/* "Quiero probarlo": el .pen le pone un texto de botón distinto al
+            del Cierre ("Empezar", el default) — mismo campo, mismo action,
+            invitación distinta según dónde aparece. */}
+        <Formulario whatsapp={whatsapp} textoBoton="Quiero probarlo" />
+
+        <p className="text-xs text-muted-foreground">
+          5 días gratis · sin tarjeta · el alta es instantánea
+        </p>
+      </div>
+
+      {/* La "Muestra": barra de navegador + el carrito real + el pie que
+          aclara que no es una captura (design/arandano.pen, nodo `g5k1vK`). */}
+      <div className="w-full rounded-[18px] border bg-background p-5">
+        <div className="mb-3.5 flex items-center gap-2">
+          {/* Los tres puntos del navegador: rojo/ámbar/verde. El .pen los
+              declara en hex crudo sin ningún token asociado (son chrome
+              decorativo de ventana, no marca), así que en vez de inventar un
+              color se reusan los tres tokens semánticos que YA significan
+              exactamente eso en el resto de la app: destructive/warn/ok.
+              Reusar el SIGNIFICADO es la decisión más defendible de las tres
+              de este bloque como criterio — y la peor en resultado (Minor 5
+              de la review final): los tres tokens están pensados para texto
+              sobre claro, y son bastante más oscuros y pesados que los
+              pasteles del .pen. Se acepta la diferencia de VALOR (no sólo de
+              nombre) para no sumar tres tokens nuevos por tres puntos
+              decorativos de 9px. */}
+          <span aria-hidden="true" className="size-[9px] rounded-full bg-destructive" />
+          <span aria-hidden="true" className="size-[9px] rounded-full bg-warn" />
+          <span aria-hidden="true" className="size-[9px] rounded-full bg-ok" />
+          {/* $ar-font, 11px — no font-mono (Minor 6 de la review final): el
+              precedente que justificaba el monoespaciado era la sección
+              Direccion (la caja con la URL de ejemplo), que la decisión 3 del
+              plan del cierre borró; sin ella no queda ningún motivo para que
+              esta URL sea la única pieza monoespaciada del sitio. */}
+          <span className="text-[11px] text-muted-foreground">flor.arandano.app/vender</span>
+        </div>
+
+        <Retrato />
+
+        <p className="mt-3.5 text-[11px] leading-[1.45] text-muted-foreground">
+          No es una captura: es el mismo componente y el mismo formateo de plata que corre en el
+          punto de venta.
+        </p>
       </div>
     </section>
   )
 }
 
-const ANOTACIONES = [
-  'El dólar entra con su cotización, y queda guardada con el pago.',
-  'El lector de código de barras funciona sin instalar nada.',
-  'Si tocás Cobrar dos veces, cobra una sola.',
+/**
+ * Las ocho piezas del núcleo, en el orden del `.pen` (nodo `J29KtQ`).
+ */
+const NUCLEO = ['Clientes', 'Catálogo', 'Inventario', 'Ventas', 'Caja ARS/USD', 'Facturación ARCA', 'Catálogo público', 'Bot']
+
+type EstadoModulo = 'Disponible' | 'En camino'
+
+/**
+ * Los tres módulos activables, con su ESTADO como dato y no como texto fijo
+ * repetido tres veces: hoy Órdenes de trabajo está construido y Turnos y
+ * Gastronomía no (CLAUDE.md, sección "Roadmap de producto"). El día que
+ * Turnos se entregue, este archivo cambia en UN lugar (este array), no en
+ * tres bloques de JSX copiados a mano donde alguno podría quedarse diciendo
+ * "En camino" de un módulo que ya se puede usar.
+ */
+export const MODULOS: { icono: typeof Wrench; titulo: string; detalle: string; rubros: string; estado: EstadoModulo }[] = [
+  {
+    icono: Wrench,
+    titulo: 'Órdenes de trabajo',
+    detalle: 'Ingreso, diagnóstico, presupuesto, aprobación, repuestos y cierre.',
+    rubros: 'Servicio técnico · Electricista · Plomería · Refrigeración',
+    estado: 'Disponible',
+  },
+  {
+    icono: CalendarClock,
+    titulo: 'Turnos',
+    detalle: 'Agenda, disponibilidad, profesionales y recordatorio automático por bot.',
+    rubros: 'Peluquería · Estética · Consultorio · Taller · Veterinaria',
+    estado: 'En camino',
+  },
+  {
+    icono: Utensils,
+    titulo: 'Gastronomía',
+    detalle: 'Mesas, comandas, pantalla de cocina y recetas que descuentan insumos.',
+    rubros: 'Bar · Cafetería · Restó · Delivery',
+    estado: 'En camino',
+  },
 ]
 
-export function Prueba() {
+function ChipDeEstado({ estado }: { estado: EstadoModulo }) {
+  if (estado === 'Disponible') {
+    return (
+      <span className="rounded-full bg-ok-soft px-[9px] py-[3px] text-[11px] font-semibold text-ok">
+        Disponible
+      </span>
+    )
+  }
   return (
-    <section className={`${ANCHO} py-12`}>
-      <div className="grid gap-8 md:grid-cols-2">
-        <Retrato />
-        <div className="space-y-6">
-          <div>
-            <Kicker>El mostrador</Kicker>
-            <h2 className="text-2xl font-semibold">Así se cobra</h2>
+    <span className="rounded-full bg-muted px-[9px] py-[3px] text-[11px] font-semibold text-foreground-soft">
+      En camino
+    </span>
+  )
+}
+
+export function Modulos() {
+  return (
+    <section id="que-hace" className="bg-background py-16">
+      <div className={`${ANCHO} flex flex-col gap-7`}>
+        <div className="flex max-w-[640px] flex-col gap-3">
+          <TituloDeSeccion>Un núcleo, tres módulos, rubros ilimitados</TituloDeSeccion>
+          <p className="text-[15px] leading-[1.6] text-foreground-soft">
+            El núcleo solo ya cubre un comercio completo. Los módulos agregan comportamiento, y un
+            rubro nuevo es un archivo de configuración, no desarrollo.
+          </p>
+        </div>
+
+        {/* La card "Núcleo": la única superficie de --marca de esta sección,
+            y la segunda del sitio (la primera y hasta ahora única era la
+            franja de Cierre). design/arandano.pen la dibuja así (nodo
+            `QeDxe`) y no como una card gris más — ver la nota que agrega esta
+            task a docs/sistema-de-diseno.md, sección "El arándano como
+            superficie": una landing no es una pantalla de aplicación con UN
+            dato operativo, así que la regla de "una por pantalla" se aplica
+            por SECCIÓN visible a la vez, no por documento entero, igual que
+            ya la reescribió la excepción del avatar del sidebar. */}
+        <div className="rounded-[18px] p-[26px]" style={{ backgroundColor: 'var(--marca)' }}>
+          <div className="flex items-center gap-2.5">
+            <Box aria-hidden="true" className="size-[19px]" style={{ color: 'var(--marca-soft)' }} />
+            <span
+              className={`${tipografia.archivo} text-xl font-semibold`}
+              style={{ color: 'var(--marca-foreground)' }}
+            >
+              Núcleo
+            </span>
+            <span className="text-[13px]" style={{ color: 'var(--marca-dim)' }}>
+              lo que todo negocio necesita
+            </span>
           </div>
-          <ul className="space-y-4">
-            {ANOTACIONES.map((texto) => (
-              <li key={texto} className="border-l-2 border-primary pl-4 text-muted-foreground">
-                {texto}
-              </li>
+          <div className="mt-4 flex flex-wrap gap-2.5">
+            {NUCLEO.map((pieza) => (
+              <span
+                key={pieza}
+                className="rounded-full px-[13px] py-2 text-xs font-medium"
+                style={{
+                  color: 'var(--marca-foreground)',
+                  backgroundColor: 'color-mix(in srgb, var(--marca-foreground) 8%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--marca-foreground) 15%, transparent)',
+                }}
+              >
+                {pieza}
+              </span>
             ))}
-          </ul>
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          {MODULOS.map((modulo) => (
+            <Card key={modulo.titulo} className="rounded-[16px] py-[22px]">
+              <CardContent className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <span className="flex size-[38px] items-center justify-center rounded-[11px] bg-accent">
+                    <modulo.icono aria-hidden="true" className="size-[18px] text-primary" />
+                  </span>
+                  <ChipDeEstado estado={modulo.estado} />
+                </div>
+                <span
+                  className={`${tipografia.archivo} text-[19px] leading-[1.2] font-semibold text-foreground`}
+                >
+                  {modulo.titulo}
+                </span>
+                <p className="text-[13px] leading-[1.5] text-foreground-soft">{modulo.detalle}</p>
+                <p className="text-[11px] leading-[1.5] font-semibold text-primary">{modulo.rubros}</p>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       </div>
     </section>
   )
 }
 
-export function Direccion({ dominio }: { dominio: string }) {
-  return (
-    <section className={`${ANCHO} py-12`}>
-      <h2 className="text-2xl font-semibold">Tu negocio tiene su dirección</h2>
-      <p className="mt-4 max-w-2xl text-muted-foreground">
-        No sos un usuario más adentro de una aplicación ajena. Tu local entra por su propia
-        dirección, y tus empleados entran ahí con su usuario y su contraseña.
-      </p>
-      {/* La barra de navegador. El nombre del local NO va en Archivo acá: es una
-          URL, no un cartel — la fuente de display escribe el nombre pintado en el
-          frente, y esto es la dirección escrita en un navegador. */}
-      <div className="mt-6 max-w-md rounded-lg border bg-muted p-4 font-mono text-sm">
-        https://florcelulares.{dominio}
-      </div>
-    </section>
-  )
-}
-
-const CAPACIDADES = [
-  ['Vender', 'Buscás, cobrás y entregás. Efectivo, transferencia o tarjeta, en pesos o en dólares.'],
-  ['Reponer', 'Cada movimiento de stock queda firmado: quién, cuándo y por qué.'],
-  ['Cerrar la caja', 'Apertura, cierre y arqueo del día, con las dos monedas por separado.'],
-  ['Facturar', 'Comprobantes de ARCA desde la misma pantalla en la que cobrás.'],
-  ['Atender', 'Un bot conectado a tu stock y a tus precios contesta por WhatsApp e Instagram.'],
-  ['Mostrar', 'Tu catálogo público, con los precios y el stock que ya tenés cargados.'],
-]
-
-export function LoQueHace() {
-  return (
-    <section className={`${ANCHO} py-12`}>
-      <Kicker>Lo que hace</Kicker>
-      <h2 className="text-2xl font-semibold">Seis cosas, todos los días</h2>
-      {/* En filas numeradas y no en una grilla de cards: seis items del mismo
-          peso visual no se leen en orden, y éstos tienen uno — es la secuencia
-          de un día de mostrador, de vender a mostrar. */}
-      <div className="mt-8">
-        {CAPACIDADES.map(([titulo, texto], i) => (
-          /* Las tres pistas, que si no son tres números sin explicación:
-             2.5rem es el ancho fijo del número de orden ("01"), que es fijo
-             para que los seis queden en la misma columna óptica; 12rem es el
-             tope del título, elegido sobre el más largo ("Cerrar la caja")
-             para que la descripción arranque siempre a la misma altura y no
-             escalonada; 1fr se queda con el resto. Los minmax(0,…) son lo que
-             impide que una palabra larga estire su pista más allá del tope —el
-             mínimo por default de una pista de grilla es `auto`, no 0. */
-          <div
-            key={titulo}
-            className="grid grid-cols-[2.5rem_minmax(0,12rem)_minmax(0,1fr)] items-baseline gap-x-8 border-t border-border py-6 first:border-t-0"
-          >
-            {/* tabular-nums para que los seis números queden en la misma
-                columna óptica: 01 y 06 tienen anchos distintos sin eso. */}
-            <p className="text-sm text-primary tabular-nums">
-              {String(i + 1).padStart(2, '0')}
-            </p>
-            <h3 className="font-medium">{titulo}</h3>
-            <p className="max-w-[52ch] text-sm text-muted-foreground">{texto}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  )
-}
-
-const MODULOS = [
-  ['Órdenes de trabajo', 'Ingreso, diagnóstico, presupuesto, aprobación y cierre. Service técnico, celulares, electricistas, refrigeración.'],
-  ['Turnos', 'Agenda, disponibilidad y recordatorio automático. Peluquería, estética, consultorio, veterinaria, taller.'],
-  ['Gastronomía', 'Mesas, comandas, pantalla de cocina y recetas que descuentan insumos. Bar, cafetería, restó, delivery.'],
+/**
+ * Los doce rubros de la grilla, en el orden del `.pen` (nodo `tr8lP`, tres
+ * filas de cuatro). "Módulos" describe qué activa cada uno tal cual lo
+ * escribió el `.pen`: "Sólo núcleo" para el que no prende ningún módulo,
+ * "Núcleo + X" para el resto — CLAUDE.md documenta la misma idea en la
+ * sección "Arquitectura de producto: núcleo, módulos y presets de rubro".
+ */
+export const RUBROS: { icono: typeof Smartphone; titulo: string; modulos: string }[] = [
+  { icono: Smartphone, titulo: 'Celulares y servicio técnico', modulos: 'Núcleo + Órdenes de trabajo' },
+  { icono: Store, titulo: 'Kiosco y autoservicio', modulos: 'Sólo núcleo' },
+  { icono: Shirt, titulo: 'Ropa e indumentaria', modulos: 'Sólo núcleo' },
+  { icono: Hammer, titulo: 'Ferretería', modulos: 'Sólo núcleo' },
+  { icono: Dog, titulo: 'Pet shop', modulos: 'Sólo núcleo' },
+  { icono: Leaf, titulo: 'Dietética', modulos: 'Sólo núcleo' },
+  { icono: Scissors, titulo: 'Peluquería y estética', modulos: 'Núcleo + Turnos' },
+  { icono: Stethoscope, titulo: 'Veterinaria', modulos: 'Núcleo + Turnos' },
+  { icono: Car, titulo: 'Taller mecánico', modulos: 'Núcleo + Turnos + Órdenes' },
+  { icono: Zap, titulo: 'Electricista y plomería', modulos: 'Núcleo + Órdenes de trabajo' },
+  { icono: HeartPulse, titulo: 'Consultorio', modulos: 'Núcleo + Turnos' },
+  { icono: Coffee, titulo: 'Bar y cafetería', modulos: 'Núcleo + Gastronomía' },
 ]
 
 export function Rubros() {
   return (
-    <section className={`${ANCHO} py-12`}>
-      <Kicker>Módulos por rubro</Kicker>
-      <h2 className="text-2xl font-semibold">Cada rubro suma lo suyo</h2>
-      <p className="mt-4 max-w-2xl text-muted-foreground">
-        Lo de arriba lo tiene cualquier negocio. Después, según lo que hagas, se activa lo que te falta.
-      </p>
-      <div className="mt-8 grid gap-8 md:grid-cols-3">
-        {MODULOS.map(([titulo, texto]) => (
-          <Card key={titulo}>
-            <CardContent>
-              <h3 className="font-medium">{titulo}</h3>
-              <p className="mt-2 text-sm text-muted-foreground">{texto}</p>
-            </CardContent>
-          </Card>
-        ))}
+    <section id="rubros" className="py-16">
+      <div className={`${ANCHO} flex flex-col gap-6`}>
+        <div className="flex flex-wrap items-end justify-between gap-10">
+          <div className="flex max-w-[600px] flex-col gap-3">
+            <TituloDeSeccion>Tu rubro ya está adentro</TituloDeSeccion>
+            <p className="text-[15px] leading-[1.6] text-foreground-soft">
+              Un rubro no es código: es qué módulos vienen activados, qué datos demo se cargan y
+              cómo se llaman las cosas en la pantalla.
+            </p>
+          </div>
+          <p className="text-xs font-semibold text-primary">¿No está el tuyo? Se agrega sin desarrollo.</p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-4">
+          {RUBROS.map((rubro) => (
+            <div
+              key={rubro.titulo}
+              className="flex items-center gap-3 rounded-[13px] border bg-card p-4"
+            >
+              <span className="flex size-[34px] shrink-0 items-center justify-center rounded-[10px] bg-background">
+                <rubro.icono aria-hidden="true" className="size-[17px] text-primary" />
+              </span>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[13px] leading-[1.3] font-semibold text-foreground">{rubro.titulo}</span>
+                <span className="text-[11px] leading-[1.35] text-muted-foreground">{rubro.modulos}</span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   )
 }
 
-const PLANES = [
-  ['Básico', 'Un usuario, una sucursal. Ventas, stock y caja.', false],
-  ['Negocio', 'Varios usuarios y facturación de ARCA.', false],
-  ['Profesional', 'Todo lo anterior, más el bot de WhatsApp e Instagram y los reportes.', true],
-  ['Premium', 'Infraestructura dedicada y todo a medida.', false],
-] as const
+type Plan = {
+  nombre: string
+  precio: string
+  periodo: string
+  detalle: string
+  incluye: string[]
+  accion: string
+  destacado?: boolean
+}
+
+/**
+ * Los cuatro planes, con el precio real de la maqueta (design/arandano.pen,
+ * nodo `ZEntb`) — antes esta sección no mostraba ningún precio.
+ */
+export const PLANES: Plan[] = [
+  {
+    nombre: 'Básico',
+    precio: '$ 24.900',
+    periodo: 'por mes · IVA incluido',
+    detalle: 'Un local, una persona.',
+    incluye: ['1 usuario', '1 sucursal', 'Ventas, stock y caja', 'Catálogo público'],
+    accion: 'Probar 5 días',
+  },
+  {
+    nombre: 'Negocio',
+    precio: '$ 44.900',
+    periodo: 'por mes · IVA incluido',
+    detalle: 'El local con equipo.',
+    incluye: ['5 usuarios', '1 sucursal', 'Todo lo del Básico', 'Facturación ARCA', 'Reportes'],
+    accion: 'Probar 5 días',
+  },
+  {
+    nombre: 'Profesional',
+    precio: '$ 79.900',
+    periodo: 'por mes · IVA incluido',
+    detalle: 'El más elegido.',
+    incluye: [
+      '15 usuarios',
+      '3 sucursales',
+      'Todo lo del Negocio',
+      'Bot de WhatsApp e Instagram',
+      'Seguimiento de ventas frías',
+      'Pedido de reseñas',
+    ],
+    accion: 'Probar 5 días',
+    destacado: true,
+  },
+  {
+    nombre: 'Premium',
+    precio: 'A medida',
+    periodo: 'hablemos',
+    detalle: 'Infraestructura dedicada.',
+    incluye: ['Usuarios ilimitados', 'Sucursales ilimitadas', 'VPC propia', 'Soporte prioritario'],
+    accion: 'Hablemos',
+  },
+]
 
 export function Planes() {
   return (
-    <section className={`${ANCHO} py-12`}>
-      <h2 className="text-2xl font-semibold">Planes</h2>
-      <div className="mt-8 grid gap-4 md:grid-cols-4">
-        {PLANES.map(([nombre, texto, destacado]) => (
-          /* El destacado se marca con un anillo y NO con bg-accent, que es lo
-             que hacía con la paleta clara: el chip "el más elegido" ya lleva
-             bg-accent, y una card del mismo color se lo tragaba — quedaba un
-             chip invisible arriba del único plan que queremos que se lea. El
-             anillo destaca sin competirle. */
-          <Card key={nombre} className={destacado ? 'ring-1 ring-primary' : undefined}>
-            <CardContent className="flex h-full flex-col">
+    <section id="precios" className="bg-background py-16">
+      <div className={`${ANCHO} flex flex-col gap-7`}>
+        <div className="flex max-w-[640px] flex-col gap-3">
+          <TituloDeSeccion>Precios claros, en pesos</TituloDeSeccion>
+          <p className="text-[15px] leading-[1.6] text-foreground-soft">
+            Los módulos no se cobran aparte ni dependen del plan: activás los que necesites. El
+            plan limita capacidad, no rubro.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-4">
+          {PLANES.map((plan) => (
+            <div
+              key={plan.nombre}
+              // El destacado (Profesional) es la TERCERA superficie de --marca
+              // del sitio, y la misma nota de arriba (card Núcleo) aplica acá:
+              // design/arandano.pen la dibuja así (nodo `riAck`), verificado
+              // en vivo — no es un invento de este código.
+              className={`flex flex-col gap-4 rounded-[18px] p-6 ${
+                plan.destacado ? '' : 'border bg-card'
+              }`}
+              style={plan.destacado ? { backgroundColor: 'var(--marca)' } : undefined}
+            >
               <div className="flex items-center justify-between gap-2">
-                <h3 className="font-medium">{nombre}</h3>
-                {destacado ? (
-                  <span className="inline-flex shrink-0 rounded-md bg-accent px-2.5 py-0.5 text-[11px] text-accent-foreground">
-                    el más elegido
+                <span
+                  className="text-sm font-bold"
+                  style={{ color: plan.destacado ? 'var(--marca-foreground)' : undefined }}
+                >
+                  {plan.nombre}
+                </span>
+                {plan.destacado && (
+                  <span
+                    className="rounded-full px-[9px] py-1 text-[10px] font-bold"
+                    style={{
+                      color: 'var(--marca-soft)',
+                      backgroundColor: 'color-mix(in srgb, var(--marca-foreground) 12%, transparent)',
+                    }}
+                  >
+                    Más elegido
                   </span>
-                ) : null}
+                )}
               </div>
-              <p className="mt-2 flex-1 text-sm text-muted-foreground">{texto}</p>
-              <Button asChild variant={destacado ? 'default' : 'secondary'} className="mt-4">
-                <a href="#contacto">Consultar</a>
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
+
+              <div className="flex flex-col gap-0.5">
+                <span
+                  className={`${tipografia.archivo} text-[32px] leading-none font-bold tracking-[-1px]`}
+                  style={{ color: plan.destacado ? 'var(--marca-foreground)' : undefined }}
+                >
+                  {plan.precio}
+                </span>
+                <span
+                  className="text-[11px]"
+                  style={{ color: plan.destacado ? 'var(--marca-dim)' : undefined }}
+                >
+                  {plan.periodo}
+                </span>
+              </div>
+
+              <p
+                className="text-xs"
+                style={{ color: plan.destacado ? 'var(--marca-soft)' : undefined }}
+              >
+                {plan.detalle}
+              </p>
+
+              <ul className="flex flex-1 flex-col gap-2">
+                {plan.incluye.map((item) => (
+                  <li key={item} className="flex items-center gap-2">
+                    <Check
+                      aria-hidden="true"
+                      className="size-[13px] shrink-0"
+                      style={{ color: plan.destacado ? 'var(--marca-soft)' : 'var(--primary)' }}
+                    />
+                    <span
+                      className="text-xs leading-[1.4]"
+                      style={{ color: plan.destacado ? 'var(--marca-foreground)' : undefined }}
+                    >
+                      {item}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              {plan.destacado ? (
+                // Botón blanco sólido con texto --marca: no es el par
+                // "on-primary" que llevan los botones de acción (ese token
+                // sólo se puede nombrar adentro de components/ui/) — es el
+                // mismo par marca/marca-deep que ya usa el avatar del
+                // sidebar para "texto oscuro sobre superficie clara".
+                <a
+                  href="#contacto"
+                  className="flex h-[42px] items-center justify-center rounded-[10px] text-[13px] font-semibold"
+                  style={{ backgroundColor: 'var(--marca-foreground)', color: 'var(--marca)' }}
+                >
+                  {plan.accion}
+                </a>
+              ) : (
+                // bg-card border-input: la superficie real de uYEg4 (Minor 9
+                // de la review final, consultado en vivo) — variant="outline"
+                // solo pinta bg-background + border-border, un blanco/gris
+                // distinto del $ar-surface + $ar-line-strong que pide el .pen.
+                <Button asChild variant="outline" className="h-[42px] border-input bg-card">
+                  <a href="#contacto">{plan.accion}</a>
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   )
@@ -219,22 +546,41 @@ export function Planes() {
 
 export function Cierre({ children }: { children: React.ReactNode }) {
   return (
-    <section id="contacto" className={`${estilos.franja} py-12`}>
-      <div className={ANCHO}>
-        <div className="grid items-center gap-8 md:grid-cols-2">
-          <div>
-            <h2 className={`${estilos.titulo} text-3xl font-semibold`}>
-              Contanos de tu negocio
-            </h2>
-            <p className={`${estilos.bajada} mt-4`}>
-              Te mostramos el sistema andando con tus productos y tus precios, y respondemos lo que
-              haga falta antes de que decidas nada.
-            </p>
-            <p className={`${estilos.firma} mt-8`}>Arándano</p>
-          </div>
-          {children}
-        </div>
+    <section id="contacto" className={`${estilos.franja} py-[72px]`}>
+      <div className={`${ANCHO} flex flex-col items-center gap-[22px] text-center`}>
+        <h2
+          className={`${estilos.titulo} ${tipografia.archivo} max-w-[720px] text-[44px] leading-[1.1] font-bold tracking-[-1.4px]`}
+        >
+          El alta es instantánea
+        </h2>
+        <p className={`${estilos.bajada} max-w-[620px] text-base leading-[1.6]`}>
+          Dejás tu WhatsApp, elegís el rubro y en dos minutos tenés tu local cargado con datos de
+          ejemplo para probarlo de verdad.
+        </p>
+
+        {/* Mismo <Formulario> que en Hero, sin tocar (ver el comentario de
+            ahí): esta task arma las secciones, la Task 5 lo achica a un solo
+            campo. */}
+        <div className="w-full max-w-[520px]">{children}</div>
+
+        <p className="text-xs" style={{ color: 'var(--marca-dim)' }}>
+          Sin tarjeta · exportás tus datos cuando quieras · soporte por WhatsApp
+        </p>
       </div>
     </section>
+  )
+}
+
+export function Pie() {
+  return (
+    <footer className="border-t">
+      <div className={`${ANCHO} flex items-center justify-between gap-6 py-6`}>
+        <div className="flex items-center gap-2">
+          <span aria-hidden="true" className="size-[18px] rounded-full bg-primary" />
+          <span className="text-xs text-muted-foreground">Arándano · Buenos Aires, Argentina</span>
+        </div>
+        <span className="text-xs text-muted-foreground">Términos · Privacidad · Estado del servicio</span>
+      </div>
+    </footer>
   )
 }

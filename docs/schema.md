@@ -11,6 +11,13 @@
 > aísla un tenant de otro. Viven en el SQL escrito a mano de las migraciones, no
 > en el schema, así que `migrate diff` no las ve. El modelo de aislamiento está
 > explicado en `docs/superpowers/specs/2026-08-04-schema-nucleo-design.md`.
+>
+> **Tampoco muestra los índices únicos escritos a mano en una migración**, por
+> el mismo motivo: `migrate diff` compara contra `schema.prisma`, no contra el
+> SQL de `prisma/migrations/`. `cajas_una_abierta_por_tenant` —el índice único
+> PARCIAL (`WHERE cerrada_en IS NULL`) que es la invariante que define la
+> tabla `cajas`— es hoy el único caso, y no aparece en ninguna parte de este
+> documento.
 
 ```mermaid
 erDiagram
@@ -36,11 +43,22 @@ erDiagram
     text sku "único junto a tenant_id"
     text nombre
     tipo_articulo tipo
+    text categoria "opcional"
     decimal(12,2) precio
     decimal(12,3) stock
     timestamptz(3) desactivado_en "opcional"
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
+  }
+  cajas {
+    uuid id PK
+    uuid tenant_id FK
+    timestamptz(3) abierta_en
+    uuid abierta_por_id FK
+    decimal(12,2) saldo_inicial
+    timestamptz(3) cerrada_en "opcional"
+    uuid cerrada_por_id FK "opcional"
+    timestamptz(3) creado_en
   }
   clientes {
     uuid id PK
@@ -63,10 +81,10 @@ erDiagram
   }
   leads {
     uuid id PK
-    text nombre
-    text email
+    text nombre "opcional"
+    text email "opcional"
     text whatsapp "opcional"
-    text rubro
+    text rubro "opcional"
     text mensaje "opcional"
     timestamptz(3) creado_en
   }
@@ -138,6 +156,8 @@ erDiagram
     integer proximo_numero_venta
     integer proximo_sku_articulo
     integer proximo_numero_orden
+    decimal(12,2) cotizacion_usd "opcional"
+    timestamptz(3) cotizacion_usd_en "opcional"
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
@@ -190,6 +210,7 @@ erDiagram
   ordenes_de_trabajo ||--o{ eventos_orden : "ON DELETE CASCADE"
   tenants ||--o{ accounts : "ON DELETE CASCADE"
   tenants ||--o{ articulos : "ON DELETE CASCADE"
+  tenants ||--o{ cajas : "ON DELETE CASCADE"
   tenants ||--o{ clientes : "ON DELETE CASCADE"
   tenants ||--o{ eventos_orden : "ON DELETE CASCADE"
   tenants ||--o{ movimientos_stock : "ON DELETE CASCADE"
@@ -201,9 +222,11 @@ erDiagram
   tenants ||--o{ venta_items : "ON DELETE CASCADE"
   tenants ||--o{ ventas : "ON DELETE CASCADE"
   tenants ||--o{ verifications : "ON DELETE CASCADE"
+  users |o--o{ cajas : "ON DELETE RESTRICT"
   users |o--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
   users |o--o{ ventas : "ON DELETE RESTRICT"
   users ||--o{ accounts : "ON DELETE CASCADE"
+  users ||--o{ cajas : "ON DELETE RESTRICT"
   users ||--o{ eventos_orden : "ON DELETE RESTRICT"
   users ||--o{ movimientos_stock : "ON DELETE RESTRICT"
   users ||--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
@@ -216,7 +239,7 @@ erDiagram
 
 ## Enums
 
-- **estado_orden**: `RECIBIDO`, `EN_DIAGNOSTICO`, `PRESUPUESTADO`, `EN_REPARACION`, `LISTO`, `ENTREGADO`, `SIN_REPARACION`, `RECHAZADO`
+- **estado_orden**: `RECIBIDO`, `EN_DIAGNOSTICO`, `PRESUPUESTADO`, `APROBADO`, `EN_REPARACION`, `LISTO`, `ENTREGADO`, `SIN_REPARACION`, `RECHAZADO`
 - **estado_tenant**: `TRIAL`, `ACTIVO`, `SUSPENDIDO`
 - **medio_pago**: `EFECTIVO`, `TRANSFERENCIA`, `TARJETA_DEBITO`, `TARJETA_CREDITO`
 - **modulo**: `ORDENES_DE_TRABAJO`, `TURNOS`, `GASTRONOMIA`
@@ -228,6 +251,7 @@ erDiagram
 ## Índices no únicos
 
 - **accounts**: `accounts_tenant_id_user_id_idx` sobre (`tenant_id`, `user_id`)
+- **cajas**: `cajas_tenant_id_abierta_en_idx` sobre (`tenant_id`, `abierta_en`)
 - **clientes**: `clientes_tenant_id_idx` sobre (`tenant_id`)
 - **eventos_orden**: `eventos_orden_tenant_id_orden_id_creado_en_idx` sobre (`tenant_id`, `orden_id`, `creado_en`)
 - **movimientos_stock**: `movimientos_stock_tenant_id_articulo_id_idx` sobre (`tenant_id`, `articulo_id`)

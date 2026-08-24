@@ -56,7 +56,7 @@ let alta: typeof import('./acciones').alta
 // Propio del test y no importado de acciones.ts: ese archivo es 'use server' y
 // sólo puede exportar funciones async. Es un valor inicial, no un dato con
 // lógica: duplicar tres campos nulos cuesta menos que un export prohibido.
-const INICIAL = { error: null, aviso: null }
+const INICIAL = { error: null, aviso: null, claveGenerada: null }
 let authParaTenant: typeof import('@/lib/auth/para-tenant').authParaTenant
 let origenDelRequest: typeof import('@/lib/auth/origen').origenDelRequest
 let administrar: typeof import('@/lib/usuarios/administrar')

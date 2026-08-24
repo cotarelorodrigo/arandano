@@ -50,3 +50,61 @@ const FECHA = new Intl.DateTimeFormat('es-AR', {
 export function formatearFecha(v: Date): string {
   return FECHA.format(v)
 }
+
+// Mismo huso que FECHA y por la misma razón: sin declararlo, "14:28" de
+// Buenos Aires se lee como la hora de Ashburn. Existe aparte de
+// formatearFecha() porque el listado de /ventas (design/arandano.pen, nodo
+// `ZjnhR`) pide la columna "Hora" sola, sin la fecha repetida en cada fila —
+// la fecha ya está una sola vez en el subtítulo de la pantalla.
+// hour12: false a propósito: design/arandano.pen escribe "14:28", 24 horas,
+// no "2:28 p. m." — que es lo que timeStyle: 'short' da por default en es-AR.
+const HORA = new Intl.DateTimeFormat('es-AR', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: 'America/Argentina/Buenos_Aires',
+})
+
+export function formatearHora(v: Date): string {
+  return HORA.format(v)
+}
+
+/**
+ * `Date` → "21/08/2026": día/mes/año, los tres de dos y cuatro dígitos fijos.
+ *
+ * Ni `formatearFecha` (que da "21/8/26" con año a dos dígitos y hora en
+ * 12 horas, pensado para lectura corrida) ni `formatearHora` alcanzan solos
+ * para el panel Resumen de /ventas/[id] (design/arandano.pen, nodo `V3VcI8`):
+ * "21/08/2026 · 14:28" pide fecha y hora por separado, unidas con su propio
+ * separador — se compone afuera con `formatearHora`, no acá, para no crear un
+ * tercer formateador que sólo sirva para ESTE armado puntual.
+ */
+const FECHA_CORTA = new Intl.DateTimeFormat('es-AR', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  timeZone: 'America/Argentina/Buenos_Aires',
+})
+
+export function formatearFechaCorta(v: Date): string {
+  return FECHA_CORTA.format(v)
+}
+
+/**
+ * Lo que devuelve `formatearPrecio`/`formatearDolares`, sin el signo de
+ * moneda adelante — para las superficies que ya dicen de qué moneda se
+ * trata por otro lado (el rótulo "USD" del chip de cotización en
+ * `app/(app)/vender/caja.tsx`, el "$" que la banda del total de
+ * `app/(app)/vender/punto-de-venta.tsx` pinta como SU PROPIO elemento) y en
+ * las que anteponer el signo de nuevo duplicaría el símbolo o compitiría con
+ * el que ya está al lado.
+ *
+ * "Todo lo que no es dígito al principio" y no una lista fija de símbolos:
+ * el símbolo varía con la moneda (pesos, dólares) y con el locale de ICU,
+ * así que esa regla no hay que retocarla si el formateador cambia. Extraída
+ * acá y no repetida en cada pantalla —estaba duplicada en las dos de
+ * arriba, hallazgo de la review final del rediseño de /vender.
+ */
+export function montoSinSigno(formateado: string): string {
+  return formateado.replace(/^\D+/, '')
+}

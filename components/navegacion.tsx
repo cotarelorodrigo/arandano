@@ -1,23 +1,25 @@
 'use client'
 
 import Link from 'next/link'
+import { Package, ReceiptText, ShoppingCart, Users, Wrench } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import type { RolUsuario } from '@/lib/auth/sesion'
-import { cn } from '@/lib/utils'
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
 
 // Las pestañas de la aplicación, en un solo lugar.
-type Pestana = { href: string; texto: string; soloDueno?: boolean }
+type Pestana = { href: string; texto: string; icono: LucideIcon; soloDueno?: boolean }
 
 const PESTANAS: Pestana[] = [
-  { href: '/vender', texto: 'Vender' },
-  { href: '/ventas', texto: 'Ventas' },
-  { href: '/inventario', texto: 'Inventario' },
+  { href: '/vender', texto: 'Vender', icono: ShoppingCart },
+  { href: '/ventas', texto: 'Ventas', icono: ReceiptText },
+  { href: '/inventario', texto: 'Inventario', icono: Package },
   // Fija y visible en TODO tenant, incluido el que no hace servicio técnico.
   // Es deuda consciente y está escrita en el spec con su vencimiento: cuando
   // exista el registry de módulos, esta entrada sale de TenantModule. El
   // disparador es el primer tenant de un rubro sin servicio técnico.
-  { href: '/servicio-tecnico', texto: 'Servicio Técnico' },
-  { href: '/usuarios', texto: 'Usuarios', soloDueno: true },
+  { href: '/servicio-tecnico', texto: 'Servicio Técnico', icono: Wrench },
+  { href: '/usuarios', texto: 'Usuarios', icono: Users, soloDueno: true },
 ]
 
 /**
@@ -51,61 +53,41 @@ export function Navegacion({ rol }: { rol: RolUsuario }) {
   const ruta = usePathname()
 
   return (
-    /* -mb-px: el subrayado de 2 px de la pestaña activa se SOLAPA con el borde
-       inferior del <header> en vez de quedar un pixel arriba, que es lo que
-       dibujaba dos líneas paralelas. Es lo que la hace leer como una pestaña
-       apoyada en el riel.
-
-       Este -1 px no es un paso de la escala de espaciado (docs/sistema-de-
-       diseno.md, sección "Espaciado y radio"): no sale de elegir un punto de
-       esa lista, sale de medir el border-b de 1 px que tiene que tapar. Por
-       eso está exceptuado ahí en vez de ser una violación sin documentar.
-
-       overflow-x-auto: hoy sobra lugar con cinco pestañas, pero este archivo
-       es el punto de extensión que CLAUDE.md promete para el registry de
-       módulos — cuando Turnos o Gastronomía sumen las suyas, o en un teléfono,
-       sin esto se rompe. Ahora sale gratis. */
-    <nav className="-mb-px flex items-center gap-1 overflow-x-auto text-sm">
+    // gap-0.5 (2 px) es el frame `Nav` de design/arandano.pen (Shell/Sidebar):
+    // SidebarMenu trae gap-0 por default, y sin pisarlo los cinco ítems
+    // quedaban pegados uno contra el otro.
+    <SidebarMenu className="gap-0.5">
       {PESTANAS.filter((p) => !p.soloDueno || rol === 'DUENO').map((p) => {
         const activa = estaActiva(p.href, ruta)
         return (
-          <Link
-            key={p.href}
-            href={p.href}
-            // aria-current es lo que anuncia un lector de pantalla; el
-            // subrayado solo no le dice nada a quien no ve la pantalla.
-            aria-current={activa ? 'page' : undefined}
-            className={cn(
-              'shrink-0 rounded-t-sm border-b-2 px-3 py-2 transition-colors outline-none',
-              // El anillo va INSET, y el motivo es mecánico: overflow-x-auto
-              // computa el eje de bloque a `auto` también, así que un anillo
-              // dibujado por fuera de la caja se recortaría arriba y abajo y
-              // podría sacar una barra de scroll vertical. Uno interior no lo
-              // toca el overflow.
-              //
-              // Y va OPACO (--ring, sin el /50 que usan botón e input): esos
-              // otros controles acompañan el halo translúcido con un borde
-              // sólido que también identifica el control (focus-visible:border-
-              // ring), y acá no hay ese segundo indicador. Sin él, --ring/50
-              // sobre --background da 2.33:1 — abajo del 3:1 que WCAG 1.4.11
-              // pide para un indicador no textual. Opaco, el mismo par da
-              // 5.49:1 (scripts/contraste.mts). Es el foco del elemento que
-              // más se opera con teclado en el producto: no se le resigna nada.
-              'focus-visible:inset-ring-3 focus-visible:inset-ring-ring',
-              activa
-                // El peso hace la mitad del trabajo: así el subrayado no tiene
-                // que hacerlo todo, y de paso la pestaña activa y el anillo de
-                // foco no se confunden, porque no comparten forma (una barra
-                // recta abajo contra un halo alrededor del texto). Los dos son
-                // --primary; lo que los distingue es la forma, no el color.
-                ? 'border-primary font-semibold text-foreground'
-                : 'border-transparent font-medium text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {p.texto}
-          </Link>
+          <SidebarMenuItem key={p.href}>
+            {/* isActive pinta el fondo y el color; aria-current es lo que un
+                lector de pantalla anuncia. Los dos, siempre: el layout viejo ya
+                los tenía a los dos y no se pierde nada en la mudanza. */}
+            {/* Geometría del ítem, contra el frame `Nav/*` de Shell/Sidebar en
+                design/arandano.pen: padding [9,12], gap 11 entre ícono y
+                rótulo, cornerRadius 9, ícono 17×17, peso 600 activo / 500
+                inactivo. shadcn trae p-2 gap-2 rounded-md [&_svg]:size-4 y sólo
+                pinta font-medium (500) en el activo — nada en el inactivo.
+                h-auto porque size="default" fija h-8 (32 px), y 9+9 de padding
+                sobre un ícono de 17 no entra ahí: el ítem tiene que poder
+                crecer. p-[9px] y no py-[9px]: sólo un p-* completo pisa el
+                p-2 de base (twMerge no funde ejes sueltos con el atajo); el
+                px-3 de al lado gana el horizontal igual, por el orden real de
+                Tailwind en la hoja de estilos. */}
+            <SidebarMenuButton
+              asChild
+              isActive={activa}
+              className="h-auto gap-[11px] rounded-[9px] p-[9px] px-3 font-medium data-active:font-semibold [&_svg]:size-[17px]"
+            >
+              <Link href={p.href} aria-current={activa ? 'page' : undefined}>
+                <p.icono aria-hidden="true" />
+                <span>{p.texto}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
         )
       })}
-    </nav>
+    </SidebarMenu>
   )
 }

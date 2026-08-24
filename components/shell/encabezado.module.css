@@ -1,0 +1,27 @@
+/*
+ * El título del encabezado: el <h1> que abre cada una de las diez pantallas.
+ *
+ * QUÉ ES Y DE DÓNDE SALE. design/arandano.pen pide Archivo para el nodo
+ * Título > H1 del frame Topbar (comprobado contra dos pantallas del .pen,
+ * App / Vender y App / Ventas: las dos coinciden en fontSize 21, fontWeight
+ * 600, fontFamily $ar-display), no la pila del sistema que documentaba antes
+ * esta fila en docs/sistema-de-diseno.md. Es el tercer rol de la cara de
+ * display, junto al Cartel y al Importe — ver esa sección del documento.
+ *
+ * POR QUÉ UN MÓDULO CSS Y NO UNA UTILIDAD DE TAILWIND. Igual que el cartel y
+ * el importe: el @theme de app/globals.css es `inline`, así que
+ * var(--font-display) no existiría fuera de una clase de Tailwind.
+ * --font-archivo, en cambio, la emite next/font sobre el <html> y se puede
+ * usar directo. Ver components/cartel.module.css, que explica lo mismo.
+ *
+ * SIN font-stretch, y es a propósito y no un olvido: a diferencia del Cartel
+ * (112%) y el Importe (85%), el nodo H1 del Topbar no declara un ancho propio
+ * en el .pen — se queda en el 100% por default del eje wdth.
+ * test/tipografia.test.ts lo cuida: un font-stretch que apareciera acá sin
+ * fila en la tabla de la escala rompería el gate.
+ */
+.titulo {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 1.3125rem; /* 21px */
+}

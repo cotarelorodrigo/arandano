@@ -16,8 +16,21 @@ export type EntradaCrearArticulo = {
   tipo: 'PRODUCTO' | 'SERVICIO'
   precio: Decimal
   sku?: string
+  // String libre, sin tabla ni jerarquía (comentario del schema): "Accesorios
+  // · Protección" es el valor completo, con el " · " tipeado a mano por quien
+  // carga el artículo. Nullable: la mayoría de los artículos que ya existen no
+  // la tienen y ninguno se rompe sin ella.
+  categoria?: string | null
   stockInicial?: Decimal | null
   costoUnitario?: Decimal | null
+}
+
+/** Vacío o sólo espacios se guarda como NULL, no como cadena vacía: son la
+ *  misma "no hay categoría" y el listado y la ficha sólo tienen que chequear
+ *  un caso, no dos. */
+function limpiarCategoria(categoria: string | null | undefined): string | null {
+  const limpio = categoria?.trim()
+  return limpio ? limpio : null
 }
 
 // Cuántas veces se salta el correlativo antes de rendirse. Agotar cinco
@@ -161,6 +174,7 @@ export async function crearArticulo(
   entrada: EntradaCrearArticulo,
 ): Promise<{ id: string; sku: string }> {
   const { tenantId, usuarioId, tipo, precio, stockInicial, costoUnitario } = entrada
+  const categoria = limpiarCategoria(entrada.categoria)
 
   const nombre = exigirNombre(entrada.nombre)
   exigirPrecio(precio)
@@ -208,7 +222,7 @@ export async function crearArticulo(
         await exigirUsuario(tx, usuarioId)
 
         const articulo = await tx.articulo.create({
-          data: { tenantId, sku, nombre, tipo, precio },
+          data: { tenantId, sku, nombre, tipo, precio, categoria },
         })
 
         // El stock inicial NO se escribe en la columna: nace como movimiento,
@@ -264,11 +278,13 @@ export async function editarArticulo(entrada: {
   nombre: string
   sku: string
   precio: Decimal
+  categoria?: string | null
 }): Promise<void> {
   const { tenantId, articuloId, precio } = entrada
 
   const nombre = exigirNombre(entrada.nombre)
   exigirPrecio(precio)
+  const categoria = limpiarCategoria(entrada.categoria)
 
   const sku = entrada.sku.trim()
   if (sku === '') {
@@ -284,7 +300,7 @@ export async function editarArticulo(entrada: {
       // `codigo`. Contar filas afectadas deja decirlo con el error del módulo.
       const { count } = await tx.articulo.updateMany({
         where: { id: articuloId },
-        data: { nombre, sku, precio },
+        data: { nombre, sku, precio, categoria },
       })
       if (count === 0) {
         throw new ErrorDeInventario(

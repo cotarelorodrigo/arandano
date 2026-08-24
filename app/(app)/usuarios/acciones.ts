@@ -6,7 +6,20 @@ import { origenDelRequest } from '@/lib/auth/origen'
 import { crearEmpleado, resetearClave, desactivar, reactivar } from '@/lib/usuarios/administrar'
 import { ErrorDeUsuario } from '@/lib/usuarios/errores'
 
-export type EstadoUsuarios = { error: string | null; aviso: string | null }
+export type EstadoUsuarios = {
+  error: string | null
+  aviso: string | null
+  /**
+   * La clave que se acaba de generar (alta o reseteo), en texto plano.
+   *
+   * Separado de `aviso` a propósito: la maqueta pinta este caso en un bloque
+   * ámbar propio, con botón de copiar y la advertencia de que la clave se
+   * muestra una sola vez — un `string` suelto no alcanza para eso, la pantalla
+   * necesita el nombre y la clave por separado para armar el mensaje y para
+   * que el botón "Copiar" copie SÓLO la clave, no la oración entera.
+   */
+  claveGenerada: { nombre: string; clave: string } | null
+}
 
 // El valor inicial NO vive acá, aunque sea lo natural: este archivo es
 // 'use server', y ahí Next.js convierte cada export en un endpoint RPC, así que
@@ -27,18 +40,19 @@ async function comoDuenio<T>(fn: (tenantId: string, origen: string) => Promise<T
 }
 
 function traducir(e: unknown): EstadoUsuarios {
-  if (e instanceof ErrorDeUsuario) return { error: e.message, aviso: null }
+  if (e instanceof ErrorDeUsuario) return { error: e.message, aviso: null, claveGenerada: null }
   throw e
 }
 
 export async function altaEmpleado(_e: EstadoUsuarios, datos: FormData): Promise<EstadoUsuarios> {
   try {
     const clave = String(datos.get('clave') ?? '')
+    const nombre = String(datos.get('nombre') ?? '').trim()
     await comoDuenio((tenantId, origen) =>
       crearEmpleado({
         tenantId,
         origen,
-        nombre: String(datos.get('nombre') ?? '').trim(),
+        nombre,
         email: String(datos.get('email') ?? '').trim(),
         clave,
         rol: datos.get('rol') === 'DUENO' ? 'DUENO' : 'EMPLEADO',
@@ -46,8 +60,10 @@ export async function altaEmpleado(_e: EstadoUsuarios, datos: FormData): Promise
     )
     revalidatePath('/usuarios')
     // La clave se muestra una sola vez: es el único momento en que existe en
-    // texto plano, y el dueño se la tiene que pasar a la persona.
-    return { error: null, aviso: `Usuario creado. Su contraseña es: ${clave}` }
+    // texto plano, y el dueño se la tiene que pasar a la persona. Estructurada
+    // (nombre + clave) y no un string armado acá: quien la muestra es la
+    // pantalla, no esta action — ver el comentario de EstadoUsuarios.
+    return { error: null, aviso: null, claveGenerada: { nombre, clave } }
   } catch (e) {
     return traducir(e)
   }
@@ -56,11 +72,16 @@ export async function altaEmpleado(_e: EstadoUsuarios, datos: FormData): Promise
 export async function nuevaClave(_e: EstadoUsuarios, datos: FormData): Promise<EstadoUsuarios> {
   try {
     const clave = String(datos.get('clave') ?? '')
+    // El nombre viaja en un campo oculto del propio formulario de la fila
+    // (ver formularios.tsx): la fila ya lo tiene en pantalla, así que pedirlo
+    // acá de nuevo con un SELECT a la base sería releer un dato que el
+    // llamador ya tenía.
+    const nombre = String(datos.get('nombre') ?? '')
     await comoDuenio((tenantId, origen) =>
       resetearClave({ tenantId, origen, usuarioId: String(datos.get('usuarioId')), clave }),
     )
     revalidatePath('/usuarios')
-    return { error: null, aviso: `Contraseña cambiada. La nueva es: ${clave}` }
+    return { error: null, aviso: null, claveGenerada: { nombre, clave } }
   } catch (e) {
     return traducir(e)
   }
@@ -70,7 +91,7 @@ export async function baja(_e: EstadoUsuarios, datos: FormData): Promise<EstadoU
   try {
     await comoDuenio((tenantId) => desactivar({ tenantId, usuarioId: String(datos.get('usuarioId')) }))
     revalidatePath('/usuarios')
-    return { error: null, aviso: 'Usuario desactivado.' }
+    return { error: null, aviso: 'Usuario desactivado.', claveGenerada: null }
   } catch (e) {
     return traducir(e)
   }
@@ -80,7 +101,7 @@ export async function alta(_e: EstadoUsuarios, datos: FormData): Promise<EstadoU
   try {
     await comoDuenio((tenantId) => reactivar({ tenantId, usuarioId: String(datos.get('usuarioId')) }))
     revalidatePath('/usuarios')
-    return { error: null, aviso: 'Usuario reactivado.' }
+    return { error: null, aviso: 'Usuario reactivado.', claveGenerada: null }
   } catch (e) {
     return traducir(e)
   }

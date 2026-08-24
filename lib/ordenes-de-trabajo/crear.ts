@@ -119,8 +119,21 @@ export async function crearOrden(
           danosVisibles: limpio(entrada.danosVisibles),
           // El evento de apertura, en la MISMA transacción: una orden sin su
           // primera línea de bitácora es una historia que arranca por la mitad.
+          //
+          // La nota de ESTE evento es el mismo "daños visibles" que ya va a la
+          // columna, no un dato distinto (hallazgo I1 de la review final del
+          // rediseño de Servicio Técnico): la card "Equipo" de la ficha
+          // enumera cuatro filas exactas y quedó sin la quinta a propósito,
+          // siguiendo lo que dibuja design/arandano.pen — pero la maqueta MUDA
+          // el dato a la bitácora en vez de tirarlo (nodo `C1Ip0`, la nota del
+          // evento "Equipo recibido": "Marco golpeado en la esquina inferior
+          // derecha"). Escribirlo acá, y no sólo en la columna, es lo que hace
+          // que ese dato vuelva a poder verse en pantalla sin agregar una
+          // columna nueva ni una quinta fila a la card.
           eventos: {
-            create: [{ tenantId, desde: null, hasta: 'RECIBIDO', usuarioId }],
+            create: [
+              { tenantId, desde: null, hasta: 'RECIBIDO', usuarioId, nota: limpio(entrada.danosVisibles) },
+            ],
           },
         },
         select: { id: true, numero: true },

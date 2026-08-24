@@ -103,6 +103,21 @@ describe('npm run leads', () => {
     expect(linea).toContain('gente')
   })
 
+  // El requisito explícito de la Task 5 (formulario de un solo campo): nombre,
+  // email y rubro ahora son nullable (migración `lead_de_un_campo`), y este
+  // comando es el único lector — antes de la migración, `sinControles(null)`
+  // reventaba en el primer lead que el formulario nuevo guardara.
+  it('no revienta con un lead sin nombre ni rubro (el formulario de un solo campo)', async () => {
+    await owner.query(
+      `INSERT INTO leads (id, nombre, email, whatsapp, rubro, mensaje, creado_en)
+       VALUES (gen_random_uuid(), NULL, NULL, '+54 9 11 3333 3333', NULL, NULL, now())`,
+    )
+    const linea = await lineaDe('+54 9 11 3333 3333')
+    expect(linea).toContain('(sin nombre)')
+    expect(linea).not.toContain('undefined')
+    expect(linea).not.toContain('null')
+  })
+
   it('sin MIGRATE_DATABASE_URL falla con un error que dice qué falta', async () => {
     const sinUrl = { ...process.env }
     delete sinUrl.MIGRATE_DATABASE_URL

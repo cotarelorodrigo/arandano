@@ -9,13 +9,17 @@ import "./globals.css";
  * POR QUÉ EXISTE, cuando docs/sistema-de-diseno.md eligió la pila del sistema
  * a conciencia: esa decisión sigue en pie para toda la aplicación —cero bytes
  * en las pantallas que se miran ocho horas— y esta fuente no la toca. Entra en
- * un solo ROL —el nombre del local— y se ve en dos lugares: el cartel
- * del login (app/login/persiana.module.css) y el del header de la aplicación
- * (components/cartel.module.css). Ningún otro rol la usa: títulos, tablas,
- * botones y campos siguen en la pila del sistema. El eje de ancho (`wdth`) es
- * el motivo de la elección — un local argentino tiene el nombre pintado en el
- * frente, y la versión expandida es lo que se parece a eso y no a un título de
- * aplicación.
+ * TRES roles —no uno—, repartidos en cuatro módulos CSS: el nombre del local
+ * (app/login/persiana.module.css y components/cartel.module.css, `font-stretch:
+ * 112%`), el importe del punto de venta (components/importe.module.css, `85%`)
+ * y, desde el ciclo del shell, el <h1> de cada una de las diez pantallas de la
+ * aplicación (components/shell/encabezado.module.css, sin font-stretch propio).
+ * Ningún otro rol la usa: tablas, botones y campos siguen en la pila del
+ * sistema. El eje de ancho (`wdth`) es el motivo de la elección — un local
+ * argentino tiene el nombre pintado en el frente, y la versión expandida es lo
+ * que se parece a eso y no a un título de aplicación. El detalle completo, con
+ * el porqué de cada rol, vive en la sección *La cara de display: Archivo* de
+ * docs/sistema-de-diseno.md.
  *
  * EL COSTO, escrito para que se pueda revisar: 90 KB de woff2, sólo el subset
  * latin (cubre el español entero, ñ y acentos incluidos; un nombre con un

@@ -1,0 +1,31 @@
+/*
+ * Archivo sin font-stretch propio, mismo caso que los módulos de tipografía
+ * de /ventas y /inventario: el título de card ("Equipos en el local"), el
+ * número de orden de la columna ORDEN del listado y el conteo de cada chip
+ * de filtro (design/arandano.pen, nodos `UTVmt`, `iAEOO` y `R7SWAX`/`PfHf3`/
+ * etc. — todos `fontFamily: "$ar-display"` en el frame `App / Servicio
+ * Técnico`) piden la MISMA cara que Cartel e Importe, pero ninguno le pide un
+ * ancho propio al eje `wdth`: se quedan en el 100% por default.
+ * test/tipografia.test.ts lo cuida con el mismo mecanismo que esos módulos.
+ *
+ * POR QUÉ UN MÓDULO CSS Y NO `style={{ fontFamily: 'var(--font-archivo)' }}`
+ * A MANO: evadiría la vigilancia de test/tipografia.test.ts, que sólo
+ * inspecciona archivos `.module.css` — ver CLAUDE.md, "Nada de
+ * `style={{ fontFamily: ... }}` suelto".
+ *
+ * `.tituloDeCard` es la única clase compuesta: mismo tamaño y peso que la de
+ * /ventas y /inventario, en su propia clase porque son módulos CSS
+ * distintos. El número de orden y el conteo de chip no tienen clase propia
+ * —van con `.archivo` más las utilidades de Tailwind que varían caso a
+ * caso (tamaño, peso)—, mismo criterio que el código/precio/stock de
+ * /inventario.
+ */
+.archivo {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+}
+
+.tituloDeCard {
+  composes: archivo;
+  font-weight: 600;
+  font-size: 0.9375rem; /* 15px */
+}

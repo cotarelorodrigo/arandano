@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { formatearPrecio, formatearDolares, formatearCantidad, formatearFecha } from './mostrar'
+import {
+  formatearPrecio, formatearDolares, formatearCantidad, formatearFecha, formatearHora,
+  formatearFechaCorta, montoSinSigno,
+} from './mostrar'
 
 // Puro: sin Docker, sin base. `Intl` alcanza y corre en cualquier Node.
 
@@ -52,5 +55,54 @@ describe('formatearFecha', () => {
     const salida = formatearFecha(instante)
     expect(salida).toContain('14')
     expect(salida).not.toContain('15')
+  })
+})
+
+describe('formatearHora', () => {
+  // Mismo caso load-bearing que formatearFecha, y por el mismo motivo: sin el
+  // huso, la columna "Hora" del listado de /ventas mostraría la de Ashburn.
+  it('usa la hora de Buenos Aires, no la de UTC', () => {
+    const instante = new Date('2026-03-15T01:30:00Z') // 22:30 del 14/03 en AR
+    const salida = formatearHora(instante)
+    expect(salida).toContain('22:30')
+  })
+
+  it('no lleva la fecha, sólo la hora', () => {
+    const salida = formatearHora(new Date('2026-03-15T17:30:00Z'))
+    expect(salida).not.toContain('2026')
+    // Sin separador de fecha: si "short" alguna vez se coló acá en vez de
+    // "timeStyle", esto es lo que lo delata sin depender de qué dígitos
+    // coincidan por casualidad entre la hora y el día.
+    expect(salida).not.toMatch(/\//)
+  })
+})
+
+describe('formatearFechaCorta', () => {
+  it('día, mes y año, con los cuatro dígitos del año', () => {
+    const instante = new Date('2026-08-21T20:28:00Z') // 17:28 en Buenos Aires
+    expect(formatearFechaCorta(instante)).toBe('21/08/2026')
+  })
+
+  it('usa el día de Buenos Aires, no el de UTC', () => {
+    const instante = new Date('2026-03-15T01:30:00Z') // 22:30 del 14/03 en AR
+    expect(formatearFechaCorta(instante)).toBe('14/03/2026')
+  })
+})
+
+// Extraída de la review final del rediseño de /vender: el mismo
+// `.replace(/^\D+/, '')` estaba escrito dos veces (la banda del total de
+// punto-de-venta.tsx y el chip de cotización de caja.tsx) para separar el
+// signo de moneda de un valor ya formateado.
+describe('montoSinSigno', () => {
+  it('descarta el signo de pesos', () => {
+    expect(montoSinSigno(formatearPrecio('1500.5'))).toBe('1.500,50')
+  })
+
+  it('descarta el signo de dólares, de dos caracteres', () => {
+    expect(montoSinSigno(formatearDolares('0.8'))).toBe('0,80')
+  })
+
+  it('no toca un valor que ya viene sin signo', () => {
+    expect(montoSinSigno('1.500,50')).toBe('1.500,50')
   })
 })

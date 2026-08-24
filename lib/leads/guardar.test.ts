@@ -60,6 +60,27 @@ describe('guardarLead', () => {
     expect(filas[0].mensaje).toBeNull()
   })
 
+  // nombre, email y rubro son nullable desde la Task 5 del cierre del
+  // rediseño: el formulario de un solo campo (app/sitio/acciones.ts) guarda
+  // el contacto en whatsapp y deja las tres en NULL. `guardarLead` no puede
+  // asumir que vienen con datos.
+  it('un lead del formulario de un solo campo entra con nombre, email y rubro en NULL', async () => {
+    notificarLead.mockResolvedValue(undefined)
+    await guardarLead({
+      nombre: null,
+      email: null,
+      whatsapp: '+54 9 11 4444 4444',
+      rubro: null,
+      mensaje: null,
+    })
+
+    const { rows } = await owner.query('SELECT * FROM leads WHERE whatsapp = $1', ['+54 9 11 4444 4444'])
+    expect(rows).toHaveLength(1)
+    expect(rows[0].nombre).toBeNull()
+    expect(rows[0].email).toBeNull()
+    expect(rows[0].rubro).toBeNull()
+  })
+
   it('avisa después de guardar', async () => {
     notificarLead.mockResolvedValue(undefined)
     await guardarLead({

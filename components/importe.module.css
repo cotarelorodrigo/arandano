@@ -19,10 +19,14 @@
  * rol no puede perderla en un refactor de clases. `text-right` sí queda como
  * utilidad, porque es alineación de columna y no propiedad del rol.
  *
- * POR QUÉ 40 PX EL TOTAL. Es lo que lo hace legible del otro lado del
+ * POR QUÉ 42 PX EL TOTAL. Es lo que lo hace legible del otro lado del
  * mostrador. Supera al cartel de 24 px, y eso está declarado como enmienda con
  * su límite en docs/sistema-de-diseno.md: el cartel es lo más grande del SHELL;
- * el contenido puede pesar más cuando el contenido es el punto.
+ * el contenido puede pesar más cuando el contenido es el punto. Subió de 40 a
+ * 42 en el rediseño de la banda del total (design/arandano.pen, nodo `T4rEAA`),
+ * junto con el letter-spacing -1 que ese mismo nodo pide: a este tamaño el
+ * tracking por default de Archivo abre de más, y un número que se dice en voz
+ * alta en el mostrador no se puede leer suelto.
  */
 .importe {
   font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
@@ -33,6 +37,21 @@
 .total {
   composes: importe;
   font-weight: 600;
-  font-size: 2.5rem;
+  font-size: 2.625rem; /* 42px */
   line-height: 1;
+  letter-spacing: -1px;
+}
+
+/*
+ * El "$" de la banda del total, separado del monto (design/arandano.pen, nodo
+ * `w06dh`): antes era parte de la MISMA cadena que formatearPrecio() ya arma
+ * ("$ 103.900,00"), ahora es su propio elemento porque la maqueta lo pinta a
+ * 24px/500 contra los 42px/600 del monto — un tamaño y un peso que no son los
+ * del rol .importe base y que ningún otro lugar de la pantalla repite, así
+ * que no comparte clase con .total.
+ */
+.signo {
+  composes: importe;
+  font-weight: 500;
+  font-size: 1.5rem; /* 24px */
 }
