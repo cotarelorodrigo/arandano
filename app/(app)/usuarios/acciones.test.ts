@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import { Client } from 'pg'
 import { urlOwner, urlApp } from '@/test/postgres-efimero'
@@ -171,5 +172,23 @@ describe('cada action revalida el rol por su cuenta', () => {
 
     expect(resultado.error).toBeNull()
     expect(forbidden).not.toHaveBeenCalled()
+  })
+})
+
+describe('/usuarios no es delegable', () => {
+  const FUENTE = readFileSync(new URL('./acciones.ts', import.meta.url), 'utf8')
+
+  // Un permiso que habilita a repartir permisos es una escalada de privilegios
+  // con pasos de más: el empleado que puede editar usuarios se otorga los otros
+  // cinco y listo. Las cinco guardas de esta pantalla se quedan en DUENO, y que
+  // no estén en el catálogo no es un olvido.
+  it('las acciones de usuarios siguen exigiendo dueño', () => {
+    expect(FUENTE).toContain('exigirDuenio()')
+    expect(FUENTE, 'alguna acción de /usuarios pasó a permisos').not.toContain('exigirPermiso(')
+  })
+
+  it('cambiarPermiso también, aunque sea la acción nueva', () => {
+    const cuerpo = FUENTE.slice(FUENTE.indexOf('export async function cambiarPermiso'))
+    expect(cuerpo).toContain('comoDuenio(')
   })
 })

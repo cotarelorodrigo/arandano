@@ -5,6 +5,9 @@ import { exigirDuenio } from '@/lib/auth/sesion'
 import { origenDelRequest } from '@/lib/auth/origen'
 import { crearEmpleado, resetearClave, desactivar, reactivar } from '@/lib/usuarios/administrar'
 import { ErrorDeUsuario } from '@/lib/usuarios/errores'
+import { comoPermiso } from '@/lib/permisos/catalogo'
+import { otorgar, revocar } from '@/lib/permisos/administrar'
+import { ErrorDePermiso } from '@/lib/permisos/errores'
 
 export type EstadoUsuarios = {
   error: string | null
@@ -103,6 +106,47 @@ export async function alta(_e: EstadoUsuarios, datos: FormData): Promise<EstadoU
     revalidatePath('/usuarios')
     return { error: null, aviso: 'Usuario reactivado.', claveGenerada: null }
   } catch (e) {
+    return traducir(e)
+  }
+}
+
+/**
+ * Prende o apaga un permiso de un empleado.
+ *
+ * **Sigue detrás de `comoDuenio`, y eso no es delegable**: un permiso que
+ * habilita a repartir permisos es una escalada de privilegios con pasos de
+ * más. `/usuarios` entera se queda en DUENO.
+ */
+export async function cambiarPermiso(
+  _e: EstadoUsuarios,
+  datos: FormData,
+): Promise<EstadoUsuarios> {
+  try {
+    const usuarioId = String(datos.get('usuarioId') ?? '').trim()
+    // El permiso llega por FormData: es texto de afuera hasta que el catálogo
+    // lo reconoce. Sin esto, un valor inventado llegaría hasta el enum de
+    // Postgres y volvería como 500 en vez de como cartel.
+    const permiso = comoPermiso(String(datos.get('permiso') ?? ''))
+    if (!permiso) {
+      return { error: 'Ese permiso no existe.', aviso: null, claveGenerada: null }
+    }
+    const prender = datos.get('otorgar') === '1'
+
+    await comoDuenio((tenantId) =>
+      prender
+        ? otorgar({ tenantId, usuarioId, permiso })
+        : revocar({ tenantId, usuarioId, permiso }),
+    )
+    revalidatePath('/usuarios')
+    return {
+      error: null,
+      aviso: prender ? 'Permiso otorgado.' : 'Permiso revocado.',
+      claveGenerada: null,
+    }
+  } catch (e) {
+    if (e instanceof ErrorDePermiso) {
+      return { error: e.message, aviso: null, claveGenerada: null }
+    }
     return traducir(e)
   }
 }
