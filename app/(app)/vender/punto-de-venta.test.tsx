@@ -546,7 +546,10 @@ describe('el punto de venta', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
     const posicion = fuente.indexOf('esAtajoDeVaciar(e.key)')
     expect(posicion, 'el atajo de vaciar tiene que existir en el fuente').toBeGreaterThan(-1)
-    const contexto = fuente.slice(posicion, posicion + 200)
+    // La ventana se ensanchó de 200 a 500 con el ciclo móvil: la rama ganó el
+    // comentario que explica por qué este chequeo convive con el de
+    // `alternarVaciado`. Sigue acotada a la rama de Escape.
+    const contexto = fuente.slice(posicion, posicion + 500)
     expect(
       contexto,
       'nada que vaciar tiene que cortar antes de armar cualquier confirmación',
@@ -661,10 +664,10 @@ describe('el punto de venta en el teléfono', () => {
   })
 
   // Los chips del cuerpo son de sólo lectura (design/arandano.pen no les pone
-  // ningún control adentro), así que abrir y cerrar el turno se van al menú de
-  // la ranura derecha del Topbar.
-  it('la ranura derecha del Topbar lleva el menú de caja', () => {
-    expect(FUENTE).toMatch(/menuMovil=\{[\s\S]{0,80}<MenuCaja/)
+  // ningún control adentro), así que abrir y cerrar el turno se van a la
+  // ranura derecha del Topbar.
+  it('la ranura derecha del Topbar lleva el control de caja', () => {
+    expect(FUENTE).toMatch(/controlMovil=\{[\s\S]{0,90}<ControlDeCaja/)
   })
 
   it('la fila de columnas corta en lg, y no queda ningún md: en la pantalla', () => {
@@ -749,11 +752,74 @@ describe('el punto de venta en el teléfono', () => {
     expect([...FUENTE.matchAll(/function ChipDeFaltante/g)].length).toBe(1)
   })
 
-  // El menú de caja es lo único de Radix que este ciclo suma a la pantalla, y
-  // los tres atajos de teclado se abstienen mientras haya un overlay de Radix
-  // montado. Un DropdownMenu abierto renderiza role="menu", así que ya queda
-  // cubierto — verificado, no supuesto.
-  it('los atajos se abstienen con el menú de caja abierto', () => {
+
+  // --- El vaciado del carrito ---
+  //
+  // En escritorio esa capacidad la da el doble Esc. En un teléfono no hay Esc,
+  // y sin este botón la única forma de deshacer una venta mal armada era
+  // borrar ítem por ítem con la ✕. El nodo `L5UIo` de VaHod lo dibuja: un
+  // encabezado de card con "Carrito" a la izquierda y "Vaciar" a la derecha.
+
+  it('el carrito del teléfono tiene su encabezado con "Vaciar"', async () => {
+    const html = await render()
+    const encabezado = html.match(/<div class="([^"]*)"[^>]*><span[^>]*>Carrito<\/span>/)
+    expect(encabezado, 'no se encontró el encabezado del carrito').toBeTruthy()
+    expect(encabezado![1], 'en escritorio manda la fila de encabezados de la tabla').toContain(
+      'lg:hidden',
+    )
+    // padding [11,14] y borde inferior (nodo `L5UIo`).
+    expect(encabezado![1]).toContain('px-[14px]')
+    expect(encabezado![1]).toContain('py-[11px]')
+    expect(encabezado![1]).toContain('border-b')
+    expect(html).toContain('Vaciar')
+  })
+
+  // Con el carrito vacío no hay nada que vaciar, y el atajo Esc ya se abstiene
+  // en ese caso: el botón tiene que hacer lo mismo o las dos mitades del mismo
+  // gesto dirían cosas distintas.
+  it('con el carrito vacío el botón de vaciar está apagado', async () => {
+    const html = await render()
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Vaciar<\/button>/)
+  })
+
+  // LO QUE MÁS IMPORTA DE ESTE BOTÓN: comparte el estado de confirmación con
+  // el atajo, no tiene el suyo. Con dos estados separados, armar por Esc y
+  // confirmar por botón (o al revés) quedaría desincronizado, y el desarme
+  // automático a los 3 segundos sólo bajaría uno de los dos.
+  it('el botón Vaciar y el atajo Esc comparten la confirmación en dos pasos', () => {
+    // UN solo estado de confirmación, UN solo lugar donde se arma, UNA sola
+    // función que decide. Es lo que este caso existe para proteger: con dos
+    // estados, armar por Esc y confirmar por botón no se entenderían.
+    expect([...FUENTE.matchAll(/\[vaciadoArmado, setVaciadoArmado\] = useState/g)].length).toBe(1)
+    expect([...FUENTE.matchAll(/setVaciadoArmado\(true\)/g)].length).toBe(1)
+    expect([...FUENTE.matchAll(/const alternarVaciado = useCallback/g)].length).toBe(1)
+
+    // Y los dos caminos entran por ahí: el botón por su onClick, el atajo
+    // desde la rama de Escape del listener global.
+    expect(FUENTE).toMatch(/onClick=\{alternarVaciado\}/)
+    const rama = FUENTE.slice(FUENTE.indexOf('esAtajoDeVaciar(e.key)'))
+    expect(rama.slice(0, 500)).toMatch(/alternarVaciado\(\)/)
+
+    // El rótulo cambia con el mismo estado que la leyenda de escritorio, y usa
+    // la fórmula "Sí, <verbo>" que ya eligieron AnularVenta y ConfirmarCierre.
+    expect(FUENTE).toMatch(/vaciadoArmado \? 'Sí, vaciar' : 'Vaciar'/)
+  })
+
+  // Un teléfono no tiene Esc, así que la leyenda de atajos no puede ser la
+  // única señal de que hay una confirmación armada: el botón la lleva encima.
+  it('el botón armado se pinta con el rojo de "esto no se deshace"', () => {
+    const posicion = FUENTE.indexOf("'Sí, vaciar'")
+    expect(posicion, 'el rótulo confirmado tiene que existir en el fuente').toBeGreaterThan(-1)
+    const contexto = FUENTE.slice(Math.max(0, posicion - 500), posicion)
+    expect(contexto).toMatch(/text-destructive/)
+  })
+
+  // El control de caja es lo único de Radix que este ciclo suma a la pantalla,
+  // y los tres atajos de teclado se abstienen mientras haya un overlay de
+  // Radix montado. Un `Sheet` abierto es un Dialog, y su Content renderiza
+  // role="dialog" — que `hayOverlayDeRadixAbierto` ya busca. Que el Sheet SEA
+  // un dialog lo verifica caja.test.tsx contra el paquete instalado, no acá.
+  it('los atajos se abstienen con la hoja de caja abierta', () => {
     const posicion = FUENTE.indexOf('function hayOverlayDeRadixAbierto')
     expect(posicion).toBeGreaterThan(-1)
     expect(FUENTE.slice(posicion, posicion + 300)).toContain('role="menu"')

@@ -1,11 +1,11 @@
 'use client'
 
-import { Fragment, useActionState, useState, useRef, useEffect } from 'react'
+import { Fragment, useActionState, useCallback, useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { ArrowRight, CircleAlert, Minus, Plus, ScanBarcode, TriangleAlert, X } from 'lucide-react'
 import { cobrar, buscarArticulos, type EstadoCobro } from './acciones'
 import { usePasoDeCobro, type Paso } from './paso'
-import { ChipCaja, ChipsDeEstado, MenuCaja, type CajaDelChip } from './caja'
+import { ChipCaja, ChipsDeEstado, ControlDeCaja, type CajaDelChip } from './caja'
 import type { ArticuloVendible } from '@/lib/ventas/buscar'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Encabezado } from '@/components/shell/encabezado'
@@ -667,6 +667,44 @@ export function PuntoDeVenta({
   // conservador que ya usa `hayLineaInvalida` más arriba.
   const hayFaltante = hayFaltanteDeVenta(faltanCentavos)
 
+  /**
+   * Un paso del vaciado del carrito en dos golpes: el primero arma la
+   * confirmación, el segundo vacía.
+   *
+   * LO DISPARAN DOS COSAS y comparten este estado, no tienen uno cada una: el
+   * atajo Esc (escritorio) y el botón "Vaciar" del encabezado del carrito en
+   * el teléfono (design/arandano.pen, nodo `L5UIo`). Con dos `vaciadoArmado`
+   * separados, armar por un camino y confirmar por el otro quedaría
+   * desincronizado, y el desarme automático a los 3 segundos bajaría sólo uno
+   * de los dos — un carrito que se vacía por un Esc que la persona ya se
+   * olvidó de haber apretado.
+   *
+   * POR QUÉ DOS PASOS Y NO UN confirm() NI UN VACIADO DESHACIBLE: ver el
+   * comentario de la leyenda, más abajo en el JSX.
+   *
+   * `useCallback` y no una función suelta: el listener global de teclado la
+   * llama, así que entra en sus dependencias. Sin memoizar cambiaría de
+   * identidad en cada render —incluido cada tecla del buscador— y el listener
+   * se re-engancharía otras tantas veces. Con estas dos dependencias sólo
+   * cambia cuando cambia algo que el efecto YA escuchaba.
+   */
+  const alternarVaciado = useCallback(() => {
+    // Nada que vaciar.
+    if (lineas.length === 0) return
+    if (vaciadoArmado) {
+      // El desarme (timer + estado) lo hace `actualizarCarrito` mismo
+      // —cualquier cambio de carrito lo hace, ver su comentario—, así que acá
+      // no hay que repetirlo.
+      actualizarCarrito(() => [])
+      setPagos([])
+      return
+    }
+    // Primer golpe: arma la confirmación y NO borra nada todavía.
+    setVaciadoArmado(true)
+    if (desarmarVaciado.current) clearTimeout(desarmarVaciado.current)
+    desarmarVaciado.current = setTimeout(() => setVaciadoArmado(false), 3000)
+  }, [lineas.length, vaciadoArmado])
+
   // Enter cobra y Esc vacía el carrito — los otros dos atajos que promete la
   // leyenda bajo el botón (design/arandano.pen, nodo `k1dDB`). Van en un
   // efecto aparte del de F2 de arriba: ese no depende de nada del estado de
@@ -701,23 +739,14 @@ export function PuntoDeVenta({
       if (hayOverlayDeRadixAbierto()) return
 
       if (esAtajoDeVaciar(e.key)) {
-        // Nada que vaciar: ni vale la pena armar la confirmación.
+        // Nada que vaciar: ni vale la pena armar la confirmación, ni tragarse
+        // la tecla, que puede tener trabajo en otro lado de la pantalla. El
+        // mismo chequeo vive también adentro de `alternarVaciado` (que es
+        // donde manda), porque acá decide algo distinto: si llamar o no a
+        // preventDefault.
         if (lineas.length === 0) return
         e.preventDefault()
-        if (vaciadoArmado) {
-          // El desarme (timer + estado) lo hace `actualizarCarrito` mismo
-          // —cualquier cambio de carrito lo hace, ver su comentario—, así
-          // que acá no hay que repetirlo.
-          actualizarCarrito(() => [])
-          setPagos([])
-          return
-        }
-        // Primer Esc: arma la confirmación y NO borra nada todavía — ver el
-        // comentario de la leyenda, más abajo en el JSX, para el porqué de
-        // dos pasos en vez de un confirm() o un vaciado deshacible.
-        setVaciadoArmado(true)
-        if (desarmarVaciado.current) clearTimeout(desarmarVaciado.current)
-        desarmarVaciado.current = setTimeout(() => setVaciadoArmado(false), 3000)
+        alternarVaciado()
         return
       }
 
@@ -745,7 +774,7 @@ export function PuntoDeVenta({
     // `setVaciadoArmado` que dispara 3 segundos después no rompe nada en
     // React 18+ (dejó de advertir por setState de un componente desmontado).
     return () => window.removeEventListener('keydown', alApretarTecla)
-  }, [lineas.length, vaciadoArmado, cierra, cobrando])
+  }, [alternarVaciado, lineas.length, vaciadoArmado, cierra, cobrando])
 
   return (
     <>
@@ -779,7 +808,7 @@ export function PuntoDeVenta({
         // La ranura derecha del teléfono queda apagada en el cobro: el frame
         // `keRdN` la dibuja deshabilitada (`NlGrn: enabled false`), y abrir o
         // cerrar el turno en medio de un cobro no es lo que nadie va a querer.
-        menuMovil={pasoVisible === 'cobro' ? undefined : <MenuCaja caja={caja} />}
+        controlMovil={pasoVisible === 'cobro' ? undefined : <ControlDeCaja caja={caja} />}
       />
 
       {/* "Cuerpo": el buscador a todo el ancho, arriba de las dos columnas.
@@ -895,6 +924,41 @@ export function PuntoDeVenta({
               paso === 'cobro' ? 'hidden lg:flex' : 'flex'
             } max-w-3xl flex-1 gap-0 rounded-[16px] border py-0 ring-0`}
           >
+            {/* El encabezado del carrito, SÓLO en el teléfono (nodo `L5UIo`):
+                padding [11,14], borde inferior, "Carrito" a la izquierda y
+                "Vaciar" a la derecha. En escritorio esa franja ya la ocupa la
+                fila de encabezados de la tabla, que en el teléfono no se ve
+                casi entera.
+
+                POR QUÉ EL BOTÓN NO ES OPCIONAL: en escritorio vaciar el
+                carrito lo da el doble Esc, y un teléfono no tiene Esc. Sin él,
+                deshacer una venta mal armada era borrar ítem por ítem con la
+                ✕. Comparte `vaciadoArmado` con el atajo (ver
+                `alternarVaciado`), así que los dos caminos no se pueden
+                desincronizar.
+
+                "Carrito" paga Archivo (14/600, `Y7AGpE`) vía el módulo de
+                Cobro: comparte familia y peso con el título de esa card y sólo
+                cambia el tamaño, que es exactamente cómo ese módulo está
+                pensado para usarse (ver su comentario). La fila "Cobro" de la
+                escala en docs/sistema-de-diseno.md dice hoy "16 px el título" y
+                pasa a tener dos tamaños — lo actualiza la task de
+                documentación del ciclo, que junta todos los roles que la
+                maqueta móvil achica. */}
+            <div className="flex items-center justify-between border-b px-[14px] py-[11px] lg:hidden">
+              <span className={`${estilosCobro.titulo} text-sm text-foreground`}>Carrito</span>
+              <button
+                type="button"
+                onClick={alternarVaciado}
+                disabled={lineas.length === 0}
+                className={`text-xs font-semibold disabled:opacity-40 ${
+                  vaciadoArmado ? 'text-destructive' : 'text-muted-foreground'
+                }`}
+              >
+                {vaciadoArmado ? 'Sí, vaciar' : 'Vaciar'}
+              </button>
+            </div>
+
             <Table className="table-fixed">
               <TableHeader>
                 {/* Fila "hundida": fondo --muted, padding [12,18] y 14 de gap

@@ -2,18 +2,19 @@
 
 import { cloneElement, useActionState, useState } from 'react'
 import { MoreVertical } from 'lucide-react'
-import { toast } from 'sonner'
 import { abrirCajaDesdeVender, cerrarCajaDesdeVender, type EstadoCaja } from './acciones'
 import { formatearFecha, formatearPrecio, montoSinSigno } from '@/lib/formato/mostrar'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CLASES_RANURA_MOVIL } from '@/components/shell/encabezado'
 import estilos from '@/components/importe.module.css'
@@ -119,26 +120,51 @@ function detenerEscapeGlobal(e: React.KeyboardEvent) {
  * solo click no puede bastar, pero tampoco hace falta un `confirm()` del
  * navegador ni una dependencia nueva para lograrlo.
  */
-function ConfirmarCierre({ caja, onCancelar }: { caja: CajaDelChip; onCancelar: () => void }) {
+function ConfirmarCierre({
+  caja,
+  onCancelar,
+  apilado = false,
+}: {
+  caja: CajaDelChip
+  onCancelar: () => void
+  // El mismo formulario en dos envases: la píldora del Topbar de escritorio
+  // (el default) y el bloque apilado de la hoja del teléfono. Un booleano y no
+  // dos componentes: lo que cambia es el layout, y el cableado de la acción
+  // —cuál es, y que el error se anuncie— tiene que quedar en un solo lugar.
+  apilado?: boolean
+}) {
   const [estado, accion, cerrando] = useActionState(cerrarCajaDesdeVender, INICIAL)
   return (
     <form
       action={accion}
       onKeyDown={detenerEscapeGlobal}
-      className={CLASES_MINI_FORM}
+      className={apilado ? 'flex flex-col gap-3' : CLASES_MINI_FORM}
     >
-      <span className="text-xs text-foreground-soft">
+      <span className={apilado ? 'text-sm text-foreground-soft' : 'text-xs text-foreground-soft'}>
         ¿Cerrar la caja abierta desde las {formatearFecha(caja.abiertaEn)}?
       </span>
       {estado.error && (
         <span role="alert" className="text-xs font-semibold text-destructive">{estado.error}</span>
       )}
-      <Button type="submit" size="sm" variant="destructive" disabled={cerrando}>
-        {cerrando ? 'Cerrando…' : 'Sí, cerrar'}
-      </Button>
-      <Button type="button" variant="ghost" size="sm" onClick={onCancelar}>
-        Cancelar
-      </Button>
+      <div className={apilado ? 'flex gap-2' : 'contents'}>
+        <Button
+          type="submit"
+          size={apilado ? 'default' : 'sm'}
+          variant="destructive"
+          disabled={cerrando}
+          className={apilado ? 'flex-1' : undefined}
+        >
+          {cerrando ? 'Cerrando…' : 'Sí, cerrar'}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size={apilado ? 'default' : 'sm'}
+          onClick={onCancelar}
+        >
+          Cancelar
+        </Button>
+      </div>
     </form>
   )
 }
@@ -165,35 +191,65 @@ function ChipSinCaja() {
   )
 }
 
-function FormularioDeApertura({ onCancelar }: { onCancelar: () => void }) {
+function FormularioDeApertura({
+  onCancelar,
+  apilado = false,
+}: {
+  onCancelar: () => void
+  // Ver el mismo prop en `ConfirmarCierre`, arriba.
+  apilado?: boolean
+}) {
   const [estado, accion, enviando] = useActionState(abrirCajaDesdeVender, INICIAL)
   return (
     <form
       action={accion}
       onKeyDown={detenerEscapeGlobal}
-      className={CLASES_MINI_FORM}
+      className={apilado ? 'flex flex-col gap-3' : CLASES_MINI_FORM}
     >
-      <Label htmlFor="saldoInicial" className="text-xs text-foreground-soft">
-        Saldo inicial
-      </Label>
-      <Input
-        id="saldoInicial"
-        name="saldoInicial"
-        defaultValue="0"
-        inputMode="decimal"
-        // 20 caracteres alcanza para cualquier saldo real; el chip no tiene
-        // espacio para un input de ancho libre sin romper la fila del header.
-        className={`h-7 w-20 border-0 bg-transparent p-0 text-right shadow-none focus-visible:ring-0 ${estilos.importe}`}
-      />
+      <div className={apilado ? 'flex flex-col gap-[5px]' : 'contents'}>
+        <Label
+          htmlFor="saldoInicial"
+          className={apilado ? 'text-[11px] font-semibold text-foreground-soft' : 'text-xs text-foreground-soft'}
+        >
+          Saldo inicial
+        </Label>
+        <Input
+          id="saldoInicial"
+          name="saldoInicial"
+          defaultValue="0"
+          inputMode="decimal"
+          // Apilado toma el ancho de la hoja y trae su propio borde, como
+          // cualquier campo de formulario. En la píldora del Topbar no hay
+          // espacio para un input de ancho libre sin romper la fila del
+          // header, así que ahí va angosto y sin borde propio.
+          className={
+            apilado
+              ? `h-11 text-right ${estilos.importe}`
+              : `h-7 w-20 border-0 bg-transparent p-0 text-right shadow-none focus-visible:ring-0 ${estilos.importe}`
+          }
+        />
+      </div>
       {estado.error && (
         <span role="alert" className="text-xs font-semibold text-destructive">{estado.error}</span>
       )}
-      <Button type="submit" size="sm" disabled={enviando}>
-        {enviando ? 'Abriendo…' : 'Abrir'}
-      </Button>
-      <Button type="button" variant="ghost" size="sm" onClick={onCancelar}>
-        Cancelar
-      </Button>
+      <div className={apilado ? 'flex gap-2' : 'contents'}>
+        <Button
+          type="submit"
+          size={apilado ? 'default' : 'sm'}
+          disabled={enviando}
+          className={apilado ? 'flex-1' : undefined}
+        >
+          {enviando ? 'Abriendo…' : 'Abrir'}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size={apilado ? 'default' : 'sm'}
+          onClick={onCancelar}
+        >
+          Cancelar
+        </Button>
+      </div>
     </form>
   )
 }
@@ -311,76 +367,74 @@ export function ChipsDeEstado({
 }
 
 /**
- * El menú `more-vertical` de la ranura derecha del Topbar del teléfono (nodo
- * `GZz1a` de `VaHod`), que es donde quedaron abrir y cerrar el turno.
+ * El control de caja de la ranura derecha del Topbar del teléfono (nodo
+ * `GZz1a` de `VaHod`, un `more-vertical`), que es donde quedaron abrir y
+ * cerrar el turno.
  *
- * DOS DIFERENCIAS CON EL CHIP DE ESCRITORIO, las dos conscientes:
+ * POR QUÉ UNA HOJA Y NO UN MENÚ. La primera versión de esta task usaba un
+ * `DropdownMenu` con dos ítems, y eso costaba el campo de saldo inicial: un
+ * `<input>` adentro de un menú de Radix le pelea al typeahead del propio menú,
+ * que atiende las teclas imprimibles para saltar de ítem. Abrir la caja en 0
+ * **en silencio**, cuando la persona tenía plata en el cajón, no es una
+ * comodidad perdida: el arqueo, cuando exista, va a cuadrar contra ese número.
+ * Un `Sheet` no tiene ese problema y aloja los MISMOS dos formularios que ya
+ * usa el chip de escritorio, con su saldo inicial y su confirmación de cierre.
  *
- * 1. **Abrir no pregunta el saldo inicial.** El chip de escritorio ofrece un
- *    campo; adentro de un menú de Radix un `<input>` pelea con el typeahead
- *    del propio menú (que atiende las teclas imprimibles para saltar de ítem),
- *    y la ranura de 38 px no tiene dónde poner el campo afuera. Se abre en 0,
- *    que es lo que `abrirCajaDesdeVender` ya usa por default cuando el campo
- *    no viene. Es una capacidad que el teléfono no tiene y el escritorio sí.
- * 2. **Cerrar no pide confirmación.** El chip de escritorio la pide porque es
- *    un clic suelto sobre algo que no se deshace; llegar hasta acá ya son dos
- *    gestos (abrir el menú, elegir el ítem), que es la misma protección por
- *    otro camino.
+ * LA CONFIRMACIÓN DE CIERRE SIGUE SIENDO DE DOS PASOS, y los dos pasos son
+ * abrir la hoja y apretar "Sí, cerrar" — el mismo par que en escritorio son
+ * clickear el chip y apretar "Sí, cerrar".
  *
- * Las acciones se llaman DIRECTO, sin `useActionState`, igual que `MenuDeRama`
- * en app/(app)/inventario/abm-categorias.tsx y por su mismo motivo: un
- * `onSelect` no es un `<form action>`, así que `useActionState` avisa "An async
- * function with useActionState was called outside of a transition", y el
- * resultado quedaría colgado de un componente que `revalidatePath` desmonta.
- * Acá el aviso se lanza en el mismo handler, con el resultado en la mano.
+ * `Sheet` es el `Dialog` de Radix, así que su contenido monta un
+ * `[role="dialog"]` y los tres atajos de teclado de `/vender` se abstienen
+ * solos mientras la hoja esté abierta (ver `hayOverlayDeRadixAbierto` en
+ * punto-de-venta.tsx). Está verificado contra el paquete instalado en
+ * `caja.test.tsx`, no supuesto: en esta pantalla suponer qué renderiza un
+ * primitivo de Radix ya produjo un bug de cobro.
  */
-export function MenuCaja({ caja }: { caja: CajaDelChip | null }) {
-  // Sin el estado completo de la acción: el resultado no se renderiza en
-  // ningún lado (va por toast), y `pendiente` es lo único que hace falta para
-  // que un doble toque no abra o cierre el turno dos veces.
-  const [pendiente, setPendiente] = useState(false)
-
-  async function ejecutar(accion: (estado: EstadoCaja, datos: FormData) => Promise<EstadoCaja>) {
-    if (pendiente) return
-    setPendiente(true)
-    // FormData vacío: `cerrarCajaDesdeVender` no lee ninguno y
-    // `abrirCajaDesdeVender` cae en su default de saldo '0' (ver el punto 1
-    // del comentario de arriba).
-    const resultado = await accion(INICIAL, new FormData())
-    // Sólo el error avisa. El éxito ya se ve solo: `revalidatePath('/vender')`
-    // vuelve a traer la pantalla con el chip del cuerpo cambiado, y un toast
-    // que diga lo mismo que el chip de al lado es ruido. Sin auto-descarte,
-    // como todo error accionable en este repo (ver el ABM de categorías).
-    if (resultado.error) toast.error(resultado.error, { duration: Infinity })
-    setPendiente(false)
+export function ControlDeCaja({ caja }: { caja: CajaDelChip | null }) {
+  const [abierta, setAbierta] = useState(false)
+  // Si el turno de verdad cambió de estado, la hoja ya hizo su trabajo y se
+  // cierra sola. `revalidatePath('/vender')` trae el `caja` nuevo por props, y
+  // ese cambio es la única señal confiable de éxito que hay: las dos acciones
+  // devuelven `{ error: null }` tanto antes de enviarse como después de salir
+  // bien. Ajuste durante el render y no un efecto — el mismo patrón (y el
+  // mismo lint) que ya obliga a usar punto-de-venta.tsx.
+  const [hayCajaReflejada, setHayCajaReflejada] = useState(caja !== null)
+  if ((caja !== null) !== hayCajaReflejada) {
+    setHayCajaReflejada(caja !== null)
+    setAbierta(false)
   }
 
   return (
-    <DropdownMenu>
+    <Sheet open={abierta} onOpenChange={setAbierta}>
       {/* tono 'suave' de la ranura (bg-muted), que es el que
-          components/shell/encabezado.tsx reserva para "abre un menú" — y es
+          components/shell/encabezado.tsx reserva para "abre algo" — y es
           además lo que pinta el nodo `NlGrn` de VaHod ($ar-sunken). */}
-      <DropdownMenuTrigger
-        aria-label="Acciones de la caja"
+      <SheetTrigger
+        aria-label="Caja del turno"
         className={`${CLASES_RANURA_MOVIL} bg-muted text-foreground`}
       >
         <MoreVertical aria-hidden="true" className="size-[19px]" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {caja ? (
-          <DropdownMenuItem
-            variant="destructive"
-            disabled={pendiente}
-            onSelect={() => void ejecutar(cerrarCajaDesdeVender)}
-          >
-            Cerrar caja
-          </DropdownMenuItem>
-        ) : (
-          <DropdownMenuItem disabled={pendiente} onSelect={() => void ejecutar(abrirCajaDesdeVender)}>
-            Abrir caja
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </SheetTrigger>
+      {/* Desde abajo: es de donde salen las hojas en un teléfono, y deja el
+          control debajo del pulgar en vez de arriba de todo. */}
+      <SheetContent side="bottom" className="gap-0">
+        <SheetHeader>
+          <SheetTitle>Caja</SheetTitle>
+          {/* Radix pide una descripción para el `aria-describedby` del diálogo.
+              Ésta dice lo que la hoja puede hacer, no en qué estado está: el
+              estado lo dice el formulario de abajo, y repetirlo acá lo dejaría
+              desincronizado el día que uno de los dos cambie. */}
+          <SheetDescription>El turno de caja del local: abrirlo o cerrarlo.</SheetDescription>
+        </SheetHeader>
+        <div className="p-4">
+          {caja ? (
+            <ConfirmarCierre caja={caja} onCancelar={() => setAbierta(false)} apilado />
+          ) : (
+            <FormularioDeApertura onCancelar={() => setAbierta(false)} apilado />
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
   )
 }

@@ -161,18 +161,18 @@ describe('el encabezado de pantalla', () => {
     })
   })
 
-  // `menuMovil` es la otra forma que puede tomar la ranura derecha del
+  // `controlMovil` es la otra forma que puede tomar la ranura derecha del
   // teléfono: `accionMovil` es SIEMPRE un link a un href (un solo toque), y
-  // /vender necesita ahí un menú —abrir y cerrar el turno de caja—, que es un
-  // control propio con su propio estado. En vez de volver `accionMovil` una
-  // unión de dos formas, la ranura acepta un nodo ya armado, y la geometría
-  // (38×38, radio 10, lg:hidden) se comparte por CLASES_RANURA_MOVIL, que es
-  // lo que evita que el menú y el link se desalineen entre pantallas.
-  describe('el menú móvil', () => {
+  // /vender necesita ahí un control con estado propio —la hoja donde se abre y
+  // se cierra el turno de caja—. En vez de volver `accionMovil` una unión de
+  // dos formas, la ranura acepta un nodo ya armado, y la geometría (38×38,
+  // radio 10, lg:hidden) se comparte por CLASES_RANURA_MOVIL, que es lo que
+  // evita que el control y el link se desalineen entre pantallas.
+  describe('el control móvil', () => {
     it('renderiza el nodo que le pasan en la ranura derecha', () => {
       const html = render({
         titulo: 'Vender',
-        menuMovil: <button aria-label="Más acciones">⋮</button>,
+        controlMovil: <button aria-label="Más acciones">⋮</button>,
       })
       expect(html).toContain('aria-label="Más acciones"')
       // Después del bloque de título, como la ranura derecha que es.

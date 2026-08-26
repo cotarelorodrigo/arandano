@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 // Mismo criterio que punto-de-venta.test.tsx: acciones.ts es 'use server' y
@@ -102,7 +102,7 @@ describe('el chip de caja', () => {
   })
 })
 
-// --- El teléfono: los chips de sólo lectura del cuerpo y el menú del Topbar ---
+// --- El teléfono: los chips de sólo lectura del cuerpo y el control del Topbar ---
 
 describe('los chips de estado del cuerpo', () => {
   async function renderChips(props: { caja: { abiertaEn: Date } | null; cotizacionUsd: string | null }) {
@@ -119,8 +119,8 @@ describe('los chips de estado del cuerpo', () => {
 
   // design/arandano.pen dibuja `MP7Iu` y `fBLhr` SIN ningún control adentro:
   // son dos frames con texto, no botones. Abrir y cerrar el turno viven en el
-  // menú del Topbar (ver más abajo) justamente por eso — si estos chips
-  // fueran clickeables, el menú no tendría razón de existir.
+  // control del Topbar (ver más abajo) justamente por eso — si estos chips
+  // fueran clickeables, ese control no tendría razón de existir.
   it('no llevan ningún control adentro: la maqueta los dibuja de sólo lectura', async () => {
     const conCaja = await renderChips({
       caja: { abiertaEn: new Date('2026-08-21T17:32:00Z') },
@@ -145,8 +145,8 @@ describe('los chips de estado del cuerpo', () => {
   })
 
   // Sin caja, el chip de sólo lectura NO puede decir "Abrir caja" —sería un
-  // botón que no lo es—: dice qué pasa, y el menú del Topbar es el que ofrece
-  // hacer algo al respecto. Ámbar y no rojo, mismo criterio que el chip
+  // botón que no lo es—: dice qué pasa, y el control del Topbar es el que
+  // ofrece hacer algo al respecto. Ámbar y no rojo, mismo criterio que el chip
   // interactivo de escritorio: vender sin caja está permitido.
   it('sin caja abierta lo dice, sin ofrecer abrirla', async () => {
     const html = await renderChips({ caja: null, cotizacionUsd: null })
@@ -157,34 +157,78 @@ describe('los chips de estado del cuerpo', () => {
   })
 })
 
-describe('el menú de caja del Topbar', () => {
-  async function renderMenu(caja: { abiertaEn: Date } | null) {
-    const { MenuCaja } = await import('./caja')
-    return renderToStaticMarkup(<MenuCaja caja={caja} />)
+describe('el control de caja del Topbar', () => {
+  async function renderControl(caja: { abiertaEn: Date } | null) {
+    const { ControlDeCaja } = await import('./caja')
+    return renderToStaticMarkup(<ControlDeCaja caja={caja} />)
   }
 
   it('es la ranura derecha del teléfono y no existe en escritorio', async () => {
-    const html = await renderMenu(null)
+    const html = await renderControl(null)
     const trigger = html.match(/<button[^>]*>/)?.[0]
-    expect(trigger, 'no se encontró el disparador del menú').toBeTruthy()
+    expect(trigger, 'no se encontró el disparador del control').toBeTruthy()
     expect(trigger).toContain('size-[38px]')
     expect(trigger).toContain('rounded-[10px]')
     expect(trigger).toContain('lg:hidden')
     expect(trigger).toContain('aria-label=')
   })
 
-  // El contenido de un DropdownMenu de Radix vive en un Portal y sólo se monta
-  // con el menú abierto, así que renderToStaticMarkup no lo ve nunca (mismo
-  // motivo por el que el tooltip de la cotización se comprueba en el fuente,
-  // más arriba). Lo que este caso puede afirmar es el cableado: qué ítem
-  // aparece según el estado y a qué acción llama cada uno.
-  it('ofrece cerrar el turno si hay caja, y abrirlo si no', () => {
-    expect(FUENTE).toMatch(/caja \? \(\s*<DropdownMenuItem/)
-    expect(FUENTE).toContain('Cerrar caja')
-    expect(FUENTE).toContain('Abrir caja')
-    // Cada ítem con SU acción: invertirlas es exactamente el bug que los dos
-    // formularios de escritorio ya cuidan más arriba con el mismo criterio.
-    expect(FUENTE).toMatch(/ejecutar\(cerrarCajaDesdeVender\)/)
-    expect(FUENTE).toMatch(/ejecutar\(abrirCajaDesdeVender\)/)
+  // El contenido de un Sheet de Radix vive en un Portal y sólo se monta con la
+  // hoja abierta, así que renderToStaticMarkup no lo ve nunca (mismo motivo
+  // por el que el tooltip de la cotización se comprueba en el fuente, más
+  // arriba). Lo que este caso puede afirmar es el cableado.
+  //
+  // POR QUÉ UNA HOJA Y NO UN MENÚ: un DropdownMenu no puede alojar el campo de
+  // saldo inicial —Radix le pone typeahead al menú y le pelea a cualquier
+  // <input> adentro—, así que la primera versión abría la caja en 0 en
+  // silencio. Eso no es una comodidad perdida: el arqueo, cuando exista, va a
+  // cuadrar contra ese número.
+  it('la hoja aloja los MISMOS formularios que el chip de escritorio', () => {
+    expect(FUENTE).toMatch(/<SheetContent/)
+    expect(FUENTE).toMatch(/caja \? \(\s*<ConfirmarCierre/)
+    expect(FUENTE).toMatch(/<FormularioDeApertura/)
+    // Una sola definición de cada formulario: el teléfono y el escritorio
+    // comparten el cableado de la acción, y lo único que cambia es el layout.
+    expect([...FUENTE.matchAll(/function FormularioDeApertura/g)].length).toBe(1)
+    expect([...FUENTE.matchAll(/function ConfirmarCierre/g)].length).toBe(1)
+  })
+
+  // Las dos capacidades que la versión con menú perdía.
+  it('abrir la caja desde el teléfono sigue pidiendo el saldo inicial', () => {
+    const posicion = FUENTE.indexOf('function FormularioDeApertura')
+    const contexto = FUENTE.slice(posicion, FUENTE.indexOf('function ChipCotizacion'))
+    expect(contexto).toContain('name="saldoInicial"')
+    expect(contexto).toContain('Saldo inicial')
+  })
+
+  it('cerrar la caja desde el teléfono sigue pidiendo confirmación', () => {
+    // `ConfirmarCierre` ES el segundo paso: el primero es abrir la hoja. Su
+    // botón dice "Sí, cerrar", la misma fórmula que ya usa AnularVenta.
+    expect(FUENTE).toContain('Sí, cerrar')
+  })
+
+  // El bug que esta pantalla YA tuvo —Enter cobrando con el medio anterior
+  // porque un overlay de Radix dejaba pasar la tecla— nació de suponer qué
+  // renderiza un primitivo. Acá la suposición sería "un Sheet es un dialog":
+  // se verifica contra el paquete instalado, así que un cambio de Radix que
+  // moviera el rol rompe el gate en vez de romper el mostrador.
+  it('la hoja monta un [role="dialog"], que es lo que hace que los atajos de /vender se abstengan', () => {
+    expect(
+      readFileSync('components/ui/sheet.tsx', 'utf8'),
+      'Sheet tiene que seguir siendo el Dialog de Radix',
+    ).toMatch(/Dialog as SheetPrimitive/)
+
+    const candidatos = [
+      'node_modules/@radix-ui/react-dialog/dist/index.mjs',
+      'node_modules/radix-ui/node_modules/@radix-ui/react-dialog/dist/index.mjs',
+    ]
+    const fuente = candidatos.map((r) => (existsSync(r) ? readFileSync(r, 'utf8') : null)).find(Boolean)
+    expect(fuente, `no se encontró @radix-ui/react-dialog en ${candidatos.join(' ni ')}`).toBeTruthy()
+    expect(
+      fuente,
+      'el Content de Radix dejó de declarar role="dialog": hayOverlayDeRadixAbierto() ' +
+        '(app/(app)/vender/punto-de-venta.tsx) lo busca por ese selector, así que los ' +
+        'atajos de teclado dejarían de abstenerse con la hoja de caja abierta.',
+    ).toContain('role: "dialog"')
   })
 })

@@ -26,9 +26,9 @@ export type AccionMovil = {
  * La caja de una ranura del teléfono: 38×38, radio 10, y sólo visible abajo de
  * `lg` (`f9BjR`/`NlGrn` del frame `Móvil/Topbar`).
  *
- * Exportada porque `menuMovil` (más abajo) recibe un nodo YA armado por quien
- * lo usa —un menú es un control con estado propio, no algo que este
- * componente pueda fabricar—, y ese nodo tiene que medir lo mismo que el link
+ * Exportada porque `controlMovil` (más abajo) recibe un nodo YA armado por
+ * quien lo usa —un control con estado propio no es algo que este componente
+ * pueda fabricar—, y ese nodo tiene que medir lo mismo que el link
  * de `accionMovil` o las dos pantallas quedarían con ranuras de distinto
  * tamaño. Un solo string es lo que impide que se desalineen sin que nadie lo
  * note; el mismo criterio que `CLASES_MINI_FORM` en app/(app)/vender/caja.tsx.
@@ -63,7 +63,7 @@ export function Encabezado({
   atras,
   alVolver,
   accionMovil,
-  menuMovil,
+  controlMovil,
 }: {
   titulo: React.ReactNode
   subtitulo?: React.ReactNode
@@ -87,14 +87,19 @@ export function Encabezado({
   accionMovil?: AccionMovil
   /**
    * La ranura derecha del teléfono cuando lo que va ahí NO es un link sino un
-   * control con estado propio — hoy, el menú `more-vertical` de /vender, que
-   * abre y cierra el turno de caja. Se recibe ya armado en vez de volver
-   * `accionMovil` una unión de dos formas; la geometría la comparte
-   * `CLASES_RANURA_MOVIL`, que quien lo arma tiene que aplicarle.
+   * control con estado propio — hoy, el `more-vertical` de /vender, que abre
+   * la hoja donde se abre y se cierra el turno de caja. Se recibe ya armado en
+   * vez de volver `accionMovil` una unión de dos formas; la geometría la
+   * comparte `CLASES_RANURA_MOVIL`, que quien lo arma tiene que aplicarle.
+   *
+   * `control` y no `menu`: lo que hay adentro puede ser un menú, una hoja o un
+   * diálogo — lo que define a esta prop es que trae su propio estado, no qué
+   * primitivo usa. La distinción con `accionMovil` es esa y no el aspecto:
+   * `accionMovil` es siempre un link a un href.
    *
    * Excluyente con `accionMovil`: las dos ocupan el mismo lugar.
    */
-  menuMovil?: React.ReactNode
+  controlMovil?: React.ReactNode
 }) {
   const tono = accionMovil?.tono ?? 'accion'
 
@@ -184,7 +189,7 @@ export function Encabezado({
           <accionMovil.icono aria-hidden="true" className="size-[19px]" />
         </a>
       ) : (
-        menuMovil ?? null
+        controlMovil ?? null
       )}
     </header>
   )
