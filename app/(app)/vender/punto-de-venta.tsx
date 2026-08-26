@@ -342,7 +342,7 @@ export function PuntoDeVenta({
   // `pushState`, sin pasar por el router de Next — ver app/(app)/vender/paso.ts
   // para el porqué (una navegación remontaría este componente con el carrito
   // de la venta en curso adentro).
-  const { paso, irACobro, volverAlCarrito } = usePasoDeCobro()
+  const { paso, irACobro, volverAlCarrito, descartarElCobro } = usePasoDeCobro()
   const enTelefono = useIsMobile()
   // En escritorio el paso se ignora POR COMPLETO: las dos columnas se ven
   // siempre y el Topbar no cambia, aunque la URL traiga `?paso=cobro` —lo que
@@ -522,6 +522,12 @@ export function PuntoDeVenta({
   // `hidden`, así que ese escaneo suma líneas a una tabla que no se ve y a un
   // total que no se ve. Es el flujo normal, venta tras venta.
   //
+  // `descartarElCobro` y NO `volverAlCarrito`: son la misma vuelta con
+  // historiales distintos (ver `MotivoDelPaso` en paso.ts). Esta vuelta no la
+  // pidió nadie, así que no le corresponde una entrada propia — y dejarla
+  // rompía el Atrás después de cada venta: volvía a `?paso=cobro` con la venta
+  // ya cobrada y este mismo efecto la empujaba afuera otra vez.
+  //
   // EL FOCO ESPERA A LA PASADA SIGUIENTE. Con el paso todavía en cobro el
   // buscador está en `display:none` (ver su `hidden lg:block`, más abajo), y
   // `focus()` sobre un elemento oculto no hace nada. `paso` está en las
@@ -531,14 +537,18 @@ export function PuntoDeVenta({
   // No hay rebote posible al revés (volver a cobro y que esto lo eche al
   // carrito): para llegar al cobro hace falta carrito, y agregar cualquier
   // línea limpia `ventaProcesada` (ver `actualizarCarrito`).
+  //
+  // EN ESCRITORIO LA RAMA DE LA VUELTA NO CORRE NUNCA, y no por un chequeo de
+  // ancho: es estructural. Lo único que pone el paso en cobro es el botón del
+  // pie, que es `lg:hidden`.
   useEffect(() => {
     if (!ventaProcesada) return
     if (paso === 'cobro') {
-      volverAlCarrito()
+      descartarElCobro()
       return
     }
     buscador.current?.focus()
-  }, [ventaProcesada, paso, volverAlCarrito])
+  }, [ventaProcesada, paso, descartarElCobro])
 
   // F2 enfoca el buscador desde cualquier parte de la pantalla: es el atajo
   // que el chip de al lado promete, no sólo lo anuncia. En un mostrador que

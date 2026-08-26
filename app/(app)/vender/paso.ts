@@ -4,9 +4,10 @@ import { useCallback, useSyncExternalStore } from 'react'
 // pasar por el router de Next: ni `router.push` ni `useSearchParams`. Los dos
 // disparan una navegación de Next -- el server component de la ruta vuelve a
 // renderizar -- y el carrito vive en el estado de cliente de PuntoDeVenta:
-// un remonte a mitad de una venta se lo llevaría puesto. `pushState` cambia
-// la URL sin ese ciclo -- Next lo documenta como la forma soportada de
-// actualizar search params sin navegar.
+// un remonte a mitad de una venta se lo llevaría puesto. `pushState` y
+// `replaceState` cambian la URL sin ese ciclo -- Next lo documenta como la
+// forma soportada de actualizar search params sin navegar. Cuál de los dos
+// corresponde en cada caso lo decide `MotivoDelPaso`, más abajo.
 
 export type Paso = 'carrito' | 'cobro'
 
@@ -42,9 +43,9 @@ export function urlConPaso(actual: string, paso: Paso): string {
   return `${url.pathname}${url.search}`
 }
 
-// A nivel de módulo, no de hook: `pushState` NO dispara ningún evento --ni
-// siquiera `popstate`, que es sólo para Atrás/Adelante del historial-- así
-// que sin este `Set` las propias transiciones (irACobro/volverAlCarrito)
+// A nivel de módulo, no de hook: `pushState` (y `replaceState`) NO disparan
+// ningún evento --ni siquiera `popstate`, que es sólo para Atrás/Adelante del
+// historial-- así que sin este `Set` las propias transiciones
 // cambiarían la URL sin que ningún componente se enterara de su propio
 // cambio. Cada `subscribe` (uno por componente montado que use el hook)
 // agrega su callback acá; notificar recorre el `Set` y dispara un re-render
@@ -81,18 +82,44 @@ function getServerSnapshot(): Paso {
   return 'carrito'
 }
 
+/**
+ * Por qué se cambia de paso, que es lo que decide qué le pasa al historial.
+ *
+ * - `gesto`: la persona lo pidió —apretó Cobrar, o la flecha de volver—, así
+ *   que le corresponde su propia entrada y el botón Atrás del teléfono tiene
+ *   que poder deshacerlo. Es lo que hace que la flecha de la maqueta y el
+ *   Atrás del navegador hagan lo mismo, que fue el motivo de poner el paso en
+ *   la URL en vez de en estado interno.
+ * - `consecuencia`: nadie lo pidió; pasó porque la venta terminó de cobrarse.
+ *   Una entrada acá le rompe el Atrás a la persona DESPUÉS DE CADA VENTA:
+ *   volvería a `?paso=cobro` con la venta ya cobrada, y como `ventaProcesada`
+ *   sigue seteado —no se puede limpiar, gatea el cartel de "Venta #N cobrada"
+ *   en punto-de-venta.tsx—, el efecto la sacaría de ahí otra vez empujando
+ *   otra entrada. El gesto queda muerto. `replaceState` no deja nada que
+ *   deshacer.
+ */
+export type MotivoDelPaso = 'gesto' | 'consecuencia'
+
+/**
+ * Cambia el paso en la URL. Exportada —además de usarse desde el hook— para
+ * que `paso.test.ts` la ejercite de verdad: lo único que toca del navegador
+ * son `window.location` y `window.history`, dos objetos que un test puede
+ * reemplazar por un doble sin necesitar jsdom.
+ */
+export function navegarAlPaso(paso: Paso, motivo: MotivoDelPaso) {
+  const url = urlConPaso(window.location.pathname + window.location.search, paso)
+  if (motivo === 'consecuencia') window.history.replaceState(null, '', url)
+  else window.history.pushState(null, '', url)
+  notificarCambioDePaso()
+}
+
 export function usePasoDeCobro() {
   const paso = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 
-  const irACobro = useCallback(() => {
-    window.history.pushState(null, '', urlConPaso(window.location.pathname + window.location.search, 'cobro'))
-    notificarCambioDePaso()
-  }, [])
+  const irACobro = useCallback(() => navegarAlPaso('cobro', 'gesto'), [])
+  const volverAlCarrito = useCallback(() => navegarAlPaso('carrito', 'gesto'), [])
+  /** La vuelta de después de cobrar — ver `MotivoDelPaso`. */
+  const descartarElCobro = useCallback(() => navegarAlPaso('carrito', 'consecuencia'), [])
 
-  const volverAlCarrito = useCallback(() => {
-    window.history.pushState(null, '', urlConPaso(window.location.pathname + window.location.search, 'carrito'))
-    notificarCambioDePaso()
-  }, [])
-
-  return { paso, irACobro, volverAlCarrito }
+  return { paso, irACobro, volverAlCarrito, descartarElCobro }
 }

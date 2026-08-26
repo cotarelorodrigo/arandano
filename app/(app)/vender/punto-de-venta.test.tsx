@@ -826,16 +826,39 @@ describe('el punto de venta en el teléfono', () => {
   // se ve y a un total que no se ve. Es el flujo NORMAL —venta tras venta—, y
   // ahí se pierde el ancla de la pantalla.
   it('después de cobrar la pantalla vuelve al carrito, y recién ahí devuelve el foco', () => {
-    const deps = FUENTE.indexOf('}, [ventaProcesada, paso, volverAlCarrito])')
+    const deps = FUENTE.indexOf('}, [ventaProcesada, paso, descartarElCobro])')
     expect(
       deps,
-      'el efecto del fin de venta tiene que depender también del paso y de volverAlCarrito',
+      'el efecto del fin de venta tiene que depender también del paso y de descartarElCobro',
     ).toBeGreaterThan(-1)
     const cuerpo = FUENTE.slice(FUENTE.lastIndexOf('useEffect(() => {', deps), deps)
     // Y en ESTE orden, con la vuelta cortando la pasada: con el paso todavía
     // en cobro el buscador está en display:none y `focus()` no hace nada, así
     // que el foco tiene que esperar a la pasada siguiente del efecto.
-    expect(cuerpo).toMatch(/volverAlCarrito\(\)[\s\S]*?return[\s\S]*?buscador\.current\?\.focus\(\)/)
+    expect(cuerpo).toMatch(/descartarElCobro\(\)[\s\S]*?return[\s\S]*?buscador\.current\?\.focus\(\)/)
+  })
+
+  // La vuelta automática NO puede ser la misma que la de la flecha. Con
+  // `volverAlCarrito` (que empuja una entrada), tocar Atrás después de cobrar
+  // restauraba `paso='cobro'` con `ventaProcesada` todavía seteado —nadie lo
+  // limpia, y no se puede: gatea el cartel de "Venta #N cobrada" y la guarda
+  // del ajuste durante el render—, así que el efecto volvía a disparar y a
+  // empujar otra entrada. El gesto de volver quedaba muerto en la ventana
+  // entre cobrar y escanear el artículo siguiente, o sea después de CADA venta.
+  it('la vuelta automática no deja entrada de historial, y la flecha sí', () => {
+    const deps = FUENTE.indexOf('}, [ventaProcesada, paso, descartarElCobro])')
+    // La existencia, antes del slice: sin esto `indexOf` da -1, el slice sale
+    // vacío y el caso pasa sin haber mirado nada — el mismo falso verde que ya
+    // apareció dos veces en esta task.
+    expect(deps, 'no se encontró el efecto del fin de venta').toBeGreaterThan(-1)
+    const cuerpo = FUENTE.slice(FUENTE.lastIndexOf('useEffect(() => {', deps), deps)
+    expect(
+      cuerpo,
+      'la vuelta de después de cobrar no la pidió nadie: no le corresponde una entrada propia',
+    ).not.toMatch(/volverAlCarrito\(\)/)
+    // Y la flecha del Topbar sigue siendo la vuelta CON entrada: es un gesto
+    // de la persona, y ahí Atrás tiene que deshacerlo.
+    expect(FUENTE).toMatch(/alVolver=\{pasoVisible === 'cobro' \? volverAlCarrito : undefined\}/)
   })
 
   // `keRdN` no dibuja el buscador: su Cuerpo es la banda del total, los pagos y
