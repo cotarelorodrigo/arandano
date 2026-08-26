@@ -23,6 +23,20 @@ export type AccionMovil = {
 }
 
 /**
+ * La caja de una ranura del teléfono: 38×38, radio 10, y sólo visible abajo de
+ * `lg` (`f9BjR`/`NlGrn` del frame `Móvil/Topbar`).
+ *
+ * Exportada porque `menuMovil` (más abajo) recibe un nodo YA armado por quien
+ * lo usa —un menú es un control con estado propio, no algo que este
+ * componente pueda fabricar—, y ese nodo tiene que medir lo mismo que el link
+ * de `accionMovil` o las dos pantallas quedarían con ranuras de distinto
+ * tamaño. Un solo string es lo que impide que se desalineen sin que nadie lo
+ * note; el mismo criterio que `CLASES_MINI_FORM` en app/(app)/vender/caja.tsx.
+ */
+export const CLASES_RANURA_MOVIL =
+  'flex size-[38px] shrink-0 items-center justify-center rounded-[10px] lg:hidden'
+
+/**
  * La franja que abre cada una de las diez pantallas de escritorio, y —desde
  * el ciclo del shell móvil— también los doce frames `Móvil / …` del .pen.
  *
@@ -47,13 +61,40 @@ export function Encabezado({
   subtitulo,
   acciones,
   atras,
+  alVolver,
   accionMovil,
+  menuMovil,
 }: {
   titulo: React.ReactNode
   subtitulo?: React.ReactNode
   acciones?: React.ReactNode
   atras?: string
+  /**
+   * La misma flecha que `atras`, pero como `<button>`: para las pantallas
+   * donde "volver" NO es navegar a otra URL sino retroceder un paso adentro de
+   * la misma pantalla. Existe por /vender y su paso de cobro
+   * (app/(app)/vender/paso.ts): ahí un `href` a /vender dispararía una
+   * navegación de Next, el server component volvería a renderizar y
+   * `PuntoDeVenta` se remontaría con el carrito de la venta en curso adentro
+   * — que es exactamente lo que ese archivo entero existe para evitar.
+   *
+   * Pasar una función como prop es legal acá porque quien la pasa es un
+   * componente CLIENTE (`PuntoDeVenta`), no un server component: lo que Next
+   * prohíbe es cruzar la frontera servidor→cliente con una función, no que un
+   * cliente le pase un handler a otro.
+   */
+  alVolver?: () => void
   accionMovil?: AccionMovil
+  /**
+   * La ranura derecha del teléfono cuando lo que va ahí NO es un link sino un
+   * control con estado propio — hoy, el menú `more-vertical` de /vender, que
+   * abre y cierra el turno de caja. Se recibe ya armado en vez de volver
+   * `accionMovil` una unión de dos formas; la geometría la comparte
+   * `CLASES_RANURA_MOVIL`, que quien lo arma tiene que aplicarle.
+   *
+   * Excluyente con `accionMovil`: las dos ocupan el mismo lugar.
+   */
+  menuMovil?: React.ReactNode
 }) {
   const tono = accionMovil?.tono ?? 'accion'
 
@@ -74,17 +115,19 @@ export function Encabezado({
           (antes de este ciclo el trigger vivía suelto en
           app/(app)/layout.tsx, también oculto en desktop con el mismo
           criterio, sólo que contra el breakpoint viejo).
-          Sin `atras`: abre el drawer con el trigger de shadcn. Con `atras`:
-          vuelve a la pantalla anterior — nunca las dos a la vez, porque una
-          pantalla de detalle no necesita volver a abrir el menú. */}
+          Sin `atras` ni `alVolver`: abre el drawer con el trigger de shadcn.
+          Con cualquiera de los dos: vuelve — nunca las dos a la vez, porque
+          una pantalla de detalle no necesita volver a abrir el menú.
+          `atras` navega a otra URL; `alVolver` retrocede un paso adentro de la
+          misma pantalla (ver su comentario en las props). */}
       {atras ? (
-        <a
-          href={atras}
-          aria-label="Volver"
-          className="flex size-[38px] shrink-0 items-center justify-center rounded-[10px] lg:hidden"
-        >
+        <a href={atras} aria-label="Volver" className={CLASES_RANURA_MOVIL}>
           <ArrowLeft aria-hidden="true" className="size-[21px]" />
         </a>
+      ) : alVolver ? (
+        <button type="button" onClick={alVolver} aria-label="Volver" className={CLASES_RANURA_MOVIL}>
+          <ArrowLeft aria-hidden="true" className="size-[21px]" />
+        </button>
       ) : (
         // SidebarTrigger trae de shadcn su propia caja (size-7, 28px) y su
         // propio ícono (PanelLeftIcon, 16px vía [&_svg:not([class*='size-'])]:
@@ -134,13 +177,15 @@ export function Encabezado({
         <a
           href={accionMovil.href}
           aria-label={accionMovil.etiqueta}
-          className={`flex size-[38px] shrink-0 items-center justify-center rounded-[10px] lg:hidden ${
+          className={`${CLASES_RANURA_MOVIL} ${
             tono === 'suave' ? 'bg-muted text-foreground' : 'bg-primary text-primary-foreground'
           }`}
         >
           <accionMovil.icono aria-hidden="true" className="size-[19px]" />
         </a>
-      ) : null}
+      ) : (
+        menuMovil ?? null
+      )}
     </header>
   )
 }

@@ -101,3 +101,90 @@ describe('el chip de caja', () => {
     }
   })
 })
+
+// --- El teléfono: los chips de sólo lectura del cuerpo y el menú del Topbar ---
+
+describe('los chips de estado del cuerpo', () => {
+  async function renderChips(props: { caja: { abiertaEn: Date } | null; cotizacionUsd: string | null }) {
+    const { ChipsDeEstado } = await import('./caja')
+    return renderToStaticMarkup(<ChipsDeEstado {...props} />)
+  }
+
+  it('sólo existen en el teléfono', async () => {
+    const html = await renderChips({ caja: null, cotizacionUsd: null })
+    const contenedor = html.match(/^<div class="[^"]*"/)?.[0]
+    expect(contenedor, 'los dos chips tienen que venir en un contenedor propio').toBeTruthy()
+    expect(contenedor).toContain('lg:hidden')
+  })
+
+  // design/arandano.pen dibuja `MP7Iu` y `fBLhr` SIN ningún control adentro:
+  // son dos frames con texto, no botones. Abrir y cerrar el turno viven en el
+  // menú del Topbar (ver más abajo) justamente por eso — si estos chips
+  // fueran clickeables, el menú no tendría razón de existir.
+  it('no llevan ningún control adentro: la maqueta los dibuja de sólo lectura', async () => {
+    const conCaja = await renderChips({
+      caja: { abiertaEn: new Date('2026-08-21T17:32:00Z') },
+      cotizacionUsd: '1485.00',
+    })
+    const sinCaja = await renderChips({ caja: null, cotizacionUsd: null })
+    for (const html of [conCaja, sinCaja]) {
+      expect(html).not.toContain('<button')
+      expect(html).not.toContain('<form')
+      expect(html).not.toContain('<input')
+    }
+  })
+
+  it('dicen si la caja está abierta y a cuánto está el dólar', async () => {
+    const html = await renderChips({
+      caja: { abiertaEn: new Date('2026-08-21T17:32:00Z') },
+      cotizacionUsd: '1485.00',
+    })
+    expect(html).toContain('Caja abierta')
+    expect(html).toContain('USD')
+    expect(html).toContain('1.485,00')
+  })
+
+  // Sin caja, el chip de sólo lectura NO puede decir "Abrir caja" —sería un
+  // botón que no lo es—: dice qué pasa, y el menú del Topbar es el que ofrece
+  // hacer algo al respecto. Ámbar y no rojo, mismo criterio que el chip
+  // interactivo de escritorio: vender sin caja está permitido.
+  it('sin caja abierta lo dice, sin ofrecer abrirla', async () => {
+    const html = await renderChips({ caja: null, cotizacionUsd: null })
+    expect(html).not.toContain('Caja abierta')
+    expect(html).not.toContain('Abrir caja')
+    expect(html).toContain('Sin caja')
+    expect(html).toContain('text-warn')
+  })
+})
+
+describe('el menú de caja del Topbar', () => {
+  async function renderMenu(caja: { abiertaEn: Date } | null) {
+    const { MenuCaja } = await import('./caja')
+    return renderToStaticMarkup(<MenuCaja caja={caja} />)
+  }
+
+  it('es la ranura derecha del teléfono y no existe en escritorio', async () => {
+    const html = await renderMenu(null)
+    const trigger = html.match(/<button[^>]*>/)?.[0]
+    expect(trigger, 'no se encontró el disparador del menú').toBeTruthy()
+    expect(trigger).toContain('size-[38px]')
+    expect(trigger).toContain('rounded-[10px]')
+    expect(trigger).toContain('lg:hidden')
+    expect(trigger).toContain('aria-label=')
+  })
+
+  // El contenido de un DropdownMenu de Radix vive en un Portal y sólo se monta
+  // con el menú abierto, así que renderToStaticMarkup no lo ve nunca (mismo
+  // motivo por el que el tooltip de la cotización se comprueba en el fuente,
+  // más arriba). Lo que este caso puede afirmar es el cableado: qué ítem
+  // aparece según el estado y a qué acción llama cada uno.
+  it('ofrece cerrar el turno si hay caja, y abrirlo si no', () => {
+    expect(FUENTE).toMatch(/caja \? \(\s*<DropdownMenuItem/)
+    expect(FUENTE).toContain('Cerrar caja')
+    expect(FUENTE).toContain('Abrir caja')
+    // Cada ítem con SU acción: invertirlas es exactamente el bug que los dos
+    // formularios de escritorio ya cuidan más arriba con el mismo criterio.
+    expect(FUENTE).toMatch(/ejecutar\(cerrarCajaDesdeVender\)/)
+    expect(FUENTE).toMatch(/ejecutar\(abrirCajaDesdeVender\)/)
+  })
+})

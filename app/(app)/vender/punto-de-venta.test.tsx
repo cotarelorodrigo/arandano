@@ -1,18 +1,46 @@
 import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { SidebarProvider } from '@/components/ui/sidebar'
 
-// Las dos funciones que el componente importa viven en un archivo 'use server'.
+// Las funciones que el componente importa viven en un archivo 'use server'.
 // Su contrato ya lo fija app/(app)/vender/acciones.test.ts; acá sólo importa qué
-// renderiza la pantalla, así que se mockean.
+// renderiza la pantalla, así que se mockean. Las dos de caja entraron cuando el
+// <Encabezado> —y con él el chip y el menú de caja— pasó a renderizarse desde
+// este componente y no desde page.tsx.
 vi.mock('./acciones', () => ({
   cobrar: vi.fn(),
   buscarArticulos: vi.fn(async () => []),
+  abrirCajaDesdeVender: vi.fn(),
+  cerrarCajaDesdeVender: vi.fn(),
 }))
 
-async function render() {
+const FUENTE = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+
+// El mismo fuente sin comentarios, para los casos que buscan la AUSENCIA de
+// una utilidad de Tailwind. Este archivo explica en prosa por qué NO usa `md:`
+// ni `max-lg:`, y también qué trae `Input` por default (`md:text-sm`), así que
+// un `not.toMatch(/\bmd:/)` sobre el texto crudo se dispara contra la
+// explicación en vez de contra una clase real — un rojo por la razón
+// equivocada, que es peor que no tener el caso.
+const SIN_COMENTARIOS = FUENTE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+
+// El <SidebarProvider> lo pone app/(app)/layout.tsx alrededor de cada
+// page.tsx; acá hace falta porque el <Encabezado> que ahora renderiza este
+// componente trae el SidebarTrigger, y ése llama a useSidebar(), que tira sin
+// un provider como ancestro (mismo helper que components/shell/encabezado.test.tsx).
+async function render(props: { caja?: { abiertaEn: Date } | null } = {}) {
   const { PuntoDeVenta } = await import('./punto-de-venta')
-  return renderToStaticMarkup(<PuntoDeVenta cotizacionInicial={null} />)
+  return renderToStaticMarkup(
+    <SidebarProvider>
+      <PuntoDeVenta
+        cotizacionInicial={null}
+        caja={props.caja ?? null}
+        cotizacionUsd={null}
+        cotizacionUsdEn={null}
+      />
+    </SidebarProvider>,
+  )
 }
 
 describe('el punto de venta', () => {
@@ -571,5 +599,177 @@ describe('el punto de venta', () => {
       contexto,
       'el primer Esc tiene que programar el desarme automático a los 3000ms, no dejar el armado colgado',
     ).toMatch(/desarmarVaciado\.current = setTimeout\(\(\) => setVaciadoArmado\(false\), 3000\)/)
+  })
+})
+
+// --- El ciclo móvil: el cuerpo en un teléfono de 390 px ---
+//
+// Un solo árbol de marcado, mobile-first, con un único corte en `lg:` (1024,
+// hooks/use-mobile.ts). Frames `VaHod` (carrito) y `keRdN` (cobro) de
+// design/arandano.pen.
+
+describe('el punto de venta en el teléfono', () => {
+  // El carrito de una venta en curso vive en el estado de cliente de este
+  // componente: cualquier navegación de Next lo remonta y se lo lleva puesto.
+  // Por eso el paso vive en `window.history.pushState` (app/(app)/vender/paso.ts)
+  // y no en el router — este caso es la red que impide que alguien "simplifique"
+  // el hook a un useSearchParams más adelante.
+  it('el paso de cobro no pasa por el router de Next', () => {
+    expect(FUENTE).toContain('usePasoDeCobro')
+    expect(FUENTE, 'router.push/useSearchParams remontarían el carrito').not.toMatch(
+      /useRouter|useSearchParams|next\/navigation/,
+    )
+  })
+
+  // El <Encabezado> se mudó de page.tsx (servidor) a acá: sus props dependen
+  // del paso, y el paso es estado de cliente. Encabezado es JSX puro, sin
+  // ninguna API de servidor, así que un componente cliente puede renderizarlo.
+  it('el Encabezado lo renderiza este componente, no page.tsx', () => {
+    const page = readFileSync('app/(app)/vender/page.tsx', 'utf8')
+    expect(
+      page,
+      'page.tsx ya no puede renderizar el Encabezado: sus props dependen del paso',
+    ).not.toMatch(/<Encabezado|from '@\/components\/shell\/encabezado'/)
+    expect(FUENTE).toContain('<Encabezado')
+  })
+
+  it('el Topbar cambia de título, subtítulo y flecha con el paso', () => {
+    expect(FUENTE).toMatch(/titulo=\{pasoVisible === 'cobro' \? 'Cobro' : 'Vender'\}/)
+    expect(FUENTE).toMatch(/alVolver=\{pasoVisible === 'cobro' \? volverAlCarrito : undefined\}/)
+    // La flecha vuelve por el hook, no por un href: un link a /vender es
+    // justamente la navegación que perdería el carrito.
+    expect(FUENTE, 'la flecha del cobro no puede ser un href').not.toMatch(/atras=/)
+  })
+
+  // "En escritorio `paso` se ignora por completo" (spec §4): las dos columnas
+  // se ven siempre y el Topbar no cambia, aunque la URL traiga ?paso=cobro
+  // —por ejemplo al agrandar la ventana a mitad de un cobro—.
+  it('en escritorio el paso se ignora', () => {
+    expect(FUENTE).toMatch(/const pasoVisible = enTelefono \? paso : 'carrito'/)
+  })
+
+  it('los dos chips de estado se ven en el cuerpo del teléfono y en el header de escritorio', async () => {
+    const html = await render({ caja: { abiertaEn: new Date('2026-08-21T17:32:00Z') } })
+    const veces = [...html.matchAll(/Caja abierta/g)].length
+    expect(
+      veces,
+      'el estado de la caja tiene que estar dos veces: el chip interactivo del ' +
+        'header (hidden lg:flex) y el de sólo lectura del cuerpo (lg:hidden)',
+    ).toBe(2)
+    expect(FUENTE).toContain('<ChipsDeEstado')
+    expect(FUENTE).toContain('<ChipCaja')
+  })
+
+  // Los chips del cuerpo son de sólo lectura (design/arandano.pen no les pone
+  // ningún control adentro), así que abrir y cerrar el turno se van al menú de
+  // la ranura derecha del Topbar.
+  it('la ranura derecha del Topbar lleva el menú de caja', () => {
+    expect(FUENTE).toMatch(/menuMovil=\{[\s\S]{0,80}<MenuCaja/)
+  })
+
+  it('la fila de columnas corta en lg, y no queda ningún md: en la pantalla', () => {
+    expect(FUENTE).toMatch(/flex flex-col gap-\[18px\] lg:flex-row/)
+    expect(
+      SIN_COMENTARIOS,
+      'el único corte del ciclo móvil es lg: (1024) — ningún md:, sm: ni xl: nuevo',
+    ).not.toMatch(/\bmd:/)
+  })
+
+  // Mobile-first y NO `max-lg:`: el valor del teléfono va sin prefijo y el de
+  // escritorio con `lg:`. En `lg:` las dos columnas terminan en `flex`, sin
+  // mirar el paso.
+  it('el paso esconde una columna y muestra la otra, sólo en el teléfono', () => {
+    expect(FUENTE).toMatch(/paso === 'cobro' \? 'hidden lg:flex' : 'flex'/)
+    expect(FUENTE).toMatch(/paso === 'cobro' \? 'flex' : 'hidden lg:flex'/)
+    expect(SIN_COMENTARIOS, 'la constraint del ciclo prohíbe max-lg:').not.toMatch(/max-lg:/)
+  })
+
+  it('el buscador mide 52 en el teléfono y 58 en escritorio', async () => {
+    const html = await render()
+    expect(html).toContain('h-[52px]')
+    expect(html).toContain('lg:h-[58px]')
+  })
+
+  // El chip "F2" promete un atajo de teclado, y un teléfono no tiene teclas de
+  // función: en el teléfono es un cartel que no se puede cumplir. `I5IuID` (el
+  // buscador de VaHod) tampoco lo dibuja.
+  it('el chip F2 no se muestra en un teléfono', async () => {
+    const html = await render()
+    const chip = html.match(/<span class="([^"]*)"[^>]*>\s*F2\s*<\/span>/)
+    expect(chip, 'no se encontró el chip F2').toBeTruthy()
+    expect(chip![1]).toContain('hidden')
+    expect(chip![1]).toContain('lg:inline-block')
+  })
+
+  it('el panel de cobro ocupa todo el ancho del teléfono', async () => {
+    const html = await render()
+    expect(html).toContain('w-full')
+    expect(html).toContain('lg:w-96')
+  })
+
+  it('el pie del teléfono repite el botón Cobrar de 54 px y no existe en escritorio', async () => {
+    const html = await render()
+    const veces = [...html.matchAll(/h-\[54px\]/g)].length
+    expect(
+      veces,
+      'el botón de 54 px tiene que estar dos veces: el pie del teléfono (lg:hidden) ' +
+        'y el pie de la card de cobro (hidden lg:flex)',
+    ).toBe(2)
+
+    const posicion = FUENTE.indexOf('function PieDeVenta')
+    expect(posicion, 'el pie del teléfono tiene que ser su propio componente').toBeGreaterThan(-1)
+    const contexto = FUENTE.slice(posicion)
+    expect(contexto).toMatch(/lg:hidden/)
+    expect(contexto).toMatch(/h-\[54px\]/)
+    expect(contexto, 'radio 12, como el nodo f4EIb de VaHod').toMatch(/rounded-\[12px\]/)
+  })
+
+  // Dos pantallas, dos botones con el mismo rótulo y trabajos distintos: en el
+  // carrito el botón AVANZA al cobro (el frame VaHod lleva a keRdN), y recién
+  // en el cobro cobra de verdad.
+  it('en el carrito el botón del pie lleva al cobro; en el cobro, cobra', () => {
+    const contexto = FUENTE.slice(FUENTE.indexOf('function PieDeVenta'))
+    expect(contexto).toMatch(/onClick=\{irACobro\}/)
+    expect(contexto).toMatch(/form=\{ID_FORMULARIO_DE_COBRO\}/)
+    // Y el <form> del cobro tiene que llevar ese mismo id, o el botón del pie
+    // —que vive afuera del form— no dispararía nada.
+    expect(FUENTE).toMatch(/id=\{ID_FORMULARIO_DE_COBRO\}/)
+  })
+
+  it('el pie del cobro suma la banda de faltante', () => {
+    const contexto = FUENTE.slice(FUENTE.indexOf('function PieDeVenta'))
+    expect(contexto).toMatch(/paso === 'cobro' && <ChipDeFaltante/)
+  })
+
+  // El chip de faltante está en dos lugares (el pie del teléfono y el pie de
+  // la card de escritorio) y se define UNA vez: dos copias del mismo JSX es
+  // como una se queda atrás sin que nada avise.
+  it('el chip de faltante se define una sola vez y se usa en los dos pies', () => {
+    expect([...FUENTE.matchAll(/<ChipDeFaltante/g)].length).toBe(2)
+    expect([...FUENTE.matchAll(/function ChipDeFaltante/g)].length).toBe(1)
+  })
+
+  // El menú de caja es lo único de Radix que este ciclo suma a la pantalla, y
+  // los tres atajos de teclado se abstienen mientras haya un overlay de Radix
+  // montado. Un DropdownMenu abierto renderiza role="menu", así que ya queda
+  // cubierto — verificado, no supuesto.
+  it('los atajos se abstienen con el menú de caja abierto', () => {
+    const posicion = FUENTE.indexOf('function hayOverlayDeRadixAbierto')
+    expect(posicion).toBeGreaterThan(-1)
+    expect(FUENTE.slice(posicion, posicion + 300)).toContain('role="menu"')
+  })
+
+  // El escritorio no puede cambiar de aspecto: el pie de la card de cobro
+  // sigue con sus tres piezas, sólo que ahora oculto en el teléfono.
+  it('el pie de la card de cobro sigue entero, y sólo se ve en escritorio', () => {
+    const inicio = FUENTE.search(/<div className="hidden flex-col[^"]*lg:flex">/)
+    expect(inicio, 'el pie de la card tiene que quedar oculto en el teléfono').toBeGreaterThan(-1)
+    // Hasta el cierre del <form>, que es donde termina el pie: así el caso
+    // afirma que las tres piezas siguen ADENTRO de este bloque y no que
+    // existan sueltas en algún otro lado del archivo.
+    const contexto = FUENTE.slice(inicio, FUENTE.indexOf('</form>', inicio))
+    expect(contexto).toContain('<AvisosDelCobro')
+    expect(contexto).toContain('<ChipDeFaltante')
+    expect(contexto).toContain('Enter para cobrar · Esc para vaciar')
   })
 })

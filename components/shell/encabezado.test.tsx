@@ -97,6 +97,24 @@ describe('el encabezado de pantalla', () => {
       expect(flecha).toContain('aria-label=')
       expect(flecha).toContain('lg:hidden')
     })
+
+    // `alVolver` existe por /vender y su paso de cobro: ahí la flecha NO puede
+    // ser un link, porque un href a /vender dispara una navegación de Next y
+    // eso remonta PuntoDeVenta con el carrito de la venta en curso adentro
+    // (ver app/(app)/vender/paso.ts). Misma caja y mismo ícono que la
+    // variante `atras`, pero como <button>.
+    it('con alVolver, la flecha es un botón y no un link', () => {
+      const html = render({ titulo: 'Cobro', alVolver: () => {} })
+      expect(html).not.toContain('data-slot="sidebar-trigger"')
+      const boton = html.match(/<button[^>]*aria-label="Volver"[^>]*>/)?.[0]
+      expect(boton, 'no se encontró el botón de volver').toBeTruthy()
+      expect(boton).toContain('size-[38px]')
+      expect(boton).toContain('rounded-[10px]')
+      expect(boton).toContain('lg:hidden')
+      // Y ningún <a> de volver: las dos variantes son excluyentes, o la
+      // pantalla mostraría dos flechas pegadas.
+      expect(html).not.toMatch(/<a[^>]*aria-label="Volver"/)
+    })
   })
 
   it('acciones sale envuelto en un contenedor con hidden lg:flex', () => {
@@ -140,6 +158,37 @@ describe('el encabezado de pantalla', () => {
       const boton = html.match(/<a[^>]*href="\/vender"[^>]*>/)?.[0]
       expect(boton).toContain('bg-muted')
       expect(boton).toContain('text-foreground')
+    })
+  })
+
+  // `menuMovil` es la otra forma que puede tomar la ranura derecha del
+  // teléfono: `accionMovil` es SIEMPRE un link a un href (un solo toque), y
+  // /vender necesita ahí un menú —abrir y cerrar el turno de caja—, que es un
+  // control propio con su propio estado. En vez de volver `accionMovil` una
+  // unión de dos formas, la ranura acepta un nodo ya armado, y la geometría
+  // (38×38, radio 10, lg:hidden) se comparte por CLASES_RANURA_MOVIL, que es
+  // lo que evita que el menú y el link se desalineen entre pantallas.
+  describe('el menú móvil', () => {
+    it('renderiza el nodo que le pasan en la ranura derecha', () => {
+      const html = render({
+        titulo: 'Vender',
+        menuMovil: <button aria-label="Más acciones">⋮</button>,
+      })
+      expect(html).toContain('aria-label="Más acciones"')
+      // Después del bloque de título, como la ranura derecha que es.
+      expect(html.indexOf('Vender')).toBeLessThan(html.indexOf('Más acciones'))
+    })
+
+    it('la geometría de la ranura se comparte con la acción móvil', async () => {
+      const { CLASES_RANURA_MOVIL } = await import('./encabezado')
+      expect(CLASES_RANURA_MOVIL).toContain('size-[38px]')
+      expect(CLASES_RANURA_MOVIL).toContain('rounded-[10px]')
+      expect(CLASES_RANURA_MOVIL).toContain('lg:hidden')
+      // Y el link de `accionMovil` la usa de verdad, en vez de repetir los
+      // mismos valores a mano: si no, cambiar la ranura de un lado dejaría el
+      // otro atrás sin que nada avise.
+      const fuente = readFileSync('components/shell/encabezado.tsx', 'utf8')
+      expect(fuente).toMatch(/CLASES_RANURA_MOVIL/)
     })
   })
 

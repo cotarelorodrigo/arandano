@@ -1,12 +1,21 @@
 'use client'
 
 import { cloneElement, useActionState, useState } from 'react'
+import { MoreVertical } from 'lucide-react'
+import { toast } from 'sonner'
 import { abrirCajaDesdeVender, cerrarCajaDesdeVender, type EstadoCaja } from './acciones'
 import { formatearFecha, formatearPrecio, montoSinSigno } from '@/lib/formato/mostrar'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { CLASES_RANURA_MOVIL } from '@/components/shell/encabezado'
 import estilos from '@/components/importe.module.css'
 
 const INICIAL: EstadoCaja = { error: null }
@@ -235,5 +244,143 @@ function ChipCotizacion({ valor, en }: { valor: string | null; en: Date | null }
         <TooltipContent>Actualizada el {formatearFecha(en)}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
+  )
+}
+
+// --- El teléfono ---
+//
+// En el teléfono los dos chips se mudan del Topbar al cuerpo, y ahí
+// design/arandano.pen los dibuja SIN ningún control adentro (`MP7Iu` y
+// `fBLhr` son dos frames con texto, no botones). Eso es lo que fuerza a que
+// abrir y cerrar el turno vivan en el menú `more-vertical` del Topbar: no
+// queda otro lugar. La maqueta dibuja el botón del menú pero NO lo abre, así
+// que su contenido es derivado — la entrada en
+// docs/correcciones-pendientes-del-pen.md la escribe la task de documentación
+// del ciclo, que es la que junta las cuatro derivaciones de una vez.
+
+/**
+ * Los dos chips de estado tal como los dibuja el frame `xMMfZ` ("Estado") del
+ * cuerpo de `Móvil / Vender`: gap 8 entre ellos, y sólo abajo de `lg` —en
+ * escritorio los mismos dos datos siguen viviendo en el Topbar, vía `ChipCaja`
+ * (arriba), que sí es interactivo.
+ *
+ * Contenedor propio, a diferencia de `ChipCaja`: acá no hay ningún `acciones`
+ * de `Encabezado` que ponga el gap, y el `lg:hidden` va en un solo lugar en vez
+ * de repetido en cada chip.
+ */
+export function ChipsDeEstado({
+  caja,
+  cotizacionUsd,
+}: {
+  caja: CajaDelChip | null
+  cotizacionUsd: string | null
+}) {
+  return (
+    <div className="flex items-center gap-2 lg:hidden">
+      {caja ? (
+        // Misma píldora que `ChipCajaAbierta`, sin el <button>: 7px de punto,
+        // gap 7, padding [6,11], radio completo (nodo `MP7Iu`).
+        <span className="flex items-center gap-[7px] rounded-full bg-ok-soft px-[11px] py-[6px]">
+          <span className="size-[7px] rounded-full bg-ok" aria-hidden="true" />
+          <span className="text-xs font-semibold text-ok">Caja abierta</span>
+        </span>
+      ) : (
+        // "Sin caja" y NO "Abrir caja": este chip no abre nada, así que un
+        // texto en imperativo prometería una acción que no está acá. Ámbar y
+        // no rojo, mismo criterio que el chip interactivo de escritorio —
+        // vender sin caja está permitido (`crearVenta` no la exige).
+        <span className="flex items-center gap-[7px] rounded-full bg-warn-soft px-[11px] py-[6px]">
+          <span className="size-[7px] rounded-full bg-warn" aria-hidden="true" />
+          <span className="text-xs font-semibold text-warn">Sin caja</span>
+        </span>
+      )}
+      {/* Nodo `fBLhr`: relleno --card y sin borde, al revés que el chip de
+          escritorio (`TB7On`, borde y sin relleno) — sobre el gris del cuerpo
+          del teléfono un chip sin relleno no se despegaría del fondo.
+          Sin tooltip, a diferencia del de escritorio: un tooltip vive del
+          hover, que en un teléfono no existe. El costo es real y queda
+          anotado — acá el dólar se muestra sin decir de cuándo es. */}
+      <span className="flex items-center gap-[6px] rounded-full bg-card px-[11px] py-[6px]">
+        <span className="text-[11px] font-semibold text-foreground-soft">USD</span>
+        <span className={`text-xs font-semibold text-foreground ${estilos.importe}`}>
+          {cotizacionUsd === null ? '—' : montoSinSigno(formatearPrecio(cotizacionUsd))}
+        </span>
+      </span>
+    </div>
+  )
+}
+
+/**
+ * El menú `more-vertical` de la ranura derecha del Topbar del teléfono (nodo
+ * `GZz1a` de `VaHod`), que es donde quedaron abrir y cerrar el turno.
+ *
+ * DOS DIFERENCIAS CON EL CHIP DE ESCRITORIO, las dos conscientes:
+ *
+ * 1. **Abrir no pregunta el saldo inicial.** El chip de escritorio ofrece un
+ *    campo; adentro de un menú de Radix un `<input>` pelea con el typeahead
+ *    del propio menú (que atiende las teclas imprimibles para saltar de ítem),
+ *    y la ranura de 38 px no tiene dónde poner el campo afuera. Se abre en 0,
+ *    que es lo que `abrirCajaDesdeVender` ya usa por default cuando el campo
+ *    no viene. Es una capacidad que el teléfono no tiene y el escritorio sí.
+ * 2. **Cerrar no pide confirmación.** El chip de escritorio la pide porque es
+ *    un clic suelto sobre algo que no se deshace; llegar hasta acá ya son dos
+ *    gestos (abrir el menú, elegir el ítem), que es la misma protección por
+ *    otro camino.
+ *
+ * Las acciones se llaman DIRECTO, sin `useActionState`, igual que `MenuDeRama`
+ * en app/(app)/inventario/abm-categorias.tsx y por su mismo motivo: un
+ * `onSelect` no es un `<form action>`, así que `useActionState` avisa "An async
+ * function with useActionState was called outside of a transition", y el
+ * resultado quedaría colgado de un componente que `revalidatePath` desmonta.
+ * Acá el aviso se lanza en el mismo handler, con el resultado en la mano.
+ */
+export function MenuCaja({ caja }: { caja: CajaDelChip | null }) {
+  // Sin el estado completo de la acción: el resultado no se renderiza en
+  // ningún lado (va por toast), y `pendiente` es lo único que hace falta para
+  // que un doble toque no abra o cierre el turno dos veces.
+  const [pendiente, setPendiente] = useState(false)
+
+  async function ejecutar(accion: (estado: EstadoCaja, datos: FormData) => Promise<EstadoCaja>) {
+    if (pendiente) return
+    setPendiente(true)
+    // FormData vacío: `cerrarCajaDesdeVender` no lee ninguno y
+    // `abrirCajaDesdeVender` cae en su default de saldo '0' (ver el punto 1
+    // del comentario de arriba).
+    const resultado = await accion(INICIAL, new FormData())
+    // Sólo el error avisa. El éxito ya se ve solo: `revalidatePath('/vender')`
+    // vuelve a traer la pantalla con el chip del cuerpo cambiado, y un toast
+    // que diga lo mismo que el chip de al lado es ruido. Sin auto-descarte,
+    // como todo error accionable en este repo (ver el ABM de categorías).
+    if (resultado.error) toast.error(resultado.error, { duration: Infinity })
+    setPendiente(false)
+  }
+
+  return (
+    <DropdownMenu>
+      {/* tono 'suave' de la ranura (bg-muted), que es el que
+          components/shell/encabezado.tsx reserva para "abre un menú" — y es
+          además lo que pinta el nodo `NlGrn` de VaHod ($ar-sunken). */}
+      <DropdownMenuTrigger
+        aria-label="Acciones de la caja"
+        className={`${CLASES_RANURA_MOVIL} bg-muted text-foreground`}
+      >
+        <MoreVertical aria-hidden="true" className="size-[19px]" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {caja ? (
+          <DropdownMenuItem
+            variant="destructive"
+            disabled={pendiente}
+            onSelect={() => void ejecutar(cerrarCajaDesdeVender)}
+          >
+            Cerrar caja
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem disabled={pendiente} onSelect={() => void ejecutar(abrirCajaDesdeVender)}>
+            Abrir caja
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
