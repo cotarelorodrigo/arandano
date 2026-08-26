@@ -179,8 +179,10 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
     // Un servicio nunca tiene movimientos (lib/inventario/stock.ts los
     // rechaza), así que ni vale consultar: `findFirst` sobre un articuloId sin
     // filas siempre da null igual, pero saltearlo evita una ida a Postgres que
-    // ya se sabe vacía.
-    esProducto
+    // ya se sabe vacía. Mismo criterio con `puedeCostos`: sin el permiso el
+    // tile no se renderea (ver más abajo), así que el resultado nunca se usa
+    // — no es una fuga, es un round-trip de más a Postgres.
+    esProducto && puedeCostos
       ? prisma.movimientoStock.findFirst({
           // El ingreso más reciente puede no tener costo cargado —es opcional,
           // CLAUDE.md— así que el filtro es explícito: el primero CON costo,

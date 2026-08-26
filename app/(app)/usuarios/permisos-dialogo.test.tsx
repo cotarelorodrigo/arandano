@@ -26,6 +26,14 @@ describe('el diálogo de permisos', () => {
       expect(html, `falta ${p.clave}`).toContain(p.nombre)
       expect(html, `falta la ayuda de ${p.clave}`).toContain(p.ayuda)
     }
+    // M5 de la review final: lo de arriba prueba que los seis ESTÁN, no que
+    // sean los ÚNICOS — un switch de más, escrito a mano al lado de los seis
+    // del catálogo, pasaba este test igual. El spec pide las dos direcciones
+    // (catálogo ↔ pantalla), así que el conteo de `role="switch"` (el que
+    // renderiza `SwitchPrimitive.Root` de Radix) tiene que cerrar exacto
+    // contra `PERMISOS.length`.
+    const cantidadDeSwitches = html.split('role="switch"').length - 1
+    expect(cantidadDeSwitches).toBe(PERMISOS.length)
   })
 
   it('muestra el conteo de los otorgados', () => {

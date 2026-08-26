@@ -51,12 +51,24 @@ const INICIAL = { error: null, aviso: null }
 const CLAVE = 'clave-mas-que-de-sobra'
 const MAIL_EMPLEADO = 'empleado-inventario@ejemplo.test'
 const MAIL_DUENO = 'duenia-inventario@ejemplo.test'
+// Dos empleados más, para el blindaje de COSTOS por efecto (I5 de la review
+// final): uno con ARTICULOS_CREAR pero sin COSTOS —para probar altaArticulo
+// sin colisionar con el `cookieEmpleado` de arriba, que ni siquiera pasa el
+// primer guard— y uno con COSTOS, para el par positivo.
+const MAIL_EMPLEADO_ALTA_SIN_COSTOS = 'empleado-alta-sin-costos@ejemplo.test'
+const MAIL_EMPLEADO_CON_COSTOS = 'empleado-con-costos@ejemplo.test'
+// Uno más, para I1: ARTICULOS_EDITAR sin CATEGORIAS, el bypass que la review
+// encontró en `guardarArticulo`.
+const MAIL_EMPLEADO_EDITAR_SIN_CATEGORIAS = 'empleado-editar-sin-categorias@ejemplo.test'
 
 let owner: Client
 let empleadoId: string
 let articuloId: string
 let cookieEmpleado: string
 let cookieDuenio: string
+let cookieEmpleadoAltaSinCostos: string
+let cookieEmpleadoConCostos: string
+let cookieEmpleadoEditarSinCategorias: string
 
 beforeAll(async () => {
   // lib/auth/para-tenant.ts arrastra lib/db.ts, que arma su Pool leyendo
@@ -72,6 +84,7 @@ beforeAll(async () => {
   ;({ authParaTenant } = await import('@/lib/auth/para-tenant'))
   ;({ origenDelRequest } = await import('@/lib/auth/origen'))
   const administrar = await import('@/lib/usuarios/administrar')
+  const { otorgar } = await import('@/lib/permisos/administrar')
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -91,6 +104,28 @@ beforeAll(async () => {
     email: MAIL_DUENO, clave: CLAVE, rol: 'DUENO',
   })
 
+  const empleadoAltaSinCostos = await administrar.crearEmpleado({
+    tenantId: estado.tenantId, origen, nombre: 'Empleado con alta, sin costos',
+    email: MAIL_EMPLEADO_ALTA_SIN_COSTOS, clave: CLAVE, rol: 'EMPLEADO',
+  })
+  await otorgar({
+    tenantId: estado.tenantId, usuarioId: empleadoAltaSinCostos.id, permiso: 'ARTICULOS_CREAR',
+  })
+
+  const empleadoConCostos = await administrar.crearEmpleado({
+    tenantId: estado.tenantId, origen, nombre: 'Empleado con costos',
+    email: MAIL_EMPLEADO_CON_COSTOS, clave: CLAVE, rol: 'EMPLEADO',
+  })
+  await otorgar({ tenantId: estado.tenantId, usuarioId: empleadoConCostos.id, permiso: 'COSTOS' })
+
+  const empleadoEditarSinCategorias = await administrar.crearEmpleado({
+    tenantId: estado.tenantId, origen, nombre: 'Empleado con editar, sin categorías',
+    email: MAIL_EMPLEADO_EDITAR_SIN_CATEGORIAS, clave: CLAVE, rol: 'EMPLEADO',
+  })
+  await otorgar({
+    tenantId: estado.tenantId, usuarioId: empleadoEditarSinCategorias.id, permiso: 'ARTICULOS_EDITAR',
+  })
+
   const a = await owner.query(
     `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, creado_en, actualizado_en)
      VALUES (gen_random_uuid(), $1, 'ACC-1', 'Artículo de prueba', 'PRODUCTO', 1000.00, 0, now(), now())
@@ -101,6 +136,9 @@ beforeAll(async () => {
 
   cookieEmpleado = await cookieDe(MAIL_EMPLEADO)
   cookieDuenio = await cookieDe(MAIL_DUENO)
+  cookieEmpleadoAltaSinCostos = await cookieDe(MAIL_EMPLEADO_ALTA_SIN_COSTOS)
+  cookieEmpleadoConCostos = await cookieDe(MAIL_EMPLEADO_CON_COSTOS)
+  cookieEmpleadoEditarSinCategorias = await cookieDe(MAIL_EMPLEADO_EDITAR_SIN_CATEGORIAS)
 })
 
 afterAll(async () => {
@@ -412,6 +450,40 @@ describe('el rol de cada action de inventario', () => {
     expect(rows[0].categoria).toBe('Repuestos')
   })
 
+  // I1 de la review final: un EMPLEADO con ARTICULOS_EDITAR y sin CATEGORIAS
+  // escribía texto libre en el campo de categoría y `asegurarCategoria` le
+  // creaba las ramas al vuelo — saltando el permiso que se supone que
+  // autoriza justo eso. El test va contra la base, no por grep del fuente:
+  // ninguna fila nueva en `categorias`, y la categoría existente del artículo
+  // queda IGUAL (no se pierde: "sin permiso" es "no cambia", no "se vacía").
+  it('un EMPLEADO con ARTICULOS_EDITAR y sin CATEGORIAS no puede crear categorías vía guardarArticulo', async () => {
+    const id = await crearArticuloDePrueba('Con categoría previa, sin permiso para tocarla')
+    await owner.query(`UPDATE articulos SET categoria = 'Ya tenía' WHERE id = $1`, [id])
+
+    const { rows: antes } = await owner.query(`SELECT count(*)::int AS n FROM categorias WHERE tenant_id = $1`, [
+      estado.tenantId,
+    ])
+
+    estado.cookie = cookieEmpleadoEditarSinCategorias
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('nombre', 'Con categoría previa, sin permiso para tocarla')
+    datos.set('sku', 'ACC-SIN-CAT-1')
+    datos.set('precio', '2500')
+    datos.set('categoria', 'Bypass · Intento')
+    const r = await guardarArticulo(INICIAL, datos)
+    expect(r.error).toBeNull()
+
+    const { rows: despues } = await owner.query(
+      `SELECT count(*)::int AS n FROM categorias WHERE tenant_id = $1`,
+      [estado.tenantId],
+    )
+    expect(despues[0].n).toBe(antes[0].n)
+
+    const { rows: articulo } = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [id])
+    expect(articulo[0].categoria).toBe('Ya tenía')
+  })
+
   it('un DUEÑO desactiva un artículo', async () => {
     estado.cookie = cookieDuenio
     const id = await crearArticuloDePrueba('Para desactivar')
@@ -704,5 +776,85 @@ describe('el costo detrás del permiso, en el servidor', () => {
     const cuerpo = FUENTE.slice(FUENTE.indexOf('export async function exportarHistorialCsv'))
     expect(cuerpo).toContain("puede('COSTOS')")
     expect(cuerpo).toContain('detalleDeMovimiento(m, conCostos)')
+  })
+})
+
+// I5 de la review final: los dos tests de arriba (`toContain("puede('COSTOS')")`)
+// prueban que el string está escrito, no que el costo se descarte de verdad —
+// un `puede('COSTOS')` que se llame y se IGNORE los dejaría en verde igual.
+// Estos casos verifican el efecto contra la base, con `owner.query` (que
+// lee sin RLS, así que ve la verdad tal cual quedó guardada).
+describe('el blindaje de COSTOS, por efecto y no por texto (I5 de la review final)', () => {
+  it('un EMPLEADO sin COSTOS que ingresa mercadería con costo: el movimiento queda sin costo', async () => {
+    estado.cookie = cookieEmpleado
+    const id = await crearArticuloDePrueba('Ingreso sin costo, empleado sin permiso', '0')
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('cantidad', '5')
+    datos.set('costoUnitario', '500')
+    const r = await ingresarMercaderia(INICIAL, datos)
+    expect(r.error).toBeNull()
+
+    const { rows } = await owner.query(
+      `SELECT costo_unitario FROM movimientos_stock WHERE articulo_id = $1
+        ORDER BY creado_en DESC LIMIT 1`,
+      [id],
+    )
+    expect(rows[0].costo_unitario).toBeNull()
+  })
+
+  it('un EMPLEADO con ARTICULOS_CREAR pero sin COSTOS que da de alta con costo: nace sin costo', async () => {
+    estado.cookie = cookieEmpleadoAltaSinCostos
+    const datos = new FormData()
+    datos.set('nombre', 'Alta con costo, empleado sin permiso')
+    datos.set('tipo', 'PRODUCTO')
+    datos.set('precio', '1000')
+    datos.set('stockInicial', '3')
+    datos.set('costoUnitario', '700')
+    const r = await altaArticulo(INICIAL, datos)
+    expect(r.error).toBeNull()
+
+    const { rows } = await owner.query(
+      `SELECT m.costo_unitario FROM movimientos_stock m
+        JOIN articulos a ON a.id = m.articulo_id
+       WHERE a.nombre = 'Alta con costo, empleado sin permiso' AND a.tenant_id = $1`,
+      [estado.tenantId],
+    )
+    expect(rows[0].costo_unitario).toBeNull()
+  })
+
+  // El par positivo: sin este caso, un `costoUnitario: null` a secas (sin
+  // consultar el permiso en absoluto) también dejaría pasar los tres tests de
+  // arriba, y "blindado" y "roto" se verían idénticos.
+  it('un EMPLEADO CON COSTOS sí guarda el costo al ingresar mercadería', async () => {
+    estado.cookie = cookieEmpleadoConCostos
+    const id = await crearArticuloDePrueba('Ingreso con costo, empleado autorizado', '0')
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('cantidad', '2')
+    datos.set('costoUnitario', '650')
+    const r = await ingresarMercaderia(INICIAL, datos)
+    expect(r.error).toBeNull()
+
+    const { rows } = await owner.query(
+      `SELECT costo_unitario FROM movimientos_stock WHERE articulo_id = $1
+        ORDER BY creado_en DESC LIMIT 1`,
+      [id],
+    )
+    expect(new Prisma.Decimal(rows[0].costo_unitario).toString()).toBe('650')
+  })
+
+  it('un EMPLEADO sin COSTOS que exporta el CSV de un artículo con costo cargado no ve el número', async () => {
+    const id = await crearArticuloDePrueba('Con costo cargado, exportado sin permiso', '0')
+    estado.cookie = cookieDuenio
+    const ingreso = new FormData()
+    ingreso.set('articuloId', id)
+    ingreso.set('cantidad', '4')
+    ingreso.set('costoUnitario', '473,25')
+    await ingresarMercaderia(INICIAL, ingreso)
+
+    estado.cookie = cookieEmpleado
+    const { csv } = await exportarHistorialCsv(id)
+    expect(csv).not.toContain('473')
   })
 })

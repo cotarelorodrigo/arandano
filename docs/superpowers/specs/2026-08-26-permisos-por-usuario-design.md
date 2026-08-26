@@ -155,9 +155,17 @@ el primero.
 
 ## Cómo se pregunta
 
-`lib/auth/sesion.ts` gana `exigirPermiso(permiso)`, que reemplaza a
-`exigirDuenio()` en los once lugares delegables. `exigirDuenio()` **sobrevive**,
-y no como vestigio: es lo que sigue guardando `/usuarios` (ver más abajo).
+`lib/permisos/guarda.ts` gana `exigirPermiso(permiso)`, que reemplaza a
+`exigirDuenio()` en los once lugares delegables. **No vive en
+`lib/auth/sesion.ts`** —corrección post-implementación, I4 de la review final:
+esta misma sección lo ubicaba ahí, y quedó sin corregir al escribirse el
+código. `sesion.ts` resuelve *quién sos* desde el request; los permisos son
+*qué podés* y consultan una tabla, así que meter esa consulta en `sesion.ts` le
+sumaría una dependencia de base de datos que hoy no tiene (ver la sección
+*Desvío del spec, decidido al planificar* del plan,
+`docs/superpowers/plans/2026-08-26-permisos-por-usuario.md`, que es donde se
+tomó la decisión en su momento). `exigirDuenio()` **sobrevive**, y no como
+vestigio: es lo que sigue guardando `/usuarios` (ver más abajo).
 
 **Un `DUENO` da verdadero sin tocar la tabla.** No es un atajo de performance:
 es lo que garantiza que un dueño no pueda quedarse afuera de su propio local, y
@@ -284,8 +292,12 @@ handler que ejecuta la acción, nunca en un `useEffect` sobre `useActionState`**
 y lleva **clave estable por acción y por usuario** para que sonner no apile una
 copia por render. El `<Toaster>` ya está en el root layout; no se toca.
 
-La fila muestra el conteo ("3 de 6 permisos") al lado del chip de rol, para que
-el estado se lea sin abrir nada.
+La fila muestra el conteo ("3 de 6 permisos") en su **propia columna
+"Permisos"**, no al lado del chip de rol — corrección post-implementación, M2
+de la review final: el código (`app/(app)/usuarios/formularios.tsx`) le da una
+columna dedicada, entre "Estado" y "Acciones", y esta línea describía algo
+distinto. El motivo es el mismo que el de la columna separada: el estado se
+lee sin abrir nada, en cualquiera de los dos lugares.
 
 **Deuda con la maqueta**: `design/arandano.pen` no dibuja este diálogo. Se
 construye derivando de lo que la maqueta sí fija para `/usuarios`, y la entrada

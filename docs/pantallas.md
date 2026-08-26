@@ -544,11 +544,13 @@ stock y el historial; a la derecha los datos editables y "Cómo se movió"
   permiso `COSTOS`, **Último costo** (con el margen contra el precio actual).
   Un servicio sólo muestra el de precio.
 - Editar nombre, categoría, precio y código desde la card "Datos" — con el
-  permiso `ARTICULOS_EDITAR`; sin él la card queda de sólo lectura.
-- **Ingresar mercadería** — con `ARTICULOS_EDITAR`— y, con `COSTOS` además, su
-  costo unitario y una nota (factura, proveedor).
-- **Corregir por conteo** (`ARTICULOS_EDITAR`): se escribe el stock contado, no
-  el delta.
+  permiso `ARTICULOS_EDITAR`; sin él la card directamente no se renderea (no
+  es de sólo lectura: no aparece).
+- **Ingresar mercadería** — de cualquiera con sesión, no de `ARTICULOS_EDITAR`:
+  es operación del día, la hace quien está atendiendo — y, con `COSTOS`
+  además, su costo unitario y una nota (factura, proveedor).
+- **Corregir por conteo** — de cualquiera con sesión, mismo motivo que
+  "Ingresar mercadería": se escribe el stock contado, no el delta.
 - Desactivar y reactivar el artículo (`ARTICULOS_EDITAR`).
 - Ver el historial completo de movimientos, con chip de motivo, la celda
   "Detalle" (combina quién y qué, según el motivo — el costo de un ingreso

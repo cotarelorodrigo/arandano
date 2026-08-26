@@ -123,14 +123,20 @@ export async function guardarArticulo(
 ): Promise<EstadoInventario> {
   try {
     const articuloId = texto(datos, 'articuloId')
-    await comoPuede('ARTICULOS_EDITAR', (tenantId) =>
+    await comoPuede('ARTICULOS_EDITAR', async (tenantId) =>
       editarArticulo({
         tenantId,
         articuloId,
         nombre: texto(datos, 'nombre'),
         sku: texto(datos, 'sku'),
         precio: aDecimal(texto(datos, 'precio'), 'el precio'),
-        categoria: texto(datos, 'categoria') || null,
+        // Sin CATEGORIAS el campo no se manda: `undefined` le dice a
+        // `editarArticulo` que no toque la categoría del artículo, ni para
+        // vaciarla ni para crear una rama nueva. La UI ya no dibuja este
+        // campo sin el permiso (ver `formularios.tsx`), pero el <input>
+        // viaja igual si alguien arma el POST a mano — como con COSTOS más
+        // abajo, el servidor es quien autoriza, no quien dibuja.
+        categoria: (await puede('CATEGORIAS')) ? texto(datos, 'categoria') || null : undefined,
       }),
     )
     revalidatePath('/inventario')
