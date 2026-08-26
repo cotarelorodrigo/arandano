@@ -366,7 +366,7 @@ export function FichaDeArticulo({
   subtitulo,
   articuloId,
   desactivado,
-  esDuenio,
+  puedeEditar,
   nombre,
   sku,
   precio,
@@ -379,7 +379,7 @@ export function FichaDeArticulo({
   subtitulo: ReactNode
   articuloId: string
   desactivado: boolean
-  esDuenio: boolean
+  puedeEditar: boolean
   nombre: string
   sku: string
   precio: string
@@ -400,7 +400,7 @@ export function FichaDeArticulo({
         titulo={titulo}
         subtitulo={subtitulo}
         acciones={
-          esDuenio ? (
+          puedeEditar ? (
             <>
               <Button
                 type="submit"
@@ -436,7 +436,7 @@ export function FichaDeArticulo({
       />
       {/* Sin ningún campo visible: existe sólo para que el botón "Desactivar"/
           "Reactivar" del Topbar tenga un <form> al que apuntar por id. */}
-      {esDuenio && (
+      {puedeEditar && (
         <form id={FORM_BAJA_ARTICULO} action={accionBaja} className="hidden" aria-hidden="true">
           <input type="hidden" name="articuloId" value={articuloId} />
         </form>
@@ -445,7 +445,7 @@ export function FichaDeArticulo({
         {/* El aviso de cada acción va arriba de todo, no junto a su campo: con
             el botón en el Topbar y el <form> en la columna derecha, no hay un
             solo lugar "al lado" de los dos a la vez. */}
-        {esDuenio && (
+        {puedeEditar && (
           <>
             <Resultado estado={estadoEditar} />
             <Resultado estado={estadoBaja} />
@@ -456,13 +456,13 @@ export function FichaDeArticulo({
           <div className="flex flex-1 flex-col gap-4">{columnaIzquierda}</div>
           {/* Sin la columna entera —no sólo su contenido— cuando no hay nada
               que mostrar: un EMPLEADO mirando un SERVICIO no tiene "Datos"
-              (esDuenio) ni "Cómo se movió" (columnaDerechaExtra, sólo para
+              (puedeEditar) ni "Cómo se movió" (columnaDerechaExtra, sólo para
               productos), y sin esta condición el <div> de 324 px quedaba
               reservando el hueco vacío igual, en vez de dejarle todo el ancho
               a la columna izquierda. */}
-          {(esDuenio || columnaDerechaExtra) && (
+          {(puedeEditar || columnaDerechaExtra) && (
             <div className="flex w-[324px] shrink-0 flex-col gap-4">
-              {esDuenio && (
+              {puedeEditar && (
                 <CardDelFormulario titulo="Datos">
                   <form id={FORM_EDITAR_ARTICULO} action={accionEditar} className="contents">
                     <input type="hidden" name="articuloId" value={articuloId} />

@@ -1,4 +1,4 @@
-import { exigirDuenio } from '@/lib/auth/sesion'
+import { exigirPermiso } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { FormularioDeAlta } from '../formularios'
 import { arbolDeCategorias } from '@/lib/inventario/categorias'
@@ -23,7 +23,7 @@ export function formatearProximoSku(proximo: number): string {
 export default async function ArticuloNuevo() {
   // El guard va acá además de en la action: la pantalla no se muestra Y la
   // action rechaza. Ninguna de las dos es suficiente sola.
-  const sesion = await exigirDuenio()
+  const sesion = await exigirPermiso('ARTICULOS_CREAR')
 
   const prisma = prismaParaTenant(sesion.tenant.id)
   // Sólo LECTURA: a diferencia de `proximoSku()`, esto no incrementa

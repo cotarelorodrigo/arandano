@@ -1,7 +1,9 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { exigirSesion, exigirDuenio } from '@/lib/auth/sesion'
+import { exigirSesion } from '@/lib/auth/sesion'
+import { exigirPermiso } from '@/lib/permisos/guarda'
+import type { Permiso } from '@/lib/permisos/catalogo'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import {
   crearArticulo,
@@ -31,9 +33,16 @@ export type EstadoInventario = { error: string | null; aviso: string | null }
 // entera. Vive en formularios.tsx, igual que en usuarios y en login.
 // test/use-server.test.ts lo fija.
 
-/** Sólo el dueño: el precio es plata y el catálogo es decisión del negocio. */
-async function comoDuenio<T>(fn: (tenantId: string, usuarioId: string) => Promise<T>) {
-  const sesion = await exigirDuenio()
+/**
+ * Quien tenga el permiso. Reemplaza al viejo `comoDuenio`: el catálogo y el ABM
+ * dejaron de ser "cosa del dueño" para pasar a ser algo que el dueño delega —
+ * ver `docs/superpowers/specs/2026-08-26-permisos-por-usuario-design.md`.
+ */
+async function comoPuede<T>(
+  permiso: Permiso,
+  fn: (tenantId: string, usuarioId: string) => Promise<T>,
+) {
+  const sesion = await exigirPermiso(permiso)
   return fn(sesion.tenant.id, sesion.usuario.id)
 }
 
@@ -74,7 +83,7 @@ export async function altaArticulo(
 ): Promise<EstadoInventario> {
   try {
     const tipo = datos.get('tipo') === 'SERVICIO' ? 'SERVICIO' : 'PRODUCTO'
-    const creado = await comoDuenio((tenantId, usuarioId) =>
+    const creado = await comoPuede('ARTICULOS_CREAR', (tenantId, usuarioId) =>
       crearArticulo({
         tenantId,
         usuarioId,
@@ -109,7 +118,7 @@ export async function guardarArticulo(
 ): Promise<EstadoInventario> {
   try {
     const articuloId = texto(datos, 'articuloId')
-    await comoDuenio((tenantId) =>
+    await comoPuede('ARTICULOS_EDITAR', (tenantId) =>
       editarArticulo({
         tenantId,
         articuloId,
@@ -133,7 +142,7 @@ export async function bajaArticulo(
 ): Promise<EstadoInventario> {
   try {
     const articuloId = texto(datos, 'articuloId')
-    await comoDuenio((tenantId) => desactivarArticulo({ tenantId, articuloId }))
+    await comoPuede('ARTICULOS_EDITAR', (tenantId) => desactivarArticulo({ tenantId, articuloId }))
     revalidatePath('/inventario')
     revalidatePath(`/inventario/${articuloId}`)
     return { error: null, aviso: 'Artículo desactivado. Su historial queda intacto.' }
@@ -148,7 +157,7 @@ export async function reactivarArticuloAccion(
 ): Promise<EstadoInventario> {
   try {
     const articuloId = texto(datos, 'articuloId')
-    await comoDuenio((tenantId) => reactivarArticulo({ tenantId, articuloId }))
+    await comoPuede('ARTICULOS_EDITAR', (tenantId) => reactivarArticulo({ tenantId, articuloId }))
     revalidatePath('/inventario')
     revalidatePath(`/inventario/${articuloId}`)
     return { error: null, aviso: 'Artículo reactivado.' }
@@ -280,7 +289,7 @@ function fechaCsv(v: Date): string {
  *
  * **Sin restringir a dueño, a propósito.** Es de sólo lectura y de datos que
  * la propia pantalla ya le muestra a cualquier sesión (`conSesion`, no
- * `comoDuenio`): exportar a CSV lo mismo que ya está en la tabla no es una
+ * `comoPuede`): exportar a CSV lo mismo que ya está en la tabla no es una
  * capacidad nueva que alguien pueda abusar, a diferencia de editar el
  * artículo o desactivarlo.
  *
@@ -358,12 +367,13 @@ export async function exportarHistorialCsv(
 }
 
 /**
- * El ABM del árbol de categorías, las cuatro por `comoDuenio`.
+ * El ABM del árbol de categorías, las cuatro por `comoPuede('CATEGORIAS')`.
  *
  * **Que el panel no le dibuje los controles a un empleado no alcanza**: un
  * server action es un endpoint, y se puede llamar sin pasar por la pantalla.
  * El criterio es el mismo que ya rige para el alta y la edición de artículo —
- * el catálogo es decisión del negocio, igual que el precio.
+ * el catálogo es decisión del negocio, igual que el precio, pero ahora es un
+ * permiso delegable y no un privilegio fijo del rol.
  *
  * Los cinco códigos que puede tirar el módulo (`NOMBRE_VACIO`,
  * `CATEGORIA_REPETIDA`, `CATEGORIA_ANIDADA`, `CATEGORIA_CON_HIJAS`,
@@ -376,7 +386,7 @@ export async function crearCategoriaAccion(
 ): Promise<EstadoInventario> {
   try {
     const padre = texto(datos, 'padreId')
-    await comoDuenio((tenantId) =>
+    await comoPuede('CATEGORIAS', (tenantId) =>
       crearCategoria({ tenantId, nombre: texto(datos, 'nombre'), padreId: padre || null }),
     )
     revalidatePath('/inventario')
@@ -391,7 +401,7 @@ export async function renombrarCategoriaAccion(
   datos: FormData,
 ): Promise<EstadoInventario> {
   try {
-    await comoDuenio((tenantId) =>
+    await comoPuede('CATEGORIAS', (tenantId) =>
       renombrarCategoria({
         tenantId,
         categoriaId: texto(datos, 'categoriaId'),
@@ -411,7 +421,7 @@ export async function moverCategoriaAccion(
 ): Promise<EstadoInventario> {
   try {
     const destino = texto(datos, 'padreId')
-    await comoDuenio((tenantId) =>
+    await comoPuede('CATEGORIAS', (tenantId) =>
       moverCategoria({
         tenantId,
         categoriaId: texto(datos, 'categoriaId'),
@@ -430,7 +440,7 @@ export async function borrarCategoriaAccion(
   datos: FormData,
 ): Promise<EstadoInventario> {
   try {
-    await comoDuenio((tenantId) =>
+    await comoPuede('CATEGORIAS', (tenantId) =>
       borrarCategoria({ tenantId, categoriaId: texto(datos, 'categoriaId') }),
     )
     revalidatePath('/inventario')

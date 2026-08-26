@@ -3,6 +3,7 @@ import { Prisma } from '@/generated/prisma/client'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { exigirSesion } from '@/lib/auth/sesion'
+import { puedeConSesion } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { cn } from '@/lib/utils'
 import { FichaDeArticulo, MoverStock, BotonExportarCsv } from '../formularios'
@@ -147,7 +148,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   // mismo 404 — y tienen que serlo: distinguirlos filtraría qué ids existen.
   if (!articulo) notFound()
 
-  const esDuenio = sesion.usuario.rol === 'DUENO'
+  const puedeEditar = await puedeConSesion(sesion, 'ARTICULOS_EDITAR')
   const esProducto = articulo.tipo === 'PRODUCTO'
 
   // Seis meses de sobra para "Cómo se movió": agregarVentasPorMes() sólo usa
@@ -356,7 +357,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
       }
       articuloId={articulo.id}
       desactivado={articulo.desactivadoEn !== null}
-      esDuenio={esDuenio}
+      puedeEditar={puedeEditar}
       nombre={articulo.nombre}
       sku={articulo.sku}
       precio={articulo.precio.toString()}

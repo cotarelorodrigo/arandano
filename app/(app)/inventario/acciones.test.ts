@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { Client } from 'pg'
 import { Prisma } from '@/generated/prisma/client'
 import { urlOwner, urlApp } from '@/test/postgres-efimero'
 import { crearTenant } from '@/test/datos'
+
+const FUENTE = readFileSync(new URL('./acciones.ts', import.meta.url), 'utf8')
 
 const estado = vi.hoisted(() => ({ tenantId: '', subdominio: '', cookie: '' }))
 
@@ -640,5 +643,45 @@ describe('exportarHistorialCsv (Task 5 del rediseño)', () => {
     await expect(
       exportarHistorialCsv('00000000-0000-0000-0000-000000000000'),
     ).rejects.toThrow(/no existe/)
+  })
+})
+
+describe('los permisos del ABM de artículos', () => {
+  const CASOS = [
+    ['altaArticulo', 'ARTICULOS_CREAR'],
+    ['guardarArticulo', 'ARTICULOS_EDITAR'],
+    ['bajaArticulo', 'ARTICULOS_EDITAR'],
+    ['reactivarArticuloAccion', 'ARTICULOS_EDITAR'],
+  ] as const
+
+  it('cada acción pide su permiso', () => {
+    for (const [accion, permiso] of CASOS) {
+      const cuerpo = FUENTE.slice(FUENTE.indexOf(`export async function ${accion}`))
+      const hastaLaSiguiente = cuerpo.slice(0, cuerpo.indexOf('\nexport async function', 1) + 1 || undefined)
+      expect(hastaLaSiguiente, `${accion} no pide ${permiso}`).toContain(`comoPuede('${permiso}'`)
+    }
+  })
+
+  // Crear y editar son permisos distintos a propósito: cargar un producto nuevo
+  // y cambiarle el precio a uno que se viene vendiendo hace meses no tienen el
+  // mismo riesgo.
+  it('crear y editar no son el mismo permiso', () => {
+    // Acotado a SU propio cuerpo, no al resto del archivo: sin el corte al
+    // próximo `export async function`, el slice se comía también
+    // `guardarArticulo` y las demás — que sí piden ARTICULOS_EDITAR más abajo
+    // en este mismo archivo — y la aserción no probaba nada.
+    const cuerpo = FUENTE.slice(FUENTE.indexOf('export async function altaArticulo'))
+    const alta = cuerpo.slice(0, cuerpo.indexOf('\nexport async function', 1) + 1 || undefined)
+    expect(alta).not.toContain("comoPuede('ARTICULOS_EDITAR'")
+  })
+
+  // Ingresar mercadería y corregir por conteo siguen siendo de cualquiera: es
+  // operación del día, la hace quien está atendiendo.
+  it('ingresar y corregir siguen siendo de cualquiera con sesión', () => {
+    for (const accion of ['ingresarMercaderia', 'corregirPorConteo']) {
+      const cuerpo = FUENTE.slice(FUENTE.indexOf(`export async function ${accion}`))
+      const hastaLaSiguiente = cuerpo.slice(0, cuerpo.indexOf('\nexport async function', 1) + 1 || undefined)
+      expect(hastaLaSiguiente, `${accion} dejó de ser de cualquiera`).toContain('conSesion(')
+    }
   })
 })

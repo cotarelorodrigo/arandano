@@ -106,14 +106,14 @@ export function PanelDeCategorias({
   total,
   sinCategoria,
   activa,
-  esDuenio,
+  puedeAdministrar,
   filtros,
 }: {
   arbol: RamaConHijas[]
   total: number
   sinCategoria: number
   activa: string | null
-  esDuenio: boolean
+  puedeAdministrar: boolean
   /**
    * Los filtros que ya están puestos, para que cada link del panel los
    * conserve. **Datos y no una función `href`**: Next rechaza pasarle una
@@ -158,7 +158,7 @@ export function PanelDeCategorias({
         <span className="text-[10px] font-bold tracking-[0.16em] text-muted-foreground">
           CATEGORÍAS
         </span>
-        {esDuenio && (
+        {puedeAdministrar && (
           <button
             type="button"
             aria-label="Categoría nueva"
@@ -214,7 +214,7 @@ export function PanelDeCategorias({
               activa={activa === rubro.id}
               href={href(rubro.id)}
               menu={
-                esDuenio ? (
+                puedeAdministrar ? (
                   <MenuDeRama
                     categoriaId={rubro.id}
                     esMarca={false}
@@ -268,7 +268,7 @@ export function PanelDeCategorias({
                     href={href(marca.id)}
                     esMarca
                     menu={
-                      esDuenio ? (
+                      puedeAdministrar ? (
                         <MenuDeRama
                           categoriaId={marca.id}
                           esMarca
@@ -297,7 +297,7 @@ export function PanelDeCategorias({
       {arbol.length === 0 && edicion === null && (
         <p className="px-2 py-3 text-[11px] leading-[1.5] text-muted-foreground">
           Todavía no creaste categorías.
-          {esDuenio && ' Empezá con el + de arriba.'}
+          {puedeAdministrar && ' Empezá con el + de arriba.'}
         </p>
       )}
 

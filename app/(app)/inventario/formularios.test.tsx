@@ -30,7 +30,7 @@ async function renderAlta(arbol = ARBOL) {
 
 async function renderFicha(
   categoria: string | null,
-  extra: Partial<{ desactivado: boolean; esDuenio: boolean }> = {},
+  extra: Partial<{ desactivado: boolean; puedeEditar: boolean }> = {},
 ) {
   const { FichaDeArticulo } = await import('./formularios')
   return renderToStaticMarkup(
@@ -43,7 +43,7 @@ async function renderFicha(
       precio="12000"
       categoria={categoria}
       desactivado={extra.desactivado ?? false}
-      esDuenio={extra.esDuenio ?? true}
+      puedeEditar={extra.puedeEditar ?? true}
       columnaIzquierda={<div>columna izquierda</div>}
     />,
   )
@@ -240,28 +240,28 @@ describe('FichaDeArticulo', () => {
     expect(boton![1]).toBe('destructive')
   })
 
-  // Sin esDuenio no hay nada que editar ni que desactivar: ni el botón del
+  // Sin puedeEditar no hay nada que editar ni que desactivar: ni el botón del
   // Topbar, ni el <form> oculto de baja, ni la card "Datos".
-  it('sin esDuenio no renderiza ninguna acción de edición', async () => {
-    const html = await renderFicha(null, { esDuenio: false })
+  it('sin puedeEditar no renderiza ninguna acción de edición', async () => {
+    const html = await renderFicha(null, { puedeEditar: false })
     expect(html).not.toContain('Guardar cambios')
     expect(html).not.toContain('Desactivar')
     expect(html).not.toContain('Datos')
     expect(html).not.toMatch(/<form id="form-baja-articulo"/)
   })
 
-  // Minor de la review: un EMPLEADO (esDuenio=false) mirando un SERVICIO (sin
+  // Minor de la review: un EMPLEADO (puedeEditar=false) mirando un SERVICIO (sin
   // columnaDerechaExtra, que sólo arma page.tsx para un producto) se quedaba
   // sin "Datos" y sin "Cómo se movió", pero el <div> de 324 px seguía
   // reservando el hueco vacío igual. La columna entera tiene que desaparecer,
   // no sólo su contenido.
   it('sin nada que mostrar a la derecha, la columna de 324 px no se renderiza', async () => {
-    const html = await renderFicha(null, { esDuenio: false })
+    const html = await renderFicha(null, { puedeEditar: false })
     expect(html).not.toContain('w-[324px]')
   })
 
-  it('con esDuenio, la columna de 324 px sí aparece (trae la card "Datos")', async () => {
-    const html = await renderFicha(null, { esDuenio: true })
+  it('con puedeEditar, la columna de 324 px sí aparece (trae la card "Datos")', async () => {
+    const html = await renderFicha(null, { puedeEditar: true })
     expect(html).toContain('w-[324px]')
   })
 
