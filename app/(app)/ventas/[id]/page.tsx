@@ -322,9 +322,14 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
                 existe ningún frame de venta anulada contra el que confirmar
                 si el botón va en otro lado, así que se lo deja exactamente
                 donde el texto lo ubica (ver relevamiento.md, punto 6). El
-                texto queda visible para cualquier rol —explica por qué un
-                empleado no tiene el botón—, y el botón mismo sigue
-                restringido al dueño.
+                texto queda visible para cualquier rol —explica por qué
+                alguien puede no tener el botón—, y el botón mismo lo
+                gobierna el permiso `VENTAS_ANULAR` (ciclo de permisos por
+                usuario, 2026-08-26): sigue en `DUENO` siempre y en
+                `EMPLEADO` sólo si se lo otorgaron. El texto de abajo ("Sólo
+                el dueño puede hacerlo") es copy literal del `.pen` y quedó
+                desactualizado por esa conversión — ver
+                docs/correcciones-pendientes-del-pen.md.
 
                 Una vez anulada no hay nada que ADVERTIR —la acción ya no se
                 puede tomar—, pero sí algo que INFORMAR: quién y cuándo. La

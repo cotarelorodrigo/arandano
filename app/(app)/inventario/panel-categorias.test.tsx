@@ -115,15 +115,18 @@ describe('PanelDeCategorias', () => {
     expect(html).toContain('Todavía no creaste categorías')
   })
 
-  // El ABM es del dueño, mismo criterio que el alta de artículo: el catálogo
-  // es decisión del negocio.
-  it('un empleado no ve los controles de administración', () => {
+  // El ABM lo gobierna el permiso CATEGORIAS (ciclo de permisos por usuario,
+  // 2026-08-26): delegable a un empleado si el dueño se lo otorga, aunque
+  // sigue sin estarlo por default. `puedeAdministrar` es la respuesta ya
+  // resuelta, no distingue por qué: el mismo `false` cubre a un empleado sin
+  // el permiso.
+  it('un empleado sin el permiso no ve los controles de administración', () => {
     const html = pintar({ puedeAdministrar: false })
     expect(html).not.toContain('Categoría nueva')
     expect(html).toContain('Fundas')
   })
 
-  it('y el dueño sí', () => {
+  it('y con el permiso sí', () => {
     expect(pintar({ puedeAdministrar: true })).toContain('Categoría nueva')
   })
 })

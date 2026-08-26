@@ -1030,6 +1030,85 @@ Y del producto:
   y no se construyeron: el código de barras (columna nueva, y el buscador de
   `/vender` debería mirarla) y el toggle de catálogo público (que viaja con el
   catálogo, cuando exista).
+- ~~Sumar permisos por usuario, empleado por empleado.~~ **Hecho**
+  (2026-08-26). Sale del feedback textual de un dueño que pidió, en estos
+  términos, poder decidir qué puede hacer cada empleado suyo — y ese pedido lo
+  convirtió de regla fija del producto (algunas cosas son del dueño, punto) en
+  **decisión de cada local** (el dueño de cada local prende o no cada
+  capacidad, para cada empleado suyo). El catálogo queda cerrado en código,
+  seis permisos: `ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`,
+  `CATEGORIAS`, `VENTAS_ANULAR`, `ORDENES_ANULAR`.
+
+  **El estado previo era el inverso del pedido, en las dos mitades.** Antes de
+  este ciclo, el alta y edición de artículos —y el ABM de categorías— estaban
+  **cerrados** al empleado (sólo el dueño), mientras que ver y cargar el costo
+  de un ingreso estaban **abiertos** a cualquiera con sesión. El pedido corre
+  las dos cosas en la dirección contraria: abre lo primero (si el dueño
+  quiere) y cierra lo segundo (por default). Vale la pena tenerlo anotado
+  porque no es una feature que sólo agrega candados — a un rubro de este ciclo
+  le está sacando una capacidad que tenía.
+
+  **Cuatro decisiones valen para releer cuando alguien quiera tocar este
+  esquema:**
+
+  - **La fila de `usuario_permisos` ES el permiso otorgado; su ausencia es la
+    negación.** No hay una columna de "prendido/apagado" que backfillear:
+    otorgar es un `INSERT`, revocar es un `DELETE`, y por eso este ciclo no
+    llevó ninguna migración de datos — la tabla nace vacía y así queda para
+    cualquier empleado sin permisos explícitos.
+  - **El dueño corta antes de la tabla.** `exigirPermiso` le da verdadero a un
+    `DUENO` sin consultar `usuario_permisos` en absoluto. No es un atajo de
+    performance: es lo que garantiza que un dueño no pueda quedarse afuera de
+    su propio local y lo que evita tener que otorgarle nada al crear un
+    tenant.
+  - **`COSTOS` es uno solo y no dos** (ver costo/margen y cargarlo al
+    recibir), pero **`ARTICULOS_CREAR` y `ARTICULOS_EDITAR` sí son dos.**
+    Cargar un costo que no se puede ver no es un caso que exista —el ingreso
+    de mercadería muestra lo que se acaba de escribir—, así que partir
+    `COSTOS` en dos daba combinaciones absurdas. Cargar un producto nuevo y
+    cambiarle el precio a uno que se viene vendiendo hace meses, en cambio, no
+    tienen el mismo riesgo, y el pedido original nombraba sólo el primero.
+  - **`/usuarios` no es delegable**, ni la pantalla ni sus acciones, y no por
+    omisión: un permiso que habilitara a repartir permisos sería una escalada
+    de privilegios con un paso de más, porque el empleado que pudiera editar
+    usuarios se otorgaría los otros cinco y listo. De ahí sale la regla
+    general para cuando el catálogo crezca: **se delega lo que opera el
+    negocio, no lo que reparte poder.**
+
+  **Este ciclo le saca al empleado, por default, ver y cargar costos** —una
+  regresión deliberada frente al comportamiento de hoy, y **gratis exactamente
+  ahora**: todavía no hay tenants reales usándolo. Dentro de seis meses sería
+  sacarle una capacidad a gente que ya la usa a diario.
+
+  **Un ingreso de mercadería hecho por un empleado sin `COSTOS` queda sin
+  costo para siempre** — `MovimientoStock.costoUnitario` ya es, desde el ciclo
+  de inventario, "una puerta de una sola dirección" que no se backfillea (ver
+  *Decisiones abiertas del modelo de datos*), y esconderle el campo a quien
+  recibe la mercadería en algún local donde el dueño no está a la mañana
+  significa que el "Último costo" del artículo no se actualiza ese día. La
+  salida —que el dueño complete el costo después, en un momento en que sí
+  tiene el permiso— no se construyó en este ciclo; el disparador para
+  construirla es concreto y no una fecha: que a un dueño le llegue a molestar
+  de verdad.
+
+  **El disparador de los roles personalizados** —hoy descartados, ver
+  *Opciones evaluadas y descartadas* si se agrega ese ítem— no es una cantidad
+  de permisos en el catálogo: es que prender seis switches de a uno, uno por
+  uno, para cada empleado nuevo, empiece a molestar en un local con muchos
+  empleados. Mientras eso no pase, un catálogo cerrado de seis y un diálogo de
+  switches alcanza.
+
+  **Queda pendiente, sin confirmar a ojo:** la verificación manual en el
+  navegador de este ciclo no se hizo. El contenedor `arandano-dev-app-1`
+  bind-montea `/root/arandano` —el workspace principal—, no el worktree donde
+  se construyó esta feature, así que el stack de `arandano-dev` no puede
+  servir este código sin tocar infraestructura compartida que este ciclo no
+  tocó. Quedó sin confirmar que el toast del diálogo de permisos aparezca y se
+  vaya solo, que el conteo "N de 6 permisos" de la fila cambie en vivo al
+  tocar un switch, y que otorgarle `ARTICULOS_CREAR` a un empleado le habilite
+  de verdad el botón "Artículo nuevo" en `/inventario`. No se lo da por hecho:
+  hace falta que alguien lo mire en un entorno que sirva este worktree antes
+  de confiar en la pantalla a ojo cerrado.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

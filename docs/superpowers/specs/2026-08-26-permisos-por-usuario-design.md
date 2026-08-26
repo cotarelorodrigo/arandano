@@ -201,7 +201,7 @@ categorías y el texto del vacío), `inventario/[id]/page.tsx` y
 `Resultado` y la card "Datos"), y `servicio-tecnico/[id]/page.tsx`. Cada una
 pasa a preguntar por el permiso que corresponde en vez de por el rol.
 
-## `COSTOS`, que toca cinco lugares y no uno
+## `COSTOS`, que toca cuatro lugares y no uno
 
 Es el único permiso que además de destrabar una acción **esconde un dato**, así
 que conviene enumerarlo entero:
@@ -209,19 +209,23 @@ que conviene enumerarlo entero:
 1. **El tile "Último costo"** de `/inventario/[id]`, con su pie de margen. Sin
    el permiso, el tile no se renderea — no se muestra en "—", que sería mentir
    diciendo que no hay costo cargado.
-2. **La columna Detalle del historial** (`historial.tsx`), donde el costo de un
-   ingreso viaja junto a la nota. Sin el permiso, queda sólo la nota.
-3. **El CSV de `exportarHistorialCsv`**, que hoy lleva `costoUnitario`. Sin el
-   permiso, sale sin esa columna. La acción sigue siendo de cualquiera con
-   sesión —exportar lo que la pantalla ya muestra no es una capacidad nueva—;
-   lo que cambia es que exporta lo que **esa persona** puede ver.
-4. **El campo "Costo unitario" del ingreso de mercadería**
+2. **La columna Detalle del historial** (`historial.tsx`) **y el CSV de
+   `exportarHistorialCsv`, que la reusan igual.** El CSV no tiene columna de
+   costo propia —`ENCABEZADO_CSV` es `['Fecha', 'Motivo', 'Detalle', 'Cambio',
+   'Queda', 'Usuario']`—: el costo de un ingreso viaja adentro de "Detalle",
+   junto a la nota, armado por la función compartida `detalleDeMovimiento()`.
+   Sin el permiso, esa función no recibe el costo y queda sólo la nota — en la
+   tabla de la ficha y en el CSV a la vez, porque ambos llaman a la misma
+   función. La exportación sigue siendo de cualquiera con sesión —exportar lo
+   que la pantalla ya muestra no es una capacidad nueva—; lo que cambia es que
+   exporta lo que **esa persona** puede ver.
+3. **El campo "Costo unitario" del ingreso de mercadería**
    (`formularios.tsx`). Sin el permiso, el campo no se dibuja y el server lo
    ignora si llega igual.
-5. **El campo "Costo unitario" del alta** (`formularios.tsx`), el del stock
+4. **El campo "Costo unitario" del alta** (`formularios.tsx`), el del stock
    inicial. Mismo tratamiento.
 
-Los puntos 4 y 5 son los que hay que blindar en el servidor y no sólo en la
+Los puntos 3 y 4 son los que hay que blindar en el servidor y no sólo en la
 UI: son un `<input name="costoUnitario">` que un `curl` puede mandar aunque la
 pantalla no lo dibuje.
 
@@ -316,7 +320,7 @@ Es un **MINOR**: el cliente ve una pantalla nueva.
 - Una acción por permiso, en sus dos formas: empleado sin permiso → rechazada;
   empleado con permiso → hace el efecto de verdad (el artículo queda creado, la
   venta queda anulada), no sólo devuelve 200.
-- **`COSTOS`, los cinco lugares**, y los dos del servidor con el campo mandado a
+- **`COSTOS`, los cuatro lugares**, y los dos del servidor con el campo mandado a
   mano por fuera de la pantalla.
 - **`/usuarios` sigue siendo del dueño**: un empleado, tenga los seis permisos,
   no entra ni ejecuta sus acciones.
