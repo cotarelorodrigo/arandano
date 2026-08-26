@@ -36,6 +36,20 @@ enum RolUsuario {
   @@map("rol_usuario")
 }
 
+/// Lo que un EMPLEADO puede hacer. Un DUENO no necesita ninguna fila: la
+/// guarda le devuelve verdadero sin consultar la tabla, que es lo que
+/// garantiza que un dueño no pueda quedarse afuera de su propio local.
+enum Permiso {
+  ARTICULOS_CREAR
+  ARTICULOS_EDITAR
+  COSTOS
+  CATEGORIAS
+  VENTAS_ANULAR
+  ORDENES_ANULAR
+
+  @@map("permiso")
+}
+
 enum TipoArticulo {
   PRODUCTO
   SERVICIO
@@ -125,21 +139,22 @@ model Tenant {
   creadoEn           DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn      DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  modulos        TenantModule[]
-  users          User[]
-  clientes       Cliente[]
-  articulos      Articulo[]
-  ventas         Venta[]
-  ventaItems     VentaItem[]
-  pagos          Pago[]
-  movimientos    MovimientoStock[]
-  sesiones       Session[]
-  cuentas        Account[]
-  verificaciones Verification[]
-  ordenes        OrdenDeTrabajo[]
-  eventosOrden   EventoOrden[]
-  cajas          Caja[]
-  categorias     Categoria[]
+  modulos         TenantModule[]
+  users           User[]
+  clientes        Cliente[]
+  articulos       Articulo[]
+  ventas          Venta[]
+  ventaItems      VentaItem[]
+  pagos           Pago[]
+  movimientos     MovimientoStock[]
+  sesiones        Session[]
+  cuentas         Account[]
+  verificaciones  Verification[]
+  ordenes         OrdenDeTrabajo[]
+  eventosOrden    EventoOrden[]
+  cajas           Caja[]
+  categorias      Categoria[]
+  usuarioPermisos UsuarioPermiso[]
 
   @@map("tenants")
 }
@@ -194,10 +209,35 @@ model User {
   eventosOrden     EventoOrden[]
   cajasAbiertas    Caja[]            @relation("CajasAbiertas")
   cajasCerradas    Caja[]            @relation("CajasCerradas")
+  permisos         UsuarioPermiso[]
 
   // Por tenant y no global: la misma persona puede trabajar en dos negocios.
   @@unique([tenantId, email])
   @@map("users")
+}
+
+/// Un permiso otorgado a una persona.
+///
+/// **La fila ES el permiso; su ausencia es la negación.** Sin columna booleana
+/// y sin tri-estado: revocar es un DELETE. Eso es lo que hace que la migración
+/// no necesite ningún backfill — los usuarios que ya existen quedan
+/// exactamente como estaban, porque hoy no pueden nada de esto.
+///
+/// **Un empleado desactivado conserva sus filas** y vuelve con los mismos
+/// permisos si lo reactivan. Es coherente con que la baja acá sea lógica
+/// (`User.desactivadoEn`) y con lo que uno espera al readmitir a alguien.
+/// Revocar es un acto aparte y explícito.
+model UsuarioPermiso {
+  tenantId   String   @map("tenant_id") @db.Uuid
+  usuarioId  String   @map("usuario_id") @db.Uuid
+  permiso    Permiso
+  otorgadoEn DateTime @default(now()) @map("otorgado_en") @db.Timestamptz(3)
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usuario User   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, usuarioId, permiso])
+  @@map("usuario_permisos")
 }
 
 model Cliente {
@@ -260,7 +300,7 @@ model Articulo {
   creadoEn      DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant         Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   // Restrict: una categoría con artículos colgando no se borra. SetNull los
   // dejaría sin clasificar sin que nadie se entere, que es la misma pérdida
   // silenciosa con otro nombre.
@@ -296,11 +336,11 @@ model Categoria {
   creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   // Restrict en las dos direcciones, igual que con los artículos: borrar
   // "Celulares" no puede llevarse puestas sus marcas.
-  padre Categoria?  @relation("Jerarquia", fields: [padreId], references: [id], onDelete: Restrict)
-  hijas Categoria[] @relation("Jerarquia")
+  padre  Categoria?  @relation("Jerarquia", fields: [padreId], references: [id], onDelete: Restrict)
+  hijas  Categoria[] @relation("Jerarquia")
 
   articulos Articulo[]
 
