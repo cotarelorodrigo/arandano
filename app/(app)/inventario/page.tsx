@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import type { Prisma } from '@/generated/prisma/client'
-import { Search, Plus, Truck, ListTree, X } from 'lucide-react'
+import { Search, Plus, ListTree, X } from 'lucide-react'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
@@ -216,7 +216,6 @@ export function FiltrosDeInventario({
             className="pointer-events-none absolute top-1/2 left-[13px] size-4 -translate-y-1/2 text-muted-foreground"
           />
           <Input
-            id="buscador-inventario"
             name="q"
             defaultValue={busqueda}
             aria-label="Buscar por nombre o código"
@@ -425,6 +424,18 @@ export default async function Inventario({
               >
                 <ListTree aria-hidden="true" className="size-[17px]" />
               </SheetTrigger>
+              {/* `side="left"`: derivada del spec (§7.1) — ningún frame de
+                  `design/arandano.pen` dibuja el árbol abierto en el
+                  teléfono, así que no hay maqueta que decida el lado. Se
+                  eligió el mismo lado que ocupa la columna en escritorio: es
+                  lo que menos desorienta a quien pasa de un ancho al otro
+                  (la columna vive a la izquierda del listado; el árbol
+                  "sale" del mismo lugar). Alto completo y `overflow-y-auto`
+                  en vez de `side="bottom"` (que sí usa `ControlDeCaja` en
+                  `/vender`) porque acá el contenido puede ser largo — un
+                  árbol de veinte ramas, según CLAUDE.md — y una hoja inferior
+                  queda acotada a `h-auto`, sin espacio garantizado para
+                  scrollear. */}
               <SheetContent side="left" className="w-[280px] gap-0 overflow-y-auto p-3 sm:max-w-none">
                 {/* sr-only: el panel ya muestra su propio título visible
                     ("CATEGORÍAS"); esto es sólo lo que Radix pide para
@@ -468,24 +479,6 @@ export default async function Inventario({
             </span>
           </div>
         )}
-
-        {/* "Ingresar mercadería" (design/arandano.pen, nodo `U3nUt`): sólo en
-            el teléfono — en escritorio no hay un botón equivalente en el
-            Topbar hoy. La pantalla no tiene (todavía) un alta de mercadería
-            a nivel de listado —"Ingresar mercadería" es una acción POR
-            artículo, dentro de su ficha (`/inventario/[id]`, ver
-            `docs/pantallas.md`)—, así que este atajo lleva al buscador: es
-            el primer paso real de "encontrar el artículo al que ingresarle
-            stock" y no un link a ningún lado. Ancla al `id` del buscador de
-            arriba en vez de JavaScript: sin React, un link a un fragmento ya
-            hace scroll Y foco sobre un elemento enfocable (el `<input>`). */}
-        <a
-          href="#buscador-inventario"
-          className="flex h-[42px] w-full items-center justify-center gap-2 rounded-[11px] bg-card text-[13px] font-semibold text-foreground lg:hidden"
-        >
-          <Truck aria-hidden="true" className="size-4" />
-          Ingresar mercadería
-        </a>
 
         {/* El frame `Contenido` de la maqueta (design/arandano.pen): el panel
             de 248 a la izquierda y el listado ocupando lo que queda. Los

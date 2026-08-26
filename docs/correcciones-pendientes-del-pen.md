@@ -172,6 +172,51 @@ Detectado al leer la maqueta del ciclo de categorías (2026-08-24).
 
 ---
 
+## 8. El botón "Ingresar mercadería" del listado de `/inventario`, en escritorio y en el teléfono
+
+- **Frames**: `App / Inventario` (nodo `DOvVZ`) y `Móvil / Inventario` (nodo
+  `U3nUt`), los dos con ícono `truck`
+- **Dice**: un botón "Ingresar mercadería" a la vista, en el cuerpo del
+  listado
+- **Tiene que decir**: nada, hasta que alguien decida a dónde manda —o se
+  borra el botón, si la respuesta es "a ningún lado nuevo"
+
+**Por qué no se construyó.** "Ingresar mercadería" ya existe como acción, pero
+vive **por artículo**, dentro de la card del mismo nombre en la ficha
+(`/inventario/[id]`, ver `docs/pantallas.md`). No hay ninguna pantalla ni
+flujo de alta de mercadería a nivel del LISTADO al que este botón pudiera
+apuntar — habría que inventar uno. `App / Inventario` (escritorio) lo dibuja
+desde antes del ciclo móvil, en el Topbar, y nadie lo construyó nunca; el
+ciclo móvil iba a repetir el mismo error copiándolo al cuerpo del teléfono
+(Task 6), hasta que la review de ese ciclo lo frenó.
+
+Es el mismo criterio ya escrito para el `more-vertical` de la ficha de
+artículo (spec `2026-08-26-movil-design.md`, §7.4: "un botón que abre un menú
+inventado es peor que la ausencia del botón") y para el toggle de catálogo
+público que no publicaba nada (spec `2026-08-24-categorias-ui-design.md`:
+"una promesa vacía en la pantalla"). Un botón cuyo rótulo promete algo que no
+hace es peor que no tenerlo — sea porque abre un menú vacío o porque no abre
+nada.
+
+**A diferencia de la entrada 7**, acá no hace falta "el dueño del producto en
+la mano" para decidir el tratamiento visual: la pregunta que hay que
+responder primero es de producto, no de diseño — ¿existe (o va a existir) un
+alta de mercadería a nivel de listado, o esto vive y va a seguir viviendo
+sólo en la ficha? Recién con esa respuesta tiene sentido dibujar (o borrar)
+el botón.
+
+Detectado por el coordinador al revisar el reporte de la Task 6 del ciclo
+móvil (2026-08-26), antes de despachar la review formal. El brief de esa task
+heredaba el error, tal cual: "el botón... baja del Topbar al cuerpo" —
+describía un botón que nunca existió en el Topbar de escritorio. El
+implementador lo siguió al pie de la letra y construyó el atajo — un link que
+enfocaba el buscador, la salida más honesta disponible sin inventar una
+pantalla —, pero incluso esa salida seguía mintiendo: alguien que lo toca
+esperando cargar stock recibe un campo de búsqueda enfocado. El botón se sacó
+del código en la misma task.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

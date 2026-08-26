@@ -452,21 +452,6 @@ describe('el chip de la rama activa, sólo en el teléfono (Task 6)', () => {
   })
 })
 
-describe('el botón "Ingresar mercadería", sólo en el teléfono (Task 6)', () => {
-  const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
-
-  it('existe, a ancho completo y 42px de alto', () => {
-    const inicio = FUENTE.indexOf('href="#buscador-inventario"')
-    expect(inicio, 'no se encontró el link al buscador').toBeGreaterThan(-1)
-    const fin = FUENTE.indexOf('</a>', inicio)
-    const bloque = FUENTE.slice(inicio, fin)
-    expect(bloque).toContain('Ingresar mercadería')
-    expect(bloque).toMatch(/h-\[42px\]/)
-    expect(bloque).toMatch(/w-full/)
-    expect(bloque).toMatch(/lg:hidden/)
-  })
-})
-
 describe('el Encabezado gana su accionMovil en el teléfono (Task 6)', () => {
   const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
 
