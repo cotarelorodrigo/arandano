@@ -685,3 +685,24 @@ describe('los permisos del ABM de artículos', () => {
     }
   })
 })
+
+describe('el costo detrás del permiso, en el servidor', () => {
+  // Los dos campos son un <input name="costoUnitario"> que un curl puede
+  // mandar aunque la pantalla no lo dibuje. Esconderlo en la UI no es la
+  // defensa: la defensa es que el servidor lo ignore.
+  it('el alta y el ingreso consultan el permiso antes de leer el costo', () => {
+    for (const accion of ['altaArticulo', 'ingresarMercaderia']) {
+      const cuerpo = FUENTE.slice(FUENTE.indexOf(`export async function ${accion}`))
+      const hastaLaSiguiente = cuerpo.slice(0, cuerpo.indexOf('\nexport async function', 1) + 1 || undefined)
+      expect(hastaLaSiguiente, `${accion} no consulta COSTOS`).toContain("puede('COSTOS')")
+    }
+  })
+
+  // El CSV es el mismo dato que la tabla, en otro formato: si la pantalla
+  // esconde el costo y el CSV lo lleva, el permiso no sirve de nada.
+  it('el CSV pasa el permiso a detalleDeMovimiento', () => {
+    const cuerpo = FUENTE.slice(FUENTE.indexOf('export async function exportarHistorialCsv'))
+    expect(cuerpo).toContain("puede('COSTOS')")
+    expect(cuerpo).toContain('detalleDeMovimiento(m, conCostos)')
+  })
+})

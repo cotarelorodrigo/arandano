@@ -100,9 +100,11 @@ const ICONO_TARJETA_TIPO = 'size-[19px] text-muted-foreground group-has-[:checke
 export function FormularioDeAlta({
   proximoSku,
   arbol,
+  puedeCostos,
 }: {
   proximoSku: string
   arbol: RamaConHijas[]
+  puedeCostos: boolean
 }) {
   const [estado, accion, pendiente] = useActionState(altaArticulo, INICIAL)
   const [tipo, setTipo] = useState<'PRODUCTO' | 'SERVICIO'>('PRODUCTO')
@@ -293,10 +295,20 @@ export function FormularioDeAlta({
                   <Label htmlFor="stockInicial">Cantidad (opcional)</Label>
                   <Input id="stockInicial" name="stockInicial" inputMode="decimal" className="h-10 rounded-[9px]" />
                 </div>
-                <div className="flex flex-1 flex-col gap-2">
-                  <Label htmlFor="costoUnitario">Costo unitario (opcional)</Label>
-                  <Input id="costoUnitario" name="costoUnitario" inputMode="decimal" className="h-10 rounded-[9px]" />
-                </div>
+                {/* Sin el permiso COSTOS, el campo no se dibuja. El
+                    blindaje real está en el servidor (altaArticulo,
+                    acciones.ts): esconderlo acá es sólo la UI. */}
+                {puedeCostos && (
+                  <div className="flex flex-1 flex-col gap-2">
+                    <Label htmlFor="costoUnitario">Costo unitario (opcional)</Label>
+                    <Input
+                      id="costoUnitario"
+                      name="costoUnitario"
+                      inputMode="decimal"
+                      className="h-10 rounded-[9px]"
+                    />
+                  </div>
+                )}
               </div>
               {/* El tercer campo que la maqueta dibuja en esta card
                   (design/arandano.pen, frame `B4O7t`). **No es una columna
@@ -518,7 +530,13 @@ export function FichaDeArticulo({
  * obligaría a restar en el navegador contra un número que puede tener un
  * minuto y una venta de antigüedad.
  */
-export function MoverStock({ articuloId }: { articuloId: string }) {
+export function MoverStock({
+  articuloId,
+  puedeCostos,
+}: {
+  articuloId: string
+  puedeCostos: boolean
+}) {
   const [ingreso, accionIngreso, ingresando] = useActionState(ingresarMercaderia, INICIAL)
   const [conteo, accionConteo, contando] = useActionState(corregirPorConteo, INICIAL)
 
@@ -539,10 +557,15 @@ export function MoverStock({ articuloId }: { articuloId: string }) {
               <Label htmlFor="i-cantidad">Cantidad que entra</Label>
               <Input id="i-cantidad" name="cantidad" inputMode="decimal" required className="h-10 rounded-[9px]" />
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="i-costo">Costo unitario (opcional)</Label>
-              <Input id="i-costo" name="costoUnitario" inputMode="decimal" className="h-10 rounded-[9px]" />
-            </div>
+            {/* Sin el permiso COSTOS, el campo no se dibuja. El blindaje
+                real está en el servidor (ingresarMercaderia, acciones.ts):
+                esconderlo acá es sólo la UI. */}
+            {puedeCostos && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="i-costo">Costo unitario (opcional)</Label>
+                <Input id="i-costo" name="costoUnitario" inputMode="decimal" className="h-10 rounded-[9px]" />
+              </div>
+            )}
             <div className="flex flex-col gap-2">
               <Label htmlFor="i-nota">Nota (opcional)</Label>
               <Input id="i-nota" name="nota" placeholder="Factura, proveedor…" className="h-10 rounded-[9px]" />

@@ -1,4 +1,4 @@
-import { exigirPermiso } from '@/lib/permisos/guarda'
+import { exigirPermiso, puedeConSesion } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { FormularioDeAlta } from '../formularios'
 import { arbolDeCategorias } from '@/lib/inventario/categorias'
@@ -24,6 +24,7 @@ export default async function ArticuloNuevo() {
   // El guard va acá además de en la action: la pantalla no se muestra Y la
   // action rechaza. Ninguna de las dos es suficiente sola.
   const sesion = await exigirPermiso('ARTICULOS_CREAR')
+  const puedeCostos = await puedeConSesion(sesion, 'COSTOS')
 
   const prisma = prismaParaTenant(sesion.tenant.id)
   // Sólo LECTURA: a diferencia de `proximoSku()`, esto no incrementa
@@ -55,6 +56,7 @@ export default async function ArticuloNuevo() {
     <FormularioDeAlta
       proximoSku={formatearProximoSku(tenant?.proximoSkuArticulo ?? 1)}
       arbol={arbol}
+      puedeCostos={puedeCostos}
     />
   )
 }

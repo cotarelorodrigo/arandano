@@ -23,9 +23,11 @@ const ARBOL = [
   },
 ]
 
-async function renderAlta(arbol = ARBOL) {
+async function renderAlta(arbol = ARBOL, puedeCostos = true) {
   const { FormularioDeAlta } = await import('./formularios')
-  return renderToStaticMarkup(<FormularioDeAlta proximoSku="A-0043" arbol={arbol} />)
+  return renderToStaticMarkup(
+    <FormularioDeAlta proximoSku="A-0043" arbol={arbol} puedeCostos={puedeCostos} />,
+  )
 }
 
 async function renderFicha(
@@ -284,9 +286,9 @@ describe('FichaDeArticulo', () => {
 })
 
 describe('MoverStock', () => {
-  async function renderMoverStock() {
+  async function renderMoverStock(puedeCostos = true) {
     const { MoverStock } = await import('./formularios')
-    return renderToStaticMarkup(<MoverStock articuloId="a1" />)
+    return renderToStaticMarkup(<MoverStock articuloId="a1" puedeCostos={puedeCostos} />)
   }
 
   // Mismo hallazgo M2: "Ingresar mercadería" y "Corregir por conteo" son las

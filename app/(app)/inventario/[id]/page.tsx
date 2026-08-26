@@ -149,6 +149,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   if (!articulo) notFound()
 
   const puedeEditar = await puedeConSesion(sesion, 'ARTICULOS_EDITAR')
+  const puedeCostos = await puedeConSesion(sesion, 'COSTOS')
   const esProducto = articulo.tipo === 'PRODUCTO'
 
   // Seis meses de sobra para "Cómo se movió": agregarVentasPorMes() sólo usa
@@ -242,7 +243,11 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
           valor={formatearPrecio(articulo.precio.toString())}
           pie={actualizadoHace(articulo.actualizadoEn)}
         />
-        {esProducto && (
+        {/* Sin el permiso COSTOS, el tile no se renderea — no se pone en
+            '—': ese guión afirma que ningún ingreso cargó el costo, que es
+            una afirmación distinta y falsa cuando lo que pasa es que a esta
+            persona no se le muestra. */}
+        {esProducto && puedeCostos && (
           <Tile
             rotulo="ÚLTIMO COSTO"
             valor={ultimoCosto ? formatearPrecio(ultimoCosto.toString()) : '—'}
@@ -255,7 +260,9 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
         )}
       </div>
 
-      {esProducto && !articulo.desactivadoEn && <MoverStock articuloId={articulo.id} />}
+      {esProducto && !articulo.desactivadoEn && (
+        <MoverStock articuloId={articulo.id} puedeCostos={puedeCostos} />
+      )}
 
       {/* El bloque que responde "por qué tengo 3 y no 5", que es la pregunta
           que un dueño hace cuando el inventario no le cierra. Es para lo que la
@@ -304,7 +311,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
                       una nota larga sin truncar se derrama sobre la celda de
                       Cambio en vez de cortarse con "…". */}
                   <TableCell className="max-w-0 truncate p-[11px] px-[7px] text-sm text-muted-foreground">
-                    {detalleDeMovimiento(m)}
+                    {detalleDeMovimiento(m, puedeCostos)}
                   </TableCell>
                   <TableCell
                     className={cn(

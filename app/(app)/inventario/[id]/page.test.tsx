@@ -76,8 +76,11 @@ describe('los tiles de la ficha (Task 4 del rediseño)', () => {
     expect(FUENTE).toMatch(/esProducto && \(\s*<Tile\s*\n\s*marca\s*\n\s*rotulo="EN STOCK"/)
   })
 
-  it('el tile "Último costo" también está condicionado a esProducto', () => {
-    expect(FUENTE).toMatch(/esProducto && \(\s*<Tile\s*\n\s*rotulo="ÚLTIMO COSTO"/)
+  // Además de esProducto, el tile ahora también está condicionado al
+  // permiso COSTOS: sin él, el tile no se renderea (no se pone en '—', que
+  // afirmaría algo distinto y falso — ver el permiso COSTOS).
+  it('el tile "Último costo" también está condicionado a esProducto y a COSTOS', () => {
+    expect(FUENTE).toMatch(/esProducto && puedeCostos && \(\s*<Tile\s*\n\s*rotulo="ÚLTIMO COSTO"/)
   })
 
   // El último costo sale del movimiento más reciente CON costo cargado, no
