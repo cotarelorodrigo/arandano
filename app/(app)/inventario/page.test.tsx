@@ -1,16 +1,26 @@
-// Puro: importa las funciones exportadas de page.tsx, nunca el componente de
-// página en sí — es un Server Component async que abre sesión y consulta
-// Prisma, y este repo no tiene el arnés para montarlo fuera de un request
-// real (mismo criterio que app/(app)/ventas/page.test.tsx). La única
-// excepción es el bloque final, que lee el FUENTE como texto (mismo criterio
-// que app/(app)/ventas/[id]/page.test.tsx) para cablear la categoría, que
-// ningún test puro puede ejercitar sin una sesión real.
+// `Inventario` (el default export) NUNCA se importa ni se monta acá: es un
+// Server Component async que abre sesión y consulta Prisma, y este repo no
+// tiene el arnés para montarlo fuera de un request real (mismo criterio que
+// app/(app)/ventas/page.test.tsx). Lo que SÍ se prueba de ese componente
+// —el `<Encabezado>`, el `Sheet` de categorías, el chip de rama— se verifica
+// leyendo el fuente con `readFileSync` (mismo criterio que
+// app/(app)/ventas/[id]/page.test.tsx), porque no hay forma de renderizarlo
+// sin una sesión real.
+//
+// `Listado`, en cambio, SÍ es un componente y SÍ se renderiza acá
+// (`renderToStaticMarkup`): no abre sesión ni toca Prisma — recibe sus filas
+// ya resueltas a texto — así que puede afirmarse sobre el HTML real y no por
+// grep sobre el fuente. Se extrajo en la ronda de arreglos 1 de la Task 6
+// (ciclo móvil) exactamente para esto: antes vivía embebido en `Inventario`
+// y su cobertura entera era `readFileSync` + `toContain`, que no puede
+// distinguir un `cn()` mal compuesto de uno bien puesto — sólo confirma que
+// la substring existe en algún lugar del archivo.
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   tipoDeQuery, construirDonde, hrefListado, ventanaDePaginas, FiltrosDeInventario,
-  ramaDelArbol, nombreDeRama,
+  ramaDelArbol, nombreDeRama, Listado,
 } from './page'
 import { SIN_CATEGORIA } from './consulta'
 
@@ -198,41 +208,15 @@ describe('FiltrosDeInventario', () => {
   })
 })
 
-describe('el listado pide y muestra la categoría (Task 1 del rediseño)', () => {
+describe('el listado pide la columna categoria', () => {
   const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
 
+  // Sólo esto queda sobre el fuente: es la forma del SELECT de Prisma en
+  // `Inventario` (Server Component), que ningún test puro puede ejercitar
+  // sin una sesión real. Que la fila la MUESTRE, más abajo, ya se prueba
+  // renderizando `Listado` de verdad (Task 6, ronda de arreglos 1).
   it('el select de Prisma trae la columna categoria', () => {
     expect(FUENTE).toMatch(/select:\s*\{[\s\S]*?categoria:\s*true/)
-  })
-
-  it('la fila muestra a.categoria bajo el nombre, sólo si existe', () => {
-    // `a.categoria &&` y no un acceso directo: un artículo sin categoría (la
-    // mayoría, hoy) no puede romper la fila ni mostrar un "null" en pantalla.
-    expect(FUENTE).toContain('{a.categoria &&')
-  })
-})
-
-describe('el vacío por página fuera de rango ofrece una salida (hallazgo M8 del barrido final)', () => {
-  const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
-
-  // El <nav> de paginación vive DENTRO de la rama `articulos.length > 0`
-  // (más abajo en el mismo archivo), así que una página fuera de rango con
-  // `total > 0` mostraba el mensaje de "no hay artículos" SIN ningún control
-  // para volver — indistinguible de una búsqueda sin resultados de verdad.
-  it('con total > 0 ofrece un link "Volver a la primera", distinto del mensaje de cero resultados', () => {
-    // El bloque entero del vacío, aislado del resto del archivo por sus dos
-    // marcadores más cercanos: el comentario que lo antecede y el cierre del
-    // <p>. Sin acotar así, un `toContain` de "Volver a la primera" pasaría
-    // aunque el link estuviera en cualquier otro lugar del archivo.
-    const inicio = FUENTE.indexOf('{articulos.length === 0 ? (')
-    const fin = FUENTE.indexOf('</p>', inicio)
-    expect(inicio, 'no se encontró la rama articulos.length === 0').toBeGreaterThan(-1)
-    const bloque = FUENTE.slice(inicio, fin)
-    expect(bloque).toMatch(/total > 0 \? \(/)
-    expect(bloque).toContain('Volver a la primera')
-    // pagina: 1 y no `pagina` a secas: el link tiene que apuntar SIEMPRE a la
-    // primera página, no a la página fuera de rango que causó el vacío.
-    expect(bloque).toMatch(/hrefListado\(\{[^}]*pagina:\s*1[^}]*\}\)/)
   })
 })
 
@@ -331,24 +315,7 @@ describe('hrefListado con categoría', () => {
   })
 })
 
-describe('el vacío con una rama activa', () => {
-  const FUENTE = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8')
 
-  // Sin esta salida, buscar algo que existe pero está en otra rama se ve
-  // exactamente igual que buscar algo que no existe.
-  it('ofrece salir de la rama conservando la búsqueda', () => {
-    expect(FUENTE).toContain('Buscar en todo el inventario')
-    expect(FUENTE).toMatch(/hrefListado\(\{ busqueda, verInactivos, tipo, cat: null \}\)/)
-  })
-
-  // El caso de la rama va ANTES que el de búsqueda en la cadena de ternarios:
-  // si fuera al revés, una búsqueda sin resultados dentro de una rama caería
-  // en el mensaje genérico y perdería la salida.
-  it('el caso de la rama se evalúa antes que el de la búsqueda', () => {
-    expect(FUENTE.indexOf(') : cat ? (')).toBeGreaterThan(-1)
-    expect(FUENTE.indexOf(') : cat ? (')).toBeLessThan(FUENTE.indexOf(') : busqueda ? ('))
-  })
-})
 
 // ---------------------------------------------------------------------------
 // Task 6 del ciclo móvil: el listado y el árbol de categorías en el teléfono.
@@ -465,39 +432,206 @@ describe('el Encabezado gana su accionMovil en el teléfono (Task 6)', () => {
   })
 })
 
-describe('el listado sigue el patrón grid + display:contents de la Task 4 (Task 6)', () => {
-  const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
+/** Una fila mínima, ya resuelta a texto — la forma que `Listado` recibe de
+ *  verdad, sin ningún `Decimal` de Prisma cruzando a un fixture de test.
+ *  Mismo criterio que `FILA` en `app/(app)/ventas/page.test.tsx`. */
+const FILA: Parameters<typeof Listado>[0]['filas'][number] = {
+  id: 'a1',
+  sku: 'A-0001',
+  nombre: 'Vidrio templado 9H',
+  categoria: 'Accesorios · Protección',
+  tipo: 'PRODUCTO',
+  precioFormateado: '$ 12.000,00',
+  stockTexto: '48',
+  estado: null,
+  desactivado: false,
+}
 
-  it('el contenedor declara las seis anchuras que hoy declaraban los TableHead', () => {
-    expect(FUENTE).toContain('lg:grid-cols-[100px_1fr_110px_140px_110px_120px]')
+function renderListado(props: Partial<Parameters<typeof Listado>[0]> = {}) {
+  return renderToStaticMarkup(
+    <Listado
+      filas={[FILA]}
+      total={1}
+      pagina={1}
+      paginas={1}
+      porPagina={50}
+      busqueda=""
+      verInactivos={false}
+      tipo={null}
+      cat={null}
+      esDuenio
+      {...props}
+    />,
+  )
+}
+
+// Ronda de arreglos 1 de la Task 6 (ciclo móvil): antes de esto, toda esta
+// cobertura leía `page.tsx` con `readFileSync` y hacía `toContain` sobre el
+// texto crudo — el propio comentario de cabecera de este archivo ya avisaba
+// que el grep sobre el fuente debía ser "la única excepción", y acá no lo
+// era: un `cn()` mal compuesto, un `lg:hidden` en el div equivocado o un
+// anidamiento roto seguían pasando con que la substring existiera en algún
+// lugar del archivo. `Listado` (arriba, en `page.tsx`) es un componente
+// puro —sin Prisma, sin sesión— hecho para renderizarse, así que esta task
+// lo extrajo del `articulos.map(...)` que vivía embebido en `Inventario`
+// (Server Component async), mismo criterio que ya usa `Listado` en
+// `app/(app)/ventas/page.test.tsx`.
+describe('Listado: el patrón grid + display:contents (Task 6, ronda de arreglos 1)', () => {
+  it('el contenedor es la tabla ARIA: 1 columna en el teléfono, 6 en escritorio', () => {
+    const html = renderListado()
+    expect(html).toContain('role="table"')
+    // Las mismas seis anchuras que declaraban los <TableHead> de antes.
+    expect(html).toMatch(/class="[^"]*\bgrid-cols-1\b[^"]*\blg:grid-cols-\[100px_1fr_110px_140px_110px_120px\]/)
   })
 
-  it('ya no queda ningún <Table>/<TableRow>/<TableCell>', () => {
-    expect(FUENTE).not.toContain('<Table')
-    expect(FUENTE).not.toContain('<TableRow')
-    expect(FUENTE).not.toContain('<TableCell')
-    expect(FUENTE).not.toContain('<TableHead')
+  it('el encabezado está oculto en el teléfono y se disuelve en escritorio', () => {
+    expect(renderListado()).toContain('role="row" class="hidden lg:contents"')
   })
 
-  it('cada fila lleva role="row" y las celdas role="cell", al menos una por columna', () => {
-    expect(FUENTE).toContain('role="row"')
-    expect(FUENTE).toContain('role="columnheader"')
-    const celdas = (FUENTE.match(/role="cell"/g) ?? []).length
-    expect(celdas).toBeGreaterThanOrEqual(6)
+  it('hay tantos role="columnheader" como columnas declara el grid (6)', () => {
+    expect(renderListado().match(/role="columnheader"/g)).toHaveLength(6)
   })
 
-  it('el hover y la transición de escritorio viven en las celdas, con prefijo lg:', () => {
-    expect(FUENTE).toContain('lg:group-hover:bg-muted/50')
-    expect(FUENTE).toContain('lg:transition-colors')
+  it('toda fila de datos lleva lg:contents y role="row"', () => {
+    const html = renderListado({ filas: [FILA, { ...FILA, id: 'a2', sku: 'A-0002' }], total: 2 })
+    // El encabezado + las dos filas de datos: las tres son role="row" y las
+    // tres llevan lg:contents.
+    const filas = html.match(/role="row" class="[^"]*"/g) ?? []
+    expect(filas).toHaveLength(3)
+    for (const fila of filas) expect(fila).toContain('lg:contents')
   })
 
-  it('el borde entre filas: lg:border-b y lg:group-last:border-b-0 en las celdas', () => {
-    expect(FUENTE).toContain('lg:border-b')
-    expect(FUENTE).toContain('lg:group-last:border-b-0')
+  it('cada fila de datos tiene 6 celdas con role="cell", tantas como columnheader', () => {
+    expect(renderListado().match(/role="cell"/g)).toHaveLength(6)
   })
 
-  it('la fila lleva "group" para que el hover de escritorio la reconozca', () => {
-    expect(FUENTE).toMatch(/role="row"\s+className="group /)
+  it('la fila resalta al pasar el mouse en escritorio (group + group-hover en las 6 celdas)', () => {
+    const html = renderListado()
+    expect(html).toContain('role="row" class="group ')
+    const celdas = html.match(/<div[^>]*\brole="cell"[^>]*>/g) ?? []
+    expect(celdas).toHaveLength(6)
+    for (const celda of celdas) expect(celda).toContain('lg:group-hover:bg-muted/50')
+  })
+
+  it('muestra código, nombre, tipo, precio, stock y el chip de estado', () => {
+    const html = renderListado({
+      filas: [{ ...FILA, tipo: 'PRODUCTO', desactivado: false }],
+    })
+    expect(html).toContain('A-0001')
+    expect(html).toContain('Vidrio templado 9H')
+    expect(html).toContain('Producto')
+    expect(html).toContain('$ 12.000,00')
+    expect(html).toContain('48')
+  })
+
+  it('la categoría aparece bajo el nombre sólo si existe (desktop) y fundida en la meta (teléfono)', () => {
+    const conCategoria = renderListado({ filas: [{ ...FILA, categoria: 'Accesorios · Protección' }] })
+    expect(conCategoria).toContain('Accesorios · Protección')
+    // La celda de escritorio de la categoría es "hidden lg:block", adentro
+    // de la celda de Nombre.
+    expect(conCategoria).toMatch(/class="hidden text-\[11px\] text-muted-foreground lg:block">Accesorios · Protección/)
+    // En el teléfono se funde con el código en la línea de meta.
+    expect(conCategoria).toContain('A-0001 · Accesorios · Protección')
+
+    const sinCategoria = renderListado({ filas: [{ ...FILA, categoria: null }] })
+    expect(sinCategoria).not.toContain('Accesorios · Protección')
+  })
+
+  it('un servicio muestra "—" de stock, tanto en la celda de escritorio como en la meta del teléfono', () => {
+    const html = renderListado({
+      filas: [{ ...FILA, tipo: 'SERVICIO', stockTexto: '—' }],
+    })
+    expect(html).toContain('Servicio')
+    expect((html.match(/—/g) ?? []).length).toBe(2)
+  })
+
+  it('el chip de estado aparece en la meta del teléfono y en su propia celda de escritorio', () => {
+    const html = renderListado({
+      filas: [{ ...FILA, estado: 'NEGATIVO' }],
+    })
+    expect((html.match(/Stock negativo/g) ?? []).length).toBe(2)
+  })
+
+  it('en el teléfono, Código y Tipo dejan de ser columna propia y se funden en la línea de meta', () => {
+    const html = renderListado()
+    // La línea de meta del teléfono, con el código.
+    expect(html).toContain('A-0001 · Accesorios · Protección')
+    // Las celdas de escritorio de Código y Tipo, ocultas en el teléfono.
+    const ocultas = html.match(/class="[^"]*\bhidden\b[^"]*\blg:block\b[^"]*"/g) ?? []
+    expect(ocultas.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('el borde entre filas vive en cada celda, no en la fila (escritorio)', () => {
+    const html = renderListado({ filas: [FILA, { ...FILA, id: 'a2', sku: 'A-0002' }], total: 2 })
+    const celdas = html.match(/<div[^>]*\brole="cell"[^>]*>/g) ?? []
+    expect(celdas).toHaveLength(12) // 6 columnas × 2 filas
+    for (const celda of celdas) expect(celda).toContain('lg:border-b')
+    const conGroupLast = celdas.filter((c) => c.includes('lg:group-last:border-b-0'))
+    expect(conGroupLast).toHaveLength(12)
+  })
+
+  it('el hover funde el color: transition-colors en cada celda', () => {
+    const celdas = renderListado().match(/<div[^>]*\brole="cell"[^>]*>/g) ?? []
+    expect(celdas).toHaveLength(6)
+    for (const celda of celdas) expect(celda).toContain('lg:transition-colors')
+  })
+
+  // Nombre es la celda más alta de la fila cuando hay categoría (dos
+  // líneas), así que no lleva el envoltorio de centrado que sí llevan las
+  // otras cinco (Código, Tipo, Precio, Stock, Estado).
+  it('las celdas más cortas que Nombre centran su contenido con un envoltorio interno, no achicando la celda', () => {
+    const html = renderListado()
+    const envoltorios = [...html.matchAll(/class="lg:flex lg:h-full lg:items-center[^"]*"/g)]
+    expect(envoltorios, 'Código, Tipo, Precio, Stock y Estado: 5 celdas más cortas que Nombre').toHaveLength(5)
+    expect(html).not.toContain('self-center')
+  })
+
+  describe('los vacíos', () => {
+    it('sin nada cargado, el dueño ve la invitación a "Artículo nuevo"', () => {
+      const html = renderListado({ filas: [], total: 0, esDuenio: true })
+      expect(html).toContain('Todavía no cargaste ningún artículo. Empezá por «Artículo nuevo».')
+    })
+
+    it('sin nada cargado, un empleado ve el mensaje genérico', () => {
+      const html = renderListado({ filas: [], total: 0, esDuenio: false })
+      expect(html).toContain('Todavía no hay artículos cargados.')
+      expect(html).not.toContain('Artículo nuevo')
+    })
+
+    it('una búsqueda sin resultados lo dice, sin ninguna rama activa', () => {
+      const html = renderListado({ filas: [], total: 0, busqueda: 'zzz' })
+      // &quot; y no ": React escapa las comillas del texto en el HTML servido.
+      expect(html).toContain('No hay artículos que coincidan con &quot;zzz&quot;.')
+    })
+
+    // El caso de la rama se evalúa ANTES que el de la búsqueda: si fuera al
+    // revés, una búsqueda sin resultados dentro de una rama caería en el
+    // mensaje genérico y perdería la salida de "Buscar en todo el
+    // inventario". Comprobado por comportamiento (con cat Y busqueda a la
+    // vez) y no por el orden literal de un ternario en el fuente.
+    it('con una rama activa Y una búsqueda sin resultados, el mensaje es el de la rama, no el genérico', () => {
+      const html = renderListado({ filas: [], total: 0, cat: 'id-fundas', busqueda: 'zzz' })
+      expect(html).toContain('No hay artículos que coincidan con &quot;zzz&quot; en esta categoría.')
+      expect(html).not.toContain('No hay artículos que coincidan con &quot;zzz&quot;.</p>')
+    })
+
+    it('una rama activa sin búsqueda ofrece salir de la rama', () => {
+      const html = renderListado({ filas: [], total: 0, cat: 'id-fundas' })
+      expect(html).toContain('Esta categoría todavía no tiene artículos.')
+      expect(html).toContain('Buscar en todo el inventario')
+      expect(html).toMatch(/href="\/inventario"[^>]*>\s*Buscar en todo el inventario/)
+    })
+
+    // Hallazgo M8 del barrido final: el <nav> de paginación vive DENTRO de
+    // la rama `filas.length > 0`, así que una página fuera de rango con
+    // `total > 0` mostraba "no hay artículos" sin ningún control para
+    // volver — indistinguible de una búsqueda sin resultados de verdad.
+    it('con total > 0 (página fuera de rango) ofrece volver a la primera, distinto del mensaje de cero resultados', () => {
+      const html = renderListado({ filas: [], total: 5, pagina: 9 })
+      expect(html).toContain('Esta página no tiene artículos.')
+      // pagina: 1 y no la página fuera de rango que causó el vacío.
+      expect(html).toContain('/inventario"')
+    })
   })
 })
 

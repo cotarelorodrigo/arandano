@@ -215,6 +215,15 @@ export function FiltrosDeInventario({
             aria-hidden="true"
             className="pointer-events-none absolute top-1/2 left-[13px] size-4 -translate-y-1/2 text-muted-foreground"
           />
+          {/* `h-10` (40px) y no los 46px que dibuja `v3Epdn` (el frame
+              "Buscador" de `Móvil / Inventario`): decisión deliberada de
+              consistencia, no un olvido. `h-10 rounded-[9px]` es la altura
+              de CUALQUIER input de esta app —los buscadores de `/ventas` y
+              `/servicio-tecnico`, y cada campo de `formularios.tsx` en esta
+              misma carpeta y en `/usuarios`, `/vender`— así que 46px acá
+              haría que este buscador fuera el único de la aplicación con su
+              propia altura, sin ganar nada a cambio (el resto del frame ya
+              sigue la maqueta al pixel). */}
           <Input
             name="q"
             defaultValue={busqueda}
@@ -291,6 +300,330 @@ function claseStock(estado: EstadoDeFila): string {
     default:
       return 'font-semibold text-foreground'
   }
+}
+
+/** Una fila ya resuelta a texto, lista para `Listado`: sin `Decimal` de
+ *  Prisma ni ningún otro tipo que no cruce limpio a un fixture de test —
+ *  mismo criterio que `FilaDeVenta` en `app/(app)/ventas/page.tsx`. */
+export type FilaDeArticulo = {
+  id: string
+  sku: string
+  nombre: string
+  categoria: string | null
+  tipo: 'PRODUCTO' | 'SERVICIO'
+  precioFormateado: string
+  /** Ya resuelto — "—" para un servicio, la cantidad formateada si no. Un
+   *  solo cómputo (`Inventario`, más abajo): lo muestran por igual la celda
+   *  de escritorio y la línea de meta del teléfono. */
+  stockTexto: string
+  estado: EstadoDeFila
+  desactivado: boolean
+}
+
+/**
+ * El listado: el patrón grid + `display:contents` de la Task 4 (docblock de
+ * referencia en `app/(app)/ventas/page.tsx:344-408` — leerlo antes de tocar
+ * este componente). Extraído como componente puro (Task 6, ronda de
+ * arreglos 1), mismo criterio que `Listado` de `/ventas`: sin esto, la única
+ * forma de cubrir el grid, los roles ARIA y las cuatro reglas del patrón era
+ * un `readFileSync` + `toContain` sobre el fuente, que no puede distinguir
+ * un `cn()` mal compuesto o un anidamiento roto de uno bien puesto — sólo
+ * confirma que la substring aparece en algún lugar del archivo. Con esto
+ * renderizado de verdad, un test puede afirmar sobre el HTML real. (El chip
+ * de la rama activa y el resto de lo que vive directo en `Inventario` —el
+ * `<Encabezado>`, el `Sheet` de categorías— siguen sin poder renderizarse:
+ * ver el comentario de cabecera de `page.test.tsx`.)
+ *
+ * Las seis anchuras del `grid-cols` son las mismas que declaraban sus
+ * encabezados de antes (100, auto→1fr, 110, 140, 110, 120), y el DOM de
+ * cada fila mantiene el MISMO orden 1-a-6 de esas columnas (Código, Nombre,
+ * Tipo, Precio, Stock, Estado) — a propósito, sin ningún `order`/`col-start`
+ * explícito: mezclarlos con el auto-placement de Grid invita a bugs de
+ * packing imposibles de ver sin un browser real (este repo no tiene jsdom).
+ *
+ * Lo que en el teléfono (design/arandano.pen, `b5J1gV` > `QqV26`) se ve como
+ * "Nombre" y "Precio" adyacentes en una sola línea es, en realidad, la fila
+ * entera en `flex-wrap`: Código y Tipo —entre medio de Nombre y Precio en el
+ * DOM— están `hidden` en el teléfono (`display:none`, fuera del flujo), así
+ * que Nombre y Precio quedan pegados igual, sin hueco. La línea de meta (más
+ * abajo, con Código+categoría fundidos, el chip y el stock) fuerza el salto
+ * a una segunda línea con `basis-full`. En escritorio esa línea de meta se
+ * saca entera (`lg:hidden`, no consume columna) y las cuatro celdas ocultas
+ * del teléfono vuelven a mostrarse — el resultado es exactamente la tabla de
+ * seis columnas de siempre.
+ */
+export function Listado({
+  filas,
+  total,
+  pagina,
+  paginas,
+  porPagina,
+  busqueda,
+  verInactivos,
+  tipo,
+  cat,
+  esDuenio,
+}: {
+  filas: FilaDeArticulo[]
+  total: number
+  pagina: number
+  paginas: number
+  porPagina: number
+  busqueda: string
+  verInactivos: boolean
+  tipo: TipoFiltro | null
+  cat: string | null
+  esDuenio: boolean
+}) {
+  return (
+    <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border bg-card">
+      {filas.length === 0 ? (
+        <p className="p-[14px] text-sm text-muted-foreground lg:p-[18px]">
+          {/* Los dos vacíos no son el mismo vacío (hallazgo M8 del
+              barrido final): con `total > 0` la página quedó fuera de
+              rango (`?p` se clampea a [1, 1.000.000], no a `paginas`), y
+              el <nav> de paginación vive DENTRO de la rama
+              `filas.length > 0` de más abajo — sin este link, ese
+              vacío por página fuera de rango no ofrece ningún control
+              para volver, y quien llegó ahí (un link viejo, una URL
+              editada a mano) queda sin forma de ver el listado salvo
+              editando la URL de nuevo. Mismo criterio que ya usa
+              `/ventas` para el mismo caso. */}
+          {total > 0 ? (
+            <>
+              Esta página no tiene artículos.{' '}
+              <Link href={hrefListado({ busqueda, verInactivos, tipo, cat, pagina: 1 })} className="underline">
+                Volver a la primera
+              </Link>
+              .
+            </>
+          ) : cat ? (
+            /* El vacío CON una rama activa necesita salida, y por eso es su
+               propio caso y no el mensaje de búsqueda de abajo: sin este
+               link, buscar algo que existe pero está en otra rama se ve
+               exactamente igual que buscar algo que no existe. El link
+               limpia la rama y CONSERVA la búsqueda, que es lo que la
+               persona quería hacer. */
+            <>
+              {busqueda
+                ? `No hay artículos que coincidan con "${busqueda}" en esta categoría.`
+                : 'Esta categoría todavía no tiene artículos.'}{' '}
+              <Link
+                href={hrefListado({ busqueda, verInactivos, tipo, cat: null })}
+                className="underline"
+              >
+                Buscar en todo el inventario
+              </Link>
+              .
+            </>
+          ) : busqueda ? (
+            // Un local recién dado de alta llega acá con cero artículos, y ésta es
+            // la primera pantalla que ve. En blanco no diría qué hacer.
+            `No hay artículos que coincidan con "${busqueda}".`
+          ) : esDuenio ? (
+            'Todavía no cargaste ningún artículo. Empezá por «Artículo nuevo».'
+          ) : (
+            'Todavía no hay artículos cargados.'
+          )}
+        </p>
+      ) : (
+        <>
+          <div role="table" className="grid grid-cols-1 lg:grid-cols-[100px_1fr_110px_140px_110px_120px]">
+            <div role="row" className="hidden lg:contents">
+              <div role="columnheader" className="bg-muted px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                Código
+              </div>
+              <div role="columnheader" className="bg-muted px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                Nombre
+              </div>
+              <div role="columnheader" className="bg-muted px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                Tipo
+              </div>
+              <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                Precio
+              </div>
+              <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                Stock
+              </div>
+              {/* Sin rótulo, a propósito (design/arandano.pen, nodo
+                  `BIcFE`): es el encabezado del chip de estado, y la
+                  mayoría de las filas no lleva ninguno. */}
+              <div role="columnheader" className="bg-muted px-[7px] py-3 pr-[18px] text-right text-[10px] font-bold text-muted-foreground" />
+            </div>
+
+            {filas.map((f) => {
+              const claseStockCelda =
+                f.tipo === 'SERVICIO' ? 'font-normal text-muted-foreground' : claseStock(f.estado)
+              // La línea de meta del teléfono (nodo `w6wW2e`): código +
+              // categoría fundidos en un solo texto — la categoría sólo
+              // si existe, mismo dato que la segunda línea de Nombre en
+              // escritorio.
+              const detalleMovil = f.categoria ? `${f.sku} · ${f.categoria}` : f.sku
+              return (
+                <div
+                  key={f.id}
+                  role="row"
+                  className="group flex flex-wrap items-center gap-x-[10px] gap-y-[5px] border-b p-[11px] px-[14px] last:border-b-0 lg:contents"
+                >
+                  {/* Código: se funde en la línea de meta del teléfono
+                      (más abajo); su propia celda queda oculta ahí y
+                      vuelve en escritorio. */}
+                  <div
+                    role="cell"
+                    className={cn(
+                      estilos.archivo,
+                      'hidden whitespace-nowrap text-sm lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors',
+                      claseCodigoOPrecio(f.desactivado),
+                    )}
+                  >
+                    <div className="lg:flex lg:h-full lg:items-center">{f.sku}</div>
+                  </div>
+
+                  {/* Nombre: la celda más alta de la fila cuando hay
+                      categoría (dos líneas) — por eso no lleva el
+                      envoltorio de centrado que sí llevan las demás, ver
+                      el docblock de esta función. */}
+                  <div
+                    role="cell"
+                    className="min-w-0 flex-1 text-sm lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+                  >
+                    <div className="flex flex-col gap-0.5">
+                      <Link
+                        href={`/inventario/${f.id}`}
+                        className="text-sm font-medium text-foreground hover:underline"
+                      >
+                        {f.nombre}
+                      </Link>
+                      {/* Segunda línea, bajo el nombre (nodo `HU2a7`):
+                          un string de dos niveles ya tipeado a mano por
+                          quien carga el artículo ("Accesorios ·
+                          Protección"), no una jerarquía que el código
+                          interprete. Ausente en la mayoría de los
+                          artículos hoy: nullable, y sin ella la fila no
+                          pierde ninguna línea. Sólo en escritorio: en el
+                          teléfono el mismo dato ya sale en la línea de
+                          meta, junto al código. */}
+                      {f.categoria && (
+                        <span className="hidden text-[11px] text-muted-foreground lg:block">
+                          {f.categoria}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Tipo: no tiene equivalente visible en el teléfono
+                      (el "Producto"/"Servicio" ya se lee de si Stock
+                      muestra unidades o un guion) — sólo escritorio. */}
+                  <div
+                    role="cell"
+                    className="hidden whitespace-nowrap text-sm text-foreground lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+                  >
+                    <div className="lg:flex lg:h-full lg:items-center">
+                      {f.tipo === 'PRODUCTO' ? 'Producto' : 'Servicio'}
+                    </div>
+                  </div>
+
+                  {/* Precio: junto a Nombre en la misma línea del
+                      teléfono (`shrink-0`, nunca se lo pisa el nombre
+                      largo gracias al `min-w-0` de arriba). */}
+                  <div
+                    role="cell"
+                    className={cn(
+                      estilos.archivo,
+                      'shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors',
+                      claseCodigoOPrecio(f.desactivado),
+                    )}
+                  >
+                    <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
+                      {f.precioFormateado}
+                    </div>
+                  </div>
+
+                  {/* Meta del teléfono (nodo `w6wW2e`): código+categoría,
+                      el chip de estado y el stock, en su propia línea.
+                      `basis-full` fuerza el salto de línea del `flex-wrap`
+                      de la fila —Código y Tipo, ocultos arriba, no dejan
+                      hueco—, y `lg:hidden` la saca del todo en
+                      escritorio, donde no consume ninguna columna. */}
+                  <div className="flex basis-full items-center gap-2 lg:hidden">
+                    <span title={detalleMovil} className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+                      {detalleMovil}
+                    </span>
+                    <ChipEstado estado={f.estado} />
+                    <span className={cn(estilos.archivo, 'shrink-0 text-[12px] tabular-nums', claseStockCelda)}>
+                      {f.stockTexto}
+                    </span>
+                  </div>
+
+                  {/* Stock: propia celda de escritorio; en el teléfono el
+                      mismo valor ya salió en la línea de meta. */}
+                  <div
+                    role="cell"
+                    className={cn(
+                      estilos.archivo,
+                      'hidden whitespace-nowrap text-right text-sm tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors',
+                      claseStockCelda,
+                    )}
+                  >
+                    <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{f.stockTexto}</div>
+                  </div>
+
+                  {/* Estado: propia celda de escritorio; en el teléfono
+                      el mismo chip ya salió en la línea de meta. */}
+                  <div
+                    role="cell"
+                    className="hidden text-right lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+                  >
+                    <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
+                      <ChipEstado estado={f.estado} />
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {paginas > 1 && (
+            <nav
+              aria-label="Paginación"
+              className="mt-auto flex items-center justify-between border-t px-[14px] py-3 lg:px-[18px]"
+            >
+              <span className="text-[12px] text-muted-foreground">
+                {formatearCantidad(String((pagina - 1) * porPagina + 1))}–
+                {formatearCantidad(String(Math.min(pagina * porPagina, total)))} de{' '}
+                {formatearCantidad(String(total))} {total === 1 ? 'artículo' : 'artículos'}
+              </span>
+              <div className="flex items-center gap-[6px]">
+                {ventanaDePaginas(pagina, paginas).map((n) =>
+                  n === pagina ? (
+                    <Button
+                      key={n}
+                      type="button"
+                      aria-current="page"
+                      size="icon-sm"
+                      className={`${estilos.archivo} size-[30px] rounded-lg text-[13px] font-semibold`}
+                    >
+                      {n}
+                    </Button>
+                  ) : (
+                    <Button
+                      key={n}
+                      asChild
+                      variant="outline"
+                      size="icon-sm"
+                      className={`${estilos.archivo} size-[30px] rounded-lg text-[13px] font-semibold text-foreground-soft`}
+                    >
+                      <Link href={hrefListado({ busqueda, verInactivos, tipo, cat, pagina: n, conservarPagina: true })}>{n}</Link>
+                    </Button>
+                  ),
+                )}
+              </div>
+            </nav>
+          )}
+        </>
+      )}
+    </div>
+  )
 }
 
 export default async function Inventario({
@@ -436,7 +769,7 @@ export default async function Inventario({
                   árbol de veinte ramas, según CLAUDE.md — y una hoja inferior
                   queda acotada a `h-auto`, sin espacio garantizado para
                   scrollear. */}
-              <SheetContent side="left" className="w-[280px] gap-0 overflow-y-auto p-3 sm:max-w-none">
+              <SheetContent side="left" className="w-[280px] gap-0 overflow-y-auto p-3">
                 {/* sr-only: el panel ya muestra su propio título visible
                     ("CATEGORÍAS"); esto es sólo lo que Radix pide para
                     `aria-labelledby`/`aria-describedby` del diálogo. */}
@@ -500,289 +833,38 @@ export default async function Inventario({
           </div>
 
         {/* El listado, dentro de su propia card (design/arandano.pen, nodo
-            `BT29h`) — antes era una <table> suelta en la pantalla. */}
-        <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border bg-card">
-          {articulos.length === 0 ? (
-            <p className="p-[14px] text-sm text-muted-foreground lg:p-[18px]">
-              {/* Los dos vacíos no son el mismo vacío (hallazgo M8 del
-                  barrido final): con `total > 0` la página quedó fuera de
-                  rango (`?p` se clampea a [1, 1.000.000], no a `paginas`), y
-                  el <nav> de paginación vive DENTRO de la rama
-                  `articulos.length > 0` de más abajo — sin este link, ese
-                  vacío por página fuera de rango no ofrece ningún control
-                  para volver, y quien llegó ahí (un link viejo, una URL
-                  editada a mano) queda sin forma de ver el listado salvo
-                  editando la URL de nuevo. Mismo criterio que ya usa
-                  `/ventas` para el mismo caso. */}
-              {total > 0 ? (
-                <>
-                  Esta página no tiene artículos.{' '}
-                  <Link href={hrefListado({ busqueda, verInactivos, tipo, cat, pagina: 1 })} className="underline">
-                    Volver a la primera
-                  </Link>
-                  .
-                </>
-              ) : cat ? (
-                /* El vacío CON una rama activa necesita salida, y por eso es su
-                   propio caso y no el mensaje de búsqueda de abajo: sin este
-                   link, buscar algo que existe pero está en otra rama se ve
-                   exactamente igual que buscar algo que no existe. El link
-                   limpia la rama y CONSERVA la búsqueda, que es lo que la
-                   persona quería hacer. */
-                <>
-                  {busqueda
-                    ? `No hay artículos que coincidan con "${busqueda}" en esta categoría.`
-                    : 'Esta categoría todavía no tiene artículos.'}{' '}
-                  <Link
-                    href={hrefListado({ busqueda, verInactivos, tipo, cat: null })}
-                    className="underline"
-                  >
-                    Buscar en todo el inventario
-                  </Link>
-                  .
-                </>
-              ) : busqueda ? (
-                // Un local recién dado de alta llega acá con cero artículos, y ésta es
-                // la primera pantalla que ve. En blanco no diría qué hacer.
-                `No hay artículos que coincidan con "${busqueda}".`
-              ) : esDuenio ? (
-                'Todavía no cargaste ningún artículo. Empezá por «Artículo nuevo».'
-              ) : (
-                'Todavía no hay artículos cargados.'
-              )}
-            </p>
-          ) : (
-            <>
-              {/* El patrón de listado (Task 4 del ciclo móvil, docblock de
-                  referencia en app/(app)/ventas/page.tsx:344-408): grid +
-                  `display:contents` en vez del componente `Table` de shadcn.
-                  Las seis anchuras son las mismas que declaraban sus
-                  encabezados de arriba (100, auto→1fr, 110, 140, 110, 120), y
-                  el DOM de cada fila mantiene el MISMO orden 1-a-6 de esas
-                  columnas (Código, Nombre, Tipo, Precio, Stock, Estado) — a
-                  propósito, sin
-                  ningún `order`/`col-start` explícito: mezclarlos con el
-                  auto-placement de Grid invita a bugs de packing imposibles
-                  de ver sin un browser real (este repo no tiene jsdom).
-
-                  Lo que en el teléfono (design/arandano.pen, `b5J1gV` >
-                  `QqV26`) se ve como "Nombre" y "Precio" adyacentes en una
-                  sola línea es, en realidad, la fila entera en
-                  `flex-wrap`: Código y Tipo —entre medio de Nombre y
-                  Precio en el DOM— están `hidden` en el teléfono
-                  (`display:none`, fuera del flujo), así que Nombre y Precio
-                  quedan pegados igual, sin hueco. La línea de meta (más
-                  abajo, con Código+categoría fundidos, el chip y el stock)
-                  fuerza el salto a una segunda línea con `basis-full`. En
-                  escritorio esa línea de meta se saca entera (`lg:hidden`,
-                  no consume columna) y las cuatro celdas ocultas del
-                  teléfono vuelven a mostrarse — el resultado es exactamente
-                  la tabla de seis columnas de siempre. */}
-              <div role="table" className="grid grid-cols-1 lg:grid-cols-[100px_1fr_110px_140px_110px_120px]">
-                <div role="row" className="hidden lg:contents">
-                  <div role="columnheader" className="bg-muted px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                    Código
-                  </div>
-                  <div role="columnheader" className="bg-muted px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                    Nombre
-                  </div>
-                  <div role="columnheader" className="bg-muted px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                    Tipo
-                  </div>
-                  <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                    Precio
-                  </div>
-                  <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                    Stock
-                  </div>
-                  {/* Sin rótulo, a propósito (design/arandano.pen, nodo
-                      `BIcFE`): es el encabezado del chip de estado, y la
-                      mayoría de las filas no lleva ninguno. */}
-                  <div role="columnheader" className="bg-muted px-[7px] py-3 pr-[18px] text-right text-[10px] font-bold text-muted-foreground" />
-                </div>
-
-                {articulos.map((a) => {
-                  const desactivado = a.desactivadoEn !== null
-                  const estado = estadoDeFila({ tipo: a.tipo, stock: a.stock, desactivado })
-                  // Un guion y NO un 0: el motor no le descuenta stock a un
-                  // servicio (lib/ventas/crear.ts filtra por esProducto), así
-                  // que un 0 se leería como faltante y alguien saldría a
-                  // comprar lo que no existe. Un solo cómputo: lo muestran
-                  // por igual la celda de escritorio y la línea de meta del
-                  // teléfono.
-                  const stockTexto =
-                    a.tipo === 'SERVICIO' ? '—' : formatearCantidad(a.stock.toString())
-                  const claseStockCelda =
-                    a.tipo === 'SERVICIO' ? 'font-normal text-muted-foreground' : claseStock(estado)
-                  // La línea de meta del teléfono (nodo `w6wW2e`): código +
-                  // categoría fundidos en un solo texto — la categoría sólo
-                  // si existe, mismo dato que la segunda línea de Nombre en
-                  // escritorio.
-                  const detalleMovil = a.categoria ? `${a.sku} · ${a.categoria}` : a.sku
-                  return (
-                    <div
-                      key={a.id}
-                      role="row"
-                      className="group flex flex-wrap items-center gap-x-[10px] gap-y-[5px] border-b p-[11px] px-[14px] last:border-b-0 lg:contents"
-                    >
-                      {/* Código: se funde en la línea de meta del teléfono
-                          (más abajo); su propia celda queda oculta ahí y
-                          vuelve en escritorio. */}
-                      <div
-                        role="cell"
-                        className={cn(
-                          estilos.archivo,
-                          'hidden whitespace-nowrap text-sm lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors',
-                          claseCodigoOPrecio(desactivado),
-                        )}
-                      >
-                        <div className="lg:flex lg:h-full lg:items-center">{a.sku}</div>
-                      </div>
-
-                      {/* Nombre: la celda más alta de la fila cuando hay
-                          categoría (dos líneas) — por eso no lleva el
-                          envoltorio de centrado que sí llevan las demás, ver
-                          el docblock de `Listado` en ventas/page.tsx. */}
-                      <div
-                        role="cell"
-                        className="min-w-0 flex-1 text-sm lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
-                      >
-                        <div className="flex flex-col gap-0.5">
-                          <Link
-                            href={`/inventario/${a.id}`}
-                            className="text-sm font-medium text-foreground hover:underline"
-                          >
-                            {a.nombre}
-                          </Link>
-                          {/* Segunda línea, bajo el nombre (nodo `HU2a7`):
-                              un string de dos niveles ya tipeado a mano por
-                              quien carga el artículo ("Accesorios ·
-                              Protección"), no una jerarquía que el código
-                              interprete. Ausente en la mayoría de los
-                              artículos hoy: nullable, y sin ella la fila no
-                              pierde ninguna línea. Sólo en escritorio: en el
-                              teléfono el mismo dato ya sale en la línea de
-                              meta, junto al código. */}
-                          {a.categoria && (
-                            <span className="hidden text-[11px] text-muted-foreground lg:block">
-                              {a.categoria}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Tipo: no tiene equivalente visible en el teléfono
-                          (el "Producto"/"Servicio" ya se lee de si Stock
-                          muestra unidades o un guion) — sólo escritorio. */}
-                      <div
-                        role="cell"
-                        className="hidden whitespace-nowrap text-sm text-foreground lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
-                      >
-                        <div className="lg:flex lg:h-full lg:items-center">
-                          {a.tipo === 'PRODUCTO' ? 'Producto' : 'Servicio'}
-                        </div>
-                      </div>
-
-                      {/* Precio: junto a Nombre en la misma línea del
-                          teléfono (`shrink-0`, nunca se lo pisa el nombre
-                          largo gracias al `min-w-0` de arriba). */}
-                      <div
-                        role="cell"
-                        className={cn(
-                          estilos.archivo,
-                          'shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors',
-                          claseCodigoOPrecio(desactivado),
-                        )}
-                      >
-                        <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
-                          {formatearPrecio(a.precio.toString())}
-                        </div>
-                      </div>
-
-                      {/* Meta del teléfono (nodo `w6wW2e`): código+categoría,
-                          el chip de estado y el stock, en su propia línea.
-                          `basis-full` fuerza el salto de línea del `flex-wrap`
-                          de la fila —Código y Tipo, ocultos arriba, no dejan
-                          hueco—, y `lg:hidden` la saca del todo en
-                          escritorio, donde no consume ninguna columna. */}
-                      <div className="flex basis-full items-center gap-2 lg:hidden">
-                        <span title={detalleMovil} className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-                          {detalleMovil}
-                        </span>
-                        <ChipEstado estado={estado} />
-                        <span className={cn(estilos.archivo, 'shrink-0 text-[12px] tabular-nums', claseStockCelda)}>
-                          {stockTexto}
-                        </span>
-                      </div>
-
-                      {/* Stock: propia celda de escritorio; en el teléfono el
-                          mismo valor ya salió en la línea de meta. */}
-                      <div
-                        role="cell"
-                        className={cn(
-                          estilos.archivo,
-                          'hidden whitespace-nowrap text-right text-sm tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors',
-                          claseStockCelda,
-                        )}
-                      >
-                        <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{stockTexto}</div>
-                      </div>
-
-                      {/* Estado: propia celda de escritorio; en el teléfono
-                          el mismo chip ya salió en la línea de meta. */}
-                      <div
-                        role="cell"
-                        className="hidden text-right lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
-                      >
-                        <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
-                          <ChipEstado estado={estado} />
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-
-              {paginas > 1 && (
-                <nav
-                  aria-label="Paginación"
-                  className="mt-auto flex items-center justify-between border-t px-[14px] py-3 lg:px-[18px]"
-                >
-                  <span className="text-[12px] text-muted-foreground">
-                    {formatearCantidad(String((pagina - 1) * POR_PAGINA + 1))}–
-                    {formatearCantidad(String(Math.min(pagina * POR_PAGINA, total)))} de{' '}
-                    {formatearCantidad(String(total))} {total === 1 ? 'artículo' : 'artículos'}
-                  </span>
-                  <div className="flex items-center gap-[6px]">
-                    {ventanaDePaginas(pagina, paginas).map((n) =>
-                      n === pagina ? (
-                        <Button
-                          key={n}
-                          type="button"
-                          aria-current="page"
-                          size="icon-sm"
-                          className={`${estilos.archivo} size-[30px] rounded-lg text-[13px] font-semibold`}
-                        >
-                          {n}
-                        </Button>
-                      ) : (
-                        <Button
-                          key={n}
-                          asChild
-                          variant="outline"
-                          size="icon-sm"
-                          className={`${estilos.archivo} size-[30px] rounded-lg text-[13px] font-semibold text-foreground-soft`}
-                        >
-                          <Link href={hrefListado({ busqueda, verInactivos, tipo, cat, pagina: n, conservarPagina: true })}>{n}</Link>
-                        </Button>
-                      ),
-                    )}
-                  </div>
-                </nav>
-              )}
-            </>
-          )}
-        </div>
+            `BT29h`) — antes era una <table> suelta en la pantalla. Extraído
+            como componente puro `Listado` (ronda de arreglos 1 de la Task
+            6): ver su docblock, más arriba. */}
+        <Listado
+          filas={articulos.map((a) => {
+            const desactivado = a.desactivadoEn !== null
+            return {
+              id: a.id,
+              sku: a.sku,
+              nombre: a.nombre,
+              categoria: a.categoria,
+              tipo: a.tipo,
+              precioFormateado: formatearPrecio(a.precio.toString()),
+              // Un guion y NO un 0: el motor no le descuenta stock a un
+              // servicio (lib/ventas/crear.ts filtra por esProducto), así
+              // que un 0 se leería como faltante y alguien saldría a
+              // comprar lo que no existe.
+              stockTexto: a.tipo === 'SERVICIO' ? '—' : formatearCantidad(a.stock.toString()),
+              estado: estadoDeFila({ tipo: a.tipo, stock: a.stock, desactivado }),
+              desactivado,
+            }
+          })}
+          total={total}
+          pagina={pagina}
+          paginas={paginas}
+          porPagina={POR_PAGINA}
+          busqueda={busqueda}
+          verInactivos={verInactivos}
+          tipo={tipo}
+          cat={cat}
+          esDuenio={esDuenio}
+        />
         </div>
       </div>
     </>
