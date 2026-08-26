@@ -231,6 +231,24 @@ el proyecto junta lo que alguien tiene que dibujar en Pencil.
    cerrar turno. La maqueta no lo dibuja abierto.
 3. **El botón de cerrar del drawer.** La maqueta lo pone sobre el velo, afuera
    del paño; `SheetContent` lo trae adentro, en la esquina. Manda la maqueta.
+4. **El `more-vertical` de `/inventario/[id]`, que NO se construye.** Es la
+   excepción de esta lista y por eso vale explicarla. En `/vender` la
+   derivación está forzada por la propia maqueta: sus dos chips —caja y
+   dólar— son de sólo lectura, sin ningún control adentro, así que abrir y
+   cerrar el turno tiene que vivir en algún lado y el único lado que queda es
+   el menú. En la ficha de artículo no pasa eso: sus dos acciones ya están al
+   pie (`Desactivar` y `Guardar cambios`, 50 px de alto) y las secundarias
+   —ingresar mercadería, corregir por conteo, exportar CSV— ya están en el
+   cuerpo. No queda nada que el menú pueda contener sin inventarlo, y un botón
+   que abre un menú inventado es peor que la ausencia del botón. Se deja sin
+   construir y la maqueta debe decir qué lleva.
+
+**Y una divergencia que este trabajo NO cierra**: `App / Venta detalle`
+(escritorio) dibuja un `Botón · Imprimir` que el código nunca construyó —no
+existe impresión de ventas, sólo el ticket de órdenes—. El frame móvil dibuja
+el mismo `printer`. La ranura derecha de esa pantalla **queda vacía**, igual
+que hoy en escritorio: imprimir una venta es una feature, no presentación, y
+este ciclo no la agrega.
 
 ## 8. Verificación
 
