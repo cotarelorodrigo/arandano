@@ -122,14 +122,14 @@ describe('PanelEstado (Task 4 del rediseño: el paño "ESTADO ACTUAL")', () => {
 })
 
 describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
-  function render(opts: { anulada?: boolean; esDuenio?: boolean } = {}) {
+  function render(opts: { anulada?: boolean; puedeAnular?: boolean } = {}) {
     return renderToStaticMarkup(
       <FichaDeOrden
         titulo="Orden #221 · Samsung A54"
         subtitulo="Ingresó el 29/07/2026 · hace 23 días en el local"
         ordenId="o-1"
         anulada={opts.anulada ?? false}
-        esDuenio={opts.esDuenio ?? true}
+        puedeAnular={opts.puedeAnular ?? true}
         accionAnular={accionFalsa}
         columnaIzquierda={<div>cuerpo izquierdo</div>}
         columnaDerecha={<div>bitácora</div>}
@@ -142,25 +142,25 @@ describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
     expect(html).toMatch(/href="\/servicio-tecnico\/o-1\/ticket"[^>]*>[\s\S]*?Reimprimir ticket/)
   })
 
-  it('el dueño con la orden viva ve "Anular orden"', () => {
-    const html = render({ esDuenio: true, anulada: false })
+  it('con el permiso y la orden viva, ve "Anular orden"', () => {
+    const html = render({ puedeAnular: true, anulada: false })
     expect(html).toContain('Anular orden')
   })
 
-  it('un empleado NO ve "Anular orden", aunque la orden esté viva', () => {
-    const html = render({ esDuenio: false, anulada: false })
+  it('sin el permiso NO ve "Anular orden", aunque la orden esté viva', () => {
+    const html = render({ puedeAnular: false, anulada: false })
     expect(html).not.toContain('Anular orden')
   })
 
-  it('una orden YA anulada no ofrece anularla de nuevo, ni para el dueño', () => {
-    const html = render({ esDuenio: true, anulada: true })
+  it('una orden YA anulada no ofrece anularla de nuevo, ni con el permiso', () => {
+    const html = render({ puedeAnular: true, anulada: true })
     expect(html).not.toContain('Anular orden')
   })
 
   it('el <form> invisible de anular sólo existe cuando el botón puede aparecer', () => {
-    expect(render({ esDuenio: true, anulada: false })).toContain('id="form-anular-orden"')
-    expect(render({ esDuenio: false, anulada: false })).not.toContain('id="form-anular-orden"')
-    expect(render({ esDuenio: true, anulada: true })).not.toContain('id="form-anular-orden"')
+    expect(render({ puedeAnular: true, anulada: false })).toContain('id="form-anular-orden"')
+    expect(render({ puedeAnular: false, anulada: false })).not.toContain('id="form-anular-orden"')
+    expect(render({ puedeAnular: true, anulada: true })).not.toContain('id="form-anular-orden"')
   })
 
   it('las dos columnas del cuerpo se renderizan', () => {
@@ -176,7 +176,7 @@ describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
   // anular: si alguien revirtiera el mecanismo a un submit directo, este caso
   // tiene que quedar en rojo.
   it('"Anular orden" arma la confirmación en vez de anular con un solo click', () => {
-    const html = render({ esDuenio: true, anulada: false })
+    const html = render({ puedeAnular: true, anulada: false })
     const inicio = html.indexOf('Anular orden')
     expect(inicio).toBeGreaterThan(-1)
     const desde = html.lastIndexOf('<button', inicio)

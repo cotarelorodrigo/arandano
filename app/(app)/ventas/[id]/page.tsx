@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft, TriangleAlert } from 'lucide-react'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
+import { puedeConSesion } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -22,15 +23,16 @@ export const dynamic = 'force-dynamic'
 const ROTULO_MONEDA: Record<'ARS' | 'USD', string> = { ARS: 'Pesos', USD: 'Dólares' }
 
 /**
- * Si esta persona puede anular ESTA venta: sólo el dueño, y sólo mientras
- * siga cobrada. Extraída y exportada porque es el único pedazo de la regla
- * que se puede probar sin un request real (mismo criterio que las funciones
- * puras de app/(app)/ventas/page.tsx) — el guard de verdad, el que protege,
- * sigue viviendo en `exigirDuenio()` adentro de la action `anular()`; esto es
- * sólo lo que decide si la pantalla ofrece el botón.
+ * Si esta pantalla OFRECE el botón de anular ESTA venta: que la persona tenga
+ * el permiso `VENTAS_ANULAR`, y que la venta siga cobrada. Extraída y
+ * exportada porque es el único pedazo de la regla que se puede probar sin un
+ * request real (mismo criterio que las funciones puras de
+ * app/(app)/ventas/page.tsx) — el guard de verdad, el que protege, sigue
+ * viviendo en `exigirPermiso('VENTAS_ANULAR')` adentro de la action
+ * `anular()`; esto es sólo comodidad, para no ofrecer lo que va a fallar.
  */
-export function puedeAnular(rol: string, anuladaEn: Date | null): boolean {
-  return rol === 'DUENO' && anuladaEn === null
+export function seOfreceAnular(puedeAnular: boolean, anuladaEn: Date | null): boolean {
+  return puedeAnular && anuladaEn === null
 }
 
 /**
@@ -139,6 +141,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
 
   const filas = filasDeResumen(venta)
   const anulada = venta.anuladaEn !== null
+  const puedeAnularVenta = await puedeConSesion(sesion, 'VENTAS_ANULAR')
 
   return (
     <>
@@ -349,7 +352,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
                   El stock vuelve al inventario con movimientos compensatorios. Los
                   movimientos originales no se borran. Sólo el dueño puede hacerlo.
                 </p>
-                {puedeAnular(sesion.usuario.rol, venta.anuladaEn) && (
+                {seOfreceAnular(puedeAnularVenta, venta.anuladaEn) && (
                   <AnularVenta ventaId={venta.id} />
                 )}
               </div>
