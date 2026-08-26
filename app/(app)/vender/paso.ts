@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useSyncExternalStore } from 'react'
 
 // El paso de cobro de /vender se maneja en la URL (?paso=cobro) pero SIN
 // pasar por el router de Next: ni `router.push` ni `useSearchParams`. Los dos
@@ -6,9 +6,7 @@ import { useCallback, useEffect, useState } from 'react'
 // renderizar -- y el carrito vive en el estado de cliente de PuntoDeVenta:
 // un remonte a mitad de una venta se lo llevaría puesto. `pushState` cambia
 // la URL sin ese ciclo -- Next lo documenta como la forma soportada de
-// actualizar search params sin navegar --, y el `popstate` (el botón Atrás
-// del teléfono) es lo único que necesita un listener propio, porque
-// `pushState` no dispara ningún evento por sí solo.
+// actualizar search params sin navegar.
 
 export type Paso = 'carrito' | 'cobro'
 
@@ -44,25 +42,56 @@ export function urlConPaso(actual: string, paso: Paso): string {
   return `${url.pathname}${url.search}`
 }
 
-export function usePasoDeCobro() {
-  // Perezoso: el inicializador sólo corre una vez, al montar -- no en cada
-  // render.
-  const [paso, setPaso] = useState<Paso>(() => pasoDeUrl(window.location.search))
+// A nivel de módulo, no de hook: `pushState` NO dispara ningún evento --ni
+// siquiera `popstate`, que es sólo para Atrás/Adelante del historial-- así
+// que sin este `Set` las propias transiciones (irACobro/volverAlCarrito)
+// cambiarían la URL sin que ningún componente se enterara de su propio
+// cambio. Cada `subscribe` (uno por componente montado que use el hook)
+// agrega su callback acá; notificar recorre el `Set` y dispara un re-render
+// de cada uno vía `useSyncExternalStore`.
+const escuchas = new Set<() => void>()
 
-  useEffect(() => {
-    const alNavegarConAtras = () => setPaso(pasoDeUrl(window.location.search))
-    window.addEventListener('popstate', alNavegarConAtras)
-    return () => window.removeEventListener('popstate', alNavegarConAtras)
-  }, [])
+function notificarCambioDePaso() {
+  for (const escucha of escuchas) escucha()
+}
+
+// Mismo mecanismo que ya usa hooks/use-mobile.ts para el mismo problema:
+// useSyncExternalStore es lo que React documenta para suscribirse a una API
+// del navegador sin el doble render de un `setState` adentro de un
+// `useEffect`, y separa la lectura del servidor (getServerSnapshot) de la
+// lectura real del navegador (getSnapshot) -- así el primer render del
+// cliente, durante la hidratación, coincide con lo que mandó el servidor en
+// vez de leer `window` antes de tiempo y desincronizarse del HTML recibido.
+function subscribe(callback: () => void) {
+  escuchas.add(callback)
+  window.addEventListener('popstate', callback)
+  return () => {
+    escuchas.delete(callback)
+    window.removeEventListener('popstate', callback)
+  }
+}
+
+function getSnapshot(): Paso {
+  return pasoDeUrl(window.location.search)
+}
+
+// El servidor no tiene `window`: 'carrito' es además el paso correcto para
+// arrancar la pantalla, así que no hace falta leer nada.
+function getServerSnapshot(): Paso {
+  return 'carrito'
+}
+
+export function usePasoDeCobro() {
+  const paso = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 
   const irACobro = useCallback(() => {
     window.history.pushState(null, '', urlConPaso(window.location.pathname + window.location.search, 'cobro'))
-    setPaso('cobro')
+    notificarCambioDePaso()
   }, [])
 
   const volverAlCarrito = useCallback(() => {
     window.history.pushState(null, '', urlConPaso(window.location.pathname + window.location.search, 'carrito'))
-    setPaso('carrito')
+    notificarCambioDePaso()
   }, [])
 
   return { paso, irACobro, volverAlCarrito }
