@@ -356,8 +356,13 @@ describe('el punto de venta', () => {
   // archivo para "no se puede calcular": no inventar un cero ni un NaN.
   it('"Agregar pago" no precarga el monto con NaN cuando el carrito tiene una línea inválida', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
-    const posicion = fuente.indexOf('Agregar pago')
-    expect(posicion, '"Agregar pago" tiene que existir en el fuente').toBeGreaterThan(-1)
+    // El TEXTO del botón, no la primera aparición de la frase: la ronda de
+    // arreglos del ciclo móvil sumó un comentario que la nombraba en prosa más
+    // arriba en el archivo, y este caso se puso rojo apuntando a ese
+    // comentario en vez de al botón. Mismo criterio que ya usaban `>Vuelto<` y
+    // `'Faltan'` un poco más abajo.
+    const posicion = fuente.search(/Agregar pago\s*<\/Button>/)
+    expect(posicion, '"Agregar pago" tiene que existir como texto del botón').toBeGreaterThan(-1)
     const contexto = fuente.slice(Math.max(0, posicion - 700), posicion)
     expect(
       contexto,
@@ -814,15 +819,69 @@ describe('el punto de venta en el teléfono', () => {
     expect(contexto).toMatch(/text-destructive/)
   })
 
-  // El control de caja es lo único de Radix que este ciclo suma a la pantalla,
-  // y los tres atajos de teclado se abstienen mientras haya un overlay de
-  // Radix montado. Un `Sheet` abierto es un Dialog, y su Content renderiza
-  // role="dialog" — que `hayOverlayDeRadixAbierto` ya busca. Que el Sheet SEA
-  // un dialog lo verifica caja.test.tsx contra el paquete instalado, no acá.
-  it('los atajos se abstienen con la hoja de caja abierta', () => {
+  // Después de cobrar, el carrito y los pagos se vacían y el foco vuelve al
+  // buscador para el próximo escaneo. En el teléfono eso no alcanza: la
+  // pantalla sigue en el paso de cobro, así que la card del carrito y su banda
+  // de total están en `hidden`, y ese escaneo agrega líneas a una tabla que no
+  // se ve y a un total que no se ve. Es el flujo NORMAL —venta tras venta—, y
+  // ahí se pierde el ancla de la pantalla.
+  it('después de cobrar la pantalla vuelve al carrito, y recién ahí devuelve el foco', () => {
+    const deps = FUENTE.indexOf('}, [ventaProcesada, paso, volverAlCarrito])')
+    expect(
+      deps,
+      'el efecto del fin de venta tiene que depender también del paso y de volverAlCarrito',
+    ).toBeGreaterThan(-1)
+    const cuerpo = FUENTE.slice(FUENTE.lastIndexOf('useEffect(() => {', deps), deps)
+    // Y en ESTE orden, con la vuelta cortando la pasada: con el paso todavía
+    // en cobro el buscador está en display:none y `focus()` no hace nada, así
+    // que el foco tiene que esperar a la pasada siguiente del efecto.
+    expect(cuerpo).toMatch(/volverAlCarrito\(\)[\s\S]*?return[\s\S]*?buscador\.current\?\.focus\(\)/)
+  })
+
+  // `keRdN` no dibuja el buscador: su Cuerpo es la banda del total, los pagos y
+  // el botón que suma uno. Es además lo que vuelve silencioso al defecto de
+  // arriba — es lo que permite escanear desde una pantalla donde el carrito no
+  // se ve.
+  it('el buscador no se ve en el paso de cobro', () => {
+    expect(FUENTE).toMatch(/paso === 'cobro' \? 'hidden lg:block' : 'block'/)
+  })
+
+  // La constraint más frágil de la task: a 1024 o más, /vender tiene que verse
+  // exactamente como antes del ciclo móvil. El padding del cuerpo es la pieza
+  // que lo decide —se mudó de page.tsx a acá adentro— y no la fijaba ningún
+  // caso.
+  it('el cuerpo mide 12/14 en el teléfono y vuelve a p-6 en escritorio', async () => {
+    const html = await render()
+    const cuerpo = html.match(/<div class="([^"]*lg:p-6[^"]*)"/)?.[1]
+    expect(cuerpo, 'no se encontró el cuerpo').toBeTruthy()
+    expect(cuerpo).toContain('px-[14px]')
+    expect(cuerpo).toContain('py-3')
+    expect(cuerpo).toContain('gap-3')
+    expect(cuerpo).toContain('lg:gap-[18px]')
+  })
+
+  // Los tres atajos de teclado se abstienen mientras haya un overlay de Radix
+  // montado, y el selector que los detecta nombra un rol por primitivo. LOS
+  // TRES, no uno: la primera versión de este caso afirmaba `role="menu"` —el
+  // del DropdownMenu que esta pantalla YA NO USA— mientras se llamaba "con la
+  // hoja de caja abierta", así que borrar `[role="dialog"]` del selector lo
+  // dejaba en verde y devolvía el bug de cobro que esta pantalla ya tuvo.
+  // Que el `Sheet` SEA un dialog de Radix lo verifica caja.test.tsx contra el
+  // paquete instalado; que el selector lo BUSQUE se verifica acá.
+  it('el selector de overlays nombra los tres roles de Radix, la hoja de caja incluida', () => {
     const posicion = FUENTE.indexOf('function hayOverlayDeRadixAbierto')
     expect(posicion).toBeGreaterThan(-1)
-    expect(FUENTE.slice(posicion, posicion + 300)).toContain('role="menu"')
+    const cuerpo = FUENTE.slice(posicion, posicion + 300)
+    // listbox: los Select de medio y moneda. dialog: la hoja de caja (Sheet).
+    // menu: ninguno hoy, y se queda por si vuelve un menú — sacarlo sería
+    // gratis de reintroducir mal.
+    expect(cuerpo, 'sin listbox, Enter cobra con el medio/moneda anterior').toContain(
+      'role="listbox"',
+    )
+    expect(cuerpo, 'sin dialog, Escape para cerrar la hoja de caja arma el vaciado del carrito').toContain(
+      'role="dialog"',
+    )
+    expect(cuerpo).toContain('role="menu"')
   })
 
   // El escritorio no puede cambiar de aspecto: el pie de la card de cobro

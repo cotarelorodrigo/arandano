@@ -510,11 +510,35 @@ export function PuntoDeVenta({
     setPagos([])
   }
 
-  // El foco sí necesita un efecto de verdad: tocar el DOM sólo puede pasar
-  // después de que React confirmó el render, no durante.
+  // Qué pasa cuando una venta se cobró bien. Un efecto de verdad y no un
+  // ajuste durante el render, porque las dos cosas que hace son efectos:
+  // `pushState` toca el historial del navegador y `focus()` toca el DOM, y las
+  // dos sólo pueden pasar después de que React confirmó el render.
+  //
+  // LA VUELTA AL CARRITO ES LO PRIMERO, y en el teléfono no es cosmética.
+  // Vaciar el carrito y devolver el foco al buscador —lo único que hacía este
+  // efecto— deja la pantalla invitando a escanear el próximo artículo; si el
+  // paso sigue en cobro, la card del carrito y su banda de total están en
+  // `hidden`, así que ese escaneo suma líneas a una tabla que no se ve y a un
+  // total que no se ve. Es el flujo normal, venta tras venta.
+  //
+  // EL FOCO ESPERA A LA PASADA SIGUIENTE. Con el paso todavía en cobro el
+  // buscador está en `display:none` (ver su `hidden lg:block`, más abajo), y
+  // `focus()` sobre un elemento oculto no hace nada. `paso` está en las
+  // dependencias justamente para eso: la vuelta corta esta pasada, el cambio
+  // de paso vuelve a disparar el efecto, y ahí el buscador ya está visible.
+  //
+  // No hay rebote posible al revés (volver a cobro y que esto lo eche al
+  // carrito): para llegar al cobro hace falta carrito, y agregar cualquier
+  // línea limpia `ventaProcesada` (ver `actualizarCarrito`).
   useEffect(() => {
-    if (ventaProcesada) buscador.current?.focus()
-  }, [ventaProcesada])
+    if (!ventaProcesada) return
+    if (paso === 'cobro') {
+      volverAlCarrito()
+      return
+    }
+    buscador.current?.focus()
+  }, [ventaProcesada, paso, volverAlCarrito])
 
   // F2 enfoca el buscador desde cualquier parte de la pantalla: es el atajo
   // que el chip de al lado promete, no sólo lo anuncia. En un mostrador que
@@ -838,7 +862,13 @@ export function PuntoDeVenta({
             paleta ya repintada una vez (2026-08-21), un halo con el violeta
             viejo hardcodeado quedaría huérfano la próxima vez y nadie se
             enteraría; con color-mix(var(--primary)) sigue al token. */}
-        <div className="relative">
+        {/* El buscador no existe en el paso de cobro: `keRdN` no lo dibuja —su
+            Cuerpo es banda total, los pagos y el botón que suma uno— y es lo que
+            volvía silencioso el defecto que arregla el efecto de arriba, porque
+            era lo que permitía escanear desde una pantalla donde el carrito no
+            se ve. Mobile-first, igual que las dos columnas: en `lg:` está
+            siempre, sin mirar el paso. */}
+        <div className={`${paso === 'cobro' ? 'hidden lg:block' : 'block'} relative`}>
           {/* focus-within y no el focus-visible del <Input>: el ring por
               default aparecería sólo alrededor del campo de texto —que no
               cubre ni el ícono ni el chip F2—, y se vería como un rectángulo
