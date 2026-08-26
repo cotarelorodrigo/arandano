@@ -54,38 +54,47 @@ describe('el catálogo y el código, en las dos direcciones', () => {
     .map((f) => readFileSync(f, 'utf8'))
     .join('\n')
 
+  // Las llamadas reales, no cualquier mención entrecomillada: un permiso que
+  // sólo aparece en un comentario o un mensaje de error no destraba nada, y
+  // "aparece en algún lado del texto" lo dejaría pasar igual. Dos formas, no
+  // una: las tres primeras reciben el permiso como PRIMER argumento, y
+  // `puedeConSesion` lo recibe como SEGUNDO. Meterlas en una sola alternancia
+  // no funciona — la alternativa que consume el `(` deja al resto del patrón
+  // buscando un segundo `(` que no existe, y ese caso quedaría sin cubrir sin
+  // que nada avise.
+  const llamadasPuedeConSesion = [...CODIGO.matchAll(/puedeConSesion\([^,)]+,\s*'([A-Z_]+)'/g)]
+  const usados = new Set(
+    [
+      ...CODIGO.matchAll(/(?:exigirPermiso|comoPuede|puede)\(\s*'([A-Z_]+)'/g),
+      ...llamadasPuedeConSesion,
+    ].map((m) => m[1]),
+  )
+
   it('encuentra fuentes; si no, el test no prueba nada', () => {
     expect(CODIGO.length).toBeGreaterThan(1000)
   })
 
+  // El caso de puedeConSesion existe de verdad: si ese regex no encuentra
+  // nada, la unión de arriba igual podría no estar vacía gracias al primero,
+  // y ese camino quedaría sin ejercitar en silencio.
+  it('el regex de puedeConSesion encuentra al menos un uso real', () => {
+    expect(llamadasPuedeConSesion.length, 'ningún uso de puedeConSesion; el regex no prueba nada').toBeGreaterThan(0)
+  })
+
   // Un permiso que no destraba nada es un switch que miente: el dueño lo
-  // prende, y no pasa nada.
+  // prende, y no pasa nada. Por eso se compara contra las llamadas reales
+  // (`usados`), no contra el texto crudo del archivo.
   it('todo permiso del catálogo lo exige o lo consulta alguien', () => {
+    expect(usados.size, 'el regex no encontró ningún uso; está roto').toBeGreaterThan(0)
     for (const clave of CLAVES_DE_PERMISO) {
-      expect(CODIGO, `${clave} no lo usa nadie fuera de lib/permisos`).toContain(`'${clave}'`)
+      expect(usados, `${clave} no lo exige ni lo consulta nadie fuera de lib/permisos`).toContain(clave)
     }
   })
 
-  // Y al revés: un literal que parece un permiso y no está en el catálogo es un
-  // typo que nunca va a dar verdadero.
+  // Y al revés: una llamada real con un literal que no está en el catálogo es
+  // un typo que nunca va a dar verdadero.
   it('todo permiso usado en el código está en el catálogo', () => {
-    // Dos formas, no una: las tres primeras reciben el permiso como PRIMER
-    // argumento, y `puedeConSesion` lo recibe como SEGUNDO. Meterlas en una
-    // sola alternancia no funciona — la alternativa que consume el `(` deja al
-    // resto del patrón buscando un segundo `(` que no existe, y ese caso
-    // quedaría sin cubrir sin que nada avise.
-    const usados = [
-      ...CODIGO.matchAll(/(?:exigirPermiso|comoPuede|puede)\(\s*'([A-Z_]+)'/g),
-      ...CODIGO.matchAll(/puedeConSesion\([^,)]+,\s*'([A-Z_]+)'/g),
-    ].map((m) => m[1])
-    expect(usados.length, 'el regex no encontró ningún uso; está roto').toBeGreaterThan(0)
-    // El caso de puedeConSesion existe de verdad: si el segundo regex no
-    // encuentra nada, la aserción de arriba pasa igual gracias al primero.
-    expect(
-      [...CODIGO.matchAll(/puedeConSesion\([^,)]+,\s*'([A-Z_]+)'/g)].length,
-      'ningún uso de puedeConSesion; el segundo regex no prueba nada',
-    ).toBeGreaterThan(0)
-    for (const usado of new Set(usados)) {
+    for (const usado of usados) {
       expect(CLAVES_DE_PERMISO, `${usado} no está en el catálogo`).toContain(usado)
     }
   })
