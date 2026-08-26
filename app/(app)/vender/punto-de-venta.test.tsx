@@ -920,4 +920,78 @@ describe('el punto de venta en el teléfono', () => {
     expect(contexto).toContain('<ChipDeFaltante')
     expect(contexto).toContain('Enter para cobrar · Esc para vaciar')
   })
+
+  // --- Task 4b: la fila del carrito, con el patrón ya estrenado por
+  // app/(app)/ventas/page.tsx (`Listado`) ---
+  //
+  // El carrito arranca vacío en `render()` (no hay prop para precargar
+  // líneas), así que ninguno de estos casos puede mirar el HTML de una fila
+  // real — igual que "cada fila del carrito muestra el SKU" y "el aviso de
+  // stock insuficiente" más arriba, miran el FUENTE.
+
+  it('el carrito ya no es una <Table>: el patrón es grid + role, como en /ventas', () => {
+    expect(FUENTE, 'sin <Table>: el nuevo contenedor es un <div role="table">').not.toMatch(/<Table[\s>]/)
+    expect(FUENTE).not.toContain("from '@/components/ui/table'")
+    expect(FUENTE).toMatch(
+      /role="table" className="grid grid-cols-1 lg:grid-cols-\[1fr_104px_110px_130px_28px\]"/,
+    )
+  })
+
+  // La Task 3 la había escondido del todo (mitigación temporal mientras la
+  // fila seguía siendo una <table> sin reflow, ver el comentario que dejó en
+  // el <TableHead>). Con el reflow resuelto acá, tiene que volver.
+  it('la columna "Precio" vuelve a existir en escritorio', () => {
+    expect(FUENTE, 'lg:table-cell era la marca de la Table vieja').not.toMatch(/lg:table-cell/)
+    expect(FUENTE).toMatch(/hidden text-right text-foreground-soft lg:block/)
+  })
+
+  it('la fila del carrito lleva role="row", lg:contents y group para el hover de escritorio', () => {
+    expect(FUENTE).toContain(
+      'className="group relative flex flex-col gap-2 border-b p-[11px] px-[14px] last:border-b-0 lg:contents"',
+    )
+  })
+
+  it('la fila tiene 5 celdas con role="cell", tantas como columnheader', () => {
+    const columnas = [...FUENTE.matchAll(/role="columnheader"/g)].length
+    const celdas = [...FUENTE.matchAll(/role="cell"/g)].length
+    expect(columnas, 'Artículo, Cantidad, Precio, Subtotal y Quitar').toBe(5)
+    expect(celdas, 'una celda de datos por columna, escrita una sola vez en el .map').toBe(5)
+  })
+
+  // Mismo mecanismo que /ventas: `display:contents` no genera caja pero
+  // sigue en la cadena de ancestros para :hover, así que `group` en la fila
+  // + `lg:group-hover:bg-muted/50` en cada celda restituye el resaltado que
+  // antes daba gratis `hover:bg-muted/50` de <TableRow>. Sin el prefijo
+  // `lg:` el resaltado se dispararía también en el teléfono.
+  it('el hover de escritorio: group-hover siempre con el prefijo lg:, una vez por celda', () => {
+    const total = [...FUENTE.matchAll(/group-hover:bg-muted\/50/g)].length
+    const conPrefijo = [...FUENTE.matchAll(/lg:group-hover:bg-muted\/50/g)].length
+    expect(total, 'una celda de datos por columna: Artículo, Cantidad, Precio, Subtotal, Quitar').toBe(5)
+    expect(conPrefijo, 'group-hover sin lg: dispararía el resaltado también en el teléfono').toBe(total)
+  })
+
+  // El agrupador que junta Cantidad, Precio (oculto ahí) y Subtotal en una
+  // sola línea del teléfono; disuelto en escritorio.
+  it('cantidad y subtotal se agrupan en una línea del teléfono, y se disuelven en escritorio', () => {
+    expect(FUENTE).toContain('className="flex items-center gap-[10px] lg:contents"')
+  })
+
+  // "Quitar" es la última columna en escritorio, pero en el teléfono tiene
+  // que convivir con el NOMBRE (la primera columna) en la misma línea —lejos
+  // en el DOM, con Cantidad/Precio/Subtotal en el medio. No se resuelve
+  // agrupando (no son columnas adyacentes): se ancla con `absolute` al
+  // padding del ítem, independiente de dónde cae en el flujo normal.
+  it('"Quitar" se ancla arriba a la derecha en el teléfono, y es celda de grid normal en escritorio', () => {
+    expect(FUENTE).toMatch(/role="cell"\s+className="absolute top-\[11px\] right-\[14px\] lg:static/)
+  })
+
+  // Sin esto, en escritorio el contenido de las 4 celdas más cortas
+  // (Cantidad, Precio, Subtotal, Quitar) quedaría pegado arriba de la fila en
+  // vez de centrado contra ella cuando el nombre del artículo ocupa dos
+  // líneas — lo que antes daba gratis `align-middle` de <TableCell>, que
+  // `display:contents` no tiene forma de heredar.
+  it('las celdas más cortas se centran contra la fila en escritorio', () => {
+    const veces = [...FUENTE.matchAll(/lg:self-center/g)].length
+    expect(veces, 'Cantidad, Precio, Subtotal y Quitar: las 4 celdas más cortas que Artículo').toBe(4)
+  })
 })

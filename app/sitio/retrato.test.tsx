@@ -145,15 +145,30 @@ describe('el retrato del punto de venta', () => {
   // aserciones de arriba, por construcción, no pueden: ésas sólo miran que
   // ESTE archivo sea internamente consistente, no que siga pareciéndose al
   // real.
+  //
+  // La Task 4b del ciclo móvil movió /vender de <TableHead> a un grid con
+  // `lg:grid-cols-[1fr_Npx_Npx_Npx_Npx]` (display:contents, ver el docblock
+  // de `Listado` en app/(app)/ventas/page.tsx) — el retrato NO se tocó en esa
+  // task (no es una de las diez pantallas de aplicación, ver CLAUDE.md), así
+  // que sigue leyendo su propio <TableHead>. Cada lado lee el ancho con la
+  // sintaxis que de verdad usa: `anchosDeRetrato` el atributo `w-[…px]` de
+  // cada celda, `anchosDeVender` los tres valores centrales del grid-cols
+  // (el primero es `1fr`, de Artículo; el último es Quitar, 28px, que acá no
+  // se compara porque el retrato tampoco lo suma en este array).
   it('las columnas Cantidad/Precio/Subtotal miden lo mismo que en /vender (acoplamiento real, leyendo los dos fuentes)', () => {
     const fuenteVender = readFileSync(
       path.join(__dirname, '../(app)/vender/punto-de-venta.tsx'),
       'utf8',
     )
-    const anchosDe = (src: string) =>
+    const anchosDeRetrato = (src: string) =>
       [...src.matchAll(/<TableHead className="[^"]*\b(w-\[\d+px\])[^"]*"/g)].map((m) => m[1])
-    const anchosRetrato = anchosDe(fuente())
-    const anchosVender = anchosDe(fuenteVender)
+    const anchosDeVender = (src: string) => {
+      const m = src.match(/lg:grid-cols-\[1fr_(\d+)px_(\d+)px_(\d+)px_\d+px\]/)
+      expect(m, 'grid-cols de /vender no matchea 1fr_Npx_Npx_Npx_Npx').not.toBeNull()
+      return [`w-[${m![1]}px]`, `w-[${m![2]}px]`, `w-[${m![3]}px]`]
+    }
+    const anchosRetrato = anchosDeRetrato(fuente())
+    const anchosVender = anchosDeVender(fuenteVender)
     // Tres columnas con ancho fijo en el encabezado: Cantidad, Precio,
     // Subtotal (Artículo y la de "Quitar" no llevan w-[…px]).
     expect(anchosRetrato).toEqual(['w-[104px]', 'w-[110px]', 'w-[130px]'])

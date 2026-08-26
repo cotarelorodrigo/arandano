@@ -22,7 +22,6 @@ import { Card } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import estilos from '@/components/importe.module.css'
 import estilosCobro from './cobro.module.css'
 
@@ -999,110 +998,143 @@ export function PuntoDeVenta({
               </button>
             </div>
 
-            <Table className="table-fixed">
-              <TableHeader>
-                {/* Fila "hundida": fondo --muted, padding [12,18] y 14 de gap
-                    entre columnas. Una tabla no tiene `gap` de verdad entre
-                    celdas, así que el hueco se arma con el padding de cada
-                    celda: la mitad (7px) contra la celda vecina y el resto
-                    (18px) contra el borde de la card. */}
-                <TableRow className="bg-muted hover:bg-muted">
-                  <TableHead className="h-auto px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                    Artículo
-                  </TableHead>
-                  <TableHead className="h-auto w-[104px] px-[7px] py-3 text-center text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                    Cantidad
-                  </TableHead>
-                  {/* La columna de precio unitario no entra en un teléfono:
-                      las cuatro columnas fijas suman 372 px (104+110+130+28,
-                      border-box) contra los ~360 que deja el cuerpo de un 390,
-                      así que con ella la tabla desborda y al nombre —lo único
-                      que de verdad hay que leer— no le queda ancho. Sin ella,
-                      al nombre le quedan ~73 px de contenido: se lee, envuelto
-                      en varias líneas. `VaHod` resuelve lo mismo de otra forma:
-                      el precio unitario se funde en la línea de meta bajo el
-                      nombre ("SKU 000412 · $ 12.000,00 c/u", nodo `mgMZ8`), que
-                      es lo que hace la línea de abajo.
-                      `hidden lg:table-cell` y no `lg:block`: una celda de tabla
-                      tiene su propio valor de `display`.
+            {/* El carrito deja de ser una tabla HTML: sigue el patrón que
+                estrena `Listado` en app/(app)/ventas/page.tsx (líneas
+                337-366 de ese archivo) — grid + `display:contents`, con las
+                mismas 5 anchuras que declaraban las celdas de encabezado de
+                antes (Artículo sin ancho fijo → `1fr`, 104, 110, 130, 28 = w-7).
 
-                      LO QUE ESTO NO CIERRA: la maqueta del teléfono no apila
-                      columnas, apila BLOQUES —nombre + ✕, meta, y una tercera
-                      fila con el stepper y el subtotal—, y eso es reestructurar
-                      la fila entera. Queda para su propio ciclo, con el patrón
-                      de `lg:contents` que el spec fija para los cuatro
-                      listados (§3). */}
-                  <TableHead className="hidden h-auto w-[110px] px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase lg:table-cell">
-                    Precio
-                  </TableHead>
-                  <TableHead className="h-auto w-[130px] px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                    Subtotal
-                  </TableHead>
-                  {/* La columna de "Quitar" queda vacía en el encabezado. */}
-                  <TableHead className="h-auto w-7 px-[7px] py-3 pr-[18px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {lineas.map((l, i) => {
-                  const cantidadMilesimas = cantidadEnMilesimas(l.cantidad)
-                  const invalida = Number.isNaN(cantidadMilesimas)
-                  const quedaria = aMilesimas(l.stock) - cantidadMilesimas
-                  return (
-                    <TableRow key={l.articuloId}>
-                      <TableCell className="p-[11px] px-[7px] pl-[18px] whitespace-normal">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-sm font-medium text-foreground">{l.descripcion}</span>
-                          <div className="flex items-center gap-2">
-                            {/* El SKU bajo el nombre: antes sólo se veía en el
-                                buscador. Un servicio no tiene SKU de stock, así
-                                que muestra "Servicio" en su lugar — mismo
-                                criterio que ya usa la lista de resultados para
-                                el stock de un servicio (una raya, no un cero). */}
-                            <span className="text-[11px] text-muted-foreground">
-                              {l.esProducto ? `SKU ${l.sku}` : 'Servicio'}
-                              {/* El precio unitario, que en el teléfono no
-                                  tiene columna propia (ver el <TableHead> de
-                                  Precio, más arriba): la maqueta lo pone acá,
-                                  pegado al SKU, con el mismo tratamiento de
-                                  meta. En escritorio desaparece de esta línea,
-                                  porque su columna vuelve. */}
-                              <span className="lg:hidden"> · {formatearPrecio(l.precio)} c/u</span>
+                `VaHod` apila TRES líneas por ítem —nombre+✕ / meta /
+                stepper…subtotal— (nodos `UMJEA`/`IKwdw`/`rXeg5`/`mRrMW`), a
+                diferencia de `Listado`, donde el agrupador siempre junta
+                columnas ADYACENTES. Acá "Quitar" —la ÚLTIMA columna en
+                escritorio— tiene que convivir con el NOMBRE —la PRIMERA— en
+                la misma línea del teléfono, con Cantidad/Precio/Subtotal en
+                el medio: agruparlas no alcanza. Se resuelve dejando el DOM en
+                el mismo orden que las columnas de escritorio (ninguna
+                auto-colocación exótica hace falta: Artículo, [Cantidad,
+                Precio, Subtotal agrupadas], Quitar) y anclando "Quitar" con
+                `absolute` sólo en el teléfono — ver su comentario, más
+                abajo. */}
+            <div role="table" className="grid grid-cols-1 lg:grid-cols-[1fr_104px_110px_130px_28px]">
+              {/* Fila "hundida": fondo --muted, padding [12,18] y 14 de gap
+                  entre columnas. Sólo existe en escritorio —`hidden`
+                  la saca del todo en el teléfono, `lg:contents` la disuelve
+                  ahí para que sus 5 `columnheader` pasen a ser las celdas de
+                  la primera fila del grid—, igual que el encabezado de
+                  `Listado`. */}
+              <div role="row" className="hidden lg:contents">
+                <div role="columnheader" className="bg-muted px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Artículo
+                </div>
+                <div role="columnheader" className="bg-muted px-[7px] py-3 text-center text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Cantidad
+                </div>
+                {/* Vuelve a existir en escritorio: la Task 3 la había
+                    escondido del todo (sin reflow posible mientras esto
+                    seguía siendo una tabla HTML) como mitigación temporal.
+                    Con el reflow ya resuelto acá, no hay motivo para seguir
+                    sin ella en escritorio. */}
+                <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Precio
+                </div>
+                <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Subtotal
+                </div>
+                {/* La columna de "Quitar" queda vacía en el encabezado. */}
+                <div role="columnheader" className="bg-muted px-[7px] py-3 pr-[18px]" />
+              </div>
+
+              {lineas.map((l, i) => {
+                const cantidadMilesimas = cantidadEnMilesimas(l.cantidad)
+                const invalida = Number.isNaN(cantidadMilesimas)
+                const quedaria = aMilesimas(l.stock) - cantidadMilesimas
+                return (
+                  // `group` + `relative`: `group` es lo que restituye el
+                  // hover de fila de escritorio (ver `lg:group-hover:` en
+                  // cada celda, más abajo — mismo mecanismo que `Listado`).
+                  // `relative` es el ancla del botón "Quitar" en el
+                  // teléfono, y no le hace nada a escritorio: ahí la fila es
+                  // `lg:contents` y una caja sin caja no tiene `position`.
+                  <div
+                    key={l.articuloId}
+                    role="row"
+                    className="group relative flex flex-col gap-2 border-b p-[11px] px-[14px] last:border-b-0 lg:contents"
+                  >
+                    {/* Artículo: nombre + meta (SKU/Servicio, el precio
+                        unitario sólo en el teléfono, el aviso de cantidad
+                        inválida y el de stock). `pr-9` en el teléfono
+                        reserva el lugar del botón "Quitar", que flota
+                        encima con `absolute` (ver más abajo) y no empuja
+                        este contenido con su propio ancho — a diferencia de
+                        `Listado`, acá no hay una celda de grid propia para
+                        "Quitar" al lado de ésta. */}
+                    <div
+                      role="cell"
+                      className="pr-9 whitespace-normal lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50"
+                    >
+                      {/* `gap-2` (8px) en el teléfono —el mismo que separa
+                          los 3 bloques de `VaHod`— y `lg:gap-0.5` para no
+                          mover el aspecto de escritorio, que ya usaba ese
+                          espaciado más apretado. */}
+                      <div className="flex flex-col gap-2 lg:gap-0.5">
+                        <span className="text-sm font-medium text-foreground">{l.descripcion}</span>
+                        <div className="flex items-center gap-2">
+                          {/* El SKU bajo el nombre: antes sólo se veía en el
+                              buscador. Un servicio no tiene SKU de stock, así
+                              que muestra "Servicio" en su lugar — mismo
+                              criterio que ya usa la lista de resultados para
+                              el stock de un servicio (una raya, no un cero). */}
+                          <span className="text-[11px] text-muted-foreground">
+                            {l.esProducto ? `SKU ${l.sku}` : 'Servicio'}
+                            {/* El precio unitario, que en el teléfono no
+                                tiene columna propia (ver el columnheader de
+                                Precio, más arriba): la maqueta lo pone acá,
+                                pegado al SKU, con el mismo tratamiento de
+                                meta. En escritorio desaparece de esta línea,
+                                porque su columna vuelve. */}
+                            <span className="lg:hidden"> · {formatearPrecio(l.precio)} c/u</span>
+                          </span>
+                          {/* Antes que el aviso de stock: una cantidad que no
+                              se entiende ni siquiera se puede evaluar contra
+                              el stock (`quedaria` también sería NaN). Ésta sí
+                              queda en rojo: a diferencia del aviso de stock,
+                              una cantidad ilegible SÍ impide seguir —apaga
+                              Cobrar—, así que acá el rojo es el color
+                              correcto (docs/sistema-de-diseno.md: "el ámbar
+                              no es un rojo suave", el rojo es para lo que
+                              bloquea). */}
+                          {invalida && (
+                            <span className="text-[11px] font-semibold text-destructive">
+                              cantidad inválida
                             </span>
-                            {/* Antes que el aviso de stock: una cantidad que no
-                                se entiende ni siquiera se puede evaluar contra
-                                el stock (`quedaria` también sería NaN). Ésta sí
-                                queda en rojo: a diferencia del aviso de stock,
-                                una cantidad ilegible SÍ impide seguir —apaga
-                                Cobrar—, así que acá el rojo es el color
-                                correcto (docs/sistema-de-diseno.md: "el ámbar
-                                no es un rojo suave", el rojo es para lo que
-                                bloquea). */}
-                            {invalida && (
-                              <span className="text-[11px] font-semibold text-destructive">
-                                cantidad inválida
-                              </span>
-                            )}
-                            {/* Se advierte y NO se bloquea: el motor permite
-                                vender sin stock a propósito, y la pantalla no
-                                puede ser más estricta que el motor sin volverse
-                                mentirosa. Ámbar y no rojo: vender con stock
-                                negativo está PERMITIDO en este producto, así
-                                que esto es "hay que mirar", no "no se puede
-                                seguir" — el rojo queda para lo que sí bloquea
-                                (arriba). */}
-                            {!invalida && l.esProducto && quedaria < 0 && (
-                              <Badge
-                                variant="outline"
-                                className="h-auto gap-[5px] border-transparent bg-warn-soft px-[7px] py-[2px] text-[10px] font-semibold text-warn"
-                              >
-                                <TriangleAlert aria-hidden="true" />
-                                sin stock suficiente
-                              </Badge>
-                            )}
-                          </div>
+                          )}
+                          {/* Se advierte y NO se bloquea: el motor permite
+                              vender sin stock a propósito, y la pantalla no
+                              puede ser más estricta que el motor sin volverse
+                              mentirosa. Ámbar y no rojo: vender con stock
+                              negativo está PERMITIDO en este producto, así
+                              que esto es "hay que mirar", no "no se puede
+                              seguir" — el rojo queda para lo que sí bloquea
+                              (arriba). */}
+                          {!invalida && l.esProducto && quedaria < 0 && (
+                            <Badge
+                              variant="outline"
+                              className="h-auto gap-[5px] border-transparent bg-warn-soft px-[7px] py-[2px] text-[10px] font-semibold text-warn"
+                            >
+                              <TriangleAlert aria-hidden="true" />
+                              sin stock suficiente
+                            </Badge>
+                          )}
                         </div>
-                      </TableCell>
-                      <TableCell className="p-[11px] px-[7px]">
+                      </div>
+                    </div>
+
+                    {/* Agrupador: junta Cantidad, Precio (oculto acá) y
+                        Subtotal en una sola línea del teléfono; disuelto en
+                        escritorio, donde vuelven a ser 3 celdas separadas. */}
+                    <div className="flex items-center gap-[10px] lg:contents">
+                      <div role="cell" className="lg:self-center lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50">
                         {/* El stepper [-] [valor] [+]: los botones cubren sumar
                             y restar de a una unidad completa, pero el campo del
                             medio sigue siendo editable a mano — el motor admite
@@ -1154,41 +1186,59 @@ export function PuntoDeVenta({
                             </Fragment>
                           ))}
                         </div>
-                      </TableCell>
-                      {/* Su encabezado ya explica por qué la columna no existe
-                          en el teléfono; la celda tiene que esconderse con él o
-                          la fila quedaría con una celda de más. */}
-                      <TableCell
-                        className={`hidden p-[11px] px-[7px] text-right text-foreground-soft lg:table-cell ${estilos.importe}`}
+                      </div>
+                      {/* Su columnheader ya explica por qué esta celda no se
+                          ve en el teléfono. */}
+                      <div
+                        role="cell"
+                        className={`hidden text-right text-foreground-soft lg:block lg:self-center lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 ${estilos.importe}`}
                       >
                         {formatearPrecio(l.precio)}
-                      </TableCell>
-                      <TableCell
-                        className={`p-[11px] px-[7px] pr-[18px] text-right text-[15px] font-semibold text-foreground ${estilos.importe}`}
+                      </div>
+                      {/* `ml-auto` empuja el subtotal a la derecha del
+                          agrupador en el teléfono —el "Espaciador" de la
+                          maqueta (nodo `WMA3r`)—; `lg:ml-0` lo apaga en
+                          escritorio, donde ya está `text-right` dentro de su
+                          propia columna de 130px. */}
+                      <div
+                        role="cell"
+                        className={`ml-auto text-right text-[15px] font-semibold text-foreground lg:ml-0 lg:self-center lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 ${estilos.importe}`}
                       >
                         {invalida
                           ? '—'
                           : formatearPrecio(
                               deCentavos(subtotalEnCentavos(cantidadMilesimas, aCentavos(l.precio))),
                             )}
-                      </TableCell>
-                      <TableCell className="p-[11px] pr-[18px] pl-[7px] text-right">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => actualizarCarrito((p) => p.filter((_, j) => j !== i))}
-                          aria-label={`Quitar ${l.descripcion}`}
-                          className="text-muted-foreground"
-                        >
-                          <X className="size-[15px]" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
+                      </div>
+                    </div>
+
+                    {/* Quitar: en escritorio es la 5ª celda del grid, como
+                        siempre (`lg:static` la devuelve a celda de grid
+                        normal). En el teléfono NO se agrupa junto al nombre
+                        —quedan Cantidad, Precio y Subtotal de por medio en el
+                        DOM—, así que se ancla con `absolute` al padding del
+                        ítem (arriba a la derecha, nodo `hRb9c`), relativo a
+                        la fila (`relative`, más arriba), independiente de
+                        dónde cae en el flujo normal. */}
+                    <div
+                      role="cell"
+                      className="absolute top-[11px] right-[14px] lg:static lg:self-center lg:p-[11px] lg:pr-[18px] lg:pl-[7px] lg:text-right lg:group-hover:bg-muted/50"
+                    >
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => actualizarCarrito((p) => p.filter((_, j) => j !== i))}
+                        aria-label={`Quitar ${l.descripcion}`}
+                        className="text-muted-foreground"
+                      >
+                        <X className="size-[15px]" />
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
 
             {lineas.length === 0 && (
               <p className="px-[18px] py-3 text-sm text-muted-foreground">
