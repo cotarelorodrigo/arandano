@@ -155,19 +155,33 @@ describe('el encabezado de pantalla', () => {
   // test/tipografia.test.ts sobre importe.module.css) — así que la única
   // forma real de comprobar que el valor está es leer el TEXTO del archivo.
   // kyXe1 > aY2nd > H1 (S2AuWU) declara lineHeight: 1.2; el H1 de escritorio
-  // no declara ninguno y no lo tuvo nunca, así que el reset a `normal`
-  // adentro de la media query es lo que mantiene el escritorio intacto.
-  it('el título lleva line-height 1.2 en el teléfono, y no cambia el de escritorio', () => {
+  // no declara ninguno y no lo tuvo nunca. `line-height` es una propiedad
+  // heredada: sin declaración propia en escritorio, el <h1> sigue heredando
+  // el 1.5 que node_modules/tailwindcss/preflight.css fija en `html, :host`,
+  // igual que antes de este ciclo — un `line-height: normal` ahí (el valor
+  // INICIAL, no el heredado) casi entró en una ronda anterior de review y
+  // hubiera achicado el interlineado de escritorio en las diez pantallas.
+  // Por eso el caso afirma la AUSENCIA de la declaración en el bloque de
+  // escritorio: es más honesto que afirmar un valor, porque acá lo que
+  // protege es que nadie vuelva a escribir uno.
+  it('el título lleva line-height 1.2 en el teléfono, y el escritorio no declara ninguno (hereda el 1.5 del preflight)', () => {
     const css = readFileSync('components/shell/encabezado.module.css', 'utf8')
     const base = css.slice(0, css.indexOf('@media'))
     const escritorio = css.slice(css.indexOf('@media'))
     expect(base, 'el bloque base (mobile-first) no declara line-height: 1.2').toContain(
       'line-height: 1.2',
     )
+    // Sin comentarios: el bloque de escritorio SÍ menciona la palabra
+    // "line-height" en prosa (explicando por qué no hay que declararla), y
+    // un chequeo ingenuo sobre el texto crudo se dispararía contra ese
+    // comentario y no contra una declaración real.
+    const escritorioSinComentarios = escritorio.replace(/\/\*[\s\S]*?\*\//g, '')
     expect(
-      escritorio,
-      'la media query de escritorio no resetea line-height a normal',
-    ).toContain('line-height: normal')
+      escritorioSinComentarios,
+      'la media query de escritorio declara su propio line-height — eso corta ' +
+        'la herencia del 1.5 del preflight y achica el interlineado del H1 de ' +
+        'escritorio. No debe declarar ninguno.',
+    ).not.toContain('line-height')
   })
 })
 

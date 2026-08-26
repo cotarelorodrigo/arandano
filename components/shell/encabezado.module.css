@@ -15,14 +15,20 @@
  * del teléfono y el de escritorio entra en `min-width: 1024px`, la misma
  * convención mobile-first que usa el resto del shell (hooks/use-mobile.ts).
  *
- * line-height: 1.2 EN EL TELÉFONO, `normal` EN ESCRITORIO. El nodo H1 de
- * kyXe1 (`S2AuWU`) declara `lineHeight: 1.2` — el de escritorio no declara
- * ninguno, y nunca lo tuvo antes de este ciclo. `normal` adentro de la media
- * query no es un valor cualquiera: es el valor inicial de `line-height`, así
- * que reproduce BYTE A BYTE lo que el navegador ya calculaba cuando esta
- * regla no existía — el escritorio no puede cambiar de aspecto, y la forma
- * de garantizarlo acá es escribir el reset explícito, no confiar en que
- * nadie vuelva a tocar este archivo sin acordarse de él.
+ * line-height: 1.2 SÓLO EN EL TELÉFONO. El nodo H1 de kyXe1 (`S2AuWU`)
+ * declara `lineHeight: 1.2` — el de escritorio no declara ninguno, y nunca
+ * lo tuvo antes de este ciclo, así que la regla de escritorio (adentro de la
+ * media query) NO declara `line-height` en absoluto: sin una declaración
+ * propia, el `<h1>` sigue heredando el `line-height: 1.5` que
+ * `node_modules/tailwindcss/preflight.css` fija en `html, :host`, que es
+ * justo lo que pasaba antes de este ciclo. `normal` (el valor INICIAL de la
+ * propiedad) casi se coló acá en su lugar en una ronda anterior de review, y
+ * es un error real: `normal` corta la herencia del 1.5 del preflight y la
+ * reemplaza por el "normal" propio de Archivo —bastante más chico—, así que
+ * hubiera achicado el interlineado del H1 de escritorio en cada una de las
+ * diez pantallas. `line-height` es una propiedad heredada, y "valor inicial"
+ * y "valor heredado" son cosas distintas en cuanto un ancestro fija algo
+ * que no sea `normal` — que es exactamente lo que hace el preflight.
  *
  * POR QUÉ UN MÓDULO CSS Y NO UNA UTILIDAD DE TAILWIND. Igual que el cartel y
  * el importe: el @theme de app/globals.css es `inline`, así que
@@ -46,6 +52,7 @@
 @media (min-width: 1024px) {
   .titulo {
     font-size: 1.3125rem; /* 21px, el escritorio de siempre */
-    line-height: normal; /* el escritorio no cambia de aspecto — ver el comentario de arriba */
+    /* SIN line-height acá, a propósito: ver el comentario de arriba — hereda
+       el 1.5 del preflight, igual que antes de este ciclo. */
   }
 }
