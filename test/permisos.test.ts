@@ -112,3 +112,64 @@ describe('la tabla usuario_permisos', () => {
     expect(rows[0].n).toBe(0)
   })
 })
+
+let permisosDe: typeof import('@/lib/permisos/consultar').permisosDe
+let otorgar: typeof import('@/lib/permisos/administrar').otorgar
+let revocar: typeof import('@/lib/permisos/administrar').revocar
+let ErrorDePermiso: typeof import('@/lib/permisos/errores').ErrorDePermiso
+
+describe('otorgar, revocar y leer', () => {
+  let duenio: string
+  let nuevo: string
+
+  beforeAll(async () => {
+    process.env.DATABASE_URL = urlApp()
+    ;({ permisosDe } = await import('@/lib/permisos/consultar'))
+    ;({ otorgar, revocar } = await import('@/lib/permisos/administrar'))
+    ;({ ErrorDePermiso } = await import('@/lib/permisos/errores'))
+
+    duenio = await crearUsuario(owner, tenantA, 'duenio@permisos-a.test', 'DUENO')
+    nuevo = await crearUsuario(owner, tenantA, 'nuevo@permisos-a.test', 'EMPLEADO')
+  })
+
+  it('un empleado nuevo no tiene ninguno', async () => {
+    expect([...(await permisosDe(tenantA, nuevo))]).toEqual([])
+  })
+
+  it('otorgar deja el permiso y revocar lo saca', async () => {
+    await otorgar({ tenantId: tenantA, usuarioId: nuevo, permiso: 'COSTOS' })
+    expect(await permisosDe(tenantA, nuevo)).toEqual(new Set(['COSTOS']))
+
+    await revocar({ tenantId: tenantA, usuarioId: nuevo, permiso: 'COSTOS' })
+    expect([...(await permisosDe(tenantA, nuevo))]).toEqual([])
+  })
+
+  // Los dos son idempotentes porque la pantalla los dispara desde un switch, y
+  // dos clicks rápidos mandan la misma orden dos veces. Otorgar dos veces
+  // chocaría contra la clave primaria; revocar algo que no está borraría cero
+  // filas y Prisma tiraría P2025.
+  it('otorgar dos veces no falla', async () => {
+    await otorgar({ tenantId: tenantA, usuarioId: nuevo, permiso: 'CATEGORIAS' })
+    await otorgar({ tenantId: tenantA, usuarioId: nuevo, permiso: 'CATEGORIAS' })
+    expect(await permisosDe(tenantA, nuevo)).toEqual(new Set(['CATEGORIAS']))
+  })
+
+  it('revocar algo que no está no falla', async () => {
+    await revocar({ tenantId: tenantA, usuarioId: nuevo, permiso: 'VENTAS_ANULAR' })
+    expect(await permisosDe(tenantA, nuevo)).toEqual(new Set(['CATEGORIAS']))
+  })
+
+  // Un dueño puede todo por construcción; darle una fila sería dejar dato
+  // muerto que además miente si algún día alguien lo lee sin la guarda.
+  it('no deja otorgarle a un dueño', async () => {
+    await expect(
+      otorgar({ tenantId: tenantA, usuarioId: duenio, permiso: 'COSTOS' }),
+    ).rejects.toThrow(ErrorDePermiso)
+  })
+
+  it('no deja otorgarle a alguien de otro tenant', async () => {
+    await expect(
+      otorgar({ tenantId: tenantA, usuarioId: empleadoB, permiso: 'COSTOS' }),
+    ).rejects.toThrow(ErrorDePermiso)
+  })
+})
