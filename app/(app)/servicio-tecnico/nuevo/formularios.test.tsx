@@ -6,19 +6,26 @@
 // una base real (acciones.test.ts, test/clientes.test.ts).
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { FormularioRecepcion } from '../formularios'
 import type { ClienteEncontrado } from '@/lib/clientes/administrar'
 
 const accionFalsa = async () => ({ error: null, aviso: null })
 
+// FormularioRecepcion renderiza <Encabezado> (Task 1 del ciclo del shell
+// móvil), que sin `atras` renderiza el SidebarTrigger de shadcn — y ése llama
+// a useSidebar(), que tira si no hay un SidebarProvider como ancestro. Mismo
+// motivo que ya documentó components/shell/encabezado.test.tsx.
 function render(clientes: ClienteEncontrado[], busquedaCliente = '') {
   return renderToStaticMarkup(
-    <FormularioRecepcion
-      accion={accionFalsa}
-      clientes={clientes}
-      busquedaCliente={busquedaCliente}
-      claveIdempotencia="clave-de-prueba"
-    />,
+    <SidebarProvider>
+      <FormularioRecepcion
+        accion={accionFalsa}
+        clientes={clientes}
+        busquedaCliente={busquedaCliente}
+        claveIdempotencia="clave-de-prueba"
+      />
+    </SidebarProvider>,
   )
 }
 

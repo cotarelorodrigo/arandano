@@ -6,6 +6,7 @@
 // igual que nuevo/formularios.test.tsx.
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { PanelEstado, FichaDeOrden, FormularioDiagnostico, textoDeAntiguedad } from './formularios'
 import { NOMBRE_ESTADO } from '@/lib/ordenes-de-trabajo/estados'
 
@@ -122,18 +123,24 @@ describe('PanelEstado (Task 4 del rediseño: el paño "ESTADO ACTUAL")', () => {
 })
 
 describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
+  // FichaDeOrden renderiza <Encabezado> (Task 1 del ciclo del shell móvil),
+  // que sin `atras` renderiza el SidebarTrigger de shadcn — y ése llama a
+  // useSidebar(), que tira si no hay un SidebarProvider como ancestro. Mismo
+  // motivo que ya documentó components/shell/encabezado.test.tsx.
   function render(opts: { anulada?: boolean; esDuenio?: boolean } = {}) {
     return renderToStaticMarkup(
-      <FichaDeOrden
-        titulo="Orden #221 · Samsung A54"
-        subtitulo="Ingresó el 29/07/2026 · hace 23 días en el local"
-        ordenId="o-1"
-        anulada={opts.anulada ?? false}
-        esDuenio={opts.esDuenio ?? true}
-        accionAnular={accionFalsa}
-        columnaIzquierda={<div>cuerpo izquierdo</div>}
-        columnaDerecha={<div>bitácora</div>}
-      />,
+      <SidebarProvider>
+        <FichaDeOrden
+          titulo="Orden #221 · Samsung A54"
+          subtitulo="Ingresó el 29/07/2026 · hace 23 días en el local"
+          ordenId="o-1"
+          anulada={opts.anulada ?? false}
+          esDuenio={opts.esDuenio ?? true}
+          accionAnular={accionFalsa}
+          columnaIzquierda={<div>cuerpo izquierdo</div>}
+          columnaDerecha={<div>bitácora</div>}
+        />
+      </SidebarProvider>,
     )
   }
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { SidebarProvider } from '@/components/ui/sidebar'
 
 // Mismo criterio que app/(app)/vender/caja.test.tsx: acciones.ts es
 // 'use server' y su contrato ya lo prueba acciones.test.ts contra una base
@@ -23,9 +24,18 @@ const ARBOL = [
   },
 ]
 
+// FormularioDeAlta y FichaDeArticulo renderizan <Encabezado> (Task 1 del
+// ciclo del shell móvil, componente en components/shell/encabezado.tsx), que
+// sin `atras` renderiza el SidebarTrigger de shadcn — y ése llama a
+// useSidebar(), que tira si no hay un SidebarProvider como ancestro. Mismo
+// motivo que ya documentó components/shell/encabezado.test.tsx.
 async function renderAlta(arbol = ARBOL) {
   const { FormularioDeAlta } = await import('./formularios')
-  return renderToStaticMarkup(<FormularioDeAlta proximoSku="A-0043" arbol={arbol} />)
+  return renderToStaticMarkup(
+    <SidebarProvider>
+      <FormularioDeAlta proximoSku="A-0043" arbol={arbol} />
+    </SidebarProvider>,
+  )
 }
 
 async function renderFicha(
@@ -34,18 +44,20 @@ async function renderFicha(
 ) {
   const { FichaDeArticulo } = await import('./formularios')
   return renderToStaticMarkup(
-    <FichaDeArticulo
-      titulo="Vidrio templado 9H"
-      subtitulo="SKU 000412 · Producto"
-      articuloId="a1"
-      nombre="Vidrio templado 9H"
-      sku="000412"
-      precio="12000"
-      categoria={categoria}
-      desactivado={extra.desactivado ?? false}
-      esDuenio={extra.esDuenio ?? true}
-      columnaIzquierda={<div>columna izquierda</div>}
-    />,
+    <SidebarProvider>
+      <FichaDeArticulo
+        titulo="Vidrio templado 9H"
+        subtitulo="SKU 000412 · Producto"
+        articuloId="a1"
+        nombre="Vidrio templado 9H"
+        sku="000412"
+        precio="12000"
+        categoria={categoria}
+        desactivado={extra.desactivado ?? false}
+        esDuenio={extra.esDuenio ?? true}
+        columnaIzquierda={<div>columna izquierda</div>}
+      />
+    </SidebarProvider>,
   )
 }
 
