@@ -153,7 +153,15 @@ export function PanelDeCategorias({
     })
 
   return (
-    <aside className="flex w-[248px] shrink-0 flex-col gap-0.5 self-start rounded-2xl border bg-card px-2 py-3">
+    // Task 6 del ciclo móvil: el ancho pasa a ser responsivo — el MISMO
+    // componente se sirve dos veces (`app/(app)/inventario/page.tsx`), en la
+    // columna de escritorio (248px fijo) y adentro del Sheet del teléfono,
+    // donde 248px fijo desbordaba o dejaba un hueco según el ancho de la
+    // hoja. `w-full` llena el contenedor que le toque (la columna o la
+    // hoja); `lg:w-[248px]` recupera el ancho fijo recién en escritorio. El
+    // resto del componente —el ABM entero: crear, renombrar, mover, borrar,
+    // los toasts— sigue sin tocarse.
+    <aside className="flex w-full shrink-0 flex-col gap-0.5 self-start rounded-2xl border bg-card px-2 py-3 lg:w-[248px]">
       <div className="flex h-7 items-center justify-between px-2">
         <span className="text-[10px] font-bold tracking-[0.16em] text-muted-foreground">
           CATEGORÍAS

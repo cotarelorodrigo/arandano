@@ -1,12 +1,14 @@
 import Link from 'next/link'
 import type { Prisma } from '@/generated/prisma/client'
-import { Search } from 'lucide-react'
+import { Search, Plus, Truck, ListTree, X } from 'lucide-react'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger,
+} from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
 import { estadoDeFila, ChipEstado, type EstadoDeFila } from './chip-estado'
@@ -50,6 +52,26 @@ export function ramaDelArbol(arbol: RamaConHijas[], cat: string | null): RamaEle
     if (rubro.id === cat) return { ids: [rubro.id, ...rubro.hijas.map((h) => h.id)] }
     const marca = rubro.hijas.find((h) => h.id === cat)
     if (marca) return { ids: [marca.id] }
+  }
+  return null
+}
+
+/**
+ * El nombre a mostrar de la rama activa — el chip del teléfono (design/
+ * arandano.pen, nodo `o0cWFv`) lo necesita resuelto contra el árbol, porque
+ * `cat` en la URL es sólo un id (o el valor reservado de "sin categoría").
+ *
+ * No usa `ramaDelArbol`: aquella resuelve a QUÉ IDS filtrar (un rubro
+ * arrastra a sus marcas); ésta resuelve el NOMBRE de la rama elegida en sí,
+ * que es un dato distinto.
+ */
+export function nombreDeRama(arbol: RamaConHijas[], cat: string | null): string | null {
+  if (cat === null) return null
+  if (cat === SIN_CATEGORIA) return 'Sin categoría'
+  for (const rubro of arbol) {
+    if (rubro.id === cat) return rubro.nombre
+    const marca = rubro.hijas.find((h) => h.id === cat)
+    if (marca) return marca.nombre
   }
   return null
 }
@@ -151,67 +173,98 @@ const OPCIONES_TIPO: { valor: TipoFiltro | null; rotulo: string }[] = [
  * pero con teclado y sin JavaScript ninguna era alcanzable. Un link plano no
  * tiene ese problema — es nativamente enfocable y no reclama un rol de pestaña
  * que no puede cumplir.
+ *
+ * **Task 6 del ciclo móvil.** El teléfono (design/arandano.pen, `b1jiWO` >
+ * `UMq99`) apila el buscador arriba y deja el segmentado a ancho completo
+ * junto al botón de 36px que abre el árbol de categorías en un `Sheet` — ese
+ * botón se recibe YA ARMADO en `panelCategorias` (mismo criterio que
+ * `controlMovil` de `Encabezado`: quien lo arma necesita `arbol`, el total
+ * del catálogo y `esDuenio`, datos que esta función no usa para nada más).
+ * "Ver desactivados" y "Buscar" no los dibuja la maqueta, pero no se sacan —
+ * silencio del `.pen` no es instrucción de borrar una capacidad real (mismo
+ * criterio que el typeahead de `/vender`); pasan a su propia fila mobile-
+ * first, y en escritorio `lg:contents` los devuelve a la fila única de
+ * siempre.
  */
 export function FiltrosDeInventario({
   busqueda,
   verInactivos,
   tipo,
   cat = null,
+  panelCategorias,
 }: {
   busqueda: string
   verInactivos: boolean
   tipo: TipoFiltro | null
   cat?: string | null
+  /** El botón de 36px + `Sheet` que abre el árbol de categorías en el
+   *  teléfono (`lg:hidden` ya resuelto por quien lo arma) — ver el docblock
+   *  de esta función. */
+  panelCategorias?: React.ReactNode
 }) {
   return (
-    <div className="flex items-center gap-[10px]">
-      <form method="get" className="flex flex-1 items-center gap-[10px]">
+    <div className="flex flex-col gap-[10px] lg:flex-row lg:items-center">
+      <form method="get" className="flex flex-col gap-[10px] lg:flex-1 lg:flex-row lg:items-center">
         {tipo && <input type="hidden" name="tipo" value={tipo} />}
         {/* Por lo mismo que el tipo: sin esto, tipear una búsqueda desde una
             rama seleccionada la pierde, y el resultado sale de todo el
             catálogo cuando la persona creía estar buscando adentro del rubro. */}
         {cat && <input type="hidden" name="cat" value={cat} />}
-        <div className="relative flex-1">
+        <div className="relative lg:flex-1">
           <Search
             aria-hidden="true"
             className="pointer-events-none absolute top-1/2 left-[13px] size-4 -translate-y-1/2 text-muted-foreground"
           />
           <Input
+            id="buscador-inventario"
             name="q"
             defaultValue={busqueda}
             aria-label="Buscar por nombre o código"
             placeholder="Buscar por nombre o código"
-            className="h-10 rounded-[9px] border-input bg-card pl-9 text-sm"
+            className="h-10 w-full rounded-[9px] border-input bg-card pl-9 text-sm"
           />
         </div>
-        <label className="flex h-10 items-center gap-2 rounded-[9px] border border-input bg-card px-[13px] text-[13px] font-normal text-foreground-soft">
-          <input
-            type="checkbox"
-            name="inactivos"
-            value="1"
-            defaultChecked={verInactivos}
-            className="size-[15px] rounded-[4px] border-input accent-primary"
-          />
-          Ver desactivados
-        </label>
-        <Button type="submit" size="sm" variant="secondary">
-          Buscar
-        </Button>
+        {/* "Ver desactivados" + "Buscar": su propia fila en el teléfono, sin
+            dibujo propio en la maqueta; `lg:contents` los devuelve a la fila
+            única de escritorio de siempre. */}
+        <div className="flex items-center gap-[10px] lg:contents">
+          <label className="flex h-10 flex-1 items-center gap-2 rounded-[9px] border border-input bg-card px-[13px] text-[13px] font-normal text-foreground-soft lg:flex-initial">
+            <input
+              type="checkbox"
+              name="inactivos"
+              value="1"
+              defaultChecked={verInactivos}
+              className="size-[15px] rounded-[4px] border-input accent-primary"
+            />
+            Ver desactivados
+          </label>
+          <Button type="submit" size="sm" variant="secondary">
+            Buscar
+          </Button>
+        </div>
       </form>
-      <div className="flex h-auto gap-0.5 rounded-[10px] bg-muted p-[3px]">
-        {OPCIONES_TIPO.map((o) => (
-          <Link
-            key={o.valor ?? VALOR_TODOS}
-            href={hrefListado({ busqueda, verInactivos, tipo: o.valor, cat })}
-            className={
-              o.valor === tipo
-                ? 'rounded-lg bg-card px-[13px] py-[7px] text-[12px] font-semibold text-foreground shadow-sm'
-                : 'rounded-lg px-[13px] py-[7px] text-[12px] font-medium text-muted-foreground'
-            }
-          >
-            {o.rotulo}
-          </Link>
-        ))}
+      {/* El segmentado + el botón de categorías: una sola fila en el
+          teléfono (`UMq99`); `lg:contents` la disuelve en escritorio, donde
+          el botón desaparece (`lg:hidden`, armado por quien pasa
+          `panelCategorias`) y el segmentado vuelve a ser el único hermano
+          del form, igual que siempre. */}
+      <div className="flex items-center gap-2 lg:contents">
+        <div className="flex h-auto flex-1 gap-0.5 rounded-[10px] bg-muted p-[3px] lg:flex-initial">
+          {OPCIONES_TIPO.map((o) => (
+            <Link
+              key={o.valor ?? VALOR_TODOS}
+              href={hrefListado({ busqueda, verInactivos, tipo: o.valor, cat })}
+              className={
+                o.valor === tipo
+                  ? 'flex-1 rounded-lg bg-card px-[13px] py-[7px] text-center text-[12px] font-semibold text-foreground shadow-sm'
+                  : 'flex-1 rounded-lg px-[13px] py-[7px] text-center text-[12px] font-medium text-muted-foreground'
+              }
+            >
+              {o.rotulo}
+            </Link>
+          ))}
+        </div>
+        {panelCategorias}
       </div>
     </div>
   )
@@ -275,6 +328,12 @@ export default async function Inventario({
   // Si el id no correspondía a ninguna rama, la pantalla se comporta como
   // "Todos" — y el panel tampoco marca ninguna fila como activa.
   const cat = rama === null ? null : catPedida
+  // El nombre de la rama activa, para el chip del teléfono — `cat` ya está
+  // garantizado a corresponder a una rama real del árbol (si no, cayó en
+  // `null` arriba), así que esto sólo puede dar `null` cuando `cat` también
+  // lo es.
+  const nombreRama = nombreDeRama(arbol, cat)
+  const esDuenio = sesion.usuario.rol === 'DUENO'
 
   const donde = construirDonde({ busqueda, verInactivos, tipo, categoria: rama })
 
@@ -328,35 +387,130 @@ export default async function Inventario({
           ) : undefined
         }
         acciones={
-          sesion.usuario.rol === 'DUENO' ? (
+          esDuenio ? (
             <Button asChild size="sm">
               <Link href="/inventario/nuevo">Artículo nuevo</Link>
             </Button>
           ) : undefined
         }
+        // Task 6 del ciclo móvil: el link a /inventario/nuevo del teléfono
+        // (design/arandano.pen, `b1jiWO` > `GZz1a`), tono 'accion' porque el
+        // botón CREA algo — mismo criterio que /usuarios.
+        accionMovil={
+          esDuenio
+            ? { icono: Plus, etiqueta: 'Artículo nuevo', href: '/inventario/nuevo', tono: 'accion' }
+            : undefined
+        }
       />
-      <div className="flex flex-col gap-4 p-6">
-        <FiltrosDeInventario busqueda={busqueda} verInactivos={verInactivos} tipo={tipo} cat={cat} />
+      {/* padding [12,14] y gap 10: una de las dos excepciones al padding/gap
+          de siempre, geometría que fija el propio plan de este ciclo — no el
+          `.pen`, que no dibuja un frame "Cuerpo" separado para esta
+          pantalla. lg: vuelve al p-6/gap-4 de escritorio, sin tocar. */}
+      <div className="flex flex-col gap-[10px] px-[14px] py-3 lg:gap-4 lg:p-6">
+        <FiltrosDeInventario
+          busqueda={busqueda}
+          verInactivos={verInactivos}
+          tipo={tipo}
+          cat={cat}
+          panelCategorias={
+            // El botón de 36px (nodo `TK1ZV`) que abre el árbol en un
+            // `Sheet` — sólo en el teléfono. `PanelDeCategorias` es el
+            // MISMO componente que la columna de escritorio, sin copiarlo:
+            // el ABM entero (renombrar, mover, borrar, los toasts) viaja
+            // adentro sin cambios.
+            <Sheet>
+              <SheetTrigger
+                aria-label="Categorías"
+                className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-card text-foreground lg:hidden"
+              >
+                <ListTree aria-hidden="true" className="size-[17px]" />
+              </SheetTrigger>
+              <SheetContent side="left" className="w-[280px] gap-0 overflow-y-auto p-3 sm:max-w-none">
+                {/* sr-only: el panel ya muestra su propio título visible
+                    ("CATEGORÍAS"); esto es sólo lo que Radix pide para
+                    `aria-labelledby`/`aria-describedby` del diálogo. */}
+                <SheetHeader className="sr-only">
+                  <SheetTitle>Categorías</SheetTitle>
+                  <SheetDescription>
+                    El árbol de categorías del catálogo: navegar, filtrar y administrar.
+                  </SheetDescription>
+                </SheetHeader>
+                <PanelDeCategorias
+                  arbol={arbol}
+                  total={totalDelCatalogo}
+                  sinCategoria={sinCategoria}
+                  activa={cat}
+                  esDuenio={esDuenio}
+                  filtros={{ busqueda, verInactivos, tipo }}
+                />
+              </SheetContent>
+            </Sheet>
+          }
+        />
+
+        {/* El chip de la rama activa, sólo en el teléfono (design/
+            arandano.pen, nodo `jgesH`): en escritorio la rama activa ya se
+            ve resaltada en el panel de la columna, así que este chip sería
+            redundante ahí. El ✕ limpia el filtro sin tocar búsqueda ni tipo
+            — mismo mecanismo que "Buscar en todo el inventario", más abajo. */}
+        {cat && nombreRama && (
+          <div className="flex items-center gap-2 lg:hidden">
+            <Link
+              href={hrefListado({ busqueda, verInactivos, tipo, cat: null })}
+              aria-label={`Quitar el filtro ${nombreRama}`}
+              className="flex items-center gap-[7px] rounded-full bg-accent px-[10px] py-[5px]"
+            >
+              <span className="text-[12px] font-semibold text-marca">{nombreRama}</span>
+              <X aria-hidden="true" className="size-3 text-marca" />
+            </Link>
+            <span className="text-[11px] text-muted-foreground">
+              {total === 1 ? '1 artículo en la rama' : `${total} artículos en la rama`}
+            </span>
+          </div>
+        )}
+
+        {/* "Ingresar mercadería" (design/arandano.pen, nodo `U3nUt`): sólo en
+            el teléfono — en escritorio no hay un botón equivalente en el
+            Topbar hoy. La pantalla no tiene (todavía) un alta de mercadería
+            a nivel de listado —"Ingresar mercadería" es una acción POR
+            artículo, dentro de su ficha (`/inventario/[id]`, ver
+            `docs/pantallas.md`)—, así que este atajo lleva al buscador: es
+            el primer paso real de "encontrar el artículo al que ingresarle
+            stock" y no un link a ningún lado. Ancla al `id` del buscador de
+            arriba en vez de JavaScript: sin React, un link a un fragmento ya
+            hace scroll Y foco sobre un elemento enfocable (el `<input>`). */}
+        <a
+          href="#buscador-inventario"
+          className="flex h-[42px] w-full items-center justify-center gap-2 rounded-[11px] bg-card text-[13px] font-semibold text-foreground lg:hidden"
+        >
+          <Truck aria-hidden="true" className="size-4" />
+          Ingresar mercadería
+        </a>
 
         {/* El frame `Contenido` de la maqueta (design/arandano.pen): el panel
             de 248 a la izquierda y el listado ocupando lo que queda. Los
             filtros quedan ARRIBA, cruzando las dos columnas, porque el
-            buscador manda sobre las dos. */}
-        <div className="flex flex-1 items-stretch gap-4">
-          <PanelDeCategorias
-            arbol={arbol}
-            total={totalDelCatalogo}
-            sinCategoria={sinCategoria}
-            activa={cat}
-            esDuenio={sesion.usuario.rol === 'DUENO'}
-            filtros={{ busqueda, verInactivos, tipo }}
-          />
+            buscador manda sobre las dos.
+            Task 6: en el teléfono se apila (flex-col) y el panel de la
+            columna desaparece (hidden lg:block) — ahí el árbol vive adentro
+            del Sheet que arma `panelCategorias`, más arriba. */}
+        <div className="flex flex-1 flex-col gap-4 lg:flex-row lg:items-stretch">
+          <div className="hidden lg:block">
+            <PanelDeCategorias
+              arbol={arbol}
+              total={totalDelCatalogo}
+              sinCategoria={sinCategoria}
+              activa={cat}
+              esDuenio={esDuenio}
+              filtros={{ busqueda, verInactivos, tipo }}
+            />
+          </div>
 
         {/* El listado, dentro de su propia card (design/arandano.pen, nodo
             `BT29h`) — antes era una <table> suelta en la pantalla. */}
         <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border bg-card">
           {articulos.length === 0 ? (
-            <p className="p-[18px] text-sm text-muted-foreground">
+            <p className="p-[14px] text-sm text-muted-foreground lg:p-[18px]">
               {/* Los dos vacíos no son el mismo vacío (hallazgo M8 del
                   barrido final): con `total > 0` la página quedó fuera de
                   rango (`?p` se clampea a [1, 1.000.000], no a `paginas`), y
@@ -398,7 +552,7 @@ export default async function Inventario({
                 // Un local recién dado de alta llega acá con cero artículos, y ésta es
                 // la primera pantalla que ve. En blanco no diría qué hacer.
                 `No hay artículos que coincidan con "${busqueda}".`
-              ) : sesion.usuario.rol === 'DUENO' ? (
+              ) : esDuenio ? (
                 'Todavía no cargaste ningún artículo. Empezá por «Artículo nuevo».'
               ) : (
                 'Todavía no hay artículos cargados.'
@@ -406,108 +560,200 @@ export default async function Inventario({
             </p>
           ) : (
             <>
-              <Table className="table-fixed">
-                <TableHeader>
-                  <TableRow className="bg-muted hover:bg-muted">
-                    <TableHead className="h-auto w-[100px] px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                      Código
-                    </TableHead>
-                    <TableHead className="h-auto px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                      Nombre
-                    </TableHead>
-                    <TableHead className="h-auto w-[110px] px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                      Tipo
-                    </TableHead>
-                    <TableHead className="h-auto w-[140px] px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                      Precio
-                    </TableHead>
-                    <TableHead className="h-auto w-[110px] px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                      Stock
-                    </TableHead>
-                    {/* Sin rótulo, a propósito (design/arandano.pen, nodo
-                        `BIcFE`): es el encabezado del chip de estado, y la
-                        mayoría de las filas no lleva ninguno. */}
-                    <TableHead className="h-auto w-[120px] px-[7px] py-3 pr-[18px] text-right text-[10px] font-bold text-muted-foreground" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {articulos.map((a) => {
-                    const desactivado = a.desactivadoEn !== null
-                    const estado = estadoDeFila({ tipo: a.tipo, stock: a.stock, desactivado })
-                    return (
-                      <TableRow key={a.id}>
-                        <TableCell
-                          className={cn(
-                            estilos.archivo,
-                            'p-[11px] px-[7px] pl-[18px] text-sm',
-                            claseCodigoOPrecio(desactivado),
+              {/* El patrón de listado (Task 4 del ciclo móvil, docblock de
+                  referencia en app/(app)/ventas/page.tsx:344-408): grid +
+                  `display:contents` en vez del componente `Table` de shadcn.
+                  Las seis anchuras son las mismas que declaraban sus
+                  encabezados de arriba (100, auto→1fr, 110, 140, 110, 120), y
+                  el DOM de cada fila mantiene el MISMO orden 1-a-6 de esas
+                  columnas (Código, Nombre, Tipo, Precio, Stock, Estado) — a
+                  propósito, sin
+                  ningún `order`/`col-start` explícito: mezclarlos con el
+                  auto-placement de Grid invita a bugs de packing imposibles
+                  de ver sin un browser real (este repo no tiene jsdom).
+
+                  Lo que en el teléfono (design/arandano.pen, `b5J1gV` >
+                  `QqV26`) se ve como "Nombre" y "Precio" adyacentes en una
+                  sola línea es, en realidad, la fila entera en
+                  `flex-wrap`: Código y Tipo —entre medio de Nombre y
+                  Precio en el DOM— están `hidden` en el teléfono
+                  (`display:none`, fuera del flujo), así que Nombre y Precio
+                  quedan pegados igual, sin hueco. La línea de meta (más
+                  abajo, con Código+categoría fundidos, el chip y el stock)
+                  fuerza el salto a una segunda línea con `basis-full`. En
+                  escritorio esa línea de meta se saca entera (`lg:hidden`,
+                  no consume columna) y las cuatro celdas ocultas del
+                  teléfono vuelven a mostrarse — el resultado es exactamente
+                  la tabla de seis columnas de siempre. */}
+              <div role="table" className="grid grid-cols-1 lg:grid-cols-[100px_1fr_110px_140px_110px_120px]">
+                <div role="row" className="hidden lg:contents">
+                  <div role="columnheader" className="bg-muted px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                    Código
+                  </div>
+                  <div role="columnheader" className="bg-muted px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                    Nombre
+                  </div>
+                  <div role="columnheader" className="bg-muted px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                    Tipo
+                  </div>
+                  <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                    Precio
+                  </div>
+                  <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                    Stock
+                  </div>
+                  {/* Sin rótulo, a propósito (design/arandano.pen, nodo
+                      `BIcFE`): es el encabezado del chip de estado, y la
+                      mayoría de las filas no lleva ninguno. */}
+                  <div role="columnheader" className="bg-muted px-[7px] py-3 pr-[18px] text-right text-[10px] font-bold text-muted-foreground" />
+                </div>
+
+                {articulos.map((a) => {
+                  const desactivado = a.desactivadoEn !== null
+                  const estado = estadoDeFila({ tipo: a.tipo, stock: a.stock, desactivado })
+                  // Un guion y NO un 0: el motor no le descuenta stock a un
+                  // servicio (lib/ventas/crear.ts filtra por esProducto), así
+                  // que un 0 se leería como faltante y alguien saldría a
+                  // comprar lo que no existe. Un solo cómputo: lo muestran
+                  // por igual la celda de escritorio y la línea de meta del
+                  // teléfono.
+                  const stockTexto =
+                    a.tipo === 'SERVICIO' ? '—' : formatearCantidad(a.stock.toString())
+                  const claseStockCelda =
+                    a.tipo === 'SERVICIO' ? 'font-normal text-muted-foreground' : claseStock(estado)
+                  // La línea de meta del teléfono (nodo `w6wW2e`): código +
+                  // categoría fundidos en un solo texto — la categoría sólo
+                  // si existe, mismo dato que la segunda línea de Nombre en
+                  // escritorio.
+                  const detalleMovil = a.categoria ? `${a.sku} · ${a.categoria}` : a.sku
+                  return (
+                    <div
+                      key={a.id}
+                      role="row"
+                      className="group flex flex-wrap items-center gap-x-[10px] gap-y-[5px] border-b p-[11px] px-[14px] last:border-b-0 lg:contents"
+                    >
+                      {/* Código: se funde en la línea de meta del teléfono
+                          (más abajo); su propia celda queda oculta ahí y
+                          vuelve en escritorio. */}
+                      <div
+                        role="cell"
+                        className={cn(
+                          estilos.archivo,
+                          'hidden whitespace-nowrap text-sm lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors',
+                          claseCodigoOPrecio(desactivado),
+                        )}
+                      >
+                        <div className="lg:flex lg:h-full lg:items-center">{a.sku}</div>
+                      </div>
+
+                      {/* Nombre: la celda más alta de la fila cuando hay
+                          categoría (dos líneas) — por eso no lleva el
+                          envoltorio de centrado que sí llevan las demás, ver
+                          el docblock de `Listado` en ventas/page.tsx. */}
+                      <div
+                        role="cell"
+                        className="min-w-0 flex-1 text-sm lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+                      >
+                        <div className="flex flex-col gap-0.5">
+                          <Link
+                            href={`/inventario/${a.id}`}
+                            className="text-sm font-medium text-foreground hover:underline"
+                          >
+                            {a.nombre}
+                          </Link>
+                          {/* Segunda línea, bajo el nombre (nodo `HU2a7`):
+                              un string de dos niveles ya tipeado a mano por
+                              quien carga el artículo ("Accesorios ·
+                              Protección"), no una jerarquía que el código
+                              interprete. Ausente en la mayoría de los
+                              artículos hoy: nullable, y sin ella la fila no
+                              pierde ninguna línea. Sólo en escritorio: en el
+                              teléfono el mismo dato ya sale en la línea de
+                              meta, junto al código. */}
+                          {a.categoria && (
+                            <span className="hidden text-[11px] text-muted-foreground lg:block">
+                              {a.categoria}
+                            </span>
                           )}
-                        >
-                          {a.sku}
-                        </TableCell>
-                        <TableCell className="p-[11px] px-[7px] whitespace-normal">
-                          <div className="flex flex-col gap-0.5">
-                            <Link
-                              href={`/inventario/${a.id}`}
-                              className="text-sm font-medium text-foreground hover:underline"
-                            >
-                              {a.nombre}
-                            </Link>
-                            {/* Segunda línea, bajo el nombre (nodo `HU2a7`):
-                                un string de dos niveles ya tipeado a mano por
-                                quien carga el artículo ("Accesorios ·
-                                Protección"), no una jerarquía que el código
-                                interprete. Ausente en la mayoría de los
-                                artículos hoy: nullable, y sin ella la fila
-                                no pierde ninguna línea. */}
-                            {a.categoria && (
-                              <span className="text-[11px] text-muted-foreground">{a.categoria}</span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="p-[11px] px-[7px] text-foreground">
+                        </div>
+                      </div>
+
+                      {/* Tipo: no tiene equivalente visible en el teléfono
+                          (el "Producto"/"Servicio" ya se lee de si Stock
+                          muestra unidades o un guion) — sólo escritorio. */}
+                      <div
+                        role="cell"
+                        className="hidden whitespace-nowrap text-sm text-foreground lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+                      >
+                        <div className="lg:flex lg:h-full lg:items-center">
                           {a.tipo === 'PRODUCTO' ? 'Producto' : 'Servicio'}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            estilos.archivo,
-                            'p-[11px] px-[7px] text-right font-semibold tabular-nums',
-                            claseCodigoOPrecio(desactivado),
-                          )}
-                        >
+                        </div>
+                      </div>
+
+                      {/* Precio: junto a Nombre en la misma línea del
+                          teléfono (`shrink-0`, nunca se lo pisa el nombre
+                          largo gracias al `min-w-0` de arriba). */}
+                      <div
+                        role="cell"
+                        className={cn(
+                          estilos.archivo,
+                          'shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors',
+                          claseCodigoOPrecio(desactivado),
+                        )}
+                      >
+                        <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
                           {formatearPrecio(a.precio.toString())}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            estilos.archivo,
-                            'p-[11px] px-[7px] text-right tabular-nums',
-                            a.tipo === 'SERVICIO' ? 'font-normal text-muted-foreground' : claseStock(estado),
-                          )}
-                        >
-                          {a.tipo === 'SERVICIO' ? (
-                            // Un guion y NO un 0: el motor no le descuenta
-                            // stock a un servicio (lib/ventas/crear.ts filtra
-                            // por esProducto), así que un 0 se leería como
-                            // faltante y alguien saldría a comprar lo que no
-                            // existe.
-                            '—'
-                          ) : (
-                            formatearCantidad(a.stock.toString())
-                          )}
-                        </TableCell>
-                        <TableCell className="p-[11px] px-[7px] pr-[18px] text-right">
+                        </div>
+                      </div>
+
+                      {/* Meta del teléfono (nodo `w6wW2e`): código+categoría,
+                          el chip de estado y el stock, en su propia línea.
+                          `basis-full` fuerza el salto de línea del `flex-wrap`
+                          de la fila —Código y Tipo, ocultos arriba, no dejan
+                          hueco—, y `lg:hidden` la saca del todo en
+                          escritorio, donde no consume ninguna columna. */}
+                      <div className="flex basis-full items-center gap-2 lg:hidden">
+                        <span title={detalleMovil} className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+                          {detalleMovil}
+                        </span>
+                        <ChipEstado estado={estado} />
+                        <span className={cn(estilos.archivo, 'shrink-0 text-[12px] tabular-nums', claseStockCelda)}>
+                          {stockTexto}
+                        </span>
+                      </div>
+
+                      {/* Stock: propia celda de escritorio; en el teléfono el
+                          mismo valor ya salió en la línea de meta. */}
+                      <div
+                        role="cell"
+                        className={cn(
+                          estilos.archivo,
+                          'hidden whitespace-nowrap text-right text-sm tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors',
+                          claseStockCelda,
+                        )}
+                      >
+                        <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{stockTexto}</div>
+                      </div>
+
+                      {/* Estado: propia celda de escritorio; en el teléfono
+                          el mismo chip ya salió en la línea de meta. */}
+                      <div
+                        role="cell"
+                        className="hidden text-right lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+                      >
+                        <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
                           <ChipEstado estado={estado} />
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
 
               {paginas > 1 && (
                 <nav
                   aria-label="Paginación"
-                  className="mt-auto flex items-center justify-between border-t px-[18px] py-3"
+                  className="mt-auto flex items-center justify-between border-t px-[14px] py-3 lg:px-[18px]"
                 >
                   <span className="text-[12px] text-muted-foreground">
                     {formatearCantidad(String((pagina - 1) * POR_PAGINA + 1))}–

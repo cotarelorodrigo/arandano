@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
   tipoDeQuery, construirDonde, hrefListado, ventanaDePaginas, FiltrosDeInventario,
-  ramaDelArbol,
+  ramaDelArbol, nombreDeRama,
 } from './page'
 import { SIN_CATEGORIA } from './consulta'
 
@@ -347,5 +347,183 @@ describe('el vacío con una rama activa', () => {
   it('el caso de la rama se evalúa antes que el de la búsqueda', () => {
     expect(FUENTE.indexOf(') : cat ? (')).toBeGreaterThan(-1)
     expect(FUENTE.indexOf(') : cat ? (')).toBeLessThan(FUENTE.indexOf(') : busqueda ? ('))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Task 6 del ciclo móvil: el listado y el árbol de categorías en el teléfono.
+// ---------------------------------------------------------------------------
+
+describe('nombreDeRama', () => {
+  const ARBOL = [
+    { id: 'id-cables', nombre: 'Cables', cuenta: 3, hijas: [] },
+    {
+      id: 'id-fundas', nombre: 'Fundas', cuenta: 12,
+      hijas: [{ id: 'id-apple', nombre: 'Apple', cuenta: 7 }],
+    },
+  ]
+
+  it('resuelve el nombre de un rubro', () => {
+    expect(nombreDeRama(ARBOL, 'id-fundas')).toBe('Fundas')
+  })
+
+  it('resuelve el nombre de una marca', () => {
+    expect(nombreDeRama(ARBOL, 'id-apple')).toBe('Apple')
+  })
+
+  it('resuelve "Sin categoría" para el valor reservado', () => {
+    expect(nombreDeRama(ARBOL, SIN_CATEGORIA)).toBe('Sin categoría')
+  })
+
+  it('null sin nada elegido', () => {
+    expect(nombreDeRama(ARBOL, null)).toBeNull()
+  })
+})
+
+describe('FiltrosDeInventario en el teléfono (Task 6)', () => {
+  it('el segmentado de Tipo llena el ancho: el contenedor y cada opción llevan flex-1', () => {
+    const html = renderToStaticMarkup(
+      <FiltrosDeInventario busqueda="" verInactivos={false} tipo={null} />,
+    )
+    // El contenedor del segmentado (antes "flex h-auto gap-0.5 rounded-[10px]
+    // bg-muted p-[3px]", sin ningún flex-1): ahora ocupa el ancho disponible
+    // en el teléfono y vuelve a su ancho natural en escritorio.
+    expect(html).toMatch(/class="[^"]*\bflex-1\b[^"]*bg-muted p-\[3px\][^"]*lg:flex-initial/)
+  })
+
+  it('recibe el botón/Sheet de categorías del teléfono y lo ubica junto al segmentado', () => {
+    const marcador = <span data-testid="marcador-panel">Categorías</span>
+    const html = renderToStaticMarkup(
+      <FiltrosDeInventario busqueda="" verInactivos={false} tipo={null} panelCategorias={marcador} />,
+    )
+    expect(html).toContain('data-testid="marcador-panel"')
+  })
+
+  it('sin panelCategorias no rompe (los tests existentes no lo pasan)', () => {
+    expect(() =>
+      renderToStaticMarkup(<FiltrosDeInventario busqueda="" verInactivos={false} tipo={null} />),
+    ).not.toThrow()
+  })
+})
+
+describe('el Contenido pasa a columna en el teléfono (Task 6)', () => {
+  const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
+
+  it('el envoltorio de PanelDeCategorias + Listado es flex-col lg:flex-row', () => {
+    expect(FUENTE).toMatch(/flex-1 flex-col gap-4 lg:flex-row lg:items-stretch/)
+  })
+
+  // El mismo componente, sin copiarlo: se renderiza dos veces — la columna
+  // de escritorio (hidden lg:block) y adentro del Sheet que abre el teléfono.
+  it('PanelDeCategorias se renderiza exactamente dos veces', () => {
+    const apariciones = (FUENTE.match(/<PanelDeCategorias/g) ?? []).length
+    expect(apariciones).toBe(2)
+  })
+
+  it('la columna de escritorio queda hidden lg:block', () => {
+    expect(FUENTE).toMatch(/hidden lg:block[\s\S]{0,60}<PanelDeCategorias/)
+  })
+
+  it('el Sheet envuelve a la segunda instancia, para el teléfono', () => {
+    expect(FUENTE).toContain('<Sheet>')
+    expect(FUENTE).toContain('<SheetTrigger')
+    expect(FUENTE).toContain('<SheetContent')
+  })
+})
+
+describe('el chip de la rama activa, sólo en el teléfono (Task 6)', () => {
+  const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
+
+  it('existe sólo si hay una rama elegida (cat && nombreRama), y es lg:hidden', () => {
+    expect(FUENTE).toMatch(/\{cat && nombreRama[\s\S]{0,300}lg:hidden/)
+  })
+
+  it('muestra el conteo "N artículos en la rama"', () => {
+    expect(FUENTE).toContain('artículos en la rama')
+  })
+
+  // El ✕ del chip limpia el filtro sin tocar el resto (misma búsqueda, mismo
+  // tipo) — mismo mecanismo que "Buscar en todo el inventario".
+  it('el chip limpia el filtro (cat: null) sin tocar búsqueda ni tipo', () => {
+    const inicio = FUENTE.indexOf('nombreRama &&')
+    expect(inicio).toBeGreaterThan(-1)
+    const bloque = FUENTE.slice(inicio, FUENTE.indexOf('artículos en la rama', inicio))
+    expect(bloque).toMatch(/hrefListado\(\{ busqueda, verInactivos, tipo, cat: null \}\)/)
+  })
+})
+
+describe('el botón "Ingresar mercadería", sólo en el teléfono (Task 6)', () => {
+  const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
+
+  it('existe, a ancho completo y 42px de alto', () => {
+    const inicio = FUENTE.indexOf('href="#buscador-inventario"')
+    expect(inicio, 'no se encontró el link al buscador').toBeGreaterThan(-1)
+    const fin = FUENTE.indexOf('</a>', inicio)
+    const bloque = FUENTE.slice(inicio, fin)
+    expect(bloque).toContain('Ingresar mercadería')
+    expect(bloque).toMatch(/h-\[42px\]/)
+    expect(bloque).toMatch(/w-full/)
+    expect(bloque).toMatch(/lg:hidden/)
+  })
+})
+
+describe('el Encabezado gana su accionMovil en el teléfono (Task 6)', () => {
+  const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
+
+  it('plus a /inventario/nuevo, tono acción', () => {
+    const inicio = FUENTE.indexOf('accionMovil={')
+    expect(inicio).toBeGreaterThan(-1)
+    const bloque = FUENTE.slice(inicio, inicio + 300)
+    expect(bloque).toContain('icono: Plus')
+    expect(bloque).toContain("href: '/inventario/nuevo'")
+    expect(bloque).toContain("tono: 'accion'")
+  })
+})
+
+describe('el listado sigue el patrón grid + display:contents de la Task 4 (Task 6)', () => {
+  const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
+
+  it('el contenedor declara las seis anchuras que hoy declaraban los TableHead', () => {
+    expect(FUENTE).toContain('lg:grid-cols-[100px_1fr_110px_140px_110px_120px]')
+  })
+
+  it('ya no queda ningún <Table>/<TableRow>/<TableCell>', () => {
+    expect(FUENTE).not.toContain('<Table')
+    expect(FUENTE).not.toContain('<TableRow')
+    expect(FUENTE).not.toContain('<TableCell')
+    expect(FUENTE).not.toContain('<TableHead')
+  })
+
+  it('cada fila lleva role="row" y las celdas role="cell", al menos una por columna', () => {
+    expect(FUENTE).toContain('role="row"')
+    expect(FUENTE).toContain('role="columnheader"')
+    const celdas = (FUENTE.match(/role="cell"/g) ?? []).length
+    expect(celdas).toBeGreaterThanOrEqual(6)
+  })
+
+  it('el hover y la transición de escritorio viven en las celdas, con prefijo lg:', () => {
+    expect(FUENTE).toContain('lg:group-hover:bg-muted/50')
+    expect(FUENTE).toContain('lg:transition-colors')
+  })
+
+  it('el borde entre filas: lg:border-b y lg:group-last:border-b-0 en las celdas', () => {
+    expect(FUENTE).toContain('lg:border-b')
+    expect(FUENTE).toContain('lg:group-last:border-b-0')
+  })
+
+  it('la fila lleva "group" para que el hover de escritorio la reconozca', () => {
+    expect(FUENTE).toMatch(/role="row"\s+className="group /)
+  })
+})
+
+describe('el conteo del árbol NO cambia con ?q ni ?tipo (protegido, Task 6)', () => {
+  const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
+
+  // arbolDeCategorias sólo recibe verInactivos: si alguna vez alguien le
+  // suma busqueda o tipo, cada rama que no matchee la búsqueda mostraría 0 y
+  // el árbol dejaría de servir para navegar justo cuando más se lo necesita
+  // (razón ya escrita en el propio archivo, más arriba).
+  it('arbolDeCategorias se sigue llamando sólo con { verInactivos }', () => {
+    expect(FUENTE).toMatch(/arbolDeCategorias\(sesion\.tenant\.id, \{ verInactivos \}\)/)
   })
 })
