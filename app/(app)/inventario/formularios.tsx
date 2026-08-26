@@ -58,10 +58,15 @@ function Resultado({ estado }: { estado: EstadoInventario }) {
 function CardDelFormulario({ titulo, children }: { titulo: string; children: ReactNode }) {
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border bg-card">
-      <div className="border-b px-[18px] py-[13px]">
+      {/* Mobile-first (Task 7 del ciclo móvil, design/arandano.pen: los
+          Encabezado de card de `m34Naf`/`T5gME` miden padding [12,14], contra
+          los [13,18] de escritorio, sin cambios) — mismo patrón que ya usan
+          las cards de `/ventas` (app/(app)/ventas/[id]/page.tsx, "Qué se
+          vendió"). */}
+      <div className="border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
         <h2 className={`${estilos.tituloDeCard} text-foreground`}>{titulo}</h2>
       </div>
-      <div className="flex flex-col gap-[14px] p-[18px]">{children}</div>
+      <div className="flex flex-col gap-3 p-[14px] lg:gap-[14px] lg:p-[18px]">{children}</div>
     </div>
   )
 }
@@ -72,12 +77,21 @@ function CardDelFormulario({ titulo, children }: { titulo: string; children: Rea
  *  JavaScript, a diferencia de la visibilidad del bloque de Stock inicial
  *  más abajo, que si necesita `onChange` porque decide si otra card entera
  *  se monta o no. */
+// p-3 lg:p-[14px]: el nodo "Producto"/"Servicio" de `m34Naf` mide padding 12,
+// contra los 14 de escritorio (design/arandano.pen) — Task 7 del ciclo móvil.
 const TARJETA_TIPO =
-  'group flex flex-1 cursor-pointer items-start gap-[11px] rounded-xl border border-input bg-card p-[14px] has-[:checked]:border-2 has-[:checked]:border-primary has-[:checked]:bg-primary-soft has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring'
+  'group flex flex-1 cursor-pointer items-start gap-[11px] rounded-xl border border-input bg-card p-3 lg:p-[14px] has-[:checked]:border-2 has-[:checked]:border-primary has-[:checked]:bg-primary-soft has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring'
 const TITULO_TARJETA_TIPO =
   'text-sm font-semibold text-foreground group-has-[:checked]:text-primary'
 const DETALLE_TARJETA_TIPO = 'text-[11px] text-muted-foreground group-has-[:checked]:text-primary'
-const ICONO_TARJETA_TIPO = 'size-[19px] text-muted-foreground group-has-[:checked]:text-primary'
+// size-5 (20px) en el teléfono, size-[19px] en escritorio — mismo mecanismo
+// que el resto de este archivo, aunque acá la diferencia sea de 1px.
+const ICONO_TARJETA_TIPO = 'size-5 text-muted-foreground group-has-[:checked]:text-primary lg:size-[19px]'
+
+// El pie del teléfono, compartido por FormularioDeAlta y FichaDeArticulo
+// (design/arandano.pen, nodo "Pie" de `m34Naf`/`T5gME`): 50px de alto y radio
+// 12 para el botón — Task 7 del ciclo móvil.
+const CLASES_BOTON_PIE = 'h-[50px] rounded-[12px]'
 
 /**
  * Alta de artículo, en tres cards (design/arandano.pen, frame `B4O7t`): qué
@@ -122,6 +136,7 @@ export function FormularioDeAlta({
       <Encabezado
         titulo="Artículo nuevo"
         subtitulo="Se agrega al catálogo del local"
+        atras="/inventario"
         acciones={
           <>
             <Button asChild variant="ghost">
@@ -136,15 +151,23 @@ export function FormularioDeAlta({
       />
       {/* Dos columnas, como el frame `B4O7t` de design/arandano.pen: a la
           izquierda "Qué es" y "Datos del artículo", a la derecha el stock
-          inicial en 420 fijos. Antes era una sola columna de 760 centrada. */}
-      <div className="flex items-start gap-4 p-6">
-        <div className="flex flex-1 flex-col gap-4">
+          inicial en 420 fijos. Antes era una sola columna de 760 centrada.
+          Mobile-first (Task 7 del ciclo móvil, frame `m34Naf`): en el
+          teléfono las dos columnas se apilan — el DOM ya trae "Stock inicial"
+          DESPUÉS de las otras dos cards, que es exactamente el orden que pide
+          la maqueta, así que alcanza con `flex-col lg:flex-row`, sin el
+          mecanismo `contents`+`order-N` que sí hace falta en FichaDeArticulo
+          (ver su docblock). */}
+      <div className="flex flex-col gap-3 p-[14px] lg:flex-row lg:items-start lg:gap-4 lg:p-6">
+        <div className="flex flex-1 flex-col gap-3 lg:gap-4">
           <CardDelFormulario titulo="Qué estás cargando">
-            <div className="flex gap-3">
+            <div className="flex flex-col gap-3 lg:flex-row">
               {/* Dos tarjetas seleccionables y no un <select>: la maqueta pide
                   esto explícitamente (design/arandano.pen, nodos `eBTjd`/`Pqbdd`).
                   Son radios reales (`name="tipo"`), no botones con onClick: así
-                  el valor llega al servidor sin depender de JavaScript. */}
+                  el valor llega al servidor sin depender de JavaScript. Se
+                  apilan en el teléfono (`m34Naf`) y quedan lado a lado en
+                  escritorio (Task 7 del ciclo móvil). */}
               <label className={TARJETA_TIPO}>
                 <input
                   type="radio"
@@ -285,7 +308,7 @@ export function FormularioDeAlta({
           <Resultado estado={estado} />
         </div>
 
-        <div className="flex w-[420px] shrink-0 flex-col gap-4">
+        <div className="flex flex-col gap-3 lg:w-[420px] lg:shrink-0 lg:gap-4">
           {tipo === 'PRODUCTO' && (
             <CardDelFormulario titulo="Stock inicial">
               <div className="flex gap-3">
@@ -325,6 +348,27 @@ export function FormularioDeAlta({
             </CardDelFormulario>
           )}
         </div>
+      </div>
+
+      {/* El pie del teléfono (design/arandano.pen, nodo "Pie" de `m34Naf`):
+          los mismos "Cancelar"/"Guardar artículo" del Topbar, repetidos —
+          `lg:hidden`, el Topbar ya los muestra en escritorio (`hidden
+          lg:flex`, adentro de `acciones`). Los dos viven dentro del MISMO
+          `<form>` que envuelve toda la pantalla (className="contents" en el
+          `<form>` de arriba), así que ninguno necesita el atributo `form=`:
+          alcanza con ser descendiente. "Cancelar" cambia de variant acá
+          — `outline`, con el borde que la maqueta dibuja (`stroke:
+          $ar-line-strong`) — porque el `ghost` de escritorio no tiene fondo
+          ni borde, y sin ninguno de los dos un botón "Cancelar" al pie de un
+          teléfono es un área táctil invisible. */}
+      <div className="sticky bottom-0 z-10 flex items-center gap-[10px] border-t bg-card p-[14px] lg:hidden">
+        <Button asChild variant="outline" className={`shrink-0 ${CLASES_BOTON_PIE}`}>
+          <Link href="/inventario">Cancelar</Link>
+        </Button>
+        <Button type="submit" disabled={pendiente} className={`flex-1 ${CLASES_BOTON_PIE}`}>
+          <Check aria-hidden="true" className="size-[15px]" />
+          {pendiente ? 'Creando…' : 'Guardar artículo'}
+        </Button>
       </div>
     </form>
   )
@@ -399,6 +443,12 @@ export function FichaDeArticulo({
       <Encabezado
         titulo={titulo}
         subtitulo={subtitulo}
+        atras="/inventario"
+        // Sin accionMovil (spec §7.4, Task 7 del ciclo móvil): el frame T5gME
+        // dibuja un `more-vertical`, pero las dos acciones ya están al pie y
+        // las secundarias (ingresar mercadería, corregir por conteo,
+        // exportar CSV) ya están en el cuerpo — no queda nada que ese menú
+        // pueda contener sin inventarlo.
         acciones={
           esDuenio ? (
             <>
@@ -441,7 +491,7 @@ export function FichaDeArticulo({
           <input type="hidden" name="articuloId" value={articuloId} />
         </form>
       )}
-      <div className="flex flex-col gap-4 p-6">
+      <div className="flex flex-col gap-3 px-[14px] py-3 lg:gap-4 lg:p-6">
         {/* El aviso de cada acción va arriba de todo, no junto a su campo: con
             el botón en el Topbar y el <form> en la columna derecha, no hay un
             solo lugar "al lado" de los dos a la vez. */}
@@ -452,8 +502,23 @@ export function FichaDeArticulo({
           </>
         )}
         {children}
-        <div className="flex items-start gap-4">
-          <div className="flex flex-1 flex-col gap-4">{columnaIzquierda}</div>
+        {/* Mobile-first (Task 7 del ciclo móvil, frame `T5gME`): a diferencia
+            de FormularioDeAlta, acá el orden de la maqueta en el teléfono NO
+            coincide con concatenar "primero la columna izquierda, después la
+            derecha" — "Datos" aparece ANTES que "Ingresar mercadería"/
+            "Corregir por conteo" (que vienen de columnaIzquierda) y "Cómo se
+            movió" (columnaDerechaExtra) va ANTES que el historial. Mismo
+            mecanismo `contents`+`order-N` que ya usa `Detalle` en
+            app/(app)/ventas/[id]/page.tsx (ver su docblock): cada columna es
+            `contents` en el teléfono —se disuelve, y sus hijos pasan a ser
+            hermanos planos del `flex-col` de más afuera— y vuelve a ser una
+            columna real (`lg:flex`) en escritorio, donde `lg:order-none`
+            restaura el orden natural del DOM. Los tres pedazos de
+            `columnaIzquierda` (tiles, MoverStock, historial) llevan su
+            `order-N` en `[id]/page.tsx`, que es donde se arman; acá sólo se
+            ordenan "Datos" (order-2) y `columnaDerechaExtra` (order-4). */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-4">
+          <div className="contents lg:flex lg:flex-1 lg:flex-col lg:gap-4">{columnaIzquierda}</div>
           {/* Sin la columna entera —no sólo su contenido— cuando no hay nada
               que mostrar: un EMPLEADO mirando un SERVICIO no tiene "Datos"
               (esDuenio) ni "Cómo se movió" (columnaDerechaExtra, sólo para
@@ -461,51 +526,94 @@ export function FichaDeArticulo({
               reservando el hueco vacío igual, en vez de dejarle todo el ancho
               a la columna izquierda. */}
           {(esDuenio || columnaDerechaExtra) && (
-            <div className="flex w-[324px] shrink-0 flex-col gap-4">
+            <div className="contents lg:flex lg:w-[324px] lg:shrink-0 lg:flex-col lg:gap-4">
               {esDuenio && (
-                <CardDelFormulario titulo="Datos">
-                  <form id={FORM_EDITAR_ARTICULO} action={accionEditar} className="contents">
-                    <input type="hidden" name="articuloId" value={articuloId} />
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="e-nombre">Nombre</Label>
-                      <Input id="e-nombre" name="nombre" defaultValue={nombre} required className="h-10 rounded-[9px]" />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="e-precio">Precio de venta</Label>
-                      <Input
-                        id="e-precio"
-                        name="precio"
-                        inputMode="decimal"
-                        defaultValue={precio}
-                        required
-                        className="h-10 rounded-[9px]"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <div className="flex flex-1 flex-col gap-2">
-                        <Label htmlFor="e-sku">Código</Label>
-                        <Input id="e-sku" name="sku" defaultValue={sku} required className="h-10 rounded-[9px]" />
+                <div className="order-2 lg:order-none">
+                  <CardDelFormulario titulo="Datos">
+                    <form id={FORM_EDITAR_ARTICULO} action={accionEditar} className="contents">
+                      <input type="hidden" name="articuloId" value={articuloId} />
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="e-nombre">Nombre</Label>
+                        <Input id="e-nombre" name="nombre" defaultValue={nombre} required className="h-10 rounded-[9px]" />
                       </div>
-                      <div className="flex flex-1 flex-col gap-2">
-                        <Label htmlFor="e-categoria">Categoría</Label>
-                        {/* '' y no `categoria` crudo: un <input> no controlado
-                            con defaultValue={null} tira la advertencia de React
-                            de pasar de no-controlado a controlado. */}
-                        <Input id="e-categoria" name="categoria" defaultValue={categoria ?? ''} className="h-10 rounded-[9px]" />
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="e-precio">Precio de venta</Label>
+                        <Input
+                          id="e-precio"
+                          name="precio"
+                          inputMode="decimal"
+                          defaultValue={precio}
+                          required
+                          className="h-10 rounded-[9px]"
+                        />
                       </div>
-                    </div>
-                    {/* El tipo no está y no es un olvido: pasar un PRODUCTO con
-                        stock y movimientos a SERVICIO deja stock huérfano que el
-                        motor ya no descuenta ni explica. Un artículo mal cargado
-                        se desactiva y se crea de nuevo. */}
-                  </form>
-                </CardDelFormulario>
+                      <div className="flex gap-2">
+                        <div className="flex flex-1 flex-col gap-2">
+                          <Label htmlFor="e-sku">Código</Label>
+                          <Input id="e-sku" name="sku" defaultValue={sku} required className="h-10 rounded-[9px]" />
+                        </div>
+                        <div className="flex flex-1 flex-col gap-2">
+                          <Label htmlFor="e-categoria">Categoría</Label>
+                          {/* '' y no `categoria` crudo: un <input> no controlado
+                              con defaultValue={null} tira la advertencia de React
+                              de pasar de no-controlado a controlado. */}
+                          <Input id="e-categoria" name="categoria" defaultValue={categoria ?? ''} className="h-10 rounded-[9px]" />
+                        </div>
+                      </div>
+                      {/* El tipo no está y no es un olvido: pasar un PRODUCTO con
+                          stock y movimientos a SERVICIO deja stock huérfano que el
+                          motor ya no descuenta ni explica. Un artículo mal cargado
+                          se desactiva y se crea de nuevo. */}
+                    </form>
+                  </CardDelFormulario>
+                </div>
               )}
-              {columnaDerechaExtra}
+              {columnaDerechaExtra && (
+                <div className="order-4 lg:order-none">{columnaDerechaExtra}</div>
+              )}
             </div>
           )}
         </div>
       </div>
+
+      {/* El pie del teléfono (design/arandano.pen, nodo "Pie" de `T5gME`):
+          los mismos "Desactivar"/"Reactivar" y "Guardar cambios" del Topbar,
+          repetidos — `lg:hidden`, atados a los MISMOS `<form>` por `form=`
+          (nunca por `id=`: los botones del pie no llevan uno propio). Sólo
+          para el dueño, igual que el Topbar. */}
+      {esDuenio && (
+        <div className="sticky bottom-0 z-10 flex items-center gap-[10px] border-t bg-card p-[14px] lg:hidden">
+          <Button
+            type="submit"
+            form={FORM_BAJA_ARTICULO}
+            variant={desactivado ? 'secondary' : 'destructive'}
+            disabled={dandoBaja}
+            className={`shrink-0 ${CLASES_BOTON_PIE}`}
+          >
+            {desactivado ? (
+              <RotateCcw aria-hidden="true" className="size-[15px]" />
+            ) : (
+              <Ban aria-hidden="true" className="size-[15px]" />
+            )}
+            {dandoBaja
+              ? desactivado
+                ? 'Reactivando…'
+                : 'Desactivando…'
+              : desactivado
+                ? 'Reactivar'
+                : 'Desactivar'}
+          </Button>
+          <Button
+            type="submit"
+            form={FORM_EDITAR_ARTICULO}
+            disabled={editando}
+            className={`flex-1 ${CLASES_BOTON_PIE}`}
+          >
+            <Check aria-hidden="true" className="size-[15px]" />
+            {editando ? 'Guardando…' : 'Guardar cambios'}
+          </Button>
+        </div>
+      )}
     </>
   )
 }
@@ -523,12 +631,13 @@ export function MoverStock({ articuloId }: { articuloId: string }) {
   const [conteo, accionConteo, contando] = useActionState(corregirPorConteo, INICIAL)
 
   return (
-    // Horizontal siempre, sin quiebre a columna: design/arandano.pen (nodo
-    // `T5Gc91`) dibuja las dos cards siempre lado a lado, gap16 — como el
-    // resto de esta pantalla, la maqueta es un diseño de escritorio fijo, sin
-    // ningún quiebre de mobile documentado.
-    <div className="flex gap-4">
-      <Card className="flex-1">
+    // Horizontal en escritorio (design/arandano.pen, nodo `T5Gc91`: las dos
+    // cards lado a lado, gap16); apiladas en el teléfono (Task 7 del ciclo
+    // móvil, frame `T5gME`: "Ingresar mercadería" y "Corregir por conteo" son
+    // dos cards de ancho completo, una debajo de la otra, no dos columnas
+    // angostas).
+    <div className="flex flex-col gap-3 lg:flex-row lg:gap-4">
+      <Card className="lg:flex-1">
         <CardHeader>
           <CardTitle>Ingresar mercadería</CardTitle>
         </CardHeader>
@@ -555,7 +664,7 @@ export function MoverStock({ articuloId }: { articuloId: string }) {
         </CardContent>
       </Card>
 
-      <Card className="flex-1">
+      <Card className="lg:flex-1">
         <CardHeader>
           <CardTitle>Corregir por conteo</CardTitle>
         </CardHeader>

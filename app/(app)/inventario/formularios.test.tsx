@@ -407,3 +407,114 @@ describe('los selectores de categoría del alta', () => {
     expect(html).toContain('name="facturaProveedor"')
   })
 })
+
+/**
+ * Task 7 del ciclo móvil (design/arandano.pen, frames `m34Naf`/`T5gME`): las
+ * acciones del Topbar se repiten al pie en el teléfono, atadas al MISMO
+ * `<form>`/`useActionState` que el botón de escritorio — ver el docblock de
+ * `FichaDeArticulo` sobre por qué es un solo componente.
+ */
+describe('el pie del teléfono repite las acciones del Topbar (Task 7 del ciclo móvil)', () => {
+  it('FormularioDeAlta: "Guardar artículo" y "Cancelar" aparecen dos veces', async () => {
+    const html = await renderAlta()
+    expect([...html.matchAll(/Guardar artículo/g)]).toHaveLength(2)
+    expect([...html.matchAll(/>Cancelar</g)]).toHaveLength(2)
+  })
+
+  // El botón del Topbar vive dentro de `acciones`, que el propio `Encabezado`
+  // envuelve en `hidden lg:flex` — acá sólo se afirma que el pie NUEVO es
+  // `lg:hidden` y no al revés.
+  it('FormularioDeAlta: el pie nuevo es lg:hidden', () => {
+    const FUENTE = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')
+    expect(FUENTE).toMatch(/border-t bg-card p-\[14px\] lg:hidden/)
+  })
+
+  // El mismo `pendiente` gobierna los dos: si alguien partiera el pie a otro
+  // componente con su propio useActionState, este caso lo detecta.
+  it('FormularioDeAlta: "disabled={pendiente}" aparece dos veces (Topbar y pie)', () => {
+    const FUENTE = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')
+    const inicio = FUENTE.indexOf('export function FormularioDeAlta')
+    const fin = FUENTE.indexOf('export function FichaDeArticulo')
+    const cuerpo = FUENTE.slice(inicio, fin)
+    expect([...cuerpo.matchAll(/disabled=\{pendiente\}/g)]).toHaveLength(2)
+  })
+
+  it('FichaDeArticulo: "Guardar cambios" y "Desactivar" aparecen dos veces, con el mismo form=', async () => {
+    const html = await renderFicha(null)
+    const guardar = [...html.matchAll(/form="([^"]+)"[^>]*>(?:(?!<\/button>)[\s\S])*?Guardar cambios/g)]
+    expect(guardar).toHaveLength(2)
+    expect(new Set(guardar.map((m) => m[1])).size).toBe(1)
+
+    const desactivar = [...html.matchAll(/form="([^"]+)"[^>]*>(?:(?!<\/button>)[\s\S])*?Desactivar/g)]
+    expect(desactivar).toHaveLength(2)
+    expect(new Set(desactivar.map((m) => m[1])).size).toBe(1)
+  })
+
+  // Mismo criterio que arriba: el mismo `editando`/`dandoBaja` (el `pendiente`
+  // de cada uno de los dos useActionState de FichaDeArticulo) tiene que
+  // gobernar los DOS botones de cada acción.
+  it('FichaDeArticulo: "disabled={editando}" y "disabled={dandoBaja}" aparecen dos veces cada uno', () => {
+    const FUENTE = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')
+    const inicio = FUENTE.indexOf('export function FichaDeArticulo')
+    const fin = FUENTE.indexOf('export function MoverStock')
+    const cuerpo = FUENTE.slice(inicio, fin)
+    expect([...cuerpo.matchAll(/disabled=\{editando\}/g)]).toHaveLength(2)
+    expect([...cuerpo.matchAll(/disabled=\{dandoBaja\}/g)]).toHaveLength(2)
+  })
+
+  // Cuidado con los id duplicados (brief): los botones del pie repiten
+  // `form=`, nunca `id=` — sólo tiene que haber dos <form id="..."> en toda
+  // la ficha (el de editar y el oculto de baja), nunca un tercero por los
+  // botones del pie.
+  it('FichaDeArticulo: los botones del pie no agregan ningún <form> ni id nuevo', async () => {
+    const html = await renderFicha(null)
+    const formularios = [...html.matchAll(/<form id="([^"]+)"/g)].map((m) => m[1])
+    expect(formularios).toHaveLength(2)
+    expect(new Set(formularios).size).toBe(2)
+  })
+
+  it('sin esDuenio, el pie del teléfono tampoco se renderiza', async () => {
+    const html = await renderFicha(null, { esDuenio: false })
+    expect(html).not.toMatch(/border-t bg-card p-\[14px\] lg:hidden/)
+  })
+})
+
+describe('atras="/inventario" y sin accionMovil (Task 7 del ciclo móvil, spec §7.4)', () => {
+  it('FormularioDeAlta vuelve a /inventario desde la ranura izquierda del teléfono', async () => {
+    const html = await renderAlta()
+    expect(html).toMatch(/<a href="\/inventario" aria-label="Volver"/)
+  })
+
+  it('FichaDeArticulo vuelve a /inventario desde la ranura izquierda del teléfono', async () => {
+    const html = await renderFicha(null)
+    expect(html).toMatch(/<a href="\/inventario" aria-label="Volver"/)
+  })
+
+  // El frame T5gME dibuja un `more-vertical`, pero sus dos acciones ya están
+  // al pie y las secundarias ya están en el cuerpo: no pasarlo es una
+  // decisión ya tomada (spec §7.4), no un olvido. Se verifica por RENDER real
+  // y no por FUENTE: si algo agregara accionMovil algún día, este caso lo
+  // detecta aunque no toque la línea del <Encabezado>.
+  it('la ficha no ofrece ninguna acción del teléfono además de "Volver"', async () => {
+    const html = await renderFicha(null)
+    const etiquetas = [...html.matchAll(/aria-label="([^"]+)"/g)].map((m) => m[1])
+    expect(etiquetas).toEqual(['Volver'])
+  })
+})
+
+describe('las tarjetas y las columnas pasan a flex-col lg:flex-row (Task 7 del ciclo móvil)', () => {
+  it('Producto/Servicio se apilan en el teléfono y quedan lado a lado en escritorio', async () => {
+    const html = await renderAlta()
+    expect(html).toMatch(/class="flex flex-col gap-3 lg:flex-row"/)
+  })
+
+  it('las dos columnas del alta (contenido + Stock inicial) se apilan en el teléfono', async () => {
+    const html = await renderAlta()
+    expect(html).toMatch(/class="flex flex-col gap-3 p-\[14px\] lg:flex-row lg:items-start lg:gap-4 lg:p-6"/)
+  })
+
+  it('las dos columnas de la ficha (columnaIzquierda + Datos/Gráfico) se apilan en el teléfono', async () => {
+    const html = await renderFicha(null)
+    expect(html).toMatch(/class="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-4"/)
+  })
+})

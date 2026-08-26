@@ -8,6 +8,9 @@ import {
   formatearFechaMovimiento,
   detalleDeMovimiento,
   calcularSaldos,
+  filaDeMovimiento,
+  HistorialDeMovimientos,
+  type FilaDeMovimiento,
 } from './historial'
 
 const d = (v: string) => new Prisma.Decimal(v)
@@ -115,5 +118,147 @@ describe('textoDeMotivo', () => {
   it('devuelve el texto plano, sin ícono', () => {
     expect(textoDeMotivo('VENTA')).toBe('Venta')
     expect(textoDeMotivo('ANULACION_VENTA')).toBe('Anulación')
+  })
+})
+
+/**
+ * Task 7 del ciclo móvil: la fila del historial ya resuelta a texto, la
+ * misma idea que `FilaDeVenta`/`ItemVendido` en /ventas — así
+ * `HistorialDeMovimientos` (más abajo) puede renderizarse sin Prisma ni
+ * sesión, y esta función queda testeable con Decimales reales, sin pasar por
+ * un render.
+ */
+describe('filaDeMovimiento (Task 7 del ciclo móvil)', () => {
+  const base = {
+    id: 'm1',
+    motivo: 'VENTA',
+    nota: null,
+    costoUnitario: null,
+    usuario: { nombre: 'Florencia' },
+    venta: { numero: 1042 },
+    creadoEn: new Date('2026-08-21T17:28:00Z'),
+  }
+
+  it('arma fecha, motivo, detalle, cambio (con signo) y queda, a partir del movimiento y el saldo', () => {
+    const fila = filaDeMovimiento({ ...base, delta: d('-1') }, d('48'))
+    expect(fila).toEqual<FilaDeMovimiento>({
+      id: 'm1',
+      fechaTexto: '21/08 · 14:28',
+      motivo: 'VENTA',
+      detalleTexto: 'Venta #1042 · Florencia',
+      cambioTexto: '-1',
+      negativo: true,
+      quedaTexto: '48',
+    })
+  })
+
+  it('un delta positivo lleva el signo "+" y negativo=false', () => {
+    const fila = filaDeMovimiento(
+      { ...base, motivo: 'INGRESO', venta: null, delta: d('24') },
+      d('49'),
+    )
+    expect(fila.cambioTexto).toBe('+24')
+    expect(fila.negativo).toBe(false)
+  })
+})
+
+/**
+ * Task 7 del ciclo móvil: la card completa del historial, extraída de
+ * `[id]/page.tsx` como componente puro y renderizable (sin Prisma, sin
+ * sesión) — mismo criterio que `Listado` de este mismo módulo (docblock de
+ * cabecera de `page.tsx`) y que evita la trampa de dos reviews de este ciclo:
+ * cubrir el patrón grid + `display:contents` por `readFileSync` en vez de por
+ * HTML real.
+ */
+describe('HistorialDeMovimientos (Task 7 del ciclo móvil)', () => {
+  const FILA: FilaDeMovimiento = {
+    id: 'm1',
+    fechaTexto: '21/08 · 14:28',
+    motivo: 'VENTA',
+    detalleTexto: 'Venta #1042 · Florencia',
+    cambioTexto: '-1',
+    negativo: true,
+    quedaTexto: '48',
+  }
+
+  it('sin filas, muestra el vacío y no el grid', () => {
+    const html = renderToStaticMarkup(
+      <HistorialDeMovimientos filas={[]} limiteAlcanzado={false} limiteVisible={50} />,
+    )
+    expect(html).toContain('Todavía no hubo movimientos de este artículo.')
+    expect(html).not.toContain('role="table"')
+  })
+
+  it('con filas, arma el grid con role="table"/"row"/"columnheader"/"cell" (patrón de la Task 4)', () => {
+    const html = renderToStaticMarkup(
+      <HistorialDeMovimientos filas={[FILA]} limiteAlcanzado={false} limiteVisible={50} />,
+    )
+    expect(html).toContain('role="table"')
+    expect(html).toContain('role="columnheader"')
+    // 5 celdas de escritorio por fila (Fecha, Motivo, Detalle, Cambio, Queda).
+    expect([...html.matchAll(/role="cell"/g)]).toHaveLength(5)
+  })
+
+  it('el motivo se ve con ChipMotivo (badge), no como texto plano', () => {
+    const html = renderToStaticMarkup(
+      <HistorialDeMovimientos filas={[FILA]} limiteAlcanzado={false} limiteVisible={50} />,
+    )
+    expect(html).toContain('Venta')
+    expect(html).toMatch(/<span[^>]*>[\s\S]*?Venta[\s\S]*?<\/span>/)
+  })
+
+  it('el cambio negativo pinta destructive y el positivo ok', () => {
+    const negativo = renderToStaticMarkup(
+      <HistorialDeMovimientos filas={[FILA]} limiteAlcanzado={false} limiteVisible={50} />,
+    )
+    expect(negativo).toContain('text-destructive')
+
+    const positiva: FilaDeMovimiento = { ...FILA, id: 'm2', cambioTexto: '+24', negativo: false }
+    const html = renderToStaticMarkup(
+      <HistorialDeMovimientos filas={[positiva]} limiteAlcanzado={false} limiteVisible={50} />,
+    )
+    expect(html).toContain('text-ok')
+  })
+
+  it('con el límite alcanzado, avisa cuántos se muestran', () => {
+    const html = renderToStaticMarkup(
+      <HistorialDeMovimientos filas={[FILA]} limiteAlcanzado={true} limiteVisible={50} />,
+    )
+    expect(html).toContain('Se muestran los últimos 50 movimientos')
+  })
+
+  it('sin alcanzar el límite, no muestra el aviso', () => {
+    const html = renderToStaticMarkup(
+      <HistorialDeMovimientos filas={[FILA]} limiteAlcanzado={false} limiteVisible={50} />,
+    )
+    expect(html).not.toContain('Se muestran los últimos')
+  })
+
+  it('la acción (Exportar CSV) se arma afuera y se recibe ya lista, en el encabezado', () => {
+    const html = renderToStaticMarkup(
+      <HistorialDeMovimientos
+        filas={[FILA]}
+        limiteAlcanzado={false}
+        limiteVisible={50}
+        accion={<button type="button">Exportar CSV →</button>}
+      />,
+    )
+    const posTitulo = html.indexOf('Historial de movimientos')
+    const posAccion = html.indexOf('Exportar CSV →')
+    expect(posTitulo).toBeGreaterThan(-1)
+    expect(posAccion).toBeGreaterThan(posTitulo)
+  })
+
+  // Las cuatro reglas del docblock de `Listado` (app/(app)/ventas/page.tsx):
+  // el borde va en las celdas, no en la fila (display:contents no pinta), y
+  // todo group-hover/transition lleva el prefijo lg:.
+  it('el borde y el hover llevan el prefijo lg: (display:contents no pinta nada propio)', () => {
+    const html = renderToStaticMarkup(
+      <HistorialDeMovimientos filas={[FILA]} limiteAlcanzado={false} limiteVisible={50} />,
+    )
+    expect(html).toContain('lg:border-b')
+    expect(html).toContain('lg:group-hover:bg-muted/50')
+    expect(html).toContain('lg:transition-colors')
+    expect(html).not.toMatch(/max-lg:/)
   })
 })
