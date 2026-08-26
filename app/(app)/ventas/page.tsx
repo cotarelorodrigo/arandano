@@ -367,6 +367,41 @@ export type FilaDeVenta = {
  * anchos —no sólo en escritorio—, porque son `<div>`s sin semántica nativa
  * propia con o sin `display:contents`.
  *
+ * **El principio completo, para que las tasks 6, 8 y 10 no lo copien a
+ * medias (Ronda de arreglos 1 lo encontró aplicado sólo al fondo, no al
+ * borde ni al centrado — ver el historial de este archivo y de
+ * `app/(app)/vender/punto-de-venta.tsx`): un `display:contents` no genera
+ * caja, así que NADA de lo que dependa de una caja puede vivir en la fila —
+ * ni el fondo, ni el borde, ni el padding, ni el centrado vertical. Los
+ * cuatro van en cada CELDA, nunca en el envoltorio:**
+ *
+ * - Fondo: `lg:group-hover:bg-muted/50` en cada celda (no `hover:bg-muted/50`
+ *   en la fila, que traía gratis `<TableRow>`).
+ * - Borde inferior entre filas: `lg:border-b` en cada celda, con
+ *   `lg:group-last:border-b-0` para la última fila —no `last:border-b-0` en
+ *   la fila, que en escritorio no pinta nada porque la fila no tiene caja.
+ *   La fila SIGUE llevando su propio `border-b`/`last:border-b-0` sin
+ *   prefijo, porque en el teléfono la fila SÍ es una caja real (no es
+ *   `display:contents` ahí) y ese es el borde que se ve.
+ * - Centrado vertical: por default, Grid estira cada celda (`align-items:
+ *   stretch`) a la altura de la fila más alta, pero el contenido de una
+ *   celda de una sola línea queda pegado ARRIBA de esa caja —lo que antes
+ *   daba gratis `align-middle` de `<TableCell>`, que `display:contents` no
+ *   tiene forma de heredar—. La celda en sí NO se achica con `self-center`:
+ *   eso desalinearía su propio borde inferior del borde de las demás celdas
+ *   de la fila (una celda más corta y centrada dentro de la fila deja su
+ *   borde flotando a mitad de camino, no en el fondo real de la fila). La
+ *   celda se queda estirada (el default), y quien centra es un `<div>`
+ *   envoltorio ADENTRO de la celda, con `lg:flex lg:h-full lg:items-center`
+ *   (más `lg:justify-end` si el contenido va alineado a la derecha) — el
+ *   `h-full` resuelve al 100% de la celda estirada porque Grid le da una
+ *   altura definida. Esto sólo hace falta en las celdas más cortas que la
+ *   más alta de la fila (acá: todas menos "Cliente", que siempre muestra dos
+ *   líneas).
+ * - Transición del hover: `lg:transition-colors` en cada celda —no en la
+ *   fila—, porque `<TableRow>` traía `transition-colors` de fábrica y sin
+ *   él el resaltado aparece de golpe en vez de fundirse.
+ *
  * No es un componente compartido a propósito: las cuatro tablas del ciclo
  * tienen columnas distintas y una abstracción que las cubra a las cuatro
  * sería peor que cuatro grids (ver el brief de la Task 4).
@@ -452,6 +487,15 @@ export function Listado({
               // de la Task 4: sin esto el resaltado de fila al pasar el mouse
               // desaparecía en escritorio — la regresión más fácil de meter
               // con este patrón, y la que las tasks 6, 8 y 10 iban a copiar.
+              //
+              // El `border-b`/`last:border-b-0` de acá SIGUEN sin prefijo: en
+              // el teléfono la fila es una caja real (todavía no es
+              // `display:contents`), así que ahí sí pintan. En escritorio no
+              // hacen nada —`display:contents` no genera caja—, y por eso
+              // cada celda lleva su PROPIO `lg:border-b`/`lg:group-last:
+              // border-b-0` más abajo (Ronda de arreglos 1, Importante 1: acá
+              // faltaba, y era el mismo defecto que el docblock de `Listado`
+              // ya explicaba sin aplicarlo del todo).
               <div
                 key={f.id}
                 role="row"
@@ -467,13 +511,24 @@ export function Listado({
                   <div className="flex items-center gap-[7px] lg:contents">
                     <div
                       role="cell"
-                      className={`${estilos.archivo} text-[14px] font-semibold text-primary lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50`}
+                      className={`${estilos.archivo} text-[14px] font-semibold text-primary lg:border-b lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}
                     >
-                      <Link href={`/ventas/${f.id}`}>#{f.numero}</Link>
+                      {/* Envoltorio de centrado (Ronda de arreglos 1,
+                          Importante 2): la CELDA se queda estirada (el
+                          default de Grid) para que su `border-b` quede a la
+                          altura del resto de la fila; quien centra el
+                          contenido, sólo en escritorio, es este `<div>`
+                          interno con `lg:h-full` (100% de la celda estirada)
+                          — ver el docblock de `Listado`, más arriba. */}
+                      <div className="lg:flex lg:h-full lg:items-center">
+                        <Link href={`/ventas/${f.id}`}>#{f.numero}</Link>
+                      </div>
                     </div>
-                    <div role="cell" className="text-[11px] text-muted-foreground lg:p-[11px] lg:px-[7px] lg:text-sm lg:text-foreground lg:group-hover:bg-muted/50">
-                      <span aria-hidden="true" className="lg:hidden">· </span>
-                      {f.horaFormateada}
+                    <div role="cell" className="text-[11px] text-muted-foreground lg:border-b lg:p-[11px] lg:px-[7px] lg:text-sm lg:text-foreground lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
+                      <div className="lg:flex lg:h-full lg:items-center">
+                        <span aria-hidden="true" className="lg:hidden">· </span>
+                        {f.horaFormateada}
+                      </div>
                     </div>
                   </div>
                   {/* El envoltorio flex-col + gap-0.5 es el mismo en los dos
@@ -481,8 +536,12 @@ export function Listado({
                       cual lo hacía la TableCell de antes; en el teléfono el
                       subtítulo de acá está `hidden` (la meta de abajo lo
                       reemplaza con el dato de medios sumado), así que sólo
-                      queda el nombre. */}
-                  <div role="cell" className="lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50">
+                      queda el nombre.
+                      SIN envoltorio de centrado, a propósito: "Cliente" es la
+                      celda más alta de la fila (siempre dos líneas), así que
+                      ya queda estirada de punta a punta — nada que centrar
+                      contra sí misma. */}
+                  <div role="cell" className="lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
                     <div className="flex flex-col gap-0.5">
                       <span className="text-[13px] font-medium text-foreground lg:text-sm">
                         {f.clienteNombre}
@@ -503,16 +562,16 @@ export function Listado({
                   </div>
                   {/* Medios: su propia celda, sólo visible en escritorio
                       (`hidden lg:block`) — en el teléfono el dato ya salió
-                      arriba, en la meta. Sin prefijo `lg:` en el resto de las
-                      clases: con el envoltorio oculto no pintan nada abajo de
-                      1024, así que prefijarlas sería ruido sin efecto (mismo
-                      criterio que el encabezado, unas líneas más arriba). */}
+                      arriba, en la meta. El `title` y `truncate` se mudan al
+                      envoltorio de centrado: es el que de verdad recorta el
+                      texto, así que el tooltip tiene que colgar de él. */}
                   <div
                     role="cell"
-                    title={f.mediosLabel}
-                    className="hidden truncate p-[11px] px-[7px] text-sm text-foreground lg:block lg:group-hover:bg-muted/50"
+                    className="hidden p-[11px] px-[7px] text-sm text-foreground lg:block lg:border-b lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
                   >
-                    {f.mediosLabel}
+                    <div title={f.mediosLabel} className="lg:flex lg:h-full lg:items-center lg:truncate">
+                      {f.mediosLabel}
+                    </div>
                   </div>
                 </div>
 
@@ -523,15 +582,19 @@ export function Listado({
                 <div className="flex flex-col items-end gap-1.5 lg:contents">
                   <div
                     role="cell"
-                    className={`${estilos.archivo} text-[15px] font-semibold text-foreground tabular-nums lg:p-[11px] lg:px-[7px] lg:text-right lg:text-sm lg:group-hover:bg-muted/50`}
+                    className={`${estilos.archivo} text-[15px] font-semibold text-foreground tabular-nums lg:border-b lg:p-[11px] lg:px-[7px] lg:text-sm lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}
                   >
-                    {f.totalFormateado}
+                    <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
+                      {f.totalFormateado}
+                    </div>
                   </div>
                   {/* Las anuladas se MUESTRAN: el historial tiene que poder
                       responder qué pasó, y esconderlas sería tapar la
                       respuesta. */}
-                  <div role="cell" className="lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:text-right lg:group-hover:bg-muted/50">
-                    <ChipEstado anulada={f.anulada} />
+                  <div role="cell" className="lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
+                    <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
+                      <ChipEstado anulada={f.anulada} />
+                    </div>
                   </div>
                 </div>
               </div>

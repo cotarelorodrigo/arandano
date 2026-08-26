@@ -258,9 +258,12 @@ describe('Listado: el patrón grid + display:contents', () => {
     const html = renderListado()
     // La línea fluida del teléfono ("3 artículos · Efectivo") y la celda de
     // Medios de escritorio, oculta abajo de 1024 (`hidden ... lg:block`),
-    // conviven en el mismo árbol.
+    // conviven en el mismo árbol. `truncate` se mudó al envoltorio de
+    // centrado interno (Ronda de arreglos 1), así que ya no vive en la
+    // apertura de la celda misma — se comprueba más abajo, junto con el
+    // resto de ese envoltorio.
     expect(html).toContain('3 artículos · Efectivo')
-    expect(html).toMatch(/class="hidden truncate[^"]*\blg:block\b/)
+    expect(html).toMatch(/class="hidden[^"]*\blg:block\b/)
   })
 
   it('sin ventas en el período, lo dice — y no confunde ese vacío con una página fuera de rango', () => {
@@ -271,6 +274,55 @@ describe('Listado: el patrón grid + display:contents', () => {
     const html = renderListado({ filas: [], total: 5, pagina: 9 })
     expect(html).toContain('Esa página no tiene ventas.')
     expect(html).toContain('/ventas?p=1')
+  })
+
+  // --- Ronda de arreglos 1: tres defectos de familia `<TableRow>`/
+  // `<TableCell>` que `display:contents` se lleva puestos, y que las tasks
+  // 6, 8 y 10 iban a copiar tal cual si no se arreglaban acá. ---
+
+  // Importante 1: `border-b`/`last:border-b-0` en la FILA no pintan nada en
+  // escritorio (`display:contents` no genera caja). Cada celda lleva su
+  // propio `lg:border-b`, y `lg:group-last:border-b-0` apaga el de la
+  // ÚLTIMA fila — sin depender de que la fila (que sigue en el DOM, sólo sin
+  // caja) resuelva el `:last-child` por su cuenta.
+  it('el borde entre filas vive en cada celda, no en la fila (escritorio)', () => {
+    const html = renderListado({ filas: [FILA, { ...FILA, id: 'v2', numero: 1041 }], total: 2 })
+    const celdas = html.match(/<div[^>]*\brole="cell"[^>]*>/g) ?? []
+    expect(celdas).toHaveLength(12) // 6 columnas × 2 filas
+    for (const celda of celdas) expect(celda).toContain('lg:border-b')
+    // Sólo la última fila apaga su borde — comprobado por conteo: 12 celdas,
+    // 12 veces `lg:group-last:border-b-0` (todas lo llevan; el selector CSS,
+    // no un cálculo en el render, es lo que decide cuál pinta 0 de verdad —
+    // ver el probe de compilación que dejó la review, `:is(:where(.group)
+    // :last-child *)`).
+    const conGroupLast = celdas.filter((c) => c.includes('lg:group-last:border-b-0'))
+    expect(conGroupLast).toHaveLength(12)
+  })
+
+  // Menor 3: `<TableRow>` traía `transition-colors` de fábrica; al mudar el
+  // hover a cada celda (Task 4) se copió el color pero no la transición.
+  it('el hover funde el color: transition-colors en cada celda', () => {
+    const html = renderListado()
+    const celdas = html.match(/<div[^>]*\brole="cell"[^>]*>/g) ?? []
+    expect(celdas).toHaveLength(6)
+    for (const celda of celdas) expect(celda).toContain('lg:transition-colors')
+  })
+
+  // Importante 2: sin `align-items` explícito el default de Grid es
+  // `stretch`, así que cada celda se estira a la altura de la fila más
+  // alta — pero el contenido de una celda de una sola línea queda pegado
+  // ARRIBA de esa caja. Se centra con un envoltorio interno
+  // (`lg:flex lg:h-full lg:items-center`), no achicando la celda
+  // (`self-center` desalinearía su borde del resto de la fila — Importante
+  // 1, arriba). Las 5 celdas más cortas que "Cliente" (que siempre muestra
+  // dos líneas) llevan el envoltorio; "Cliente" no lo necesita.
+  it('las celdas más cortas que "Cliente" centran su contenido con un envoltorio interno, no achicando la celda', () => {
+    const html = renderListado()
+    const envoltorios = [...html.matchAll(/class="lg:flex lg:h-full lg:items-center[^"]*"/g)]
+    expect(envoltorios, 'Número, Hora, Medios, Total y Estado: 5 celdas más cortas que Cliente').toHaveLength(5)
+    // Ninguna celda se achica para centrarse — `self-center` desalinearía
+    // el borde inferior del resto de la fila (Importante 1).
+    expect(html).not.toContain('self-center')
   })
 })
 

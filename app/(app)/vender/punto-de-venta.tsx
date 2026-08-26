@@ -1056,6 +1056,16 @@ export function PuntoDeVenta({
                   // `relative` es el ancla del botón "Quitar" en el
                   // teléfono, y no le hace nada a escritorio: ahí la fila es
                   // `lg:contents` y una caja sin caja no tiene `position`.
+                  //
+                  // El `border-b`/`last:border-b-0` de acá siguen sin
+                  // prefijo, y siguen sirviendo: en el teléfono la fila ES
+                  // una caja real (no es `display:contents` ahí), así que
+                  // ahí pintan. En escritorio no hacen nada — por eso cada
+                  // celda lleva su propio `lg:border-b`/`lg:group-last:
+                  // border-b-0` más abajo (Ronda de arreglos 1 sobre la
+                  // Task 4b; el principio completo, con el porqué del
+                  // envoltorio de centrado, vive en el docblock de
+                  // `Listado`, app/(app)/ventas/page.tsx).
                   <div
                     key={l.articuloId}
                     role="row"
@@ -1068,10 +1078,14 @@ export function PuntoDeVenta({
                         encima con `absolute` (ver más abajo) y no empuja
                         este contenido con su propio ancho — a diferencia de
                         `Listado`, acá no hay una celda de grid propia para
-                        "Quitar" al lado de ésta. */}
+                        "Quitar" al lado de ésta. Es la celda más alta de la
+                        fila (dos líneas siempre), así que no necesita el
+                        envoltorio de centrado que sí llevan las otras
+                        cuatro, más abajo: ya queda estirada de punta a
+                        punta. */}
                     <div
                       role="cell"
-                      className="pr-9 whitespace-normal lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50"
+                      className="pr-9 whitespace-normal lg:border-b lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
                     >
                       {/* `gap-2` (8px) en el teléfono —el mismo que separa
                           los 3 bloques de `VaHod`— y `lg:gap-0.5` para no
@@ -1134,81 +1148,97 @@ export function PuntoDeVenta({
                         Subtotal en una sola línea del teléfono; disuelto en
                         escritorio, donde vuelven a ser 3 celdas separadas. */}
                     <div className="flex items-center gap-[10px] lg:contents">
-                      <div role="cell" className="lg:self-center lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50">
-                        {/* El stepper [-] [valor] [+]: los botones cubren sumar
-                            y restar de a una unidad completa, pero el campo del
-                            medio sigue siendo editable a mano — el motor admite
-                            cantidades con hasta tres decimales a propósito
-                            (lib/formato/mostrar.ts: "Medio kilo de harina
-                            necesita los decimales"), y +1/-1 no alcanza para
-                            tipear "0,5". Los dos botones salen de
-                            `PASOS_STEPPER.map(...)` y no de dos <button>
-                            escritos a mano: ver el porqué en la definición del
-                            array, un poco más arriba. */}
-                        {/* focus-within por la misma razón que la barra del
-                            buscador: el <Input> del medio apaga su propio ring
-                            para que el foco se vea en el stepper entero, no en
-                            un rectángulo que ignora los botones [-]/[+]. */}
-                        <div className="flex h-9 w-[104px] items-center rounded-[9px] border border-input focus-within:ring-3 focus-within:ring-ring/50">
-                          {PASOS_STEPPER.map(({ verbo, delta, Icono }) => (
-                            <Fragment key={verbo}>
-                              <button
-                                type="button"
-                                aria-label={`${verbo} una unidad a ${l.descripcion}`}
-                                className="flex h-full w-8 items-center justify-center text-foreground-soft hover:bg-muted"
-                                onClick={() =>
-                                  actualizarCarrito((p) =>
-                                    p.map((x, j) =>
-                                      j === i ? { ...x, cantidad: pasoDeCantidad(x.cantidad, delta) } : x,
-                                    ),
-                                  )
-                                }
-                              >
-                                <Icono className="size-[13px]" />
-                              </button>
-                              {/* El valor editable va entre los dos botones:
-                                  se intercala acá, después del primero
-                                  (Restar), en vez de partir el .map en dos para
-                                  no perder el orden visual [-] [valor] [+]. */}
-                              {delta === -1 && (
-                                <Input
-                                  inputMode="decimal"
-                                  value={l.cantidad}
-                                  onChange={(e) =>
+                      <div role="cell" className="lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
+                        {/* Envoltorio de centrado (Ronda de arreglos 1,
+                            Importante 2): la CELDA se queda estirada (el
+                            default de Grid) para que su `border-b` quede a
+                            la altura del resto de la fila; quien centra el
+                            contenido, sólo en escritorio, es este `<div>`
+                            interno con `lg:h-full` (100% de la celda
+                            estirada) — ver el docblock de `Listado`,
+                            app/(app)/ventas/page.tsx. */}
+                        <div className="lg:flex lg:h-full lg:items-center">
+                          {/* El stepper [-] [valor] [+]: los botones cubren sumar
+                              y restar de a una unidad completa, pero el campo del
+                              medio sigue siendo editable a mano — el motor admite
+                              cantidades con hasta tres decimales a propósito
+                              (lib/formato/mostrar.ts: "Medio kilo de harina
+                              necesita los decimales"), y +1/-1 no alcanza para
+                              tipear "0,5". Los dos botones salen de
+                              `PASOS_STEPPER.map(...)` y no de dos <button>
+                              escritos a mano: ver el porqué en la definición del
+                              array, un poco más arriba. */}
+                          {/* focus-within por la misma razón que la barra del
+                              buscador: el <Input> del medio apaga su propio ring
+                              para que el foco se vea en el stepper entero, no en
+                              un rectángulo que ignora los botones [-]/[+]. */}
+                          <div className="flex h-9 w-[104px] items-center rounded-[9px] border border-input focus-within:ring-3 focus-within:ring-ring/50">
+                            {PASOS_STEPPER.map(({ verbo, delta, Icono }) => (
+                              <Fragment key={verbo}>
+                                <button
+                                  type="button"
+                                  aria-label={`${verbo} una unidad a ${l.descripcion}`}
+                                  className="flex h-full w-8 items-center justify-center text-foreground-soft hover:bg-muted"
+                                  onClick={() =>
                                     actualizarCarrito((p) =>
-                                      p.map((x, j) => (j === i ? { ...x, cantidad: e.target.value } : x)),
+                                      p.map((x, j) =>
+                                        j === i ? { ...x, cantidad: pasoDeCantidad(x.cantidad, delta) } : x,
+                                      ),
                                     )
                                   }
-                                  aria-label={`Cantidad de ${l.descripcion}`}
-                                  className={`h-full flex-1 border-0 bg-transparent px-0 py-0 text-center font-semibold text-foreground shadow-none focus-visible:ring-0 ${estilos.importe}`}
-                                />
-                              )}
-                            </Fragment>
-                          ))}
+                                >
+                                  <Icono className="size-[13px]" />
+                                </button>
+                                {/* El valor editable va entre los dos botones:
+                                    se intercala acá, después del primero
+                                    (Restar), en vez de partir el .map en dos para
+                                    no perder el orden visual [-] [valor] [+]. */}
+                                {delta === -1 && (
+                                  <Input
+                                    inputMode="decimal"
+                                    value={l.cantidad}
+                                    onChange={(e) =>
+                                      actualizarCarrito((p) =>
+                                        p.map((x, j) => (j === i ? { ...x, cantidad: e.target.value } : x)),
+                                      )
+                                    }
+                                    aria-label={`Cantidad de ${l.descripcion}`}
+                                    className={`h-full flex-1 border-0 bg-transparent px-0 py-0 text-center font-semibold text-foreground shadow-none focus-visible:ring-0 ${estilos.importe}`}
+                                  />
+                                )}
+                              </Fragment>
+                            ))}
+                          </div>
                         </div>
                       </div>
                       {/* Su columnheader ya explica por qué esta celda no se
                           ve en el teléfono. */}
                       <div
                         role="cell"
-                        className={`hidden text-right text-foreground-soft lg:block lg:self-center lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 ${estilos.importe}`}
+                        className={`hidden text-foreground-soft lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors ${estilos.importe}`}
                       >
-                        {formatearPrecio(l.precio)}
+                        <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
+                          {formatearPrecio(l.precio)}
+                        </div>
                       </div>
                       {/* `ml-auto` empuja el subtotal a la derecha del
                           agrupador en el teléfono —el "Espaciador" de la
                           maqueta (nodo `WMA3r`)—; `lg:ml-0` lo apaga en
-                          escritorio, donde ya está `text-right` dentro de su
-                          propia columna de 130px. */}
+                          escritorio, donde el envoltorio de centrado interno
+                          (más abajo) ya lo alinea a la derecha con
+                          `justify-end`, dentro de su propia columna de
+                          130px. */}
                       <div
                         role="cell"
-                        className={`ml-auto text-right text-[15px] font-semibold text-foreground lg:ml-0 lg:self-center lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 ${estilos.importe}`}
+                        className={`ml-auto text-[15px] font-semibold text-foreground lg:ml-0 lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors ${estilos.importe}`}
                       >
-                        {invalida
-                          ? '—'
-                          : formatearPrecio(
-                              deCentavos(subtotalEnCentavos(cantidadMilesimas, aCentavos(l.precio))),
-                            )}
+                        <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
+                          {invalida
+                            ? '—'
+                            : formatearPrecio(
+                                deCentavos(subtotalEnCentavos(cantidadMilesimas, aCentavos(l.precio))),
+                              )}
+                        </div>
                       </div>
                     </div>
 
@@ -1222,18 +1252,20 @@ export function PuntoDeVenta({
                         dónde cae en el flujo normal. */}
                     <div
                       role="cell"
-                      className="absolute top-[11px] right-[14px] lg:static lg:self-center lg:p-[11px] lg:pr-[18px] lg:pl-[7px] lg:text-right lg:group-hover:bg-muted/50"
+                      className="absolute top-[11px] right-[14px] lg:static lg:border-b lg:p-[11px] lg:pr-[18px] lg:pl-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
                     >
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => actualizarCarrito((p) => p.filter((_, j) => j !== i))}
-                        aria-label={`Quitar ${l.descripcion}`}
-                        className="text-muted-foreground"
-                      >
-                        <X className="size-[15px]" />
-                      </Button>
+                      <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => actualizarCarrito((p) => p.filter((_, j) => j !== i))}
+                          aria-label={`Quitar ${l.descripcion}`}
+                          className="text-muted-foreground"
+                        >
+                          <X className="size-[15px]" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 )

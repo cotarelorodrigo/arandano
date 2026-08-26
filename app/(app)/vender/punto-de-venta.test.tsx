@@ -942,7 +942,7 @@ describe('el punto de venta en el teléfono', () => {
   // el <TableHead>). Con el reflow resuelto acá, tiene que volver.
   it('la columna "Precio" vuelve a existir en escritorio', () => {
     expect(FUENTE, 'lg:table-cell era la marca de la Table vieja').not.toMatch(/lg:table-cell/)
-    expect(FUENTE).toMatch(/hidden text-right text-foreground-soft lg:block/)
+    expect(FUENTE).toMatch(/hidden text-foreground-soft lg:block/)
   })
 
   it('la fila del carrito lleva role="row", lg:contents y group para el hover de escritorio', () => {
@@ -985,13 +985,47 @@ describe('el punto de venta en el teléfono', () => {
     expect(FUENTE).toMatch(/role="cell"\s+className="absolute top-\[11px\] right-\[14px\] lg:static/)
   })
 
-  // Sin esto, en escritorio el contenido de las 4 celdas más cortas
-  // (Cantidad, Precio, Subtotal, Quitar) quedaría pegado arriba de la fila en
-  // vez de centrado contra ella cuando el nombre del artículo ocupa dos
-  // líneas — lo que antes daba gratis `align-middle` de <TableCell>, que
-  // `display:contents` no tiene forma de heredar.
-  it('las celdas más cortas se centran contra la fila en escritorio', () => {
-    const veces = [...FUENTE.matchAll(/lg:self-center/g)].length
-    expect(veces, 'Cantidad, Precio, Subtotal y Quitar: las 4 celdas más cortas que Artículo').toBe(4)
+  // Ronda de arreglos 1 (Importante 2): sin esto, en escritorio el contenido
+  // de las 4 celdas más cortas (Cantidad, Precio, Subtotal, Quitar) quedaría
+  // pegado arriba de la fila en vez de centrado contra ella cuando el nombre
+  // del artículo ocupa dos líneas — lo que antes daba gratis `align-middle`
+  // de <TableCell>, que `display:contents` no tiene forma de heredar.
+  //
+  // La primera versión de este arreglo usaba `lg:self-center` en la CELDA —
+  // la review encontró que eso la achica a su contenido y la despega del
+  // fondo real de la fila, así que su propio `border-b` (más abajo) quedaba
+  // flotando a mitad de camino en vez de alinear con el de las demás. La
+  // celda se queda estirada (el default de Grid); quien centra es un
+  // envoltorio interno con `lg:flex lg:h-full lg:items-center` — el
+  // `h-full` resuelve al 100% de la celda estirada.
+  it('las celdas más cortas se centran con un envoltorio interno, no achicando la celda', () => {
+    const envoltorios = [...FUENTE.matchAll(/lg:flex lg:h-full lg:items-center/g)].length
+    expect(envoltorios, 'Cantidad, Precio, Subtotal y Quitar: las 4 celdas más cortas que Artículo').toBe(4)
+    expect(FUENTE, 'self-center desalinearía el borde inferior del resto de la fila').not.toContain('self-center')
+  })
+
+  // Ronda de arreglos 1 (Importante 1): `border-b`/`last:border-b-0` en la
+  // FILA no pintan nada en escritorio (`display:contents` no genera caja).
+  // Cada celda lleva su propio `lg:border-b`, y `lg:group-last:border-b-0`
+  // apaga el de la ÚLTIMA fila — la fila sigue en el DOM aunque no pinte,
+  // así que el selector `:last-child` de `group-last` la sigue encontrando.
+  it('el borde entre filas vive en cada celda, no sólo en la fila (escritorio)', () => {
+    // SIN_COMENTARIOS y no FUENTE: el comentario de la fila (más arriba en
+    // el archivo) nombra `lg:border-b` en prosa para explicar la decisión, y
+    // eso también matchea la clase — mismo motivo que ya documenta
+    // SIN_COMENTARIOS más arriba en este archivo.
+    const conBorde = [...SIN_COMENTARIOS.matchAll(/lg:border-b\b/g)].length
+    const conGroupLast = [...SIN_COMENTARIOS.matchAll(/lg:group-last:border-b-0/g)].length
+    expect(conBorde, 'una por columna: Artículo, Cantidad, Precio, Subtotal, Quitar').toBe(5)
+    expect(conGroupLast, 'las 5 celdas apagan su borde en la última fila').toBe(5)
+  })
+
+  // Ronda de arreglos 1 (Menor 3): <TableRow> traía `transition-colors` de
+  // fábrica; al mudar el hover a cada celda (Task 4b) se copió el color pero
+  // no la transición, así que el resaltado aparecía de golpe en vez de
+  // fundirse.
+  it('el hover funde el color: transition-colors en cada celda', () => {
+    const veces = [...FUENTE.matchAll(/lg:transition-colors/g)].length
+    expect(veces, 'una por columna: Artículo, Cantidad, Precio, Subtotal, Quitar').toBe(5)
   })
 })
