@@ -42,7 +42,7 @@ describe('detalleDeMovimiento (Task 5 del rediseño: la celda "Detalle")', () =>
     expect(
       detalleDeMovimiento({
         motivo: 'VENTA', nota: null, costoUnitario: null, usuario, venta: { numero: 1042 },
-      }),
+      }, true),
     ).toBe('Venta #1042 · Florencia')
   })
 
@@ -50,7 +50,7 @@ describe('detalleDeMovimiento (Task 5 del rediseño: la celda "Detalle")', () =>
     expect(
       detalleDeMovimiento({
         motivo: 'ANULACION_VENTA', nota: null, costoUnitario: null, usuario, venta: { numero: 1002 },
-      }),
+      }, true),
     ).toBe('Anulación de la venta #1002')
   })
 
@@ -61,7 +61,7 @@ describe('detalleDeMovimiento (Task 5 del rediseño: la celda "Detalle")', () =>
       costoUnitario: d('7400'),
       usuario,
       venta: null,
-    })
+    }, true)
     // formatearPrecio() y no un literal con espacio a mano: Intl mete un
     // espacio de no separación (NBSP) entre "$" y el número, y un literal
     // con espacio normal nunca iguala byte a byte.
@@ -70,7 +70,7 @@ describe('detalleDeMovimiento (Task 5 del rediseño: la celda "Detalle")', () =>
 
   it('INGRESO sin nota ni costo: cae a quién lo hizo, la celda no queda vacía', () => {
     expect(
-      detalleDeMovimiento({ motivo: 'INGRESO', nota: null, costoUnitario: null, usuario, venta: null }),
+      detalleDeMovimiento({ motivo: 'INGRESO', nota: null, costoUnitario: null, usuario, venta: null }, true),
     ).toBe('Ingreso · Florencia')
   })
 
@@ -78,14 +78,50 @@ describe('detalleDeMovimiento (Task 5 del rediseño: la celda "Detalle")', () =>
     expect(
       detalleDeMovimiento({
         motivo: 'AJUSTE', nota: 'Conteo de fin de mes', costoUnitario: null, usuario, venta: null,
-      }),
+      }, true),
     ).toBe('Conteo de fin de mes · Florencia')
   })
 
   it('AJUSTE sin nota: sólo quién contó', () => {
     expect(
-      detalleDeMovimiento({ motivo: 'AJUSTE', nota: null, costoUnitario: null, usuario, venta: null }),
+      detalleDeMovimiento({ motivo: 'AJUSTE', nota: null, costoUnitario: null, usuario, venta: null }, true),
     ).toBe('Florencia')
+  })
+})
+
+describe('el costo en la celda Detalle', () => {
+  const INGRESO = {
+    motivo: 'INGRESO',
+    nota: 'Factura A-0001',
+    costoUnitario: new Prisma.Decimal('7400'),
+    usuario: { nombre: 'Ana' },
+    venta: null,
+  }
+
+  it('con permiso, el costo va junto a la nota', () => {
+    expect(detalleDeMovimiento(INGRESO, true)).toContain('7.400')
+    expect(detalleDeMovimiento(INGRESO, true)).toContain('Factura A-0001')
+  })
+
+  it('sin permiso, queda la nota y desaparece el costo', () => {
+    expect(detalleDeMovimiento(INGRESO, false)).toBe('Factura A-0001')
+  })
+
+  // El caso que importa de verdad: sin nota Y sin permiso, la celda no puede
+  // quedar vacía. Cae al mismo fallback que ya existe para un ingreso al que
+  // nadie le cargó el costo, así que no revela por omisión que hay un costo
+  // escondido — se ve idéntico a un ingreso sin costo.
+  it('sin nota y sin permiso, cae al fallback de siempre', () => {
+    expect(detalleDeMovimiento({ ...INGRESO, nota: null }, false)).toBe('Ingreso · Ana')
+  })
+
+  // Los otros motivos no llevan costo, así que el permiso no los toca.
+  it('una venta se ve igual con permiso y sin él', () => {
+    const venta = {
+      motivo: 'VENTA', nota: null, costoUnitario: null,
+      usuario: { nombre: 'Ana' }, venta: { numero: 12 },
+    }
+    expect(detalleDeMovimiento(venta, false)).toBe(detalleDeMovimiento(venta, true))
   })
 })
 

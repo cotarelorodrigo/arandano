@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { Client } from 'pg'
 import { Prisma } from '@/generated/prisma/client'
 import { urlOwner, urlApp } from '@/test/postgres-efimero'
 import { crearTenant } from '@/test/datos'
+
+const FUENTE = readFileSync(new URL('./acciones.ts', import.meta.url), 'utf8')
 
 const estado = vi.hoisted(() => ({ tenantId: '', subdominio: '', cookie: '' }))
 
@@ -163,5 +166,16 @@ describe('anular', () => {
     await anular(INICIAL, datos)
     const despues = await owner.query(`SELECT stock FROM articulos WHERE id = $1`, [articuloId])
     expect(despues.rows[0].stock).toBe(antes.rows[0].stock)
+  })
+})
+
+describe('anular una venta', () => {
+  // Anular devuelve el stock y borra plata cobrada del período: sigue siendo
+  // peligroso, pero ahora es el dueño quien decide si lo delega, en vez de que
+  // lo decida el código.
+  it('exige VENTAS_ANULAR, no el rol', () => {
+    const cuerpo = FUENTE.slice(FUENTE.indexOf('export async function anular'))
+    expect(cuerpo).toContain("exigirPermiso('VENTAS_ANULAR')")
+    expect(cuerpo).not.toContain('exigirDuenio()')
   })
 })

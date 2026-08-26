@@ -3,6 +3,7 @@ import { Prisma } from '@/generated/prisma/client'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { exigirSesion } from '@/lib/auth/sesion'
+import { puedeConSesion } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { cn } from '@/lib/utils'
 import { FichaDeArticulo, MoverStock, BotonExportarCsv } from '../formularios'
@@ -147,7 +148,8 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   // mismo 404 — y tienen que serlo: distinguirlos filtraría qué ids existen.
   if (!articulo) notFound()
 
-  const esDuenio = sesion.usuario.rol === 'DUENO'
+  const puedeEditar = await puedeConSesion(sesion, 'ARTICULOS_EDITAR')
+  const puedeCostos = await puedeConSesion(sesion, 'COSTOS')
   const esProducto = articulo.tipo === 'PRODUCTO'
 
   // Seis meses de sobra para "Cómo se movió": agregarVentasPorMes() sólo usa
@@ -177,8 +179,10 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
     // Un servicio nunca tiene movimientos (lib/inventario/stock.ts los
     // rechaza), así que ni vale consultar: `findFirst` sobre un articuloId sin
     // filas siempre da null igual, pero saltearlo evita una ida a Postgres que
-    // ya se sabe vacía.
-    esProducto
+    // ya se sabe vacía. Mismo criterio con `puedeCostos`: sin el permiso el
+    // tile no se renderea (ver más abajo), así que el resultado nunca se usa
+    // — no es una fuga, es un round-trip de más a Postgres.
+    esProducto && puedeCostos
       ? prisma.movimientoStock.findFirst({
           // El ingreso más reciente puede no tener costo cargado —es opcional,
           // CLAUDE.md— así que el filtro es explícito: el primero CON costo,
@@ -241,7 +245,11 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
           valor={formatearPrecio(articulo.precio.toString())}
           pie={actualizadoHace(articulo.actualizadoEn)}
         />
-        {esProducto && (
+        {/* Sin el permiso COSTOS, el tile no se renderea — no se pone en
+            '—': ese guión afirma que ningún ingreso cargó el costo, que es
+            una afirmación distinta y falsa cuando lo que pasa es que a esta
+            persona no se le muestra. */}
+        {esProducto && puedeCostos && (
           <Tile
             rotulo="ÚLTIMO COSTO"
             valor={ultimoCosto ? formatearPrecio(ultimoCosto.toString()) : '—'}
@@ -254,7 +262,9 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
         )}
       </div>
 
-      {esProducto && !articulo.desactivadoEn && <MoverStock articuloId={articulo.id} />}
+      {esProducto && !articulo.desactivadoEn && (
+        <MoverStock articuloId={articulo.id} puedeCostos={puedeCostos} />
+      )}
 
       {/* El bloque que responde "por qué tengo 3 y no 5", que es la pregunta
           que un dueño hace cuando el inventario no le cierra. Es para lo que la
@@ -303,7 +313,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
                       una nota larga sin truncar se derrama sobre la celda de
                       Cambio en vez de cortarse con "…". */}
                   <TableCell className="max-w-0 truncate p-[11px] px-[7px] text-sm text-muted-foreground">
-                    {detalleDeMovimiento(m)}
+                    {detalleDeMovimiento(m, puedeCostos)}
                   </TableCell>
                   <TableCell
                     className={cn(
@@ -356,7 +366,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
       }
       articuloId={articulo.id}
       desactivado={articulo.desactivadoEn !== null}
-      esDuenio={esDuenio}
+      puedeEditar={puedeEditar}
       nombre={articulo.nombre}
       sku={articulo.sku}
       precio={articulo.precio.toString()}

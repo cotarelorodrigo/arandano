@@ -189,6 +189,12 @@ erDiagram
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
+  usuario_permisos {
+    uuid tenant_id PK, FK
+    uuid usuario_id PK, FK
+    permiso permiso PK
+    timestamptz(3) otorgado_en
+  }
   venta_items {
     uuid id PK
     uuid tenant_id FK
@@ -238,6 +244,7 @@ erDiagram
   tenants ||--o{ sessions : "ON DELETE CASCADE"
   tenants ||--o{ tenant_modules : "ON DELETE CASCADE"
   tenants ||--o{ users : "ON DELETE CASCADE"
+  tenants ||--o{ usuario_permisos : "ON DELETE CASCADE"
   tenants ||--o{ venta_items : "ON DELETE CASCADE"
   tenants ||--o{ ventas : "ON DELETE CASCADE"
   tenants ||--o{ verifications : "ON DELETE CASCADE"
@@ -250,6 +257,7 @@ erDiagram
   users ||--o{ movimientos_stock : "ON DELETE RESTRICT"
   users ||--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
   users ||--o{ sessions : "ON DELETE CASCADE"
+  users ||--o{ usuario_permisos : "ON DELETE CASCADE"
   users ||--o{ ventas : "ON DELETE RESTRICT"
   ventas |o--o{ movimientos_stock : "ON DELETE RESTRICT"
   ventas ||--o{ pagos : "ON DELETE CASCADE"
@@ -264,6 +272,7 @@ erDiagram
 - **modulo**: `ORDENES_DE_TRABAJO`, `TURNOS`, `GASTRONOMIA`
 - **moneda**: `ARS`, `USD`
 - **motivo_movimiento**: `VENTA`, `ANULACION_VENTA`, `AJUSTE`, `INGRESO`
+- **permiso**: `ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`, `CATEGORIAS`, `VENTAS_ANULAR`, `ORDENES_ANULAR`
 - **rol_usuario**: `DUENO`, `EMPLEADO`
 - **tipo_articulo**: `PRODUCTO`, `SERVICIO`
 

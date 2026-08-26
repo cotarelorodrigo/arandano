@@ -13,6 +13,8 @@ import { ChipRol } from './chip-rol'
 import { ChipEstadoUsuario } from './chip-estado'
 import { AvisoClaveGenerada } from './aviso-clave'
 import { FilaAcciones, type UsuarioDeFila } from './fila-acciones'
+import { PermisosDeUsuario } from './permisos-dialogo'
+import type { Permiso } from '@/lib/permisos/catalogo'
 import estilos from './tipografia.module.css'
 
 // Acá y no en acciones.ts: aquel archivo es 'use server' y sólo puede exportar
@@ -83,10 +85,12 @@ function CardConEncabezado({
 function CardEquipo({
   usuarios,
   usuarioActualId,
+  permisosPorUsuario,
   onClaveGenerada,
 }: {
   usuarios: UsuarioDeFila[]
   usuarioActualId: string
+  permisosPorUsuario: Record<string, Permiso[]>
   onClaveGenerada: (info: { nombre: string; clave: string }) => void
 }) {
   return (
@@ -102,6 +106,9 @@ function CardEquipo({
             </TableHead>
             <TableHead className="h-auto w-[118px] px-[7px] py-[11px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
               Estado
+            </TableHead>
+            <TableHead className="h-auto w-[140px] px-[7px] py-[11px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+              Permisos
             </TableHead>
             <TableHead className="h-auto w-[180px] py-[11px] pr-[18px] pl-[7px] text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
               Acciones
@@ -122,6 +129,13 @@ function CardEquipo({
               </TableCell>
               <TableCell className="px-[7px] py-[11px]">
                 <ChipEstadoUsuario desactivado={u.desactivadoEn !== null} />
+              </TableCell>
+              <TableCell className="px-[7px] py-[11px]">
+                {/* Un dueño no lleva switches: puede todo por construcción, y
+                    un diálogo con los seis prendidos y trabados sería ruido. */}
+                {u.rol === 'EMPLEADO' && (
+                  <PermisosDeUsuario usuario={u} permisos={permisosPorUsuario[u.id] ?? []} />
+                )}
               </TableCell>
               <TableCell className="py-[11px] pr-[18px] pl-[7px] text-right">
                 <FilaAcciones
@@ -283,16 +297,23 @@ function CardReglas() {
 export function CuerpoUsuarios({
   usuarios,
   usuarioActualId,
+  permisosPorUsuario,
 }: {
   usuarios: UsuarioDeFila[]
   usuarioActualId: string
+  permisosPorUsuario: Record<string, Permiso[]>
 }) {
   const [claveGenerada, setClaveGenerada] = useState<{ nombre: string; clave: string } | null>(null)
 
   return (
     <div className="flex gap-4 p-6">
       <div className="flex flex-1 flex-col gap-4">
-        <CardEquipo usuarios={usuarios} usuarioActualId={usuarioActualId} onClaveGenerada={setClaveGenerada} />
+        <CardEquipo
+          usuarios={usuarios}
+          usuarioActualId={usuarioActualId}
+          permisosPorUsuario={permisosPorUsuario}
+          onClaveGenerada={setClaveGenerada}
+        />
         {claveGenerada && <AvisoClaveGenerada nombre={claveGenerada.nombre} clave={claveGenerada.clave} />}
       </div>
       <div className="flex w-[360px] flex-col gap-4">

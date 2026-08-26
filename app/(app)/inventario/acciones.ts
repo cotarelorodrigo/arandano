@@ -1,7 +1,9 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { exigirSesion, exigirDuenio } from '@/lib/auth/sesion'
+import { exigirSesion } from '@/lib/auth/sesion'
+import { exigirPermiso, puede } from '@/lib/permisos/guarda'
+import type { Permiso } from '@/lib/permisos/catalogo'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import {
   crearArticulo,
@@ -31,9 +33,16 @@ export type EstadoInventario = { error: string | null; aviso: string | null }
 // entera. Vive en formularios.tsx, igual que en usuarios y en login.
 // test/use-server.test.ts lo fija.
 
-/** Sólo el dueño: el precio es plata y el catálogo es decisión del negocio. */
-async function comoDuenio<T>(fn: (tenantId: string, usuarioId: string) => Promise<T>) {
-  const sesion = await exigirDuenio()
+/**
+ * Quien tenga el permiso. Reemplaza al viejo `comoDuenio`: el catálogo y el ABM
+ * dejaron de ser "cosa del dueño" para pasar a ser algo que el dueño delega —
+ * ver `docs/superpowers/specs/2026-08-26-permisos-por-usuario-design.md`.
+ */
+async function comoPuede<T>(
+  permiso: Permiso,
+  fn: (tenantId: string, usuarioId: string) => Promise<T>,
+) {
+  const sesion = await exigirPermiso(permiso)
   return fn(sesion.tenant.id, sesion.usuario.id)
 }
 
@@ -74,7 +83,7 @@ export async function altaArticulo(
 ): Promise<EstadoInventario> {
   try {
     const tipo = datos.get('tipo') === 'SERVICIO' ? 'SERVICIO' : 'PRODUCTO'
-    const creado = await comoDuenio((tenantId, usuarioId) =>
+    const creado = await comoPuede('ARTICULOS_CREAR', async (tenantId, usuarioId) =>
       crearArticulo({
         tenantId,
         usuarioId,
@@ -92,8 +101,13 @@ export async function altaArticulo(
         // persona no eligió mandar.
         stockInicial:
           tipo === 'PRODUCTO' ? aDecimalOpcional(texto(datos, 'stockInicial'), 'el stock inicial') : null,
+        // El costo se descarta si esta persona no puede cargarlo: el campo no
+        // se le dibuja, pero el <input> viaja igual si alguien arma el POST a
+        // mano. La UI esconde; esto es lo que autoriza.
         costoUnitario:
-          tipo === 'PRODUCTO' ? aDecimalOpcional(texto(datos, 'costoUnitario'), 'el costo') : null,
+          tipo === 'PRODUCTO' && (await puede('COSTOS'))
+            ? aDecimalOpcional(texto(datos, 'costoUnitario'), 'el costo')
+            : null,
       }),
     )
     revalidatePath('/inventario')
@@ -109,14 +123,20 @@ export async function guardarArticulo(
 ): Promise<EstadoInventario> {
   try {
     const articuloId = texto(datos, 'articuloId')
-    await comoDuenio((tenantId) =>
+    await comoPuede('ARTICULOS_EDITAR', async (tenantId) =>
       editarArticulo({
         tenantId,
         articuloId,
         nombre: texto(datos, 'nombre'),
         sku: texto(datos, 'sku'),
         precio: aDecimal(texto(datos, 'precio'), 'el precio'),
-        categoria: texto(datos, 'categoria') || null,
+        // Sin CATEGORIAS el campo no se manda: `undefined` le dice a
+        // `editarArticulo` que no toque la categoría del artículo, ni para
+        // vaciarla ni para crear una rama nueva. La UI ya no dibuja este
+        // campo sin el permiso (ver `formularios.tsx`), pero el <input>
+        // viaja igual si alguien arma el POST a mano — como con COSTOS más
+        // abajo, el servidor es quien autoriza, no quien dibuja.
+        categoria: (await puede('CATEGORIAS')) ? texto(datos, 'categoria') || null : undefined,
       }),
     )
     revalidatePath('/inventario')
@@ -133,7 +153,7 @@ export async function bajaArticulo(
 ): Promise<EstadoInventario> {
   try {
     const articuloId = texto(datos, 'articuloId')
-    await comoDuenio((tenantId) => desactivarArticulo({ tenantId, articuloId }))
+    await comoPuede('ARTICULOS_EDITAR', (tenantId) => desactivarArticulo({ tenantId, articuloId }))
     revalidatePath('/inventario')
     revalidatePath(`/inventario/${articuloId}`)
     return { error: null, aviso: 'Artículo desactivado. Su historial queda intacto.' }
@@ -148,7 +168,7 @@ export async function reactivarArticuloAccion(
 ): Promise<EstadoInventario> {
   try {
     const articuloId = texto(datos, 'articuloId')
-    await comoDuenio((tenantId) => reactivarArticulo({ tenantId, articuloId }))
+    await comoPuede('ARTICULOS_EDITAR', (tenantId) => reactivarArticulo({ tenantId, articuloId }))
     revalidatePath('/inventario')
     revalidatePath(`/inventario/${articuloId}`)
     return { error: null, aviso: 'Artículo reactivado.' }
@@ -174,7 +194,11 @@ export async function ingresarMercaderia(
         articuloId,
         cantidad,
         usuarioId,
-        costoUnitario: aDecimalOpcional(texto(datos, 'costoUnitario'), 'el costo'),
+        // Mismo criterio que en `altaArticulo`: el servidor es quien decide
+        // si el costo se guarda, no la pantalla que lo dibuja o no.
+        costoUnitario: (await puede('COSTOS'))
+          ? aDecimalOpcional(texto(datos, 'costoUnitario'), 'el costo')
+          : null,
         nota: texto(datos, 'nota') || undefined,
       })
       return cantidad
@@ -280,7 +304,7 @@ function fechaCsv(v: Date): string {
  *
  * **Sin restringir a dueño, a propósito.** Es de sólo lectura y de datos que
  * la propia pantalla ya le muestra a cualquier sesión (`conSesion`, no
- * `comoDuenio`): exportar a CSV lo mismo que ya está en la tabla no es una
+ * `comoPuede`): exportar a CSV lo mismo que ya está en la tabla no es una
  * capacidad nueva que alguien pueda abusar, a diferencia de editar el
  * artículo o desactivarlo.
  *
@@ -338,10 +362,16 @@ export async function exportarHistorialCsv(
       articulo.stock,
     )
 
+    // El CSV es el mismo dato que la tabla en otro formato, así que respeta el
+    // mismo permiso. La acción sigue detrás de `conSesion` —exportar lo que la
+    // pantalla ya muestra no es una capacidad nueva— pero exporta lo que ESA
+    // persona puede ver, no lo que ve un dueño.
+    const conCostos = await puede('COSTOS')
+
     const filas = movimientos.map((m, i) => [
       fechaCsv(m.creadoEn),
       textoDeMotivo(m.motivo),
-      detalleDeMovimiento(m),
+      detalleDeMovimiento(m, conCostos),
       (m.delta.greaterThan(0) ? '+' : '') + formatearCantidad(m.delta.toString()),
       formatearCantidad(saldos[i].toString()),
       // La consulta ya trae `usuario` para armar "Detalle" en pantalla; acá
@@ -358,12 +388,13 @@ export async function exportarHistorialCsv(
 }
 
 /**
- * El ABM del árbol de categorías, las cuatro por `comoDuenio`.
+ * El ABM del árbol de categorías, las cuatro por `comoPuede('CATEGORIAS')`.
  *
  * **Que el panel no le dibuje los controles a un empleado no alcanza**: un
  * server action es un endpoint, y se puede llamar sin pasar por la pantalla.
  * El criterio es el mismo que ya rige para el alta y la edición de artículo —
- * el catálogo es decisión del negocio, igual que el precio.
+ * el catálogo es decisión del negocio, igual que el precio, pero ahora es un
+ * permiso delegable y no un privilegio fijo del rol.
  *
  * Los cinco códigos que puede tirar el módulo (`NOMBRE_VACIO`,
  * `CATEGORIA_REPETIDA`, `CATEGORIA_ANIDADA`, `CATEGORIA_CON_HIJAS`,
@@ -376,7 +407,7 @@ export async function crearCategoriaAccion(
 ): Promise<EstadoInventario> {
   try {
     const padre = texto(datos, 'padreId')
-    await comoDuenio((tenantId) =>
+    await comoPuede('CATEGORIAS', (tenantId) =>
       crearCategoria({ tenantId, nombre: texto(datos, 'nombre'), padreId: padre || null }),
     )
     revalidatePath('/inventario')
@@ -391,7 +422,7 @@ export async function renombrarCategoriaAccion(
   datos: FormData,
 ): Promise<EstadoInventario> {
   try {
-    await comoDuenio((tenantId) =>
+    await comoPuede('CATEGORIAS', (tenantId) =>
       renombrarCategoria({
         tenantId,
         categoriaId: texto(datos, 'categoriaId'),
@@ -411,7 +442,7 @@ export async function moverCategoriaAccion(
 ): Promise<EstadoInventario> {
   try {
     const destino = texto(datos, 'padreId')
-    await comoDuenio((tenantId) =>
+    await comoPuede('CATEGORIAS', (tenantId) =>
       moverCategoria({
         tenantId,
         categoriaId: texto(datos, 'categoriaId'),
@@ -430,7 +461,7 @@ export async function borrarCategoriaAccion(
   datos: FormData,
 ): Promise<EstadoInventario> {
   try {
-    await comoDuenio((tenantId) =>
+    await comoPuede('CATEGORIAS', (tenantId) =>
       borrarCategoria({ tenantId, categoriaId: texto(datos, 'categoriaId') }),
     )
     revalidatePath('/inventario')

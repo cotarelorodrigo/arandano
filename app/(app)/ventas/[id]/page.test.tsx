@@ -7,21 +7,21 @@
 import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import {
-  puedeAnular, cotizacionVisible, subtituloDeItem, filasDeResumen, notaDeAnulacion,
+  seOfreceAnular, cotizacionVisible, subtituloDeItem, filasDeResumen, notaDeAnulacion,
 } from './page'
 import { CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
 
-describe('puedeAnular', () => {
-  it('el dueño puede anular una venta cobrada', () => {
-    expect(puedeAnular('DUENO', null)).toBe(true)
+describe('seOfreceAnular', () => {
+  it('con el permiso, se ofrece anular una venta cobrada', () => {
+    expect(seOfreceAnular(true, null)).toBe(true)
   })
 
-  it('un empleado no ve el botón, sin importar el estado de la venta', () => {
-    expect(puedeAnular('EMPLEADO', null)).toBe(false)
+  it('sin el permiso no se ofrece el botón, sin importar el estado de la venta', () => {
+    expect(seOfreceAnular(false, null)).toBe(false)
   })
 
-  it('nadie anula una venta ya anulada, ni siquiera el dueño', () => {
-    expect(puedeAnular('DUENO', new Date())).toBe(false)
+  it('nadie anula una venta ya anulada, ni con el permiso', () => {
+    expect(seOfreceAnular(true, new Date())).toBe(false)
   })
 })
 

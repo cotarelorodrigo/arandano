@@ -3,6 +3,7 @@ import type { Prisma } from '@/generated/prisma/client'
 import { Search } from 'lucide-react'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
+import { puedeConSesion } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -249,6 +250,10 @@ export default async function Inventario({
   }>
 }) {
   const sesion = await exigirSesion()
+  // Dos preguntas y no `esDuenio`: el botón de alta y el ABM del árbol son
+  // permisos distintos, así que un empleado puede tener uno sin el otro.
+  const puedeCrear = await puedeConSesion(sesion, 'ARTICULOS_CREAR')
+  const puedeCategorias = await puedeConSesion(sesion, 'CATEGORIAS')
   const { q = '', p = '1', inactivos, tipo: tipoQuery, cat: catQuery } = await searchParams
 
   const busqueda = q.trim()
@@ -328,7 +333,7 @@ export default async function Inventario({
           ) : undefined
         }
         acciones={
-          sesion.usuario.rol === 'DUENO' ? (
+          puedeCrear ? (
             <Button asChild size="sm">
               <Link href="/inventario/nuevo">Artículo nuevo</Link>
             </Button>
@@ -348,7 +353,7 @@ export default async function Inventario({
             total={totalDelCatalogo}
             sinCategoria={sinCategoria}
             activa={cat}
-            esDuenio={sesion.usuario.rol === 'DUENO'}
+            puedeAdministrar={puedeCategorias}
             filtros={{ busqueda, verInactivos, tipo }}
           />
 
@@ -398,7 +403,7 @@ export default async function Inventario({
                 // Un local recién dado de alta llega acá con cero artículos, y ésta es
                 // la primera pantalla que ve. En blanco no diría qué hacer.
                 `No hay artículos que coincidan con "${busqueda}".`
-              ) : sesion.usuario.rol === 'DUENO' ? (
+              ) : puedeCrear ? (
                 'Todavía no cargaste ningún artículo. Empezá por «Artículo nuevo».'
               ) : (
                 'Todavía no hay artículos cargados.'

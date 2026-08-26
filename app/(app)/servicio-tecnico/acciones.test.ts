@@ -1,16 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+
+const FUENTE = readFileSync(new URL('./acciones.ts', import.meta.url), 'utf8')
 
 // Se mockea la sesión y el dominio: lo que este test prueba es el CONTRATO de
 // la action —que exija sesión, que traduzca los errores de dominio a cartel y
 // relance el resto—, no el motor, que ya tiene su propio test contra la base.
 const exigirSesion = vi.fn()
-const exigirDuenio = vi.fn()
+const exigirPermiso = vi.fn()
 const crearOrden = vi.fn()
 const anularOrden = vi.fn()
 const cambiarEstado = vi.fn()
 const guardarDiagnostico = vi.fn()
 
-vi.mock('@/lib/auth/sesion', () => ({ exigirSesion, exigirDuenio }))
+vi.mock('@/lib/auth/sesion', () => ({ exigirSesion }))
+vi.mock('@/lib/permisos/guarda', () => ({ exigirPermiso }))
 vi.mock('@/lib/ordenes-de-trabajo/crear', () => ({ crearOrden }))
 vi.mock('@/lib/ordenes-de-trabajo/operaciones', () => ({
   anularOrden,
@@ -28,7 +32,21 @@ const sesion = {
 beforeEach(() => {
   vi.clearAllMocks()
   exigirSesion.mockResolvedValue(sesion)
-  exigirDuenio.mockResolvedValue({ ...sesion, usuario: { id: 'u-1', rol: 'DUENO' } })
+  exigirPermiso.mockResolvedValue({ ...sesion, usuario: { id: 'u-1', rol: 'DUENO' } })
+})
+
+describe('anular una orden de trabajo', () => {
+  it('exige ORDENES_ANULAR, no el rol', () => {
+    const cuerpo = FUENTE.slice(FUENTE.indexOf('export async function anular'))
+    expect(cuerpo).toContain("exigirPermiso('ORDENES_ANULAR')")
+    expect(cuerpo).not.toContain('exigirDuenio()')
+  })
+
+  // El resto de las transiciones son operación del día: recibir el equipo,
+  // presupuestar, marcar listo. Ésas nunca fueron del dueño y no cambian.
+  it('las demás acciones siguen siendo de cualquiera con sesión', () => {
+    expect(FUENTE).toContain('exigirSesion')
+  })
 })
 
 function formulario(campos: Record<string, string>): FormData {
@@ -122,11 +140,18 @@ describe('recibirEquipo', () => {
 })
 
 describe('anular', () => {
-  it('exige DUEÑO, no sólo sesión', async () => {
+  it('exige el permiso ORDENES_ANULAR, no sólo sesión', async () => {
     const { anular } = await import('./acciones')
-    exigirDuenio.mockRejectedValueOnce(new Error('403'))
+    exigirPermiso.mockRejectedValueOnce(new Error('403'))
     await expect(anular({ error: null, aviso: null }, formulario({ ordenId: 'o-1' }))).rejects.toThrow()
     expect(anularOrden).not.toHaveBeenCalled()
+  })
+
+  it('pide el permiso ORDENES_ANULAR', async () => {
+    const { anular } = await import('./acciones')
+    anularOrden.mockResolvedValue(undefined)
+    await anular({ error: null, aviso: null }, formulario({ ordenId: 'o-1' }))
+    expect(exigirPermiso).toHaveBeenCalledWith('ORDENES_ANULAR')
   })
 })
 

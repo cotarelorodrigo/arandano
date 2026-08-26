@@ -687,7 +687,7 @@ export function FichaDeOrden({
   subtitulo,
   ordenId,
   anulada,
-  esDuenio,
+  puedeAnular,
   accionAnular,
   columnaIzquierda,
   columnaDerecha,
@@ -696,16 +696,16 @@ export function FichaDeOrden({
   subtitulo: ReactNode
   ordenId: string
   anulada: boolean
-  esDuenio: boolean
+  puedeAnular: boolean
   accionAnular: (e: EstadoServicio, d: FormData) => Promise<EstadoServicio>
   columnaIzquierda: ReactNode
   columnaDerecha: ReactNode
 }) {
   const [estadoAnular, ejecutarAnular, anulando] = useActionState(accionAnular, INICIAL)
-  // Sólo el dueño, y sólo si no está anulada ya: la action lo revalida con
-  // exigirDuenio y con ORDEN_ANULADA — esconder el botón acá es comodidad,
-  // no el permiso real.
-  const puedeAnular = esDuenio && !anulada
+  // Quien tenga ORDENES_ANULAR, y sólo si no está anulada ya: la action lo
+  // revalida con exigirPermiso('ORDENES_ANULAR') y con ORDEN_ANULADA —
+  // esconder el botón acá es comodidad, no el permiso real.
+  const seOfreceAnular = puedeAnular && !anulada
 
   return (
     <>
@@ -720,12 +720,12 @@ export function FichaDeOrden({
                 Reimprimir ticket
               </Link>
             </Button>
-            {puedeAnular ? <BotonAnular anulando={anulando} /> : null}
+            {seOfreceAnular ? <BotonAnular anulando={anulando} /> : null}
           </>
         }
       />
 
-      {puedeAnular ? (
+      {seOfreceAnular ? (
         <form id={FORM_ANULAR} action={ejecutarAnular} className="hidden" aria-hidden="true">
           <input type="hidden" name="ordenId" value={ordenId} />
         </form>

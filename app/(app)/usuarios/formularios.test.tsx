@@ -11,6 +11,7 @@ vi.mock('./acciones', () => ({
   nuevaClave: vi.fn(),
   baja: vi.fn(),
   alta: vi.fn(),
+  cambiarPermiso: vi.fn(),
 }))
 
 async function renderAlta() {
@@ -89,7 +90,9 @@ describe('CuerpoUsuarios', () => {
 
   async function render() {
     const { CuerpoUsuarios } = await import('./formularios')
-    return renderToStaticMarkup(<CuerpoUsuarios usuarios={USUARIOS} usuarioActualId="u1" />)
+    return renderToStaticMarkup(
+      <CuerpoUsuarios usuarios={USUARIOS} usuarioActualId="u1" permisosPorUsuario={{}} />,
+    )
   }
 
   // Minor 16 de la review final: este nombre decía "cuatro" y la lista de al

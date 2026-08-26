@@ -24,17 +24,16 @@ describe('las acciones del árbol de categorías', () => {
   })
 
   /**
-   * El ABM es del DUEÑO, mismo criterio que el alta de artículo: el catálogo es
-   * decisión del negocio. Que el panel no le dibuje los controles a un empleado
-   * no alcanza — un server action es un endpoint, y se puede llamar sin pasar
-   * por la pantalla.
+   * El ABM del árbol pasa a ser delegable: un dueño puede dárselo a un
+   * empleado. Que el panel no le dibuje los controles no alcanza — un server
+   * action es un endpoint y se puede llamar sin pasar por la pantalla.
    */
-  it('las cuatro exigen dueño, no sólo sesión', () => {
+  it('las cuatro exigen el permiso CATEGORIAS, no sólo sesión', () => {
     for (const accion of ACCIONES) {
       const cuerpo = FUENTE.slice(FUENTE.indexOf(`export async function ${accion}`))
       const hastaLaSiguiente = cuerpo.slice(0, cuerpo.indexOf('\nexport async function', 1) + 1 || undefined)
-      expect(hastaLaSiguiente, `${accion} no pasa por comoDuenio`).toContain('comoDuenio')
-      expect(hastaLaSiguiente, `${accion} no usa conSesion`).not.toContain('conSesion(')
+      expect(hastaLaSiguiente, `${accion} no pide CATEGORIAS`).toContain("comoPuede('CATEGORIAS'")
+      expect(hastaLaSiguiente, `${accion} usa conSesion pelado`).not.toContain('conSesion(')
     }
   })
 
