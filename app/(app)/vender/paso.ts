@@ -6,8 +6,9 @@ import { useCallback, useSyncExternalStore } from 'react'
 // renderizar -- y el carrito vive en el estado de cliente de PuntoDeVenta:
 // un remonte a mitad de una venta se lo llevaría puesto. `pushState` y
 // `replaceState` cambian la URL sin ese ciclo -- Next lo documenta como la
-// forma soportada de actualizar search params sin navegar. Cuál de los dos
-// corresponde en cada caso lo decide `MotivoDelPaso`, más abajo.
+// forma soportada de actualizar search params sin navegar. Cuál de los tres
+// caminos (empujar, consumir o reemplazar) corresponde en cada caso lo decide
+// `MotivoDelPaso`, más abajo.
 
 export type Paso = 'carrito' | 'cobro'
 
@@ -101,6 +102,32 @@ function getServerSnapshot(): Paso {
 export type MotivoDelPaso = 'gesto' | 'consecuencia'
 
 /**
+ * La marca que este módulo le pone a las entradas de historial que empuja ÉL.
+ *
+ * Es lo único que después distingue "esta entrada la puse yo" de "acá aterrizó
+ * alguien con una URL tipeada o compartida", y esa diferencia decide si la
+ * vuelta automática puede consumir la entrada o tiene que reemplazarla (ver
+ * `navegarAlPaso`). El nombre lleva el del producto a propósito: el objeto de
+ * estado de una entrada lo comparten Next --que guarda ahí sus propios campos,
+ * `__NA` y el árbol de rutas-- y cualquier otro código que llame a
+ * `pushState`, así que una clave genérica como `paso` sería una colisión
+ * esperando.
+ */
+const MARCA_DE_PASO = 'arandanoPasoDeCobro'
+
+/**
+ * Si la entrada de historial actual la empujamos nosotros.
+ *
+ * `history.state` es `any` para TypeScript, así que se lo trata como `unknown`
+ * y se lo comprueba a mano: un `null` (lo que hay antes de que nadie escriba
+ * nada) y un estado ajeno tienen que dar los dos `false`.
+ */
+function laEntradaDeArribaEsNuestra(): boolean {
+  const estado: unknown = window.history.state
+  return typeof estado === 'object' && estado !== null && MARCA_DE_PASO in estado
+}
+
+/**
  * Cambia el paso en la URL. Exportada —además de usarse desde el hook— para
  * que `paso.test.ts` la ejercite de verdad: lo único que toca del navegador
  * son `window.location` y `window.history`, dos objetos que un test puede
@@ -108,8 +135,33 @@ export type MotivoDelPaso = 'gesto' | 'consecuencia'
  */
 export function navegarAlPaso(paso: Paso, motivo: MotivoDelPaso) {
   const url = urlConPaso(window.location.pathname + window.location.search, paso)
-  if (motivo === 'consecuencia') window.history.replaceState(null, '', url)
-  else window.history.pushState(null, '', url)
+
+  if (motivo === 'gesto') {
+    window.history.pushState({ [MARCA_DE_PASO]: true }, '', url)
+    notificarCambioDePaso()
+    return
+  }
+
+  // Una consecuencia sobre una entrada NUESTRA: consumirla con `back()`
+  // restaura la anterior EXACTA y deja el historial como estaba antes del
+  // cobro. Reemplazarla, en cambio, deja una copia de la entrada anterior —una
+  // por venta, permanente—, y en un turno de cincuenta ventas eso son
+  // cincuenta toques de Atrás antes de que el gesto haga algo visible: el
+  // mismo síntoma que este archivo existe para evitar, creciendo con el uso.
+  if (laEntradaDeArribaEsNuestra()) {
+    // SIN notificar acá: `back()` es asincrónico y dispara `popstate`, que es
+    // justo lo que `subscribe` ya escucha. Un aviso a mano además llegaría
+    // ANTES de que el navegador cambie la URL —o sea leyendo todavía el paso
+    // viejo— y duplicaría el que sí sirve.
+    window.history.back()
+    return
+  }
+
+  // La entrada de arriba no es nuestra: alguien aterrizó directo en
+  // `/vender?paso=cobro` con una URL tipeada o compartida. Un `back()` acá lo
+  // sacaría de la aplicación, así que se reemplaza — que sigue cumpliendo lo
+  // que importa, no dejar nada que deshacer hacia un cobro ya consumado.
+  window.history.replaceState(null, '', url)
   notificarCambioDePaso()
 }
 
