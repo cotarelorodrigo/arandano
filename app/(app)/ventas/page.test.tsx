@@ -4,9 +4,21 @@
 // request real (mismo criterio que ya documentan las funciones puras de
 // app/(app)/vender/punto-de-venta.tsx: se prueba la REGLA, no el cableado
 // completo de principio a fin, que queda cubierto por scripts/smoke.sh).
+//
+// `Listado`, en cambio, SÍ es un componente y SÍ se renderiza acá
+// (renderToStaticMarkup): a diferencia de `Ventas`, no abre sesión ni toca
+// Prisma — recibe sus filas ya resueltas a texto — así que puede afirmarse
+// sobre el HTML real y no por grep, que es lo que una review anterior de
+// este ciclo marcó como preferible cuando el render lo permite. Lo que NO se
+// puede renderizar (los cambios de layout que viven directo en `Ventas`,
+// como el `hidden lg:flex` del formulario de fechas) se verifica sobre el
+// fuente, igual que ya lo hacen otras pantallas de este repo
+// (app/(app)/servicio-tecnico/page.test.tsx).
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
+import { renderToStaticMarkup } from 'react-dom/server'
 import {
-  rangoDeChip, chipActivo, pieDeCobradas, pieDeAnuladas, rotuloDeMedios, ventanaDePaginas,
+  rangoDeChip, chipActivo, pieDeCobradas, pieDeAnuladas, rotuloDeMedios, ventanaDePaginas, Listado,
 } from './page'
 
 const HOY = '2026-08-21'
@@ -126,5 +138,131 @@ describe('ventanaDePaginas', () => {
 
   it('no se pasa del límite superior', () => {
     expect(ventanaDePaginas(10, 10)).toEqual([6, 7, 8, 9, 10])
+  })
+})
+
+/** Una fila mínima, ya resuelta a texto — la forma que `Listado` recibe de
+ *  verdad, sin ningún `Decimal` de Prisma cruzando a un fixture de test. */
+const FILA: Parameters<typeof Listado>[0]['filas'][number] = {
+  id: 'v1',
+  numero: 1042,
+  horaFormateada: '14:32',
+  clienteNombre: 'Consumidor final',
+  itemsLabel: '3 artículos',
+  mediosLabel: 'Efectivo',
+  totalFormateado: '$ 103.900,00',
+  anulada: false,
+}
+
+function renderListado(props: Partial<Parameters<typeof Listado>[0]> = {}) {
+  return renderToStaticMarkup(
+    <Listado
+      filas={[FILA]}
+      total={1}
+      pagina={1}
+      paginas={1}
+      porPagina={50}
+      conPagina={(n) => `/ventas?p=${n}`}
+      {...props}
+    />,
+  )
+}
+
+// Task 4 del ciclo móvil: el patrón de listado que copian las tasks 6, 8 y
+// 10 — grid en escritorio, tarjetas apiladas en el teléfono, resuelto con
+// `display:contents` sobre el MISMO árbol (design/arandano.pen, frame
+// `nwW2V`, spec §3).
+describe('Listado: el patrón grid + display:contents', () => {
+  it('el contenedor es la tabla ARIA: 1 columna en el teléfono, 6 en escritorio', () => {
+    const html = renderListado()
+    expect(html).toContain('role="table"')
+    expect(html).toMatch(/class="[^"]*\bgrid-cols-1\b[^"]*\blg:grid-cols-\[84px_110px_1fr_168px_140px_104px\]/)
+  })
+
+  it('el encabezado está oculto en el teléfono y se disuelve en escritorio', () => {
+    const html = renderListado()
+    expect(html).toContain('role="row" class="hidden lg:contents"')
+  })
+
+  it('hay tantos role="columnheader" como columnas declara el grid (6)', () => {
+    const html = renderListado()
+    expect(html.match(/role="columnheader"/g)).toHaveLength(6)
+  })
+
+  it('toda fila de datos lleva lg:contents y role="row"', () => {
+    const html = renderListado({ filas: [FILA, { ...FILA, id: 'v2', numero: 1041 }], total: 2 })
+    // El encabezado + las dos filas de datos: las tres son role="row" y las
+    // tres llevan lg:contents — es lo que hace que, en escritorio, el mismo
+    // árbol vuelva a ser una tabla de verdad.
+    const filas = html.match(/role="row" class="[^"]*"/g) ?? []
+    expect(filas).toHaveLength(3)
+    for (const fila of filas) expect(fila).toContain('lg:contents')
+  })
+
+  it('cada fila de datos tiene 6 celdas con role="cell", tantas como columnheader', () => {
+    const html = renderListado()
+    expect(html.match(/role="cell"/g)).toHaveLength(6)
+  })
+
+  it('muestra número, hora, cliente, medios, total y estado', () => {
+    const html = renderListado()
+    expect(html).toContain('#1042')
+    expect(html).toContain('14:32')
+    expect(html).toContain('Consumidor final')
+    expect(html).toContain('3 artículos')
+    expect(html).toContain('Efectivo')
+    expect(html).toContain('$ 103.900,00')
+    expect(html).toContain('Cobrada')
+  })
+
+  it('en el teléfono, Medios deja de ser columna y se funde en la línea de meta', () => {
+    const html = renderListado()
+    // La línea fluida del teléfono ("3 artículos · Efectivo") y la celda de
+    // Medios de escritorio, oculta abajo de 1024 (`hidden ... lg:block`),
+    // conviven en el mismo árbol.
+    expect(html).toContain('3 artículos · Efectivo')
+    expect(html).toMatch(/class="hidden truncate[^"]*lg:block"/)
+  })
+
+  it('sin ventas en el período, lo dice — y no confunde ese vacío con una página fuera de rango', () => {
+    expect(renderListado({ filas: [], total: 0 })).toContain('No hay ventas en ese período.')
+  })
+
+  it('con la página fuera de rango, ofrece volver a la primera', () => {
+    const html = renderListado({ filas: [], total: 5, pagina: 9 })
+    expect(html).toContain('Esa página no tiene ventas.')
+    expect(html).toContain('/ventas?p=1')
+  })
+})
+
+// El resto de los cambios del ciclo móvil viven directo en `Ventas` (un
+// Server Component async que no se puede montar fuera de un request real,
+// ver el comentario de arriba de todo), así que se verifican sobre el
+// fuente — mismo criterio que ya usa
+// app/(app)/servicio-tecnico/page.test.tsx.
+describe('page.tsx: los cambios de layout del ciclo móvil (Task 4)', () => {
+  const FUENTE = readFileSync('app/(app)/ventas/page.tsx', 'utf8')
+
+  it('no queda ningún import de @/components/ui/table', () => {
+    expect(FUENTE).not.toMatch(/@\/components\/ui\/table/)
+  })
+
+  it('el formulario de fechas es hidden lg:flex en escritorio', () => {
+    expect(FUENTE).toContain("hidden items-end gap-[10px] lg:flex")
+  })
+
+  it('hay un botón de 38px, lg:hidden, que abre el Sheet con las fechas', () => {
+    expect(FUENTE).toMatch(/size-\[38px\][^`]*lg:hidden/)
+    expect(FUENTE).toContain('<Sheet>')
+    expect(FUENTE).toContain('<SheetTrigger')
+  })
+
+  it('los chips de rango son flex-1 lg:flex-none', () => {
+    expect(FUENTE).toContain('flex-1 rounded-lg bg-card')
+    expect(FUENTE).toContain('lg:flex-none')
+  })
+
+  it('los tiles se apilan en el teléfono y vuelven a una fila en escritorio', () => {
+    expect(FUENTE).toContain('flex flex-col gap-3 lg:flex-row lg:gap-4')
   })
 })
