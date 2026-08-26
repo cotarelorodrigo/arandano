@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
-  rangoDeChip, chipActivo, pieDeCobradas, pieDeAnuladas, rotuloDeMedios, ventanaDePaginas, Listado,
+  rangoDeChip, chipActivo, pieDeCobradas, pieDeAnuladas, rotuloDeMedios, ventanaDePaginas, Listado, Tile,
 } from './page'
 
 const HOY = '2026-08-21'
@@ -168,6 +168,28 @@ function renderListado(props: Partial<Parameters<typeof Listado>[0]> = {}) {
   )
 }
 
+// Ronda de arreglos 1 (Menor 2): el pie de los tiles chicos ("Ventas
+// cobradas"/"Anuladas") había quedado en 11px en los dos anchos — la única
+// medida de `Tile` sin su par mobile-first, entre varias que sí lo tienen.
+// La maqueta pide 10px/1.3 en el teléfono (`HvuAw`/`KSKKW`) y 11px/normal en
+// escritorio (`nINsZ`/`W3w2l`, sin cambios).
+describe('Tile: el pie mobile-first de los tiles chicos', () => {
+  it('el pie es 10px/1.3 en el teléfono y 11px/normal en escritorio', () => {
+    const html = renderToStaticMarkup(<Tile rotulo="Ventas cobradas" valor="44" pie="promedio $ 29.193,18" />)
+    const pie = html.match(/<div class="([^"]*)">promedio \$ 29\.193,18<\/div>/)
+    expect(pie, `no se encontró el <div> del pie en: ${html}`).not.toBeNull()
+    const clases = pie![1]
+    for (const c of ['text-[10px]', 'leading-[1.3]', 'lg:text-[11px]', 'lg:leading-normal']) {
+      expect(clases, `falta "${c}" en "${clases}"`).toContain(c)
+    }
+  })
+
+  it('el tile de marca ("Total del período") no cambia: su pie sigue en 11px en los dos anchos', () => {
+    const html = renderToStaticMarkup(<Tile marca rotulo="Total del período" valor="$ 1.284.500,00" pie="sin contar las anuladas" />)
+    expect(html).toMatch(/class="text-\[11px\]"[^>]*>sin contar las anuladas/)
+  })
+})
+
 // Task 4 del ciclo móvil: el patrón de listado que copian las tasks 6, 8 y
 // 10 — grid en escritorio, tarjetas apiladas en el teléfono, resuelto con
 // `display:contents` sobre el MISMO árbol (design/arandano.pen, frame
@@ -204,6 +226,23 @@ describe('Listado: el patrón grid + display:contents', () => {
     expect(html.match(/role="cell"/g)).toHaveLength(6)
   })
 
+  // Ronda de arreglos 1 (Importante 1): `TableRow` traía `hover:bg-muted/50`
+  // por default (components/ui/table.tsx) y se perdió al pasar a `<div
+  // role="row">`. `display:contents` no genera caja pero sigue en la cadena
+  // de ancestros para `:hover`, así que `group` en la fila +
+  // `lg:group-hover:bg-muted/50` en cada celda lo recupera en escritorio —
+  // el patrón que las tasks 6, 8 y 10 tienen que copiar.
+  it('la fila resalta al pasar el mouse en escritorio (group + group-hover en las 6 celdas)', () => {
+    const html = renderListado()
+    expect(html).toContain('role="row" class="group ')
+    // La etiqueta de apertura completa de cada celda, sin asumir que
+    // `class` viene inmediatamente después de `role` (la celda de Medios
+    // tiene un `title` en el medio).
+    const celdasDeDatos = html.match(/<div[^>]*\brole="cell"[^>]*>/g) ?? []
+    expect(celdasDeDatos).toHaveLength(6)
+    for (const celda of celdasDeDatos) expect(celda).toContain('lg:group-hover:bg-muted/50')
+  })
+
   it('muestra número, hora, cliente, medios, total y estado', () => {
     const html = renderListado()
     expect(html).toContain('#1042')
@@ -221,7 +260,7 @@ describe('Listado: el patrón grid + display:contents', () => {
     // Medios de escritorio, oculta abajo de 1024 (`hidden ... lg:block`),
     // conviven en el mismo árbol.
     expect(html).toContain('3 artículos · Efectivo')
-    expect(html).toMatch(/class="hidden truncate[^"]*lg:block"/)
+    expect(html).toMatch(/class="hidden truncate[^"]*\blg:block\b/)
   })
 
   it('sin ventas en el período, lo dice — y no confunde ese vacío con una página fuera de rango', () => {

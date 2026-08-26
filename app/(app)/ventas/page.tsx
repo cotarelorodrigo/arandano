@@ -226,7 +226,7 @@ export function ventanaDePaginas(actual: number, total: number): number[] {
  * que entró en el período"), así que ANTES de este ciclo el código
  * contradecía su propio sistema de diseño escrito — no sólo la maqueta.
  */
-function Tile({
+export function Tile({
   rotulo, valor, pie, marca = false,
 }: { rotulo: string; valor: string; pie?: string; marca?: boolean }) {
   // Paddings y tamaños mobile-first: el teléfono (`nwW2V`) achica el padding
@@ -272,7 +272,12 @@ function Tile({
       >
         {valor}
       </div>
-      {pie && <div className="text-[11px] text-muted-foreground">{pie}</div>}
+      {/* 10px/1.3 en el teléfono (nodos `HvuAw`/`KSKKW`: el pie puede
+          envolver a dos líneas en un tile angosto, y sin `leading` explícito
+          hereda el 1.5 del preflight, más suelto de lo que pide la maqueta),
+          11px/normal en escritorio (`nINsZ`/`W3w2l`) como siempre — la única
+          medida de esta función que había quedado sin el par mobile-first. */}
+      {pie && <div className="text-[10px] leading-[1.3] text-muted-foreground lg:text-[11px] lg:leading-normal">{pie}</div>}
     </div>
   )
 }
@@ -438,10 +443,19 @@ export function Listado({
             </div>
 
             {filas.map((f) => (
+              // `group`: un elemento con `display:contents` no genera caja
+              // propia, pero sigue en la cadena de ancestros para efectos de
+              // `:hover` — así que su `:hover` dispara igual en escritorio, y
+              // `lg:group-hover:bg-muted/50` en cada celda (más abajo) es lo
+              // que reemplaza el `hover:bg-muted/50` que traía por default
+              // `TableRow` (components/ui/table.tsx). Hallazgo de la review
+              // de la Task 4: sin esto el resaltado de fila al pasar el mouse
+              // desaparecía en escritorio — la regresión más fácil de meter
+              // con este patrón, y la que las tasks 6, 8 y 10 iban a copiar.
               <div
                 key={f.id}
                 role="row"
-                className="flex items-center gap-[10px] border-b p-[11px] px-[14px] last:border-b-0 lg:contents"
+                className="group flex items-center gap-[10px] border-b p-[11px] px-[14px] last:border-b-0 lg:contents"
               >
                 {/* "Datos": la mitad izquierda en el teléfono (agrupador +
                     cliente + meta); disuelta en escritorio, donde sus hijos
@@ -453,11 +467,11 @@ export function Listado({
                   <div className="flex items-center gap-[7px] lg:contents">
                     <div
                       role="cell"
-                      className={`${estilos.archivo} text-[14px] font-semibold text-primary lg:p-[11px] lg:px-[7px] lg:pl-[18px]`}
+                      className={`${estilos.archivo} text-[14px] font-semibold text-primary lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50`}
                     >
                       <Link href={`/ventas/${f.id}`}>#{f.numero}</Link>
                     </div>
-                    <div role="cell" className="text-[11px] text-muted-foreground lg:p-[11px] lg:px-[7px] lg:text-sm lg:text-foreground">
+                    <div role="cell" className="text-[11px] text-muted-foreground lg:p-[11px] lg:px-[7px] lg:text-sm lg:text-foreground lg:group-hover:bg-muted/50">
                       <span aria-hidden="true" className="lg:hidden">· </span>
                       {f.horaFormateada}
                     </div>
@@ -468,7 +482,7 @@ export function Listado({
                       subtítulo de acá está `hidden` (la meta de abajo lo
                       reemplaza con el dato de medios sumado), así que sólo
                       queda el nombre. */}
-                  <div role="cell" className="lg:p-[11px] lg:px-[7px]">
+                  <div role="cell" className="lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50">
                     <div className="flex flex-col gap-0.5">
                       <span className="text-[13px] font-medium text-foreground lg:text-sm">
                         {f.clienteNombre}
@@ -496,7 +510,7 @@ export function Listado({
                   <div
                     role="cell"
                     title={f.mediosLabel}
-                    className="hidden truncate p-[11px] px-[7px] text-sm text-foreground lg:block"
+                    className="hidden truncate p-[11px] px-[7px] text-sm text-foreground lg:block lg:group-hover:bg-muted/50"
                   >
                     {f.mediosLabel}
                   </div>
@@ -509,14 +523,14 @@ export function Listado({
                 <div className="flex flex-col items-end gap-1.5 lg:contents">
                   <div
                     role="cell"
-                    className={`${estilos.archivo} text-[15px] font-semibold text-foreground tabular-nums lg:p-[11px] lg:px-[7px] lg:text-right lg:text-sm`}
+                    className={`${estilos.archivo} text-[15px] font-semibold text-foreground tabular-nums lg:p-[11px] lg:px-[7px] lg:text-right lg:text-sm lg:group-hover:bg-muted/50`}
                   >
                     {f.totalFormateado}
                   </div>
                   {/* Las anuladas se MUESTRAN: el historial tiene que poder
                       responder qué pasó, y esconderlas sería tapar la
                       respuesta. */}
-                  <div role="cell" className="lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:text-right">
+                  <div role="cell" className="lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:text-right lg:group-hover:bg-muted/50">
                     <ChipEstado anulada={f.anulada} />
                   </div>
                 </div>
