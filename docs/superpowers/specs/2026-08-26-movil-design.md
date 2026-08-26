@@ -90,7 +90,7 @@ criterio que conviene dejar escrito porque no es decorativo:
 ### `Encabezado` no se duplica
 
 El componente de `components/shell/encabezado.tsx` sirve a las dos maquetas con
-**una sola franja**: `h-14 lg:h-[66px]`, `px-4 lg:px-7`. Gana dos props:
+**una sola franja**: `h-14 lg:h-[66px]`, `px-3 lg:px-7`. Gana dos props:
 
 - `atras?: string` — con href renderiza el `arrow-left` (`lg:hidden`); sin él,
   el `SidebarTrigger`, que se muda acá desde el `m-2 md:hidden` flotante que
