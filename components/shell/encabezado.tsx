@@ -58,13 +58,16 @@ export function Encabezado({
   const tono = accionMovil?.tono ?? 'accion'
 
   return (
-    // h-14 lg:h-[66px], px-4 lg:px-7: 56/66 px de alto y 16/28 px de padding
-    // horizontal, teléfono/escritorio. gap-4 (16px) queda igual que siempre
-    // —el .pen del teléfono pide gap 10, pero nada en este ciclo lo pide
-    // cambiar, y con min-w-0 flex-1 en el bloque de título ese número sólo
-    // fija el mínimo entre ítems, no la posición: el título igual se estira
-    // hasta pegar contra la ranura derecha—.
-    <header className="flex h-14 shrink-0 items-center gap-4 border-b bg-card px-4 lg:h-[66px] lg:px-7">
+    // h-14 lg:h-[66px], px-3 lg:px-7: 56/66 px de alto y 12/28 px de padding
+    // horizontal, teléfono/escritorio — mismo mapeo que ya usaba el
+    // escritorio (padding [0,28] -> px-7): kyXe1 declara "padding":[0,12], y
+    // px-3 son esos 12px, no px-4 (16px, un error de la ronda anterior:
+    // llevaba la prosa del brief en vez de la geometría del propio frame).
+    // gap-2.5 lg:gap-4: mismo trato para el gap entre las ranuras — kyXe1
+    // declara "gap":10 (gap-2.5) y el Topbar de escritorio 16 (gap-4, el de
+    // siempre). Los dos números conviven porque son geometría de dos
+    // maquetas distintas, no uno que "no cambió".
+    <header className="flex h-14 shrink-0 items-center gap-2.5 border-b bg-card px-3 lg:h-[66px] lg:gap-4 lg:px-7">
       {/* Ranura izquierda (design/arandano.pen, kyXe1 > f9BjR): 38×38, radio
           10, sin relleno, ícono 21. Sólo existe en el teléfono —lg:hidden en
           las dos variantes—, porque en escritorio no hay ningún ícono acá
@@ -83,7 +86,21 @@ export function Encabezado({
           <ArrowLeft aria-hidden="true" className="size-[21px]" />
         </a>
       ) : (
-        <SidebarTrigger className="lg:hidden" />
+        // SidebarTrigger trae de shadcn su propia caja (size-7, 28px) y su
+        // propio ícono (PanelLeftIcon, 16px vía [&_svg:not([class*='size-'])]:
+        // size-4 en components/ui/button.tsx) — ninguno de los dos es el
+        // 38×38/ícono-21 que pide f9BjR, la misma geometría que la variante
+        // `atras` de acá arriba SÍ cumple. La caja se pisa sola: cn()
+        // (twMerge) reconoce size-[38px] y size-7 como la misma "familia" de
+        // utilidad y descarta la de shadcn. El ícono no: [&_svg]:size-[21px]
+        // es un selector arbitrario DISTINTO del que trae la base
+        // ([&_svg:not(...)]:size-4), así que twMerge no los funde y los dos
+        // conviven en el HTML — pero como el de acá lleva `!` (important) y
+        // el de la base no, el de acá gana en el navegador sin importar la
+        // especificidad más alta que le da el :not(). Mismo mecanismo que ya
+        // resolvió exactamente este problema en
+        // app/(app)/servicio-tecnico/chip-estado.tsx (ver su comentario).
+        <SidebarTrigger className="size-[38px] rounded-[10px] lg:hidden [&_svg]:size-[21px]!" />
       )}
 
       {/* min-w-0 flex-1: en vez de justify-between en el <header> (que con

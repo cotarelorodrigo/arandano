@@ -49,14 +49,19 @@ describe('el encabezado de pantalla', () => {
 
   // La franja sirve a las dos maquetas con un solo componente: 56 px en
   // kyXe1 (Móvil/Topbar) y 66 px en el Topbar de escritorio. h-14 = 56px.
+  // px-3 = 12px (kyXe1 declara "padding":[0,12], NO 16 — un rojo real que
+  // dejó pasar la primera ronda de review, con px-4 en su lugar).
+  // gap-2.5 = 10px (kyXe1 "gap":10) y lg:gap-4 = 16px, el de siempre.
   it('la franja mide h-14 en el teléfono y 66px en escritorio', () => {
     const html = render()
     const header = html.match(/<header[^>]*>/)?.[0]
     expect(header, 'no se encontró el <header>').toBeTruthy()
     expect(header).toContain('h-14')
     expect(header).toContain('lg:h-[66px]')
-    expect(header).toContain('px-4')
+    expect(header).toContain('px-3')
     expect(header).toContain('lg:px-7')
+    expect(header).toContain('gap-2.5')
+    expect(header).toContain('lg:gap-4')
   })
 
   describe('la ranura izquierda', () => {
@@ -65,6 +70,23 @@ describe('el encabezado de pantalla', () => {
       const trigger = html.match(/<button[^>]*data-slot="sidebar-trigger"[^>]*>/)?.[0]
       expect(trigger, 'no se encontró el SidebarTrigger').toBeTruthy()
       expect(trigger).toContain('lg:hidden')
+    })
+
+    // f9BjR pide la misma caja que la variante `atras` de al lado: 38×38,
+    // radio 10, ícono 21 — no el size-7/ícono-16 que trae shadcn por
+    // default. Segunda ronda de review: la primera dejaba pasar el default.
+    it('el SidebarTrigger tiene la misma caja e ícono que la variante con atrás', () => {
+      const html = render()
+      const trigger = html.match(/<button[^>]*data-slot="sidebar-trigger"[^>]*>/)?.[0]
+      expect(trigger).toContain('size-[38px]')
+      expect(trigger).toContain('rounded-[10px]')
+      // El ícono va con `!` (important): la base de shadcn
+      // ([&_svg:not([class*='size-'])]:size-4) tiene más especificidad por
+      // el :not(), así que sin `!` el 16px de siempre le gana al 21px nuevo.
+      // size-[21px]! a secas (sin el prefijo [&_svg]:, que renderToStaticMarkup
+      // escapa como &amp;_svg — mismo criterio que ya usa
+      // chip-estado.test.tsx para este mismo patrón).
+      expect(html).toContain('size-[21px]!')
     })
 
     it('con atrás, vuelve a la pantalla anterior y no muestra el trigger', () => {
@@ -126,6 +148,26 @@ describe('el encabezado de pantalla', () => {
   // hay un import real del módulo.
   it('el corte de mobile es 1024, no los 768 que trae shadcn por default', () => {
     expect(MOBILE_BREAKPOINT).toBe(1024)
+  })
+
+  // Vitest corre con `css: false`: importar el módulo CSS da un Proxy que
+  // fabrica cualquier clase, exista o no (mismo hallazgo que ya documentó
+  // test/tipografia.test.ts sobre importe.module.css) — así que la única
+  // forma real de comprobar que el valor está es leer el TEXTO del archivo.
+  // kyXe1 > aY2nd > H1 (S2AuWU) declara lineHeight: 1.2; el H1 de escritorio
+  // no declara ninguno y no lo tuvo nunca, así que el reset a `normal`
+  // adentro de la media query es lo que mantiene el escritorio intacto.
+  it('el título lleva line-height 1.2 en el teléfono, y no cambia el de escritorio', () => {
+    const css = readFileSync('components/shell/encabezado.module.css', 'utf8')
+    const base = css.slice(0, css.indexOf('@media'))
+    const escritorio = css.slice(css.indexOf('@media'))
+    expect(base, 'el bloque base (mobile-first) no declara line-height: 1.2').toContain(
+      'line-height: 1.2',
+    )
+    expect(
+      escritorio,
+      'la media query de escritorio no resetea line-height a normal',
+    ).toContain('line-height: normal')
   })
 })
 

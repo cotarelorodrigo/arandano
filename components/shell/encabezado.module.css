@@ -15,6 +15,15 @@
  * del teléfono y el de escritorio entra en `min-width: 1024px`, la misma
  * convención mobile-first que usa el resto del shell (hooks/use-mobile.ts).
  *
+ * line-height: 1.2 EN EL TELÉFONO, `normal` EN ESCRITORIO. El nodo H1 de
+ * kyXe1 (`S2AuWU`) declara `lineHeight: 1.2` — el de escritorio no declara
+ * ninguno, y nunca lo tuvo antes de este ciclo. `normal` adentro de la media
+ * query no es un valor cualquiera: es el valor inicial de `line-height`, así
+ * que reproduce BYTE A BYTE lo que el navegador ya calculaba cuando esta
+ * regla no existía — el escritorio no puede cambiar de aspecto, y la forma
+ * de garantizarlo acá es escribir el reset explícito, no confiar en que
+ * nadie vuelva a tocar este archivo sin acordarse de él.
+ *
  * POR QUÉ UN MÓDULO CSS Y NO UNA UTILIDAD DE TAILWIND. Igual que el cartel y
  * el importe: el @theme de app/globals.css es `inline`, así que
  * var(--font-display) no existiría fuera de una clase de Tailwind.
@@ -31,10 +40,12 @@
   font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   font-weight: 600;
   font-size: 1.0625rem; /* 17px, el teléfono */
+  line-height: 1.2; /* kyXe1 > aY2nd > H1 (S2AuWU) */
 }
 
 @media (min-width: 1024px) {
   .titulo {
     font-size: 1.3125rem; /* 21px, el escritorio de siempre */
+    line-height: normal; /* el escritorio no cambia de aspecto — ver el comentario de arriba */
   }
 }
