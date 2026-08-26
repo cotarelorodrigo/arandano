@@ -158,6 +158,36 @@ describe('el dato de quién anuló no se vuelve a perder', () => {
   })
 })
 
+// Hallazgo de la review (Ronda de arreglos 1): dos de los seis requisitos
+// del Step 1 del brief no tenian ningun test — que el `Encabezado` reciba
+// `atras="/ventas"` y que NO se le pase `accionMovil`. El codigo ya lo
+// cumplia (nadie lo discute), pero nada lo protegia: alguien que copie el
+// `<Encabezado>` de otra pantalla —que si trae `accionMovil`— o que borre
+// el `atras` en un merge no rompe ningun test, y la pantalla queda con dos
+// flechas de volver (el link del cuerpo YA muestra la suya en escritorio, si
+// el Topbar sumara otra) o con ninguna. Mismo criterio que el bloque de
+// arriba: `DetalleDeVenta` es un Server Component que no se puede montar sin
+// sesion ni Prisma, asi que se verifica sobre el fuente.
+describe('el Encabezado vuelve a /ventas por atras, nunca por accionMovil', () => {
+  const fuente = readFileSync('app/(app)/ventas/[id]/page.tsx', 'utf8')
+  // La etiqueta completa, no lineas sueltas: asi 'accionMovil' en un
+  // comentario de mas arriba (hay varios, explicando la ranura vacia) no
+  // puede colar como si estuviera en el JSX.
+  const etiqueta = fuente.match(/<Encabezado[^>]*\/>/)?.[0]
+
+  it('existe el <Encabezado> de esta pantalla', () => {
+    expect(etiqueta, `no se encontro <Encabezado ... /> en: ${fuente}`).toBeTruthy()
+  })
+
+  it('recibe atras="/ventas"', () => {
+    expect(etiqueta).toContain('atras="/ventas"')
+  })
+
+  it('NO recibe accionMovil — la ranura derecha queda vacia a proposito (spec Ss7, printer)', () => {
+    expect(etiqueta).not.toContain('accionMovil')
+  })
+})
+
 /** Un ítem mínimo, ya resuelto a texto — la forma que `Detalle` recibe de
  *  verdad, sin ningún `Decimal` de Prisma. */
 const ITEM: ItemVendido = {
