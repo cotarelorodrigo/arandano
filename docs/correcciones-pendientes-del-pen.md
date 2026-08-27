@@ -17,12 +17,18 @@ archivo. Cada entrada dice el frame, el nodo, qué dice hoy y qué tiene que dec
 
 ---
 
-## 1. El encabezado de columna del listado de ventas dice "VENDIÓ" y muestra el cliente
+## 1. ~~El encabezado de columna del listado de ventas dice "VENDIÓ" y muestra el cliente~~ — RESUELTA
 
 - **Frame**: `yhuFd` (`App / Ventas`)
 - **Nodo**: `H9hBt4`
-- **Dice**: `VENDIÓ`
-- **Tiene que decir**: `CLIENTE`
+- **Decía**: `VENDIÓ`
+- **Dice hoy**: `CLIENTE`
+
+**Resuelta.** Verificado con el MCP de Pencil en la Task 13 del ciclo móvil
+(2026-08-26): `H9hBt4` dice `CLIENTE`, y no queda ningún nodo con "VENDIÓ" ni
+en `yhuFd` ni en `nwW2V`. Alguien la aplicó en Pencil en algún momento entre
+el ciclo de `/ventas` y éste. Se deja el texto de abajo como registro de por
+qué se pidió.
 
 **Por qué.** La columna muestra el comprador —"Consumidor final", "Martín Sosa"—,
 no quién hizo la venta. El dato es el correcto: en un listado de ventas el cliente
@@ -243,6 +249,226 @@ elementos.
 
 Detectado en la Task 8 del ciclo móvil (2026-08-26), al leer el frame con el
 MCP de Pencil antes de implementar el tablero.
+
+---
+
+## 10. El árbol de categorías del teléfono, abierto
+
+- **Frame**: `b1jiWO` (`Móvil / Inventario`)
+- **Dibuja**: el botón de 36 px que lo abre (`TK1ZV`, ícono `list-tree`, al
+  lado del segmentado de Tipo) y el chip de la rama activa con su ✕
+  (`jgesH` > `o0cWFv` + el conteo `QJ4TA`)
+- **No dibuja**: el árbol desplegado. No hay ningún frame del panel abierto
+  en el teléfono
+
+**Qué hizo el código, y por qué.** Sirve el `PanelCategorias` que ya existe
+—el mismo componente, con el ABM entero adentro— dentro de un `Sheet` con
+`side="left"` y 280 px de ancho. Elegir el lado izquierdo no es una preferencia:
+es el lado donde vive la columna de 248 px en escritorio, así que abrir el
+panel desde el mismo borde es lo que menos desorienta a alguien que usa las dos
+pantallas. El único cambio dentro del componente fue pasar su `<aside>` de
+`w-[248px]` fijo a `w-full lg:w-[248px]`, porque la misma instancia vive ahora
+en dos contenedores de ancho distinto.
+
+Es una **derivada declarada**, no una omisión: el spec del ciclo
+(`2026-08-26-movil-design.md`, §7.1) ya la anticipaba. Lo que hace falta
+dibujar es el estado abierto, para que el ancho, el lado y el tratamiento del
+velo dejen de ser una elección del código. Si al dibujarlo la maqueta decide
+otra cosa, manda la maqueta.
+
+Detectado al planificar el ciclo móvil (2026-08-26) y confirmado en la Task 6.
+
+---
+
+## 11. El menú de caja de `/vender` en el teléfono, abierto — y que no terminó siendo un menú
+
+- **Frame**: `VaHod` (`Móvil / Vender`), Topbar `SoTUC`
+- **Dibuja**: la ranura derecha con `more-vertical` en tono suave
+  (`SoTUC/NlGrn`, relleno `$ar-sunken`, ícono `SoTUC/GZz1a` en `$ar-ink`)
+- **No dibuja**: qué pasa al tocarlo
+
+**Por qué el control existe.** En el teléfono los dos chips de estado —caja y
+dólar— bajan al cuerpo (`xMMfZ`) y ahí son de **sólo lectura**: ni `<button>`,
+ni `<form>`, ni `<input>`. Abrir y cerrar el turno tiene que vivir en algún
+lado, y el único que queda es esta ranura. Es la diferencia con la entrada 13:
+acá la derivación está forzada por la propia maqueta.
+
+**Y no terminó siendo un menú, que es lo que hay que dibujar.** La primera
+versión usó `DropdownMenu`, y eso costaba dos capacidades reales: abrir la caja
+**sin declarar el saldo inicial** (abría en 0, en silencio) y cerrarla sin
+confirmación — porque un `DropdownMenu` de Radix no puede contener un `<input>`
+sin pelearle a su propio typeahead. Abrir una caja con el saldo equivocado no
+es una incomodidad, es un problema contable. El control pasó a un `Sheet`, que
+aloja los **mismos dos mini-formularios** que el chip de escritorio. Cuesta un
+toque más para abrir la caja; compra que el número sea el que la persona quiso.
+
+Así que lo que falta dibujar no es "el menú abierto" sino la hoja con sus dos
+formularios. Si la maqueta prefiere de verdad un menú, entonces tiene que
+decir además de dónde sale el saldo inicial.
+
+Detectado al planificar el ciclo móvil (2026-08-26, spec §7.2) y resuelto así
+en la Task 3.
+
+---
+
+## 12. El velo del drawer y su botón de cerrar están escritos con hex crudos, y el velo del código no es el que la maqueta pide
+
+- **Frame**: `klNkg` (`Móvil / Menú (drawer)`)
+- **Nodos**: `k2qBi` (Velo, `fill: #171221A6`) y `hFjNK` (Cerrar, `fill:
+  #FFFFFF26`, con el ícono `pJwYu` en `#FFFFFF`)
+- **Dicen**: tres colores literales
+- **Tienen que decir**: variables `$ar-*`, o una variable nueva si ninguna de
+  las que hay sirve
+
+**Por qué importa, y no es prolijidad.** `test/maqueta.test.ts` ata las
+variables `ar-*` del `.pen` con los tokens de `app/globals.css` **en las dos
+direcciones**, y ése es el único mecanismo que impide que un color se decida
+escribiendo código. Un color escrito como hex crudo dentro de un frame queda
+**afuera** de ese mecanismo: no lo ve el test por ningún lado. Es exactamente
+el agujero que el ciclo del login cerró creando `--marca-halo` en vez de
+enterrar una mezcla adentro de un `radial-gradient`.
+
+**Y ya tiene una consecuencia medible.** El velo del código no es el de la
+maqueta: `SheetOverlay` (`components/ui/sheet.tsx`, tal como lo copia el
+registry de shadcn) pinta `bg-black/10` más un `backdrop-blur`, y el `.pen`
+pide `#171221A6` — un violeta casi negro al 65 %, sin desenfoque. Nadie lo
+notó durante el ciclo justamente porque el color de la maqueta no es una
+variable: no hay test que los compare. El botón de cerrar sí sigue a la
+maqueta (38×38, círculo, blanco al 15 %, ícono `x` de 19 px, `padding [14,12]`
+desde el borde), sólo que también con literales de los dos lados.
+
+**Lo que hay que decidir primero es de producto y no de diseño**: si el velo
+lleva desenfoque o no. Recién con eso dibujado y tokenizado el código puede
+seguirlo sin inventar.
+
+Detectado en la Task 13 del ciclo móvil (2026-08-26), leyendo `klNkg` con el
+MCP de Pencil para documentar el drawer.
+
+---
+
+## 13. El `more-vertical` de la ficha de artículo, que NO se construye
+
+- **Frame**: `T5gME` (`Móvil / Artículo ficha`), Topbar `OqlvI`
+- **Dibuja**: la ranura derecha con `more-vertical` en tono suave
+  (`OqlvI/NlGrn` + `OqlvI/GZz1a`)
+- **Tiene que decir**: nada, hasta que alguien decida qué contiene — o se
+  borra, si la respuesta es "nada nuevo"
+
+**Por qué no se construyó.** Es la excepción de esta familia y por eso vale
+explicarla al lado de la entrada 11, que se resolvió al revés. En `/vender` la
+derivación está forzada: sus chips son de sólo lectura y abrir el turno no
+tiene otro lugar donde vivir. Acá no pasa eso — las dos acciones de la ficha ya
+están al pie (`Desactivar` y `Guardar cambios`, 50 px de alto) y las
+secundarias —ingresar mercadería, corregir por conteo, exportar CSV— ya están
+en el cuerpo. No queda nada que el menú pueda contener sin inventarlo.
+
+Es el mismo criterio de la entrada 8 y del toggle de catálogo público de la
+entrada 4: **un botón que promete algo que no hace es peor que la ausencia del
+botón**, sea porque abre un menú vacío o porque no abre nada.
+
+Detectado al planificar el ciclo móvil (2026-08-26, spec §7.4). El código deja
+la ranura vacía con el motivo escrito al lado.
+
+---
+
+## 14. El `printer` de `/ventas/[id]`, dibujado en los dos anchos y sin construir en ninguno
+
+- **Frames**: `KEwHe` (`App / Venta detalle`) y `WBV5G` (`Móvil / Venta
+  detalle`), Topbar `qO1HX`
+- **Dibujan**: un botón de imprimir — en el teléfono, la ranura derecha con
+  `printer` en tono suave (`qO1HX/NlGrn` + `qO1HX/GZz1a`)
+- **Tienen que decir**: nada, hasta que exista impresión de ventas
+
+**Por qué.** El producto no imprime ventas. Lo único que se imprime hoy es el
+ticket térmico de una orden de trabajo (`/servicio-tecnico/[id]/ticket`), y
+eso es una feature con su propio formato, no un botón. La ranura derecha de
+esta pantalla queda vacía en el teléfono, igual que el Topbar de escritorio la
+dejó siempre.
+
+**No es una divergencia nueva del ciclo móvil**: el frame de escritorio la
+dibuja desde antes y nadie la construyó nunca. El frame móvil la heredó. Se
+anota ahora porque el ciclo la volvió a encontrar y porque, a diferencia de
+antes, ahora hay dos frames que corregir y no uno.
+
+El disparador de cuándo esto deja de ser una corrección pendiente y pasa a ser
+una feature: el día que se integre ARCA y exista un comprobante que valga la
+pena imprimir. Hasta entonces, la maqueta promete algo que el producto no
+tiene.
+
+Detectado al planificar el ciclo móvil (2026-08-26, spec §7) y confirmado en la
+Task 5.
+
+---
+
+## 15. El buscador de `/inventario` mide 46 px en la maqueta y 40 en la aplicación
+
+- **Frame**: `b1jiWO` (`Móvil / Inventario`)
+- **Nodo**: `v3Epdn` (`height: 46`, radio 12, `padding [0,14]`, lupa de 18)
+- **El código**: 40 px, que es la altura de un `<Input>` de este repo
+
+**Por qué no se cambió, y por qué igual hay algo que decidir.** El
+implementador eligió los 40 px por consistencia con el resto de los campos de
+la aplicación, y esa razón es razonable pero no está exenta: `/vender` **sí**
+se apartó de esa consistencia siguiendo su propia maqueta —su buscador mide 52
+px en el teléfono y 58 en escritorio—, así que "todos los inputs miden 40" no
+describe la aplicación de hoy.
+
+Lo que hay que responder es si esos 46 px son un **tratamiento prominente**
+querido —un buscador que es la acción principal de la pantalla, como el de
+`/vender`— o una variación del mockup que nadie eligió a conciencia. Si es lo
+primero, manda la maqueta y el código sube a 46. Si es lo segundo, la maqueta
+baja a 40 y la consistencia queda escrita de una vez.
+
+Detectado en la review de la Task 6 del ciclo móvil (2026-08-26).
+
+---
+
+## 16. La columna MEDIOS del listado de ventas mide 150 en la maqueta y 168 en el código
+
+- **Frame**: `yhuFd` (`App / Ventas`) — la maqueta de **escritorio**
+- **Nodo**: `qjFU0` (`Col Medios`, `width: 150`)
+- **El código**: 168 px
+
+**Por qué manda el código acá.** Las otras cinco columnas coinciden byte a
+byte con la maqueta —84 `NÚMERO`, 110 `HORA`, `fill_container` `CLIENTE`, 140
+`TOTAL`, 104 `ESTADO`—, así que el 150 desentona con sus propias hermanas. Y
+el ciclo móvil tenía una constraint dura: **el escritorio no cambia**. Tocar
+esa columna para seguir a la maqueta habría movido una pantalla que ya está
+verificada a ojo, en un ciclo que no era el suyo.
+
+Es la corrección más chica de esta lista y también la más fácil de aplicar:
+son 18 px en un nodo de texto. Si al mirarla resulta que los 150 son los
+correctos, entonces el que cambia es el código, y eso es un cambio de una
+línea en `app/(app)/ventas/page.tsx` — pero con su verificación visual, como
+cualquier cambio de escritorio.
+
+Detectado en la Task 4 del ciclo móvil (2026-08-26). El ledger de ese ciclo lo
+anotó contra el frame `nwW2V` (el móvil); es `yhuFd`, el de escritorio —
+verificado con el MCP de Pencil en la Task 13, `nwW2V` no tiene ningún nodo
+"MEDIOS", porque en el teléfono los medios de pago se funden en la línea de
+meta y dejan de ser columna.
+
+---
+
+## 17. El chip de cotización del teléfono no dice de cuándo es el dólar
+
+- **Frame**: `VaHod` (`Móvil / Vender`), los chips de estado del cuerpo
+- **Dibuja**: la cotización sola
+- **Falta**: de cuándo es
+
+**Por qué no es un detalle.** Este repo tiene escrita la decisión contraria:
+un dólar sin saber de cuándo es, es peor que no mostrarlo — porque
+`Tenant.cotizacionUsd` es un número que alguien fija a mano y que puede llevar
+una semana sin tocarse. En escritorio ese dato se resuelve con un tooltip
+sobre el chip del header. **En un teléfono no hay hover**, así que el tooltip
+no es una opción, y la maqueta no dibuja ningún reemplazo.
+
+La salida que nadie evaluó es la más obvia: poner la fecha al lado, dentro del
+chip o abajo. Cuesta ancho en una pantalla que no lo tiene de sobra, y por eso
+es una decisión de producto y no una derivación que el código pueda tomar solo.
+
+Detectado en la review de la Task 3 del ciclo móvil (2026-08-26), y explícita
+para el dueño del producto.
 
 ---
 

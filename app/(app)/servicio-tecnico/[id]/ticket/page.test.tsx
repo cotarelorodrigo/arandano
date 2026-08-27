@@ -78,13 +78,23 @@ describe('el cuerpo del ticket, mobile-first (Task 9 del ciclo móvil)', () => {
 
 /**
  * El caso que más fácil se rompe sin que nadie lo note hasta que sale un
- * papel mal cortado: este ciclo NO toca ticket.module.css. Un hash y no una
- * lista de selectores — así cualquier cambio, hasta un espacio, lo atrapa.
+ * papel mal cortado: el CSS de impresión de esta pantalla no se toca. Un hash
+ * y no una lista de selectores — así cualquier cambio, hasta un espacio, lo
+ * atrapa.
+ *
+ * EL HASH SE REBASELINEÓ UNA VEZ, en la Task 13 del mismo ciclo, y esa es la
+ * única forma legítima de cambiarlo: la Task 9 dejó falsa una PREMISA del
+ * comentario de ese archivo —decía que esta pantalla "nunca renderiza un
+ * <Encabezado>", y esa misma task le sumó uno—, y la Task 9 tenía prohibido
+ * tocarlo. La corrección fue de comentario y nada más: se verificó que el
+ * archivo, con los comentarios eliminados, quedara idéntico byte a byte al de
+ * antes. Un hash nuevo sin esa verificación es exactamente lo que este caso
+ * existe para impedir.
  */
-describe('ticket.module.css no se toca (Task 9 del ciclo móvil)', () => {
+describe('ticket.module.css no cambia de reglas (Task 9 del ciclo móvil)', () => {
   it('sigue byte a byte igual', () => {
     const contenido = readFileSync(RUTA_CSS, 'utf8')
     const hash = createHash('sha256').update(contenido).digest('hex')
-    expect(hash).toBe('1e54b8c10de3a6ee8e795cb26baeffe2bc07b2a7fc7ebfdbde9324606710554f')
+    expect(hash).toBe('7b46c4e684bd001711ede0641b90ed890615dc6857d343bb31e6e55002998aa0')
   })
 })

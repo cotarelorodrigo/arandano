@@ -1030,6 +1030,157 @@ Y del producto:
   y no se construyeron: el código de barras (columna nueva, y el buscador de
   `/vender` debería mirarla) y el toggle de catálogo público (que viaja con el
   catálogo, cuando exista).
+- ~~Adaptar las trece pantallas al teléfono.~~ **Hecho** (2026-08-26). Estaban
+  construidas contra una maqueta de escritorio de 1440 px y se sirven ahora
+  también a 390, contra los **quince frames `Móvil / …`** que
+  `design/arandano.pen` sumó después —trece pantallas más el cobro de
+  `/vender`, que en el teléfono es pantalla propia, más el drawer, que no
+  tiene ruta— y el componente reusable `Móvil/Topbar`. Ver
+  `docs/superpowers/specs/2026-08-26-movil-design.md` y `design/LEEME.md`.
+
+  **Es presentación pura, y eso fue una condición y no una casualidad.** No se
+  tocó el schema, ni una server action, ni una consulta: el deploy más grande
+  que tuvo el proyecto —trece pantallas de una, sin flags— se vuelve atrás por
+  completo revirtiendo la imagen, porque no hay ninguna migración que revertir.
+  Y los colores tampoco cambian: los frames móviles usan las mismas variables
+  `ar-*` que `test/maqueta.test.ts` ya ata a `app/globals.css`, así que ese
+  test pasó el ciclo entero sin una línea nueva.
+
+  **Un solo corte, 1024 px, y el número es aritmética.** shadcn trae 768 por
+  default y no alcanza: en escritorio `/vender` pone en una fila el sidebar de
+  248, el carrito y el panel de cobro de 384, así que a 768 px de viewport al
+  carrito le quedan **136 px** — está roto hoy, con el `md:flex-row` que el
+  código ya tenía. A 1024 le quedan **392**, que es el mínimo que funciona. El
+  costo aceptado es que un iPad vertical recibe la versión de teléfono, y es la
+  respuesta correcta: a ese ancho la de teléfono se ve bien y la de escritorio
+  no. **Ese mismo número gobierna las dos mitades**: el `lg:` de Tailwind y el
+  `Sheet` del sidebar de shadcn, que lo lee por `useIsMobile`
+  (`MOBILE_BREAKPOINT`, `hooks/use-mobile.ts`). Un corte para el CSS y otro
+  para el JavaScript es la clase de desincronización que nadie ve hasta que
+  alguien mira desde un ancho intermedio. Las clases se escriben mobile-first
+  —el valor del teléfono sin prefijo, el de escritorio con `lg:`—, que es la
+  convención de Tailwind y la de `components/ui/*`.
+
+  **Un solo árbol, no dos presentaciones: el patrón `lg:contents`.** Los cuatro
+  listados (`/ventas`, `/inventario`, `/servicio-tecnico`, `/usuarios`) y el
+  carrito de `/vender` dejaron de ser `<Table>` de shadcn: hoy son un `grid`
+  cuyo contenedor pasa de `grid-cols-1` a las mismas anchuras de columna que
+  declaraban los `<TableHead>`, y cuyas filas y agrupadores llevan
+  `lg:contents`. `display: contents` borra al envoltorio de la caja de layout y
+  sus hijos pasan a ser celdas del grid del padre, así que el **mismo marcado**
+  es una tarjeta apilada abajo de 1024 y una tabla arriba. La alternativa
+  —renderizar dos veces y ocultar una con CSS— deja el mismo dato dos veces en
+  el DOM, y el dueño del producto eligió explícitamente lo contrario.
+
+  **Lo que ese patrón cuesta, que es real y no se disimula.** Primero, **se
+  pierde `<Table>` y con él la semántica nativa**: `display: contents` saca del
+  árbol de accesibilidad a todo elemento sin rol explícito, así que
+  `role="table"`, `"row"`, `"columnheader"` y `"cell"` sobre los mismos divs
+  dejan de ser prolijidad y pasan a ser obligatorios — y en los **dos** anchos,
+  no sólo en escritorio. Sigue siendo peor que un `<table>` de verdad; es el
+  precio de tener un solo árbol.
+
+  Y segundo, **hay cuatro cosas que `<TableRow>`/`<TableCell>` daban gratis y
+  que `display: contents` se lleva puestas**, porque un elemento sin caja no
+  pinta nada: el **fondo** (el hover de fila), el **borde** entre filas, el
+  **padding** de cada celda y el **centrado vertical**. Las cuatro hay que
+  devolverlas a mano, en las celdas y no en la fila. La del centrado es la más
+  sutil y la que se arregla mal a la primera: `self-center` **encoge la celda**
+  —`align-self: center` deja de estirarla—, así que su `border-b` queda a
+  distinta altura que el del resto de la fila; el arreglo es un envoltorio
+  interno con `lg:h-full lg:flex lg:items-center`, que centra el contenido
+  dejando la celda estirada. Ninguna de las dos alternativas obvias sirve:
+  `align-items` en el contenedor produce el mismo defecto, e `items-center` en
+  la fila es un no-op, porque un elemento sin caja no tiene modelo de flex
+  propio que alinear.
+
+  **El paso de cobro de `/vender` se sincroniza con `pushState`, no con
+  `router.push`,** y esa diferencia es la que decide si el carrito sobrevive:
+  `pushState` no dispara navegación de Next, así que el server component no
+  vuelve a renderizar y `PuntoDeVenta` no se remonta con la venta a medias
+  adentro. Un listener de `popstate` atiende el botón Atrás del teléfono, que
+  es lo que hace que la flecha de la maqueta y el gesto del sistema signifiquen
+  lo mismo — que es exactamente por lo que el dueño del producto eligió este
+  diseño.
+
+  **Y de ahí salió la distinción que vale más que el mecanismo: un gesto deja
+  su entrada en el historial, una consecuencia consume la suya.** Entrar al
+  cobro es un gesto y empuja una entrada; volver al carrito **después de
+  cobrar** es una consecuencia y tiene que consumirla. Sin esa distinción, cada
+  venta dejaba una entrada duplicada permanente —el par no era estático sino
+  **acumulativo**—, así que después de cincuenta ventas en un turno cincuenta
+  toques de Atrás no cambiaban nada a la vista. El mecanismo: `pushState` marca
+  la entrada propia con un objeto de estado, y la vuelta por consecuencia la
+  consume con `history.back()` si la entrada actual es la nuestra, o la
+  `replaceState` si no lo es (alguien tipeó o compartió `/vender?paso=cobro`, y
+  ahí un `back()` saldría de la aplicación). Vive entero en
+  `app/(app)/vender/paso.ts`.
+
+  **La regla que este ciclo aplicó cinco veces: una capacidad que desaparece
+  del teléfono y no reaparece en ningún otro lado es un defecto, no una
+  simplificación.** Pasó con el vaciado del carrito (en escritorio lo da el
+  doble `Esc`, y un teléfono no tiene `Esc`), con el saldo inicial de la caja
+  (un `DropdownMenu` de Radix no puede alojar un `<input>` sin pelearle a su
+  typeahead, así que la caja abría en 0 en silencio — el control pasó a un
+  `Sheet` con los mismos mini-formularios del escritorio), con reimprimir y con
+  anular una orden (el `<Encabezado>` envuelve sus `acciones` en `hidden
+  lg:flex`, y nada había entrado en su lugar), y con los filtros de estado de
+  `/servicio-tecnico`, donde la maqueta dibuja nueve chips y el código mantuvo
+  los diez porque sacar "Rechazado" dejaba sin ver ni filtrar esas órdenes
+  desde el celular. **En los cinco casos la pregunta correcta no fue qué dibuja
+  el `.pen` sino qué pierde el producto si se saca** — el mismo criterio que ya
+  había salvado al typeahead de `/vender` en un ciclo anterior.
+
+  **Y el criterio inverso, que es el que evita el error opuesto: un control
+  cuyo destino habría que inventar es peor que su ausencia.** Por eso no se
+  construyó el "Ingresar mercadería" del listado de `/inventario` —esa acción
+  vive por artículo, y a nivel del listado no hay a dónde mandar— ni el
+  `more-vertical` de la ficha de artículo, cuyas dos acciones ya están al pie y
+  las secundarias en el cuerpo. Los dos los dibuja la maqueta; los dos quedaron
+  anotados en `docs/correcciones-pendientes-del-pen.md`. **La diferencia con la
+  regla de arriba es de dirección**: ahí faltaba un lugar donde poner algo que
+  el producto ya hacía; acá sobraba un botón que prometía algo que el producto
+  no hace.
+
+  **La red que queda es `test/responsive.test.ts`**, y cubre exactamente el
+  modo de falla de este trabajo: un ancho fijo olvidado sin `lg:` que en un
+  teléfono desborda y arrastra la página entera al scroll horizontal, sin que
+  nada avise. Marca todo `w-[Npx]`, `min-w-[Npx]` y `basis-[Npx]` mayor a
+  **362** —390 menos los dos paddings de 14— que no venga prefijado. **`max-w-`
+  queda afuera a propósito**: un `max-width` sólo topea el ancho, nunca lo
+  ensancha, así que estructuralmente no puede desbordar; incluirlo entrenaría a
+  poner un `lg:` que no significa nada, y este repo ya tiene escrito el
+  criterio inverso —"un test que se rompa al mover una card es el que se
+  termina ignorando"—. La primera versión marcó ocho `max-w-` y los ocho se
+  revirtieron cuando quedó claro que ninguno prevenía un desborde real.
+
+  **Y hay un rol tipográfico que ahora depende del ancho**, con su fila
+  actualizada en `docs/sistema-de-diseno.md`: el título de pantalla pasa a 17
+  px en el teléfono contra 21 en escritorio, y no es el único — la columna
+  "Tamaño" de esa tabla dice los dos valores cada vez que difieren, sin
+  contarlos acá, por lo mismo que este documento no lleva el número de
+  pantallas de la maqueta. **Que un
+  rol cambie de tamaño no lo convierte en otro rol**; un rol nuevo se justifica
+  cuando cambia lo que el texto *es*, no cuánto espacio hay. El caso que más
+  fácil se lee como un bug y no lo es: de los tres títulos de card de
+  `/usuarios`, en escritorio sólo dos pagan Archivo y en el teléfono los pagan
+  los tres — son **dos frames con una decisión distinta cada uno**, y las dos
+  son la autoridad en su ancho.
+
+  **Queda pendiente**, y es lo que cierra el ciclo de verdad: **la verificación
+  visual en un teléfono real**. Ningún test la reemplaza — el gate no puede
+  responder si un espaciado se ve apretado o si un botón se alcanza con el
+  pulgar. El obstáculo concreto es que el tenant se resuelve por subdominio y
+  `flor.localhost` no resuelve en un teléfono: se sale poniendo `DOMINIO_BASE`
+  a un `nip.io` de la IP de la Mac en la red local
+  (`flor.192-168-0-10.nip.io:3001`), con el catálogo del canario sembrado y con
+  importes de distinta cantidad de dígitos, por lo mismo que la verificación
+  visual anterior dejó anotado. **Y un defecto conocido que la documentación de
+  este ciclo destapó y no arregló**: en `/ventas/[id]`, ocho celdas de
+  escritorio se quedaron sin tamaño propio al desaparecer el `<Table>` —del que
+  heredaban `text-sm`— y hoy caen a los 16 px del navegador en vez de los 14 de
+  su rol. Está escrito con nombre y apellido en `docs/sistema-de-diseno.md`,
+  bajo la escala tipográfica.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

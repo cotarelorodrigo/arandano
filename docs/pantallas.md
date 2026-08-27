@@ -95,6 +95,31 @@ copy literal de la maqueta; ahora son las siete que la maqueta dibuja, en
   migración `lead_de_un_campo` — un lead nuevo trae sólo el contacto que se
   clasificó, un lead viejo (de los cinco campos) sigue trayendo todo.
 
+**En el teléfono**
+
+Es la pantalla que menos cambia, porque ya tenía tratamiento responsive antes
+del ciclo (frame `Móvil / Sitio · Landing`, `yz6Sr`). Lo que sí cambió:
+
+- **Una sola columna.** El Hero deja de ser `grid-cols-[7fr_9fr]`: el título y
+  la bajada arriba, el retrato del carrito abajo. Las ocho secciones comparten
+  un solo margen lateral (`ANCHO`), 20 px en el teléfono contra 56 en
+  escritorio — un cambio en una constante cubre Nav, Hero, Muestra, Módulos,
+  Rubros, Planes, Cierre y Pie.
+- **El nav se guarda en un `Sheet`.** La maqueta dibuja sólo un ícono de menú
+  (nodo `K60WPs`), y los tres links de sección más "Entrar a mi local" **no
+  desaparecen**: los reagrupa la hoja. Es el mismo criterio que el resto del
+  ciclo — lo que la maqueta no dibuja hay que preguntarse qué pierde el
+  producto si se saca, y acá se perdía la navegación entera.
+- **Rubros va en dos columnas, no en una.** El nodo `dDugH` dibuja pares; la
+  prosa del plan decía "una columna" y mandó la maqueta.
+- **El formulario de captura pierde su marco.** El borde, el fondo y el radio
+  de 14 px que envuelven al campo y al botón son una pieza **sólo de
+  escritorio**: en el teléfono son dos cajas sueltas separadas por 9 px. Vive
+  en `app/sitio/formulario.module.css` y no en clases de Tailwind con `lg:`
+  porque el color de ese marco se fijaba con `style` inline, y a un estilo
+  inline no le gana ninguna clase por especificidad — ninguna media query lo
+  habría podido apagar.
+
 ## `/login`
 
 Entrar a un local. Usuario y contraseña, sin magic link ni OAuth (rediseño de
@@ -145,6 +170,25 @@ Entrar a un local. Usuario y contraseña, sin magic link ni OAuth (rediseño de
   ícono `eye`/`eye-off` de mostrar/ocultar — mismo patrón que `ScanBarcode` en
   `punto-de-venta.tsx`: un botón con ícono DENTRO del `Input`, sin sumar
   ningún componente de shadcn nuevo.
+
+**En el teléfono**
+
+El paño de marca deja de ser una columna y pasa a ser una **franja superior de
+300 px** (`flex-col lg:flex-row`, frame `Móvil / Login`, `Kp4Eg`). Toda la
+tipografía del paño se escribe mobile-first en `persiana.module.css`: el
+nombre del local a 32 px (contra el `clamp` de escritorio), la bajada a 13, el
+logo a 22 y "Arándano" a 13. La persiana en sí —la animación, el travesaño, el
+acanalado— no se toca en ningún ancho.
+
+**El pie con el subdominio cambia de casa, y nunca desaparece.** En escritorio
+vive dentro del paño, en colores de marca; en el teléfono se muda al fondo del
+formulario, empujado por un espaciador, y ahí paga colores de tinta
+(`--foreground-soft` / `--muted-foreground`) porque el fondo pasó a ser claro.
+Eso obligó a que `FormularioLogin` reciba `dominio` como prop: antes ese dato
+sólo lo necesitaba `page.tsx`.
+
+Los campos y el botón crecen: 50 px de alto en el teléfono contra 44 (inputs) y
+48 (botón) en escritorio. Un dedo no apunta como un mouse.
 
 ## `/vender`
 
@@ -259,6 +303,44 @@ shell (sidebar + encabezado) ya venía de un ciclo anterior.
   que esos dos mini-forms cortan Escape con `stopPropagation()` en su
   propio `onKeyDown` en vez de depender de la guarda de la pantalla.
 
+**En el teléfono**
+
+Es la pantalla que más cambia del ciclo, y la única que se parte en dos frames
+(`Móvil / Vender`, `VaHod`, y `Móvil / Vender · Cobro`, `keRdN`).
+
+- **El cobro es una pantalla propia**, no una columna al costado. El paso vive
+  en estado de cliente y se sincroniza con la URL (`?paso=cobro`) por
+  `window.history.pushState`, **no** por `router.push`: `pushState` no dispara
+  navegación de Next, así que el server component no vuelve a renderizar y
+  `PuntoDeVenta` no se remonta con la venta a medias adentro. Es la única razón
+  por la que el carrito sobrevive al cambio de paso. El detalle del historial
+  —qué empuja una entrada y qué la consume— está en `app/(app)/vender/paso.ts`
+  y resumido en `CLAUDE.md`.
+- **El Topbar cambia con el paso**: título "Vender"/"Cobro", subtítulo con el
+  monto en el cobro, flecha de volver, y la ranura derecha apagada mientras se
+  cobra. Por eso el `<Encabezado>` de esta pantalla se renderiza desde
+  `PuntoDeVenta` (que es cliente) y no desde `page.tsx`, y la flecha es un
+  `alVolver` —una función— y no un `href`: un link a `/vender` dispararía
+  justo la navegación que `pushState` existe para evitar.
+- **Los dos chips de estado —caja y dólar— bajan al cuerpo**, arriba del
+  buscador, y ahí son de **sólo lectura**. Abrir y cerrar el turno se mudan al
+  `more-vertical` de la ranura derecha, que abre un `Sheet` con los **mismos
+  dos mini-formularios** del chip de escritorio. No es un `DropdownMenu`, y la
+  diferencia no es estética: un menú de Radix no puede alojar un `<input>` sin
+  pelearle a su typeahead, y sin input la caja se abría en 0 en silencio.
+  Abrir una caja con el saldo equivocado es un problema contable.
+- **El carrito gana un encabezado propio con "Vaciar"** (nodo `L5UIo`). En
+  escritorio esa capacidad la da el doble `Esc`, y un teléfono no tiene `Esc`:
+  sin ese botón, deshacer una venta mal armada era borrar ítem por ítem. El
+  botón y el atajo comparten el mismo `vaciadoArmado`, así que no se pueden
+  desincronizar.
+- **La fila del carrito se apila**: nombre y "Quitar" arriba, stepper y
+  subtotal debajo, y el precio unitario fundido en la línea de meta. Mismo
+  patrón `lg:contents` que los cuatro listados.
+- **El pie fijo lleva el botón `Cobrar` de 54 px**, y el buscador sube a 52.
+- **Los tres atajos de teclado no se tocan.** En un teléfono no hay teclado que
+  los dispare, y su lógica de foco ya estaba probada.
+
 **Pendiente**
 
 - **La caja sigue sin arqueo ni pantalla propia**, y `crearVenta` **no** exige
@@ -337,6 +419,25 @@ El historial por período.
   por página fuera de rango no ofrece ningún control para volver. `/inventario`
   y `/servicio-tecnico` usan el mismo criterio.
 
+**En el teléfono**
+
+- **Los chips de rango van a ancho completo** y los tres campos de fecha se
+  guardan detrás de un botón de 38 px con ícono `calendar`, que abre un
+  `Sheet`. Es **un solo** `FormularioDeFechas` renderizado dos veces —una
+  visible sólo en escritorio, otra dentro de la hoja— y no dos formularios: por
+  eso las etiquetas van implícitas (un `<label>` envolviendo el campo) en vez
+  de `id`/`htmlFor`, que se duplicarían en el instante en que las dos copias
+  coexisten.
+- **Los tres tiles se apilan** y bajan un escalón de tamaño (30 px el de marca
+  contra 32, 24 los otros contra 26).
+- **El listado deja de ser una tabla.** Cada venta es una tarjeta de tres
+  líneas: `#1042 · 14:32` y el total arriba, el cliente debajo, y una línea de
+  meta que funde la cantidad de artículos con los medios de pago — **"Medios"
+  deja de existir como columna**. Es el mismo árbol que en escritorio: ver *Lo
+  que hereda toda pantalla* para el patrón.
+- **"Cómo entró la plata" ya era fluido** desde que se reescribió sin
+  `recharts`, así que no necesitó nada.
+
 ## `/ventas/[id]`
 
 El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
@@ -370,6 +471,24 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
   ninguna venta tiene comprobante fiscal, así que el texto es exactamente
   cierto para todas. Cuando ARCA se integre, este campo pasa a leer del
   modelo — no antes.
+
+**En el teléfono**
+
+- **El Topbar trae la flecha de volver a `/ventas`, y la ranura derecha queda
+  vacía.** La maqueta dibuja un `printer` ahí —y también en el frame de
+  escritorio—, pero imprimir una venta no es una feature que el producto tenga.
+  Ver `docs/correcciones-pendientes-del-pen.md`, entrada 14. El link "Volver"
+  del cuerpo se oculta: esa función ya la cumple la flecha.
+- **"Resumen" pasa primero**, antes de "Qué se vendió". Las dos columnas de
+  escritorio se disuelven con `contents` y cada card lleva su `order-N`, porque
+  `order` sólo reordena hermanos del mismo contenedor.
+- **Las dos tablas pasan a tarjetas.** Las columnas que no entran
+  —Cantidad/Precio en una, Medio/Moneda/Cotización/Monto/En pesos en la otra—
+  se funden en una línea de meta por tarjeta (`metaDeItem` y `metaDePago`, dos
+  funciones puras).
+- **La banda TOTAL va a ancho completo y se pinta con `--marca`** (nodo
+  `Cv4xd`), donde en escritorio es `bg-muted`. Es la superficie de marca de
+  esta pantalla en el teléfono.
 
 ## `/inventario`
 
@@ -454,6 +573,26 @@ El listado de artículos, con buscador, filtro de tipo y chips de estado
   rango no ofrece ningún control para volver. Mismo criterio que ya usaba
   `/ventas`.
 
+**En el teléfono**
+
+- **El árbol de categorías sale de la columna.** Un botón de 36 px con ícono
+  `list-tree`, al lado del segmentado de Tipo, abre un `Sheet` desde la
+  izquierda con **el mismo `PanelCategorias`** de escritorio: el ABM entero
+  —crear, renombrar, mover, borrar, los toasts— viaja adentro, sin una segunda
+  forma de navegar el árbol. Debajo del segmentado, un chip con la rama activa
+  y su ✕ para soltarla. La maqueta no dibuja el panel abierto: ver
+  `docs/correcciones-pendientes-del-pen.md`, entrada 10.
+- **El listado pasa a tarjetas**: nombre y precio en la primera línea, y una
+  segunda línea de meta con código, categoría, el chip de estado y el stock.
+  "Código" y "Tipo" dejan de tener celda propia. La técnica es más simple que
+  en `/ventas` y vale saber por qué: como las celdas ocultas llevan `hidden`
+  (que las saca del flujo), Nombre y Precio quedan pegados sin reordenar nada,
+  y el orden del DOM sigue siendo el de escritorio.
+- **"Ingresar mercadería" no se construyó**, ni acá ni en el Topbar de
+  escritorio, aunque la maqueta lo dibuje en los dos: esa acción vive **por
+  artículo**, en la ficha, y a nivel del listado no hay destino al que mandar.
+  Ver `docs/correcciones-pendientes-del-pen.md`, entrada 8.
+
 ## `/inventario/nuevo`
 
 El alta de un artículo, en tres cards: qué se está cargando, sus datos y el
@@ -516,6 +655,24 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
   botón que dispara vive arriba y el HTML exige que sea descendiente del
   `<form>`. `FormularioDeAlta` (`formularios.tsx`) arma la pantalla entera,
   ya no sólo el cuerpo.
+
+**En el teléfono**
+
+Las tres cards se apilan y las tarjetas Producto/Servicio pasan de fila a
+columna. Las acciones bajan del Topbar a un **pie fijo** con "Cancelar" y
+"Guardar artículo" de 50 px.
+
+**Son dos botones, no uno movido**, y el mecanismo importa: un elemento del DOM
+no puede estar en dos lugares, así que hay un juego `hidden lg:flex` y otro
+`lg:hidden`. Lo que sigue siendo **uno solo** es el estado — el mismo
+`useActionState` gobierna los dos, así que `pendiente` deshabilita los dos a la
+vez. Acá ni siquiera hace falta `form=`: el formulario entero (Encabezado,
+Cuerpo y Pie) vive dentro de un único `<form className="contents">`, así que el
+botón del pie alcanza con ser descendiente.
+
+"Cancelar" cambia de `ghost` a `outline` en el pie: un botón sin borde ni fondo
+al pie de un teléfono es un área táctil invisible, y la maqueta le dibuja
+borde.
 
 ## `/inventario/[id]`
 
@@ -593,6 +750,25 @@ stock y el historial; a la derecha los datos editables y "Cómo se movió"
   `INGRESO`). Sumar un motivo es una migración aditiva: es el punto de extensión
   que el núcleo le promete a los módulos.
 
+**En el teléfono**
+
+- **Los tiles se apilan y "En stock" cambia de eje**: en escritorio es una
+  columna (rótulo arriba, valor grande abajo); en el teléfono es una fila, con
+  el rótulo y el pie a la izquierda y el número a la derecha. "Precio de venta"
+  y "Último costo" comparten la fila siguiente.
+- **El cuerpo se reordena, no se apila.** La maqueta **intercala** "Datos" y
+  "Cómo se movió" entre las piezas de la columna izquierda, así que apilar las
+  dos columnas tal cual daba otro orden: los cinco bloques llevan `order-1` a
+  `order-5` y `lg:order-none` restaura el de escritorio.
+- **Las acciones bajan a un pie fijo** ("Desactivar"/"Reactivar" y "Guardar
+  cambios"), atadas a los mismos `<form id=…>` por `form=`. "Ingresar
+  mercadería" y "Corregir por conteo" se apilan en vez de compartir una fila de
+  dos columnas angostas.
+- **La ranura derecha del Topbar queda vacía**, aunque la maqueta dibuje un
+  `more-vertical`: las dos acciones principales ya están al pie y las
+  secundarias en el cuerpo, así que ese menú no tendría qué contener sin
+  inventarlo. Ver `docs/correcciones-pendientes-del-pen.md`, entrada 13.
+
 ## `/servicio-tecnico`
 
 El tablero de órdenes: qué equipos hay en el local y en qué anda cada uno.
@@ -651,6 +827,25 @@ Servicio Técnico):
 - **El subtítulo del Topbar** ("N equipos en el local · el más viejo hace N
   días") se completó en este ciclo: el comentario que dejaba pendiente el ciclo
   del shell decía textualmente "para el ciclo del tablero", y éste lo fue.
+
+**En el teléfono**
+
+- **Los contadores de estado pasan de pastillas horizontales a una grilla de
+  tres columnas**, con el conteo grande arriba (17 px en Archivo) y el rótulo
+  abajo. Son **dos renderizados independientes**, cada uno oculto por CSS, y no
+  el mismo árbol reordenado: acá cambia cuál dato va primero y la forma entera
+  del chip, no sólo cómo se agrupan las mismas celdas.
+- **Siguen siendo diez y no nueve.** La maqueta dibuja tres filas de tres y le
+  falta "Rechazado"; sacarlo habría dejado sin ver ni filtrar las órdenes
+  rechazadas desde el teléfono. La grilla cae en una cuarta fila con un chip
+  solo. Ver `docs/correcciones-pendientes-del-pen.md`, entrada 9.
+- **El listado pasa a tarjetas de tres líneas**: número, modelo y el chip de
+  estado arriba; cliente y teléfono en una línea unida por "·"; IMEI, fecha de
+  ingreso y antigüedad en la tercera. El chip de estado es la **única** celda
+  que se dibuja dos veces en esta pantalla, y es a propósito: en el teléfono
+  tiene que aparecer después de Equipo, y su columna de escritorio es la
+  quinta, así que fundirlo habría corrido a Cliente e Ingresó de lugar.
+- **El buscador y sus controles se apilan** en vez de compartir una fila.
 
 ## `/servicio-tecnico/nuevo`
 
@@ -728,6 +923,16 @@ Servicio Técnico):
   (con el aviso de que la clave no se imprime), Qué le pasa (falla, accesorios,
   daños) y "Qué se imprime" — un panel puramente informativo, sin inputs, con
   los cuatro puntos que ya explicaba el ticket.
+
+**En el teléfono**
+
+Las cuatro cards se apilan en el orden que ya traía el DOM, y las acciones
+bajan a un pie fijo con "Cancelar" (en `outline`, por lo mismo que en el alta
+de artículo) y **"Guardar e imprimir"** — más corto que el rótulo de
+escritorio, porque "…ticket" no entra a 390 px al lado de "Cancelar", y porque
+es literalmente lo que dice el nodo de la maqueta. Los dos botones del pie
+están atados al mismo `<form id="form-recepcion">` por `form=` y al mismo
+`pendiente`.
 
 ## `/servicio-tecnico/[id]`
 
@@ -836,6 +1041,21 @@ Servicio Técnico):
   `usuarioId` a los dos), así que ese dato ya sale de ahí sin repetir la
   consulta.
 
+**En el teléfono**
+
+- **El paño "ESTADO ACTUAL" va a ancho completo** y sus botones de transición
+  se apilan a 44 px de alto cada uno, contra los 40 px en fila de escritorio.
+- **La bitácora fluye con el resto del cuerpo**: pierde su altura y su scroll
+  interno propios, y los recupera en escritorio, donde sigue empatándose con la
+  columna vecina.
+- **Reimprimir y anular no se pierden.** El `<Encabezado>` envuelve sus
+  `acciones` en `hidden lg:flex`, así que sin nada en su lugar la ficha se
+  quedaba sin las dos en el teléfono. La maqueta ya lo resolvía: el `printer`
+  sube a la ranura derecha en tono suave, y "Anular orden" baja al cuerpo con
+  46 px de alto. Es el mismo criterio que se aplicó con el vaciado del carrito
+  y con la caja de `/vender` — una capacidad que desaparece y no reaparece en
+  ningún lado es un defecto, no una simplificación.
+
 ## `/servicio-tecnico/[id]/ticket`
 
 El comprobante de recepción en papel térmico de 80 mm. Se imprime solo al
@@ -868,6 +1088,27 @@ cargar.
   importarse— y por lo tanto sin base.
 - La ruta está en `RUTAS_SIN_SMOKE`: no hay id de orden que pedirle al gate sin
   sembrar datos.
+
+**En el teléfono**
+
+**Esta pantalla gana un `<Encabezado>` que antes no tenía en ningún ancho**, y
+por eso es la única del ciclo donde sumar el Topbar también cambia el
+escritorio: "Ticket #N", subtítulo "80 mm · dos copias en una impresión",
+flecha de vuelta a la ficha, y `printer` en la ranura derecha — en **tono
+acción** y no suave, la excepción del grupo, porque acá imprimir *es* la acción
+de la pantalla y no una secundaria.
+
+**Nada de esto llega al papel.** El `<Encabezado>` va envuelto en
+`print:hidden`, y el envoltorio que le da al cuerpo la geometría de excepción
+del teléfono (`padding [16,44]`, `gap 14`) se disuelve con `display: contents`
+tanto en escritorio (`lg:contents`) como al imprimir (`print:contents`): ni
+mueve el aspecto de hoy, ni le agrega un píxel de margen al rollo.
+
+**`ticket.module.css` no cambió de reglas**, y eso lo sostiene un test que
+compara el hash del archivo entero — cualquier cambio, hasta un espacio, lo
+rompe. Se rebaselineó una sola vez, para corregir un comentario que la propia
+suma del Encabezado dejó falso; el CSS con los comentarios eliminados quedó
+byte a byte igual.
 
 ## `/usuarios`
 
@@ -921,10 +1162,30 @@ Usuarios`).
   reimplementado**: las dos reglas ya existen en `lib/usuarios/administrar.ts`
   (el lock del último dueño en `desactivar()`, el `session.deleteMany` de
   `resetearClave()`); la pantalla sólo las cuenta.
-- Consultado en vivo con el MCP de Pencil: a diferencia de los otros dos
-  títulos de card de esta pantalla ("El equipo del local", "Agregar a
-  alguien", en Archivo 15px/600), el título de la card de Reglas usa la pila
-  del sistema a 13px/700 — el relevamiento escrito los agrupaba a los tres.
+- Consultado en vivo con el MCP de Pencil: **en escritorio**, a diferencia de
+  los otros dos títulos de card de esta pantalla ("El equipo del local",
+  "Agregar a alguien", en Archivo 15px/600), el título de la card de Reglas usa
+  la pila del sistema a 13px/700 — el relevamiento escrito los agrupaba a los
+  tres. En el teléfono la maqueta invierte esa excepción: ver más abajo.
+
+**En el teléfono**
+
+- **El aviso de clave generada pasa primero**, arriba de todo, cuando en
+  escritorio vive debajo de la tabla. Las cuatro piezas quedan como una lista
+  plana con gap uniforme: los dos envoltorios de columna se disuelven con
+  `contents` y cada pieza lleva su `order-N`, sin tocar su lugar real en el DOM.
+  Su botón de copiar pasa a ser sólo ícono (34×34), con `aria-label` propio
+  porque se queda sin texto visible.
+- **La tabla del equipo pasa a tarjetas**, con un **avatar de 34 px** que sólo
+  existe en el teléfono: la inicial del nombre, con el color del rol. No hace
+  falta duplicar ninguna celda —a diferencia de `/servicio-tecnico`— porque el
+  orden de escritorio (Persona, Rol, Estado, Acciones) ya es el que el teléfono
+  necesita.
+- **El título de "Dos reglas que el sistema no deja romper" paga Archivo, y en
+  escritorio no.** No es un bug de ninguno de los dos lados: son dos frames con
+  una decisión distinta cada uno, y las dos son la autoridad en su ancho. Está
+  explicado en `docs/sistema-de-diseno.md`, en la nota bajo la escala
+  tipográfica, y en el propio `app/(app)/usuarios/tipografia.module.css`.
 
 <!-- pantallas:fin -->
 
@@ -938,10 +1199,27 @@ heredan cuatro cosas sin que nadie las repita:
   afuera del grupo sin declarar por qué.
 - **`robots: noindex`**. Son datos de un local.
 - **El shell**: el cartel con el nombre del local, quién sos, cómo salir, y la
-  navegación.
-- **El encabezado de 66 px** (`components/shell/encabezado.tsx`, ciclo del
-  shell): el único `<h1>` de la pantalla, un subtítulo opcional y un slot de
-  acciones a la derecha. Las diez lo usan; ninguna dibuja su propio `<h1>`.
+  navegación. **Abajo de 1024 px el mismo paño se sirve como drawer**, sobre un
+  velo, con un botón de cerrar que flota afuera del panel. No hay una segunda
+  navegación: es el mismo `Sidebar` de shadcn, que ya renderiza un `Sheet`
+  cuando `useIsMobile` da verdadero.
+- **El encabezado, de 56 px en el teléfono y 66 en escritorio**
+  (`components/shell/encabezado.tsx`): el único `<h1>` de la pantalla, un
+  subtítulo opcional y un slot de acciones a la derecha. Las diez lo usan;
+  ninguna dibuja su propio `<h1>`. **Es una sola franja para las dos maquetas,
+  no dos componentes** — el `.pen` la modela igual, con un `Móvil/Topbar`
+  reusable que los doce frames instancian. En el teléfono gana dos ranuras de
+  38 px: a la izquierda el `arrow-left` (con `atras` o `alVolver`) o, si no hay
+  ninguno de los dos, el trigger que abre el drawer; a la derecha **una sola**
+  acción —`accionMovil`, un link, o `controlMovil`, un control con estado
+  propio—, mientras las `acciones` de escritorio pasan a `hidden lg:flex`.
+
+**Y hay un solo corte, 1024 px**, que gobierna las dos mitades a la vez: el
+`lg:` de Tailwind y el `Sheet` del sidebar (`MOBILE_BREAKPOINT` en
+`hooks/use-mobile.ts`). Las clases se escriben mobile-first — el valor del
+teléfono sin prefijo, el de escritorio con `lg:`. El porqué del número y del
+patrón `lg:contents` que comparten los cuatro listados y el carrito está en
+`CLAUDE.md`, en la entrada del ciclo del teléfono.
 
 Y todas, sin excepción, leen la base con `prismaParaTenant`, que fuerza el
 filtro por `tenant_id` y ata la conexión al tenant por GUC de sesión. RLS es la

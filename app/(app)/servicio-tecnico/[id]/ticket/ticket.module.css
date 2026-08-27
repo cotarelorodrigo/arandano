@@ -72,10 +72,20 @@
 
      [data-sidebar="trigger"] SALIÓ de acá (Task 1 del ciclo del shell móvil,
      2026-08-26): el trigger dejó de vivir suelto en el layout y se mudó a la
-     ranura izquierda de <Encabezado> (components/shell/encabezado.tsx) — y
-     esta pantalla (page.tsx, arriba) nunca renderiza un <Encabezado>, sólo
-     <CuerpoDelTicket>. El selector había quedado sin nada a qué apuntar:
-     nunca se imprime porque nunca existe en esta página. Ocultar
+     ranura izquierda de <Encabezado> (components/shell/encabezado.tsx), así
+     que el selector se quedó sin nada a qué apuntar EN ESTA PÁGINA.
+
+     La premisa de esa frase cambió a mitad del mismo ciclo y conviene dejarlo
+     escrito, porque la conclusión sobrevivió y la razón no: cuando la Task 1
+     sacó el selector, esta pantalla no renderizaba ningún <Encabezado> —sólo
+     <CuerpoDelTicket>—, y la Task 9 le sumó uno (design/arandano.pen, frame
+     `kNPwE`: Topbar con `printer`). Hoy SÍ hay <Encabezado> acá. Lo que sigue
+     siendo cierto es que el trigger nunca se monta: ese <Encabezado> recibe
+     siempre `atras` (la flecha de vuelta a la ficha), y la ranura izquierda
+     dibuja el trigger sólo cuando NO hay ni `atras` ni `alVolver`. Y aunque
+     se montara, page.tsx envuelve el <Encabezado> entero en `print:hidden`,
+     que es la defensa de verdad para el papel — este selector nunca fue la
+     que sostenía ese caso. Ocultar
      [data-slot='sidebar'] solo sigue alcanzando para lo que de verdad importa
      —el paño entero, con TODO lo que cuelgue de él— porque `display: none`
      en un ancestro se lleva a cualquier descendiente sin excepción por
