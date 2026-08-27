@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import { CreditCard, Plus, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -237,13 +237,25 @@ export function CamposDePlan({ plan, pendiente }: { plan?: FilaDePlan; pendiente
  * haría desaparecer lo que la persona escribió justo cuando el toast le
  * explica que lo corrija.
  *
+ * **Pero el "en curso" sale de `useTransition` y no de un `useState` propio**,
+ * igual que el diálogo de permisos de `/usuarios`. No es cosmético: las
+ * actions de este archivo **rechazan** todo lo que no sea corregible
+ * —`forbidden()` incluido, que es alcanzable acá mismo si un dueño le revoca
+ * `PLANES_PAGO` a alguien que tiene el diálogo abierto—, y con un
+ * `setPendiente(false)` escrito a mano después del `await`, un rechazo se
+ * saltea esa línea y deja el diálogo trabado para siempre: todos los campos
+ * deshabilitados, el botón clavado en "Guardando…" y ni un toast, porque
+ * `avisar` tampoco llegó a correr. React limpia su bandera cuando la
+ * transición termina, se haya resuelto o rechazado, así que el agujero no
+ * existe — y el rechazo llega al error boundary en vez de perderse.
+ *
  * El costo es que esta pantalla **necesita JavaScript**. Acá ya era así: el
  * diálogo es de Radix y el `Select` del medio tampoco funciona sin JS — es el
  * mismo trade-off que ya aceptaron `/vender` y el alta de artículos.
  */
 export function DialogoDePlan({ plan }: { plan?: FilaDePlan }) {
   const [abierto, setAbierto] = useState(false)
-  const [pendiente, setPendiente] = useState(false)
+  const [enCurso, empezar] = useTransition()
 
   const clave = plan ? `plan-${plan.id}-edicion` : 'plan-alta'
 
@@ -276,25 +288,28 @@ export function DialogoDePlan({ plan }: { plan?: FilaDePlan }) {
           </DialogDescription>
         </DialogHeader>
         <form
-          onSubmit={async (e) => {
+          onSubmit={(e) => {
             e.preventDefault()
-            if (pendiente) return
-            // El FormData se arma ANTES del await: después de uno,
-            // `e.currentTarget` ya es null.
+            if (enCurso) return
+            // El FormData se arma ACÁ y no adentro de la transición: después
+            // del primer await, `e.currentTarget` ya es null.
             const datos = new FormData(e.currentTarget)
-            setPendiente(true)
-            const resultado = avisar(
-              await (plan ? edicionDePlan : altaDePlan)(INICIAL, datos),
-              clave,
-            )
-            setPendiente(false)
-            if (!resultado.error) setAbierto(false)
+            empezar(async () => {
+              const resultado = avisar(
+                await (plan ? edicionDePlan : altaDePlan)(INICIAL, datos),
+                clave,
+              )
+              // Sólo si salió bien: con un nombre repetido, cerrar haría
+              // desaparecer lo que la persona escribió justo cuando el toast le
+              // explica que lo corrija.
+              if (!resultado.error) setAbierto(false)
+            })
           }}
         >
-          <CamposDePlan plan={plan} pendiente={pendiente} />
+          <CamposDePlan plan={plan} pendiente={enCurso} />
           <DialogFooter className="mt-5">
-            <Button type="submit" disabled={pendiente}>
-              {pendiente ? 'Guardando…' : plan ? 'Guardar cambios' : 'Crear el plan'}
+            <Button type="submit" disabled={enCurso}>
+              {enCurso ? 'Guardando…' : plan ? 'Guardar cambios' : 'Crear el plan'}
             </Button>
           </DialogFooter>
         </form>
@@ -310,31 +325,37 @@ export function DialogoDePlan({ plan }: { plan?: FilaDePlan }) {
  * —el id— y la pantalla ya necesita JavaScript por el diálogo, así que un form
  * no compraría nada. La baja es LÓGICA, así que no hay nada irreversible que
  * confirmar: si se dio de baja de más, "Reactivar" está en la misma celda.
+ *
+ * `useTransition` por lo mismo que `DialogoDePlan` (ver su comentario): un
+ * rechazo de la action —un `forbidden()` por un permiso revocado, o un bug de
+ * verdad— dejaba el botón clavado en "Dando de baja…" para siempre. Y de paso
+ * saca el `void` con el que se disparaba cada acción, que descartaba el rechazo
+ * en vez de dejarlo llegar a ningún lado.
  */
 export function AccionesDeFila({ plan }: { plan: FilaDePlan }) {
-  const [pendiente, setPendiente] = useState(false)
+  const [enCurso, empezar] = useTransition()
 
-  const ejecutar = async (
+  const ejecutar = (
     accion: (estado: EstadoPlanes, datos: FormData) => Promise<EstadoPlanes>,
     sufijo: string,
   ) => {
-    if (pendiente) return
-    setPendiente(true)
+    if (enCurso) return
     const datos = new FormData()
     datos.set('id', plan.id)
-    avisar(await accion(INICIAL, datos), `plan-${plan.id}-${sufijo}`)
-    setPendiente(false)
+    empezar(async () => {
+      avisar(await accion(INICIAL, datos), `plan-${plan.id}-${sufijo}`)
+    })
   }
 
   if (plan.desactivado) {
     return (
       <button
         type="button"
-        disabled={pendiente}
-        onClick={() => void ejecutar(reactivacionDePlan, 'reactivacion')}
+        disabled={enCurso}
+        onClick={() => ejecutar(reactivacionDePlan, 'reactivacion')}
         className={ENLACE}
       >
-        {pendiente ? 'Reactivando…' : 'Reactivar'}
+        {enCurso ? 'Reactivando…' : 'Reactivar'}
       </button>
     )
   }
@@ -347,11 +368,11 @@ export function AccionesDeFila({ plan }: { plan: FilaDePlan }) {
       </span>
       <button
         type="button"
-        disabled={pendiente}
-        onClick={() => void ejecutar(bajaDePlan, 'baja')}
+        disabled={enCurso}
+        onClick={() => ejecutar(bajaDePlan, 'baja')}
         className={ENLACE}
       >
-        {pendiente ? 'Dando de baja…' : 'Baja'}
+        {enCurso ? 'Dando de baja…' : 'Baja'}
       </button>
     </div>
   )

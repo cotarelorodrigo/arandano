@@ -174,3 +174,53 @@ describe('los avisos por toast', () => {
   // test/toaster.test.ts para TODO app/, que es el alcance correcto — un
   // segundo caso local sería una copia que se desincroniza.
 })
+
+/**
+ * El agujero que este bloque existe para no repetir (Important 1 de la review
+ * de esta task): las actions de esta pantalla **rechazan** todo lo que no sea
+ * corregible —`forbidden()` incluido, alcanzable si un dueño le revoca
+ * `PLANES_PAGO` a alguien que tiene el diálogo abierto—, y la primera versión
+ * apagaba la bandera de "en curso" con un `setPendiente(false)` escrito a mano
+ * DESPUÉS del `await`. Un rechazo se saltea esa línea: el diálogo quedaba con
+ * todos los campos deshabilitados y el botón clavado en "Guardando…" para
+ * siempre, sin un solo toast, porque `avisar` tampoco llegaba a correr.
+ *
+ * **Se mide sobre el FUENTE y no renderizando**, y hace falta decir por qué: la
+ * garantía la da React —limpia la bandera de `useTransition` cuando la
+ * transición termina, se haya resuelto o rechazado— y este harness no tiene
+ * jsdom, así que no hay forma de disparar un submit y observar el estado
+ * después. Lo que sí se puede fijar, y es exactamente lo que estaba roto, es
+ * que la bandera NO vuelva a manejarse a mano: cualquier reintroducción del
+ * patrón viejo —un `useState` para el pendiente, un `setPendiente(false)`
+ * salteable, un `void` que descarta el rechazo— pone esto en rojo. Es el mismo
+ * mecanismo con el que este repo fija el contrato de los archivos 'use server'
+ * y el del Toaster: reglas de runtime que ningún render estático ve.
+ */
+describe('una acción rechazada no puede dejar la pantalla trabada', () => {
+  const FUENTE = readFileSync('app/(app)/formas-de-pago/formularios.tsx', 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
+
+  // Dos: el diálogo y las acciones de fila. Contado y no `toContain`, para que
+  // uno de los dos que vuelva al patrón viejo no pase en verde gracias al otro.
+  it('la bandera de "en curso" sale de useTransition, no de un useState propio', () => {
+    expect(FUENTE.split('useTransition()').length - 1).toBe(2)
+  })
+
+  it('ningún pendiente se apaga a mano después de un await', () => {
+    expect(FUENTE).not.toMatch(/setPendiente|setEnCurso/)
+  })
+
+  // `void accion(...)` descarta el rechazo en el acto: no llega ni al error
+  // boundary ni al log. Adentro de `empezar()` React se hace cargo.
+  it('ninguna acción se dispara con `void`, que tira el rechazo a la basura', () => {
+    expect(FUENTE).not.toMatch(/\bvoid\s/)
+  })
+
+  // Las llamadas a una action tienen que estar TODAS adentro de la transición:
+  // una que quedara afuera volvería a tener el agujero sin que los casos de
+  // arriba lo noten.
+  it('las llamadas a una action viven adentro de empezar()', () => {
+    expect(FUENTE.split('empezar(async () => {').length - 1).toBe(2)
+  })
+})

@@ -36,7 +36,7 @@ function traducir(e: unknown): EstadoPlanes {
 function medioDe(datos: FormData): Medio {
   const medio = String(datos.get('medio') ?? '')
   if (!(MEDIOS as readonly string[]).includes(medio)) {
-    throw new ErrorDePlan('MEDIO_INVALIDO', `medio de pago desconocido: ${medio}`)
+    throw new ErrorDePlan('MEDIO_INVALIDO', `Esa forma de pago no existe: "${medio}".`)
   }
   return medio as Medio
 }
@@ -44,11 +44,13 @@ function medioDe(datos: FormData): Medio {
 function cuotasDe(datos: FormData): number {
   const crudo = String(datos.get('cuotas') ?? '1').trim()
   // Number() y no parseInt: parseInt("3 cuotas") da 3 en silencio, y lo que se
-  // quiere acá es rechazar lo que no sea un número entero pelado. El RANGO
-  // (1 a 120) lo valida `lib/planes/administrar.ts`, con el mismo mensaje.
+  // quiere acá es rechazar lo que no sea un número entero pelado.
   const cuotas = Number(crudo)
   if (!Number.isInteger(cuotas)) {
-    throw new ErrorDePlan('CUOTAS_INVALIDAS', 'Las cuotas van de 1 a 120.')
+    // El mensaje habla de lo que ESTE guard mira, no del rango: `3,5` —el error
+    // realista— no se arregla leyendo "van de 1 a 120". El rango lo valida
+    // `lib/planes/administrar.ts`, y su redacción vive sólo ahí.
+    throw new ErrorDePlan('CUOTAS_INVALIDAS', 'Las cuotas tienen que ser un número entero.')
   }
   return cuotas
 }
@@ -57,12 +59,17 @@ function cuotasDe(datos: FormData): number {
  * Un número con signo y, si lleva, decimales. Sin separador de miles: ver el
  * comentario de `porcentajeDe`. La coma y el punto valen lo mismo.
  *
+ * **El `+` se acepta y no sólo el `-`**: la tabla muestra `+40%`
+ * (`formatearPorcentaje`), así que quien retipee lo que está leyendo escribe
+ * `+40` — rechazárselo sería castigarlo por copiar lo que la pantalla le
+ * mostró. `Prisma.Decimal` lo normaliza a `40` sin más.
+ *
  * La cantidad de decimales no se topea acá aunque la columna sea `Decimal(6,3)`:
  * `validar` (lib/planes/administrar.ts) ya rechaza el cuarto decimal con el
  * mensaje que dice qué hacer, y duplicar el límite en dos lugares es lo que los
  * desincroniza.
  */
-const RECARGO_TIPEADO = /^-?\d+(?:[.,]\d+)?$/
+const RECARGO_TIPEADO = /^[+-]?\d+(?:[.,]\d+)?$/
 
 /**
  * El recargo tipeado, con su signo.
@@ -84,12 +91,20 @@ const RECARGO_TIPEADO = /^-?\d+(?:[.,]\d+)?$/
  * sería inentrable en el único campo que `Decimal(6,3)` existe para guardar.
  */
 function porcentajeDe(datos: FormData): Prisma.Decimal {
-  const crudo = String(datos.get('porcentaje') ?? '').replace(/\s/g, '')
+  // `.trim()` y NO `replace(/\s/g, '')`: sacar TODOS los espacios convierte
+  // `4 0` en cuarenta y `1 3,7` en trece coma siete, o sea acepta un error de
+  // tipeo como si fuera otro número. Es la misma regla que `lib/formato/
+  // gramatica.ts` aplica a la plata —rechazar en vez de adivinar—, y la que ya
+  // usa `cuotasDe` acá arriba.
+  const crudo = String(datos.get('porcentaje') ?? '').trim()
   if (crudo === '') {
-    throw new ErrorDeFormato('NUMERO_INVALIDO', 'falta el recargo')
+    throw new ErrorDeFormato('NUMERO_INVALIDO', 'Falta el recargo.')
   }
   if (!RECARGO_TIPEADO.test(crudo)) {
-    throw new ErrorDeFormato('NUMERO_INVALIDO', `el recargo no es un número: "${crudo}"`)
+    throw new ErrorDeFormato(
+      'NUMERO_INVALIDO',
+      `El recargo no es un número: "${crudo}". Escribilo como 40, 13,755 o -10.`,
+    )
   }
   return new Prisma.Decimal(crudo.replace(',', '.'))
 }

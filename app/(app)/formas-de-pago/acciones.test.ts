@@ -229,6 +229,46 @@ describe('altaDePlan', () => {
     expect(r.error).toMatch(/no es un número/)
   })
 
+  /**
+   * El signo que la propia tabla muestra tiene que volver a entrar:
+   * `formatearPorcentaje` renderiza `+40%`, así que quien retipee lo que está
+   * leyendo escribe `+40`. Rechazárselo sería castigarlo por copiar lo que la
+   * pantalla le mostró.
+   */
+  it('un recargo escrito con + —como lo muestra la tabla— se guarda', async () => {
+    estado.cookie = cookieDuenio
+    const nombre = `Con mas ${++contador}`
+    const r = await altaDePlan(INICIAL, formularioDePlan({ nombre, porcentaje: '+40' }))
+    expect(r.error).toBeNull()
+    const plan = (await planesDelTenant(estado.tenantId)).find((p) => p.nombre === nombre)
+    // Normalizado por Prisma.Decimal: se guarda como 40, no como "+40".
+    expect(plan?.porcentaje).toBe('40')
+  })
+
+  /**
+   * Un espacio en el medio del número es un error de tipeo, no otro número.
+   * Con `replace(/\s/g, '')` en vez de `trim()`, `4 0` entraba como cuarenta:
+   * el local terminaba recargando 40 % donde alguien quiso escribir otra cosa,
+   * sin que nada avisara. Es la misma regla que `lib/formato/gramatica.ts`
+   * aplica a la plata: rechazar en vez de adivinar.
+   */
+  it('un espacio en el medio del recargo se rechaza, no se borra', async () => {
+    estado.cookie = cookieDuenio
+    const r = await altaDePlan(INICIAL, formularioDePlan({ porcentaje: '4 0' }))
+    expect(r.error).toMatch(/no es un número/)
+  })
+
+  // Y los espacios de los BORDES sí se sacan: pegar un valor desde otro lado
+  // suele traerlos, y ahí no hay ninguna ambigüedad que resolver.
+  it('los espacios de los bordes no molestan', async () => {
+    estado.cookie = cookieDuenio
+    const nombre = `Con espacios ${++contador}`
+    const r = await altaDePlan(INICIAL, formularioDePlan({ nombre, porcentaje: '  25  ' }))
+    expect(r.error).toBeNull()
+    const plan = (await planesDelTenant(estado.tenantId)).find((p) => p.nombre === nombre)
+    expect(plan?.porcentaje).toBe('25')
+  })
+
   // Lo que la persona puede corregir tipeando distinto tiene que volver como
   // cartel, no como 500.
   it('un porcentaje inválido vuelve como error corregible', async () => {
@@ -237,10 +277,23 @@ describe('altaDePlan', () => {
     expect(r.error).toMatch(/recargo va de/i)
   })
 
-  it('unas cuotas que no son un entero vuelven como error corregible', async () => {
+  /**
+   * `3,5` es el error realista, no `3 cuotas`. Y el mensaje tiene que hablar de
+   * lo que ESTE guard mira: decirle "van de 1 a 120" a quien escribió un
+   * decimal lo manda a arreglar lo que no está mal. El rango sigue siendo de
+   * `lib/planes/administrar.ts`, y el caso de abajo lo comprueba.
+   */
+  it('unas cuotas que no son un entero lo dicen así, no hablan del rango', async () => {
     estado.cookie = cookieDuenio
-    const r = await altaDePlan(INICIAL, formularioDePlan({ cuotas: '3 cuotas' }))
-    expect(r.error).toMatch(/cuotas van de/i)
+    const r = await altaDePlan(INICIAL, formularioDePlan({ cuotas: '3,5' }))
+    expect(r.error).toMatch(/número entero/i)
+    expect(r.error).not.toMatch(/1 a 120/)
+  })
+
+  it('unas cuotas fuera del rango sí hablan del rango, desde lib/planes', async () => {
+    estado.cookie = cookieDuenio
+    const r = await altaDePlan(INICIAL, formularioDePlan({ cuotas: '200' }))
+    expect(r.error).toMatch(/1 a 120/)
   })
 
   // Primer lanzador de MEDIO_INVALIDO: el medio llega por FormData, así que es
@@ -248,7 +301,7 @@ describe('altaDePlan', () => {
   it('un medio inventado vuelve como error corregible, no como 500', async () => {
     estado.cookie = cookieDuenio
     const r = await altaDePlan(INICIAL, formularioDePlan({ medio: 'CRIPTO' }))
-    expect(r.error).toMatch(/medio de pago desconocido/)
+    expect(r.error).toMatch(/forma de pago no existe/i)
   })
 
   it('un nombre repetido en el mismo medio vuelve como error corregible', async () => {

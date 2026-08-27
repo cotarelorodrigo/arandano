@@ -9,7 +9,7 @@ const EMPLEADA = {
 }
 
 describe('el diálogo de permisos', () => {
-  // Los seis salen del catálogo y no de una lista escrita a mano al lado: si
+  // Salen del catálogo y no de una lista escrita a mano al lado: si
   // se escribieran dos veces, agregar un permiso dejaría la pantalla vieja.
   //
   // Contra `FilasDePermisos` y no contra `PermisosDeUsuario`: `DialogContent`
@@ -18,7 +18,7 @@ describe('el diálogo de permisos', () => {
   // CERRADO (el estado inicial, y el único que este test puede producir sin
   // jsdom) nunca ve las filas. Forzar el montaje con `forceMount` se probó y
   // se descartó: ver el JSDoc de `FilasDePermisos` en `permisos-dialogo.tsx`.
-  it('ofrece los seis permisos del catálogo, con su ayuda', () => {
+  it('ofrece todos los permisos del catálogo, con su ayuda', () => {
     const html = renderToStaticMarkup(
       <FilasDePermisos usuarioId="u1" otorgados={new Set()} enCurso={false} onCambiar={() => {}} />,
     )
@@ -26,7 +26,7 @@ describe('el diálogo de permisos', () => {
       expect(html, `falta ${p.clave}`).toContain(p.nombre)
       expect(html, `falta la ayuda de ${p.clave}`).toContain(p.ayuda)
     }
-    // M5 de la review final: lo de arriba prueba que los seis ESTÁN, no que
+    // M5 de la review final: lo de arriba prueba que ESTÁN todos, no que
     // sean los ÚNICOS — un switch de más, escrito a mano al lado de los del
     // catálogo, pasaba este test igual. El spec pide las dos direcciones
     // (catálogo ↔ pantalla), así que el conteo de `role="switch"` (el que
