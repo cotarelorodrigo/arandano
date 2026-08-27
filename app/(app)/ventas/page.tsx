@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { Funnel } from 'lucide-react'
+import { Prisma } from '@/generated/prisma/client'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
@@ -8,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatearPrecio, formatearHora, formatearCantidad } from '@/lib/formato/mostrar'
 import { componerPorMedio } from '@/lib/ventas/composicion'
+import { totalCobrado } from '@/lib/ventas/totales'
 import { ROTULO_MEDIO, CONSUMIDOR_FINAL, type Medio } from '@/lib/ventas/medios'
 import { ChipEstado } from './chip-estado'
 import { GraficoDeMedios } from './grafico'
@@ -143,16 +145,34 @@ type FiltroDePeriodo = { creadoEn: { gte: Date; lt: Date } }
  * ningún test (785/785 en verde) — hallazgo I3 de la review final del
  * rediseño. Que la función exista y se llame desde acá es lo que la deja
  * protegida.
+ *
+ * Suma `total` Y `recargo` (Task 8, precios por forma de pago): lo que
+ * pregunta el tile "Total del período" es cuánta plata entró, y esa plata es
+ * `total + recargo` — `Venta.total` sigue siendo sólo la mercadería, a precio
+ * de lista, y no cambió de significado (CLAUDE.md, el ciclo de precios por
+ * forma de pago). El llamador arma `totalCobrado()` con los dos números; esta
+ * función sigue devolviendo el agregado crudo, no la suma ya hecha, porque
+ * `test/ventas.test.ts` también lee `_sum.total` solo para probar la regla de
+ * arriba (que una venta anulada no cuenta).
  */
 export function totalDelPeriodo(
   prisma: ReturnType<typeof prismaParaTenant>,
   donde: FiltroDePeriodo,
 ) {
-  return prisma.venta.aggregate({ where: { ...donde, anuladaEn: null }, _sum: { total: true } })
+  return prisma.venta.aggregate({
+    where: { ...donde, anuladaEn: null },
+    _sum: { total: true, recargo: true },
+  })
 }
 
 /**
  * El pie del tile "Ventas cobradas": el promedio por venta cobrada.
+ *
+ * Sobre lo COBRADO (`total + recargo`) y no sólo la mercadería, por la misma
+ * razón que el tile "Total del período" de al lado ya lo hace desde Task 8:
+ * las dos plata de la misma pantalla tienen que contestar la misma pregunta
+ * ("cuánto entró"), y "promedio de mercadería vendida" sería una tercera
+ * métrica que nadie pidió.
  *
  * `undefined` y no `NaN` cuando no hubo ninguna cobrada — un período puede
  * anularse entero, y "promedio $ NaN" es peor que no mostrar ningún pie: ver
@@ -169,6 +189,12 @@ export function pieDeCobradas(sumaCobradas: string, cobradas: number): string | 
  * lado — son dos agregados distintos (`SUM(total) WHERE anuladaEn IS NOT
  * NULL` acá, `WHERE anuladaEn IS NULL` en el tile de al lado) y mezclarlos
  * sería el mismo bug que ya evita `crearVenta` al no reutilizar sumas.
+ *
+ * Con `total + recargo`, no sólo la mercadería: lo que se anuló es la plata
+ * COBRADA, recargo incluido —una venta en 3 cuotas que se anula da de baja
+ * también el recargo de esa financiación, no sólo el precio de lista—, así
+ * que "devuelto" tiene que decir lo mismo que decía "cobrado" antes de
+ * anularse.
  */
 export function pieDeAnuladas(montoDevuelto: string): string {
   return `${formatearPrecio(montoDevuelto)} devueltos`
@@ -302,7 +328,12 @@ export default async function Ventas({
       skip: (pagina - 1) * POR_PAGINA,
       take: POR_PAGINA,
       select: {
-        id: true, numero: true, total: true, creadoEn: true, anuladaEn: true,
+        // `recargo` entra al select para la columna Total: no se puede sumar
+        // el recargo pago por pago acá —sería exactamente el join de pagos
+        // que la columna evita, y para eso está el caché en `Venta.recargo`
+        // (CLAUDE.md, "El costo del movimiento" — mismo criterio que
+        // `Articulo.stock` contra sus movimientos).
+        id: true, numero: true, total: true, recargo: true, creadoEn: true, anuladaEn: true,
         cliente: { select: { nombre: true } },
         // orderBy explícito: rotuloDeMedios() documenta "en el orden en que
         // se cobraron", y sin esto Postgres no promete ningún orden — el
@@ -324,12 +355,29 @@ export default async function Ventas({
     prisma.venta.count({ where: { ...donde, anuladaEn: { not: null } } }),
     // Lo DEVUELTO del tile de anuladas: un agregado propio, y no el mismo
     // `suma` de arriba con el filtro invertido reusado a mano — son sumas de
-    // conjuntos disjuntos y cada una necesita su propio `_sum`.
-    prisma.venta.aggregate({ where: { ...donde, anuladaEn: { not: null } }, _sum: { total: true } }),
+    // conjuntos disjuntos y cada una necesita su propio `_sum`. `recargo`
+    // entra por lo mismo que en `totalDelPeriodo`: lo devuelto es lo que se
+    // había cobrado, recargo incluido.
+    prisma.venta.aggregate({
+      where: { ...donde, anuladaEn: { not: null } },
+      _sum: { total: true, recargo: true },
+    }),
     // Los pagos del período, para el panel de composición. Se filtran por la
     // VENTA y no por `pago.creadoEn`: es el mismo `donde` que el listado y que
     // los tiles, así que las tres cosas de la pantalla no pueden hablar de
     // períodos distintos.
+    //
+    // Decisión de Task 8, dejada explícita porque no es obvia mirando sólo
+    // este archivo: `Pago.monto` YA es `base + recargo` (`lib/ventas/crear.ts`,
+    // Task 4) — no `Venta.total`, que es sólo mercadería. Este panel suma
+    // `monto`, así que "Cómo entró la plata" ya mostraba, desde que el motor
+    // empezó a cobrar con plan, la plata REAL que entró por cada medio,
+    // recargo incluido — sin que nadie lo tocara. Antes de este ciclo eso
+    // dejaba a este panel y al tile "Total del período" de arriba contando
+    // dos cosas distintas por el mismo importe (mercadería acá, cobrado allá);
+    // ahora que el tile también suma `recargo`, los dos números vuelven a
+    // cerrar entre sí. Por eso `componerPorMedio` NO se toca en este ciclo:
+    // ya estaba bien, lo que estaba mal era lo que había al lado.
     //
     // `groupBy` y no `$queryRaw` con un `SUM(monto * cotizacion)`, que sería la
     // consulta obvia: la extensión de lib/tenant/prisma.ts intercepta
@@ -348,6 +396,19 @@ export default async function Ventas({
   ])
 
   const composicion = componerPorMedio(pagos)
+  // Lo cobrado del período y lo devuelto de las anuladas: `total + recargo`
+  // en los dos casos, con `totalCobrado()` y no una suma a mano — es la MISMA
+  // función que arma la columna Total de cada fila, así que el tile de
+  // arriba y el listado de abajo no pueden desacordar en cuánto es "lo
+  // cobrado".
+  const sumaCobrada = totalCobrado({
+    total: suma._sum.total ?? new Prisma.Decimal(0),
+    recargo: suma._sum.recargo ?? new Prisma.Decimal(0),
+  })
+  const devueltoCobrado = totalCobrado({
+    total: devueltas._sum.total ?? new Prisma.Decimal(0),
+    recargo: devueltas._sum.recargo ?? new Prisma.Decimal(0),
+  })
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA))
   const conPagina = (n: number) => {
     const u = new URLSearchParams({ desde: dDesde, hasta: dHasta })
@@ -451,18 +512,18 @@ export default async function Ventas({
                 <Tile
                   marca
                   rotulo="Total del período"
-                  valor={formatearPrecio((suma._sum.total ?? '0').toString())}
+                  valor={formatearPrecio(sumaCobrada.toString())}
                   pie="sin contar las anuladas"
                 />
                 <Tile
                   rotulo="Ventas cobradas"
                   valor={formatearCantidad(String(cobradas))}
-                  pie={pieDeCobradas((suma._sum.total ?? '0').toString(), cobradas)}
+                  pie={pieDeCobradas(sumaCobrada.toString(), cobradas)}
                 />
                 <Tile
                   rotulo="Anuladas"
                   valor={formatearCantidad(String(anuladas))}
-                  pie={pieDeAnuladas((devueltas._sum.total ?? '0').toString())}
+                  pie={pieDeAnuladas(devueltoCobrado.toString())}
                 />
               </div>
             )}
@@ -581,10 +642,14 @@ export default async function Ventas({
                           >
                             {rotuloDeMedios(v.pagos)}
                           </TableCell>
+                          {/* `total + recargo` (Task 8): lo que preguntan de
+                              esta columna es cuánto entró, no cuánto valía la
+                              mercadería — `totalCobrado()`, la misma cuenta
+                              que arma el tile de arriba. */}
                           <TableCell
                             className={`${estilos.archivo} p-[11px] px-[7px] text-right font-semibold text-foreground tabular-nums`}
                           >
-                            {formatearPrecio(v.total.toString())}
+                            {formatearPrecio(totalCobrado(v).toString())}
                           </TableCell>
                           {/* Las anuladas se MUESTRAN: el historial tiene que
                               poder responder qué pasó, y esconderlas sería

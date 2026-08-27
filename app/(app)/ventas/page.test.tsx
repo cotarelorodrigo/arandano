@@ -4,6 +4,7 @@
 // request real (mismo criterio que ya documentan las funciones puras de
 // app/(app)/vender/punto-de-venta.tsx: se prueba la REGLA, no el cableado
 // completo de principio a fin, que queda cubierto por scripts/smoke.sh).
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import {
   rangoDeChip, chipActivo, pieDeCobradas, pieDeAnuladas, rotuloDeMedios, ventanaDePaginas,
@@ -126,5 +127,32 @@ describe('ventanaDePaginas', () => {
 
   it('no se pasa del límite superior', () => {
     expect(ventanaDePaginas(10, 10)).toEqual([6, 7, 8, 9, 10])
+  })
+})
+
+// Task 8 (las ventas muestran el recargo): mismo criterio que el bloque de
+// regresión de app/(app)/ventas/[id]/page.test.tsx — la pantalla es un Server
+// Component async que abre sesión y consulta Prisma, así que lo que un test
+// puro no puede aserverar (que la columna Total y el tile de arriba usen
+// `totalCobrado()`, y que el select pida `recargo`) se cablea leyendo el
+// fuente como texto.
+describe('la columna Total y el tile del período muestran lo cobrado', () => {
+  const fuente = readFileSync('app/(app)/ventas/page.tsx', 'utf8')
+
+  it('el select del listado pide recargo', () => {
+    expect(fuente).toContain(
+      'id: true, numero: true, total: true, recargo: true, creadoEn: true, anuladaEn: true,',
+    )
+  })
+
+  it('la celda Total usa totalCobrado(v), no v.total a secas', () => {
+    expect(fuente).toContain('formatearPrecio(totalCobrado(v).toString())')
+    expect(fuente).not.toContain('formatearPrecio(v.total.toString())')
+  })
+
+  it('el tile "Total del período" muestra sumaCobrada', () => {
+    const posTile = fuente.indexOf('rotulo="Total del período"')
+    const posValor = fuente.indexOf('valor={formatearPrecio(sumaCobrada.toString())}', posTile)
+    expect(posValor).toBeGreaterThan(posTile)
   })
 })

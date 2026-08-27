@@ -282,6 +282,39 @@ sección *Las pantallas*.
 
 ---
 
+## 11. La maqueta no dibuja el desglose de recargo ni la columna Plan de `/ventas/[id]`
+
+- **Frame**: `NjMl1` (`App / Venta detalle`)
+
+**Qué falta.** `design/arandano.pen` es anterior a los planes de pago
+(2026-08-27), así que el frame del detalle de venta no tiene:
+
+1. **El desglose de tres líneas del pie de "Qué se vendió"** (Mercadería /
+   Recargo o Descuento / Cobrado), que sólo aparece cuando `Venta.recargo` no
+   es cero. El código lo derivó del único renglón "Total" que la maqueta sí
+   dibuja ahí: mismo fondo `bg-muted` y mismo peso para la línea final
+   ("Cobrado"), y las dos líneas nuevas de arriba toman el tratamiento más
+   liviano de una fila de tabla común (12px muted / 13px semibold), sin
+   inventar un tercer estilo.
+2. **La columna "Plan" de la tabla "Cómo se pagó"**, entre Medio y Moneda —
+   "—" sin plan. El código la derivó de las columnas vecinas de esa misma
+   tabla: mismo `TableHead` de 10px uppercase, mismo ancho fijo que Moneda
+   (110px, ampliado a 150px porque un nombre de plan es más largo que
+   "Dólares").
+
+Mismo precedente que las entradas 6, 8, 9 y 10: la maqueta no **contradice** al
+código acá, le **falta** el control, así que se construyó contra lo que el
+`.pen` ya fija para esa pantalla en vez de inventar un tratamiento. Si al
+dibujarlos la maqueta decide otra cosa, manda la maqueta y se corrige el
+código.
+
+Detectado al construir el desglose de recargo del detalle de venta (2026-08-27,
+Task 8 del ciclo de planes de pago). Ver
+`docs/superpowers/specs/2026-08-27-precios-por-forma-de-pago-design.md`,
+sección *Las pantallas*.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

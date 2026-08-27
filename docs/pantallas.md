@@ -333,7 +333,7 @@ El historial por período.
   anuladas con lo devuelto.
 - Ver el listado dentro de su propia card ("Últimas ventas"), con la columna
   "Cliente" (quién compró, no quién vendió — eso vive en el detalle), cuántos
-  artículos, con qué medios se pagó y su estado.
+  artículos, con qué medios se pagó, el **total cobrado** y su estado.
 - Ver **"Cómo entró la plata"**: una barra por medio de pago, de un solo color,
   con los dólares convertidos a pesos a la cotización de cada pago —sin
   segunda serie: la maqueta nunca pidió una (`docs/sistema-de-diseno.md`,
@@ -344,6 +344,21 @@ El historial por período.
 
 **Decisiones**
 
+- **La columna Total, el tile "Total del período", el promedio de "Ventas
+  cobradas" y lo devuelto de "Anuladas" muestran lo COBRADO (`total +
+  recargo`), no la mercadería** (ciclo de precios por forma de pago, Task 8).
+  `Venta.total` no cambió de significado —sigue siendo el precio de lista— y
+  `Venta.recargo` es un CACHÉ aparte (la suma de los recargos de sus pagos,
+  mismo criterio que `Articulo.stock` contra sus movimientos): esta pantalla
+  contesta "cuánta plata entró", así que las cuatro cifras de plata tienen que
+  sumar los dos campos. La suma vive en una sola función,
+  `totalCobrado()` (`lib/ventas/totales.ts`), para que ninguna de las cuatro
+  pueda desacordar con las otras tres — o con la columna Total de
+  `/ventas/[id]`, que usa la misma función. **El panel "Cómo entró la plata"
+  no se tocó**: suma `Pago.monto`, que ya era `base + recargo` desde que el
+  motor cobra con plan (Task 4) — antes de este ciclo era éste, y no el tile,
+  el que decía la verdad; ver el comentario del `groupBy` en `page.tsx` para
+  el detalle.
 - **El total NO suma las anuladas**, y lo dice en pantalla para que nadie tenga
   que deducirlo. Lo devuelto de las anuladas es un agregado APARTE, no el
   mismo número con el filtro invertido.
@@ -401,8 +416,12 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 
 - Ver los ítems con su SKU (o "Servicio" si no lleva stock), cantidad, precio
   unitario y subtotal.
-- Ver los pagos con su medio, moneda, cotización (sólo en los pagos en
-  dólares), monto y su equivalente en pesos.
+- Ver el pie de "Qué se vendió" **desglosado en Mercadería / Recargo (o
+  Descuento) / Cobrado si la venta llevó recargo**, o el renglón único "Total"
+  de siempre si no.
+- Ver los pagos con su medio, **el plan con el que se cobró cada uno** (o "—"
+  sin plan), moneda, cotización (sólo en los pagos en dólares), monto y su
+  equivalente en pesos.
 - Ver el panel **Resumen**: fecha y hora, quién la vendió, el cliente (o
   "Consumidor final"), el estado y el comprobante.
 - **Anular la venta** — con el permiso `VENTAS_ANULAR` (un dueño siempre lo
@@ -410,6 +429,24 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 
 **Decisiones**
 
+- **El pie de "Qué se vendió" desglosa sólo si `Venta.recargo` no es cero**
+  (ciclo de precios por forma de pago, Task 8): una venta sin recargo —toda
+  venta grabada antes de este ciclo, y la mayoría después— no tiene nada que
+  desglosar, y tres líneas repitiendo el mismo número serían ruido. Con
+  recargo, el rótulo de la segunda línea sigue la misma gramática que ya fijó
+  `/vender` (Task 6): "Recargo" o "Descuento" según el signo, y bajo
+  "Descuento" el importe va sin el signo porque la palabra ya dice de qué lado
+  está — la misma regla vale en una pantalla que se LEE y no sólo en una que se
+  opera.
+- **La columna "Plan" de "Cómo se pagó" no filtra planes dados de baja.** La
+  FK `Pago.planDePagoId` es `Restrict` y la baja es lógica (Task 1), así que
+  la fila sigue estando: una venta de marzo tiene que seguir diciendo con qué
+  plan se cobró aunque el local ya no lo ofrezca hoy. Confirmado contra la
+  base en `test/ventas.test.ts`.
+- **"Cómo se pagó" no le atribuye el recargo a un solo plan en el resumen.**
+  Con un pago partido entre dos planes distintos, el pie de arriba muestra un
+  único número de recargo (la suma); cuál plan cobró cuánto vive en la columna
+  "Plan" de esta tabla, de a un pago por vez.
 - El guard está **en la action**, no sólo en la pantalla: una server action se
   invoca sin pasar por ningún componente. `puedeAnular()` en `page.tsx` sólo
   decide si el botón se ofrece.

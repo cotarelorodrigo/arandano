@@ -6,10 +6,14 @@
 // para cablear una regresión concreta que ningún test puro puede atrapar.
 import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
+import { Prisma } from '@/generated/prisma/client'
 import {
   seOfreceAnular, cotizacionVisible, subtituloDeItem, filasDeResumen, notaDeAnulacion,
+  lineasDeRecargo, rotuloDePlan,
 } from './page'
 import { CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
+
+const d = (v: string) => new Prisma.Decimal(v)
 
 describe('seOfreceAnular', () => {
   it('con el permiso, se ofrece anular una venta cobrada', () => {
@@ -43,6 +47,46 @@ describe('subtituloDeItem', () => {
 
   it('un servicio no tiene SKU de stock: dice "Servicio"', () => {
     expect(subtituloDeItem({ sku: '999999', tipo: 'SERVICIO' })).toBe('Servicio')
+  })
+})
+
+describe('lineasDeRecargo', () => {
+  it('sin recargo, no hay nada que desglosar', () => {
+    // Toda venta grabada antes de este ciclo, y la mayoría después.
+    expect(lineasDeRecargo({ total: d('10000'), recargo: d('0') })).toBeNull()
+  })
+
+  it('con recargo positivo, desglosa mercadería, recargo y cobrado', () => {
+    const lineas = lineasDeRecargo({ total: d('10000'), recargo: d('2500') })
+    expect(lineas).not.toBeNull()
+    expect(lineas!.map((l) => l.rotulo)).toEqual(['Mercadería', 'Recargo', 'Cobrado'])
+    expect(lineas![0].monto.toString()).toBe('10000')
+    expect(lineas![1].monto.toString()).toBe('2500')
+    expect(lineas![2].monto.toString()).toBe('12500')
+  })
+
+  it('con recargo negativo, la palabra es "Descuento" y el importe va sin signo', () => {
+    // Misma gramática que ya fijó /vender (Task 6, lineasDelPieDeCobro): la
+    // palabra sale del signo, y bajo "Descuento" no se repite el "−" — la
+    // palabra ya dice de qué lado está.
+    const lineas = lineasDeRecargo({ total: d('10000'), recargo: d('-1000') })
+    expect(lineas!.map((l) => l.rotulo)).toEqual(['Mercadería', 'Descuento', 'Cobrado'])
+    expect(lineas![1].monto.toString()).toBe('1000')
+    expect(lineas![2].monto.toString()).toBe('9000')
+  })
+})
+
+describe('rotuloDePlan', () => {
+  it('sin plan, no hay nada que mostrar', () => {
+    expect(rotuloDePlan(null)).toBeNull()
+  })
+
+  it('con una cuota (débito, contado), sólo el nombre', () => {
+    expect(rotuloDePlan({ nombre: 'Débito', cuotas: 1 })).toBe('Débito')
+  })
+
+  it('con más de una cuota, el nombre más cuántas', () => {
+    expect(rotuloDePlan({ nombre: 'Crédito 3 cuotas', cuotas: 3 })).toBe('Crédito 3 cuotas · 3 cuotas')
   })
 })
 
@@ -127,5 +171,39 @@ describe('el dato de quién anuló no se vuelve a perder', () => {
     expect(posLlamada).toBeGreaterThan(posDeclaracion)
     const posAlert = fuente.lastIndexOf('<Alert', posLlamada)
     expect(posAlert).toBeGreaterThan(-1)
+  })
+})
+
+// El cableado de Task 8 (precios por forma de pago): mismo criterio que el
+// bloque de arriba — leer el fuente como texto porque la pantalla es un
+// Server Component async que ni jsdom ni este arnés pueden montar (ver el
+// comentario del encabezado del archivo).
+describe('la pantalla pide y usa el recargo y el plan de cada pago', () => {
+  const fuente = readFileSync('app/(app)/ventas/[id]/page.tsx', 'utf8')
+
+  it('el select de la venta pide recargo', () => {
+    expect(fuente).toContain('id: true, numero: true, total: true, recargo: true')
+  })
+
+  it('el select de los pagos pide el plan, sin filtrar por si está dado de baja', () => {
+    // Sin `desactivadoEn` en el `where` del plan: la FK es Restrict y la baja
+    // es lógica, así que la fila sigue estando — una venta vieja tiene que
+    // seguir nombrando el plan aunque el local ya no lo ofrezca. Confirmado
+    // contra la base en test/ventas.test.ts.
+    expect(fuente).toContain('plan: { select: { nombre: true, cuotas: true } }')
+  })
+
+  it('el pie de "Qué se vendió" usa lineasDeRecargo(), no venta.total a secas', () => {
+    expect(fuente).toContain('const lineasDeTotal = lineasDeRecargo(venta)')
+  })
+
+  it('la tabla "Cómo se pagó" tiene una columna Plan', () => {
+    const posHeaders = fuente.indexOf('Cómo se pagó')
+    const posPlan = fuente.indexOf('Plan', posHeaders)
+    expect(posPlan).toBeGreaterThan(posHeaders)
+  })
+
+  it('cada fila de pago llama a rotuloDePlan con el plan de ESE pago', () => {
+    expect(fuente).toContain('rotuloDePlan(p.plan)')
   })
 })

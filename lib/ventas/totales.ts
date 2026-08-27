@@ -94,3 +94,23 @@ export function totalDePagos(
 export function recargoDePago(baseEnPesos: Decimal, porcentaje: Decimal): Decimal {
   return redondearDinero(baseEnPesos.mul(porcentaje).div(100))
 }
+
+/**
+ * Lo que entró a la caja por una venta: la mercadería más el recargo (o menos
+ * el descuento, si vino en negativo).
+ *
+ * Existe porque `Venta.total` NO cambió de significado con los planes de
+ * pago (Task 1, `docs/superpowers/specs/2026-08-27-precios-por-forma-de-pago-design.md`):
+ * sigue siendo la mercadería a precio de lista, y ninguna venta ya grabada
+ * pasó a decir algo distinto de lo que decía antes. `Venta.recargo` es un
+ * CACHÉ aparte —la suma de los recargos de sus pagos, con el mismo criterio
+ * que `Articulo.stock` contra sus movimientos—, así que lo cobrado no es un
+ * campo que se pueda leer directo: hay que sumar los dos. Una sola función
+ * para esa suma, y no `venta.total.add(venta.recargo)` a mano en cada
+ * pantalla, es lo que hace que `/ventas` (la columna Total y el tile "Total
+ * del período") y `/ventas/[id]` (el desglose del pie) nunca puedan
+ * desacordar en qué es "lo cobrado".
+ */
+export function totalCobrado(v: { total: Decimal; recargo: Decimal }): Decimal {
+  return v.total.add(v.recargo)
+}

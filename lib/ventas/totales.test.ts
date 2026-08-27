@@ -7,6 +7,7 @@ import {
   montoEnPesos,
   totalDePagos,
   recargoDePago,
+  totalCobrado,
 } from './totales'
 
 const d = (v: string) => new Prisma.Decimal(v)
@@ -117,5 +118,24 @@ describe('recargoDePago', () => {
 
   it('respeta los tres decimales del porcentaje', () => {
     expect(recargoDePago(d('10000'), d('13.75')).toString()).toBe('1375')
+  })
+})
+
+describe('totalCobrado', () => {
+  // Es lo que preguntan la columna Total y el tile "Total del período" de
+  // /ventas: cuánto entró, no cuánto valía la mercadería.
+  it('suma el recargo al total de mercadería', () => {
+    expect(totalCobrado({ total: d('10000'), recargo: d('2500') }).toString()).toBe('12500')
+  })
+
+  it('un recargo negativo (descuento) resta', () => {
+    expect(totalCobrado({ total: d('10000'), recargo: d('-1000') }).toString()).toBe('9000')
+  })
+
+  it('sin recargo, lo cobrado es exactamente la mercadería', () => {
+    // Toda venta grabada antes de este ciclo tiene recargo 0 (Task 4: "sin
+    // plan, todo sigue exactamente como antes") — éste es el caso que
+    // describe a todas ellas.
+    expect(totalCobrado({ total: d('10000'), recargo: d('0') }).toString()).toBe('10000')
   })
 })

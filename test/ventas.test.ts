@@ -806,6 +806,47 @@ describe('cobrar con un plan de pago', () => {
       }),
     ).rejects.toMatchObject({ codigo: 'PLAN_EN_DOLARES' })
   })
+
+  // Task 8 (las ventas muestran el recargo): `app/(app)/ventas/[id]/page.tsx`
+  // pide el plan de cada pago SIN filtrar por `desactivadoEn` — la FK
+  // `Pago.planDePagoId` es `Restrict` y la baja es lógica (Task 1), así que la
+  // fila sigue estando. Este test ejercita el mecanismo de verdad, con la
+  // MISMA forma de `select` que usa esa pantalla: una venta de marzo tiene
+  // que seguir diciendo con qué plan se cobró, aunque el local ya haya dado
+  // de baja ese plan para hoy.
+  it('un plan dado de baja sigue apareciendo en el detalle de la venta que lo usó', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: 'Crédito 18 cuotas',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 18,
+      recargoPorcentaje: d('60'),
+    })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: items(),
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('10000'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+      ],
+    })
+
+    await desactivarPlan({ tenantId, id: plan.id })
+
+    const venta = await prismaParaTenant(tenantId).venta.findUniqueOrThrow({
+      where: { id },
+      select: { pagos: { select: { plan: { select: { nombre: true, cuotas: true } } } } },
+    })
+    expect(venta.pagos[0].plan).not.toBeNull()
+    expect(venta.pagos[0].plan?.nombre).toBe('Crédito 18 cuotas')
+    expect(venta.pagos[0].plan?.cuotas).toBe(18)
+  })
 })
 
 describe('anularVenta', () => {
@@ -1016,6 +1057,46 @@ describe('totalDelPeriodo (app/(app)/ventas/page.tsx)', () => {
     // Sólo entró el $500 cobrado: el $700 se anuló y no cuenta, aunque la
     // venta siga existiendo (crearVenta no la borra).
     expect(sumaDespues.minus(sumaAntes).toString()).toBe('500')
+  })
+
+  // Task 8: el tile "Total del período" de /ventas pasa a mostrar lo COBRADO
+  // (`total + recargo`), no sólo la mercadería — así que `totalDelPeriodo()`
+  // tiene que sumar el `recargo` del período, no sólo `total`. Mismo criterio
+  // de antes/después que el test de arriba, ahora sobre `_sum.recargo`.
+  it('también suma el recargo del período, para que el tile pueda mostrar lo cobrado', async () => {
+    const prisma = prismaParaTenant(tenantId)
+    const donde = { creadoEn: { gte: new Date('2000-01-01T00:00:00Z'), lt: new Date('2999-01-01T00:00:00Z') } }
+
+    const antes = await totalDelPeriodo(prisma, donde)
+    const sumaAntes = new Prisma.Decimal(antes._sum.recargo ?? 0)
+
+    const plan = await crearPlan({
+      tenantId,
+      nombre: 'Crédito de totalDelPeriodo',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 3,
+      recargoPorcentaje: d('20'),
+    })
+    await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: servicio, cantidad: d('1') }],
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('500'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+      ],
+    })
+
+    const despues = await totalDelPeriodo(prisma, donde)
+    const sumaDespues = new Prisma.Decimal(despues._sum.recargo ?? 0)
+
+    // 20 % de $500 = $100.
+    expect(sumaDespues.minus(sumaAntes).toString()).toBe('100')
   })
 })
 

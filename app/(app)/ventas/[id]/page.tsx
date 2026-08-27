@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, TriangleAlert } from 'lucide-react'
+import { Prisma } from '@/generated/prisma/client'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { puedeConSesion } from '@/lib/permisos/guarda'
@@ -12,11 +13,13 @@ import {
   formatearFecha,
 } from '@/lib/formato/mostrar'
 import { ROTULO_MEDIO, CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
-import { subtotalItem, montoEnPesos } from '@/lib/ventas/totales'
+import { subtotalItem, montoEnPesos, totalCobrado } from '@/lib/ventas/totales'
 import { ChipEstado } from '../chip-estado'
 import { AnularVenta } from '../formularios'
 import { esUuid } from '@/lib/uuid'
 import estilos from '../tipografia.module.css'
+
+type Decimal = Prisma.Decimal
 
 export const dynamic = 'force-dynamic'
 
@@ -51,6 +54,62 @@ export function cotizacionVisible(p: { moneda: 'ARS' | 'USD'; cotizacion: string
  */
 export function subtituloDeItem(articulo: { sku: string; tipo: 'PRODUCTO' | 'SERVICIO' }): string {
   return articulo.tipo === 'SERVICIO' ? 'Servicio' : `SKU ${articulo.sku}`
+}
+
+/** Una línea del pie de "Qué se vendió": un rótulo y su importe. */
+export type LineaDeTotal = { rotulo: string; monto: Decimal }
+
+/**
+ * Las líneas del pie de "Qué se vendió", según si la venta llevó recargo.
+ *
+ * `null` cuando `recargo` es cero — que es toda venta grabada antes de este
+ * ciclo, y la inmensa mayoría después: no hay nada que desglosar, y tres
+ * líneas que dicen el mismo número tres veces es ruido, no información
+ * (Task 8). El llamador cae al viejo renglón único "Total" en ese caso, sin
+ * que este archivo tenga que nombrarlo acá.
+ *
+ * Con recargo, tres líneas: Mercadería (`total`, sin tocar — sigue siendo el
+ * precio de lista), la línea del recargo, y Cobrado (`totalCobrado`).
+ *
+ * **El rótulo de la línea del recargo sigue la misma gramática que ya fijó
+ * `/vender`** (Task 6, `lineasDelPieDeCobro` en punto-de-venta.tsx): la
+ * palabra sale del SIGNO —"Recargo" si suma, "Descuento" si resta— y bajo
+ * "Descuento" el importe va SIN el signo, porque la palabra ya dice de qué
+ * lado está y un "−" al lado sería una doble negación. Esa regla no es del
+ * mostrador: es de cómo se lee cualquier ticket (mercadería, lo que se le
+ * suma o resta, el resultado), así que vale igual en una pantalla que se LEE
+ * en vez de operarse — no hay razón para escribir una segunda gramática acá.
+ * A diferencia de `/vender`, esta línea no nombra el plan (eso lo hace la
+ * columna "Plan" de la tabla de pagos, de a un pago por vez): con pagos
+ * partidos entre dos planes distintos, nombrar uno solo en el resumen le
+ * atribuiría el recargo entero a uno de los dos.
+ */
+export function lineasDeRecargo(v: { total: Decimal; recargo: Decimal }): LineaDeTotal[] | null {
+  if (v.recargo.isZero()) return null
+  const palabra = v.recargo.isNegative() ? 'Descuento' : 'Recargo'
+  return [
+    { rotulo: 'Mercadería', monto: v.total },
+    { rotulo: palabra, monto: v.recargo.abs() },
+    { rotulo: 'Cobrado', monto: totalCobrado(v) },
+  ]
+}
+
+/**
+ * El rótulo del plan al lado de un pago, o `null` sin plan —un pago viejo, de
+ * antes de que existieran los planes, o uno nuevo que se cobró sin elegir
+ * ninguno—.
+ *
+ * Sólo el nombre con 1 cuota o menos: un plan de débito o de contado no
+ * necesita decir "1 cuota", nadie lo pregunta así. Con más de una, el nombre
+ * más cuántas, separadas por " · " — mismo dato que ya muestra
+ * `PanelPreciosPorFormaDePago` en la ficha del artículo
+ * (`app/(app)/inventario/[id]/page.tsx`), sólo que ahí "cuotas" comparte
+ * celda con el medio de pago y acá con el nombre del plan, así que la
+ * puntuación es la propia de esta columna.
+ */
+export function rotuloDePlan(plan: { nombre: string; cuotas: number } | null): string | null {
+  if (!plan) return null
+  return plan.cuotas > 1 ? `${plan.nombre} · ${plan.cuotas} cuotas` : plan.nombre
 }
 
 /**
@@ -117,7 +176,10 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
   const venta = await prismaParaTenant(sesion.tenant.id).venta.findUnique({
     where: { id },
     select: {
-      id: true, numero: true, total: true, creadoEn: true, anuladaEn: true,
+      // `recargo` para el pie de "Qué se vendió" (Task 8): `lineasDeRecargo`
+      // decide con este número si desglosa en tres líneas o deja el único
+      // "Total" de siempre.
+      id: true, numero: true, total: true, recargo: true, creadoEn: true, anuladaEn: true,
       usuario: { select: { nombre: true } },
       // Quién anuló, no sólo que esté anulada: `Venta.anuladaPorId` existe en
       // el schema para responder esa pregunta (CLAUDE.md, el modelo `Pago`
@@ -132,7 +194,18 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
           articulo: { select: { sku: true, tipo: true } },
         },
       },
-      pagos: { select: { id: true, medio: true, moneda: true, monto: true, cotizacion: true } },
+      pagos: {
+        select: {
+          id: true, medio: true, moneda: true, monto: true, cotizacion: true,
+          // Sin filtrar por `desactivadoEn`: la FK `Pago.planDePagoId` es
+          // `Restrict` y la baja de un plan es lógica (Task 1), así que la
+          // fila del plan sigue estando ahí aunque el local ya no lo ofrezca.
+          // Es a propósito — una venta de marzo tiene que seguir diciendo con
+          // qué plan se cobró, no importa si ese plan sigue vigente hoy.
+          // Confirmado contra la base en test/ventas.test.ts.
+          plan: { select: { nombre: true, cuotas: true } },
+        },
+      },
     },
   })
   // RLS ya filtró por tenant: "no existe" y "es de otro negocio" son el mismo
@@ -142,6 +215,9 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
   const filas = filasDeResumen(venta)
   const anulada = venta.anuladaEn !== null
   const puedeAnularVenta = await puedeConSesion(sesion, 'VENTAS_ANULAR')
+  // null cuando la venta no llevó recargo: el pie de "Qué se vendió" cae al
+  // renglón único "Total" de siempre, más abajo.
+  const lineasDeTotal = lineasDeRecargo(venta)
 
   return (
     <>
@@ -222,15 +298,47 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
                   ))}
                 </TableBody>
               </Table>
-              <div className="flex items-center justify-between bg-muted px-[18px] py-[14px]">
-                <span className="text-[10px] font-bold tracking-[1.2px] text-muted-foreground uppercase">
-                  Total
-                </span>
-                <span
-                  className={`${estilos.archivo} text-[22px] font-semibold text-foreground tabular-nums`}
-                >
-                  {formatearPrecio(venta.total.toString())}
-                </span>
+              {/* Un renglón ("Total") sin recargo — toda venta grabada antes
+                  de este ciclo, y la mayoría después —, o tres con
+                  `lineasDeRecargo()` (Task 8): Mercadería, Recargo/Descuento y
+                  Cobrado, la última destacada igual que el único renglón de
+                  antes. `design/arandano.pen` no dibuja el desglose de tres
+                  líneas —es anterior a los planes de pago—, y la deuda queda
+                  anotada en docs/correcciones-pendientes-del-pen.md junto con
+                  las otras de este mismo ciclo. */}
+              <div className="flex flex-col divide-y">
+                {(lineasDeTotal ?? [{ rotulo: 'Total', monto: venta.total }]).map(
+                  ({ rotulo, monto }, i, arr) => {
+                    const esUltima = i === arr.length - 1
+                    return (
+                      <div
+                        key={rotulo}
+                        className={`flex items-center justify-between px-[18px] py-[14px] ${
+                          esUltima ? 'bg-muted' : ''
+                        }`}
+                      >
+                        <span
+                          className={
+                            esUltima
+                              ? 'text-[10px] font-bold tracking-[1.2px] text-muted-foreground uppercase'
+                              : 'text-[12px] text-muted-foreground'
+                          }
+                        >
+                          {rotulo}
+                        </span>
+                        <span
+                          className={`${estilos.archivo} tabular-nums ${
+                            esUltima
+                              ? 'text-[22px] font-semibold text-foreground'
+                              : 'text-[13px] font-semibold text-foreground-soft'
+                          }`}
+                        >
+                          {formatearPrecio(monto.toString())}
+                        </span>
+                      </div>
+                    )
+                  },
+                )}
               </div>
             </div>
 
@@ -243,6 +351,12 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
                   <TableRow className="bg-muted hover:bg-muted">
                     <TableHead className="h-auto px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
                       Medio
+                    </TableHead>
+                    {/* Con qué plan se cobró (Task 8) — "—" sin plan, que es
+                        todo pago de antes de este ciclo y cualquier pago
+                        nuevo cobrado sin elegir uno. */}
+                    <TableHead className="h-auto w-[150px] px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                      Plan
                     </TableHead>
                     <TableHead className="h-auto w-[110px] px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
                       Moneda
@@ -263,6 +377,9 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
                     <TableRow key={p.id}>
                       <TableCell className="p-[11px] px-[7px] pl-[18px] text-foreground">
                         {ROTULO_MEDIO[p.medio]}
+                      </TableCell>
+                      <TableCell className="p-[11px] px-[7px] text-foreground-soft">
+                        {rotuloDePlan(p.plan) ?? '—'}
                       </TableCell>
                       <TableCell className="p-[11px] px-[7px] text-foreground">
                         {ROTULO_MONEDA[p.moneda]}

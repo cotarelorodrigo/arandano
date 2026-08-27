@@ -47,6 +47,16 @@ export type FilaDePagos = {
  * pago, que es justamente para esto que `Pago.cotizacion` se guarda— porque una
  * barra que mezclara unidades no se podría comparar contra la de al lado.
  *
+ * Suma `Pago.monto`, y **no** se lo toca en Task 8 (precios por forma de
+ * pago) aunque esa task sí cambie qué suma el resto de `/ventas`. La razón:
+ * `monto` YA es `base + recargo` desde que el motor cobra con plan (Task 4,
+ * `lib/ventas/crear.ts`) — nunca fue sólo mercadería —, así que esta función
+ * siempre sumó lo cobrado de verdad. Lo que sí se ajustó fue el tile "Total
+ * del período" de `/ventas`, que hasta Task 8 sumaba sólo `Venta.total` (la
+ * mercadería) y por eso dejaba de cerrar contra este panel apenas alguna
+ * venta llevaba recargo. Ver el comentario del `groupBy` que arma `filas` en
+ * `app/(app)/ventas/page.tsx` para el detalle completo de la decisión.
+ *
  * La multiplicación pasa por `montoEnPesos`, y no se hace acá a mano, para que
  * este panel redondee en el mismo momento y de la misma forma que el total de
  * la venta: los dos números viven en la misma pantalla y se comparan a ojo.
