@@ -46,6 +46,10 @@ export function CampoClave({
   const Icono = mostrar ? EyeOff : Eye
   return (
     <div className="relative">
+      {/* Menor de la Ronda de arreglos 1 (Task 11): el padding horizontal
+          de los dos <Input> es 13px en el teléfono (nodos `vSgDl`/`Sl8Lu`,
+          frame `Móvil / Login`), no los 11px de escritorio (`Wz7cZ`/`GmOfQ`)
+          — quedaba fijo en 11 en los dos anchos. */}
       <Input
         id="clave"
         name="clave"
@@ -53,7 +57,7 @@ export function CampoClave({
         autoComplete="current-password"
         required
         ref={inputRef}
-        className="h-[50px] rounded-[11px] pr-9 pl-[11px] lg:h-11 lg:rounded-[9px]"
+        className="h-[50px] rounded-[11px] pr-9 pl-[13px] lg:h-11 lg:rounded-[9px] lg:pl-[11px]"
       />
       <button
         type="button"
@@ -143,7 +147,7 @@ export function FormularioLogin({ dominio }: { dominio: string }) {
             required
             placeholder="flor@celularesflor.com.ar"
             defaultValue={estado.email ?? ''}
-            className="h-[50px] rounded-[11px] px-[11px] lg:h-11 lg:rounded-[9px]"
+            className="h-[50px] rounded-[11px] px-[13px] lg:h-11 lg:rounded-[9px] lg:px-[11px]"
           />
         </div>
         <div className="flex flex-col gap-[5px]">

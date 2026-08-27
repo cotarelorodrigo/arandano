@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { readFileSync } from 'node:fs'
 import { Nav, Hero, Modulos, Rubros, Planes, Cierre, Pie, MODULOS, RUBROS, PLANES } from './secciones'
 import type { BaseDeTenant } from './entrar'
 
@@ -80,17 +81,37 @@ describe('Nav', () => {
   // teléfono (la maqueta sólo dibuja el ícono de menú, nodo `K60WPs`), pero
   // no pueden desaparecer sin más — regla del ciclo. Reaparecen dentro de un
   // `Sheet` que abre el ícono de menú.
-  it('en el teléfono, los links y "Entrar a mi local" viven dentro del Sheet que abre el ícono de menú', () => {
+  //
+  // Importante de la Ronda de arreglos 1: `renderToStaticMarkup` no puede
+  // verificar el CONTENIDO del Sheet. `SheetContent` vive detrás del
+  // `Portal` de Radix, que sólo monta cuando `mounted` pasa a `true` en un
+  // `useLayoutEffect` — y `renderToStaticMarkup` no tiene fase de commit, así
+  // que ese efecto nunca corre y el contenido del Sheet JAMÁS aparece en
+  // este HTML (no es que "esté montado pero cerrado": no está montado). Por
+  // eso lo que se afirma sobre el HTML es sólo el ícono/trigger, y lo que se
+  // afirma sobre los links y "Entrar a mi local" se lee del FUENTE — mismo
+  // mecanismo que ya usa app/(app)/ventas/page.tsx (ver el comentario de
+  // `FormularioDeFechas` ahí) y su test (page.test.tsx).
+  it('el ícono de menú (lucide "menu") sólo existe abajo de 1024px', () => {
     const markup = html()
-    // Los tres <a> de sección siguen existiendo, pero SÓLO visibles desde
-    // lg: (o adentro del Sheet, que tampoco los muestra por defecto en el
-    // teléfono — están montados pero el propio Sheet arranca cerrado).
-    expect(markup.match(/Qué hace/g)?.length).toBeGreaterThanOrEqual(1)
-    // El ícono de menú (lucide "menu"), sólo visible abajo de 1024.
     expect(markup).toContain('lucide-menu')
     const clases = markup.match(/class="([^"]*lucide-menu[^"]*)"/)?.[1]
     expect(clases, 'no se encontró la clase del ícono lucide-menu').toBeTruthy()
     expect(clases).toContain('lg:hidden')
+  })
+
+  it('los links de sección y "Entrar a mi local" viven DENTRO del <SheetContent> (leído del fuente)', () => {
+    const fuente = readFileSync('app/sitio/secciones.tsx', 'utf8')
+    const inicio = fuente.indexOf('<SheetContent')
+    const fin = fuente.indexOf('</SheetContent>', inicio)
+    expect(inicio, 'no se encontró <SheetContent> en el fuente').toBeGreaterThan(-1)
+    expect(fin, 'no se encontró el cierre </SheetContent>').toBeGreaterThan(inicio)
+    const cuerpo = fuente.slice(inicio, fin)
+    // Los tres links de sección: el mismo array LINKS_DE_SECCION que arma la
+    // barra de escritorio, no una lista escrita a mano una segunda vez.
+    expect(cuerpo).toContain('LINKS_DE_SECCION.map')
+    // "Entrar a mi local" — el toggle real, no un texto suelto.
+    expect(cuerpo).toContain('<EntradaDeSubdominio')
   })
 
   it('no se hace pasar por una página de tenant ni rompe con el ícono de menú montado', () => {
@@ -427,5 +448,21 @@ describe('Pie', () => {
     const clases = markup.slice(inicio).match(/^<div class="([^"]*)"/)?.[1]
     expect(clases).toContain('flex-col')
     expect(clases).toContain('lg:flex-row')
+  })
+
+  // Menor de la Ronda de arreglos 1 sobre la Task 11: el padding vertical
+  // del teléfono NO es simétrico (nodo `itZnH`: [24,20,28,20], 28 abajo) —
+  // había quedado en py-6 (24/24) parejo en los dos lados. Desde escritorio
+  // sigue siendo py-6 simétrico, sin tocar.
+  it('el padding vertical del teléfono es 24 arriba / 28 abajo, no 24/24 parejo', () => {
+    const markup = renderToStaticMarkup(<Pie />)
+    const inicio = markup.indexOf('<div class="')
+    const clases = markup.slice(inicio).match(/^<div class="([^"]*)"/)?.[1]
+    expect(clases).toContain('pt-6')
+    expect(clases).toContain('pb-7')
+    expect(clases).toContain('lg:py-6')
+    // Negación explícita: "py-6" sin el prefijo lg: volvería a los 24/24
+    // parejos que este caso corrige.
+    expect(clases).not.toMatch(/(?<!lg:)py-6/)
   })
 })

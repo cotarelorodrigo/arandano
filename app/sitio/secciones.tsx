@@ -739,8 +739,13 @@ export function Pie() {
     <footer className="border-t">
       {/* Task 11 del ciclo móvil (nodo `itZnH`): apila en el teléfono
           (flex-col, gap 10) y vuelve a la fila con justify-between de
-          siempre desde escritorio. */}
-      <div className={`${ANCHO} flex flex-col gap-[10px] py-6 lg:flex-row lg:items-center lg:justify-between lg:gap-6`}>
+          siempre desde escritorio.
+
+          Menor de la Ronda de arreglos 1: el padding vertical del teléfono
+          NO es simétrico — el nodo pide [24,20,28,20] (24 arriba, 28 abajo),
+          no los 24/24 (py-6) que había quedado acá. Desde escritorio sigue
+          siendo py-6 simétrico, sin tocar. */}
+      <div className={`${ANCHO} flex flex-col gap-[10px] pt-6 pb-7 lg:flex-row lg:items-center lg:justify-between lg:gap-6 lg:py-6`}>
         <div className="flex items-center gap-2">
           <span aria-hidden="true" className="size-[18px] rounded-full bg-primary" />
           <span className="text-xs text-muted-foreground">Arándano · Buenos Aires, Argentina</span>

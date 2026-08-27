@@ -74,6 +74,43 @@ describe('geometría contra design/arandano.pen (I4 de la review final)', () => 
     }
   })
 
+  // Menor de la Ronda de arreglos 1 sobre la Task 11: el padding horizontal
+  // de los dos <Input> es 13px en el teléfono (nodos vSgDl/Sl8Lu), 11px
+  // desde escritorio (nodos Wz7cZ/GmOfQ, el valor de siempre) — antes
+  // quedaba fijo en 11 en los dos anchos. Dos casos separados y no uno
+  // genérico: cada campo usa un prefijo Tailwind distinto (pl- en el de
+  // contraseña, por el ícono del ojo a la derecha; px- en el de mail), y una
+  // negación genérica contra "[11px]" pegaría también con "rounded-[11px]",
+  // que no tiene nada que ver con este padding.
+  it('el padding izquierdo del campo de contraseña es 13px en el teléfono, 11px en escritorio', async () => {
+    const html = await render()
+    // El <Input> de shadcn arma class ANTES de esparcir el resto de las
+    // props (components/ui/input.tsx: `className={cn(...)} {...props}`), así
+    // que en el DOM real el atributo `class` sale ANTES que `name` — no al
+    // revés. Se busca la etiqueta completa y se filtra por contenido, no por
+    // orden de atributos.
+    const clave = [...html.matchAll(/<input[^>]*>/g)]
+      .map((m) => m[0])
+      .find((tag) => tag.includes('name="clave"'))
+    expect(clave, 'no se encontró el <input name="clave">').toBeTruthy()
+    expect(clave).toContain('pl-[13px]')
+    expect(clave).toContain('lg:pl-[11px]')
+    // Negación explícita: "pl-[11px]" SIN el prefijo lg: no puede sobrevivir
+    // — es exactamente el bug que este caso corrige.
+    expect(clave).not.toMatch(/(?<!lg:)pl-\[11px\]/)
+  })
+
+  it('el padding horizontal del campo de mail es 13px en el teléfono, 11px en escritorio', async () => {
+    const html = await render()
+    const mail = [...html.matchAll(/<input[^>]*>/g)]
+      .map((m) => m[0])
+      .find((tag) => tag.includes('name="email"'))
+    expect(mail, 'no se encontró el <input name="email">').toBeTruthy()
+    expect(mail).toContain('px-[13px]')
+    expect(mail).toContain('lg:px-[11px]')
+    expect(mail).not.toMatch(/(?<!lg:)px-\[11px\]/)
+  })
+
   // Task 11: el botón "Entrar" mide 52px/r12/gap8 en el teléfono (nodo
   // yh21O) y vuelve a 48px/r11/gap7/pad-x15 en escritorio (nodo E5gfx, el
   // valor de siempre).
