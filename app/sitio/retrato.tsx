@@ -93,7 +93,7 @@ export function Retrato() {
             que es exactamente lo que hace la tabla de verdad en /vender.
             Una tabla cortada se lee como una ventana angosta; una tabla con
             la columna colapsada se lee como un producto roto. */}
-        <Table className="table-fixed min-w-[520px]">
+        <Table className="table-fixed lg:min-w-[520px]">
           <TableHeader>
             <TableRow className="bg-muted hover:bg-muted">
               <TableHead className="h-auto px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
