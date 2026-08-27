@@ -11,6 +11,9 @@ import { ChipMotivo, detalleDeMovimiento, formatearFechaMovimiento, calcularSald
 import { GraficoDeRotacion, agregarVentasPorMes } from '../rotacion'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
 import { esUuid } from '@/lib/uuid'
+import { planesDelTenant, type PlanVisible } from '@/lib/planes/consultar'
+import { precioConPlan } from '@/lib/planes/precio'
+import { ROTULO_MEDIO } from '@/lib/ventas/medios'
 import estilos from '../tipografia.module.css'
 
 export const dynamic = 'force-dynamic'
@@ -132,6 +135,61 @@ function Tile({
   )
 }
 
+/**
+ * "Precios por forma de pago": el pedido original del cliente ("un precio
+ * para crédito y otro para débito/efectivo/transferencia") hecho visible, sin
+ * haber guardado un segundo número en ningún lado. Una fila por plan ACTIVO,
+ * con el precio derivado calculado con `precioConPlan` (Task 3) — la MISMA
+ * función que después usa el cobro en `/vender`, no una cuenta propia: si acá
+ * se calculara distinto, la ficha podría estar mintiéndole al mostrador.
+ *
+ * `design/arandano.pen` no dibuja este panel — es posterior a los planes de
+ * pago — y la deuda queda anotada en `docs/correcciones-pendientes-del-pen.md`
+ * en vez de inventarle un frame.
+ *
+ * **Sin planes cargados, no hay panel** (`null`, no una card con una sola
+ * fila): un local que no usa planes no tiene nada que mirar acá, y repetir el
+ * precio de venta de arriba en una card aparte sería ruido.
+ *
+ * **Sin permiso, a propósito.** Es de sólo lectura, sobre el precio que la
+ * misma ficha ya muestra en el tile de arriba, y quien cobra necesita poder
+ * decirle a un cliente el precio en cuotas. `COSTOS` sigue tapando el costo y
+ * el margen, que son otra cosa — no hay motivo para gatear esto detrás de él.
+ */
+export function PanelPreciosPorFormaDePago({
+  precio,
+  planes,
+}: {
+  precio: Prisma.Decimal
+  planes: PlanVisible[]
+}) {
+  if (planes.length === 0) return null
+  return (
+    <div className="flex flex-col overflow-hidden rounded-2xl border bg-card">
+      <div className="border-b px-[18px] py-[13px]">
+        <h2 className={`${estilos.tituloDeCard} text-foreground`}>Precios por forma de pago</h2>
+      </div>
+      <div className="flex flex-col divide-y">
+        {planes.map((p) => (
+          <div key={p.id} className="flex items-center justify-between gap-3 px-[18px] py-[11px]">
+            <div className="flex flex-col gap-[2px]">
+              <span className="text-[13px] font-medium text-foreground">{p.nombre}</span>
+              <span className="text-[11px] text-muted-foreground">
+                {ROTULO_MEDIO[p.medio]} · {p.cuotas === 1 ? '1 cuota' : `${p.cuotas} cuotas`}
+              </span>
+            </div>
+            <span
+              className={`${estilos.archivo} shrink-0 text-[13px] font-semibold tabular-nums text-foreground`}
+            >
+              {formatearPrecio(precioConPlan(precio, new Prisma.Decimal(p.porcentaje)).toString())}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default async function DetalleDeArticulo({ params }: { params: Promise<{ id: string }> }) {
   const sesion = await exigirSesion()
   const { id } = await params
@@ -159,7 +217,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   const SIETE_MESES_ATRAS = new Date()
   SIETE_MESES_ATRAS.setUTCMonth(SIETE_MESES_ATRAS.getUTCMonth() - 7)
 
-  const [movimientos, ultimoConCosto, ventasPorMes] = await Promise.all([
+  const [movimientos, ultimoConCosto, ventasPorMes, planes] = await Promise.all([
     prisma.movimientoStock.findMany({
       where: { articuloId: id },
       // `id` como segundo criterio, no sólo `creadoEn`: `creado_en` es la
@@ -215,6 +273,10 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
           select: { delta: true, creadoEn: true },
         })
       : [],
+    // Sólo activos: un plan dado de baja ya no se ofrece al cobrar, así que
+    // tampoco tiene sentido cotizarlo acá. Producto o servicio por igual —el
+    // recargo por forma de pago es del medio, no del tipo de artículo—.
+    planesDelTenant(sesion.tenant.id),
   ])
 
   const ultimoCosto = ultimoConCosto?.costoUnitario ?? null
@@ -228,6 +290,20 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   const meses = agregarVentasPorMes(
     ventasPorMes.map((m) => ({ delta: m.delta.toString(), creadoEn: m.creadoEn })),
   )
+
+  // Mismo motivo que el resto de la columna derecha: sin nada que mostrar en
+  // ninguna de las dos secciones, `columnaDerechaExtra` tiene que quedar en
+  // `undefined` — no un fragmento vacío, truthy igual, que dejaría la columna
+  // de 324 px reservando un hueco sin contenido (ver el comentario de
+  // `FichaDeArticulo` en `../formularios.tsx`).
+  const hayPanelPrecios = planes.length > 0
+  const columnaDerechaExtra =
+    hayPanelPrecios || esProducto ? (
+      <>
+        {hayPanelPrecios && <PanelPreciosPorFormaDePago precio={articulo.precio} planes={planes} />}
+        {esProducto && <GraficoDeRotacion meses={meses} />}
+      </>
+    ) : undefined
 
   const columnaIzquierda = (
     <>
@@ -372,7 +448,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
       precio={articulo.precio.toString()}
       categoria={articulo.categoria}
       columnaIzquierda={columnaIzquierda}
-      columnaDerechaExtra={esProducto ? <GraficoDeRotacion meses={meses} /> : undefined}
+      columnaDerechaExtra={columnaDerechaExtra}
     >
       {articulo.desactivadoEn && (
         <Alert>

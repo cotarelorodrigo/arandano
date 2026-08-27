@@ -585,8 +585,9 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
 ## `/inventario/[id]`
 
 La ficha de un artículo, en dos columnas: a la izquierda las métricas, mover
-stock y el historial; a la derecha los datos editables y "Cómo se movió"
-(`design/arandano.pen`, frame `App / Artículo ficha`).
+stock y el historial; a la derecha los datos editables, "Precios por forma de
+pago" y "Cómo se movió" (`design/arandano.pen`, frame `App / Artículo ficha` —
+el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
 
 **Acciones**: `guardarArticulo`, `ingresarMercaderia`, `corregirPorConteo`,
 `bajaArticulo`, `reactivarArticuloAccion`, `exportarHistorialCsv`.
@@ -610,6 +611,9 @@ stock y el historial; a la derecha los datos editables y "Cómo se movió"
   "Detalle" (combina quién y qué, según el motivo — el costo de un ingreso
   aparece ahí sólo con `COSTOS`) y la columna **Queda** (el saldo después de
   cada movimiento).
+- Ver **"Precios por forma de pago"**: una fila por plan de pago activo del
+  local, con su precio derivado — sin ningún permiso, de cualquiera con
+  sesión. No aparece si el local no cargó ningún plan.
 - Ver **"Cómo se movió"**: seis barras con las unidades vendidas por mes.
 - **Exportar CSV** con el historial completo (sin el límite de la tabla en
   pantalla; la columna de costo del CSV sigue la misma regla de `COSTOS` que la
@@ -639,6 +643,20 @@ stock y el historial; a la derecha los datos editables y "Cómo se movió"
   costo cargado más reciente (no el ingreso más reciente a secas, que puede no
   tenerlo) y calcula el margen contra el precio de venta actual. Sin ningún
   ingreso con costo, el tile muestra "—", nunca un número inventado.
+- **"Precios por forma de pago" calcula con `precioConPlan`, la misma función
+  que después usa el cobro en `/vender`** — no una cuenta propia — para que la
+  ficha nunca pueda decir un número distinto del que cobra el mostrador. Es el
+  pedido original del cliente ("un precio para crédito y otro para
+  débito/efectivo/transferencia") hecho visible, sin haber guardado un
+  segundo precio en la base: se deriva del precio de venta y del porcentaje
+  de cada plan al momento de mostrarlo. Trae sólo planes **activos**
+  (`planesDelTenant`, sin `incluirDesactivados`) y aplica tanto a productos
+  como a servicios — el recargo es del medio de pago, no del tipo de
+  artículo. Sin ningún plan cargado, el panel no se renderea (no una card con
+  una sola fila que repite el precio de arriba, que sería ruido). **No lleva
+  permiso**: es de sólo lectura sobre un precio que la misma ficha ya muestra
+  arriba, y quien cobra necesita poder decirle a un cliente el precio en
+  cuotas — `COSTOS` sigue tapando el costo y el margen, que son otra cosa.
 - **La columna "Queda" se reconstruye, no se guarda.** `MovimientoStock` no
   tiene columna de saldo por fila, y `Articulo.stock` es apenas el caché de la
   suma de sus movimientos. `calcularSaldos` (`historial.tsx`) recorre los

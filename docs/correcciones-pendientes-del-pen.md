@@ -256,6 +256,32 @@ Detectado al construir el selector de plan del mostrador (2026-08-27). Ver
 
 ---
 
+## 10. La maqueta no dibuja el panel "Precios por forma de pago" de la ficha del artículo
+
+- **Frame**: `App / Artículo ficha`, columna derecha
+
+**Qué falta.** `design/arandano.pen` es anterior a los planes de pago
+(2026-08-27), así que el frame de la ficha no tiene la card nueva "Precios por
+forma de pago" — una fila por plan activo con nombre, medio, cuotas y el
+precio derivado. El código la derivó de las dos cards vecinas que sí están
+dibujadas y viven en la misma columna: el encabezado con borde inferior y la
+cara de display de "Datos" y "Cómo se movió" (`design/arandano.pen`, frame
+`y4tEb`), y el patrón fila-con-importe-a-la-derecha de la tabla de
+`/formas-de-pago` (que tampoco tiene frame propio, ver entrada 9 más arriba).
+
+Mismo precedente que las entradas 6, 8 y 9: la maqueta no **contradice** al
+código acá, le **falta** el control, así que se construyó contra lo que el
+`.pen` ya fija para esa pantalla en vez de inventar un tratamiento. Si al
+dibujarla la maqueta decide otra cosa, manda la maqueta y se corrige el
+código.
+
+Detectado al construir el panel de precios de la ficha (2026-08-27, Task 7 del
+ciclo de planes de pago). Ver
+`docs/superpowers/specs/2026-08-27-precios-por-forma-de-pago-design.md`,
+sección *Las pantallas*.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

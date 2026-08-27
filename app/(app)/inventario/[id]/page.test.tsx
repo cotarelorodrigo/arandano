@@ -4,8 +4,13 @@
 // puras (textoDeMargen, actualizadoHace) sí se importan y se prueban directo.
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { Prisma } from '@/generated/prisma/client'
-import { textoDeMargen, actualizadoHace } from './page'
+import { textoDeMargen, actualizadoHace, PanelPreciosPorFormaDePago } from './page'
+import { precioConPlan } from '@/lib/planes/precio'
+import { recargoDePago } from '@/lib/ventas/totales'
+import { formatearPrecio } from '@/lib/formato/mostrar'
+import type { PlanVisible } from '@/lib/planes/consultar'
 
 const FUENTE = readFileSync('app/(app)/inventario/[id]/page.tsx', 'utf8')
 const d = (v: string) => new Prisma.Decimal(v)
@@ -166,10 +171,13 @@ describe('el historial de la ficha (Task 5 del rediseño)', () => {
 })
 
 describe('"Cómo se movió" en la ficha (Task 5 del rediseño)', () => {
+  // Task 7 movió esta condición a la variable `columnaDerechaExtra`, armada
+  // antes del JSX (ver el describe de "Precios por forma de pago" más abajo
+  // para el detalle de esa composición) — sigue siendo cierto que
+  // GraficoDeRotacion sólo se arma con esProducto, sólo que ya no es un
+  // ternario inline en la prop.
   it('sólo se arma para un producto: un servicio no vende con movimiento de stock', () => {
-    expect(FUENTE).toContain(
-      'columnaDerechaExtra={esProducto ? <GraficoDeRotacion meses={meses} /> : undefined}',
-    )
+    expect(FUENTE).toContain('{esProducto && <GraficoDeRotacion meses={meses} />}')
   })
 
   it('la consulta de ventas por mes filtra por motivo VENTA', () => {
@@ -184,5 +192,71 @@ describe('"Cómo se movió" en la ficha (Task 5 del rediseño)', () => {
   // anuladas (docs/pantallas.md).
   it('excluye las ventas anuladas, igual que /ventas', () => {
     expect(FUENTE).toContain('venta: { anuladaEn: null }')
+  })
+})
+
+describe('"Precios por forma de pago" (Task 7 del ciclo de planes de pago)', () => {
+  const PLAN_40: PlanVisible = {
+    id: '00000000-0000-4000-8000-000000000010',
+    nombre: 'Crédito 3 cuotas',
+    medio: 'TARJETA_CREDITO',
+    cuotas: 3,
+    porcentaje: '40',
+    orden: 3,
+    desactivadoEn: null,
+  }
+  const PLAN_MENOS_10: PlanVisible = {
+    id: '00000000-0000-4000-8000-000000000011',
+    nombre: 'Contado',
+    medio: 'EFECTIVO',
+    cuotas: 1,
+    porcentaje: '-10',
+    orden: 0,
+    desactivadoEn: null,
+  }
+
+  it('el panel lista un precio por plan activo', () => {
+    const html = renderToStaticMarkup(
+      <PanelPreciosPorFormaDePago precio={d('10000')} planes={[PLAN_40, PLAN_MENOS_10]} />,
+    )
+    expect(html).toContain('Precios por forma de pago')
+    expect(html).toContain(formatearPrecio('14000'))
+    expect(html).toContain(formatearPrecio('9000'))
+  })
+
+  // Un panel con una sola fila que repite el precio de arriba es ruido: el
+  // local que no usa planes no tiene nada que mirar acá.
+  it('sin planes cargados el panel no aparece', () => {
+    const html = renderToStaticMarkup(<PanelPreciosPorFormaDePago precio={d('10000')} planes={[]} />)
+    expect(html).not.toContain('Precios por forma de pago')
+  })
+
+  // No un número escrito a mano en el test: la cuenta de la ficha y la del
+  // cobro tienen que ser la misma función, o la pantalla miente.
+  it('el precio derivado es el mismo que cobra el motor', () => {
+    expect(precioConPlan(d('12345.67'), d('13.75')).toString()).toBe(
+      d('12345.67').add(recargoDePago(d('12345.67'), d('13.75'))).toString(),
+    )
+  })
+
+  it('sólo trae planes activos: planesDelTenant sin incluirDesactivados', () => {
+    expect(FUENTE).toContain('planesDelTenant(sesion.tenant.id)')
+    expect(FUENTE).not.toContain('planesDelTenant(sesion.tenant.id, { incluirDesactivados: true })')
+  })
+
+  it('el panel va antes de "Cómo se movió" en columnaDerechaExtra', () => {
+    const posPanel = FUENTE.indexOf('<PanelPreciosPorFormaDePago')
+    const posGrafico = FUENTE.indexOf('<GraficoDeRotacion')
+    expect(posPanel).toBeGreaterThan(-1)
+    expect(posGrafico).toBeGreaterThan(posPanel)
+  })
+
+  it('no lleva permiso: no está condicionado a puedeConSesion en el panel', () => {
+    // El panel es de sólo lectura sobre el precio que la ficha ya muestra
+    // arriba; COSTOS sigue tapando costo y margen, que son otra cosa.
+    const desde = FUENTE.indexOf('function PanelPreciosPorFormaDePago')
+    const bloque = FUENTE.slice(desde, desde + 900)
+    expect(bloque).not.toContain('puedeConSesion')
+    expect(bloque).not.toContain('exigirPermiso')
   })
 })
