@@ -522,56 +522,60 @@ describe('Listado (Task 8 del ciclo móvil): el patrón grid + display:contents'
 
   // Ronda de arreglos 1 (Menor, calibrado por el revisor): la primera
   // versión de este test afirmaba sobre un contenedor "línea 1" con
-  // `lg:hidden` que ya no existe — Orden, Equipo y Cliente pasaron a ser las
-  // MISMAS celdas en los dos anchos (ver el docblock de Listado), así que lo
-  // que hay que afirmar ahora es que esas celdas siguen presentes (no
-  // `display:none`) y que sus piezas aparecen en el orden esperado, más las
-  // dos piezas que sí quedaron duplicadas (chip y meta).
-  it('en el teléfono: Orden+Equipo+chip fluyen en una línea, Cliente+teléfono se funden, y la Meta (IMEI+ingreso) es una línea aparte', () => {
+  // `lg:hidden` que ya no existe — Orden, Equipo, Cliente e Ingresó pasaron
+  // a ser las MISMAS celdas en los dos anchos (ver el docblock de Listado),
+  // así que lo que hay que afirmar ahora es que esas celdas siguen
+  // presentes (no `display:none`) y que sus piezas aparecen en el orden
+  // esperado, más la única pieza que sigue duplicada (el chip).
+  // Ronda de arreglos 2: la Meta dejó de ser una pieza duplicada sin rol —
+  // ahora vive DENTRO de la celda real de Ingresó (fundida, mismo mecanismo
+  // que Cliente).
+  it('en el teléfono: Orden+Equipo+chip fluyen en una línea, Cliente+teléfono se funden, e Ingresó+Meta también', () => {
     const html = renderListado()
-    // Orden, Equipo y Cliente son celdas reales (role="cell"), no divs
-    // `lg:hidden` — la fila SIGUE teniendo owned elements válidos en el
-    // teléfono, a diferencia de la primera versión de este código.
+    // Orden, Equipo, Cliente e Ingresó son celdas reales (role="cell"), no
+    // divs `lg:hidden` — la fila SIGUE teniendo owned elements válidos en
+    // el teléfono, a diferencia de la primera versión de este código.
     const numero = html.indexOf('>#221<')
     const equipo = html.indexOf('Samsung A54')
     const chip = html.indexOf('En reparación')
     const cliente = html.indexOf('Marcos Vera')
     const separador = html.indexOf('lg:hidden">· ')
     const telefono = html.indexOf('11 5412-9087')
-    for (const idx of [numero, equipo, chip, cliente, separador, telefono]) {
+    const meta = html.indexOf('IMEI 356938035643809 · ingresó 29/07/2026 · hace 23 días')
+    for (const idx of [numero, equipo, chip, cliente, separador, telefono, meta]) {
       expect(idx).toBeGreaterThan(-1)
     }
-    // El orden de flujo: número, luego equipo, luego el chip duplicado, y
-    // recién después el teléfono (Cliente es su propia celda con
-    // `basis-full`, forzando su propio renglón).
+    // El orden de flujo: número, luego equipo, luego el chip duplicado,
+    // recién después el teléfono (Cliente, `basis-full`, su propio
+    // renglón), y por último la Meta (Ingresó, también `basis-full`,
+    // inmediatamente después de Cliente en el DOM).
     expect(numero).toBeLessThan(equipo)
     expect(equipo).toBeLessThan(chip)
     expect(chip).toBeLessThan(cliente)
     expect(cliente).toBeLessThan(separador)
     expect(separador).toBeLessThan(telefono)
-    // La Meta: IMEI + fecha + antigüedad, combinados — datos que en
-    // escritorio viven en celdas DISTINTAS (Equipo e Ingresó).
-    expect(html).toContain('IMEI 356938035643809 · ingresó 29/07/2026 · hace 23 días')
+    expect(telefono).toBeLessThan(meta)
   })
 
-  // El hallazgo puntual de la review: antes NINGUNA celda real sobrevivía en
-  // el teléfono (las cinco eran `hidden lg:block`), así que la fila se
-  // quedaba sin ningún `role="cell"` alcanzable ahí —sin *owned elements*
-  // válidos para `role="row"`—. Ahora Orden, Equipo y Cliente son las
-  // MISMAS celdas en los dos anchos: siguen ahí.
-  it('Orden, Equipo y Cliente son celdas reales en el teléfono (no `display:none`): la fila no se queda sin owned elements', () => {
+  // El hallazgo puntual de la review (Ronda 1): antes NINGUNA celda real
+  // sobrevivía en el teléfono (las cinco eran `hidden lg:block`), así que la
+  // fila se quedaba sin ningún `role="cell"` alcanzable ahí —sin *owned
+  // elements* válidos para `role="row"`—. Ronda 2 sumó Ingresó a la lista de
+  // celdas fundidas (la Meta ya no necesita una copia sin rol): sólo Estado
+  // sigue oculto en el teléfono, porque el chip es la única pieza que de
+  // verdad no se puede fusionar sin reordenar el grid de escritorio (ver el
+  // docblock de Listado).
+  it('Orden, Equipo, Cliente e Ingresó son celdas reales en el teléfono (no `display:none`): la fila no se queda sin owned elements', () => {
     const html = renderListado()
     const celdas = html.match(/<div[^>]*\brole="cell"[^>]*>/g) ?? []
     expect(celdas).toHaveLength(5)
     const [orden, equipo, cliente, ingreso, estado] = celdas
-    for (const celda of [orden, equipo, cliente]) {
+    for (const celda of [orden, equipo, cliente, ingreso]) {
       expect(celda).not.toContain('hidden')
     }
-    // Ingresó y Estado SÍ siguen ocultas en el teléfono: sus datos ya salen
-    // duplicados en la línea 1 (chip) y en la Meta (fecha/antigüedad).
-    for (const celda of [ingreso, estado]) {
-      expect(celda).toContain('hidden')
-    }
+    // Estado es la ÚNICA que sigue oculta en el teléfono: su dato ya sale
+    // duplicado en el chip de la línea 1.
+    expect(estado).toContain('hidden')
   })
 
   it('sin IMEI, la meta del teléfono y la celda de escritorio dicen "Sin IMEI"', () => {

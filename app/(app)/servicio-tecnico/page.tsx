@@ -431,40 +431,54 @@ export type FilaDeOrden = {
  * ningún `role="cell"` alcanzable en el teléfono, o sea sin *owned
  * elements* válidos para `role="row"`. La fila ahora es
  * `flex flex-wrap ... lg:contents` (el mismo mecanismo que
- * `app/(app)/inventario/page.tsx` ya usa para su propia fila), y TRES de las
- * cinco celdas —Orden, Equipo y Cliente— son las MISMAS en los dos anchos:
- * siempre presentes, siempre con su `role="cell"`, sólo que en el teléfono
- * son ítems de un `flex-wrap` y en escritorio se disuelven en columnas de
- * grid. `basis-full` en Cliente fuerza su propio renglón en el teléfono —en
- * escritorio no hace nada, porque una vez disuelta la fila la celda es un
- * ítem de GRID, que ignora `flex-basis` por completo—.
+ * `app/(app)/inventario/page.tsx` ya usa para su propia fila), y CUATRO de
+ * las cinco celdas —Orden, Equipo, Cliente e Ingresó— son las MISMAS en los
+ * dos anchos: siempre presentes, siempre con su `role="cell"`, sólo que en
+ * el teléfono son ítems de un `flex-wrap` y en escritorio se disuelven en
+ * columnas de grid. `basis-full` en Cliente e Ingresó fuerza su propio
+ * renglón en el teléfono —en escritorio no hace nada, porque una vez
+ * disuelta la fila la celda es un ítem de GRID, que ignora `flex-basis` por
+ * completo—.
  *
- * **Lo que NO se pudo fusionar, y por qué.** El chip de estado (columna 5)
- * y la línea de meta (IMEI + fecha + antigüedad, que junta un dato de la
- * columna 2 con dos de la columna 4) no tienen forma de sumarse a esas tres
- * celdas sin reordenar el grid de escritorio: Cliente (3) e Ingresó (4) se
- * interponen entre Equipo (2) y Estado (5) en el orden de columnas, y el
- * auto-placement de CSS Grid llena las columnas en el orden del DOM — mover
- * el chip o la meta más arriba en el árbol correría a Cliente e Ingresó de
- * columna al disolver `lg:contents`. La única forma de lograrlo sería con
- * `order-*` explícito en varias celdas a la vez (reordenar visualmente sin
- * tocar el DOM), una técnica que no usa ningún otro listado de este ciclo y
- * que cambia el orden de lectura de un lector de pantalla respecto del
- * orden visual — más riesgo que beneficio para dos piezas. Así que el chip
- * y la meta quedan DUPLICADOS: una copia real en su celda de escritorio
- * (Estado e Ingresó, `hidden lg:block`), y una copia sin rol propio,
- * visible sólo en el teléfono (`lg:hidden`) — el mismo mecanismo, con el
- * mismo trade-off, que ya usa `app/(app)/inventario/page.tsx` para su
- * propio `ChipEstado` y su `detalleMovil` (ver el comentario "el mismo chip
- * ya salió en la línea de meta" en ese archivo). La fila ya no se queda sin
- * celdas: tiene tres reales (Orden, Equipo, Cliente) más estas dos copias
- * puntuales, contra ninguna antes.
+ * Ronda de arreglos 2 (Menor): la Meta (IMEI + fecha de ingreso +
+ * antigüedad) SÍ se pudo fundir, a diferencia de lo que decía la primera
+ * versión de este comentario. El error de esa primera versión fue tratar
+ * "IMEI + fecha + antigüedad" como si tuviera que vivir cerca de la celda
+ * Equipo (donde vive el IMEI en escritorio) — pero el IMEI es un DATO
+ * (`f.imeiLabel`), no un nodo del DOM: nada impide leerlo dentro de
+ * CUALQUIER celda. Y la celda que el teléfono necesita justo después de
+ * Cliente para la Meta es, literal, la 4ª columna del grid de
+ * escritorio — Ingresó — que YA vive ahí en el DOM. No hizo falta mover
+ * nada: sacarle el `hidden` a Ingresó, sumarle `basis-full`, y usar adentro
+ * la misma técnica de "compacto en el teléfono (`lg:hidden`), apilado en
+ * escritorio (`hidden lg:flex`)" que ya usa Cliente.
+ *
+ * **Lo único que sigue sin poder fusionarse: el chip de estado.** Vive en
+ * la columna 5, y la línea 1 del teléfono lo necesita en la posición ~3 del
+ * flujo (justo después de Equipo) — con Cliente (3) e Ingresó (4) de por
+ * medio en el orden de columnas. El auto-placement de CSS Grid llena las
+ * columnas en el orden del DOM, así que adelantar la celda Estado hasta ahí
+ * correría a Cliente e Ingresó de columna al disolver `lg:contents`. La
+ * única forma de lograrlo sería `order-*` explícito en varias celdas a la
+ * vez (reordenar visualmente sin tocar el DOM), una técnica que no usa
+ * ningún otro listado de este ciclo y que además desalinea el orden de
+ * lectura de un lector de pantalla del orden visual — más riesgo que
+ * beneficio para una sola pieza. Así que el chip queda DUPLICADO: una copia
+ * real en su celda de escritorio (Estado, `hidden lg:block`), y una copia
+ * sin rol propio, visible sólo en el teléfono (`lg:hidden`) — el mismo
+ * mecanismo, con el mismo trade-off, que ya usa
+ * `app/(app)/inventario/page.tsx` para su propio `ChipEstado` (ver el
+ * comentario "el mismo chip ya salió en la línea de meta" en ese archivo).
+ * La fila ya no se queda sin celdas: tiene CUATRO reales (Orden, Equipo,
+ * Cliente, Ingresó) más esta única copia puntual, contra ninguna celda real
+ * antes de la Ronda 1.
  *
  * Línea 1 (teléfono): Orden + Equipo (modelo, sin el IMEI) + el chip
  * duplicado, en ese orden de flujo — ninguno fuerza salto de línea. Línea 2:
  * Cliente, con el teléfono fusionado inline (mismo mecanismo que la "· " de
  * Hora en `app/(app)/ventas/page.tsx`) y `basis-full` para su propio
- * renglón. Línea 3: la meta duplicada, también `basis-full`.
+ * renglón. Línea 3: Ingresó, con la Meta fusionada inline (mismo mecanismo
+ * que Cliente) y `basis-full` para su propio renglón.
  *
  * **Sin `fallaDeclarada`, a propósito.** Uno de los cinco ejemplos de la
  * maqueta ("Sin IMEI · no enciende · ingresó…") mete el motivo declarado
@@ -620,22 +634,24 @@ export function Listado({
                   </div>
                 </div>
 
-                {/* Meta (teléfono): IMEI + fecha de ingreso + antigüedad —
-                    DUPLICADA a propósito, no fusionada — ver el docblock de
-                    Listado, arriba, para el porqué. `basis-full` fuerza su
-                    propio renglón. */}
-                <p className="basis-full text-[11px] leading-[1.2] text-muted-foreground lg:hidden">
-                  {f.imeiLabel} · ingresó {f.fechaFormateada} · {f.antiguedadLabel}
-                </p>
-
-                {/* Ingresó: oculta en el teléfono —su dato ya salió en la
-                    Meta de arriba—, sin cambios respecto de antes de este
-                    ciclo. */}
+                {/* Ingresó: la MISMA celda en los dos anchos —Ronda de
+                    arreglos 2: ya vive en la 4ª posición del DOM, justo
+                    después de Cliente, que es exactamente donde el teléfono
+                    necesita la Meta. El IMEI es un dato (`f.imeiLabel`), no
+                    un nodo del DOM: leerlo acá no exige que esta celda esté
+                    cerca de Equipo. `basis-full` fuerza su propio renglón en
+                    el teléfono; en escritorio no hace nada (la celda es un
+                    ítem de grid). Mismo mecanismo de "compacto en el
+                    teléfono, apilado en escritorio" que ya usa Cliente, más
+                    arriba. */}
                 <div
                   role="cell"
-                  className="hidden lg:block lg:whitespace-nowrap lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+                  className="basis-full lg:whitespace-nowrap lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
                 >
-                  <div className="flex flex-col gap-0.5">
+                  <p className="text-[11px] leading-[1.2] text-muted-foreground lg:hidden">
+                    {f.imeiLabel} · ingresó {f.fechaFormateada} · {f.antiguedadLabel}
+                  </p>
+                  <div className="hidden flex-col gap-0.5 lg:flex">
                     <span className="text-sm font-medium text-foreground">{f.fechaFormateada}</span>
                     <span className="text-[11px] text-muted-foreground">{f.antiguedadLabel}</span>
                   </div>
