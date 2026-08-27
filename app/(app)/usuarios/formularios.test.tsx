@@ -194,6 +194,17 @@ describe('CardEquipo: el patrón grid + display:contents (Task 10)', () => {
     expect(lineas).toHaveLength(2)
   })
 
+  // El .pen manda incluso sobre el checklist de la task, que no lo
+  // mencionaba: el nodo `hfAYV` ("Chips") dibuja un separador "·" antes de
+  // las acciones en las TRES filas del ejemplo ("· Cambiar clave", "·
+  // Cambiar clave · Baja", "· Reactivar"). Sólo en el teléfono — en
+  // escritorio esta celda nunca llevó separador.
+  it('el separador "·" aparece antes de las acciones, sólo en el teléfono (nodo hfAYV)', async () => {
+    const html = await render()
+    const separadores = html.match(/<span aria-hidden="true" class="[^"]*lg:hidden[^"]*">·<\/span>/g) ?? []
+    expect(separadores).toHaveLength(2) // uno por fila
+  })
+
   it('las acciones de fila siguen ahí: "Cambiar clave" para uno mismo, "Reactivar" para el desactivado', async () => {
     const html = await render()
     // u1 (Florencia) es "esUnoMismo": sólo "Cambiar clave", sin "Baja".

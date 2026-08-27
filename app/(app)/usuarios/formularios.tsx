@@ -189,7 +189,17 @@ export function CardEquipo({
                   role="cell"
                   className="lg:border-b lg:py-[11px] lg:pr-[18px] lg:pl-[7px] lg:text-right lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
                 >
-                  <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
+                  {/* El separador "·" (nodo `hfAYV` > "Acciones": "·
+                      Cambiar clave", "· Cambiar clave · Baja", "·
+                      Reactivar") es cosmético pero el .pen lo dibuja en las
+                      TRES filas del ejemplo — manda sobre el checklist de la
+                      task, que no lo mencionaba. Sólo en el teléfono
+                      (`lg:hidden`): en escritorio esta celda nunca llevó
+                      separador. */}
+                  <div className="flex items-center gap-1 lg:h-full lg:justify-end">
+                    <span aria-hidden="true" className="text-[10px] text-muted-foreground lg:hidden">
+                      ·
+                    </span>
                     <FilaAcciones
                       usuario={u}
                       esUnoMismo={u.id === usuarioActualId}
@@ -359,17 +369,31 @@ function CardReglas() {
  * revés que en escritorio, donde vive debajo de la tabla, en la misma
  * columna—.
  *
+ * **Por qué `order-N` y no simplemente apilar las dos columnas de
+ * escritorio con `flex-col lg:flex-row`** (que es lo que el checklist de la
+ * task, literal, sólo pedía para Alta+Reglas): apilar las columnas TAL CUAL
+ * habría dejado dos defectos frente a `k7F13E` — el Aviso en el orden de
+ * escritorio (después de la tabla, adentro de la columna de Equipo) en vez
+ * de primero, y un gap MEZCLADO (16px entre Equipo y Aviso, heredado del
+ * `gap-4` interno de esa columna, contra 12px entre el resto de las piezas).
+ * Esto no es capricho ni sobre-ingeniería: es lo que el `.pen` dibuja, y acá
+ * "el `.pen` manda" —incluso sobre la propia lista de casos de la task,
+ * que es un resumen y no el límite—.
+ *
  * El mecanismo es el mismo `contents` (sin `lg:`) + `order-N`/`lg:order-none`
  * que ya usa `FichaDeArticulo` (app/(app)/inventario/formularios.tsx, ver su
- * comentario): los dos envoltorios de columna llevan `contents` a secas, así
- * que en CUALQUIER ancho menor a `lg` se disuelven y sus hijos pasan a ser
- * ítems planos del flex-col de afuera —de ahí que el gap-3 de afuera quede
- * uniforme entre las cuatro piezas—; `lg:flex ... lg:flex-col` los vuelve a
- * armar en columna recién en escritorio. Cada pieza lleva el `order-N` que
- * le toca en el teléfono (Aviso=1, Equipo=2, Alta=3, Reglas=4) sin tocar su
- * lugar real en el DOM, que sigue siendo el de escritorio (Equipo antes que
- * Aviso, Alta antes que Reglas) — `lg:order-none` cancela el reorden ahí, así
- * que escritorio no cambia de aspecto.
+ * comentario) para este problema exacto — no es una técnica nueva inventada
+ * para esta pantalla, es el patrón ya establecido en el repo: los dos
+ * envoltorios de columna llevan `contents` a secas, así que en CUALQUIER
+ * ancho menor a `lg` se disuelven y sus hijos pasan a ser ítems planos del
+ * flex-col de afuera —de ahí que el gap-3 de afuera quede uniforme entre las
+ * cuatro piezas, sin el 16px mezclado del párrafo de arriba—; `lg:flex
+ * lg:flex-col` los vuelve a armar en columna recién en escritorio. Cada
+ * pieza lleva el `order-N` que le toca en el teléfono (Aviso=1, Equipo=2,
+ * Alta=3, Reglas=4) sin tocar su lugar real en el DOM, que sigue siendo el
+ * de escritorio (Equipo antes que Aviso, Alta antes que Reglas) —
+ * `lg:order-none` cancela el reorden ahí, así que escritorio no cambia de
+ * aspecto.
  */
 export function CuerpoUsuarios({
   usuarios,
