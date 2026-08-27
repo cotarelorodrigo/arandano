@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatearPrecio, formatearHora, formatearCantidad } from '@/lib/formato/mostrar'
 import { componerPorMedio } from '@/lib/ventas/composicion'
-import { totalCobrado } from '@/lib/ventas/totales'
+import { totalCobrado, redondearDinero } from '@/lib/ventas/totales'
 import { ROTULO_MEDIO, CONSUMIDOR_FINAL, type Medio } from '@/lib/ventas/medios'
 import { ChipEstado } from './chip-estado'
 import { GraficoDeMedios } from './grafico'
@@ -180,8 +180,15 @@ export function totalDelPeriodo(
  */
 export function pieDeCobradas(sumaCobradas: string, cobradas: number): string | undefined {
   if (cobradas <= 0) return undefined
-  const promedio = Number(sumaCobradas) / cobradas
-  return `promedio ${formatearPrecio(promedio.toFixed(2))}`
+  // Decimal.div + redondearDinero, no Number()/toFixed(2): plata en Decimal,
+  // nunca number con decimales (regla del ciclo). No es sólo estilo — 2010 /
+  // 2000 = 1,005 exacto en decimal (ROUND_HALF_UP redondea a 1,01), pero el
+  // double más cercano a 1.005 es un poquito MENOR, así que
+  // `(2010/2000).toFixed(2)` daba "1.00" en JS (Minor 3 de la review de
+  // Task 8 — el caso vive en `page.test.tsx`). `redondearDinero` es la MISMA
+  // función que usa el resto de `lib/ventas/totales.ts`.
+  const promedio = redondearDinero(new Prisma.Decimal(sumaCobradas).div(cobradas))
+  return `promedio ${formatearPrecio(promedio.toString())}`
 }
 
 /**

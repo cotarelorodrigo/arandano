@@ -284,7 +284,10 @@ sección *Las pantallas*.
 
 ## 11. La maqueta no dibuja el desglose de recargo ni la columna Plan de `/ventas/[id]`
 
-- **Frame**: `NjMl1` (`App / Venta detalle`)
+- **Frame**: `KEwHe` (`App / Venta detalle`) — `NjMl1`, citado en el código
+  (`app/(app)/ventas/[id]/page.tsx`, la fila de las dos columnas), es un nodo
+  "Fila" ANIDADO adentro de este frame (`KEwHe > Columna lEwoj > Cuerpo jC6yK >
+  Fila NjMl1`), sin texto propio — no la pantalla.
 
 **Qué falta.** `design/arandano.pen` es anterior a los planes de pago
 (2026-08-27), así que el frame del detalle de venta no tiene:

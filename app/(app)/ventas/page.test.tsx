@@ -60,6 +60,22 @@ describe('pieDeCobradas', () => {
     // real, no un caso imposible. "promedio $ NaN" es peor que ningún pie.
     expect(pieDeCobradas('0', 0)).toBeUndefined()
   })
+
+  // Minor 3 de la review de Task 8: `Number(sumaCobradas) / cobradas` seguido
+  // de `.toFixed(2)` es aritmética de punto flotante sobre plata, contra la
+  // regla del ciclo ("plata en Decimal, nunca number con decimales"). No es un
+  // caso de laboratorio: 2010 / 2000 = 1,005 EXACTO en decimal (redondea a
+  // 1,01 con ROUND_HALF_UP, la regla que usa el resto del motor), pero el
+  // double más cercano a 1.005 es un poquito MENOR, así que
+  // `(2010/2000).toFixed(2)` da "1.00" en JS — confirmado en el propio
+  // intérprete node antes de este fix. Con Decimal.div + redondearDinero (la
+  // MISMA función que usa el resto de lib/ventas/totales.ts) el promedio
+  // redondea para el lado correcto.
+  it('redondea el promedio con la MISMA regla que el resto de la plata (ROUND_HALF_UP), no con Number().toFixed()', () => {
+    const pie = pieDeCobradas('2010', 2000)
+    expect(pie).toContain('1,01')
+    expect(pie).not.toContain('1,00')
+  })
 })
 
 describe('pieDeAnuladas', () => {
@@ -154,5 +170,22 @@ describe('la columna Total y el tile del período muestran lo cobrado', () => {
     const posTile = fuente.indexOf('rotulo="Total del período"')
     const posValor = fuente.indexOf('valor={formatearPrecio(sumaCobrada.toString())}', posTile)
     expect(posValor).toBeGreaterThan(posTile)
+  })
+
+  // Los dos call sites que van MÁS ALLÁ de lo que pedía el brief (el brief
+  // sólo nombraba la columna Total y el tile de arriba): sin este par, revertir
+  // cualquiera de los dos a la expresión vieja (`suma._sum.total` /
+  // `devueltas._sum.total` a secas) deja el resto de la suite en verde — nada
+  // más lo notaría. Mismo criterio que la celda Total: positivo + negativo,
+  // para que no alcance con que la cadena nueva aparezca en CUALQUIER lado del
+  // archivo.
+  it('el pie de "Ventas cobradas" recibe sumaCobrada, no suma._sum.total a secas', () => {
+    expect(fuente).toContain('pieDeCobradas(sumaCobrada.toString(), cobradas)')
+    expect(fuente).not.toContain("pieDeCobradas((suma._sum.total ?? '0').toString(), cobradas)")
+  })
+
+  it('el pie de "Anuladas" recibe devueltoCobrado, no devueltas._sum.total a secas', () => {
+    expect(fuente).toContain('pieDeAnuladas(devueltoCobrado.toString())')
+    expect(fuente).not.toContain("pieDeAnuladas((devueltas._sum.total ?? '0').toString())")
   })
 })
