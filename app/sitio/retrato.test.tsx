@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { formatearPrecio, formatearCantidad, montoSinSigno } from '@/lib/formato/mostrar'
-import { Retrato, TOTAL, ARTICULOS, UNIDADES, ITEMS } from './retrato'
+import { Retrato, RetratoMovil, TOTAL, ARTICULOS, UNIDADES, ITEMS } from './retrato'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
@@ -86,9 +86,15 @@ describe('el retrato del punto de venta', () => {
     // línea (cantidad, precio, subtotal) tienen que pagar el rol — un
     // `estilos.importe` que sobreviva en un solo lugar (y se haya perdido en
     // otro) pasaría un `toContain` pero no este conteo.
-    expect(src.match(/estilos\.importe/g)).toHaveLength(3)
-    expect(src.match(/estilos\.signo/g)).toHaveLength(1)
-    expect(src.match(/estilos\.total\b/g)).toHaveLength(1)
+    //
+    // Acotado a `Retrato` (hasta donde empieza `RetratoMovil`, Task 11 del
+    // ciclo móvil): éste comparte el mismo archivo y el mismo rol Importe,
+    // con su propio conteo en la describe de RetratoMovil más abajo — sumar
+    // los dos acá los desincronizaría en cuanto uno de los dos cambie.
+    const bloqueRetrato = src.slice(0, src.indexOf('export function RetratoMovil'))
+    expect(bloqueRetrato.match(/estilos\.importe/g)).toHaveLength(3)
+    expect(bloqueRetrato.match(/estilos\.signo/g)).toHaveLength(1)
+    expect(bloqueRetrato.match(/estilos\.total\b/g)).toHaveLength(1)
   })
 
   // El nombre del local ("Flor Celulares") ya NO se pinta adentro de esta
@@ -198,7 +204,8 @@ describe('el retrato del punto de venta', () => {
     expect(contenido).toBe(1328) // las secciones del .pen miden 1328
 
     // El Hero reparte ese ancho 7:9 (560:720 en el .pen) con 48px de gap.
-    const proporcion = fuenteSecciones.match(/md:grid-cols-\[(\d+)fr_(\d+)fr\]/)
+    // Task 11 del ciclo móvil migró este breakpoint de md: a lg:.
+    const proporcion = fuenteSecciones.match(/lg:grid-cols-\[(\d+)fr_(\d+)fr\]/)
     expect(proporcion, 'el Hero dejó de repartirse en fr').not.toBeNull()
     const [izq, der] = [Number(proporcion![1]), Number(proporcion![2])]
     const muestra = ((contenido - 48) * der) / (izq + der)
@@ -212,5 +219,90 @@ describe('el retrato del punto de venta', () => {
     const nombre = tabla - fijas
     // 216 es lo que pide el .pen; el margen absorbe el borde y el redondeo.
     expect(nombre).toBeGreaterThanOrEqual(216)
+  })
+})
+
+/**
+ * `RetratoMovil` — Task 11 del ciclo móvil (design/arandano.pen, frame
+ * `Móvil / Sitio · Landing`, nodo `TVNp5`, "Carrito real" dentro de
+ * `Muestra`). El teléfono no colapsa la tabla de `Retrato`: la REDIBUJA como
+ * una lista de cards, una por ítem, con el mismo dato (`ITEMS`/`TOTAL`/…) que
+ * el desktop — mismo criterio que ya exige `retrato.test.tsx` para `Retrato`:
+ * los números salen del formateo real, no de un string a mano.
+ */
+describe('RetratoMovil — el carrito en cards del teléfono', () => {
+  const htmlMovil = () => renderToStaticMarkup(<RetratoMovil />)
+
+  it('muestra "Carrito" y "Vaciar" en el encabezado (nodo CQoIR)', () => {
+    expect(htmlMovil()).toContain('Carrito')
+    expect(htmlMovil()).toContain('Vaciar')
+  })
+
+  it('los precios y subtotales de cada línea salen del formateo real', () => {
+    const markup = htmlMovil()
+    for (const item of ITEMS) {
+      expect(markup).toContain(formatearPrecio(item.precio))
+      expect(markup).toContain(formatearPrecio(item.subtotal))
+    }
+  })
+
+  it('la cantidad de cada línea sale de formatearCantidad', () => {
+    const markup = htmlMovil()
+    for (const item of ITEMS) {
+      expect(markup).toContain(formatearCantidad(item.cantidad))
+    }
+  })
+
+  it('el total de la banda usa el mismo formateo, sin el signo', () => {
+    expect(htmlMovil()).toContain(montoSinSigno(formatearPrecio(TOTAL)))
+  })
+
+  it('el resumen "N artículos · N unidades" coincide con las líneas reales', () => {
+    const markup = htmlMovil()
+    expect(markup).toContain(`${ARTICULOS} artículos · ${UNIDADES} unidades`)
+  })
+
+  it('un servicio (sin SKU) muestra "Servicio" en vez de un código', () => {
+    expect(htmlMovil()).toContain('Servicio')
+  })
+
+  // El aviso es más corto acá ("sin stock", nodo RnB2Y) que en Retrato ("sin
+  // stock suficiente"): son textos DISTINTOS a propósito, así que el conteo
+  // de "sin stock suficiente" que hace retrato.test.tsx contra <Retrato />
+  // sigue en 1 aunque las dos versiones convivan en la misma página.
+  it('el aviso de stock dice "sin stock" (más corto que en Retrato), en la línea marcada', () => {
+    const markup = htmlMovil()
+    const apariciones = markup.match(/sin stock\b/g) ?? []
+    expect(apariciones).toHaveLength(1)
+    expect(markup).not.toContain('sin stock suficiente')
+  })
+
+  it('el stepper existe: un ícono minus y uno plus por línea', () => {
+    const markup = htmlMovil()
+    expect(markup.match(/lucide-minus /g) ?? []).toHaveLength(ITEMS.length)
+    expect(markup.match(/lucide-plus /g) ?? []).toHaveLength(ITEMS.length)
+  })
+
+  it('el ícono de quitar (x) existe una vez por línea', () => {
+    const markup = htmlMovil()
+    expect(markup.match(/lucide-x /g) ?? []).toHaveLength(ITEMS.length)
+  })
+
+  it('no es interactivo: es una imagen del producto, no el producto', () => {
+    const markup = htmlMovil()
+    expect(markup).not.toContain('<button')
+    expect(markup).not.toContain('<input')
+  })
+
+  it('los precios, la cantidad y el total pagan el rol Importe (components/importe.module.css)', () => {
+    const src = fuente()
+    const bloque = src.slice(src.indexOf('export function RetratoMovil'))
+    expect(bloque, 'no se encontró RetratoMovil en el fuente').toBeTruthy()
+    // Cantidad y Subtotal (Precio no tiene celda propia en el teléfono: va
+    // pegado al SKU en la Meta, sin el rol Importe — mismo criterio que ya
+    // usa la fila del teléfono de /vender).
+    expect(bloque.match(/estilos\.importe/g)).toHaveLength(2)
+    expect(bloque.match(/estilos\.signo/g)).toHaveLength(1)
+    expect(bloque.match(/estilos\.total\b/g)).toHaveLength(1)
   })
 })

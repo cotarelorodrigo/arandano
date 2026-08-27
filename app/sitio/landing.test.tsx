@@ -34,6 +34,27 @@ describe('la landing', () => {
     expect(raiz).toContain('bg-card')
   })
 
+  // Task 11 del ciclo móvil: la "Muestra" (el carrito de ejemplo) se
+  // promueve a sección propia entre Hero y Módulos en el teléfono (nunca
+  // desaparece: reemplaza al bloque que en escritorio vive adentro del
+  // Hero). Se afirma con las DOS mitades explícitamente — la que sólo existe
+  // en el teléfono (lg:hidden) y la que sólo existe desde escritorio (hidden
+  // lg:block) — porque afirmar sólo que el carrito "existe" no distingue un
+  // ciclo que lo mostrara siempre de uno que respeta el corte.
+  it('la "Muestra" aparece dos veces (una por ancho) y en orden, entre Hero y Módulos', () => {
+    const markup = html()
+    const idxHero = markup.indexOf('Todo el local en un solo lugar')
+    const idxModulos = markup.indexOf('Un núcleo, tres módulos, rubros ilimitados')
+    const apariciones = [...markup.matchAll(/flor\.arandano\.app\/vender/g)].map((m) => m.index!)
+    expect(apariciones).toHaveLength(2)
+    // Las dos entre Hero y Módulos: la de escritorio (dentro del Hero) y la
+    // del teléfono (la sección Muestra, después del Hero).
+    for (const idx of apariciones) {
+      expect(idx).toBeGreaterThan(idxHero)
+      expect(idx).toBeLessThan(idxModulos)
+    }
+  })
+
   it('las siete secciones aparecen, en orden', () => {
     const markup = html()
     const titulares = [

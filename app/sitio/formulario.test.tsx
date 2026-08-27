@@ -144,7 +144,7 @@ describe('formulario de la landing', () => {
   // EtDRA/HfYKR) y 48px en el Cierre (nodos V9xSVB/sUETx) — el código tenía
   // 46 en los dos. Se afirma sobre el <input> Y el botón, en las dos
   // variantes.
-  it('mide 46px en "clara" (Hero) y 48px en "oscura" (Cierre) — input y botón', () => {
+  it('mide 46px en "clara" (Hero) y 48px en "oscura" (Cierre) desde escritorio — input y botón', () => {
     const clara = html({ variante: 'clara' })
     const oscura = html({ variante: 'oscura' })
     expect(clara).toContain('h-[46px]')
@@ -154,5 +154,37 @@ describe('formulario de la landing', () => {
     // Las dos piezas (input y botón) de CADA variante, no sólo una de las dos.
     expect(clara.match(/h-\[46px\]/g)).toHaveLength(2)
     expect(oscura.match(/h-\[48px\]/g)).toHaveLength(2)
+  })
+
+  // Task 11 del ciclo móvil: en el teléfono las dos variantes miden 50px —
+  // el Lead del Hero (nodos Wc1DB/MJENr) y el Formulario del Cierre (nodos
+  // YBpWb/myteL), frame `Móvil / Sitio · Landing` — y recién en escritorio
+  // (`lg:`) se separan en 46/48 como antes. Mobile-first: el valor sin
+  // prefijo es el del teléfono.
+  it('mide 50px en el teléfono, en las dos variantes — input y botón', () => {
+    const clara = html({ variante: 'clara' })
+    const oscura = html({ variante: 'oscura' })
+    expect(clara.match(/h-\[50px\]/g)).toHaveLength(2)
+    expect(oscura.match(/h-\[50px\]/g)).toHaveLength(2)
+    expect(clara.match(/lg:h-\[46px\]/g)).toHaveLength(2)
+    expect(oscura.match(/lg:h-\[48px\]/g)).toHaveLength(2)
+  })
+
+  // El corte viejo de este archivo (sm:, que miraba el viewport) migra al
+  // único corte del ciclo (lg:, 1024) — ver CLAUDE.md / el brief de la Task
+  // 11. Ningún sm:/md:/xl: puede sobrevivir acá.
+  it('el marco pasa de sm: a lg: — el corte viejo no sobrevive', () => {
+    const markup = html()
+    // Se acota al <form> propio: shadcn trae de fábrica un `md:text-sm` en
+    // el <Input> (components/ui/input.tsx) que no es de este archivo y no
+    // corresponde migrar acá.
+    const form = markup.match(/<form[^>]*class="([^"]*)"/)?.[1]
+    expect(form, 'no se encontró el <form>').toBeTruthy()
+    expect(form).not.toMatch(/\bsm:/)
+    expect(form).not.toMatch(/\bmd:/)
+    expect(form).not.toMatch(/\bxl:/)
+    expect(form).toContain('lg:flex-row')
+    expect(form).toContain('lg:flex-wrap')
+    expect(form).toContain('lg:items-center')
   })
 })

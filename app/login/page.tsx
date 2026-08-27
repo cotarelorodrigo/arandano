@@ -31,15 +31,26 @@ export default async function Login() {
   const dominio = `${resolucion.subdominio}.${dominioBase}`
 
   return (
-    <main className="flex min-h-full flex-col md:flex-row">
+    <main className="flex min-h-full flex-col lg:flex-row">
       {/* El paño. La jerarquía es la decisión: el nombre del local grande y
           "Arándano" chico arriba. Quien entra acá labura en su negocio, no en
           nuestra plataforma — el cartel es del local y la marca firma abajo.
           Tres bloques con justify-content: space-between (ver persiana.module.css):
           Marca arriba, el nombre del local + su bajada en el medio, el pie
-          abajo. */}
+          abajo.
+
+          Task 11 del ciclo móvil (design/arandano.pen, frame `Móvil / Login`,
+          `Kp4Eg`): en el teléfono el paño se acuesta — franja de 300px de
+          alto arriba de todo (`h-[300px]`, `gap-4`, padding [26,22]) — y en
+          escritorio vuelve a ser la columna de siempre (`lg:h-auto`, sin gap
+          propio porque space-between ya reparte el espacio con sólo 2 hijos
+          visibles, `lg:p-12`). El PIE (la URL del tenant) NO viaja acá abajo
+          en el teléfono: el nodo `eY0BS` lo muda al fondo del formulario, así
+          que se oculta en esta mitad (`hidden lg:flex`) y reaparece dentro de
+          `FormularioLogin`, con otro color (ver el comentario de ahí) — nunca
+          desaparece sin más. */}
       <section
-        className={`${estilos.pano} relative flex flex-col overflow-hidden p-8 md:p-12`}
+        className={`${estilos.pano} relative flex h-[300px] flex-col gap-4 overflow-hidden p-[26px_22px] lg:h-auto lg:gap-0 lg:p-12`}
       >
         <div className={estilos.persiana} aria-hidden="true" />
 
@@ -48,7 +59,7 @@ export default async function Login() {
           <p className={estilos.arandano}>Arándano</p>
         </div>
 
-        <div className="flex max-w-[560px] flex-col gap-[14px]">
+        <div className="flex max-w-[560px] flex-col gap-2 lg:gap-[14px]">
           {/* El testid lo consume scripts/smoke.sh (caso_tenant_resuelve) para
               verificar que el subdominio resolvió al tenant correcto. Dos cosas
               no se pueden tocar sin mover ese caso en el mismo commit: el
@@ -64,18 +75,20 @@ export default async function Login() {
           </p>
         </div>
 
-        <div className="flex flex-col gap-1">
+        <div className="hidden flex-col gap-1 lg:flex">
           <p className={estilos.pieUrl}>{dominio}</p>
           <p className={estilos.pieNota}>Cada local entra por su propia dirección.</p>
         </div>
       </section>
 
-      {/* Arriba en el teléfono, centrado en escritorio. Centrarlo también en el
-          teléfono dejaba medio metro de blanco entre el cartel y el campo de
-          mail; en escritorio, en cambio, el centrado es lo que le da al
-          formulario el mismo eje vertical que el cartel. */}
-      <div className="flex flex-1 items-start justify-center p-6 md:items-center md:p-12">
-        <FormularioLogin />
+      {/* Debajo del paño en el teléfono, centrado en escritorio. En el
+          teléfono este envoltorio ya no centra: `FormularioLogin` pasa a
+          `flex-1` para ocupar todo el alto que queda y poder empujar su
+          propio pie (ver más abajo) hasta el fondo. En escritorio, el
+          centrado es lo que le da al formulario el mismo eje vertical que el
+          cartel. */}
+      <div className="flex flex-1 px-[22px] py-6 lg:items-center lg:justify-center lg:p-12">
+        <FormularioLogin dominio={dominio} />
       </div>
     </main>
   )

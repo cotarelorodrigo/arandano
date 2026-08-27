@@ -67,6 +67,39 @@ describe('Nav', () => {
     expect(markup).toContain('Entrar a mi local')
     expect(markup).not.toContain('<input')
   })
+
+  // Task 11 del ciclo móvil (design/arandano.pen, frame `Móvil / Sitio ·
+  // Landing`, nodo `fI6bl`): el Nav baja de 76 a 60px en el teléfono.
+  it('el Nav mide 60px en el teléfono y 76px desde escritorio (nodo fI6bl)', () => {
+    const markup = html()
+    expect(markup).toContain('h-[60px]')
+    expect(markup).toContain('lg:h-[76px]')
+  })
+
+  // Los tres links de sección y "Entrar a mi local" siguen sin verse en el
+  // teléfono (la maqueta sólo dibuja el ícono de menú, nodo `K60WPs`), pero
+  // no pueden desaparecer sin más — regla del ciclo. Reaparecen dentro de un
+  // `Sheet` que abre el ícono de menú.
+  it('en el teléfono, los links y "Entrar a mi local" viven dentro del Sheet que abre el ícono de menú', () => {
+    const markup = html()
+    // Los tres <a> de sección siguen existiendo, pero SÓLO visibles desde
+    // lg: (o adentro del Sheet, que tampoco los muestra por defecto en el
+    // teléfono — están montados pero el propio Sheet arranca cerrado).
+    expect(markup.match(/Qué hace/g)?.length).toBeGreaterThanOrEqual(1)
+    // El ícono de menú (lucide "menu"), sólo visible abajo de 1024.
+    expect(markup).toContain('lucide-menu')
+    const clases = markup.match(/class="([^"]*lucide-menu[^"]*)"/)?.[1]
+    expect(clases, 'no se encontró la clase del ícono lucide-menu').toBeTruthy()
+    expect(clases).toContain('lg:hidden')
+  })
+
+  it('no se hace pasar por una página de tenant ni rompe con el ícono de menú montado', () => {
+    // El Sheet no está abierto por defecto: no debería haber ningún rol de
+    // diálogo visible en el HTML inicial más allá de lo que Radix monta
+    // colapsado (data-state="closed").
+    const markup = html()
+    expect(markup).not.toContain('data-state="open"')
+  })
 })
 
 describe('Hero', () => {
@@ -99,6 +132,29 @@ describe('Hero', () => {
     // El retrato en sí (role="img") viene de app/sitio/retrato.tsx y ya
     // tiene su propio test — acá sólo se comprueba que Hero lo renderiza.
     expect(markup).toContain('role="img"')
+  })
+
+  // Task 11 del ciclo móvil: la grilla de dos columnas (7fr/9fr) es sólo de
+  // escritorio — en el teléfono el Hero es una sola columna (design/arandano.pen,
+  // frame `Móvil / Sitio · Landing`, nodo `Sv9VR`) y la "Muestra" (barra +
+  // retrato) se oculta acá (se promueve a sección propia entre Hero y
+  // Módulos, ver `landing.test.tsx`) — nunca desaparece sin más.
+  it('la grilla de 7fr/9fr es lg:, no default — en el teléfono es una columna', () => {
+    const html2 = renderToStaticMarkup(<Hero whatsapp="5491155555555" />)
+    expect(html2).not.toMatch(/(?<!lg:)grid-cols-\[7fr_9fr\]/)
+    expect(html2).toContain('lg:grid-cols-[7fr_9fr]')
+  })
+
+  it('la "Muestra" (barra + retrato) de acá adentro es hidden lg:block — sólo de escritorio', () => {
+    const markup = html()
+    const idx = markup.indexOf('flor.arandano.app/vender')
+    const inicioDiv = markup.lastIndexOf('<div class="hidden ', idx)
+    expect(inicioDiv, 'no se encontró un <div class="hidden ..."> antes de la Muestra').toBeGreaterThan(
+      -1,
+    )
+    const clases = markup.slice(inicioDiv).match(/^<div class="([^"]*)"/)?.[1]
+    expect(clases).toContain('hidden')
+    expect(clases).toContain('lg:block')
   })
 
   // Minor 6 de la review final: el .pen (nodo udK1D) pide $ar-font para la
@@ -140,6 +196,16 @@ describe('Modulos', () => {
     ]) {
       expect(markup).toContain(pieza)
     }
+  })
+
+  // Task 11 del ciclo móvil: las tres tarjetas de módulo son una columna en
+  // el teléfono (design/arandano.pen, frame `Móvil / Sitio · Landing`, nodo
+  // `Csb0k`: Encabezado/Núcleo/Órdenes/Turnos/Gastronomía son 5 hermanos
+  // apilados) y recién desde `lg:` pasan a 3 columnas.
+  it('la grilla de módulos es una columna en el teléfono, 3 desde escritorio', () => {
+    const markup = html()
+    expect(markup).toContain('grid-cols-1')
+    expect(markup).toContain('lg:grid-cols-3')
   })
 
   // El requisito explícito de la Task 4: Órdenes de trabajo dice
@@ -190,6 +256,18 @@ describe('Rubros', () => {
     // Kiosco, Ropa, Ferretería, Pet shop y Dietética: los cinco que el .pen
     // no ata a ningún módulo.
     expect(soloNucleo).toHaveLength(5)
+  })
+
+  // Task 11 del ciclo móvil: a diferencia de Módulos y Planes (una columna),
+  // el .pen (frame `Móvil / Sitio · Landing`, nodo `dDugH`) arma Rubros en
+  // PARES — seis filas de a dos tarjetas — así que en el teléfono son 2
+  // columnas, no 1. Recién desde `lg:` pasa a las 4 de siempre. Verificado en
+  // vivo con el MCP de Pencil: contradice la prosa del brief de esta task
+  // ("pasan a una columna"), y manda el .pen.
+  it('la grilla de rubros es 2 columnas en el teléfono (nodo dDugH), 4 desde escritorio', () => {
+    const markup = html()
+    expect(markup).toContain('grid-cols-2')
+    expect(markup).toContain('lg:grid-cols-4')
   })
 })
 
@@ -246,6 +324,16 @@ describe('Planes', () => {
       expect(a).toContain('border-input')
     }
   })
+
+  // Task 11 del ciclo móvil: los cuatro planes son una columna en el
+  // teléfono (design/arandano.pen, frame `Móvil / Sitio · Landing`, nodo
+  // `IvCnb`: Básico/Negocio/Profesional/Premium son 4 hermanos apilados) y
+  // recién desde `lg:` pasan a las 4 columnas de siempre.
+  it('la grilla de planes es una columna en el teléfono, 4 desde escritorio', () => {
+    const markup = html()
+    expect(markup).toContain('grid-cols-1')
+    expect(markup).toContain('lg:grid-cols-4')
+  })
 })
 
 describe('Cierre', () => {
@@ -277,5 +365,17 @@ describe('Pie', () => {
     const markup = renderToStaticMarkup(<Pie />)
     expect(markup).toContain('Arándano · Buenos Aires, Argentina')
     expect(markup).toContain('Términos · Privacidad · Estado del servicio')
+  })
+
+  // Task 11 del ciclo móvil: el Pie apila la marca sobre los links en el
+  // teléfono (design/arandano.pen, frame `Móvil / Sitio · Landing`, nodo
+  // `itZnH`: layout vertical) y recién en escritorio vuelve a la fila con
+  // justify-between de siempre.
+  it('apila en el teléfono (flex-col) y vuelve a fila desde escritorio (lg:flex-row)', () => {
+    const markup = renderToStaticMarkup(<Pie />)
+    const inicio = markup.indexOf('<div class="')
+    const clases = markup.slice(inicio).match(/^<div class="([^"]*)"/)?.[1]
+    expect(clases).toContain('flex-col')
+    expect(clases).toContain('lg:flex-row')
   })
 })

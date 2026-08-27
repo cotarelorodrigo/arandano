@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Minus, Plus, TriangleAlert, X } from 'lucide-react'
 import estilos from '@/components/importe.module.css'
+import tipografia from './tipografia.module.css'
 
 /**
  * El producto, mostrado en vez de contado.
@@ -178,6 +179,117 @@ export function Retrato() {
             marca sólido vía var(), signo "$" como elemento propio separado
             del monto, cada uno con su propio rol tipográfico de Archivo. */}
         <div className="flex items-center justify-between px-[22px] py-5" style={{ backgroundColor: 'var(--marca)' }}>
+          <div className="flex flex-col gap-0.5">
+            <span
+              className="text-[10px] font-bold tracking-[1.4px] uppercase"
+              style={{ color: 'var(--marca-soft)' }}
+            >
+              Total
+            </span>
+            <span className="text-xs" style={{ color: 'var(--marca-dim)' }}>
+              {ARTICULOS} artículos · {UNIDADES} unidades
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={estilos.signo} style={{ color: 'var(--marca-soft)' }}>
+              $
+            </span>
+            <span className={estilos.total} style={{ color: 'var(--marca-foreground)' }}>
+              {montoSinSigno(formatearPrecio(TOTAL))}
+            </span>
+          </div>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+/**
+ * El mismo carrito, redibujado como cards para el teléfono — Task 11 del
+ * ciclo móvil (design/arandano.pen, frame `Móvil / Sitio · Landing`, nodo
+ * `TVNp5`, "Carrito real" dentro de la sección `Muestra` de
+ * `app/sitio/secciones.tsx`).
+ *
+ * NO es `Retrato` con clases responsive: la maqueta del teléfono no colapsa
+ * la tabla, la REEMPLAZA por una lista de ítems (nombre + quitar, meta con
+ * SKU/precio y el aviso de stock, y una fila de stepper + subtotal), sin
+ * encabezado de columnas. Mismo dato (`ITEMS`/`TOTAL`/`ARTICULOS`/
+ * `UNIDADES`) que `Retrato`, para que las dos versiones nunca puedan
+ * desincronizarse — es la misma razón por la que `Retrato` lee
+ * `formatearPrecio`/`formatearCantidad` en vez de escribir los números a
+ * mano.
+ *
+ * Vive en un componente aparte (no adentro de `Retrato`) porque cada uno se
+ * usa desde un lugar de la página distinto según el ancho —`Retrato` adentro
+ * del Hero, oculto abajo de 1024; éste en la sección `Muestra`, oculta desde
+ * 1024— y esa es la sección que decide cuál mostrar, no este archivo.
+ */
+export function RetratoMovil() {
+  return (
+    <Card
+      className="w-full gap-0 overflow-hidden rounded-[16px] border py-0 ring-0"
+      role="img"
+      aria-label="Una venta en el punto de venta de Arándano: cuatro artículos, uno con aviso de stock insuficiente, total de ciento tres mil novecientos pesos."
+    >
+      <div aria-hidden="true">
+        <div className="flex items-center justify-between border-b px-[14px] py-[11px]">
+          <span className={`${tipografia.archivo} text-sm font-semibold text-foreground`}>
+            Carrito
+          </span>
+          <span className="text-xs font-semibold text-muted-foreground">Vaciar</span>
+        </div>
+
+        {ITEMS.map((item) => (
+          <div key={item.descripcion} className="flex flex-col gap-2 border-b p-[11px] px-[14px]">
+            <div className="flex items-center gap-[10px]">
+              <span className="flex-1 text-sm font-medium text-foreground">{item.descripcion}</span>
+              <span className="flex size-[26px] shrink-0 items-center justify-center rounded-[8px] text-muted-foreground">
+                <X aria-hidden="true" className="size-[15px]" />
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] text-muted-foreground">
+                {item.sku ? `SKU ${item.sku}` : 'Servicio'} · {formatearPrecio(item.precio)} c/u
+              </span>
+              {item.sinStockSuficiente && (
+                <Badge
+                  variant="outline"
+                  className="h-auto gap-[5px] border-transparent bg-warn-soft px-[7px] py-[2px] text-[10px] font-semibold text-warn"
+                >
+                  <TriangleAlert aria-hidden="true" />
+                  sin stock
+                </Badge>
+              )}
+            </div>
+
+            <div className="flex items-center gap-[10px]">
+              <div className="flex h-[34px] w-[106px] items-center rounded-[9px] bg-muted">
+                <span className="flex h-full w-8 items-center justify-center text-foreground-soft">
+                  <Minus aria-hidden="true" className="size-[13px]" />
+                </span>
+                <span
+                  className={`flex h-full flex-1 items-center justify-center text-center font-semibold text-foreground ${estilos.importe}`}
+                >
+                  {formatearCantidad(item.cantidad)}
+                </span>
+                <span className="flex h-full w-8 items-center justify-center text-foreground-soft">
+                  <Plus aria-hidden="true" className="size-[13px]" />
+                </span>
+              </div>
+              <span
+                className={`ml-auto text-[15px] font-semibold text-foreground ${estilos.importe}`}
+              >
+                {formatearPrecio(item.subtotal)}
+              </span>
+            </div>
+          </div>
+        ))}
+
+        {/* La banda del total: mismo patrón que en Retrato, con el padding
+            propio del teléfono (nodo ZevtA: [14,16] contra [20,22] en
+            escritorio). */}
+        <div className="flex items-center justify-between px-4 py-[14px]" style={{ backgroundColor: 'var(--marca)' }}>
           <div className="flex flex-col gap-0.5">
             <span
               className="text-[10px] font-bold tracking-[1.4px] uppercase"
