@@ -5,8 +5,9 @@ import {
   cantidadEnMilesimas, dineroEnCentavos, cotizacionEnDiezMilesimas,
   subtotalEnCentavos, totalEnCentavos,
   pesosDePagoEnCentavos, totalDePagosEnCentavos,
+  recargoEnCentavos, porcentajeEnMilesimas,
 } from './centavos'
-import { totalDeItems, totalDePagos } from './totales'
+import { totalDeItems, totalDePagos, recargoDePago } from './totales'
 import { aDecimal, ErrorDeFormato } from '@/lib/formato/numeros'
 
 describe('conversión a enteros', () => {
@@ -217,5 +218,39 @@ describe('lo que la persona tipea vale lo mismo de los dos lados', () => {
     expect(cantidadEnMilesimas(texto)).toBeNaN()
     expect(dineroEnCentavos(texto)).toBeNaN()
     expect(cotizacionEnDiezMilesimas(texto)).toBeNaN()
+  })
+})
+
+describe('el recargo del navegador espeja al del servidor', () => {
+  const CASOS: { base: string; porcentaje: string }[] = [
+    { base: '100000', porcentaje: '25' },
+    { base: '10000', porcentaje: '-10' },
+    { base: '9999.99', porcentaje: '0' },
+    { base: '1', porcentaje: '50' },
+    { base: '1', porcentaje: '-50' },
+    { base: '10000', porcentaje: '13.75' },
+    { base: '333.33', porcentaje: '40' },
+    { base: '0.01', porcentaje: '999.999' },
+    // El caso que de verdad separa Math.round() del ROUND_HALF_UP de Decimal:
+    // 1 al 0,5 % = 0,005 exacto, la mitad exacta de un centavo. Para el
+    // negativo, Math.round(-0.5) da -0 (redondea hacia +∞) y el servidor da
+    // -0,01 (se aleja del cero). Los pares "redondos" de arriba (50 %, -50 %)
+    // NO son mitades — 1 × 50 / 100 = 0,5, ya exacto a dos decimales — así
+    // que no simplificar este par de vuelta a uno "más prolijo".
+    { base: '1', porcentaje: '0.5' },
+    { base: '1', porcentaje: '-0.5' },
+  ]
+
+  for (const c of CASOS) {
+    it(`base ${c.base} al ${c.porcentaje} %`, () => {
+      const servidor = recargoDePago(new Prisma.Decimal(c.base), new Prisma.Decimal(c.porcentaje))
+      const navegador = recargoEnCentavos(aCentavos(c.base), porcentajeEnMilesimas(c.porcentaje))
+      expect(navegador, `${c.base} al ${c.porcentaje} %`).toBe(aCentavos(servidor.toString()))
+    })
+  }
+
+  it('un porcentaje que no se entiende da NaN, no cero', () => {
+    expect(porcentajeEnMilesimas('')).toBeNaN()
+    expect(porcentajeEnMilesimas('cuarenta')).toBeNaN()
   })
 })

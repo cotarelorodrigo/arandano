@@ -30,6 +30,7 @@ const DECIMALES_CANTIDAD = 3
 // La cotización se guarda con CUATRO. Truncarla a tres movería el total de un
 // pago en dólares y desalinearía el botón respecto del servidor.
 const DECIMALES_COTIZACION = 4
+const DECIMALES_PORCENTAJE = 3
 
 /** El texto de un Decimal a un entero en la escala pedida. */
 function aEntero(texto: string, decimales: number): number {
@@ -97,6 +98,22 @@ export function dineroEnCentavos(texto: string): number {
 /** Lo que se tipeó como cotización, en diezmilésimas. NaN si no. */
 export function cotizacionEnDiezMilesimas(texto: string): number {
   return tipeadoEnEscala(texto, aDiezMilesimas)
+}
+
+// Canónico y no tipeado: esto NO pasa por `tipeadoEnEscala`, y es la única
+// función de este archivo que no lo hace. Lo que entra acá es el `toString()`
+// de un Decimal(6,3) que armó el servidor, no algo que alguien escribió en un
+// campo — y la gramática de tipeo rechaza los negativos a propósito (ver
+// lib/formato/gramatica.ts), que es justo lo que un descuento necesita.
+//
+// La guarda no es opcional: sin ella `aEntero('')` devuelve 0, y un cero
+// silencioso es un plan que no recarga nada sin que nadie se entere.
+const PORCENTAJE_CANONICO = /^-?\d+(\.\d+)?$/
+
+/** Un porcentaje (`"13.75"`, `"-10"`) a milésimas. NaN si no se entiende. */
+export function porcentajeEnMilesimas(texto: string): number {
+  if (!PORCENTAJE_CANONICO.test(texto)) return NaN
+  return aEntero(texto, DECIMALES_PORCENTAJE)
 }
 
 /**
@@ -190,4 +207,29 @@ export function totalDePagosEnCentavos(
     (acc, p) => acc + pesosDePagoEnCentavos(p.montoCentavos, p.cotizacionDiezMilesimas),
     0,
   )
+}
+
+/**
+ * `Math.round` NO alcanza acá, y es la única función de este archivo donde no
+ * alcanza: para positivos es ROUND_HALF_UP, pero para negativos redondea hacia
+ * +∞ (`Math.round(-0.5)` da -0) mientras que el `ROUND_HALF_UP` de Decimal se
+ * aleja del cero (-1). Los descuentos son negativos, así que ese medio centavo
+ * separaría al navegador del servidor y dejaría el botón "Cobrar" habilitado
+ * para una venta que el motor rechaza.
+ */
+function redondearMitadLejosDelCero(v: number): number {
+  return v < 0 ? -Math.round(-v) : Math.round(v)
+}
+
+/**
+ * El recargo de un pago, en centavos. Espeja a `recargoDePago` de totales.ts.
+ *
+ * centavos × milésimas de porcentaje son 10^-5 de un porcentaje; dividir por
+ * 100.000 los deja en centavos.
+ */
+export function recargoEnCentavos(
+  baseEnPesosCentavos: number,
+  porcentajeMilesimas: number,
+): number {
+  return redondearMitadLejosDelCero((baseEnPesosCentavos * porcentajeMilesimas) / 100000)
 }

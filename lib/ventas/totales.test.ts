@@ -6,6 +6,7 @@ import {
   totalDeItems,
   montoEnPesos,
   totalDePagos,
+  recargoDePago,
 } from './totales'
 
 const d = (v: string) => new Prisma.Decimal(v)
@@ -84,5 +85,37 @@ describe('totalDePagos', () => {
 
   it('una lista vacía da cero', () => {
     expect(totalDePagos([]).toString()).toBe('0')
+  })
+})
+
+describe('recargoDePago', () => {
+  it('un recargo del 25 % sobre 100.000 son 25.000', () => {
+    expect(recargoDePago(d('100000'), d('25')).toString()).toBe('25000')
+  })
+
+  it('un descuento del 10 % es negativo', () => {
+    expect(recargoDePago(d('10000'), d('-10')).toString()).toBe('-1000')
+  })
+
+  it('un porcentaje en cero no recarga', () => {
+    expect(recargoDePago(d('9999.99'), d('0')).toString()).toBe('0')
+  })
+
+  // ROUND_HALF_UP: 0.005 va para arriba, y para un negativo "arriba" es
+  // alejarse del cero. Es lo que hace el resto del motor y lo que la gente
+  // espera cuando mira el vuelto.
+  //
+  // 1 y 0,5 % NO son números redondos elegidos al azar: 1 × 0,5 / 100 = 0,005
+  // exacto, la mitad exacta de un centavo — el único valor que de verdad
+  // ejercita el desempate de ROUND_HALF_UP. Un par más "prolijo" como 1 y 50 %
+  // da 0,5, que ya es exacto a dos decimales y no prueba nada (fue el bug que
+  // este mismo test tenía antes de esta corrección). No simplificar de vuelta.
+  it('redondea la mitad alejándose del cero, en los dos signos', () => {
+    expect(recargoDePago(d('1'), d('0.5')).toString()).toBe('0.01')
+    expect(recargoDePago(d('1'), d('-0.5')).toString()).toBe('-0.01')
+  })
+
+  it('respeta los tres decimales del porcentaje', () => {
+    expect(recargoDePago(d('10000'), d('13.75')).toString()).toBe('1375')
   })
 })

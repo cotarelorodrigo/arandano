@@ -12,6 +12,8 @@ export const ESCALA_DINERO = 2
 export const ESCALA_CANTIDAD = 3
 /** La cotización de la moneda: `Decimal(12, 4)`. */
 export const ESCALA_COTIZACION = 4
+/** El porcentaje de un plan de pago: `Decimal(6, 3)`. */
+export const ESCALA_PORCENTAJE = 3
 
 /**
  * Si `v` tiene más decimales de los que la columna va a conservar.
@@ -78,4 +80,17 @@ export function totalDePagos(
     (acc, p) => acc.add(montoEnPesos(p.monto, p.cotizacion)),
     new Prisma.Decimal(0),
   )
+}
+
+/**
+ * Lo que un plan le suma (o le resta) a la parte de la venta que ese pago cubre.
+ *
+ * Con signo: un plan de -10 % devuelve un negativo, y el llamador lo suma igual.
+ *
+ * Redondea ACÁ, por pago, antes de que nadie sume — misma regla y mismo motivo
+ * que `subtotalItem`: el total del navegador y el del servidor se comparan por
+ * igualdad, así que los dos tienen que redondear en el mismo momento.
+ */
+export function recargoDePago(baseEnPesos: Decimal, porcentaje: Decimal): Decimal {
+  return redondearDinero(baseEnPesos.mul(porcentaje).div(100))
 }
