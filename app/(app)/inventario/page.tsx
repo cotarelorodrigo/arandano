@@ -550,33 +550,60 @@ export function Listado({
                     </div>
                   </div>
 
-                  {/* Meta del teléfono (nodo `w6wW2e`): código+categoría,
-                      el chip de estado y el stock, en su propia línea.
-                      `basis-full` fuerza el salto de línea del `flex-wrap`
-                      de la fila —Código y Tipo, ocultos arriba, no dejan
-                      hueco—, y `lg:hidden` la saca del todo en
-                      escritorio, donde no consume ninguna columna. */}
-                  <div className="flex basis-full items-center gap-2 lg:hidden">
-                    <span title={detalleMovil} className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-                      {detalleMovil}
-                    </span>
-                    <ChipEstado estado={f.estado} />
-                    <span className={cn(estilos.archivo, 'shrink-0 text-[12px] tabular-nums', claseStockCelda)}>
-                      {f.stockTexto}
-                    </span>
-                  </div>
+                  {/* Stock, y en el teléfono la LÍNEA DE META ENTERA (nodo
+                      `w6wW2e`): código+categoría, el chip de estado y el
+                      stock.
 
-                  {/* Stock: propia celda de escritorio; en el teléfono el
-                      mismo valor ya salió en la línea de meta. */}
+                      Las dos cosas en la MISMA celda, y no en un `<div>`
+                      suelto al lado, que es como estaba hasta la ola final
+                      del ciclo. El motivo es de accesibilidad, no de
+                      prolijidad: los hijos de un `role="row"` tienen que ser
+                      celdas, y aquel `<div>` sin rol dejaba la fila del
+                      teléfono con un hijo que no lo era. Fundirla acá también
+                      borra la única duplicación real que quedaba —el stock
+                      aparecía dos veces, en la meta y en su celda— porque
+                      ahora las dos versiones son dos presentaciones del mismo
+                      dato adentro de su celda.
+
+                      Es la técnica que `/servicio-tecnico` ya usa en su celda
+                      "Ingresó" (app/(app)/servicio-tecnico/page.tsx): un
+                      bloque `lg:hidden` y otro `hidden lg:flex` como
+                      hermanos, y la lección es que **el dato no tiene por qué
+                      vivir cerca de la celda que uno imagina** — la meta del
+                      teléfono habla del código, del estado y del stock, y
+                      cuelga de la celda de Stock porque es la que ocupa su
+                      lugar en la grilla de escritorio.
+
+                      `basis-full` fuerza el salto de línea del `flex-wrap`
+                      de la fila en el teléfono (Código y Tipo, ocultos más
+                      arriba, no dejan hueco); en escritorio el `flex-basis`
+                      no tiene efecto: ahí la fila es `lg:contents` y esto es
+                      un ítem de grid. */}
                   <div
                     role="cell"
-                    className={cn(
-                      estilos.archivo,
-                      'hidden whitespace-nowrap text-right text-sm tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors',
-                      claseStockCelda,
-                    )}
+                    className="basis-full lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
                   >
-                    <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{f.stockTexto}</div>
+                    <div className="flex items-center gap-2 lg:hidden">
+                      <span title={detalleMovil} className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+                        {detalleMovil}
+                      </span>
+                      <ChipEstado estado={f.estado} />
+                      <span className={cn(estilos.archivo, 'shrink-0 text-[12px] tabular-nums', claseStockCelda)}>
+                        {f.stockTexto}
+                      </span>
+                    </div>
+                    {/* Escritorio: el stock solo, alineado a la derecha, con
+                        el mismo envoltorio de centrado (`lg:h-full`) que
+                        llevan las otras celdas cortas de esta fila. */}
+                    <div
+                      className={cn(
+                        estilos.archivo,
+                        'hidden whitespace-nowrap text-right text-sm tabular-nums lg:flex lg:h-full lg:items-center lg:justify-end',
+                        claseStockCelda,
+                      )}
+                    >
+                      {f.stockTexto}
+                    </div>
                   </div>
 
                   {/* Estado: propia celda de escritorio; en el teléfono

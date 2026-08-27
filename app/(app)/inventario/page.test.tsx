@@ -522,6 +522,48 @@ describe('Listado: el patrón grid + display:contents (Task 6, ronda de arreglos
     expect(renderListado().match(/role="cell"/g)).toHaveLength(6)
   })
 
+  /**
+   * Deuda que el ciclo móvil dejó agendada y la ola final cerró: la línea de
+   * meta del teléfono era un `<div>` SIN rol, hijo directo del `role="row"`
+   * — y los hijos de una fila ARIA tienen que ser celdas. Se fundió en la
+   * celda real de Stock, la misma técnica que `/servicio-tecnico` ya usa en
+   * su celda "Ingresó".
+   *
+   * El caso cuenta los hijos DIRECTOS de la fila y exige que los seis sean
+   * celdas. Cuenta hijos y no clases a propósito: un `<div>` nuevo sin rol
+   * colado en la fila —que es exactamente lo que pasó— no cambia ninguna
+   * clase existente, así que sólo un conteo estructural lo ve.
+   */
+  it('la fila del teléfono no tiene ningún hijo suelto: sus 6 hijos son celdas', () => {
+    const html = renderListado()
+    const marca = html.indexOf('role="row" class="group ')
+    expect(marca, 'no se encontró la fila de datos').toBeGreaterThan(-1)
+    // Desde la APERTURA del <div> de la fila, no desde el atributo: si no, el
+    // recorrido arranca a mitad de la etiqueta y confunde profundidades.
+    const desdeLaFila = html.slice(html.lastIndexOf('<div', marca))
+
+    // Los hijos directos: se recorre el HTML llevando la profundidad de
+    // <div>, y se anota cada apertura que esté en profundidad 1 respecto de
+    // la fila. renderToStaticMarkup no emite <div> auto-cerrados, así que
+    // abrir y cerrar alcanzan para llevar la cuenta.
+    const hijos: string[] = []
+    let profundidad = 0
+    for (const m of desdeLaFila.matchAll(/<div\b[^>]*>|<\/div>/g)) {
+      if (m[0] === '</div>') {
+        profundidad -= 1
+        if (profundidad === 0) break // se cerró la fila
+      } else {
+        if (profundidad === 1) hijos.push(m[0])
+        profundidad += 1
+      }
+    }
+
+    expect(hijos, `hijos directos de la fila: ${hijos.join('\n')}`).toHaveLength(6)
+    for (const hijo of hijos) {
+      expect(hijo, `un hijo de role="row" que no es celda: ${hijo}`).toContain('role="cell"')
+    }
+  })
+
   it('la fila resalta al pasar el mouse en escritorio (group + group-hover en las 6 celdas)', () => {
     const html = renderListado()
     expect(html).toContain('role="row" class="group ')
@@ -598,7 +640,15 @@ describe('Listado: el patrón grid + display:contents (Task 6, ronda de arreglos
   // otras cinco (Código, Tipo, Precio, Stock, Estado).
   it('las celdas más cortas que Nombre centran su contenido con un envoltorio interno, no achicando la celda', () => {
     const html = renderListado()
-    const envoltorios = [...html.matchAll(/class="lg:flex lg:h-full lg:items-center[^"]*"/g)]
+    // Se busca `lg:h-full` + `lg:items-center` EN CUALQUIER POSICIÓN del
+    // atributo, y no como prefijo exacto: desde que la celda de Stock comparte
+    // su caja con la línea de meta del teléfono (ola final), su envoltorio de
+    // escritorio arranca con `hidden` y lleva además la tipografía que antes
+    // vivía en la celda. Lo que este caso cuida es el MECANISMO de centrado,
+    // no el orden en que Tailwind ordena las clases.
+    const envoltorios = [...html.matchAll(/class="[^"]*\blg:h-full\b[^"]*"/g)].filter((m) =>
+      m[0].includes('lg:items-center'),
+    )
     expect(envoltorios, 'Código, Tipo, Precio, Stock y Estado: 5 celdas más cortas que Nombre').toHaveLength(5)
     expect(html).not.toContain('self-center')
   })

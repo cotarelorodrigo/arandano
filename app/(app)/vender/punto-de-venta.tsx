@@ -1249,7 +1249,23 @@ export function PuntoDeVenta({
                         DOM—, así que se ancla con `absolute` al padding del
                         ítem (arriba a la derecha, nodo `hRb9c`), relativo a
                         la fila (`relative`, más arriba), independiente de
-                        dónde cae en el flujo normal. */}
+                        dónde cae en el flujo normal.
+
+                        EL COSTO, Y LA ALTERNATIVA, para quien vuelva acá: el
+                        botón queda visualmente junto al nombre pero en el DOM
+                        sigue siendo la QUINTA celda, así que por teclado se
+                        llega después del stepper y del subtotal. La maqueta lo
+                        modela como hermano del nombre. La salida conocida —que
+                        la ola final de la review dejó anotada en vez de
+                        aplicar, porque toca las cinco celdas de escritorio de
+                        una pantalla ya verificada a ojo— es **anidarlo junto
+                        al nombre en el DOM y darle a las CINCO celdas un
+                        `lg:col-start-N` explícito**: así el orden de lectura y
+                        el de tabulación pasan a ser el del teléfono, y la
+                        grilla de escritorio se reconstruye por posición
+                        declarada en vez de por orden del DOM. Es todo o nada:
+                        con `col-start` en una sola celda, las otras cuatro
+                        siguen fluyendo y se corren. */}
                     <div
                       role="cell"
                       className="absolute top-[11px] right-[14px] lg:static lg:border-b lg:p-[11px] lg:pr-[18px] lg:pl-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"

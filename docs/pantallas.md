@@ -337,6 +337,15 @@ Es la pantalla que más cambia del ciclo, y la única que se parte en dos frames
 - **La fila del carrito se apila**: nombre y "Quitar" arriba, stepper y
   subtotal debajo, y el precio unitario fundido en la línea de meta. Mismo
   patrón `lg:contents` que los cuatro listados.
+
+  **"Quitar" queda arriba a la derecha con `position: absolute`, no anidado
+  junto al nombre**, así que en el DOM sigue siendo la quinta celda: por
+  teclado se llega después del stepper y del subtotal. La alternativa está
+  escrita en el código, al lado del botón — anidarlo junto al nombre y darle a
+  las **cinco** celdas un `lg:col-start-N` explícito, que reconstruye la grilla
+  de escritorio por posición declarada en vez de por orden del DOM. No se
+  aplicó porque toca las cinco celdas de una pantalla ya verificada a ojo, y no
+  se puede hacer a medias.
 - **El pie fijo lleva el botón `Cobrar` de 54 px**, y el buscador sube a 52.
 - **Los tres atajos de teclado no se tocan.** En un teléfono no hay teclado que
   los dispare, y su lógica de foco ya estaba probada.
@@ -588,6 +597,14 @@ El listado de artículos, con buscador, filtro de tipo y chips de estado
   en `/ventas` y vale saber por qué: como las celdas ocultas llevan `hidden`
   (que las saca del flujo), Nombre y Precio quedan pegados sin reordenar nada,
   y el orden del DOM sigue siendo el de escritorio.
+
+  **Esa línea de meta vive DENTRO de la celda de Stock**, no en un `<div>`
+  suelto al lado (ola final del ciclo del teléfono). Así la fila del teléfono
+  no tiene ningún hijo que no sea celda, y el stock deja de estar duplicado en
+  dos hermanos: las dos versiones —la meta compacta y el número alineado a la
+  derecha— son dos presentaciones del mismo dato adentro de su propia celda.
+  Ver *Lo que hereda toda pantalla* para cuándo esta fusión se puede y cuándo
+  no.
 - **"Ingresar mercadería" no se construyó**, ni acá ni en el Topbar de
   escritorio, aunque la maqueta lo dibuje en los dos: esa acción vive **por
   artículo**, en la ficha, y a nivel del listado no hay destino al que mandar.
@@ -1220,6 +1237,35 @@ heredan cuatro cosas sin que nadie las repita:
 teléfono sin prefijo, el de escritorio con `lg:`. El porqué del número y del
 patrón `lg:contents` que comparten los cuatro listados y el carrito está en
 `CLAUDE.md`, en la entrada del ciclo del teléfono.
+
+**La derivada que ese patrón deja abierta, y que conviene tener escrita**: en
+varias filas quedan hijos directos de un `role="row"` que **no son celdas**, y
+una fila ARIA sólo debería tener celdas. Son de dos formas distintas y sólo una
+es deuda:
+
+- **Agrupadores `lg:contents`** — `/ventas`, `/vender` y `/usuarios` juntan dos
+  o tres celdas en una caja para poder apilarlas en el teléfono, y esa caja se
+  disuelve en escritorio. Son andamiaje de layout, no un lugar donde viva un
+  dato.
+- **Líneas fundidas `lg:hidden`** — la meta del teléfono que junta datos que en
+  escritorio son columnas distintas. Ésta sí es la deuda, porque es contenido.
+  Quedan **tres en `/ventas/[id]`** (una en "Qué se vendió", dos en "Cómo se
+  pagó"), **dos en el historial de `/inventario/[id]`** y **una en
+  `/servicio-tecnico`** — esta última con su razón ya escrita en el docblock de
+  `Listado` de esa pantalla: fundirla habría corrido dos columnas de escritorio
+  de lugar.
+
+**`/inventario` ya no tiene ninguna**: la ola final del ciclo fundió su línea de
+meta dentro de la celda real de **Stock**, que es la técnica que
+`/servicio-tecnico` ya usaba en su celda "Ingresó" — un bloque `lg:hidden` y
+otro `hidden lg:flex` como hermanos adentro de la misma celda. La lección que
+hace falta para repetirla en las otras: **el dato no tiene por qué vivir cerca
+de la celda que uno imagina**. La meta de `/inventario` habla del código, del
+estado y del stock, y cuelga de la celda de Stock simplemente porque es la que
+ocupa su lugar en la grilla de escritorio. Cuándo NO se puede: cuando la celda
+que tocaría no está en la posición del DOM donde el teléfono necesita la línea,
+porque moverla correría columnas de escritorio — que es exactamente el caso de
+`/servicio-tecnico` y su chip.
 
 Y todas, sin excepción, leen la base con `prismaParaTenant`, que fuerza el
 filtro por `tenant_id` y ata la conexión al tenant por GUC de sesión. RLS es la
