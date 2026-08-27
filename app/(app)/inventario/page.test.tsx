@@ -356,6 +356,23 @@ describe('FiltrosDeInventario en el teléfono (Task 6)', () => {
     // bg-muted p-[3px]", sin ningún flex-1): ahora ocupa el ancho disponible
     // en el teléfono y vuelve a su ancho natural en escritorio.
     expect(html).toMatch(/class="[^"]*\bflex-1\b[^"]*bg-muted p-\[3px\][^"]*lg:flex-initial/)
+
+    // Y CADA OPCIÓN, que es donde vivía el defecto: guardar sólo el contenedor
+    // no alcanza porque su ancho intrínseco a ≥1024 lo fijan los ítems, y un
+    // contenedor flex cuyos ítems son todos `flex: 1 1 0%` mide n × el ítem
+    // más ancho. Las tres pastillas llevan `flex-1 … lg:flex-none` y
+    // `text-center lg:text-left`; ninguna de las cuatro clases existía antes
+    // de la rama del teléfono.
+    const opciones = [...html.matchAll(/<a\b[^>]*class="([^"]*rounded-lg[^"]*)"/g)].map(
+      (m) => m[1],
+    )
+    expect(opciones).toHaveLength(3)
+    for (const clases of opciones) {
+      expect(clases).toMatch(/\bflex-1\b/)
+      expect(clases).toMatch(/\blg:flex-none\b/)
+      expect(clases).toMatch(/\btext-center\b/)
+      expect(clases).toMatch(/\blg:text-left\b/)
+    }
   })
 
   it('recibe el botón/Sheet de categorías del teléfono y lo ubica junto al segmentado', () => {

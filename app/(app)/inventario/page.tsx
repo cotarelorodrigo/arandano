@@ -257,6 +257,17 @@ export function FiltrosDeInventario({
           `panelCategorias`) y el segmentado vuelve a ser el único hermano
           del form, igual que siempre. */}
       <div className="flex items-center gap-2 lg:contents">
+        {/* `flex-1` y `text-center` van EN EL CONTENEDOR Y EN CADA OPCIÓN, y
+            los dos se apagan en escritorio. Guardar sólo el contenedor no
+            alcanza: a ≥1024 vuelve a `flex: 0 1 auto`, o sea que su ancho lo
+            fija el contenido — y el tamaño intrínseco de un contenedor flex
+            cuyos ítems son todos `flex: 1 1 0%` es n × el ítem más ancho, así
+            que el control se ensancharía y las tres pastillas pasarían a medir
+            lo mismo. Antes de esta rama ninguno de los dos existía. Mismo
+            tratamiento que el segmentado hermano de /ventas, del que sale
+            `lg:flex-none` para las opciones: con el contenedor ya dimensionado
+            por su contenido, `flex-none` y `flex-initial` dan exactamente el
+            mismo ancho, y así las dos pantallas dicen lo mismo. */}
         <div className="flex h-auto flex-1 gap-0.5 rounded-[10px] bg-muted p-[3px] lg:flex-initial">
           {OPCIONES_TIPO.map((o) => (
             <Link
@@ -264,8 +275,8 @@ export function FiltrosDeInventario({
               href={hrefListado({ busqueda, verInactivos, tipo: o.valor, cat })}
               className={
                 o.valor === tipo
-                  ? 'flex-1 rounded-lg bg-card px-[13px] py-[7px] text-center text-[12px] font-semibold text-foreground shadow-sm'
-                  : 'flex-1 rounded-lg px-[13px] py-[7px] text-center text-[12px] font-medium text-muted-foreground'
+                  ? 'flex-1 rounded-lg bg-card px-[13px] py-[7px] text-center text-[12px] font-semibold text-foreground shadow-sm lg:flex-none lg:text-left'
+                  : 'flex-1 rounded-lg px-[13px] py-[7px] text-center text-[12px] font-medium text-muted-foreground lg:flex-none lg:text-left'
               }
             >
               {o.rotulo}

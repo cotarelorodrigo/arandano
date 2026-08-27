@@ -287,7 +287,17 @@ export function HistorialDeMovimientos({
               </div>
 
               {/* Celdas de escritorio: cada una su propia columna del grid,
-                  ocultas en el teléfono (ya fundidas arriba). */}
+                  ocultas en el teléfono (ya fundidas arriba).
+
+                  Las CINCO llevan `text-sm` propio, sin prefijo. Antes de
+                  esta task lo heredaban del `<Table>` de shadcn
+                  (components/ui/table.tsx), que se fue con el grid: ningún
+                  ancestro lo repone —`.archivo` sólo declara la familia y el
+                  `<section>` de arriba no fija tamaño—, así que sin esto
+                  caerían a los 16 px del navegador. Los 14 px valen en los
+                  dos anchos: son los de escritorio de antes de la rama, y la
+                  maqueta del teléfono no los muestra (acá abajo mandan las
+                  dos filas fundidas, con sus tamaños propios). */}
               <div role="cell" className="hidden text-sm text-foreground lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
                 <div className="lg:flex lg:h-full lg:items-center">{f.fechaTexto}</div>
               </div>
@@ -308,13 +318,13 @@ export function HistorialDeMovimientos({
               </div>
               <div
                 role="cell"
-                className={`${estilos.archivo} hidden text-right font-semibold tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors ${
+                className={`${estilos.archivo} hidden text-right text-sm font-semibold tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors ${
                   f.negativo ? 'text-destructive' : 'text-ok'
                 }`}
               >
                 <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{f.cambioTexto}</div>
               </div>
-              <div role="cell" className={`${estilos.archivo} hidden text-right font-semibold text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
+              <div role="cell" className={`${estilos.archivo} hidden text-right text-sm font-semibold text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
                 <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{f.quedaTexto}</div>
               </div>
             </div>

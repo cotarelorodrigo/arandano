@@ -296,19 +296,31 @@ export function Detalle({
                     </span>
                   </div>
 
-                  {/* Cantidad — su propia celda, sólo escritorio. */}
-                  <div role="cell" className={`${estilos.archivo} hidden text-right text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
+                  {/* Cantidad — su propia celda, sólo escritorio.
+
+                      Las celdas de escritorio de las DOS tablas de esta
+                      pantalla llevan `text-sm` propio, sin prefijo. Antes de
+                      esta rama lo heredaban del `<Table>` de shadcn
+                      (components/ui/table.tsx), que se fue con el grid; acá
+                      ningún ancestro lo repone —`.archivo` sólo declara la
+                      familia, y el contenedor es un `<div>` con borde, no un
+                      `<Card>` de shadcn, que sí lo trae (por eso el carrito
+                      de /vender no lo necesitó)—, así que sin esto caerían a
+                      los 16 px del navegador. Los 14 px valen en los dos
+                      anchos: son los de escritorio de antes de la rama, y en
+                      el teléfono estas celdas están ocultas. */}
+                  <div role="cell" className={`${estilos.archivo} hidden text-right text-sm text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
                     <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{i.cantidadFormateada}</div>
                   </div>
 
                   {/* Precio — su propia celda, sólo escritorio. */}
-                  <div role="cell" className={`${estilos.archivo} hidden text-right text-foreground-soft tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
+                  <div role="cell" className={`${estilos.archivo} hidden text-right text-sm text-foreground-soft tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
                     <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{i.precioFormateado}</div>
                   </div>
 
                   {/* Subtotal — su propia celda, sólo escritorio (el
                       teléfono ya lo mostró arriba, en la meta). */}
-                  <div role="cell" className={`${estilos.archivo} hidden text-right font-semibold text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
+                  <div role="cell" className={`${estilos.archivo} hidden text-right text-sm font-semibold text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
                     <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{i.subtotalFormateado}</div>
                   </div>
                 </div>
@@ -371,18 +383,18 @@ export function Detalle({
                       diferencia de "Artículo" en la de arriba—, así que
                       TODAS necesitan el envoltorio de centrado (ninguna es
                       "la más alta" de por sí). */}
-                  <div role="cell" className="hidden text-foreground lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
+                  <div role="cell" className="hidden text-sm text-foreground lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
                     <div className="lg:flex lg:h-full lg:items-center">{p.medioLabel}</div>
                   </div>
 
                   {/* Moneda — su propia celda, sólo escritorio (el teléfono
                       la funde en la meta). */}
-                  <div role="cell" className="hidden text-foreground lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
+                  <div role="cell" className="hidden text-sm text-foreground lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
                     <div className="lg:flex lg:h-full lg:items-center">{p.monedaLabel}</div>
                   </div>
 
                   {/* Cotización — su propia celda, sólo escritorio. */}
-                  <div role="cell" className={`${estilos.archivo} hidden text-right text-foreground-soft tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
+                  <div role="cell" className={`${estilos.archivo} hidden text-right text-sm text-foreground-soft tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
                     <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{p.cotizacionFormateada}</div>
                   </div>
 
@@ -391,7 +403,7 @@ export function Detalle({
                       resuelto en `montoFormateado` — `formatearPrecio` ya
                       emite el `$` de pesos, así que anteponerle "US$ " a mano
                       daba "US$ $ 0,80". */}
-                  <div role="cell" className={`${estilos.archivo} hidden text-right text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
+                  <div role="cell" className={`${estilos.archivo} hidden text-right text-sm text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
                     <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{p.montoFormateado}</div>
                   </div>
 
@@ -400,7 +412,7 @@ export function Detalle({
                       dólares). `montoEnPesos()` de lib/ventas/totales.ts, la
                       MISMA función con la que `componerPorMedio` arma "Cómo
                       entró la plata" en /ventas. */}
-                  <div role="cell" className={`${estilos.archivo} hidden text-right font-semibold text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
+                  <div role="cell" className={`${estilos.archivo} hidden text-right text-sm font-semibold text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
                     <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{p.enPesosFormateado}</div>
                   </div>
 

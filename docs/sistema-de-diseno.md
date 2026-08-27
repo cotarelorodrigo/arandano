@@ -515,16 +515,38 @@ listados y del carrito —pasaron a `grid` + `display: contents`, para que el
 mismo árbol sea una tabla arriba de 1024 y una tarjeta apilada abajo—, así que
 ya no hay ningún `<Table>` del que heredar: el tamaño lo declara cada celda.
 
-Y eso dejó una deuda concreta que conviene tener escrita acá y no sólo en el
-reporte de un ciclo: **en `/ventas/[id]` ocho celdas de escritorio se quedaron
-sin tamaño propio al desaparecer el `<Table>`** —Cantidad, Precio y Subtotal de
-"Qué se vendió"; Medio, Moneda, Cotización, Monto y En pesos de "Cómo se
-pagó"—, así que hoy heredan los 16 px del navegador en vez de los 14 que
-declaran su rol. `/inventario` sí repuso el `text-sm` explícito al hacer el
-mismo cambio, y `/vender` no lo necesita porque su carrito vive dentro de un
-`<Card>`, que trae `text-sm` propio. **La tabla de arriba dice 14 px porque el
-documento es la fuente de verdad**: lo que hay que corregir es el código, no
-esta fila.
+Y eso dejó una deuda que conviene tener escrita acá y no sólo en el reporte de
+un ciclo, porque es el modo de falla que más veces se repitió: **DIEZ celdas de
+escritorio, repartidas en DOS pantallas, se quedaron sin tamaño propio al
+desaparecer el `<Table>`** y pasaron a heredar los 16 px del navegador en vez de
+los 14 que declara su rol.
+
+- **`/ventas/[id]`, ocho**: Cantidad, Precio y Subtotal de "Qué se vendió";
+  Medio, Moneda, Cotización, Monto y En pesos de "Cómo se pagó".
+- **`/inventario`, dos**: Cambio y Queda del historial de movimientos
+  (`historial.tsx`). El listado de esa misma pantalla (`page.tsx`) **sí** había
+  repuesto el `text-sm` explícito al hacer el cambio; el historial, que es otro
+  archivo, no — y por eso la primera versión de esta nota, que decía
+  "`/inventario` sí lo repuso", era cierta a medias y dejaba dos celdas
+  desprotegidas.
+
+`/vender` es la única que no lo necesitó: su carrito vive dentro de un `<Card>`,
+que trae `text-sm` propio.
+
+**Las diez están corregidas** (ola final del ciclo del teléfono): cada celda
+declara `text-sm` sin prefijo, porque los 14 px valen en los dos anchos —son los
+de escritorio de antes de la rama, y en el teléfono esas celdas están ocultas.
+**La tabla de arriba siempre dijo 14 px porque el documento es la fuente de
+verdad**: lo que había que corregir era el código, no esa fila.
+
+Y la lección que vale más que el arreglo, porque es la que se escapó tres veces:
+**lo que se pierde al sacar un componente contenedor no son sólo sus clases,
+sino las propiedades heredables que le daba gratis a todo lo de adentro.** El
+ciclo repuso cuatro pérdidas de `<TableRow>`/`<TableCell>` —que eran clases
+visibles en el diff— y se le escaparon éstas, que nunca fueron una clase de
+ninguna celda. Ante un cambio así, la pregunta no es "¿qué clases borré?" sino
+"¿qué heredaban de acá?": `font-size`, `color`, `text-align`, `white-space`,
+`font-family`, `line-height`.
 
 **Los seis roles de arriba son nuevos y no una extensión de *Importe*, a
 propósito.** La plata de `/ventas` y `/ventas/[id]` también es dinero en
