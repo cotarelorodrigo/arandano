@@ -59,7 +59,7 @@ export default async function Login() {
           <p className={estilos.arandano}>Arándano</p>
         </div>
 
-        <div className="flex flex-col gap-2 lg:max-w-[560px] lg:gap-[14px]">
+        <div className="flex max-w-[560px] flex-col gap-2 lg:gap-[14px]">
           {/* El testid lo consume scripts/smoke.sh (caso_tenant_resuelve) para
               verificar que el subdominio resolvió al tenant correcto. Dos cosas
               no se pueden tocar sin mover ese caso en el mismo commit: el

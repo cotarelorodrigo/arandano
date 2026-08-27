@@ -57,14 +57,8 @@ import tipografia from './tipografia.module.css'
 // Landing`, consultado nodo por nodo (Nav, Hero, Muestra, Módulos, Rubros,
 // Planes, Cierre y Pie miden 20px de margen lateral, los ocho). Como las ocho
 // secciones ya comparten esta constante, migrar acá alcanza para las ocho a
-// la vez — el mx-auto no se toca.
-//
-// Task 12 (test/responsive.test.ts): el cap de 1440px de ancho pasó a llevar
-// el prefijo `lg:`. No cambia nada — 1440 nunca se alcanza por debajo de
-// 1024, así que ese cap estaba inactivo en todo el rango que ahora cubre
-// `lg:` — pero sin el prefijo, el propio test que impide la recaída lo
-// marcaba como un ancho fijo sin variante de escritorio.
-const ANCHO = 'mx-auto w-full px-5 lg:max-w-[1440px] lg:px-14'
+// la vez — el mx-auto/max-w siguen sin tocarse, no atan nada abajo de 1440.
+const ANCHO = 'mx-auto w-full max-w-[1440px] px-5 lg:px-14'
 
 /**
  * El H2 que comparten Módulos, Rubros y Planes: 38px/700 Archivo, tracking
@@ -370,7 +364,7 @@ export function Modulos() {
     // escritorio; en el teléfono es py-8(32px).
     <section id="que-hace" className="bg-background py-8 lg:py-16">
       <div className={`${ANCHO} flex flex-col gap-[18px] lg:gap-7`}>
-        <div className="flex flex-col gap-[10px] lg:max-w-[640px] lg:gap-3">
+        <div className="flex max-w-[640px] flex-col gap-[10px] lg:gap-3">
           <TituloDeSeccion>Un núcleo, tres módulos, rubros ilimitados</TituloDeSeccion>
           <p className="text-[13px] leading-[1.5] text-foreground-soft lg:text-[15px] lg:leading-[1.6]">
             El núcleo solo ya cubre un comercio completo. Los módulos agregan comportamiento, y un
@@ -476,7 +470,7 @@ export function Rubros() {
     <section id="rubros" className="py-8 lg:py-16">
       <div className={`${ANCHO} flex flex-col gap-[18px] lg:gap-6`}>
         <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:justify-between lg:gap-10">
-          <div className="flex flex-col gap-[10px] lg:max-w-[600px] lg:gap-3">
+          <div className="flex max-w-[600px] flex-col gap-[10px] lg:gap-3">
             <TituloDeSeccion>Tu rubro ya está adentro</TituloDeSeccion>
             <p className="text-[13px] leading-[1.5] text-foreground-soft lg:text-[15px] lg:leading-[1.6]">
               Un rubro no es código: es qué módulos vienen activados, qué datos demo se cargan y
@@ -593,7 +587,7 @@ export function Planes() {
     // el teléfono es py-8.
     <section id="precios" className="bg-background py-8 lg:py-16">
       <div className={`${ANCHO} flex flex-col gap-[18px] lg:gap-7`}>
-        <div className="flex flex-col gap-[10px] lg:max-w-[640px] lg:gap-3">
+        <div className="flex max-w-[640px] flex-col gap-[10px] lg:gap-3">
           <TituloDeSeccion>Precios claros, en pesos</TituloDeSeccion>
           <p className="text-[13px] leading-[1.5] text-foreground-soft lg:text-[15px] lg:leading-[1.6]">
             Los módulos no se cobran aparte ni dependen del plan: activás los que necesites. El
@@ -718,11 +712,11 @@ export function Cierre({ children }: { children: React.ReactNode }) {
     <section id="contacto" className={`${estilos.franja} py-9 lg:py-[72px]`}>
       <div className={`${ANCHO} flex flex-col items-center gap-4 text-center lg:gap-[22px]`}>
         <h2
-          className={`${estilos.titulo} ${tipografia.archivo} text-[28px] leading-[1.15] font-semibold lg:max-w-[720px] lg:text-[44px] lg:leading-[1.1] lg:font-bold lg:tracking-[-1.4px]`}
+          className={`${estilos.titulo} ${tipografia.archivo} max-w-[720px] text-[28px] leading-[1.15] font-semibold lg:text-[44px] lg:leading-[1.1] lg:font-bold lg:tracking-[-1.4px]`}
         >
           El alta es instantánea
         </h2>
-        <p className={`${estilos.bajada} text-[13px] leading-[1.5] lg:max-w-[620px] lg:text-base lg:leading-[1.6]`}>
+        <p className={`${estilos.bajada} max-w-[620px] text-[13px] leading-[1.5] lg:text-base lg:leading-[1.6]`}>
           Dejás tu WhatsApp, elegís el rubro y en dos minutos tenés tu local cargado con datos de
           ejemplo para probarlo de verdad.
         </p>
@@ -730,7 +724,7 @@ export function Cierre({ children }: { children: React.ReactNode }) {
         {/* Mismo <Formulario> que en Hero, sin tocar (ver el comentario de
             ahí): esta task arma las secciones, la Task 5 lo achica a un solo
             campo. */}
-        <div className="w-full lg:max-w-[520px]">{children}</div>
+        <div className="w-full max-w-[520px]">{children}</div>
 
         <p className="text-[11px] lg:text-xs" style={{ color: 'var(--marca-dim)' }}>
           Sin tarjeta · exportás tus datos cuando quieras · soporte por WhatsApp
