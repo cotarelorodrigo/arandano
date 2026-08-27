@@ -132,8 +132,32 @@ export function PermisosDeUsuario({
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm">
-          <KeyRound aria-hidden="true" className="size-[15px]" />
+        {/* Mobile-first (merge con el ciclo del teléfono, 2026-08-26): en el
+            teléfono este disparador NO es un botón fantasma sino un link más
+            de la línea de acciones de la fila —"· 3 de 6 permisos · Cambiar
+            clave · Baja"—, con el mismo tratamiento que `ENLACE` en
+            `fila-acciones.tsx` (10px, semibold, `--primary`, subrayado al
+            pasar por encima) y sin el ícono, que a 15px desentona entre
+            textos de 10. Es UN SOLO nodo en el DOM: el `lg:` de cada clase
+            repone exactamente lo que `size="sm"` + `variant="ghost"` ya
+            pintaban en escritorio (alto 28, `px-2.5`, `text-[0.8rem]`,
+            `font-medium`, el `hover:bg-muted`), así que escritorio queda
+            igual que en `origin/main`.
+
+            `lg:text-inherit` y no `lg:text-foreground`: en `main` este
+            disparador no declaraba color, así que heredaba el de `body`
+            (`app/globals.css`, `text-foreground`). Los dos resuelven al mismo
+            valor hoy, pero fijar `text-foreground` acá deja una segunda copia
+            del color: si la celda "Permisos" alguna vez se apaga a
+            `--foreground-soft` como el resto de la meta de la fila, un
+            `text-foreground` puesto a mano no se enteraría. `text-inherit`
+            sigue heredando, igual que `main`. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-auto px-0 text-[10px] font-semibold text-primary hover:bg-transparent hover:text-primary hover:underline lg:h-7 lg:px-2.5 lg:text-[0.8rem] lg:font-medium lg:text-inherit lg:hover:bg-muted lg:hover:text-foreground lg:hover:no-underline"
+        >
+          <KeyRound aria-hidden="true" className="hidden size-[15px] lg:block" />
           {cuenta}
         </Button>
       </DialogTrigger>

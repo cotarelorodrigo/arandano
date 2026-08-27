@@ -1,12 +1,53 @@
+import Link from 'next/link'
+import { ArrowLeft } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 import estilos from './encabezado.module.css'
 
 /**
- * La franja de 66 px que abre las diez pantallas de la aplicación.
+ * La ranura derecha "de un solo toque" que design/arandano.pen dibuja en la
+ * esquina de `Móvil/Topbar` (nodo `NlGrn`, 38×38, radio 10, ícono 19). No es
+ * lo mismo que `acciones`: eso sigue existiendo para escritorio y puede traer
+ * cualquier cosa (un botón, dos, un menú); esto es SIEMPRE un solo link a un
+ * `href`, porque en 38 px no entra más que un ícono.
  *
- * La geometría sale de design/arandano.pen: `Topbar [fill x 66] fill:$ar-surface
- * pad:[0,28]`. Es la misma en las diez, y por eso es un componente y no un
- * bloque copiado: un padding distinto en una pantalla se ve como un salto al
- * navegar entre ellas.
+ * `tono` no es decorativo — la maqueta lo usa con un criterio: 'accion' (el
+ * default, relleno de `--primary`) cuando el botón CREA algo (`plus` en
+ * /inventario, `user-plus` en /usuarios); 'suave' (relleno de `--muted`)
+ * cuando es secundario o abre un menú (`more-vertical` en /vender).
+ */
+export type AccionMovil = {
+  icono: LucideIcon
+  etiqueta: string
+  href: string
+  tono?: 'accion' | 'suave'
+}
+
+/**
+ * La caja de una ranura del teléfono: 38×38, radio 10, y sólo visible abajo de
+ * `lg` (`f9BjR`/`NlGrn` del frame `Móvil/Topbar`).
+ *
+ * Exportada porque `controlMovil` (más abajo) recibe un nodo YA armado por
+ * quien lo usa —un control con estado propio no es algo que este componente
+ * pueda fabricar—, y ese nodo tiene que medir lo mismo que el link
+ * de `accionMovil` o las dos pantallas quedarían con ranuras de distinto
+ * tamaño. Un solo string es lo que impide que se desalineen sin que nadie lo
+ * note; el mismo criterio que `CLASES_MINI_FORM` en app/(app)/vender/caja.tsx.
+ */
+export const CLASES_RANURA_MOVIL =
+  'flex size-[38px] shrink-0 items-center justify-center rounded-[10px] lg:hidden'
+
+/**
+ * La franja que abre cada una de las diez pantallas de escritorio, y —desde
+ * el ciclo del shell móvil— también los doce frames `Móvil / …` del .pen.
+ *
+ * La geometría sale de dos frames: el Topbar de escritorio (66 px de alto,
+ * `padding [0,28]`) y `Móvil/Topbar` (`kyXe1`: 56 px, `padding [0,12]`,
+ * `gap 10`). Es el mismo componente para las dos porque las dos son "la misma
+ * franja, dos maquetas" — un padding distinto en una pantalla se ve como un
+ * salto al navegar entre ellas, y eso vale tanto en escritorio como en
+ * teléfono. Mobile-first: el valor sin prefijo es el del teléfono, `lg:` el
+ * de escritorio (hooks/use-mobile.ts explica por qué el corte es 1024).
  *
  * El <h1> paga Archivo (encabezado.module.css) porque el nodo Título > H1 del
  * Topbar lo pide en el .pen — no la pila del sistema que documentaba antes
@@ -20,20 +61,110 @@ export function Encabezado({
   titulo,
   subtitulo,
   acciones,
+  atras,
+  alVolver,
+  accionMovil,
+  controlMovil,
 }: {
   titulo: React.ReactNode
   subtitulo?: React.ReactNode
   acciones?: React.ReactNode
+  atras?: string
+  /**
+   * La misma flecha que `atras`, pero como `<button>`: para las pantallas
+   * donde "volver" NO es navegar a otra URL sino retroceder un paso adentro de
+   * la misma pantalla. Existe por /vender y su paso de cobro
+   * (app/(app)/vender/paso.ts): ahí un `href` a /vender dispararía una
+   * navegación de Next, el server component volvería a renderizar y
+   * `PuntoDeVenta` se remontaría con el carrito de la venta en curso adentro
+   * — que es exactamente lo que ese archivo entero existe para evitar.
+   *
+   * Pasar una función como prop es legal acá porque quien la pasa es un
+   * componente CLIENTE (`PuntoDeVenta`), no un server component: lo que Next
+   * prohíbe es cruzar la frontera servidor→cliente con una función, no que un
+   * cliente le pase un handler a otro.
+   */
+  alVolver?: () => void
+  accionMovil?: AccionMovil
+  /**
+   * La ranura derecha del teléfono cuando lo que va ahí NO es un link sino un
+   * control con estado propio — hoy, el `more-vertical` de /vender, que abre
+   * la hoja donde se abre y se cierra el turno de caja. Se recibe ya armado en
+   * vez de volver `accionMovil` una unión de dos formas; la geometría la
+   * comparte `CLASES_RANURA_MOVIL`, que quien lo arma tiene que aplicarle.
+   *
+   * `control` y no `menu`: lo que hay adentro puede ser un menú, una hoja o un
+   * diálogo — lo que define a esta prop es que trae su propio estado, no qué
+   * primitivo usa. La distinción con `accionMovil` es esa y no el aspecto:
+   * `accionMovil` es siempre un link a un href.
+   *
+   * Excluyente con `accionMovil`: las dos ocupan el mismo lugar.
+   */
+  controlMovil?: React.ReactNode
 }) {
+  const tono = accionMovil?.tono ?? 'accion'
+
   return (
-    // gap-4 (16px): lo que declara el Topbar en nueve de las diez pantallas del
-    // .pen (Vender es la excepción, sin gap propio). Hoy es inerte porque
-    // justify-between empuja título y acciones a los extremos, pero el número
-    // tiene que seguir siendo el de la maqueta para el día que deje de serlo.
-    <header className="flex h-[66px] shrink-0 items-center justify-between gap-4 border-b bg-card px-7">
-      {/* flex-col gap-px: el frame Título del .pen es layout vertical con
-          gap:1, no dos elementos sueltos que el flujo de bloque apila solos. */}
-      <div className="flex min-w-0 flex-col gap-px">
+    // h-14 lg:h-[66px], px-3 lg:px-7: 56/66 px de alto y 12/28 px de padding
+    // horizontal, teléfono/escritorio — mismo mapeo que ya usaba el
+    // escritorio (padding [0,28] -> px-7): kyXe1 declara "padding":[0,12], y
+    // px-3 son esos 12px, no px-4 (16px, un error de la ronda anterior:
+    // llevaba la prosa del brief en vez de la geometría del propio frame).
+    // gap-2.5 lg:gap-4: mismo trato para el gap entre las ranuras — kyXe1
+    // declara "gap":10 (gap-2.5) y el Topbar de escritorio 16 (gap-4, el de
+    // siempre). Los dos números conviven porque son geometría de dos
+    // maquetas distintas, no uno que "no cambió".
+    <header className="flex h-14 shrink-0 items-center gap-2.5 border-b bg-card px-3 lg:h-[66px] lg:gap-4 lg:px-7">
+      {/* Ranura izquierda (design/arandano.pen, kyXe1 > f9BjR): 38×38, radio
+          10, sin relleno, ícono 21. Sólo existe en el teléfono —lg:hidden en
+          las dos variantes—, porque en escritorio no hay ningún ícono acá
+          (antes de este ciclo el trigger vivía suelto en
+          app/(app)/layout.tsx, también oculto en desktop con el mismo
+          criterio, sólo que contra el breakpoint viejo).
+          Sin `atras` ni `alVolver`: abre el drawer con el trigger de shadcn.
+          Con cualquiera de los dos: vuelve — nunca las dos a la vez, porque
+          una pantalla de detalle no necesita volver a abrir el menú.
+          `atras` navega a otra URL; `alVolver` retrocede un paso adentro de la
+          misma pantalla (ver su comentario en las props). */}
+      {atras ? (
+        // `Link` de Next y no un `<a>` pelado: un `<a>` acá es una recarga
+        // completa de documento en cada vuelta atrás — sin navegación de
+        // cliente, sin prefetch, sin restauración de scroll—, y ésta es la
+        // superficie de navegación principal del teléfono, la más sensible a
+        // una red mala. `Link` renderiza igual un `<a>`, así que todo lo que
+        // afirme sobre la etiqueta sigue valiendo.
+        <Link href={atras} aria-label="Volver" className={CLASES_RANURA_MOVIL}>
+          <ArrowLeft aria-hidden="true" className="size-[21px]" />
+        </Link>
+      ) : alVolver ? (
+        <button type="button" onClick={alVolver} aria-label="Volver" className={CLASES_RANURA_MOVIL}>
+          <ArrowLeft aria-hidden="true" className="size-[21px]" />
+        </button>
+      ) : (
+        // SidebarTrigger trae de shadcn su propia caja (size-7, 28px) y su
+        // propio ícono (PanelLeftIcon, 16px vía [&_svg:not([class*='size-'])]:
+        // size-4 en components/ui/button.tsx) — ninguno de los dos es el
+        // 38×38/ícono-21 que pide f9BjR, la misma geometría que la variante
+        // `atras` de acá arriba SÍ cumple. La caja se pisa sola: cn()
+        // (twMerge) reconoce size-[38px] y size-7 como la misma "familia" de
+        // utilidad y descarta la de shadcn. El ícono no: [&_svg]:size-[21px]
+        // es un selector arbitrario DISTINTO del que trae la base
+        // ([&_svg:not(...)]:size-4), así que twMerge no los funde y los dos
+        // conviven en el HTML — pero como el de acá lleva `!` (important) y
+        // el de la base no, el de acá gana en el navegador sin importar la
+        // especificidad más alta que le da el :not(). Mismo mecanismo que ya
+        // resolvió exactamente este problema en
+        // app/(app)/servicio-tecnico/chip-estado.tsx (ver su comentario).
+        <SidebarTrigger className="size-[38px] rounded-[10px] lg:hidden [&_svg]:size-[21px]!" />
+      )}
+
+      {/* min-w-0 flex-1: en vez de justify-between en el <header> (que con
+          una ranura izquierda de más ya no alcanza para tres bloques),
+          este bloque se estira y absorbe todo el ancho libre — el mismo
+          resultado visual, pero que sigue funcionando con uno, dos o tres
+          hermanos en flujo según el breakpoint y las props. flex-col gap-px:
+          el frame Título del .pen es layout vertical con gap:1. */}
+      <div className="flex min-w-0 flex-1 flex-col gap-px">
         <h1 className={`${estilos.titulo} truncate text-foreground`}>{titulo}</h1>
         {/* Condicional y no un <p> siempre presente: sin subtítulo, un párrafo
             vacío corre el título hacia arriba y la franja deja de leerse
@@ -42,10 +173,39 @@ export function Encabezado({
           <p className="truncate text-[11px] text-muted-foreground">{subtitulo}</p>
         ) : null}
       </div>
+
       {/* gap-2.5 (10px): el frame Acciones/Estado del .pen, igual en las diez
-          pantallas. No se nota hoy porque ninguna pantalla llena este slot
-          todavía, pero la Task 6 les mete botones a cuatro de las diez. */}
-      {acciones ? <div className="flex shrink-0 items-center gap-2.5">{acciones}</div> : null}
+          pantallas de escritorio. hidden lg:flex: en el teléfono este slot no
+          existe — ahí manda `accionMovil`, un solo botón en vez de "lo que
+          sea que traiga `acciones`". */}
+      {acciones ? (
+        <div className="hidden shrink-0 items-center gap-2.5 lg:flex">{acciones}</div>
+      ) : null}
+
+      {/* Ranura derecha del teléfono (design/arandano.pen, kyXe1 > NlGrn):
+          38×38, radio 10, ícono 19. lg:hidden: en escritorio manda
+          `acciones`, no esto. */}
+      {accionMovil ? (
+        // `Link` y no `<a>`, por lo mismo que la ranura izquierda de arriba.
+        // Nota para quien vaya a usar `accionMovil`: es SIEMPRE una navegación
+        // real a otra URL. Si lo que hace falta es un efecto en la página
+        // actual (imprimir, abrir algo, disparar una acción), la ranura es
+        // `controlMovil`, no ésta — con `<a>` pelado un href a la misma URL
+        // "funcionaba" de casualidad, porque la recarga de documento remontaba
+        // la pantalla entera; con `Link` la navegación de misma-ruta no
+        // remonta nada y el botón no hace nada.
+        <Link
+          href={accionMovil.href}
+          aria-label={accionMovil.etiqueta}
+          className={`${CLASES_RANURA_MOVIL} ${
+            tono === 'suave' ? 'bg-muted text-foreground' : 'bg-primary text-primary-foreground'
+          }`}
+        >
+          <accionMovil.icono aria-hidden="true" className="size-[19px]" />
+        </Link>
+      ) : (
+        controlMovil ?? null
+      )}
     </header>
   )
 }

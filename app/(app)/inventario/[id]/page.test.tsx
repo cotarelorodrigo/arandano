@@ -4,8 +4,9 @@
 // puras (textoDeMargen, actualizadoHace) sí se importan y se prueban directo.
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { Prisma } from '@/generated/prisma/client'
-import { textoDeMargen, actualizadoHace } from './page'
+import { textoDeMargen, actualizadoHace, Tile } from './page'
 
 const FUENTE = readFileSync('app/(app)/inventario/[id]/page.tsx', 'utf8')
 const d = (v: string) => new Prisma.Decimal(v)
@@ -129,8 +130,13 @@ describe('el historial de la ficha (Task 5 del rediseño)', () => {
     expect(FUENTE).toContain('calcularSaldos(\n    movimientos.map((m) => m.delta),\n    articulo.stock,\n  )')
   })
 
-  it('cada fila del historial usa el saldo reconstruido, indexado por fila (saldos[i])', () => {
-    expect(FUENTE).toContain('{formatearCantidad(saldos[i].toString())}')
+  // Task 7 del ciclo móvil: el armado de cada fila (fecha/motivo/detalle/
+  // cambio con signo/queda) se mudó a `filaDeMovimiento` (historial.tsx), que
+  // historial.test.tsx prueba a fondo con Decimales reales — acá sólo se
+  // verifica el CABLEADO: que page.tsx la llame indexando `saldos[i]`, no un
+  // valor fijo o el de otra fila.
+  it('cada fila del historial se arma con filaDeMovimiento(m, saldos[i], puedeCostos)', () => {
+    expect(FUENTE).toContain('movimientos.map((m, i) => filaDeMovimiento(m, saldos[i], puedeCostos))')
   })
 
   it('la consulta de movimientos ahora trae costoUnitario, que detalleDeMovimiento necesita', () => {
@@ -147,21 +153,14 @@ describe('el historial de la ficha (Task 5 del rediseño)', () => {
     expect(FUENTE).toContain("orderBy: [{ creadoEn: 'desc' }, { id: 'desc' }],\n      take: MOVIMIENTOS_VISIBLES,")
   })
 
-  it('el motivo se ve con ChipMotivo, no como texto plano', () => {
-    expect(FUENTE).toContain('<ChipMotivo motivo={m.motivo} />')
-  })
-
-  it('"Exportar CSV" vive en el encabezado de la card de historial', () => {
-    const posHistorial = FUENTE.indexOf('Historial de movimientos')
-    const posBoton = FUENTE.indexOf('<BotonExportarCsv')
-    expect(posHistorial).toBeGreaterThan(-1)
-    expect(posBoton).toBeGreaterThan(posHistorial)
-  })
-
-  // Cambio positivo en --ok, negativo en --destructive — la maqueta pinta
-  // los dos, no sólo el negativo (que era todo lo que hacía el código viejo).
-  it('la celda "Cambio" distingue positivo (ok) de negativo (destructive)', () => {
-    expect(FUENTE).toContain("m.delta.lessThan(0) ? 'text-destructive' : 'text-ok'")
+  // El render de la card entera (ChipMotivo, el patrón grid, el color de
+  // "Cambio", "Exportar CSV" en el encabezado) vive en
+  // `HistorialDeMovimientos` (historial.tsx) desde Task 7 del ciclo móvil —
+  // ver `historial.test.tsx` para esa cobertura por HTML real. Acá sólo
+  // queda verificar que page.tsx la use, con la acción de exportar wireada.
+  it('la ficha usa HistorialDeMovimientos, con BotonExportarCsv como acción', () => {
+    expect(FUENTE).toContain('<HistorialDeMovimientos')
+    expect(FUENTE).toContain('accion={<BotonExportarCsv articuloId={articulo.id} />}')
   })
 })
 
@@ -184,5 +183,55 @@ describe('"Cómo se movió" en la ficha (Task 5 del rediseño)', () => {
   // anuladas (docs/pantallas.md).
   it('excluye las ventas anuladas, igual que /ventas', () => {
     expect(FUENTE).toContain('venta: { anuladaEn: null }')
+  })
+})
+
+/**
+ * Task 7 del ciclo móvil (design/arandano.pen, frame `T5gME`): el tile de
+ * marca ("En stock") cambia de eje según el ancho, y los tiles sin marca
+ * cambian de tamaño de valor. `Tile` se exportó para esto — antes sólo se
+ * cubría por FUENTE.
+ */
+describe('Tile (Task 7 del ciclo móvil)', () => {
+  it('el tile marca es fila en el teléfono (justify-between) y columna en escritorio (lg:flex-col)', () => {
+    const html = renderToStaticMarkup(<Tile marca rotulo="EN STOCK" valor="48" pie="unidades disponibles" />)
+    expect(html).toContain('items-center justify-between')
+    expect(html).toContain('lg:flex-col')
+  })
+
+  it('el pie del tile marca vuelve a quedar después del valor en escritorio (lg:order-3)', () => {
+    const html = renderToStaticMarkup(<Tile marca rotulo="EN STOCK" valor="48" pie="unidades disponibles" />)
+    expect(html).toContain('lg:order-1')
+    expect(html).toContain('lg:order-2')
+    expect(html).toContain('lg:order-3')
+  })
+
+  it('el tile sin marca mide 19px en el teléfono y 24px en escritorio', () => {
+    const html = renderToStaticMarkup(<Tile rotulo="PRECIO DE VENTA" valor="$ 12.000,00" pie="actualizado hoy" />)
+    expect(html).toContain('text-[19px]')
+    expect(html).toContain('lg:text-[24px]')
+  })
+})
+
+describe('el grupo de tiles se apila en el teléfono (Task 7 del ciclo móvil)', () => {
+  // "En stock" ocupa su propia fila completa; Precio de venta/Último costo
+  // comparten la siguiente — el envoltorio de estos dos es `contents` en
+  // escritorio para que la fila de tres quede exactamente como antes.
+  it('el envoltorio exterior es flex-col en el teléfono y flex-row en escritorio', () => {
+    expect(FUENTE).toContain('className="order-1 flex flex-col gap-3 lg:order-none lg:flex-row lg:gap-4"')
+  })
+
+  it('Precio de venta y Último costo comparten fila propia, que se disuelve en escritorio', () => {
+    expect(FUENTE).toContain('<div className="flex gap-3 lg:contents">')
+  })
+})
+
+describe('MoverStock y el historial se ordenan junto a Datos/Gráfico en el teléfono (Task 7)', () => {
+  it('MoverStock lleva order-3, entre las tiles (order-1) y el historial (order-5)', () => {
+    expect(FUENTE).toContain('<div className="order-3 lg:order-none">')
+  })
+
+  it('el historial lleva order-5, el último de los cinco bloques', () => {
+    expect(FUENTE).toContain('<div className="order-5 lg:order-none">')
   })
 })

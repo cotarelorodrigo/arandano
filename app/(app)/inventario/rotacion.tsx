@@ -125,10 +125,14 @@ export function GraficoDeRotacion({ meses }: { meses: MesDeVentas[] }) {
 
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border bg-card">
-      <div className="border-b px-[18px] py-[13px]">
+      {/* Mobile-first (Task 7 del ciclo móvil): mismo patrón de padding que
+          las demás cards de este ciclo (CardDelFormulario en
+          formularios.tsx, "Qué se vendió" en /ventas), en vez del padding
+          fijo de escritorio que tenía antes. */}
+      <div className="border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
         <h2 className={`${estilos.tituloDeCard} text-foreground`}>Cómo se movió</h2>
       </div>
-      <div className="flex flex-col gap-[14px] p-[18px]">
+      <div className="flex flex-col gap-3 p-[14px] lg:gap-[14px] lg:p-[18px]">
         {/* items-end y NO h-full en cada columna: la fila mide ALTURA_TOTAL
             fija, y cada columna sólo ocupa el alto natural de su barra + su
             rótulo, alineada al piso — así una barra baja no estira su

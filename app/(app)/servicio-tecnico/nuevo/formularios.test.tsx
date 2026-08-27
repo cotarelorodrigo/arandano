@@ -5,20 +5,28 @@
 // renderiza el formulario, no el dominio, que ya tiene su propio test contra
 // una base real (acciones.test.ts, test/clientes.test.ts).
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { FormularioRecepcion } from '../formularios'
 import type { ClienteEncontrado } from '@/lib/clientes/administrar'
 
 const accionFalsa = async () => ({ error: null, aviso: null })
 
+// FormularioRecepcion renderiza <Encabezado> (Task 1 del ciclo del shell
+// móvil), que sin `atras` renderiza el SidebarTrigger de shadcn — y ése llama
+// a useSidebar(), que tira si no hay un SidebarProvider como ancestro. Mismo
+// motivo que ya documentó components/shell/encabezado.test.tsx.
 function render(clientes: ClienteEncontrado[], busquedaCliente = '') {
   return renderToStaticMarkup(
-    <FormularioRecepcion
-      accion={accionFalsa}
-      clientes={clientes}
-      busquedaCliente={busquedaCliente}
-      claveIdempotencia="clave-de-prueba"
-    />,
+    <SidebarProvider>
+      <FormularioRecepcion
+        accion={accionFalsa}
+        clientes={clientes}
+        busquedaCliente={busquedaCliente}
+        claveIdempotencia="clave-de-prueba"
+      />
+    </SidebarProvider>,
   )
 }
 
@@ -203,5 +211,145 @@ describe('FormularioRecepcion — el buscador de cliente (Task 3 del rediseño)'
       expect(inicio, `no se encontró el campo ${campo}`).toBeGreaterThan(-1)
       expect(html.slice(inicio, cierre), `${campo} no mide h-10`).toContain('h-10')
     }
+  })
+})
+
+/**
+ * Task 9 del ciclo móvil (design/arandano.pen, frame `H1Wm6`): `atras` vuelve
+ * al tablero, y la ranura derecha del teléfono queda apagada —sus acciones
+ * bajan al pie—, mismo criterio que ya prueba `app/(app)/inventario/
+ * formularios.test.tsx` para `FormularioDeAlta`.
+ */
+describe('atras="/servicio-tecnico" y sin accionMovil (Task 9 del ciclo móvil)', () => {
+  it('vuelve a /servicio-tecnico desde la ranura izquierda del teléfono', () => {
+    const html = render([])
+    // La etiqueta se extrae y DESPUÉS se afirma el href, en vez de un
+    // regex que fije el orden de los atributos: desde que <Encabezado>
+    // navega con `Link` de Next (hallazgo I3 de la review final), el href
+    // sale último y no primero. Mismo mecanismo que ya usaba
+    // components/shell/encabezado.test.tsx para la variante <button>.
+    const volver = html.match(/<a[^>]*aria-label="Volver"[^>]*>/)?.[0]
+    expect(volver, `no se encontró la flecha de volver en: ${html}`).toBeTruthy()
+    expect(volver).toContain('href="/servicio-tecnico"')
+  })
+
+  // Se verifica por RENDER real y no por FUENTE: si algo agregara accionMovil
+  // algún día, este caso lo detecta aunque no toque la línea del <Encabezado>.
+  // Cuenta las ranuras de 38px del Topbar (izquierda + derecha), no todos los
+  // aria-label del documento: el buscador de cliente también lleva el suyo
+  // ("Buscar cliente por nombre o teléfono"), sin relación con esto.
+  it('no ofrece ninguna acción del teléfono: una sola ranura de 38px en el Topbar (la de "Volver")', () => {
+    const html = render([])
+    const ranuras = html.match(/size-\[38px\] shrink-0 items-center justify-center rounded-\[10px\] lg:hidden/g) ?? []
+    expect(ranuras).toHaveLength(1)
+  })
+})
+
+/**
+ * Task 9 del ciclo móvil (design/arandano.pen, nodo "Pie" de `H1Wm6`):
+ * mismo mecanismo que ya usa `app/(app)/inventario/formularios.tsx` para
+ * `FormularioDeAlta` — dos botones, uno `hidden lg:flex` (dentro de
+ * `acciones`, que ya lo envuelve el propio `Encabezado`) y otro `lg:hidden`,
+ * atados al MISMO `<form id="form-recepcion">` por el atributo `form=` y al
+ * MISMO `pendiente` de `useActionState`.
+ */
+describe('el pie del teléfono repite las acciones del Topbar (Task 9 del ciclo móvil)', () => {
+  it('"Cancelar" y "Guardar e imprimir" aparecen dos veces (Topbar y pie)', () => {
+    const html = render([])
+    expect([...html.matchAll(/>Cancelar</g)]).toHaveLength(2)
+    // Substring y no la frase completa: el Topbar dice "Guardar e imprimir
+    // ticket" (sin cambios) y el pie dice "Guardar e imprimir" a secas —nodo
+    // `O0unea` de H1Wm6—, porque a 390px de ancho, junto al botón "Cancelar",
+    // "...ticket" no entra. El substring común cubre las dos redacciones.
+    expect([...html.matchAll(/Guardar e imprimir/g)]).toHaveLength(2)
+  })
+
+  it('el pie nuevo es lg:hidden', () => {
+    const fuente = readFileSync('app/(app)/servicio-tecnico/formularios.tsx', 'utf8')
+    expect(fuente).toMatch(/border-t bg-card p-\[14px\] lg:hidden/)
+  })
+
+  // El mismo `pendiente` gobierna los dos: si alguien partiera el pie a otro
+  // componente con su propio useActionState, este caso lo detecta.
+  it('"disabled={pendiente}" aparece dos veces (Topbar y pie)', () => {
+    const fuente = readFileSync('app/(app)/servicio-tecnico/formularios.tsx', 'utf8')
+    const inicio = fuente.indexOf('export function FormularioRecepcion')
+    const fin = fuente.indexOf('export function PanelEstado')
+    const cuerpo = fuente.slice(inicio, fin)
+    expect([...cuerpo.matchAll(/disabled=\{pendiente\}/g)]).toHaveLength(2)
+  })
+
+  it('el botón del Topbar sigue siendo el primero en el DOM', () => {
+    const html = render([])
+    const posTopbar = html.indexOf('Guardar e imprimir ticket')
+    const posPie = html.lastIndexOf('Guardar e imprimir')
+    expect(posTopbar).toBeGreaterThan(-1)
+    expect(posPie).toBeGreaterThan(posTopbar)
+  })
+})
+
+/**
+ * Task 9 del ciclo móvil (design/arandano.pen, frame `H1Wm6`): las cuatro
+ * cards (Cliente, Equipo, Qué le pasa, Qué se imprime) se apilan en una sola
+ * columna en el teléfono, y quedan como hoy (dos columnas) en escritorio.
+ */
+describe('las cuatro cards se apilan en el teléfono (Task 9 del ciclo móvil)', () => {
+  it('las dos columnas del cuerpo pasan a flex-col lg:flex-row', () => {
+    const html = render([])
+    expect(html).toMatch(/class="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-4"/)
+  })
+
+  it('el cuerpo entero pasa a padding/gap mobile-first', () => {
+    const html = render([])
+    expect(html).toMatch(/class="flex flex-col gap-3 px-\[14px\] py-3 lg:gap-4 lg:p-6"/)
+  })
+})
+
+/**
+ * Corrección del coordinador tras el reporte de la Task 9: el frame `H1Wm6`
+ * apila "IMEI o número de serie" y "Clave de desbloqueo" en dos filas de
+ * ancho completo en el teléfono (nodos `vFqyt`/`nXu5B`, cada uno su propia
+ * fila) — no la fila fija de dos campos que sigue trayendo escritorio. El
+ * brief resumió esto como "cards apiladas" en prosa; manda la maqueta.
+ * "Marca"/"Modelo" no se tocan: la maqueta SÍ los dibuja en una fila (nodo
+ * `w6yjn`, sin distinción de ancho).
+ */
+describe('IMEI y Clave de desbloqueo se apilan en el teléfono (corrección del coordinador, frame H1Wm6)', () => {
+  it('la fila de IMEI/Clave pasa a flex-col lg:flex-row', () => {
+    const html = render([])
+    expect(html).toMatch(/class="flex flex-col gap-3 lg:flex-row lg:gap-\[10px\]"/)
+  })
+
+  it('el campo IMEI ocupa el ancho sobrante recién en escritorio (lg:flex-1)', () => {
+    const html = render([])
+    const inicioLabel = html.indexOf('IMEI o número de serie')
+    const desde = html.lastIndexOf('<div', inicioLabel)
+    const hasta = html.indexOf('</div>', html.indexOf('name="equipoSerie"'))
+    const bloque = html.slice(desde, hasta)
+    expect(bloque).toContain('lg:flex-1')
+    expect(bloque).not.toMatch(/class="flex flex-1 flex-col/)
+  })
+
+  it('el campo Clave mide 190px recién en escritorio (lg:w-[190px])', () => {
+    const html = render([])
+    const inicioLabel = html.indexOf('Clave de desbloqueo')
+    const desde = html.lastIndexOf('<div', inicioLabel)
+    const hasta = html.indexOf('</div>', html.indexOf('name="claveDesbloqueo"'))
+    const bloque = html.slice(desde, hasta)
+    expect(bloque).toContain('lg:w-[190px]')
+    expect(bloque).not.toMatch(/class="flex w-\[190px\]/)
+  })
+
+  it('Marca y Modelo siguen en una sola fila fija: la maqueta no los apila', () => {
+    const html = render([])
+    // El campo Marca vive DENTRO de la fila que se quiere afirmar sin
+    // cambios: se busca la fila (name="equipoMarca" es su primer
+    // descendiente) y se comprueba que sigue siendo la de siempre.
+    const posMarca = html.indexOf('name="equipoMarca"')
+    const desde = html.lastIndexOf('<div class="flex gap-[10px]">', posMarca)
+    const hasta = html.indexOf('</div>', html.indexOf('name="equipoModelo"'))
+    expect(desde).toBeGreaterThan(-1)
+    const bloque = html.slice(desde, hasta)
+    expect(bloque).toContain('name="equipoModelo"')
   })
 })

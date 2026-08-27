@@ -112,4 +112,15 @@ describe('GraficoDeRotacion', () => {
     // actual (el último del arreglo), no el primero.
     expect(html).toContain('Sin unidades vendidas de este artículo en lo que va de agosto.')
   })
+
+  // Task 7 del ciclo móvil: mismo patrón mobile-first de padding que las
+  // demás cards ya tocadas por este ciclo (CardDelFormulario en
+  // formularios.tsx, "Qué se vendió" en /ventas), en vez del padding fijo de
+  // escritorio que tenía antes.
+  it('el encabezado y el contenido de la card usan padding mobile-first (Task 7 del ciclo móvil)', () => {
+    const meses = agregarVentasPorMes([], AHORA)
+    const html = renderToStaticMarkup(<GraficoDeRotacion meses={meses} />)
+    expect(html).toContain('px-[14px] py-3 lg:px-[18px] lg:py-[13px]')
+    expect(html).toContain('gap-3 p-[14px] lg:gap-[14px] lg:p-[18px]')
+  })
 })

@@ -1,6 +1,16 @@
 import * as React from "react"
 
-const MOBILE_BREAKPOINT = 768
+// 1024 y no los 768 que trae shadcn por default: es aritmética, no gusto. En
+// escritorio /vender pone en una fila el sidebar de 248, el carrito y el
+// panel de cobro de 384. A 768 px de viewport al carrito le quedan apenas
+// 136 px — roto hoy, con el md:flex-row que el código ya tiene. A 1024 le
+// quedan 392, que es el mínimo que funciona. El costo es que un iPad vertical
+// recibe la versión de teléfono: es la respuesta correcta, porque a ese ancho
+// la versión de teléfono se ve bien y la de escritorio no. Exportada porque
+// el mismo número gobierna el `lg:` de Tailwind en todo el shell, y afirmar
+// el valor desde un test que lea el fuente probaría el archivo y no el
+// comportamiento. Ver docs/superpowers/specs/2026-08-26-movil-design.md §1.
+export const MOBILE_BREAKPOINT = 1024
 
 // Reescrito respecto de lo que trae `npx shadcn add sidebar`: el original
 // hacía `setState` síncrono adentro de un useEffect (para fijar el valor

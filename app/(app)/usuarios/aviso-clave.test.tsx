@@ -64,4 +64,48 @@ describe('AvisoClaveGenerada', () => {
     const fuente = readFileSync(RUTA, 'utf8')
     expect(fuente).toMatch(/navigator\.clipboard\?\.writeText\(clave\)/)
   })
+
+  // Task 10 del ciclo móvil (frame `NIyHG`, nodo `ZVVQf`): en el teléfono el
+  // botón de copiar es sólo ícono, 34×34 — no el botón de 38px con texto que
+  // ya existía en escritorio.
+  it('en el teléfono, el botón mide 34×34 (nodo ZVVQf) y el texto "Copiar" queda oculto', () => {
+    expect(html).toContain('h-[34px] w-[34px]')
+    expect(html).toContain('<span class="hidden lg:inline">Copiar</span>')
+  })
+
+  it('en escritorio, el botón sigue siendo el de antes: 38px, con borde y el texto visible', () => {
+    expect(html).toContain('lg:h-[38px]')
+    expect(html).toContain('lg:border')
+    expect(html).toContain('lg:border-input')
+  })
+
+  it('el botón lleva aria-label="Copiar": en el teléfono es el único nombre accesible, sin texto visible', () => {
+    expect(html).toContain('aria-label="Copiar"')
+  })
+
+  // Ronda de arreglos 1 (Importante 2): sólo el botón de copiar había
+  // recibido tratamiento móvil — el resto del bloque (nodo `frTpj`) seguía
+  // con los valores de escritorio (`SFTGC`) sin `lg:`, así que el teléfono
+  // los heredaba tal cual.
+  it('el contenedor usa la geometría del teléfono (gap 11, padding 13, radio 14), sin tocar la de escritorio', () => {
+    expect(html).toContain('gap-[11px]')
+    expect(html).toContain('rounded-[14px]')
+    expect(html).toContain('p-[13px]')
+    expect(html).toContain('lg:gap-[14px]')
+    expect(html).toContain('lg:rounded-2xl')
+    expect(html).toContain('lg:p-[18px]')
+    expect(html).not.toMatch(/(?<!lg:)gap-\[14px\]/)
+    expect(html).not.toMatch(/(?<!lg:)rounded-2xl/)
+    expect(html).not.toMatch(/(?<!lg:)p-\[18px\]/)
+  })
+
+  it('el círculo del ícono mide 32px en el teléfono, 38px en escritorio (nodo Q0pc6)', () => {
+    expect(html).toContain('size-8')
+    expect(html).toContain('lg:size-[38px]')
+  })
+
+  it('el ícono adentro del círculo mide 16px en el teléfono, 18px en escritorio (nodo qcq6D)', () => {
+    expect(html).toContain('size-4 text-warn')
+    expect(html).toContain('lg:size-[18px]')
+  })
 })

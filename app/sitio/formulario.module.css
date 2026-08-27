@@ -1,0 +1,72 @@
+/*
+ * El "marco" del <Formulario> — el <form> en sí, compartido por el Input y
+ * el botón.
+ *
+ * Fix de la Ronda de arreglos 1 sobre la Task 11 del ciclo móvil: el .pen
+ * del teléfono (frame `Móvil / Sitio · Landing`, nodos `Wc1DB`/`MJENr` en el
+ * Hero, `YBpWb`/`myteL` en el Cierre) NO dibuja ningún marco compartido — el
+ * Input y el Botón son dos cajas SUELTAS, cada una con su propio fondo y su
+ * propio radio, apenas separadas por un gap de 9px. El marco compartido
+ * (borde + fondo + padding + radio de 14px) es una pieza SÓLO de escritorio.
+ * La primera versión de este archivo dejaba el marco puesto en los dos
+ * anchos — una divergencia contra la maqueta, no una limitación técnica.
+ *
+ * Va en un CSS Module y no en clases de Tailwind con `lg:` porque el color
+ * de fondo/borde de escritorio depende de la variante (clara/oscura) y hasta
+ * este fix se fijaba con `style={{ backgroundColor: ... }}` en
+ * formulario.tsx — un estilo INLINE nunca puede quedar detrás de una media
+ * query: ninguna clase le gana en especificidad, así que un `lg:bg-[...]`
+ * sencillamente no hace nada contra un `style` puesto en el mismo elemento.
+ * Mismo mecanismo y misma razón que `.tituloDeReglas` en
+ * app/(app)/usuarios/tipografia.module.css: la media query vive ADENTRO del
+ * módulo, no como una utilidad de Tailwind suelta en el JSX, porque un CSS
+ * Module y Tailwind no tienen un orden de cascada garantizado entre
+ * archivos — con las dos reglas en el MISMO archivo, el orden es fijo.
+ *
+ * Dos clases y no una con una prop de color: 'clara' y 'oscura' no sólo
+ * cambian de color, cambian de PAR (fondo+borde) entero, y escribir eso
+ * como una única clase con variables CSS de más no deja nada más claro que
+ * dos clases chicas.
+ */
+/*
+ * LAS DOS REGLAS DE ACÁ ABAJO ESTÁN VACÍAS A PROPÓSITO, y no son un resto de
+ * una versión anterior (la review final las marcó como "código muerto que
+ * hace mirar dos veces", y merecen esta explicación más que su borrado).
+ *
+ * En el teléfono el marco NO EXISTE —ver el comentario de arriba—, así que no
+ * hay ni una propiedad que declarar. Borrarlas funcionaría igual: los nombres
+ * se exportan lo mismo desde el `@media` de más abajo. Pero el bloque vacío es
+ * lo que hace EXPLÍCITA la ausencia en el default mobile-first, en vez de que
+ * haya que deducirla de que el archivo abre directo con una media query —
+ * exactamente la lectura que `app/sitio/formulario.test.tsx` fija, afirmando
+ * que estas dos reglas existen y que su cuerpo está vacío.
+ */
+.marcoClara {
+}
+
+.marcoOscura {
+}
+
+@media (min-width: 1024px) {
+  .marcoClara,
+  .marcoOscura {
+    border-radius: 14px;
+    border-width: 1px;
+    border-style: solid;
+    padding: 7px;
+  }
+
+  .marcoClara {
+    /* $ar-bg en el .pen de escritorio (nodo P2ZVg6) — divergencia hermana de
+       I5 de la review final del cierre. Sin borderColor propio: usa el
+       border-color por default de Tailwind (--border), igual que la versión
+       anterior de este archivo cuando el marco vivía como clase suelta. */
+    background-color: var(--background);
+    border-color: var(--border);
+  }
+
+  .marcoOscura {
+    background-color: color-mix(in srgb, var(--marca-foreground) 8%, transparent);
+    border-color: color-mix(in srgb, var(--marca-foreground) 15%, transparent);
+  }
+}

@@ -28,7 +28,7 @@ import { PanelLeftIcon } from "lucide-react"
 // SIDEBAR_COOKIE_MAX_AGE y SIDEBAR_KEYBOARD_SHORTCUT (ver más abajo, en
 // SidebarProvider). Con collapsible="offcanvas" y sin SidebarRail en
 // components/shell/sidebar-arandano.tsx, el único control visible es
-// SidebarTrigger, que es md:hidden — invisible en desktop. El atajo de
+// SidebarTrigger, que es lg:hidden — invisible en desktop. El atajo de
 // teclado que traía el CLI era entonces la única forma de esconder TODA la
 // navegación en un mostrador sin dejar cómo volver a traerla, y la cookie que
 // escribía no la leía nadie (ver el comentario de setOpen).
@@ -197,9 +197,21 @@ function Sidebar({
     )
   }
 
+  // MODIFICADO respecto del registry de shadcn: `md:block` acá abajo y
+  // `md:flex` en el contenedor pasaron a `lg:`. La rama de arriba (el `Sheet`
+  // del teléfono) la elige `useIsMobile()`, que corta en 1024
+  // (MOBILE_BREAKPOINT, hooks/use-mobile.ts); esta rama tenía su propio corte
+  // en CSS, en 768. Con los dos desincronizados quedaba una banda de 768–1023
+  // donde el SSR renderiza esta rama (getServerSnapshot devuelve false),
+  // `md:block` la hace VISIBLE —el paño de 248 px se pinta y corre el
+  // contenido— y al hidratar `useIsMobile()` da true, la rama cambia a `Sheet`
+  // y el paño desaparece de golpe, con salto de layout. Abajo de 768 no se
+  // notaba porque `hidden` ganaba. Un `npx shadcn add sidebar` futuro pisa
+  // esto sin enterarse: dos cortes distintos para el mismo concepto es
+  // exactamente la desincronización que este repo evita en todos lados.
   return (
     <div
-      className="group peer hidden text-sidebar-foreground md:block"
+      className="group peer hidden text-sidebar-foreground lg:block"
       data-state={state}
       data-collapsible={state === "collapsed" ? collapsible : ""}
       data-variant={variant}
@@ -222,7 +234,7 @@ function Sidebar({
         data-slot="sidebar-container"
         data-side={side}
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
+          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] lg:flex",
           // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
             ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"

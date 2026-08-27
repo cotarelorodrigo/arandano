@@ -1,13 +1,11 @@
 import { notFound } from 'next/navigation'
 import { Prisma } from '@/generated/prisma/client'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { puedeConSesion } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
-import { cn } from '@/lib/utils'
 import { FichaDeArticulo, MoverStock, BotonExportarCsv } from '../formularios'
-import { ChipMotivo, detalleDeMovimiento, formatearFechaMovimiento, calcularSaldos } from '../historial'
+import { calcularSaldos, filaDeMovimiento, HistorialDeMovimientos } from '../historial'
 import { GraficoDeRotacion, agregarVentasPorMes } from '../rotacion'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
 import { esUuid } from '@/lib/uuid'
@@ -85,45 +83,60 @@ export function textoDeMargen(precio: Prisma.Decimal, costo: Prisma.Decimal | nu
  * `app/(app)/ventas/page.tsx`, mismo patrón, pero acá el valor va en 34 px y
  * no en 32: la maqueta de esta pantalla usa un tamaño distinto para su tile
  * de marca).
+ *
+ * **Task 7 del ciclo móvil**: el tile de marca ("En stock") cambia de eje en
+ * el teléfono (design/arandano.pen, frame `T5gME`, nodo `dnE5C`) — ahí es una
+ * FILA (rótulo+pie a la izquierda, el valor grande a la derecha,
+ * `justify-between`), mientras que en escritorio sigue siendo la columna de
+ * siempre (rótulo arriba, valor, pie abajo). El envoltorio de rótulo+pie es
+ * `contents` en escritorio para que sus dos hijos vuelvan a ser hermanos
+ * directos del valor —con `lg:order-1`/`lg:order-2`/`lg:order-3` restaurando
+ * el orden vertical—, mismo mecanismo que `Detalle` en
+ * app/(app)/ventas/[id]/page.tsx. Exportado (antes no lo estaba) para que
+ * este cambio se pueda cubrir por render real, no por FUENTE. Los tiles sin
+ * marca también cambian: 19px de valor en el teléfono contra 24px en
+ * escritorio (`I0TWua`/`eB6Wd` de `T5gME`).
  */
-function Tile({
+export function Tile({
   rotulo, valor, pie, marca = false,
 }: { rotulo: string; valor: string; pie?: string; marca?: boolean }) {
   if (marca) {
     return (
       <div
-        className="flex flex-1 flex-col gap-[3px] rounded-2xl px-[18px] py-4"
+        className="flex flex-1 items-center justify-between rounded-2xl px-[17px] py-[15px] lg:flex-col lg:items-stretch lg:justify-start lg:gap-[3px] lg:px-[18px] lg:py-4"
         style={{ backgroundColor: 'var(--marca)' }}
       >
-        <div
-          className="text-[10px] font-bold tracking-[1.2px] uppercase"
-          style={{ color: 'var(--marca-soft)' }}
-        >
-          {rotulo}
+        <div className="flex flex-col gap-[2px] lg:contents">
+          <div
+            className="text-[10px] font-bold tracking-[1.2px] uppercase lg:order-1"
+            style={{ color: 'var(--marca-soft)' }}
+          >
+            {rotulo}
+          </div>
+          {pie && (
+            <div className="text-[11px] lg:order-3" style={{ color: 'var(--marca-dim)' }}>
+              {pie}
+            </div>
+          )}
         </div>
         <div
           style={{ color: 'var(--marca-foreground)' }}
-          className={`${estilos.archivo} text-[34px] leading-none font-semibold tracking-[-0.6px] tabular-nums`}
+          className={`${estilos.archivo} text-[34px] leading-none font-semibold tracking-[-0.6px] tabular-nums lg:order-2`}
         >
           {valor}
         </div>
-        {pie && (
-          <div className="text-[11px]" style={{ color: 'var(--marca-dim)' }}>
-            {pie}
-          </div>
-        )}
       </div>
     )
   }
   return (
-    <div className="flex flex-1 flex-col gap-[3px] rounded-2xl border bg-card px-[18px] py-4">
+    <div className="flex flex-1 flex-col gap-[3px] rounded-2xl border bg-card px-[15px] py-[14px] lg:px-[18px] lg:py-4">
       <div className="text-[10px] font-bold tracking-[1.2px] text-muted-foreground uppercase">
         {rotulo}
       </div>
       {/* tabular-nums en los tres, no sólo en el de plata: los tiles están uno
           al lado del otro y un dígito de ancho variable los descalza entre sí. */}
       <div
-        className={`${estilos.archivo} text-[24px] leading-none font-semibold tracking-[-0.6px] tabular-nums text-foreground`}
+        className={`${estilos.archivo} text-[19px] leading-none font-semibold tracking-[-0.6px] tabular-nums text-foreground lg:text-[24px]`}
       >
         {valor}
       </div>
@@ -229,9 +242,27 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
     ventasPorMes.map((m) => ({ delta: m.delta.toString(), creadoEn: m.creadoEn })),
   )
 
+  // Task 7 del ciclo móvil: cada movimiento, ya resuelto a texto (fecha,
+  // detalle, cambio con signo, queda), indexado contra `saldos` — el resto
+  // de la lógica (ChipMotivo, el patrón grid) vive en `HistorialDeMovimientos`
+  // (historial.tsx), que se renderiza sin Prisma ni sesión.
+  //
+  // `puedeCostos` viaja hasta acá (ciclo de permisos, 2026-08-26) porque el
+  // texto de la celda "Detalle" de un INGRESO incluye el costo unitario: la
+  // fila se resuelve a texto ANTES de renderizarse, así que el permiso tiene
+  // que decidirse en el armado y no en el JSX — esconderlo después sería
+  // mandarlo igual al HTML.
+  const filasHistorial = movimientos.map((m, i) => filaDeMovimiento(m, saldos[i], puedeCostos))
+
   const columnaIzquierda = (
     <>
-      <div className="flex gap-4">
+      {/* El grupo de tiles se apila en el teléfono (Task 7 del ciclo móvil,
+          frame `T5gME`): "En stock" ocupa su propia fila completa (con su
+          propio quiebre de eje, ver el docblock de `Tile`), y "Precio de
+          venta"/"Último costo" comparten la fila siguiente — el envoltorio
+          interno es `contents` en escritorio para que sus dos Tile se sumen
+          a la fila de "En stock" y quede la misma fila de tres de siempre. */}
+      <div className="order-1 flex flex-col gap-3 lg:order-none lg:flex-row lg:gap-4">
         {esProducto && (
           <Tile
             marca
@@ -240,113 +271,52 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
             pie="unidades disponibles"
           />
         )}
-        <Tile
-          rotulo="PRECIO DE VENTA"
-          valor={formatearPrecio(articulo.precio.toString())}
-          pie={actualizadoHace(articulo.actualizadoEn)}
-        />
-        {/* Sin el permiso COSTOS, el tile no se renderea — no se pone en
-            '—': ese guión afirma que ningún ingreso cargó el costo, que es
-            una afirmación distinta y falsa cuando lo que pasa es que a esta
-            persona no se le muestra. */}
-        {esProducto && puedeCostos && (
+        <div className="flex gap-3 lg:contents">
           <Tile
-            rotulo="ÚLTIMO COSTO"
-            valor={ultimoCosto ? formatearPrecio(ultimoCosto.toString()) : '—'}
-            pie={
-              ultimoCosto
-                ? (textoDeMargen(articulo.precio, ultimoCosto) ?? 'el precio no permite calcular el margen')
-                : 'ningún ingreso cargó el costo todavía'
-            }
+            rotulo="PRECIO DE VENTA"
+            valor={formatearPrecio(articulo.precio.toString())}
+            pie={actualizadoHace(articulo.actualizadoEn)}
           />
-        )}
+          {/* Sin el permiso COSTOS, el tile no se renderea — no se pone en
+              '—': ese guión afirma que ningún ingreso cargó el costo, que es
+              una afirmación distinta y falsa cuando lo que pasa es que a esta
+              persona no se le muestra.
+
+              En el teléfono eso deja a "Precio de venta" solo en su fila, y
+              está bien: los dos Tile son `flex-1`, así que el que queda ocupa
+              el ancho entero — el mismo resultado que ya se ve para un
+              SERVICIO, que tampoco lleva "Último costo". */}
+          {esProducto && puedeCostos && (
+            <Tile
+              rotulo="ÚLTIMO COSTO"
+              valor={ultimoCosto ? formatearPrecio(ultimoCosto.toString()) : '—'}
+              pie={
+                ultimoCosto
+                  ? (textoDeMargen(articulo.precio, ultimoCosto) ?? 'el precio no permite calcular el margen')
+                  : 'ningún ingreso cargó el costo todavía'
+              }
+            />
+          )}
+        </div>
       </div>
 
       {esProducto && !articulo.desactivadoEn && (
-        <MoverStock articuloId={articulo.id} puedeCostos={puedeCostos} />
+        <div className="order-3 lg:order-none">
+          <MoverStock articuloId={articulo.id} puedeCostos={puedeCostos} />
+        </div>
       )}
 
       {/* El bloque que responde "por qué tengo 3 y no 5", que es la pregunta
           que un dueño hace cuando el inventario no le cierra. Es para lo que la
           tabla es append-only. */}
-      <section className="flex flex-col overflow-hidden rounded-2xl border bg-card">
-        <div className="flex items-center justify-between border-b px-[18px] py-[13px]">
-          <h2 className={`${estilos.tituloDeCard} text-foreground`}>Historial de movimientos</h2>
-          <BotonExportarCsv articuloId={articulo.id} />
-        </div>
-        {movimientos.length === 0 ? (
-          <p className="p-[18px] text-sm text-muted-foreground">
-            Todavía no hubo movimientos de este artículo.
-          </p>
-        ) : (
-          <Table className="table-fixed">
-            <TableHeader>
-              <TableRow className="bg-muted hover:bg-muted">
-                <TableHead className="h-auto w-[150px] px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                  Fecha
-                </TableHead>
-                <TableHead className="h-auto w-[170px] px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                  Motivo
-                </TableHead>
-                <TableHead className="h-auto px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                  Detalle
-                </TableHead>
-                <TableHead className="h-auto w-[110px] px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                  Cambio
-                </TableHead>
-                <TableHead className="h-auto w-[100px] px-[7px] py-3 pr-[18px] text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                  Queda
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {movimientos.map((m, i) => (
-                <TableRow key={m.id}>
-                  <TableCell className="p-[11px] px-[7px] pl-[18px] text-sm text-foreground">
-                    {formatearFechaMovimiento(m.creadoEn)}
-                  </TableCell>
-                  <TableCell className="p-[11px] px-[7px]">
-                    <ChipMotivo motivo={m.motivo} />
-                  </TableCell>
-                  {/* truncate y no sólo whitespace-nowrap (el default de
-                      TableCell): esta celda es la única de ancho flexible, y
-                      una nota larga sin truncar se derrama sobre la celda de
-                      Cambio en vez de cortarse con "…". */}
-                  <TableCell className="max-w-0 truncate p-[11px] px-[7px] text-sm text-muted-foreground">
-                    {detalleDeMovimiento(m, puedeCostos)}
-                  </TableCell>
-                  <TableCell
-                    className={cn(
-                      estilos.archivo,
-                      'p-[11px] px-[7px] text-right font-semibold tabular-nums',
-                      m.delta.lessThan(0) ? 'text-destructive' : 'text-ok',
-                    )}
-                  >
-                    {/* El signo explícito en el positivo: la columna se lee de
-                        un vistazo como "entró" o "salió". */}
-                    {m.delta.greaterThan(0) ? '+' : ''}
-                    {formatearCantidad(m.delta.toString())}
-                  </TableCell>
-                  <TableCell
-                    className={cn(
-                      estilos.archivo,
-                      'p-[11px] px-[7px] pr-[18px] text-right font-semibold tabular-nums text-foreground',
-                    )}
-                  >
-                    {formatearCantidad(saldos[i].toString())}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-        {movimientos.length === MOVIMIENTOS_VISIBLES && (
-          <p className="border-t px-[18px] py-3 text-sm text-muted-foreground">
-            Se muestran los últimos {MOVIMIENTOS_VISIBLES} movimientos. Exportar CSV trae el
-            historial completo.
-          </p>
-        )}
-      </section>
+      <div className="order-5 lg:order-none">
+        <HistorialDeMovimientos
+          filas={filasHistorial}
+          limiteAlcanzado={movimientos.length === MOVIMIENTOS_VISIBLES}
+          limiteVisible={MOVIMIENTOS_VISIBLES}
+          accion={<BotonExportarCsv articuloId={articulo.id} />}
+        />
+      </div>
     </>
   )
 

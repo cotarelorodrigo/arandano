@@ -62,6 +62,12 @@ export default async function Usuarios() {
             </a>
           </Button>
         }
+        // Task 10 del ciclo móvil (frame `NIyHG`, nodo `GZz1a`): el mismo
+        // destino que el botón de arriba, ahora como la ranura de un solo
+        // toque del teléfono. Tono 'accion' porque el botón CREA algo —mismo
+        // criterio que /inventario y /servicio-tecnico—, y el mismo
+        // `href="#alta"` que ya prueba el caso de arriba.
+        accionMovil={{ icono: UserPlus, etiqueta: 'Agregar persona', href: '#alta', tono: 'accion' }}
       />
       {/* El cuerpo entero es un único Client Component: el bloque "Clave
           generada" (design/arandano.pen, nodo `SFTGC`) vive fuera de

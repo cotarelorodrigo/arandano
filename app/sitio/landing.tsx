@@ -1,6 +1,6 @@
 import type { BaseDeTenant } from './entrar'
 import { Formulario } from './formulario'
-import { Nav, Hero, Modulos, Rubros, Planes, Cierre, Pie } from './secciones'
+import { Nav, Hero, Muestra, Modulos, Rubros, Planes, Cierre, Pie } from './secciones'
 
 /**
  * El sitio público del ápex.
@@ -20,6 +20,13 @@ import { Nav, Hero, Modulos, Rubros, Planes, Cierre, Pie } from './secciones'
  * el orden de design/arandano.pen, frame `Sitio / Landing` — ver el comentario
  * largo al principio de `secciones.tsx` para el porqué de cada cambio contra
  * lo que había antes de la Task 4 del cierre del rediseño.
+ *
+ * Task 11 del ciclo móvil suma una octava, `Muestra`, entre Hero y Módulos:
+ * el `.pen` del teléfono (frame `Móvil / Sitio · Landing`) promueve el
+ * carrito de ejemplo —que en escritorio vive adentro del Hero— a su propia
+ * sección. `Muestra` es `lg:hidden` (sólo existe abajo de 1024) y la mitad de
+ * adentro del Hero es `hidden lg:block` (sólo existe desde 1024): nunca
+ * conviven las dos, pero el carrito nunca desaparece sin más.
  */
 export function Landing({ base, whatsapp }: { base: BaseDeTenant; whatsapp: string }) {
   return (
@@ -35,6 +42,7 @@ export function Landing({ base, whatsapp }: { base: BaseDeTenant; whatsapp: stri
 
       <main>
         <Hero whatsapp={whatsapp} />
+        <Muestra />
         <Modulos />
         <Rubros />
         <Planes />

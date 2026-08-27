@@ -8,7 +8,13 @@ import { Input } from '@/components/ui/input'
 // puede exportar funciones async.
 const INICIAL: EstadoUsuarios = { error: null, aviso: null, claveGenerada: null }
 
-const ENLACE = 'text-xs font-semibold text-primary hover:underline disabled:pointer-events-none disabled:opacity-50'
+// Ronda de arreglos 1 (Menor 4): el separador "·" (formularios.tsx, celda
+// Acciones de CardEquipo) quedó a 10px como pide el nodo `hfAYV`, pero el
+// texto que lo sigue seguía en 12 (text-xs) — la maqueta dibuja "· Cambiar
+// clave" uniforme a 10 en el teléfono. `lg:text-xs` repone el tamaño de
+// escritorio de siempre.
+const ENLACE =
+  'text-[10px] lg:text-xs font-semibold text-primary hover:underline disabled:pointer-events-none disabled:opacity-50'
 
 /**
  * El formulario inline de "Cambiar clave" (design/arandano.pen no lo dibuja:
@@ -137,6 +143,13 @@ export type UsuarioDeFila = {
  * mostrar. Se interpretó como variedad ilustrativa del mockup, no como una
  * regla de "los dueños no se dan de baja desde acá", y "Baja" queda
  * disponible para cualquier fila activa que no sea la propia.
+ *
+ * `items-start lg:items-end` (Task 10 del ciclo móvil): en el teléfono esta
+ * celda se funde en la misma línea que los chips de rol y estado
+ * (formularios.tsx, `CardEquipo`), leída de izquierda a derecha — alinearla
+ * a la derecha ahí la separaría de los chips en vez de seguirlos. En
+ * escritorio sigue siendo su propia columna "Acciones", alineada a la
+ * derecha como siempre.
  */
 export function FilaAcciones({
   usuario,
@@ -186,7 +199,7 @@ export function FilaAcciones({
 
   if (desactivado) {
     return (
-      <div className="flex flex-col items-end gap-1">
+      <div className="flex flex-col items-start gap-1 lg:items-end">
         <form action={accionAlta}>
           <input type="hidden" name="usuarioId" value={usuario.id} />
           <button type="submit" disabled={altaEnCurso} className={ENLACE}>
@@ -212,14 +225,17 @@ export function FilaAcciones({
   }
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex flex-col items-start gap-1 lg:items-end">
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => setCambiandoClave(true)} className={ENLACE}>
           Cambiar clave
         </button>
         {!esUnoMismo && (
           <>
-            <span aria-hidden="true" className="text-xs text-muted-foreground">
+            {/* Mismo tamaño que ENLACE (arriba): el "·" entre "Cambiar
+                clave" y "Baja" es parte del mismo texto uniforme a 10px que
+                dibuja la maqueta en el teléfono. */}
+            <span aria-hidden="true" className="text-[10px] text-muted-foreground lg:text-xs">
               ·
             </span>
             <form action={accionBaja}>

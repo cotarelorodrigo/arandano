@@ -8,7 +8,7 @@ vi.mock('./acciones', () => ({ entrar: vi.fn() }))
 
 async function render() {
   const { FormularioLogin } = await import('./formulario')
-  return renderToStaticMarkup(<FormularioLogin />)
+  return renderToStaticMarkup(<FormularioLogin dominio="flor.arandano.app" />)
 }
 
 describe('FormularioLogin', () => {
@@ -59,24 +59,72 @@ describe('FormularioLogin', () => {
 // consultados en vivo con el MCP de Pencil (nodos `Wz7cZ`/`GmOfQ` los
 // inputs, `E5gfx` el botón, `aSxqO`/`UiPiY` los rótulos).
 describe('geometría contra design/arandano.pen (I4 de la review final)', () => {
-  it('los dos <Input> miden 44px con r=9 (nodos Wz7cZ/GmOfQ)', async () => {
+  // Task 11 del ciclo móvil: los dos <Input> miden 50px/r11 en el teléfono
+  // (nodos vSgDl/Sl8Lu, frame `Móvil / Login`) y vuelven a 44px/r9 en
+  // escritorio (nodos Wz7cZ/GmOfQ, el valor de siempre) — mobile-first.
+  it('los dos <Input> miden 50px/r11 en el teléfono, 44px/r9 en escritorio (I4 + Task 11)', async () => {
     const html = await render()
     const inputs = [...html.matchAll(/<input[^>]*class="([^"]*)"[^>]*>/g)].map((m) => m[1])
     expect(inputs).toHaveLength(2)
     for (const clases of inputs) {
-      expect(clases).toContain('h-11')
-      expect(clases).toContain('rounded-[9px]')
+      expect(clases).toContain('h-[50px]')
+      expect(clases).toContain('rounded-[11px]')
+      expect(clases).toContain('lg:h-11')
+      expect(clases).toContain('lg:rounded-[9px]')
     }
   })
 
-  it('el botón "Entrar" mide 48px, r=11, gap=7, pad-x=15 (nodo E5gfx)', async () => {
+  // Menor de la Ronda de arreglos 1 sobre la Task 11: el padding horizontal
+  // de los dos <Input> es 13px en el teléfono (nodos vSgDl/Sl8Lu), 11px
+  // desde escritorio (nodos Wz7cZ/GmOfQ, el valor de siempre) — antes
+  // quedaba fijo en 11 en los dos anchos. Dos casos separados y no uno
+  // genérico: cada campo usa un prefijo Tailwind distinto (pl- en el de
+  // contraseña, por el ícono del ojo a la derecha; px- en el de mail), y una
+  // negación genérica contra "[11px]" pegaría también con "rounded-[11px]",
+  // que no tiene nada que ver con este padding.
+  it('el padding izquierdo del campo de contraseña es 13px en el teléfono, 11px en escritorio', async () => {
+    const html = await render()
+    // El <Input> de shadcn arma class ANTES de esparcir el resto de las
+    // props (components/ui/input.tsx: `className={cn(...)} {...props}`), así
+    // que en el DOM real el atributo `class` sale ANTES que `name` — no al
+    // revés. Se busca la etiqueta completa y se filtra por contenido, no por
+    // orden de atributos.
+    const clave = [...html.matchAll(/<input[^>]*>/g)]
+      .map((m) => m[0])
+      .find((tag) => tag.includes('name="clave"'))
+    expect(clave, 'no se encontró el <input name="clave">').toBeTruthy()
+    expect(clave).toContain('pl-[13px]')
+    expect(clave).toContain('lg:pl-[11px]')
+    // Negación explícita: "pl-[11px]" SIN el prefijo lg: no puede sobrevivir
+    // — es exactamente el bug que este caso corrige.
+    expect(clave).not.toMatch(/(?<!lg:)pl-\[11px\]/)
+  })
+
+  it('el padding horizontal del campo de mail es 13px en el teléfono, 11px en escritorio', async () => {
+    const html = await render()
+    const mail = [...html.matchAll(/<input[^>]*>/g)]
+      .map((m) => m[0])
+      .find((tag) => tag.includes('name="email"'))
+    expect(mail, 'no se encontró el <input name="email">').toBeTruthy()
+    expect(mail).toContain('px-[13px]')
+    expect(mail).toContain('lg:px-[11px]')
+    expect(mail).not.toMatch(/(?<!lg:)px-\[11px\]/)
+  })
+
+  // Task 11: el botón "Entrar" mide 52px/r12/gap8 en el teléfono (nodo
+  // yh21O) y vuelve a 48px/r11/gap7/pad-x15 en escritorio (nodo E5gfx, el
+  // valor de siempre).
+  it('el botón "Entrar" mide 52px/r12/gap8 en el teléfono, 48px/r11/gap7/pad-x15 en escritorio (I4 + Task 11)', async () => {
     const html = await render()
     const boton = html.match(/<button[^>]*type="submit"[^>]*>/)?.[0]
     expect(boton, 'no se encontró el <button type="submit">').toBeTruthy()
-    expect(boton).toContain('h-12')
-    expect(boton).toContain('gap-[7px]')
-    expect(boton).toContain('rounded-[11px]')
+    expect(boton).toContain('h-[52px]')
+    expect(boton).toContain('gap-2')
+    expect(boton).toContain('rounded-[12px]')
     expect(boton).toContain('px-[15px]')
+    expect(boton).toContain('lg:h-12')
+    expect(boton).toContain('lg:gap-[7px]')
+    expect(boton).toContain('lg:rounded-[11px]')
   })
 
   it('los rótulos "Mail" y "Contraseña" son 11px/600 en --foreground-soft (nodos aSxqO/UiPiY)', async () => {
@@ -102,6 +150,47 @@ describe('geometría contra design/arandano.pen (I4 de la review final)', () => 
     // Título, el campo Mail y el campo Contraseña: los tres con gap-[5px].
     expect(html.match(/gap-\[5px\]/g)).toHaveLength(3)
     expect(html).toContain('gap-[14px]')
+  })
+
+  // Task 11 del ciclo móvil: el <form> pasa a ocupar el ancho completo en el
+  // teléfono (nodo `TyIWX`, frame `Móvil / Login`, fill_container) y sólo en
+  // escritorio vuelve a los 360px fijos de siempre. El gap externo (Título,
+  // Campos, Botón, Ayuda) también es mobile-first: 18px en el teléfono, 20px
+  // (gap-5) en escritorio.
+  it('el <form> es w-full en el teléfono y w-[360px] recién desde escritorio', async () => {
+    const html = await render()
+    const form = html.match(/<form[^>]*class="([^"]*)"/)?.[1]
+    expect(form, 'no se encontró el <form>').toBeTruthy()
+    expect(form).toContain('w-full')
+    expect(form).toContain('lg:w-[360px]')
+    expect(form).toContain('gap-[18px]')
+    expect(form).toContain('lg:gap-5')
+  })
+})
+
+// Task 11 del ciclo móvil (design/arandano.pen, frame `Móvil / Login`,
+// `Kp4Eg`): el pie con la URL del tenant se muda al fondo del formulario en
+// el teléfono (nodo `eY0BS`), empujado por un espaciador `flex-1` (nodo
+// `i4g4a`) — con otro color que el de escritorio (ink, no marca: acá el fondo
+// es claro, no el paño violeta). En escritorio esta mitad se oculta
+// (`lg:hidden`) porque el pie real vive dentro del paño (ver page.tsx).
+describe('FormularioLogin — el pie del teléfono (dominio del tenant)', () => {
+  it('muestra el dominio recibido por prop, con la nota de siempre', async () => {
+    const html = await render()
+    expect(html).toContain('flor.arandano.app')
+    expect(html).toContain('Cada local entra por su propia dirección.')
+  })
+
+  it('el bloque del pie es lg:hidden (sólo existe en el teléfono)', async () => {
+    const html = await render()
+    const idx = html.indexOf('flor.arandano.app')
+    // El <div> que envuelve el pie es el ÚLTIMO abierto antes del dominio; se
+    // busca hacia atrás el primer class= que lleve lg:hidden.
+    const antes = html.slice(0, idx)
+    const ultimaAperturaDeDiv = antes.lastIndexOf('<div class="')
+    const clases = antes.slice(ultimaAperturaDeDiv).match(/^<div class="([^"]*)"/)?.[1]
+    expect(clases, 'no se encontró el <div> del pie').toBeTruthy()
+    expect(clases).toContain('lg:hidden')
   })
 })
 

@@ -5,6 +5,7 @@ import { ArrowRight } from 'lucide-react'
 import { enviarLead, type EstadoLead } from './acciones'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import estilos from './formulario.module.css'
 
 // El estado inicial vive acá y no en acciones.ts: ese archivo es 'use server' y
 // sólo puede exportar funciones async. Mismo patrón que login, usuarios,
@@ -95,8 +96,11 @@ export function Formulario({
   const oscura = variante === 'oscura'
   // 46px en el Hero (nodos EtDRA/HfYKR), 48px en el Cierre (nodos
   // V9xSVB/sUETx) — Minor 10 de la review final: el código tenía 46 en los
-  // dos.
-  const altura = oscura ? 'h-[48px]' : 'h-[46px]'
+  // dos. Eso sigue siendo la medida DE ESCRITORIO: Task 11 del ciclo móvil
+  // suma 50px como piso mobile-first (nodos Wc1DB/MJENr en el Hero,
+  // YBpWb/myteL en el Cierre, frame `Móvil / Sitio · Landing`) — las dos
+  // variantes miden lo mismo en el teléfono y sólo se separan desde `lg:`.
+  const altura = oscura ? 'h-[50px] lg:h-[48px]' : 'h-[50px] lg:h-[46px]'
 
   return (
     <div className="flex w-full flex-col gap-2">
@@ -112,30 +116,30 @@ export function Formulario({
 
       <form
         action={accion}
-        // `sm:flex-wrap` + el piso del input: el botón es `shrink-0` y el
+        // `lg:flex-wrap` + el piso del input: el botón es `shrink-0` y el
         // `Input` de shadcn trae `min-w-0`, así que cuando la fila no entra
         // el recorte se lo come entero el campo — medido en 38px de ancho,
-        // sin lugar ni para el placeholder. El breakpoint `sm` mira el
-        // VIEWPORT y acá lo que se angosta es la COLUMNA del Hero, que a
-        // 1440px son 560 y bastante menos en una ventana a medio abrir: son
-        // dos cosas distintas y por eso `sm:flex-row` solo no alcanza. Con
-        // wrap, el botón se va abajo en vez de aplastar el campo.
-        className="flex w-full flex-col gap-2.5 rounded-[14px] border p-[7px] sm:flex-row sm:flex-wrap sm:items-center"
-        style={
-          oscura
-            ? {
-                backgroundColor: 'color-mix(in srgb, var(--marca-foreground) 8%, transparent)',
-                borderColor: 'color-mix(in srgb, var(--marca-foreground) 15%, transparent)',
-              }
-            : // 'clara' (Hero): el .pen pinta el marco (nodo P2ZVg6) con
-              // $ar-bg y el input (EtDRA) con $ar-surface — divergencia
-              // hermana de I5 en la review final. Sin esto, el <Input> de
-              // shadcn es bg-transparent y el marco no pintaba nada propio,
-              // así que los dos terminaban del mismo color que la página de
-              // fondo (antes gris por el bug de arriba, ahora blanco): el
-              // campo dejaba de leerse como su propia pieza.
-              { backgroundColor: 'var(--background)' }
-        }
+        // sin lugar ni para el placeholder. Con wrap, el botón se va abajo en
+        // vez de aplastar el campo.
+        //
+        // Task 11 del ciclo móvil migró este breakpoint de `sm:` a `lg:`: el
+        // corte de este ciclo es 1024 y sólo 1024 (CLAUDE.md). Abajo de eso
+        // el campo y el botón van apilados siempre (design/arandano.pen,
+        // frame `Móvil / Sitio · Landing`, nodo `M5JB1W`/`HQHDT`: el "Lead"
+        // del Hero y el "Formulario" del Cierre son columnas de gap 9, sin
+        // fila intermedia) — antes, con `sm:`, una ventana de escritorio a
+        // medio abrir (>640px) ya los ponía en fila, que es exactamente lo
+        // que el ciclo quiere evitar entre 768 y 1023.
+        // El marco (borde + fondo + padding + radio) es sólo de escritorio
+        // (app/sitio/formulario.module.css lo explica a fondo): en el
+        // teléfono el .pen dibuja el Input y el Botón como dos cajas
+        // sueltas, sin marco compartido — por eso el color y la geometría
+        // del marco viven en el CSS Module (`estilos.marcoClara`/
+        // `estilos.marcoOscura`), NO en `style` inline: un inline no puede
+        // quedar detrás de una media query.
+        className={`flex w-full flex-col gap-2.5 lg:flex-row lg:flex-wrap lg:items-center ${
+          oscura ? estilos.marcoOscura : estilos.marcoClara
+        }`}
       >
         <label htmlFor={idContacto} className="sr-only">
           Tu WhatsApp o tu mail

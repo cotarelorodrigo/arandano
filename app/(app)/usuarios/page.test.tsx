@@ -30,3 +30,24 @@ describe('el botón "Agregar persona" del Topbar (I3 de la review final)', () =>
     expect(fuenteFormularios).toContain('<CardConEncabezado id="alta" titulo="Agregar a alguien">')
   })
 })
+
+/**
+ * Task 10 del ciclo móvil (frame `NIyHG`): el mismo botón de arriba gana su
+ * ranura en el teléfono. `Usuarios` es un Server Component async (no se puede
+ * montar sin sesión ni Prisma reales, ver el comentario de arriba de todo),
+ * así que esto se verifica sobre el FUENTE — mismo criterio que ya usan
+ * inventario/page.test.tsx y servicio-tecnico/page.test.tsx para su propio
+ * `accionMovil`.
+ */
+describe('el Encabezado gana su accionMovil en el teléfono (Task 10)', () => {
+  const fuente = readFileSync('app/(app)/usuarios/page.tsx', 'utf8')
+
+  it('user-plus a #alta, tono acción', () => {
+    const inicio = fuente.indexOf('accionMovil={')
+    expect(inicio).toBeGreaterThan(-1)
+    const bloque = fuente.slice(inicio, inicio + 300)
+    expect(bloque).toContain('icono: UserPlus')
+    expect(bloque).toContain("href: '#alta'")
+    expect(bloque).toContain("tono: 'accion'")
+  })
+})

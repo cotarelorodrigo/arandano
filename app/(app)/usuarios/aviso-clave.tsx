@@ -24,9 +24,22 @@ import { Copy, KeyRound } from 'lucide-react'
  */
 export function AvisoClaveGenerada({ nombre, clave }: { nombre: string; clave: string }) {
   return (
-    <div role="alert" className="flex items-center gap-[14px] rounded-2xl bg-warn-soft p-[18px]">
-      <div className="flex size-[38px] shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--card)_50%,transparent)]">
-        <KeyRound aria-hidden="true" className="size-[18px] text-warn" />
+    // Ronda de arreglos 1 (Importante 2): sólo el botón de copiar había
+    // recibido tratamiento móvil — el resto del bloque (nodo `frTpj`) seguía
+    // con los valores de escritorio (`SFTGC`) sin `lg:`, aunque estaba en el
+    // mismo `Get` que ya había traído el botón. gap 11/padding 13/radio 14 en
+    // el teléfono; gap 14/padding 18/rounded-2xl (16px) sin tocar en
+    // escritorio.
+    <div
+      role="alert"
+      className="flex items-center gap-[11px] rounded-[14px] bg-warn-soft p-[13px] lg:gap-[14px] lg:rounded-2xl lg:p-[18px]"
+    >
+      {/* Círculo del ícono (nodo `Q0pc6`): 32px en el teléfono, 38px en
+          escritorio — sin tocar. */}
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--card)_50%,transparent)] lg:size-[38px]">
+        {/* Ícono adentro (nodo `qcq6D`): 16px en el teléfono, 18px en
+            escritorio — sin tocar. */}
+        <KeyRound aria-hidden="true" className="size-4 text-warn lg:size-[18px]" />
       </div>
       <div className="flex flex-1 flex-col gap-[3px]">
         <p className="text-sm font-bold text-warn">
@@ -42,16 +55,25 @@ export function AvisoClaveGenerada({ nombre, clave }: { nombre: string; clave: s
       </div>
       <button
         type="button"
+        // aria-label a mano: en el teléfono el botón queda sin texto visible
+        // (el <span> de "Copiar" pasa a hidden), así que esto es el único
+        // nombre accesible que le queda. En escritorio no molesta —el texto
+        // visible ya dice lo mismo—.
+        aria-label="Copiar"
         onClick={() => {
           // navigator.clipboard puede no existir (contexto sin HTTPS, o un
           // navegador viejo): el catch evita que un clic sin efecto tire una
           // excepción no atrapada a la consola.
           navigator.clipboard?.writeText(clave).catch(() => {})
         }}
-        className="flex h-[38px] shrink-0 items-center gap-[7px] rounded-[9px] border border-input bg-card px-[15px] text-[13px] font-semibold text-foreground"
+        // Task 10 del ciclo móvil (frame `NIyHG`, nodo `ZVVQf`): en el
+        // teléfono el botón es sólo ícono, 34×34, radio 10, sin borde — el
+        // botón de 38px con texto y borde que ya existía queda intacto desde
+        // `lg:`.
+        className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] bg-card text-warn lg:h-[38px] lg:w-auto lg:justify-start lg:gap-[7px] lg:rounded-[9px] lg:border lg:border-input lg:px-[15px] lg:text-[13px] lg:font-semibold lg:text-foreground"
       >
         <Copy aria-hidden="true" className="size-[15px]" />
-        Copiar
+        <span className="hidden lg:inline">Copiar</span>
       </button>
     </div>
   )

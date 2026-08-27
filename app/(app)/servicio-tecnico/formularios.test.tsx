@@ -6,6 +6,7 @@
 // igual que nuevo/formularios.test.tsx.
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { PanelEstado, FichaDeOrden, FormularioDiagnostico, textoDeAntiguedad } from './formularios'
 import { NOMBRE_ESTADO } from '@/lib/ordenes-de-trabajo/estados'
 
@@ -119,21 +120,44 @@ describe('PanelEstado (Task 4 del rediseño: el paño "ESTADO ACTUAL")', () => {
     const html = render([])
     expect(html).not.toContain('name="nota"')
   })
+
+  // Task 9 del ciclo móvil (design/arandano.pen, frame `B3noN`, nodo
+  // `W8tnTz` "Transiciones"): los botones se apilan uno debajo del otro en
+  // el teléfono, a 44px de alto (h-11) — y quedan como hoy en escritorio
+  // (lado a lado si entran, 40px de alto).
+  it('los botones de transición se apilan en el teléfono a 44px, y quedan lado a lado a 40px en escritorio', () => {
+    const html = render(['LISTO', 'PRESUPUESTADO', 'SIN_REPARACION'])
+    expect(html).toMatch(/class="flex flex-col gap-2 lg:flex-row lg:flex-wrap"/)
+
+    const posListo = html.indexOf('>Listo<')
+    const desdeListo = html.lastIndexOf('<button', posListo)
+    const botonListo = html.slice(desdeListo, html.indexOf('</button>', posListo))
+    expect(botonListo).toContain('h-11')
+    expect(botonListo).toContain('lg:h-10')
+    expect(botonListo).toContain('w-full')
+    expect(botonListo).toContain('lg:w-auto')
+  })
 })
 
 describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
+  // FichaDeOrden renderiza <Encabezado> (Task 1 del ciclo del shell móvil),
+  // que sin `atras` renderiza el SidebarTrigger de shadcn — y ése llama a
+  // useSidebar(), que tira si no hay un SidebarProvider como ancestro. Mismo
+  // motivo que ya documentó components/shell/encabezado.test.tsx.
   function render(opts: { anulada?: boolean; puedeAnular?: boolean } = {}) {
     return renderToStaticMarkup(
-      <FichaDeOrden
-        titulo="Orden #221 · Samsung A54"
-        subtitulo="Ingresó el 29/07/2026 · hace 23 días en el local"
-        ordenId="o-1"
-        anulada={opts.anulada ?? false}
-        puedeAnular={opts.puedeAnular ?? true}
-        accionAnular={accionFalsa}
-        columnaIzquierda={<div>cuerpo izquierdo</div>}
-        columnaDerecha={<div>bitácora</div>}
-      />,
+      <SidebarProvider>
+        <FichaDeOrden
+          titulo="Orden #221 · Samsung A54"
+          subtitulo="Ingresó el 29/07/2026 · hace 23 días en el local"
+          ordenId="o-1"
+          anulada={opts.anulada ?? false}
+          puedeAnular={opts.puedeAnular ?? true}
+          accionAnular={accionFalsa}
+          columnaIzquierda={<div>cuerpo izquierdo</div>}
+          columnaDerecha={<div>bitácora</div>}
+        />
+      </SidebarProvider>,
     )
   }
 
@@ -187,6 +211,92 @@ describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
     // Sin confirmar todavía: ni "Sí, anular" ni "Cancelar" aparecen.
     expect(html).not.toContain('Sí, anular')
     expect(html).not.toContain('>Cancelar<')
+  })
+
+  // Task 9 del ciclo móvil (design/arandano.pen, frame `B3noN`).
+  it('vuelve a /servicio-tecnico desde la ranura izquierda del teléfono', () => {
+    const html = render()
+    // La etiqueta se extrae y DESPUÉS se afirma el href, en vez de un
+    // regex que fije el orden de los atributos: desde que <Encabezado>
+    // navega con `Link` de Next (hallazgo I3 de la review final), el href
+    // sale último y no primero. Mismo mecanismo que ya usaba
+    // components/shell/encabezado.test.tsx para la variante <button>.
+    const volver = html.match(/<a[^>]*aria-label="Volver"[^>]*>/)?.[0]
+    expect(volver, `no se encontró la flecha de volver en: ${html}`).toBeTruthy()
+    expect(volver).toContain('href="/servicio-tecnico"')
+  })
+
+  it('las dos columnas del cuerpo pasan a flex-col lg:flex-row en el teléfono', () => {
+    const html = render()
+    expect(html).toMatch(/class="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-4"/)
+  })
+
+  /**
+   * Corrección del coordinador tras el reporte de la Task 9: el frame
+   * `B3noN` (Orden ficha) dibuja el ícono `printer` como `accionMovil` con
+   * tono `suave` en el Topbar del teléfono — no una ranura vacía. Sin esto,
+   * "Reimprimir ticket" desaparecía bajo 1024px sin reaparecer en ningún
+   * otro lado: una capacidad perdida, no una simplificación.
+   */
+  it('la ranura derecha del teléfono es "Reimprimir ticket" (printer, tono suave)', () => {
+    const html = render()
+    // Sin fijar el orden de los atributos, por lo mismo que la flecha de
+    // volver de acá arriba: `Link` de Next emite el href al final.
+    const ranura = html.match(/<a[^>]*aria-label="Reimprimir ticket"[^>]*>/)?.[0]
+    expect(ranura, `no se encontró la ranura de reimprimir en: ${html}`).toBeTruthy()
+    expect(ranura).toContain('href="/servicio-tecnico/o-1/ticket"')
+    expect(ranura, 'tono "suave": la maqueta la pinta con --muted').toMatch(
+      /class="[^"]*bg-muted text-foreground[^"]*"/,
+    )
+  })
+
+  /**
+   * Corrección del coordinador: `B3noN` también baja "Anular orden" al
+   * cuerpo (nodo `Jq2Rf`, 46px de alto, ancho completo) — el Topbar lo sigue
+   * mostrando en escritorio (`hidden lg:flex`, sin cambios), pero bajo
+   * 1024px esa acción no reaparecía en ningún lado. Mismo componente
+   * `BotonAnular`, mismo mecanismo de confirmación en dos pasos: sólo se le
+   * suma una className de tamaño para esta segunda instancia.
+   */
+  it('"Anular orden" se duplica al final del cuerpo en el teléfono, a 46px de alto', () => {
+    const html = render({ puedeAnular: true, anulada: false })
+    const apariciones = [...html.matchAll(/Anular orden/g)]
+    expect(apariciones).toHaveLength(2)
+
+    const ultima = html.lastIndexOf('Anular orden')
+    const desde = html.lastIndexOf('<button', ultima)
+    const boton = html.slice(desde, html.indexOf('</button>', ultima))
+    expect(boton).toContain('h-[46px]')
+    // Conserva el lenguaje visual destructivo: no es un botón nuevo desde
+    // cero, es la MISMA instancia de BotonAnular con otro tamaño.
+    expect(boton).toContain('border-destructive')
+    expect(boton).toContain('text-destructive')
+  })
+
+  it('el bloque del cuerpo es lg:hidden: en escritorio sigue viviendo sólo en el Topbar', () => {
+    const html = render({ puedeAnular: true, anulada: false })
+    expect(html).toMatch(/class="flex gap-\[10px\] lg:hidden"/)
+  })
+
+  /**
+   * El riesgo propio del merge con el ciclo de permisos (2026-08-26): las DOS
+   * copias del botón —Topbar (`hidden lg:flex`) y cuerpo del teléfono
+   * (`lg:hidden`)— tienen que estar gobernadas por la MISMA expresión,
+   * `seOfreceAnular` (el permiso `ORDENES_ANULAR` Y que la orden no esté ya
+   * anulada). El ciclo de permisos convirtió la guarda cuando existía una
+   * sola copia; el ciclo móvil agregó la segunda.
+   *
+   * Los conteos, y no un `not.toContain`, son lo que hace que este caso
+   * detecte gatear UNA sola: con la guarda mal puesta en el cuerpo daría 1 en
+   * vez de 0 (y 1 en vez de 2 si estuviera mal la del Topbar).
+   */
+  it('las DOS copias de "Anular orden" las gobierna la misma expresión', () => {
+    const cuenta = (opts: { anulada: boolean; puedeAnular: boolean }) =>
+      [...render(opts).matchAll(/Anular orden/g)].length
+
+    expect(cuenta({ puedeAnular: true, anulada: false }), 'con permiso y orden viva: las dos').toBe(2)
+    expect(cuenta({ puedeAnular: false, anulada: false }), 'sin permiso: ninguna').toBe(0)
+    expect(cuenta({ puedeAnular: true, anulada: true }), 'orden ya anulada: ninguna').toBe(0)
   })
 })
 
