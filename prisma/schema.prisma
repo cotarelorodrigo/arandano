@@ -155,6 +155,7 @@ model Tenant {
   cajas           Caja[]
   categorias      Categoria[]
   usuarioPermisos UsuarioPermiso[]
+  planesDePago    PlanDePago[]
 
   @@map("tenants")
 }
@@ -353,6 +354,42 @@ model Categoria {
   @@map("categorias")
 }
 
+// Las formas de pago del local y cuánto recargan. `Articulo.precio` es el
+// precio de LISTA y cada plan deriva el suyo: no hay un segundo precio guardado
+// en ningún lado, que es lo que evita que los dos se desincronicen.
+model PlanDePago {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  nombre            String
+  // A qué medio aplica. Es lo que hace que elegir "Crédito" en la fila de pago
+  // ofrezca sólo los planes de crédito, y lo que le permite al servidor
+  // rechazar un plan de tarjeta en un pago en efectivo.
+  medio             MedioPago
+  // Dato propio y no derivable del nombre: el mostrador necesita decir "6
+  // cuotas de $X", y nadie va a parsear "Crédito 6 cuotas" para saberlo.
+  cuotas            Int       @default(1)
+  // CON SIGNO: +40.000 recarga, -10.000 descuenta (el descuento por efectivo es
+  // tan común acá como el recargo por cuotas, y merece el mismo mecanismo y no
+  // otro). Tres decimales porque los costos financieros vienen así (13.75 %);
+  // (6,3) topea en 999.999, que ya no es un recargo sino un error de tipeo.
+  recargoPorcentaje Decimal   @map("recargo_porcentaje") @db.Decimal(6, 3)
+  // El orden del mostrador, que decide el dueño. Sin esto se ordena por nombre
+  // y "Crédito 12 cuotas" queda antes que "Crédito 3 cuotas".
+  orden             Int       @default(0)
+  // Baja lógica, como Articulo y User: un plan que ya cobró ventas es
+  // indestructible por la FK Restrict de `pagos`, así que se desactiva.
+  desactivadoEn     DateTime? @map("desactivado_en") @db.Timestamptz(3)
+  creadoEn          DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn     DateTime  @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pagos  Pago[]
+
+  @@unique([tenantId, medio, nombre])
+  @@index([tenantId, medio])
+  @@map("planes_de_pago")
+}
+
 // Append-only: nada se edita ni se borra. Es lo que permite responder "por qué
 // tengo 3 y no 5", que es la pregunta que un dueño hace cuando el inventario no
 // le cierra.
@@ -412,6 +449,12 @@ model Venta {
   usuarioId         String    @map("usuario_id") @db.Uuid
   // En pesos. Lo calcula el motor sumando los ítems; no llega de afuera.
   total             Decimal   @db.Decimal(12, 2)
+  // La suma de los recargos de sus pagos. Es un CACHÉ, con el mismo criterio y
+  // el mismo precedente que Articulo.stock respecto de sus movimientos: existe
+  // para que el listado de /ventas no tenga que sumar los pagos de cada fila.
+  // `total` NO cambia de significado: sigue siendo la mercadería a precio de
+  // lista, así que ninguna venta ya cobrada queda diciendo otra cosa.
+  recargo           Decimal   @default(0) @db.Decimal(12, 2)
   // La venta anulada NO se borra: sus ítems y su total quedan intactos porque
   // el historial tiene que poder responder qué se cobró, y cuando llegue ARCA
   // ésta va a ser el comprobante que necesita su nota de crédito.
@@ -459,21 +502,33 @@ model VentaItem {
 // Varios por venta: el pago partido —una parte en efectivo, otra por
 // transferencia— es la norma, no la excepción.
 model Pago {
-  id         String    @id @default(uuid(7)) @db.Uuid
-  tenantId   String    @map("tenant_id") @db.Uuid
-  ventaId    String    @map("venta_id") @db.Uuid
-  medio      MedioPago
-  moneda     Moneda
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  ventaId      String    @map("venta_id") @db.Uuid
+  medio        MedioPago
+  moneda       Moneda
   // En la moneda del pago, no en pesos.
-  monto      Decimal   @db.Decimal(12, 2)
+  monto        Decimal   @db.Decimal(12, 2)
   // Los ARS que valía una unidad de esa moneda EN ESE MOMENTO. Un pago en pesos
   // lleva 1. Guardarla es lo que después deja cerrar la caja en las dos monedas
   // sin tener que reconstruir a qué valor se tomó cada dólar.
-  cotizacion Decimal   @db.Decimal(12, 4)
-  creadoEn   DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
+  cotizacion   Decimal   @db.Decimal(12, 4)
+  // Con qué plan se cobró. NULL = a precio de lista, que es exactamente lo que
+  // son todos los pagos que ya existen: esta columna no necesita backfill.
+  planDePagoId String?   @map("plan_de_pago_id") @db.Uuid
+  // Cuánto de este pago fue recargo — o descuento, en negativo. En PESOS
+  // siempre, porque un pago en dólares no puede llevar plan (ver crear.ts).
+  // CONGELADO, por lo mismo que VentaItem congela precio y descripción teniendo
+  // articuloId: la venta de marzo tiene que seguir diciendo que se cobró 40 %
+  // aunque el plan hoy esté en 45 % o esté dado de baja. La FK sirve para
+  // navegar; este número es el que explica la plata.
+  recargo      Decimal   @default(0) @db.Decimal(12, 2)
+  creadoEn     DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  venta  Venta  @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  venta  Venta       @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  // Restrict: un plan que ya cobró no se borra. Por eso el ABM da de baja.
+  plan   PlanDePago? @relation(fields: [planDePagoId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, ventaId])
   // La última cotización en dólares del local, que el punto de venta pide en

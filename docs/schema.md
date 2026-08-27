@@ -146,7 +146,21 @@ erDiagram
     moneda moneda
     decimal(12,2) monto
     decimal(12,4) cotizacion
+    uuid plan_de_pago_id FK "opcional"
+    decimal(12,2) recargo
     timestamptz(3) creado_en
+  }
+  planes_de_pago {
+    uuid id PK
+    uuid tenant_id FK "único junto a medio, nombre"
+    text nombre "único junto a tenant_id, medio"
+    medio_pago medio "único junto a tenant_id, nombre"
+    integer cuotas
+    decimal(6,3) recargo_porcentaje
+    integer orden
+    timestamptz(3) desactivado_en "opcional"
+    timestamptz(3) creado_en
+    timestamptz(3) actualizado_en
   }
   sessions {
     uuid id PK
@@ -212,6 +226,7 @@ erDiagram
     uuid cliente_id FK "opcional"
     uuid usuario_id FK
     decimal(12,2) total
+    decimal(12,2) recargo
     timestamptz(3) anulada_en "opcional"
     uuid anulada_por_id FK "opcional"
     timestamptz(3) creado_en
@@ -232,6 +247,7 @@ erDiagram
   clientes |o--o{ ventas : "ON DELETE RESTRICT"
   clientes ||--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
   ordenes_de_trabajo ||--o{ eventos_orden : "ON DELETE CASCADE"
+  planes_de_pago |o--o{ pagos : "ON DELETE RESTRICT"
   tenants ||--o{ accounts : "ON DELETE CASCADE"
   tenants ||--o{ articulos : "ON DELETE CASCADE"
   tenants ||--o{ cajas : "ON DELETE CASCADE"
@@ -241,6 +257,7 @@ erDiagram
   tenants ||--o{ movimientos_stock : "ON DELETE CASCADE"
   tenants ||--o{ ordenes_de_trabajo : "ON DELETE CASCADE"
   tenants ||--o{ pagos : "ON DELETE CASCADE"
+  tenants ||--o{ planes_de_pago : "ON DELETE CASCADE"
   tenants ||--o{ sessions : "ON DELETE CASCADE"
   tenants ||--o{ tenant_modules : "ON DELETE CASCADE"
   tenants ||--o{ users : "ON DELETE CASCADE"
@@ -290,6 +307,7 @@ erDiagram
 - **ordenes_de_trabajo**: `ordenes_de_trabajo_tenant_id_estado_creado_en_idx` sobre (`tenant_id`, `estado`, `creado_en`)
 - **pagos**: `pagos_tenant_id_moneda_creado_en_idx` sobre (`tenant_id`, `moneda`, `creado_en`)
 - **pagos**: `pagos_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
+- **planes_de_pago**: `planes_de_pago_tenant_id_medio_idx` sobre (`tenant_id`, `medio`)
 - **sessions**: `sessions_tenant_id_user_id_idx` sobre (`tenant_id`, `user_id`)
 - **venta_items**: `venta_items_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
 - **ventas**: `ventas_tenant_id_creado_en_idx` sobre (`tenant_id`, `creado_en`)

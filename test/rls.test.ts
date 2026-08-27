@@ -542,4 +542,66 @@ describe('aislamiento por RLS', () => {
       expect(rows[0].categoria, 'el nombre de la categoría de B se filtró a A').toBeNull()
     })
   })
+
+  describe('los planes de pago', () => {
+    let planB: string
+
+    beforeAll(async () => {
+      const p = await owner.query(
+        `INSERT INTO planes_de_pago
+           (id, tenant_id, nombre, medio, cuotas, recargo_porcentaje, orden, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, 'Crédito 6 cuotas', 'TARJETA_CREDITO', 6, 40.000, 0, now(), now())
+         RETURNING id`,
+        [tenantB],
+      )
+      planB = p.rows[0].id
+    })
+
+    it('planes_de_pago: el otro tenant no ve la fila, y su dueño sí', async () => {
+      const { rows: deA } = await comoTenant(tenantA, 'SELECT 1 FROM planes_de_pago')
+      expect(deA, 'planes_de_pago filtró filas de otro tenant').toHaveLength(0)
+
+      const { rows: deB } = await comoTenant(tenantB, 'SELECT 1 FROM planes_de_pago')
+      expect(deB, 'planes_de_pago no es legible por su propio tenant').toHaveLength(1)
+    })
+
+    it('planes_de_pago: rechaza insertar con el tenant_id de otro', async () => {
+      await expect(
+        comoTenant(
+          tenantA,
+          `INSERT INTO planes_de_pago
+             (id, tenant_id, nombre, medio, cuotas, recargo_porcentaje, orden, creado_en, actualizado_en)
+           VALUES (gen_random_uuid(), $1, 'Robado', 'TARJETA_CREDITO', 3, 10.000, 0, now(), now())`,
+          [tenantB],
+        ),
+      ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+    })
+
+    it('planes_de_pago: A no puede cambiarle el recargo (UPDATE) al plan de B', async () => {
+      const { rowCount } = await comoTenant(
+        tenantA,
+        `UPDATE planes_de_pago SET recargo_porcentaje = 0 WHERE id = $1`,
+        [planB],
+      )
+      expect(rowCount, 'el UPDATE de A afectó una fila que no es suya').toBe(0)
+
+      const { rows } = await owner.query(
+        'SELECT recargo_porcentaje FROM planes_de_pago WHERE id = $1',
+        [planB],
+      )
+      expect(Number(rows[0].recargo_porcentaje)).toBe(40)
+    })
+
+    it('planes_de_pago: A no puede borrar (DELETE) el plan de B', async () => {
+      const { rowCount } = await comoTenant(
+        tenantA,
+        `DELETE FROM planes_de_pago WHERE id = $1`,
+        [planB],
+      )
+      expect(rowCount, 'el DELETE de A afectó una fila que no es suya').toBe(0)
+
+      const { rows } = await owner.query('SELECT 1 FROM planes_de_pago WHERE id = $1', [planB])
+      expect(rows, 'el plan de B desapareció').toHaveLength(1)
+    })
+  })
 })
