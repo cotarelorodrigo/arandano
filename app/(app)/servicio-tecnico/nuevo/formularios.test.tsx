@@ -5,6 +5,7 @@
 // renderiza el formulario, no el dominio, que ya tiene su propio test contra
 // una base real (acciones.test.ts, test/clientes.test.ts).
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { FormularioRecepcion } from '../formularios'
@@ -210,5 +211,89 @@ describe('FormularioRecepcion — el buscador de cliente (Task 3 del rediseño)'
       expect(inicio, `no se encontró el campo ${campo}`).toBeGreaterThan(-1)
       expect(html.slice(inicio, cierre), `${campo} no mide h-10`).toContain('h-10')
     }
+  })
+})
+
+/**
+ * Task 9 del ciclo móvil (design/arandano.pen, frame `H1Wm6`): `atras` vuelve
+ * al tablero, y la ranura derecha del teléfono queda apagada —sus acciones
+ * bajan al pie—, mismo criterio que ya prueba `app/(app)/inventario/
+ * formularios.test.tsx` para `FormularioDeAlta`.
+ */
+describe('atras="/servicio-tecnico" y sin accionMovil (Task 9 del ciclo móvil)', () => {
+  it('vuelve a /servicio-tecnico desde la ranura izquierda del teléfono', () => {
+    const html = render([])
+    expect(html).toMatch(/<a href="\/servicio-tecnico" aria-label="Volver"/)
+  })
+
+  // Se verifica por RENDER real y no por FUENTE: si algo agregara accionMovil
+  // algún día, este caso lo detecta aunque no toque la línea del <Encabezado>.
+  // Cuenta las ranuras de 38px del Topbar (izquierda + derecha), no todos los
+  // aria-label del documento: el buscador de cliente también lleva el suyo
+  // ("Buscar cliente por nombre o teléfono"), sin relación con esto.
+  it('no ofrece ninguna acción del teléfono: una sola ranura de 38px en el Topbar (la de "Volver")', () => {
+    const html = render([])
+    const ranuras = html.match(/size-\[38px\] shrink-0 items-center justify-center rounded-\[10px\] lg:hidden/g) ?? []
+    expect(ranuras).toHaveLength(1)
+  })
+})
+
+/**
+ * Task 9 del ciclo móvil (design/arandano.pen, nodo "Pie" de `H1Wm6`):
+ * mismo mecanismo que ya usa `app/(app)/inventario/formularios.tsx` para
+ * `FormularioDeAlta` — dos botones, uno `hidden lg:flex` (dentro de
+ * `acciones`, que ya lo envuelve el propio `Encabezado`) y otro `lg:hidden`,
+ * atados al MISMO `<form id="form-recepcion">` por el atributo `form=` y al
+ * MISMO `pendiente` de `useActionState`.
+ */
+describe('el pie del teléfono repite las acciones del Topbar (Task 9 del ciclo móvil)', () => {
+  it('"Cancelar" y "Guardar e imprimir" aparecen dos veces (Topbar y pie)', () => {
+    const html = render([])
+    expect([...html.matchAll(/>Cancelar</g)]).toHaveLength(2)
+    // Substring y no la frase completa: el Topbar dice "Guardar e imprimir
+    // ticket" (sin cambios) y el pie dice "Guardar e imprimir" a secas —nodo
+    // `O0unea` de H1Wm6—, porque a 390px de ancho, junto al botón "Cancelar",
+    // "...ticket" no entra. El substring común cubre las dos redacciones.
+    expect([...html.matchAll(/Guardar e imprimir/g)]).toHaveLength(2)
+  })
+
+  it('el pie nuevo es lg:hidden', () => {
+    const fuente = readFileSync('app/(app)/servicio-tecnico/formularios.tsx', 'utf8')
+    expect(fuente).toMatch(/border-t bg-card p-\[14px\] lg:hidden/)
+  })
+
+  // El mismo `pendiente` gobierna los dos: si alguien partiera el pie a otro
+  // componente con su propio useActionState, este caso lo detecta.
+  it('"disabled={pendiente}" aparece dos veces (Topbar y pie)', () => {
+    const fuente = readFileSync('app/(app)/servicio-tecnico/formularios.tsx', 'utf8')
+    const inicio = fuente.indexOf('export function FormularioRecepcion')
+    const fin = fuente.indexOf('export function PanelEstado')
+    const cuerpo = fuente.slice(inicio, fin)
+    expect([...cuerpo.matchAll(/disabled=\{pendiente\}/g)]).toHaveLength(2)
+  })
+
+  it('el botón del Topbar sigue siendo el primero en el DOM', () => {
+    const html = render([])
+    const posTopbar = html.indexOf('Guardar e imprimir ticket')
+    const posPie = html.lastIndexOf('Guardar e imprimir')
+    expect(posTopbar).toBeGreaterThan(-1)
+    expect(posPie).toBeGreaterThan(posTopbar)
+  })
+})
+
+/**
+ * Task 9 del ciclo móvil (design/arandano.pen, frame `H1Wm6`): las cuatro
+ * cards (Cliente, Equipo, Qué le pasa, Qué se imprime) se apilan en una sola
+ * columna en el teléfono, y quedan como hoy (dos columnas) en escritorio.
+ */
+describe('las cuatro cards se apilan en el teléfono (Task 9 del ciclo móvil)', () => {
+  it('las dos columnas del cuerpo pasan a flex-col lg:flex-row', () => {
+    const html = render([])
+    expect(html).toMatch(/class="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-4"/)
+  })
+
+  it('el cuerpo entero pasa a padding/gap mobile-first', () => {
+    const html = render([])
+    expect(html).toMatch(/class="flex flex-col gap-3 px-\[14px\] py-3 lg:gap-4 lg:p-6"/)
   })
 })

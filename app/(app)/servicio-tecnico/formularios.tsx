@@ -80,6 +80,12 @@ function CardConEncabezado({ titulo, children }: { titulo: string; children: Rea
 // `form={FORM_RECEPCION}`, sin importar dónde queden en el DOM.
 const FORM_RECEPCION = 'form-recepcion'
 
+// El pie del teléfono (design/arandano.pen, nodo "Pie" de `H1Wm6`): 50px de
+// alto y radio 12 para los botones — Task 9 del ciclo móvil. Constante propia
+// y no importada de app/(app)/inventario/formularios.tsx: cada pantalla arma
+// la suya, mismo criterio que CardConEncabezado más arriba.
+const CLASES_BOTON_PIE = 'h-[50px] rounded-[12px]'
+
 /**
  * Un resultado del buscador de cliente (design/arandano.pen, nodos `w8JWU`
  * SELECCIONADO / `i8yfrS` no seleccionado, dentro de `x0iSE3` "Resultados"):
@@ -160,6 +166,7 @@ export function FormularioRecepcion({
       <Encabezado
         titulo="Recibir un equipo"
         subtitulo="Queda la orden abierta y sale el ticket con las dos copias"
+        atras="/servicio-tecnico"
         acciones={
           <>
             <Button asChild variant="ghost">
@@ -182,11 +189,16 @@ export function FormularioRecepcion({
         <input type="hidden" name="claveIdempotencia" value={claveIdempotencia} />
       </form>
 
-      <div className="flex flex-col gap-4 p-6">
+      <div className="flex flex-col gap-3 px-[14px] py-3 lg:gap-4 lg:p-6">
         <Aviso estado={estado} />
 
-        <div className="flex items-start gap-4">
-          <div className="flex flex-1 flex-col gap-4">
+        {/* Mobile-first (Task 9 del ciclo móvil, frame `H1Wm6`): las cuatro
+            cards se apilan en una sola columna en el teléfono —el orden del
+            DOM ya coincide con el que dibuja la maqueta, Cliente/Equipo antes
+            que Qué le pasa/Qué se imprime—, y quedan en las dos columnas de
+            hoy en escritorio. */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-4">
+          <div className="flex flex-col gap-3 lg:flex-1 lg:gap-4">
             <CardConEncabezado titulo="1 · Cliente">
               {/* El buscador: <form> de método GET, PROPIO y no anidado en
                   FORM_RECEPCION (un <form> no puede anidar otro). Recarga la
@@ -333,7 +345,7 @@ export function FormularioRecepcion({
             </CardConEncabezado>
           </div>
 
-          <div className="flex w-[420px] shrink-0 flex-col gap-4">
+          <div className="flex flex-col gap-3 lg:w-[420px] lg:shrink-0 lg:gap-4">
             <CardConEncabezado titulo="3 · Qué le pasa">
               <div className="flex flex-col gap-[5px]">
                 <Label htmlFor={`${id}-falla`} className="text-[11px] font-semibold text-foreground-soft">
@@ -385,6 +397,33 @@ export function FormularioRecepcion({
           </div>
         </div>
       </div>
+
+      {/* El pie del teléfono (design/arandano.pen, nodo "Pie" de `H1Wm6`):
+          los mismos "Cancelar"/"Guardar e imprimir ticket" del Topbar,
+          repetidos — `lg:hidden`, atados al MISMO `<form id="form-recepcion">`
+          por el atributo `form=` (nunca por `id=`) y al mismo `pendiente`.
+          "Cancelar" cambia de variant acá — `outline`, con borde —, porque el
+          `ghost` de escritorio no tiene fondo ni borde, y sin ninguno de los
+          dos un botón "Cancelar" al pie de un teléfono es un área táctil
+          invisible; mismo criterio que ya usó Task 7 en /inventario. El
+          texto del botón primario es más corto acá que en el Topbar
+          ("Guardar e imprimir", nodo `O0unea`, sin "ticket"): a 390px de
+          ancho, junto a "Cancelar", "...ticket" no entra — la maqueta lo
+          acorta y este componente sigue esa redacción. */}
+      <div className="sticky bottom-0 z-10 flex items-center gap-[10px] border-t bg-card p-[14px] lg:hidden">
+        <Button asChild variant="outline" className={`shrink-0 ${CLASES_BOTON_PIE}`}>
+          <Link href="/servicio-tecnico">Cancelar</Link>
+        </Button>
+        <Button
+          type="submit"
+          form={FORM_RECEPCION}
+          disabled={pendiente}
+          className={`flex-1 ${CLASES_BOTON_PIE}`}
+        >
+          <Printer aria-hidden="true" className="size-[15px]" />
+          {pendiente ? 'Guardando…' : 'Guardar e imprimir'}
+        </Button>
+      </div>
     </>
   )
 }
@@ -422,7 +461,10 @@ function BotonDeTransicion({
       value={hasta}
       disabled={disabled}
       className={cn(
-        'flex h-10 items-center justify-center gap-[7px] rounded-[9px] px-[14px] text-[13px] font-semibold whitespace-nowrap',
+        // h-11 (44px) w-full en el teléfono (design/arandano.pen, frame
+        // `B3noN`, nodo `W8tnTz`: los tres botones apilados a 44px de alto,
+        // ancho completo) — lg: los vuelve a lo de hoy, 40px lado a lado.
+        'flex h-11 w-full items-center justify-center gap-[7px] rounded-[9px] px-[14px] text-[13px] font-semibold whitespace-nowrap lg:h-10 lg:w-auto',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--marca-foreground)] disabled:pointer-events-none disabled:opacity-50',
         principal
           ? 'bg-[var(--marca-foreground)] text-[var(--marca)]'
@@ -468,7 +510,12 @@ export function PanelEstado({
   const id = useId()
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl p-[18px]" style={{ backgroundColor: 'var(--marca)' }}>
+    <div
+      // p-4 (16px) en el teléfono (design/arandano.pen, frame `B3noN`, nodo
+      // `u27AIe`), p-[18px] (el de hoy) en escritorio.
+      className="flex flex-col gap-3 rounded-2xl p-4 lg:p-[18px]"
+      style={{ backgroundColor: 'var(--marca)' }}
+    >
       <div className="flex items-center justify-between">
         <div className="flex flex-col gap-[3px]">
           <span
@@ -536,7 +583,9 @@ export function PanelEstado({
               className="border-[color-mix(in_srgb,var(--marca-foreground)_33%,transparent)] bg-[color-mix(in_srgb,var(--marca-foreground)_10%,transparent)] text-[var(--marca-foreground)] placeholder:text-[color-mix(in_srgb,var(--marca-foreground)_55%,transparent)]"
             />
           </div>
-          <div className="flex flex-wrap gap-2">
+          {/* Apilados en el teléfono, lado a lado (con wrap) en escritorio —
+              Task 9 del ciclo móvil, mismo frame `W8tnTz`. */}
+          <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap">
             {siguientes.map((s, i) => (
               <BotonDeTransicion
                 key={s}
@@ -712,6 +761,7 @@ export function FichaDeOrden({
       <Encabezado
         titulo={titulo}
         subtitulo={subtitulo}
+        atras="/servicio-tecnico"
         acciones={
           <>
             <Button asChild variant="outline">
@@ -731,11 +781,15 @@ export function FichaDeOrden({
         </form>
       ) : null}
 
-      <div className="flex flex-col gap-4 p-6">
+      <div className="flex flex-col gap-3 px-[14px] py-3 lg:gap-4 lg:p-6">
         <Aviso estado={estadoAnular} />
-        <div className="flex items-start gap-4">
-          <div className="flex flex-1 flex-col gap-4">{columnaIzquierda}</div>
-          <div className="flex w-[380px] shrink-0 flex-col gap-4">{columnaDerecha}</div>
+        {/* Mobile-first (Task 9 del ciclo móvil, frame `B3noN`): las dos
+            columnas se apilan en el teléfono —columnaIzquierda (paño, Cliente,
+            Equipo, Falla y diagnóstico) antes que columnaDerecha (la
+            bitácora)—, y quedan lado a lado en escritorio como hoy. */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-4">
+          <div className="flex flex-col gap-3 lg:flex-1 lg:gap-4">{columnaIzquierda}</div>
+          <div className="flex flex-col gap-3 lg:w-[380px] lg:shrink-0 lg:gap-4">{columnaDerecha}</div>
         </div>
       </div>
     </>

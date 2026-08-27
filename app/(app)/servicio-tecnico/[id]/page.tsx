@@ -269,12 +269,16 @@ export type EventoDeBitacora = {
  */
 export function Bitacora({ eventos }: { eventos: EventoDeBitacora[] }) {
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-2xl border bg-card">
+    // Fluida en el teléfono (Task 9 del ciclo móvil, frame `B3noN`): sin
+    // altura ni scroll propios, se estira con el resto del cuerpo. `lg:h-full`
+    // y `lg:overflow-y-auto` la vuelven a lo de hoy en escritorio, donde se
+    // empareja con la columna vecina.
+    <div className="flex flex-col overflow-hidden rounded-2xl border bg-card lg:h-full">
       <div className="flex items-center justify-between border-b px-[18px] py-[13px]">
         <h2 className={cn(estilos.tituloDeCard, 'text-foreground')}>Qué pasó</h2>
         <span className="text-xs font-semibold text-primary">Append-only</span>
       </div>
-      <div className="flex flex-1 flex-col overflow-y-auto px-[18px] pt-4">
+      <div className="flex flex-col px-[18px] pt-4 lg:flex-1 lg:overflow-y-auto">
         {eventos.map((e, i) => {
           const esUltimo = i === eventos.length - 1
           const { Icono, clase } = ESTADO_VISUAL[e.hasta]

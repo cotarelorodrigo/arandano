@@ -148,6 +148,16 @@ describe('Bitacora (Task 4 del rediseño)', () => {
     const html = renderToStaticMarkup(<Bitacora eventos={[sinNota]} />)
     expect(html).toContain('Pasó a En reparación')
   })
+
+  // Task 9 del ciclo móvil (design/arandano.pen, frame `B3noN`): sin scroll
+  // interno propio en el teléfono —fluye con el resto del cuerpo—, y se
+  // queda como hoy en escritorio (h-full + su propio overflow-y-auto, para
+  // parejarse con la columna vecina).
+  it('es fluida en el teléfono: sin scroll interno propio, y se queda como hoy en escritorio', () => {
+    const html = renderToStaticMarkup(<Bitacora eventos={EVENTOS} />)
+    expect(html).toMatch(/class="flex flex-col overflow-hidden rounded-2xl border bg-card lg:h-full"/)
+    expect(html).toMatch(/class="flex flex-col px-\[18px\] pt-4 lg:flex-1 lg:overflow-y-auto"/)
+  })
 })
 
 describe('CardFallaYDiagnostico (hallazgo I2 de la review final: el presupuesto formateado)', () => {

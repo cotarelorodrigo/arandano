@@ -120,6 +120,23 @@ describe('PanelEstado (Task 4 del rediseño: el paño "ESTADO ACTUAL")', () => {
     const html = render([])
     expect(html).not.toContain('name="nota"')
   })
+
+  // Task 9 del ciclo móvil (design/arandano.pen, frame `B3noN`, nodo
+  // `W8tnTz` "Transiciones"): los botones se apilan uno debajo del otro en
+  // el teléfono, a 44px de alto (h-11) — y quedan como hoy en escritorio
+  // (lado a lado si entran, 40px de alto).
+  it('los botones de transición se apilan en el teléfono a 44px, y quedan lado a lado a 40px en escritorio', () => {
+    const html = render(['LISTO', 'PRESUPUESTADO', 'SIN_REPARACION'])
+    expect(html).toMatch(/class="flex flex-col gap-2 lg:flex-row lg:flex-wrap"/)
+
+    const posListo = html.indexOf('>Listo<')
+    const desdeListo = html.lastIndexOf('<button', posListo)
+    const botonListo = html.slice(desdeListo, html.indexOf('</button>', posListo))
+    expect(botonListo).toContain('h-11')
+    expect(botonListo).toContain('lg:h-10')
+    expect(botonListo).toContain('w-full')
+    expect(botonListo).toContain('lg:w-auto')
+  })
 })
 
 describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
@@ -194,6 +211,17 @@ describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
     // Sin confirmar todavía: ni "Sí, anular" ni "Cancelar" aparecen.
     expect(html).not.toContain('Sí, anular')
     expect(html).not.toContain('>Cancelar<')
+  })
+
+  // Task 9 del ciclo móvil (design/arandano.pen, frame `B3noN`).
+  it('vuelve a /servicio-tecnico desde la ranura izquierda del teléfono', () => {
+    const html = render()
+    expect(html).toMatch(/<a href="\/servicio-tecnico" aria-label="Volver"/)
+  })
+
+  it('las dos columnas del cuerpo pasan a flex-col lg:flex-row en el teléfono', () => {
+    const html = render()
+    expect(html).toMatch(/class="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-4"/)
   })
 })
 
