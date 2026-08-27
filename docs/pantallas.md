@@ -244,7 +244,16 @@ la pantalla llega con el dato puesto en vez de parpadear.
 - **El pie del panel de cobro pasa a tres líneas —Mercadería, Recargo *nombre
   del plan*, Total a cobrar— sólo cuando hay algún plan elegido**; sin recargo
   no crece y la pantalla queda como estaba. Con más de un plan elegido el
-  recargo va sin nombre, porque el número es la suma de todos. **La banda de
+  recargo va sin nombre, porque el número es la suma de todos.
+- **La palabra del renglón del medio sale del SIGNO del neto: "Recargo" o
+  "Descuento".** El descuento por pago contado es un caso de primera clase de
+  este producto, no un borde, y "Recargo Contado −$ 1.000,00" se contradice a sí
+  mismo en la misma línea. Bajo "Descuento" el importe va **sin** el menos: el
+  rótulo ya dice de qué lado está, un `−` al lado de la palabra es una doble
+  negación, y el total a cobrar quedando por debajo de la mercadería confirma
+  la dirección. Es a propósito lo contrario de `formatearPorcentaje`, que
+  muestra el signo siempre porque allá el rótulo de la columna es fijo y el
+  signo es lo único que distingue un plan de otro. **La banda de
   `--marca` sigue mostrando la MERCADERÍA**: es el ancla de contenido de esta
   pantalla y el número contra el que se reparten los pagos; el total a cobrar
   vive en el panel donde se decide cuánta plata entra. El recargo lo calculan

@@ -299,9 +299,10 @@ function montoDelPie(centavos: number): string {
 }
 
 /**
- * Las tres líneas del pie del panel de cobro —Mercadería, Recargo y Total a
- * cobrar—, o ninguna cuando no hay ningún plan elegido: sin recargo el pie no
- * crece y la pantalla queda exactamente como estaba.
+ * Las tres líneas del pie del panel de cobro —Mercadería, Recargo (o
+ * Descuento, según el signo) y Total a cobrar—, o ninguna cuando no hay ningún
+ * plan elegido: sin recargo el pie no crece y la pantalla queda exactamente
+ * como estaba.
  *
  * **La banda de `--marca` sigue mostrando la MERCADERÍA**, que es el ancla de
  * contenido de esta pantalla y el número contra el que se reparten los pagos.
@@ -345,6 +346,26 @@ export function lineasDelPieDeCobro(
   )
   if (recargoCentavos === 0) return []
 
+  // LA PALABRA SALE DEL SIGNO, no es fija. "Recargo Contado −$ 1.000,00"
+  // contradice su propio número en la misma línea, y el descuento por pago
+  // contado es un caso de primera clase de este producto —tan común como el
+  // recargo por cuotas, lo dice el spec—, no un borde. Del NETO y no del
+  // porcentaje de un plan: con dos planes que se compensan, el signo del total
+  // es lo único que describe bien lo que pasó.
+  //
+  // Y bajo "Descuento" el importe va SIN signo (`Math.abs`). El rótulo ya dice
+  // de qué lado está, y un "−" al lado de la palabra es una doble negación que
+  // en un mostrador se lee al revés ("descuento negativo"). Así se lee
+  // cualquier ticket —mercadería, menos el descuento, total—, y el total, que
+  // queda POR DEBAJO de la mercadería, es la confirmación de la dirección. Es
+  // a propósito lo contrario de `formatearPorcentaje`, que sí muestra el signo
+  // siempre: ahí el rótulo de la columna es fijo y el signo es lo ÚNICO que
+  // distingue un plan de recargo de uno de descuento.
+  //
+  // Con el recargo en NaN (un monto a medio tipear) no hay signo que mirar y
+  // la palabra cae en "Recargo" con "—" de importe: no afirma ningún número,
+  // así que tampoco puede contradecir a ninguno.
+  const palabra = recargoCentavos < 0 ? 'Descuento' : 'Recargo'
   // Con UN solo plan elegido el rótulo lo nombra ("Recargo 3 cuotas"): un
   // "Recargo" pelado no dice de qué recargo habla. Con dos planes distintos el
   // número es la suma de los dos, así que nombrar a uno sería atribuirle un
@@ -352,7 +373,10 @@ export function lineasDelPieDeCobro(
   const nombres = [...new Set(conPlan.map(({ plan }) => plan.nombre))]
   return [
     { rotulo: 'Mercadería', monto: montoDelPie(mercaderiaCentavos) },
-    { rotulo: nombres.length === 1 ? `Recargo ${nombres[0]}` : 'Recargo', monto: montoDelPie(recargoCentavos) },
+    {
+      rotulo: nombres.length === 1 ? `${palabra} ${nombres[0]}` : palabra,
+      monto: montoDelPie(Math.abs(recargoCentavos)),
+    },
     { rotulo: 'Total a cobrar', monto: montoDelPie(mercaderiaCentavos + recargoCentavos) },
   ]
 }

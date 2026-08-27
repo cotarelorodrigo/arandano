@@ -209,6 +209,53 @@ Detectado al cerrar el ciclo de permisos por usuario (2026-08-26). Ver
 
 ---
 
+## 9. La maqueta no dibuja el selector de plan ni el pie del cobro de `/vender`
+
+- **Frame**: `App / Vender` (nodos `Cyias` para la card de Cobro, `XdYjF`/`VnEsm`
+  para una fila de pago)
+
+**Qué falta.** `design/arandano.pen` es anterior a los planes de pago
+(2026-08-27), así que el frame de `/vender` no tiene:
+
+1. **El `Select` de plan de cada fila de pago.** Aparece bajo los selectores de
+   Medio y Moneda, y **sólo** cuando el medio elegido tiene planes cargados y el
+   pago es en pesos — un local sin planes no ve ningún control nuevo. El código
+   lo derivó del selector de **Medio** de esa misma fila, que es su hermano
+   directo y sí está dibujado: mismo alto (36), mismo radio (9), mismo borde
+   `$ar-line-strong`, mismo 13/500. Lo único que no sale de ahí es que ocupe su
+   **propia fila** a todo el ancho en vez de ir al lado de Medio y Moneda: en
+   una card de 384 un tercer control apretaría justo al de Medio, que es el que
+   más se toca, y los nombres de plan son largos ("Crédito 3 cuotas sin
+   interés").
+2. **El pie de tres líneas del panel de Cobro** — `Mercadería`, `Recargo <plan>`
+   (o `Descuento <plan>`, según el signo) y `Total a cobrar`—, que aparece sólo
+   cuando hay algún plan elegido y va entre los carteles de error/éxito y el
+   chip de Faltante. El código lo derivó del renglón **"Entran $X"** (nodo
+   `OTlAa`), que es el otro sitio de esta pantalla donde un rótulo y un importe
+   conviven en una línea: rótulo 12 en `$ar-text-muted`, importe 13/600 en
+   Archivo. Lo derivado es el destaque de la última línea (borde arriba y
+   15/700), que "Entran $X" no tiene porque no cierra ninguna cuenta.
+
+**Lo que la maqueta NO tiene que cambiar**, y conviene decirlo para que nadie lo
+"arregle" al dibujarlo: la banda de `--marca` sigue mostrando la **mercadería**,
+no el total a cobrar. Es el ancla de contenido de la pantalla y el número contra
+el que se reparten los pagos; el total a cobrar vive en el pie del panel de
+cobro, que es donde se decide cuánta plata entra. El chip "Faltan / Sobran"
+mide contra la mercadería por la misma razón: si midiera contra lo cobrado, una
+venta financiada no cerraría nunca.
+
+Mismo precedente que el panel de categorías de `/inventario` (entrada 6) y que
+el diálogo de permisos de `/usuarios` (entrada 8): la maqueta no **contradice**
+al código acá, le **falta** el control, así que se construyó contra lo que el
+`.pen` ya fija para esa pantalla en vez de inventar un tratamiento. Si al
+dibujarlos la maqueta decide otra cosa, manda la maqueta y se corrige el código.
+
+Detectado al construir el selector de plan del mostrador (2026-08-27). Ver
+`docs/superpowers/specs/2026-08-27-precios-por-forma-de-pago-design.md`, sección
+*Las pantallas*, que ya anticipaba esta deuda.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

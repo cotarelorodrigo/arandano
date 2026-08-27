@@ -609,6 +609,46 @@ describe('el punto de venta', () => {
     ).toMatch(/desarmarVaciado\.current = setTimeout\(\(\) => setVaciadoArmado\(false\), 3000\)/)
   })
 
+  // El hallazgo de la review de la Task 6 de precios por forma de pago:
+  // `hayOverlayDeRadixAbierto` no aparecía en NINGÚN test. Borrar
+  // `if (hayOverlayDeRadixAbierto()) return`, o moverlo debajo de la rama de
+  // Esc, dejaba los 45 casos de entonces en verde — y es la guarda que existe
+  // porque el bug YA SE FUE A PRODUCCIÓN una vez: con un `Select` de Radix
+  // abierto, Enter sobre la opción resaltada cobraba la venta con el medio
+  // anterior, y dos Esc para cerrar dos dropdowns vaciaban el carrito. La
+  // función misma no se puede probar acá (usa `document`, que es DOM real y
+  // este repo no corre jsdom, ver su comentario), pero SÍ se puede fijar que
+  // el listener la consulte ANTES de cualquier rama.
+  //
+  // Importa más desde esta task, que suma un TERCER listbox de Radix a la
+  // pantalla (el selector de plan) apoyado en esta misma abstención.
+  it('el listener de atajos se abstiene antes de mirar ninguna tecla si hay un overlay de Radix abierto', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    // El ÚLTIMO `alApretarTecla` y no el primero: el primero es el listener de
+    // F2, que no comparte teclas con Radix y no lleva esta guarda.
+    const inicio = fuente.lastIndexOf('function alApretarTecla(')
+    expect(inicio, 'el listener compartido de Enter/Esc tiene que existir').toBeGreaterThan(-1)
+    const hastaLaPrimeraRama = fuente.slice(
+      inicio,
+      fuente.indexOf('if (esAtajoDeVaciar(e.key))', inicio),
+    )
+    expect(
+      hastaLaPrimeraRama,
+      'la abstención por overlay tiene que ir ANTES de la rama de Esc y la de Enter, no adentro de una de ellas',
+    ).toMatch(/if \(hayOverlayDeRadixAbierto\(\)\) return/)
+
+    // Y que la abstención siga mirando el `[role="listbox"]` de un Select
+    // abierto: es exactamente lo que monta el selector de plan de esta task
+    // —verificado en runtime con jsdom—, así que estrechar esta query lo
+    // dejaría sin cobertura.
+    expect(
+      fuente,
+      'la guarda tiene que seguir cubriendo listbox, dialog y menu',
+    ).toMatch(
+      /document\.querySelector\('\[role="listbox"\], \[role="dialog"\], \[role="menu"\]'\)/,
+    )
+  })
+
   // --- Task 6: el plan de pago del mostrador ---
 
   // La promesa explícita del spec: un local que no cargó ningún plan no ve UN
@@ -663,7 +703,10 @@ describe('el punto de venta', () => {
     // propio, y el selector entero tiene que desaparecer cuando no queda
     // ninguno para ofrecer.
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
-    expect(fuente).toMatch(/const planesDelMedio = planesOfrecidos\(pago, planes\)/)
+    // `\s*` entre los argumentos por lo mismo que el caso de más abajo: lo que
+    // importa es que la fila llame a ESTA función con SU pago y los planes, no
+    // que la llamada entre en una línea.
+    expect(fuente).toMatch(/const planesDelMedio = planesOfrecidos\(\s*pago,\s*planes,?\s*\)/)
     expect(fuente).toMatch(/\{planesDelMedio\.length > 0 && \(/)
   })
 
@@ -675,10 +718,19 @@ describe('el punto de venta', () => {
   // viajando en el JSON escondido.
   it('cambiar el medio o la moneda limpia el plan elegido', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    // Acotado al Select de medio y después `planId: null`, y NO la línea
+    // entera del `onCambiar` tipeada tal cual: fijar el formato exacto de una
+    // sola línea hace que un reformateo de Prettier rompa el caso por algo que
+    // no tiene nada que ver con la propiedad que afirma. Es la misma forma que
+    // ya usaba la mitad de la moneda, acá abajo (hallazgo de la review de esta
+    // task).
+    const desdeElMedio = fuente.indexOf('value={pago.medio}')
+    expect(desdeElMedio, 'el Select de medio tiene que existir en el fuente').toBeGreaterThan(-1)
+    const bloqueDelMedio = fuente.slice(desdeElMedio, fuente.indexOf('<SelectTrigger', desdeElMedio))
     expect(
-      fuente,
+      bloqueDelMedio,
       'cambiar el medio tiene que limpiar el plan en el MISMO onCambiar',
-    ).toMatch(/onCambiar\(\{ medio: medio as Pago\['medio'\], planId: null \}\)/)
+    ).toMatch(/planId: null/)
 
     const posicion = fuente.indexOf("const moneda = valor as Pago['moneda']")
     expect(posicion, 'el handler de moneda tiene que existir en el fuente').toBeGreaterThan(-1)
@@ -719,27 +771,48 @@ describe('el punto de venta', () => {
   })
 
   // El descuento es el otro lado del mismo cálculo, y el que rompe cualquier
-  // cuenta que asuma positivos: el recargo resta y el total a cobrar queda
-  // POR DEBAJO de la mercadería.
-  it('un plan con porcentaje negativo descuenta en vez de recargar', async () => {
+  // cuenta que asuma positivos: el importe resta y el total a cobrar queda POR
+  // DEBAJO de la mercadería.
+  //
+  // Y el RÓTULO también cambia — el hallazgo Important de la review de esta
+  // task: con la palabra fija en "Recargo", el mostrador leía "Recargo
+  // Contado −$ 1.000,00", una línea que se contradice a sí misma en la
+  // pantalla que un local mira todo el día. La palabra sale del signo, y bajo
+  // "Descuento" el importe va SIN el menos: el rótulo ya dice de qué lado
+  // está, y un "−" al lado de la palabra es una doble negación.
+  it('un plan con porcentaje negativo descuenta en vez de recargar, y lo dice', async () => {
     const { lineasDelPieDeCobro } = await import('./punto-de-venta')
     const lineas = lineasDelPieDeCobro(
       1_000_000,
       [{ base: '10000', cotizacion: '1', planId: PLAN_CONTADO.id }],
       [PLAN_CONTADO],
     )
-    expect(lineas.map((l) => l.monto)).toEqual([
-      formatearPrecio('10000'),
-      formatearPrecio('-1000'),
-      formatearPrecio('9000'),
+    expect(lineas).toEqual([
+      { rotulo: 'Mercadería', monto: formatearPrecio('10000') },
+      { rotulo: 'Descuento Contado', monto: formatearPrecio('1000') },
+      { rotulo: 'Total a cobrar', monto: formatearPrecio('9000') },
     ])
+    // La otra dirección, para que la palabra no pueda quedar fija en ninguna
+    // de las dos: el mismo pie con un plan de recargo dice "Recargo" y el
+    // total queda POR ENCIMA de la mercadería. (El caso completo del recargo
+    // es el de más arriba; acá se afirma el contraste.)
+    const conRecargo = lineasDelPieDeCobro(
+      1_000_000,
+      [{ base: '10000', cotizacion: '1', planId: PLAN_CREDITO.id }],
+      [PLAN_CREDITO],
+    )
+    expect(conRecargo[1].rotulo).toBe('Recargo Crédito 3 cuotas')
   })
 
   // Con dos planes distintos el rótulo no puede nombrar a uno solo: sería
   // decir que ese plan cobró un recargo que en realidad es la suma de los dos.
-  it('con más de un plan elegido el recargo va sin nombre', async () => {
+  // Y la palabra la decide el NETO, no el porcentaje de ninguno de los dos —
+  // los mismos dos planes cambian de "Recargo" a "Descuento" según cuánto se
+  // reparta en cada uno.
+  it('con más de un plan elegido el recargo va sin nombre, y la palabra sale del neto', async () => {
     const { lineasDelPieDeCobro } = await import('./punto-de-venta')
-    const lineas = lineasDelPieDeCobro(
+    // 40 % de 5.000 = 2.000, −10 % de 5.000 = −500 → neto +1.500.
+    const netoPositivo = lineasDelPieDeCobro(
       1_000_000,
       [
         { base: '5000', cotizacion: '1', planId: PLAN_CREDITO.id },
@@ -747,8 +820,22 @@ describe('el punto de venta', () => {
       ],
       [PLAN_CREDITO, PLAN_CONTADO],
     )
-    // 40 % de 5.000 = 2.000, −10 % de 5.000 = −500.
-    expect(lineas[1]).toEqual({ rotulo: 'Recargo', monto: formatearPrecio('1500') })
+    expect(netoPositivo[1]).toEqual({ rotulo: 'Recargo', monto: formatearPrecio('1500') })
+
+    // 40 % de 1.000 = 400, −10 % de 9.000 = −900 → neto −500.
+    const netoNegativo = lineasDelPieDeCobro(
+      1_000_000,
+      [
+        { base: '1000', cotizacion: '1', planId: PLAN_CREDITO.id },
+        { base: '9000', cotizacion: '1', planId: PLAN_CONTADO.id },
+      ],
+      [PLAN_CREDITO, PLAN_CONTADO],
+    )
+    expect(netoNegativo[1]).toEqual({ rotulo: 'Descuento', monto: formatearPrecio('500') })
+    expect(netoNegativo[2]).toEqual({
+      rotulo: 'Total a cobrar',
+      monto: formatearPrecio('9500'),
+    })
   })
 
   // "Sin recargo el pie no crece": un local con planes cargados que cobra a
