@@ -269,6 +269,56 @@ describe('Rubros', () => {
     expect(markup).toContain('grid-cols-2')
     expect(markup).toContain('lg:grid-cols-4')
   })
+
+  // Fix de la Ronda de arreglos 1 sobre la Task 11 del ciclo móvil: en
+  // escritorio la nota vive al lado del encabezado (nodo `bHS71`); en el
+  // teléfono el .pen (`EKea9`) la pone DESPUÉS de la grilla, como hermano
+  // aparte, no del encabezado. Dos copias, una por ancho — ninguna
+  // desaparece, y cada una se afirma con su ausencia en el ancho contrario,
+  // no sólo con la presencia de la clase que la cancela (eso pasaría igual
+  // si alguien reintrodujera la nota sin `hidden`/`lg:hidden` al lado de una
+  // copia vieja que ya la mostraba siempre).
+  it('la nota "¿No está el tuyo?" aparece dos veces: oculta en escritorio dentro del encabezado, oculta en el teléfono después de la grilla', () => {
+    const markup = html()
+    const apariciones = [...markup.matchAll(/¿No está el tuyo\? Se agrega sin desarrollo\./g)]
+    expect(apariciones).toHaveLength(2)
+
+    // La primera (la del encabezado) es la de escritorio: hidden lg:block.
+    const idxHeader = apariciones[0].index!
+    const inicioHeader = markup.lastIndexOf('<p class="', idxHeader)
+    const clasesHeader = markup.slice(inicioHeader).match(/^<p class="([^"]*)"/)?.[1]
+    expect(clasesHeader, 'no se encontró el <p> de la nota en el encabezado').toBeTruthy()
+    expect(clasesHeader).toContain('hidden')
+    expect(clasesHeader).toContain('lg:block')
+    // Negación explícita: esta copia NO puede ser la que se ve en el
+    // teléfono (lg:hidden) — si alguien le cambia la clase por error, esto
+    // tiene que quedar en rojo, no sólo "existe algo con hidden".
+    expect(clasesHeader).not.toContain('lg:hidden')
+
+    // La segunda (después de la grilla) es la del teléfono: lg:hidden, y sin
+    // "hidden" a secas (que la sacaría también de escritorio: ahí es donde
+    // tiene que reaparecer).
+    const idxDespuesDeGrilla = apariciones[1].index!
+    const inicioDespuesDeGrilla = markup.lastIndexOf('<p class="', idxDespuesDeGrilla)
+    const clasesDespuesDeGrilla = markup
+      .slice(inicioDespuesDeGrilla)
+      .match(/^<p class="([^"]*)"/)?.[1]
+    expect(
+      clasesDespuesDeGrilla,
+      'no se encontró el <p> de la nota después de la grilla',
+    ).toBeTruthy()
+    expect(clasesDespuesDeGrilla).toContain('lg:hidden')
+    expect(clasesDespuesDeGrilla).not.toContain('hidden lg:block')
+    // Y en escritorio esta segunda copia tiene que desaparecer de verdad: no
+    // alcanza con "lg:hidden" en la clase si en algún momento se le suma un
+    // "lg:block" que lo cancele — se niega esa combinación explícitamente.
+    expect(clasesDespuesDeGrilla).not.toMatch(/\blg:block\b/)
+
+    // Y la que aparece DESPUÉS de la grilla en el DOM tiene que ser,
+    // justamente, la segunda — no una tercera copia suelta en otro lado.
+    const idxGrilla = markup.indexOf('grid-cols-2')
+    expect(idxDespuesDeGrilla).toBeGreaterThan(idxGrilla)
+  })
 })
 
 describe('Planes', () => {

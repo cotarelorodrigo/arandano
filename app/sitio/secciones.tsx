@@ -477,7 +477,16 @@ export function Rubros() {
               cómo se llaman las cosas en la pantalla.
             </p>
           </div>
-          <p className="text-xs font-semibold text-primary">¿No está el tuyo? Se agrega sin desarrollo.</p>
+          {/* Fix de la Ronda de arreglos 1 sobre la Task 11: en escritorio la
+              nota vive ACÁ, al lado del encabezado (nodo `bHS71`, la maqueta
+              de escritorio la reparte con justify-between) — pero en el
+              .pen del teléfono (`EKea9`) es un hermano APARTE, DESPUÉS de la
+              grilla, no del encabezado. `hidden lg:block` la saca de acá
+              abajo de 1024; la copia de después de la grilla es la que se ve
+              en el teléfono. */}
+          <p className="hidden text-xs font-semibold text-primary lg:block">
+            ¿No está el tuyo? Se agrega sin desarrollo.
+          </p>
         </div>
 
         {/* Task 11: a diferencia de Módulos y Planes (una columna), el .pen
@@ -503,6 +512,13 @@ export function Rubros() {
             </div>
           ))}
         </div>
+
+        {/* La copia del teléfono (nodo `FR90j`, hermano de la Grilla, no del
+            Encabezado): `lg:hidden` la saca desde escritorio, donde la nota
+            de arriba (`hidden lg:block`) ya la muestra. */}
+        <p className="text-xs font-semibold text-primary lg:hidden">
+          ¿No está el tuyo? Se agrega sin desarrollo.
+        </p>
       </div>
     </section>
   )

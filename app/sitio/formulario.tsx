@@ -5,6 +5,7 @@ import { ArrowRight } from 'lucide-react'
 import { enviarLead, type EstadoLead } from './acciones'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import estilos from './formulario.module.css'
 
 // El estado inicial vive acá y no en acciones.ts: ese archivo es 'use server' y
 // sólo puede exportar funciones async. Mismo patrón que login, usuarios,
@@ -129,22 +130,16 @@ export function Formulario({
         // fila intermedia) — antes, con `sm:`, una ventana de escritorio a
         // medio abrir (>640px) ya los ponía en fila, que es exactamente lo
         // que el ciclo quiere evitar entre 768 y 1023.
-        className="flex w-full flex-col gap-2.5 rounded-[14px] border p-[7px] lg:flex-row lg:flex-wrap lg:items-center"
-        style={
-          oscura
-            ? {
-                backgroundColor: 'color-mix(in srgb, var(--marca-foreground) 8%, transparent)',
-                borderColor: 'color-mix(in srgb, var(--marca-foreground) 15%, transparent)',
-              }
-            : // 'clara' (Hero): el .pen pinta el marco (nodo P2ZVg6) con
-              // $ar-bg y el input (EtDRA) con $ar-surface — divergencia
-              // hermana de I5 en la review final. Sin esto, el <Input> de
-              // shadcn es bg-transparent y el marco no pintaba nada propio,
-              // así que los dos terminaban del mismo color que la página de
-              // fondo (antes gris por el bug de arriba, ahora blanco): el
-              // campo dejaba de leerse como su propia pieza.
-              { backgroundColor: 'var(--background)' }
-        }
+        // El marco (borde + fondo + padding + radio) es sólo de escritorio
+        // (app/sitio/formulario.module.css lo explica a fondo): en el
+        // teléfono el .pen dibuja el Input y el Botón como dos cajas
+        // sueltas, sin marco compartido — por eso el color y la geometría
+        // del marco viven en el CSS Module (`estilos.marcoClara`/
+        // `estilos.marcoOscura`), NO en `style` inline: un inline no puede
+        // quedar detrás de una media query.
+        className={`flex w-full flex-col gap-2.5 lg:flex-row lg:flex-wrap lg:items-center ${
+          oscura ? estilos.marcoOscura : estilos.marcoClara
+        }`}
       >
         <label htmlFor={idContacto} className="sr-only">
           Tu WhatsApp o tu mail

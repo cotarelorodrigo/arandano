@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { readFileSync } from 'node:fs'
 import { Formulario, PantallaDeGracias } from './formulario'
 
 // El action no se ejercita acá —tiene su propio archivo, contra la base—: lo
@@ -132,12 +133,30 @@ describe('formulario de la landing', () => {
   // El marco (el <form> en sí) también pinta un fondo propio en 'clara' —
   // --background, el mismo $ar-bg del nodo P2ZVg6— para que el input en
   // --card se distinga de su marco. En 'oscura' el marco sigue con la
-  // mezcla translúcida que ya tenía (sin tocar).
-  it('el marco de "clara" pinta --background; el de "oscura" sigue con su mezcla translúcida', () => {
-    expect(html({ variante: 'clara' })).toContain('background-color:var(--background)')
-    expect(html({ variante: 'oscura' })).toContain(
-      'background-color:color-mix(in srgb, var(--marca-foreground) 8%, transparent)',
-    )
+  // mezcla translúcida que ya tenía.
+  //
+  // Fix de la Ronda de arreglos 1 sobre la Task 11 del ciclo móvil: el marco
+  // dejó de pintarse con `style={{ backgroundColor: ... }}` (un inline no
+  // puede quedar detrás de una media query) y pasó a un CSS Module
+  // (formulario.module.css, `.marcoClara`/`.marcoOscura`) — acá sólo se
+  // afirma que el <form> queda atado a la clase correcta según la variante
+  // (bajo vitest un módulo CSS es un proxy identidad: `estilos.marcoClara`
+  // resuelve al string "marcoClara"); el color y la media query en sí los
+  // cuida la describe de abajo, que LEE el CSS real.
+  it('el <form> lleva la clase del marco según la variante, y ya no un style inline', () => {
+    const clara = html({ variante: 'clara' })
+    const oscura = html({ variante: 'oscura' })
+    const formClara = clara.match(/<form[^>]*class="([^"]*)"/)?.[1]
+    const formOscura = oscura.match(/<form[^>]*class="([^"]*)"/)?.[1]
+    expect(formClara).toContain('marcoClara')
+    expect(formClara).not.toContain('marcoOscura')
+    expect(formOscura).toContain('marcoOscura')
+    expect(formOscura).not.toContain('marcoClara')
+    // El <form> ya no lleva ningún style: el color del marco vive entero en
+    // el CSS Module.
+    expect(formClara).toBeTruthy()
+    expect(clara).not.toMatch(/<form[^>]*style=/)
+    expect(oscura).not.toMatch(/<form[^>]*style=/)
   })
 
   // Minor 10 de la review final: el .pen pide 46px en el Hero (nodos
@@ -186,5 +205,89 @@ describe('formulario de la landing', () => {
     expect(form).toContain('lg:flex-row')
     expect(form).toContain('lg:flex-wrap')
     expect(form).toContain('lg:items-center')
+  })
+})
+
+/**
+ * `formulario.module.css` — el marco compartido de `<Formulario>`, sólo de
+ * escritorio (Fix de la Ronda de arreglos 1 sobre la Task 11 del ciclo
+ * móvil). Se lee el archivo como texto, mismo mecanismo que
+ * `app/login/persiana.test.ts` usa para `persiana.module.css`: bajo vitest
+ * un módulo CSS es un proxy identidad, así que la única forma de atar una
+ * propiedad de una regla real es leer el CSS.
+ *
+ * Lo que este archivo cuida no es sólo que el color de escritorio esté bien
+ * (ya lo hace el test de arriba, indirectamente, comparando contra el HTML
+ * de antes de este fix) — es que la ausencia en el teléfono sea EXPLÍCITA:
+ * afirmar sólo que existe la clase que la cancela pasaría igual si alguien
+ * reintrodujera un `style` inline al lado de la clase (el inline gana
+ * siempre, la clase quedaría de adorno). Por eso las dos primeras
+ * aserciones son un `not.toMatch` contra el bloque BASE, sin media query.
+ */
+describe('formulario.module.css — el marco es sólo de escritorio (Fix Ronda 1, Task 11)', () => {
+  const css = readFileSync('app/sitio/formulario.module.css', 'utf8')
+
+  // El bloque base es todo lo que hay ANTES de la media query real (no
+  // basta con buscar la SUBCADENA "@media": el propio comentario de este
+  // archivo la menciona en prosa) — ahí no puede aparecer ninguna propiedad
+  // de caja.
+  const inicioMedia = css.indexOf('@media (min-width: 1024px)')
+  const bloqueBase = css.slice(0, inicioMedia)
+  const bloqueMedia = css.slice(inicioMedia)
+
+  // Se lee el CUERPO de la regla, no el bloque base entero: el propio
+  // docblock de este archivo menciona "padding" y "backgroundColor" en
+  // prosa (explicando POR QUÉ el marco no está acá), así que buscar esas
+  // palabras contra el bloque base completo daría un falso positivo — el
+  // comentario, no una declaración real, es lo que las contendría.
+  const cuerpoClaraBase = bloqueBase.match(/\.marcoClara\s*\{([^}]*)\}/)?.[1]
+  const cuerpoOscuraBase = bloqueBase.match(/\.marcoOscura\s*\{([^}]*)\}/)?.[1]
+
+  it('.marcoClara y .marcoOscura existen, y su CUERPO está vacío en el teléfono', () => {
+    expect(cuerpoClaraBase, 'no se encontró .marcoClara en el bloque base').toBeDefined()
+    expect(cuerpoOscuraBase, 'no se encontró .marcoOscura en el bloque base').toBeDefined()
+    // trim() y no una regex de "está vacío": una sola declaración colada
+    // (aunque fuera "border: none") tiene que poner esto en rojo.
+    expect(cuerpoClaraBase?.trim()).toBe('')
+    expect(cuerpoOscuraBase?.trim()).toBe('')
+  })
+
+  it('el CUERPO de las dos reglas en el teléfono no tiene ni borde, ni fondo, ni padding, ni radio', () => {
+    for (const cuerpo of [cuerpoClaraBase, cuerpoOscuraBase]) {
+      expect(cuerpo).not.toMatch(/border/)
+      expect(cuerpo).not.toMatch(/background/)
+      expect(cuerpo).not.toMatch(/padding/)
+      expect(cuerpo).not.toMatch(/border-radius/)
+    }
+  })
+
+  it('desde 1024px, las dos comparten radio 14px, borde de 1px y padding de 7px', () => {
+    expect(bloqueMedia).toContain('border-radius: 14px')
+    expect(bloqueMedia).toContain('border-width: 1px')
+    expect(bloqueMedia).toContain('padding: 7px')
+  })
+
+  it('.marcoClara pinta --background con border-color --border, desde escritorio', () => {
+    // Última coincidencia y no la primera: ".marcoClara" también aparece en
+    // el selector compartido ("`.marcoClara,\n  .marcoOscura {`"), y la
+    // regla específica con el color va DESPUÉS de esa, no antes.
+    const bloque = [...bloqueMedia.matchAll(/\.marcoClara\s*\{([^}]*)\}/g)].at(-1)?.[1]
+    expect(bloque, 'no se encontró .marcoClara adentro del @media').toBeTruthy()
+    expect(bloque).toContain('background-color: var(--background)')
+    expect(bloque).toContain('border-color: var(--border)')
+  })
+
+  it('.marcoOscura pinta la mezcla translúcida de --marca-foreground, desde escritorio', () => {
+    // Misma razón que arriba: ".marcoOscura" cierra el selector compartido
+    // ("`.marcoClara,\n  .marcoOscura {`"), así que la PRIMERA coincidencia
+    // sería esa regla genérica y no la específica con el color.
+    const bloque = [...bloqueMedia.matchAll(/\.marcoOscura\s*\{([^}]*)\}/g)].at(-1)?.[1]
+    expect(bloque, 'no se encontró .marcoOscura adentro del @media').toBeTruthy()
+    expect(bloque).toContain(
+      'background-color: color-mix(in srgb, var(--marca-foreground) 8%, transparent)',
+    )
+    expect(bloque).toContain(
+      'border-color: color-mix(in srgb, var(--marca-foreground) 15%, transparent)',
+    )
   })
 })
