@@ -188,7 +188,8 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 - **Postgres administrado (Supabase) en lugar del Postgres propio**: evaluado el 2026-08-06 y **pospuesto**, no descartado para siempre. A favor pesaban la durabilidad de los datos de clientes (hoy un incidente de disco cuesta hasta 24 h, que es el intervalo del backup nocturno) y liberar los 1536 MiB que reserva prod. En contra: es un ciclo entero de spec, plan e implementación que rehace backups, `verify-infra.sh`, los tres compose y `setup-db-roles.sh` sin entregar una sola feature, y el beneficio principal es proporcional a datos de clientes que todavía no existen. Se decidió seguir con Postgres propio para el MVP. **Lo que hace reconsiderarlo**: que haya clientes reales facturando adentro. **Lo que NO lo bloquea**: el schema, el modelo de RLS y el `tenant_id` son independientes del proveedor, y el camino de migración es `pg_dump` → `pg_restore`, que ya está escrito y verificado — así que mudarse sigue siendo barato después. **Mitigación mientras tanto**: subir la frecuencia del backup, que ataca el 80 % del riesgo con un cambio chico sobre un script probado.
 - **SQLite en dev con Postgres en producción**: descartado. Dejaría el aislamiento entre tenants probado en ningún lado salvo producción: SQLite no tiene RLS (se caen `test/rls.test.ts` y `test/rls-cobertura.test.ts`), no tiene roles (`arandano_owner` / `arandano_app`, los `GRANT` y los default privileges), y no tiene GUCs de sesión, que es el mecanismo con el que `lib/tenant/prisma.ts` ata el cliente al tenant. Además Prisma lleva un historial de migraciones por provider, así que el SQL que corre en prod no se ejecutaría nunca en dev — exactamente el modo de falla del bloqueante 9.
 - **Clerk** (autenticación gestionada como tercero): evaluado en el ciclo de autenticación (2026-08-10) y descartado. Resuelve bien lo aburrido —login, contraseñas, sesiones, todo listo—, pero pone un tercero en el camino de cobrar: si Clerk tiene un incidente, un local no puede abrir el punto de venta aunque Postgres y el resto de la app estén sanos. Cobra por organización activa, US$1 por tenant por mes pasadas las primeras 100, contra comercios argentinos que facturan en pesos — el costo escala justo con lo que más queremos escalar. Y no ahorra la parte difícil: el chequeo de "esta persona pertenece al tenant de este `Host`" sigue siendo código nuestro sobre RLS de todos modos, con o sin Clerk; y si su cookie se setea en `.arandano.app`, ese chequeo pasa de importante a load-bearing, porque la sesión sería válida en todos los subdominios por diseño. Se prefirió Better Auth: self-hosted, en el propio Postgres, con el mismo `tenant_id`. Ver `docs/superpowers/specs/2026-08-10-autenticacion-design.md`.
-- **Roles personalizados** (que cada tenant defina sus propios roles, en vez de un catálogo cerrado de seis permisos sobre `DUENO`/`EMPLEADO`): evaluado en el ciclo de permisos por usuario (2026-08-26) y descartado por ahora. Un catálogo cerrado y un diálogo de switches alcanza mientras dar de alta un empleado signifique prender unos pocos switches una sola vez; un rol personalizado sería resolver un problema — muchos empleados, cada uno con una combinación distinta que se repite— que todavía no existe. **El disparador para reconsiderarlo**: que prender switches de a uno, para cada empleado nuevo, empiece a molestar en un local con planta grande. Ver `docs/superpowers/specs/2026-08-26-permisos-por-usuario-design.md`.
+- **Roles personalizados** (que cada tenant defina sus propios roles, en vez de un catálogo cerrado de permisos sobre `DUENO`/`EMPLEADO`): evaluado en el ciclo de permisos por usuario (2026-08-26) y descartado por ahora. Un catálogo cerrado y un diálogo de switches alcanza mientras dar de alta un empleado signifique prender unos pocos switches una sola vez; un rol personalizado sería resolver un problema — muchos empleados, cada uno con una combinación distinta que se repite— que todavía no existe. **El disparador para reconsiderarlo**: que prender switches de a uno, para cada empleado nuevo, empiece a molestar en un local con planta grande. Ver `docs/superpowers/specs/2026-08-26-permisos-por-usuario-design.md`.
+- **Precio por artículo y por plan** (que además del porcentaje del local, cada artículo pueda pisar su precio para una forma de pago puntual: *"en el iPhone el 40 % no me da, ahí cobro tal número"*): evaluado en el ciclo de precios por forma de pago (2026-08-27) y descartado por ahora. Es una matriz de artículos × planes, o sea un segundo lugar donde vive un precio, y el problema no es la tabla sino lo que pasa después: cambiar `Articulo.precio` deja los overrides viejos donde estaban, sin avisarle a nadie, y el dueño termina con precios inconsistentes que no ve hasta que se cobra mal. Con un porcentaje del local, el catálogo sigue teniendo un número por artículo y no hay nada que se pueda desincronizar. **El disparador para reconsiderarlo**: que a un dueño le moleste de verdad no poder pisar el precio de un artículo puntual. **Lo que no lo bloquea**: sumarlo es aditivo —una tabla nueva, ninguna columna que borrar— así que nada de lo construido en ese ciclo habría que deshacer. Ver `docs/superpowers/specs/2026-08-27-precios-por-forma-de-pago-design.md`.
 
 ## Riesgos conocidos
 
@@ -1038,7 +1039,10 @@ Y del producto:
   **decisión de cada local** (el dueño de cada local prende o no cada
   capacidad, para cada empleado suyo). El catálogo queda cerrado en código,
   seis permisos: `ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`,
-  `CATEGORIAS`, `VENTAS_ANULAR`, `ORDENES_ANULAR`.
+  `CATEGORIAS`, `VENTAS_ANULAR`, `ORDENES_ANULAR`. **Ese conteo es el de este
+  ciclo y ya no es el vigente**: el de precios por forma de pago (2026-08-27,
+  más abajo) sumó el séptimo. La fuente es `lib/permisos/catalogo.ts`, no este
+  párrafo.
 
   **El estado previo era el inverso del pedido, en las dos mitades.** Antes de
   este ciclo, el alta y edición de artículos —y el ABM de categorías— estaban
@@ -1094,9 +1098,9 @@ Y del producto:
 
   **El disparador de los roles personalizados** —descartados por ahora, ver la
   entrada de *Opciones evaluadas y descartadas*, más arriba— no es una cantidad
-  de permisos en el catálogo: es que prender seis switches de a uno, uno por
+  de permisos en el catálogo: es que prender los switches de a uno, uno por
   uno, para cada empleado nuevo, empiece a molestar en un local con muchos
-  empleados. Mientras eso no pase, un catálogo cerrado de seis y un diálogo de
+  empleados. Mientras eso no pase, un catálogo cerrado y un diálogo de
   switches alcanza.
 
   **Queda pendiente, sin confirmar a ojo:** la verificación manual en el
@@ -1110,6 +1114,108 @@ Y del producto:
   de verdad el botón "Artículo nuevo" en `/inventario`. No se lo da por hecho:
   hace falta que alguien lo mire en un entorno que sirva este worktree antes
   de confiar en la pantalla a ojo cerrado.
+- ~~Cobrar distinto según la forma de pago.~~ **Hecho** (2026-08-27). Sale del
+  feedback textual de un cliente: *"también necesitaría poder diferenciar valor
+  que se abona con crédito, del valor débito o transferencia. Porque no es el
+  mismo. Es decir, cada producto tiene que tener un precio para abonar con
+  crédito y otro precio para abonar débito/efectivo/transferencia"*, y de la
+  precisión que llegó al empezar a diseñarlo: *"crédito en 1 pago 10 %, crédito
+  en cuotas 40 %"*. Esa segunda mitad es la que definió la forma del ciclo:
+  "dos precios por artículo" se resolvía con una columna; **"un precio por cada
+  forma de pago que el local ofrezca" es una tabla del local**, y una venta que
+  registra con cuál se cobró. Ver
+  `docs/superpowers/specs/2026-08-27-precios-por-forma-de-pago-design.md`.
+
+  **Las cinco decisiones del ciclo, cada una con la alternativa que se
+  descartó:**
+
+  - **El precio de crédito se DERIVA de un porcentaje, no se carga por
+    artículo.** Un segundo número por artículo era lo literal al pedido: un
+    catálogo de 300 artículos pasa a ser 600 números para mantener, y cuando
+    cambia la lista del proveedor hay que acordarse de tocar los dos.
+  - **Los porcentajes viven en una tabla del local (`PlanDePago`) con su ABM,
+    no en dos campos fijos.** "Crédito 1 pago" y "crédito en cuotas" entran tal
+    cual como dos filas, y el local que mañana quiera cobrar distinto 3 cuotas
+    que 12 —que es lo normal, porque el costo financiero real de la tarjeta es
+    distinto en cada escalón— agrega una fila en vez de pedir desarrollo.
+  - **No hay precio por artículo y por plan.** El override se evaluó y se
+    descartó; tiene su entrada propia en *Opciones evaluadas y descartadas*,
+    con el disparador para reconsiderarlo.
+  - **El recargo cae sólo sobre la parte que se paga con ese plan.** La
+    alternativa —un plan por venta, que re-precia la venta entera— le cobraría
+    el recargo de la tarjeta a los $50.000 que entraron en efectivo, que es lo
+    que ningún local hace. Los ítems se congelan **siempre a precio de lista** y
+    el recargo va por afuera, pago por pago.
+  - **El porcentaje lleva signo y aplica a cualquier medio.** `−10 %` en
+    efectivo es el descuento por pago contado, tan común acá como el recargo
+    por cuotas. La alternativa era limitar los planes a la tarjeta de crédito y
+    resolver el descuento en un ciclo aparte con otro mecanismo: dos maneras
+    distintas de mover el mismo número.
+
+  **La consecuencia que hay que decir en voz alta: `Articulo.precio` pasa a
+  significar precio de LISTA**, no "precio de contado". Es un cambio de
+  significado sin cambio de columna — ninguna migración lo anuncia, así que
+  vive escrito acá.
+
+  **`Venta.total`, en cambio, NO cambia de significado**: sigue siendo la
+  mercadería a precio de lista, y lo cobrado es `total + recargo`. Cambiarlo
+  habría dejado a toda fila ya existente diciendo otra cosa, y habría dejado
+  sin dato al margen de `/inventario/[id]`, que se mide contra el precio de
+  lista.
+
+  **El invariante del motor es el de siempre, corrido un lugar.** Antes los
+  pagos sumaban el total; ahora lo suman **sus bases**, y el recargo queda por
+  afuera de esa suma. Por eso el chip "Faltan / Sobran" del mostrador no
+  cambió: la persona que cobra sigue repartiendo la mercadería entre pagos, como
+  siempre. Y **lo que la pantalla manda sí cambió**: por pago viaja `base` y
+  `planId`, ya no `monto`. El monto que entra a la caja lo calcula el servidor y
+  el porcentaje se lee siempre de la fila del plan — un número que arma el
+  navegador no puede decidir cuánta plata entró.
+
+  **Un pago en dólares no puede llevar plan**, y se rechaza con su propio error.
+  Con `cotizacion ≠ 1`, encadenar el factor del plan obliga a dividir, y hay
+  pares (porcentaje, total) donde no existe un monto en dólares que cierre
+  exacto contra la base: el resultado sería una venta que el motor rechaza y que
+  la persona del mostrador no tiene forma de arreglar. El local ya tiene dónde
+  ajustar el precio del dólar, que es `Tenant.cotizacionUsd`. Como los planes
+  son en pesos, donde el recargo es distinto de cero la cotización vale 1, y
+  `monto = base + recargo` cierra sin conversión.
+
+  **El recargo se congela en el pago** (`Pago.recargo`, con `Venta.recargo` como
+  caché de la suma, mismo criterio que `Articulo.stock` respecto de sus
+  movimientos) **además** de guardar la FK al plan. No es duplicar: es la misma
+  decisión que ya toma `VentaItem` al congelar `descripcion` y `precioUnitario`
+  teniendo `articuloId` — la FK sirve para navegar, el número explica la plata,
+  y un plan editado o dado de baja no puede cambiar lo que una venta vieja dice
+  que cobró. Es también lo que hace innecesario un historial de cambios de
+  porcentaje: qué recargo tenía el plan en marzo lo contestan las ventas de
+  marzo.
+
+  **El catálogo cerrado de permisos suma el séptimo, `PLANES_PAGO`**, y la
+  asimetría es a propósito: no se pliega sobre `ARTICULOS_EDITAR` porque editar
+  un artículo mueve el precio de UN artículo, y tocar el recargo de un plan
+  mueve el precio de TODO el catálogo para esa forma de pago — una palanca de
+  una fila. Quien puede corregir el precio de una funda no necesariamente puede
+  decidir cuánto recarga el local por pagar en doce cuotas. La fuente sigue
+  siendo `lib/permisos/catalogo.ts`, atada al enum del schema en las dos
+  direcciones.
+
+  **Queda para los ciclos siguientes**: el override por artículo si aparece la
+  necesidad real, el plan en pagos en dólares —que requiere resolver antes la
+  división que hoy lo bloquea—, excluir un artículo de un plan ("esto no se
+  vende en cuotas"), y el recargo discriminado en el comprobante cuando exista
+  el modelo de factura de ARCA. **El disparador para reconsiderar el diseño
+  entero**: que un local necesite que el recargo dependa del emisor de la
+  tarjeta y no sólo de las cuotas — ahí la tabla de planes deja de alcanzar y
+  empieza a ser un motor de promociones, que es otro producto.
+
+  **Y queda pendiente la verificación manual**, por lo mismo que la dejó
+  pendiente el ciclo de permisos: `arandano-dev` bind-montea `/root/arandano` y
+  no el worktree. Después del merge hay que mirar que el selector de plan
+  aparezca sólo cuando el medio elegido tiene planes cargados, que el pie del
+  cobro sume bien, que el precio derivado de la ficha del artículo sea el mismo
+  que termina cobrando el mostrador, y que un empleado sin `PLANES_PAGO` no vea
+  la pestaña.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~
