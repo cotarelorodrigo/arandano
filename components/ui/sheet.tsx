@@ -33,11 +33,22 @@ function SheetOverlay({
   className,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Overlay>) {
+  // MODIFICADO respecto del registry de shadcn: el velo era
+  // `bg-black/10 … supports-backdrop-filter:backdrop-blur-xs` —negro al 10 %
+  // con desenfoque—. design/arandano.pen lo dibuja (nodo `k2qBi`) como
+  // `#171221A6`: violeta-tinta al 65 %, SIN ningún desenfoque. Y `#171221` ya
+  // es un token —es `--foreground`, app/globals.css—, así que el velo se
+  // escribe `bg-foreground/65`: ni variable nueva ni hex crudo (un hex crudo
+  // acá además rompería test/sistema-de-diseno.test.ts). Un
+  // `npx shadcn add sheet` futuro pisa esto sin enterarse.
+  //
+  // No toca ningún escritorio: los cinco `SheetContent` del repo cuelgan de
+  // disparadores `lg:hidden` o de la rama `isMobile` del Sidebar.
   return (
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 z-50 bg-foreground/65 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}

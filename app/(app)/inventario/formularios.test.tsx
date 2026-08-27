@@ -482,12 +482,26 @@ describe('el pie del teléfono repite las acciones del Topbar (Task 7 del ciclo 
 describe('atras="/inventario" y sin accionMovil (Task 7 del ciclo móvil, spec §7.4)', () => {
   it('FormularioDeAlta vuelve a /inventario desde la ranura izquierda del teléfono', async () => {
     const html = await renderAlta()
-    expect(html).toMatch(/<a href="\/inventario" aria-label="Volver"/)
+    // La etiqueta se extrae y DESPUÉS se afirma el href, en vez de un
+    // regex que fije el orden de los atributos: desde que <Encabezado>
+    // navega con `Link` de Next (hallazgo I3 de la review final), el href
+    // sale último y no primero. Mismo mecanismo que ya usaba
+    // components/shell/encabezado.test.tsx para la variante <button>.
+    const volver = html.match(/<a[^>]*aria-label="Volver"[^>]*>/)?.[0]
+    expect(volver, `no se encontró la flecha de volver en: ${html}`).toBeTruthy()
+    expect(volver).toContain('href="/inventario"')
   })
 
   it('FichaDeArticulo vuelve a /inventario desde la ranura izquierda del teléfono', async () => {
     const html = await renderFicha(null)
-    expect(html).toMatch(/<a href="\/inventario" aria-label="Volver"/)
+    // La etiqueta se extrae y DESPUÉS se afirma el href, en vez de un
+    // regex que fije el orden de los atributos: desde que <Encabezado>
+    // navega con `Link` de Next (hallazgo I3 de la review final), el href
+    // sale último y no primero. Mismo mecanismo que ya usaba
+    // components/shell/encabezado.test.tsx para la variante <button>.
+    const volver = html.match(/<a[^>]*aria-label="Volver"[^>]*>/)?.[0]
+    expect(volver, `no se encontró la flecha de volver en: ${html}`).toBeTruthy()
+    expect(volver).toContain('href="/inventario"')
   })
 
   // El frame T5gME dibuja un `more-vertical`, pero sus dos acciones ya están

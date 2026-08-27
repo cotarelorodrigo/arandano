@@ -217,9 +217,18 @@ describe('el encabezado de pantalla', () => {
     const css = readFileSync('components/shell/encabezado.module.css', 'utf8')
     const base = css.slice(0, css.indexOf('@media'))
     const escritorio = css.slice(css.indexOf('@media'))
-    expect(base, 'el bloque base (mobile-first) no declara line-height: 1.2').toContain(
-      'line-height: 1.2',
-    )
+    // Sin comentarios en las DOS mitades, y no sólo en la de escritorio
+    // (hallazgo I4 de la review final): el docblock del archivo vive antes
+    // del @media, o sea adentro de `base`, y contiene el literal
+    // "line-height: 1.2" dos veces en prosa. Así, borrar la declaración real
+    // de `.titulo` dejaba este caso en verde — un falso verde sobre el valor
+    // que le costó dos rondas a la primera task, incluida una regresión de
+    // escritorio en las diez pantallas.
+    const baseSinComentarios = base.replace(/\/\*[\s\S]*?\*\//g, '')
+    expect(
+      baseSinComentarios,
+      'el bloque base (mobile-first) no declara line-height: 1.2',
+    ).toContain('line-height: 1.2')
     // Sin comentarios: el bloque de escritorio SÍ menciona la palabra
     // "line-height" en prosa (explicando por qué no hay que declararla), y
     // un chequeo ingenuo sobre el texto crudo se dispararía contra ese

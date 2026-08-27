@@ -144,13 +144,20 @@ export function Nav({ base }: { base: BaseDeTenant }) {
               1024px, y abre un Sheet con lo que la fila angosta no tiene
               lugar para mostrar — los tres links de sección y "Entrar a mi
               local". Mismo patrón que el botón de fechas de `/ventas`
-              (app/(app)/ventas/page.tsx). */}
+              (app/(app)/ventas/page.tsx).
+
+              `lg:hidden` va en el TRIGGER y en ningún lado más: es él quien
+              decide si el botón se ve. El `<Menu>` lo llevaba también, y era
+              redundante —un ícono adentro de un botón oculto no se ve igual—;
+              peor, estaba ahí para que el test lo encontrara, así que sacarle
+              el `lg:hidden` al trigger dejaba la hamburguesa visible a 1440
+              con el caso en verde (hallazgo I5 de la review final). */}
           <Sheet>
             <SheetTrigger
               aria-label="Abrir menú"
               className="flex size-9 shrink-0 items-center justify-center rounded-[9px] lg:hidden"
             >
-              <Menu aria-hidden="true" className="size-5 lg:hidden" />
+              <Menu aria-hidden="true" className="size-5" />
             </SheetTrigger>
             <SheetContent side="right">
               <SheetHeader>

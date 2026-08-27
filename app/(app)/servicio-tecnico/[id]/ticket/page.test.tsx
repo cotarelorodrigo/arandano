@@ -1,9 +1,13 @@
 // Whitebox sobre el FUENTE: Ticket es un Server Component async con sesión y
 // Prisma reales, sin arnés en este repo para montarlo fuera de un request —
 // mismo criterio que app/(app)/ventas/[id]/page.test.tsx.
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { renderToStaticMarkup } from 'react-dom/server'
+import type { ReactElement } from 'react'
+import { BotonImprimir } from './imprimir'
+import { CLASES_RANURA_MOVIL } from '@/components/shell/encabezado'
 
 const RUTA_PAGE = 'app/(app)/servicio-tecnico/[id]/ticket/page.tsx'
 const RUTA_CSS = 'app/(app)/servicio-tecnico/[id]/ticket/ticket.module.css'
@@ -17,11 +21,14 @@ const fuente = readFileSync(RUTA_PAGE, 'utf8')
  * printer"), y no una regresión de aspecto en escritorio.
  */
 describe('el Encabezado del ticket (Task 9 del ciclo móvil)', () => {
-  // Multilínea y no [^>]*: accionMovil viaja como objeto, en varias líneas.
-  // \s obligatorio después de "Encabezado" (y no "<Encabezado>" pelado): así
-  // una mención al componente en un comentario de más arriba no puede colar
-  // como si fuera la apertura de la etiqueta real.
-  const etiqueta = fuente.match(/<Encabezado\s[\s\S]*?\/>/)?.[0]
+  // Multilínea y no [^>]*: las props viajan en varias líneas. \s obligatorio
+  // después de "Encabezado" (y no "<Encabezado>" pelado): así una mención al
+  // componente en un comentario de más arriba no puede colar como si fuera la
+  // apertura de la etiqueta real. Y el cierre pide `/>` AL PRINCIPIO DE UNA
+  // LÍNEA: desde que `controlMovil` recibe un elemento (`<BotonImprimir />`),
+  // un `\/>` a secas cortaba la etiqueta en el `/>` de esa prop y dejaba
+  // afuera todo lo que viniera después.
+  const etiqueta = fuente.match(/<Encabezado\s[\s\S]*?\n\s*\/>/)?.[0]
 
   it('existe el <Encabezado> de esta pantalla', () => {
     expect(etiqueta, `no se encontró <Encabezado ... /> en: ${fuente}`).toBeTruthy()
@@ -31,18 +38,17 @@ describe('el Encabezado del ticket (Task 9 del ciclo móvil)', () => {
     expect(etiqueta).toContain('atras={`/servicio-tecnico/${id}`}')
   })
 
-  // La ranura derecha de esta pantalla es la excepción tono='accion' del
-  // grupo "printer": en /servicio-tecnico/[id] y /ventas/[id] el mismo ícono
-  // es tono='suave' (acción secundaria); acá ES la acción de la pantalla.
-  it('la ranura derecha del teléfono es "printer", tono acción', () => {
-    expect(etiqueta).toContain('icono: Printer')
-    expect(etiqueta).toContain("tono: 'accion'")
-  })
-
-  it('el href del ícono de imprimir es esta misma pantalla', () => {
-    // `href:` (propiedad de objeto), no `href={` (atributo JSX): accionMovil
-    // viaja como objeto literal, no como prop directa del Encabezado.
-    expect(etiqueta).toContain('href: `/servicio-tecnico/${id}/ticket`')
+  // La ranura derecha de esta pantalla es un CONTROL, no un link: imprimir no
+  // es ir a ninguna URL, es un efecto sobre la página en la que ya se está.
+  // La primera versión de esta pantalla lo puso como `accionMovil` con href a
+  // su propia URL, y funcionaba de casualidad —el `<a>` pelado forzaba una
+  // recarga completa de documento, que remontaba `ImprimirAlCargar`—; desde
+  // que el Encabezado navega con `Link`, esa casualidad se termina.
+  it('la ranura derecha del teléfono es un control, no un link a esta misma URL', () => {
+    expect(etiqueta).toContain('controlMovil={<BotonImprimir />}')
+    expect(etiqueta, 'accionMovil es SIEMPRE un link a otra URL: acá no hay ninguna').not.toContain(
+      'accionMovil',
+    )
   })
 
   // El Encabezado del ticket NO puede entrar al área imprimible: va con la
@@ -96,5 +102,60 @@ describe('ticket.module.css no cambia de reglas (Task 9 del ciclo móvil)', () =
     const contenido = readFileSync(RUTA_CSS, 'utf8')
     const hash = createHash('sha256').update(contenido).digest('hex')
     expect(hash).toBe('7b46c4e684bd001711ede0641b90ed890615dc6857d343bb31e6e55002998aa0')
+  })
+})
+
+/**
+ * El botón de imprimir de la ranura derecha del teléfono, hallazgo I2 de la
+ * review final del ciclo móvil.
+ *
+ * Antes de esta ola el botón NO tenía comportamiento propio: era un
+ * `accionMovil` con `href` a la misma URL, y abría el diálogo de impresión
+ * sólo porque el `<a>` pelado del Encabezado forzaba una recarga completa de
+ * documento y esa recarga remontaba `ImprimirAlCargar`. Pasar el Encabezado a
+ * `Link` (hallazgo I3, la misma ola) rompía eso en silencio: Next resuelve la
+ * navegación como misma-ruta, no remonta nada, y ningún test caía.
+ *
+ * Por eso este caso afirma sobre el `onClick`, que es el mecanismo, y no
+ * sobre el HTML, que es el aspecto: con el botón renderizado igual pero sin
+ * handler, el aspecto sigue verde y el botón no imprime nada.
+ */
+describe('BotonImprimir (hallazgo I2 de la review final)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('llama a window.print() cuando se lo toca', () => {
+    const imprimir = vi.fn()
+    // El entorno de vitest es 'node': no hay window. Se stubea el mínimo que
+    // el handler toca, que es justamente lo que este caso quiere observar.
+    vi.stubGlobal('window', { print: imprimir })
+
+    const elemento = BotonImprimir() as ReactElement<{ onClick?: () => void }>
+    expect(elemento.props.onClick, 'el botón no tiene onClick: no imprime nada').toBeTypeOf(
+      'function',
+    )
+    elemento.props.onClick?.()
+
+    expect(imprimir).toHaveBeenCalledTimes(1)
+  })
+
+  it('es un <button type="button">, no un link', () => {
+    const html = renderToStaticMarkup(<BotonImprimir />)
+    expect(html).toContain('<button')
+    expect(html).toContain('type="button"')
+    expect(html, 'un <a> volvería a atar el imprimir a una navegación').not.toContain('<a ')
+    expect(html).toContain('aria-label="Imprimir"')
+  })
+
+  it('comparte la geometría de la ranura y el tono de acción de la maqueta', () => {
+    const html = renderToStaticMarkup(<BotonImprimir />)
+    for (const clase of CLASES_RANURA_MOVIL.split(' ')) {
+      expect(html, `falta la clase de ranura ${clase}`).toContain(clase)
+    }
+    // tono 'accion' (relleno de --primary), el mismo que tenía como
+    // accionMovil: es LA acción de esta pantalla, no una secundaria.
+    expect(html).toContain('bg-primary')
+    expect(html).toContain('text-primary-foreground')
   })
 })

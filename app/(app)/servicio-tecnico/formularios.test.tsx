@@ -216,7 +216,14 @@ describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
   // Task 9 del ciclo móvil (design/arandano.pen, frame `B3noN`).
   it('vuelve a /servicio-tecnico desde la ranura izquierda del teléfono', () => {
     const html = render()
-    expect(html).toMatch(/<a href="\/servicio-tecnico" aria-label="Volver"/)
+    // La etiqueta se extrae y DESPUÉS se afirma el href, en vez de un
+    // regex que fije el orden de los atributos: desde que <Encabezado>
+    // navega con `Link` de Next (hallazgo I3 de la review final), el href
+    // sale último y no primero. Mismo mecanismo que ya usaba
+    // components/shell/encabezado.test.tsx para la variante <button>.
+    const volver = html.match(/<a[^>]*aria-label="Volver"[^>]*>/)?.[0]
+    expect(volver, `no se encontró la flecha de volver en: ${html}`).toBeTruthy()
+    expect(volver).toContain('href="/servicio-tecnico"')
   })
 
   it('las dos columnas del cuerpo pasan a flex-col lg:flex-row en el teléfono', () => {
@@ -233,8 +240,13 @@ describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
    */
   it('la ranura derecha del teléfono es "Reimprimir ticket" (printer, tono suave)', () => {
     const html = render()
-    expect(html).toMatch(
-      /<a href="\/servicio-tecnico\/o-1\/ticket" aria-label="Reimprimir ticket" class="[^"]*bg-muted text-foreground[^"]*"/,
+    // Sin fijar el orden de los atributos, por lo mismo que la flecha de
+    // volver de acá arriba: `Link` de Next emite el href al final.
+    const ranura = html.match(/<a[^>]*aria-label="Reimprimir ticket"[^>]*>/)?.[0]
+    expect(ranura, `no se encontró la ranura de reimprimir en: ${html}`).toBeTruthy()
+    expect(ranura).toContain('href="/servicio-tecnico/o-1/ticket"')
+    expect(ranura, 'tono "suave": la maqueta la pinta con --muted').toMatch(
+      /class="[^"]*bg-muted text-foreground[^"]*"/,
     )
   })
 

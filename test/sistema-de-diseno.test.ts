@@ -200,6 +200,15 @@ const CONSUMIDORES_LEGITIMOS: Record<string, string> = {
   'components/shell/encabezado.test.tsx':
     'ejercita el par bg-primary/text-primary-foreground de accionMovil que ' +
     'declara components/shell/encabezado.tsx, arriba.',
+  'app/(app)/servicio-tecnico/[id]/ticket/imprimir.tsx':
+    'el botón de imprimir del ticket ocupa esa MISMA ranura derecha con el ' +
+    'MISMO tono "accion" — es LA acción de esa pantalla. Va por controlMovil ' +
+    'y no por accionMovil sólo porque imprimir no es navegar a ninguna URL ' +
+    '(hallazgo I2 de la review final del ciclo móvil), así que el par de ' +
+    'colores lo tiene que escribir él y no <Encabezado>.',
+  'app/(app)/servicio-tecnico/[id]/ticket/page.test.tsx':
+    'ejercita el par bg-primary/text-primary-foreground de BotonImprimir que ' +
+    'declara app/(app)/servicio-tecnico/[id]/ticket/imprimir.tsx, arriba.',
 }
 
 describe('nadie toma --primary-foreground por "el color claro"', () => {

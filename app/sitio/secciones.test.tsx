@@ -92,12 +92,26 @@ describe('Nav', () => {
   // afirma sobre los links y "Entrar a mi local" se lee del FUENTE — mismo
   // mecanismo que ya usa app/(app)/ventas/page.tsx (ver el comentario de
   // `FormularioDeFechas` ahí) y su test (page.test.tsx).
-  it('el ícono de menú (lucide "menu") sólo existe abajo de 1024px', () => {
+  // Hallazgo I5 de la review final: este caso afirmaba el `lg:hidden` sobre la
+  // clase del `<Menu>` de lucide, que es el ÍCONO. Quien decide si el botón se
+  // ve es el `SheetTrigger` que lo contiene, así que sacarle el `lg:hidden` al
+  // trigger dejaba la hamburguesa visible a 1440 con el caso en verde — y el
+  // `lg:hidden` del ícono era redundante, puesto ahí para este test. Ahora se
+  // afirma sobre la etiqueta de apertura del disparador.
+  it('el botón de menú sólo existe abajo de 1024px', () => {
     const markup = html()
-    expect(markup).toContain('lucide-menu')
-    const clases = markup.match(/class="([^"]*lucide-menu[^"]*)"/)?.[1]
-    expect(clases, 'no se encontró la clase del ícono lucide-menu').toBeTruthy()
-    expect(clases).toContain('lg:hidden')
+    // El ícono sigue teniendo que estar: es lo que se ve del botón.
+    expect(markup, 'no se renderizó el ícono lucide-menu').toContain('lucide-menu')
+
+    const apertura = markup.match(/<button[^>]*aria-label="Abrir menú"[^>]*>/)?.[0]
+    expect(
+      apertura,
+      `no se encontró el disparador del menú (<button aria-label="Abrir menú">) en: ${markup}`,
+    ).toBeTruthy()
+    expect(
+      apertura,
+      'el disparador del menú no lleva lg:hidden: la hamburguesa se ve en escritorio',
+    ).toContain('lg:hidden')
   })
 
   it('los links de sección y "Entrar a mi local" viven DENTRO del <SheetContent> (leído del fuente)', () => {

@@ -223,7 +223,14 @@ describe('FormularioRecepcion — el buscador de cliente (Task 3 del rediseño)'
 describe('atras="/servicio-tecnico" y sin accionMovil (Task 9 del ciclo móvil)', () => {
   it('vuelve a /servicio-tecnico desde la ranura izquierda del teléfono', () => {
     const html = render([])
-    expect(html).toMatch(/<a href="\/servicio-tecnico" aria-label="Volver"/)
+    // La etiqueta se extrae y DESPUÉS se afirma el href, en vez de un
+    // regex que fije el orden de los atributos: desde que <Encabezado>
+    // navega con `Link` de Next (hallazgo I3 de la review final), el href
+    // sale último y no primero. Mismo mecanismo que ya usaba
+    // components/shell/encabezado.test.tsx para la variante <button>.
+    const volver = html.match(/<a[^>]*aria-label="Volver"[^>]*>/)?.[0]
+    expect(volver, `no se encontró la flecha de volver en: ${html}`).toBeTruthy()
+    expect(volver).toContain('href="/servicio-tecnico"')
   })
 
   // Se verifica por RENDER real y no por FUENTE: si algo agregara accionMovil

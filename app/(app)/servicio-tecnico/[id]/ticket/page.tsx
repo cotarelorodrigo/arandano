@@ -1,10 +1,9 @@
 import { notFound } from 'next/navigation'
-import { Printer } from 'lucide-react'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { esUuid } from '@/lib/uuid'
-import { ImprimirAlCargar } from './imprimir'
+import { BotonImprimir, ImprimirAlCargar } from './imprimir'
 import { CuerpoDelTicket } from './cuerpo'
 
 export const dynamic = 'force-dynamic'
@@ -47,12 +46,7 @@ export default async function Ticket({ params }: { params: Promise<{ id: string 
           titulo={`Ticket #${orden.numero}`}
           subtitulo="80 mm · dos copias en una impresión"
           atras={`/servicio-tecnico/${id}`}
-          accionMovil={{
-            icono: Printer,
-            etiqueta: 'Imprimir',
-            href: `/servicio-tecnico/${id}/ticket`,
-            tono: 'accion',
-          }}
+          controlMovil={<BotonImprimir />}
         />
       </div>
       <ImprimirAlCargar />

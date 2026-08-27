@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
@@ -126,9 +127,15 @@ export function Encabezado({
           `atras` navega a otra URL; `alVolver` retrocede un paso adentro de la
           misma pantalla (ver su comentario en las props). */}
       {atras ? (
-        <a href={atras} aria-label="Volver" className={CLASES_RANURA_MOVIL}>
+        // `Link` de Next y no un `<a>` pelado: un `<a>` acá es una recarga
+        // completa de documento en cada vuelta atrás — sin navegación de
+        // cliente, sin prefetch, sin restauración de scroll—, y ésta es la
+        // superficie de navegación principal del teléfono, la más sensible a
+        // una red mala. `Link` renderiza igual un `<a>`, así que todo lo que
+        // afirme sobre la etiqueta sigue valiendo.
+        <Link href={atras} aria-label="Volver" className={CLASES_RANURA_MOVIL}>
           <ArrowLeft aria-hidden="true" className="size-[21px]" />
-        </a>
+        </Link>
       ) : alVolver ? (
         <button type="button" onClick={alVolver} aria-label="Volver" className={CLASES_RANURA_MOVIL}>
           <ArrowLeft aria-hidden="true" className="size-[21px]" />
@@ -179,7 +186,15 @@ export function Encabezado({
           38×38, radio 10, ícono 19. lg:hidden: en escritorio manda
           `acciones`, no esto. */}
       {accionMovil ? (
-        <a
+        // `Link` y no `<a>`, por lo mismo que la ranura izquierda de arriba.
+        // Nota para quien vaya a usar `accionMovil`: es SIEMPRE una navegación
+        // real a otra URL. Si lo que hace falta es un efecto en la página
+        // actual (imprimir, abrir algo, disparar una acción), la ranura es
+        // `controlMovil`, no ésta — con `<a>` pelado un href a la misma URL
+        // "funcionaba" de casualidad, porque la recarga de documento remontaba
+        // la pantalla entera; con `Link` la navegación de misma-ruta no
+        // remonta nada y el botón no hace nada.
+        <Link
           href={accionMovil.href}
           aria-label={accionMovil.etiqueta}
           className={`${CLASES_RANURA_MOVIL} ${
@@ -187,7 +202,7 @@ export function Encabezado({
           }`}
         >
           <accionMovil.icono aria-hidden="true" className="size-[19px]" />
-        </a>
+        </Link>
       ) : (
         controlMovil ?? null
       )}
