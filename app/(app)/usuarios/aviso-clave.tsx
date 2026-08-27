@@ -42,16 +42,25 @@ export function AvisoClaveGenerada({ nombre, clave }: { nombre: string; clave: s
       </div>
       <button
         type="button"
+        // aria-label a mano: en el teléfono el botón queda sin texto visible
+        // (el <span> de "Copiar" pasa a hidden), así que esto es el único
+        // nombre accesible que le queda. En escritorio no molesta —el texto
+        // visible ya dice lo mismo—.
+        aria-label="Copiar"
         onClick={() => {
           // navigator.clipboard puede no existir (contexto sin HTTPS, o un
           // navegador viejo): el catch evita que un clic sin efecto tire una
           // excepción no atrapada a la consola.
           navigator.clipboard?.writeText(clave).catch(() => {})
         }}
-        className="flex h-[38px] shrink-0 items-center gap-[7px] rounded-[9px] border border-input bg-card px-[15px] text-[13px] font-semibold text-foreground"
+        // Task 10 del ciclo móvil (frame `NIyHG`, nodo `ZVVQf`): en el
+        // teléfono el botón es sólo ícono, 34×34, radio 10, sin borde — el
+        // botón de 38px con texto y borde que ya existía queda intacto desde
+        // `lg:`.
+        className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] bg-card text-warn lg:h-[38px] lg:w-auto lg:justify-start lg:gap-[7px] lg:rounded-[9px] lg:border lg:border-input lg:px-[15px] lg:text-[13px] lg:font-semibold lg:text-foreground"
       >
         <Copy aria-hidden="true" className="size-[15px]" />
-        Copiar
+        <span className="hidden lg:inline">Copiar</span>
       </button>
     </div>
   )

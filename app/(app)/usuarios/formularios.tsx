@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { ChipRol } from './chip-rol'
 import { ChipEstadoUsuario } from './chip-estado'
@@ -66,7 +65,10 @@ function CardConEncabezado({
 }) {
   return (
     <div id={id} className="flex flex-col overflow-hidden rounded-2xl border bg-card">
-      <div className="flex items-center justify-between border-b px-[18px] py-[13px]">
+      {/* Mobile-first (Task 10 del ciclo móvil, nodos `nd3Fx`/`Q5UJWP` del
+          frame `NIyHG`): padding [12,14] en el teléfono; el de escritorio
+          (13/18) es el que ya tenía este header — sin tocar. */}
+      <div className="flex items-center justify-between border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
         <h2 className={`${estilos.tituloDeCard} text-foreground`}>{titulo}</h2>
         {accesorio}
       </div>
@@ -76,11 +78,35 @@ function CardConEncabezado({
 }
 
 /**
- * "El equipo del local" (design/arandano.pen, nodo `swCOr`): la tabla con
- * chips de rol y estado, más las acciones por fila. `usuarioActualId` decide
- * qué fila es "uno mismo" (ver fila-acciones.tsx).
+ * "El equipo del local" (design/arandano.pen, nodo `swCOr` en escritorio,
+ * `u1UYe` en el frame móvil `NIyHG`): el patrón grid + `display:contents` de
+ * la Task 4 (ver el docblock de `Listado` en app/(app)/ventas/page.tsx),
+ * exportado para poder renderizarlo suelto en un test (Task 10, lección 1 del
+ * brief: "extraé el listado como componente puro y renderizable").
+ * `usuarioActualId` decide qué fila es "uno mismo" (ver fila-acciones.tsx).
+ *
+ * Anchuras del grid de escritorio: las mismas que declaraban los
+ * `<TableHead>` de antes — sin ancho propio (1fr) para Persona, 112/118/180
+ * para Rol/Estado/Acciones.
+ *
+ * A diferencia de app/(app)/servicio-tecnico/page.tsx (que tiene que
+ * DUPLICAR su chip de estado porque el orden de columnas de escritorio no
+ * coincide con el orden que el teléfono necesita), acá no hace falta
+ * duplicar nada: el orden de escritorio —Persona, Rol, Estado, Acciones— YA
+ * es el orden que pide el teléfono (nombre+mail, chip de rol, chip de
+ * estado, acciones). Rol, Estado y Acciones se agrupan en un envoltorio
+ * `lg:contents` propio (nodo `hfAYV`, "Chips": rol + estado + acciones en su
+ * propia línea, `alignItems: center`) que se disuelve en escritorio en sus
+ * tres celdas de siempre.
+ *
+ * El avatar (nodos `daaCM`/`f70Wo` para dueños, `qeoqq`/`he7DG` para
+ * empleados) es enteramente nuevo y sólo existe en el teléfono (`lg:hidden`):
+ * el escritorio nunca mostró un avatar en la columna Persona y no puede
+ * empezar a mostrarlo ahora ("el escritorio no puede cambiar de aspecto"). La
+ * inicial es la primera letra del nombre — no es un dato nuevo, sólo recorta
+ * uno que `User` ya trae.
  */
-function CardEquipo({
+export function CardEquipo({
   usuarios,
   usuarioActualId,
   onClaveGenerada,
@@ -91,49 +117,91 @@ function CardEquipo({
 }) {
   return (
     <CardConEncabezado titulo="El equipo del local">
-      <Table className="table-fixed">
-        <TableHeader>
-          <TableRow className="bg-muted hover:bg-muted">
-            <TableHead className="h-auto py-[11px] pr-[7px] pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-              Persona
-            </TableHead>
-            <TableHead className="h-auto w-[112px] px-[7px] py-[11px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-              Rol
-            </TableHead>
-            <TableHead className="h-auto w-[118px] px-[7px] py-[11px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-              Estado
-            </TableHead>
-            <TableHead className="h-auto w-[180px] py-[11px] pr-[18px] pl-[7px] text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-              Acciones
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {usuarios.map((u) => (
-            <TableRow key={u.id}>
-              <TableCell className="py-[11px] pr-[7px] pl-[18px]">
+      <div role="table" className="grid grid-cols-1 lg:grid-cols-[1fr_112px_118px_180px]">
+        <div role="row" className="hidden lg:contents">
+          <div role="columnheader" className="bg-muted py-[11px] pr-[7px] pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+            Persona
+          </div>
+          <div role="columnheader" className="bg-muted px-[7px] py-[11px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+            Rol
+          </div>
+          <div role="columnheader" className="bg-muted px-[7px] py-[11px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+            Estado
+          </div>
+          <div role="columnheader" className="bg-muted py-[11px] pr-[18px] pl-[7px] text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+            Acciones
+          </div>
+        </div>
+
+        {usuarios.map((u) => (
+          <div
+            key={u.id}
+            role="row"
+            className="group flex items-center gap-[10px] border-b p-[11px] px-[14px] last:border-b-0 lg:contents"
+          >
+            {/* Avatar: sólo en el teléfono, ver el docblock de arriba. */}
+            <div
+              aria-hidden="true"
+              className={`flex size-[34px] shrink-0 items-center justify-center rounded-full lg:hidden ${
+                u.rol === 'DUENO' ? 'bg-accent text-primary' : 'bg-muted text-foreground-soft'
+              }`}
+            >
+              <span className={`${estilos.archivo} text-[14px] font-semibold`}>
+                {u.nombre.trim().charAt(0).toUpperCase()}
+              </span>
+            </div>
+
+            {/* "Datos+chips": se disuelve en escritorio en las celdas
+                Persona, Rol, Estado y Acciones — ver el docblock. */}
+            <div className="flex min-w-0 flex-1 flex-col gap-[3px] lg:contents">
+              <div
+                role="cell"
+                className="lg:border-b lg:py-[11px] lg:pr-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+              >
                 <div className="flex flex-col gap-0.5">
                   <span className="text-sm font-medium text-foreground">{u.nombre}</span>
                   <span className="text-[11px] text-muted-foreground">{u.email}</span>
                 </div>
-              </TableCell>
-              <TableCell className="px-[7px] py-[11px]">
-                <ChipRol rol={u.rol} />
-              </TableCell>
-              <TableCell className="px-[7px] py-[11px]">
-                <ChipEstadoUsuario desactivado={u.desactivadoEn !== null} />
-              </TableCell>
-              <TableCell className="py-[11px] pr-[18px] pl-[7px] text-right">
-                <FilaAcciones
-                  usuario={u}
-                  esUnoMismo={u.id === usuarioActualId}
-                  onClaveGenerada={onClaveGenerada}
-                />
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+              </div>
+
+              {/* "Chips" (nodo `hfAYV`): rol + estado + acciones, en su
+                  propia línea en el teléfono; disuelto en escritorio, donde
+                  vuelven a ser las celdas Rol (112px), Estado (118px) y
+                  Acciones (180px) de siempre. */}
+              <div className="flex flex-wrap items-center gap-1.5 lg:contents">
+                <div
+                  role="cell"
+                  className="lg:border-b lg:px-[7px] lg:py-[11px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+                >
+                  <div className="lg:flex lg:h-full lg:items-center">
+                    <ChipRol rol={u.rol} />
+                  </div>
+                </div>
+                <div
+                  role="cell"
+                  className="lg:border-b lg:px-[7px] lg:py-[11px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+                >
+                  <div className="lg:flex lg:h-full lg:items-center">
+                    <ChipEstadoUsuario desactivado={u.desactivadoEn !== null} />
+                  </div>
+                </div>
+                <div
+                  role="cell"
+                  className="lg:border-b lg:py-[11px] lg:pr-[18px] lg:pl-[7px] lg:text-right lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+                >
+                  <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
+                    <FilaAcciones
+                      usuario={u}
+                      esUnoMismo={u.id === usuarioActualId}
+                      onClaveGenerada={onClaveGenerada}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </CardConEncabezado>
   )
 }
@@ -172,8 +240,11 @@ export function AltaDeEmpleado({
           campos no controlados por su cuenta cuando la action termina bien,
           así que nombre/mail/clave no quedan pegados tras un alta exitosa. El
           rol SÍ es controlado (useState) y no lo toca ese reset — se deja en
-          "Empleado" a propósito, que es el default más común. */}
-      <form action={accion} className="flex flex-col gap-[14px] p-[18px]">
+          "Empleado" a propósito, que es el default más común.
+          Mobile-first (Task 10, nodo `rodaD` del frame `NIyHG`): gap 12,
+          padding 14 en el teléfono; el de escritorio (gap 14, padding 18) es
+          el que ya tenía este formulario. */}
+      <form action={accion} className="flex flex-col gap-3 p-[14px] lg:gap-[14px] lg:p-[18px]">
         <div className="flex flex-col gap-[5px]">
           <Label htmlFor="nombre" className="text-[11px] font-semibold text-foreground-soft">
             Nombre y apellido
@@ -274,11 +345,31 @@ function CardReglas() {
 }
 
 /**
- * El cuerpo entero de /usuarios (design/arandano.pen, nodo `NQhvT`), en
- * cliente: el bloque "Clave generada" tiene que vivir en un solo lugar sin
- * importar si lo disparó el alta o el reseteo de una fila, y eso pide un
- * estado compartido por encima de ambos — algo que un Server Component no
- * puede sostener.
+ * El cuerpo entero de /usuarios (design/arandano.pen, nodo `NQhvT` en
+ * escritorio, `k7F13E` en el frame móvil `NIyHG`), en cliente: el bloque
+ * "Clave generada" tiene que vivir en un solo lugar sin importar si lo
+ * disparó el alta o el reseteo de una fila, y eso pide un estado compartido
+ * por encima de ambos — algo que un Server Component no puede sostener.
+ *
+ * Mobile-first (Task 10 del ciclo móvil): en escritorio esto son dos
+ * columnas (Equipo+Aviso a la izquierda, Alta+Reglas a la derecha, 360px
+ * fijos) — sin cambios. Pero `k7F13E` dibuja las CUATRO piezas como
+ * hermanas directas, una sola lista con gap 12 uniforme, y en un orden
+ * distinto: el Aviso va PRIMERO, antes que "El equipo del local" —al
+ * revés que en escritorio, donde vive debajo de la tabla, en la misma
+ * columna—.
+ *
+ * El mecanismo es el mismo `contents` (sin `lg:`) + `order-N`/`lg:order-none`
+ * que ya usa `FichaDeArticulo` (app/(app)/inventario/formularios.tsx, ver su
+ * comentario): los dos envoltorios de columna llevan `contents` a secas, así
+ * que en CUALQUIER ancho menor a `lg` se disuelven y sus hijos pasan a ser
+ * ítems planos del flex-col de afuera —de ahí que el gap-3 de afuera quede
+ * uniforme entre las cuatro piezas—; `lg:flex ... lg:flex-col` los vuelve a
+ * armar en columna recién en escritorio. Cada pieza lleva el `order-N` que
+ * le toca en el teléfono (Aviso=1, Equipo=2, Alta=3, Reglas=4) sin tocar su
+ * lugar real en el DOM, que sigue siendo el de escritorio (Equipo antes que
+ * Aviso, Alta antes que Reglas) — `lg:order-none` cancela el reorden ahí, así
+ * que escritorio no cambia de aspecto.
  */
 export function CuerpoUsuarios({
   usuarios,
@@ -290,14 +381,24 @@ export function CuerpoUsuarios({
   const [claveGenerada, setClaveGenerada] = useState<{ nombre: string; clave: string } | null>(null)
 
   return (
-    <div className="flex gap-4 p-6">
-      <div className="flex flex-1 flex-col gap-4">
-        <CardEquipo usuarios={usuarios} usuarioActualId={usuarioActualId} onClaveGenerada={setClaveGenerada} />
-        {claveGenerada && <AvisoClaveGenerada nombre={claveGenerada.nombre} clave={claveGenerada.clave} />}
+    <div className="flex flex-col gap-3 p-[14px] lg:flex-row lg:items-start lg:gap-4 lg:p-6">
+      <div className="contents lg:flex lg:flex-1 lg:flex-col lg:gap-4">
+        <div className="order-2 lg:order-none">
+          <CardEquipo usuarios={usuarios} usuarioActualId={usuarioActualId} onClaveGenerada={setClaveGenerada} />
+        </div>
+        {claveGenerada && (
+          <div className="order-1 lg:order-none">
+            <AvisoClaveGenerada nombre={claveGenerada.nombre} clave={claveGenerada.clave} />
+          </div>
+        )}
       </div>
-      <div className="flex w-[360px] flex-col gap-4">
-        <AltaDeEmpleado onClaveGenerada={setClaveGenerada} />
-        <CardReglas />
+      <div className="contents lg:flex lg:flex-col lg:w-[360px] lg:shrink-0 lg:gap-4">
+        <div className="order-3 lg:order-none">
+          <AltaDeEmpleado onClaveGenerada={setClaveGenerada} />
+        </div>
+        <div className="order-4 lg:order-none">
+          <CardReglas />
+        </div>
       </div>
     </div>
   )

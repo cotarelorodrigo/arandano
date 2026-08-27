@@ -64,4 +64,22 @@ describe('AvisoClaveGenerada', () => {
     const fuente = readFileSync(RUTA, 'utf8')
     expect(fuente).toMatch(/navigator\.clipboard\?\.writeText\(clave\)/)
   })
+
+  // Task 10 del ciclo móvil (frame `NIyHG`, nodo `ZVVQf`): en el teléfono el
+  // botón de copiar es sólo ícono, 34×34 — no el botón de 38px con texto que
+  // ya existía en escritorio.
+  it('en el teléfono, el botón mide 34×34 (nodo ZVVQf) y el texto "Copiar" queda oculto', () => {
+    expect(html).toContain('h-[34px] w-[34px]')
+    expect(html).toContain('<span class="hidden lg:inline">Copiar</span>')
+  })
+
+  it('en escritorio, el botón sigue siendo el de antes: 38px, con borde y el texto visible', () => {
+    expect(html).toContain('lg:h-[38px]')
+    expect(html).toContain('lg:border')
+    expect(html).toContain('lg:border-input')
+  })
+
+  it('el botón lleva aria-label="Copiar": en el teléfono es el único nombre accesible, sin texto visible', () => {
+    expect(html).toContain('aria-label="Copiar"')
+  })
 })

@@ -137,6 +137,13 @@ export type UsuarioDeFila = {
  * mostrar. Se interpretó como variedad ilustrativa del mockup, no como una
  * regla de "los dueños no se dan de baja desde acá", y "Baja" queda
  * disponible para cualquier fila activa que no sea la propia.
+ *
+ * `items-start lg:items-end` (Task 10 del ciclo móvil): en el teléfono esta
+ * celda se funde en la misma línea que los chips de rol y estado
+ * (formularios.tsx, `CardEquipo`), leída de izquierda a derecha — alinearla
+ * a la derecha ahí la separaría de los chips en vez de seguirlos. En
+ * escritorio sigue siendo su propia columna "Acciones", alineada a la
+ * derecha como siempre.
  */
 export function FilaAcciones({
   usuario,
@@ -186,7 +193,7 @@ export function FilaAcciones({
 
   if (desactivado) {
     return (
-      <div className="flex flex-col items-end gap-1">
+      <div className="flex flex-col items-start gap-1 lg:items-end">
         <form action={accionAlta}>
           <input type="hidden" name="usuarioId" value={usuario.id} />
           <button type="submit" disabled={altaEnCurso} className={ENLACE}>
@@ -212,7 +219,7 @@ export function FilaAcciones({
   }
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex flex-col items-start gap-1 lg:items-end">
       <div className="flex items-center gap-2">
         <button type="button" onClick={() => setCambiandoClave(true)} className={ENLACE}>
           Cambiar clave
