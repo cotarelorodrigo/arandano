@@ -21,7 +21,9 @@ import {
   notaDelConjunto,
   ventanaDePaginas,
   FilaDeChips,
+  ChipDeFiltroMovil,
   CeldaDeEstado,
+  Listado,
 } from './page'
 
 describe('esEstado', () => {
@@ -316,6 +318,251 @@ describe('FilaDeChips', () => {
     )
     expect(bloqueDelChip(html, 'Listo')).toContain('q=motorola')
   })
+
+  // Task 8 del ciclo móvil: FilaDeChips ahora renderiza los mismos diez
+  // chips DOS veces — una con ChipDeFiltro (pastilla, sólo escritorio) y
+  // otra con ChipDeFiltroMovil (card, sólo teléfono). `bloqueDelChip`
+  // encuentra siempre la PRIMERA ocurrencia de cada rótulo, que tiene que
+  // seguir siendo la pastilla de escritorio (por eso los tests de arriba no
+  // cambiaron) — y estos dos tests nuevos cierran el resto: que el bloque
+  // del teléfono exista, y que quede oculto por CSS en cada ancho.
+  it('el bloque de escritorio queda oculto por default (hidden) y visible a partir de lg (lg:flex)', () => {
+    const html = renderToStaticMarkup(
+      <FilaDeChips abiertas={18} cuenta={{}} filtro={null} buscandoEnTodas={false} busqueda="" />,
+    )
+    expect(html).toContain('hidden flex-wrap items-center gap-2 lg:flex')
+  })
+
+  it('el bloque del teléfono es una grilla de 3 columnas, oculta a partir de lg (lg:hidden)', () => {
+    const html = renderToStaticMarkup(
+      <FilaDeChips abiertas={18} cuenta={{}} filtro={null} buscandoEnTodas={false} busqueda="" />,
+    )
+    expect(html).toContain('grid grid-cols-3 gap-2 lg:hidden')
+  })
+
+  it('cada rótulo aparece dos veces: una en la pastilla de escritorio, otra en la card del teléfono', () => {
+    const html = renderToStaticMarkup(
+      <FilaDeChips abiertas={18} cuenta={{ RECIBIDO: 4 }} filtro={null} buscandoEnTodas={false} busqueda="" />,
+    )
+    expect(html.match(/>Recibido</g)).toHaveLength(2)
+    expect(html.match(/>Abiertas</g)).toHaveLength(2)
+  })
+})
+
+/**
+ * Task 8 del ciclo móvil: la card de un chip de filtro en el teléfono. Ver
+ * el docblock de `ChipDeFiltroMovil` en page.tsx para el porqué de no
+ * compartir árbol con `ChipDeFiltro`.
+ */
+describe('ChipDeFiltroMovil (Task 8 del ciclo móvil)', () => {
+  it('muestra el conteo formateado y el rótulo', () => {
+    const html = renderToStaticMarkup(
+      <ChipDeFiltroMovil href="/servicio-tecnico?estado=ENTREGADO" rotulo="Entregado" cuenta={1234} seleccionado={false} />,
+    )
+    expect(html).toContain('1.234')
+    expect(html).toContain('Entregado')
+  })
+
+  it('seleccionado: fondo bg-primary y aria-current="page"', () => {
+    const html = renderToStaticMarkup(
+      <ChipDeFiltroMovil href="/servicio-tecnico" rotulo="Abiertas" cuenta={18} seleccionado={true} />,
+    )
+    expect(html).toContain('aria-current="page"')
+    expect(html).toContain('bg-primary')
+  })
+
+  it('no seleccionado: sin aria-current, fondo bg-card', () => {
+    const html = renderToStaticMarkup(
+      <ChipDeFiltroMovil href="/servicio-tecnico?estado=RECIBIDO" rotulo="Recibido" cuenta={4} seleccionado={false} />,
+    )
+    expect(html).not.toContain('aria-current')
+    expect(html).toContain('bg-card')
+  })
+
+  /** El `<span>` que envuelve `texto`, ubicado por su contenido — para poder
+   *  mirar SU className en particular, sin confundirlo con el otro `<span>`
+   *  de la misma card (mismo criterio que `bloqueDelChip`/`aperturaDelChip`
+   *  de más arriba, adaptado a un solo elemento). */
+  function spanDe(html: string, texto: string): string {
+    const idx = html.indexOf(`>${texto}<`)
+    expect(idx, `no se encontró "${texto}" en: ${html}`).toBeGreaterThan(-1)
+    const desde = html.lastIndexOf('<span', idx)
+    expect(desde, `no se encontró el <span> de "${texto}"`).toBeGreaterThan(-1)
+    return html.slice(desde, idx + `>${texto}<`.length)
+  }
+
+  // La divergencia a propósito con el chip de escritorio (ver el docblock):
+  // acá el conteo NUNCA se apaga a muted, tenga cero o no.
+  it('con conteo en cero, el CONTEO no se pinta muted — a diferencia del chip de escritorio', () => {
+    const html = renderToStaticMarkup(
+      <ChipDeFiltroMovil href="/servicio-tecnico?estado=SIN_REPARACION" rotulo="Sin reparación" cuenta={0} seleccionado={false} />,
+    )
+    expect(spanDe(html, '0')).not.toContain('text-muted-foreground')
+  })
+
+  it('con conteo > 0, el RÓTULO igual se pinta muted — a diferencia del chip de escritorio', () => {
+    const html = renderToStaticMarkup(
+      <ChipDeFiltroMovil href="/servicio-tecnico?estado=RECIBIDO" rotulo="Recibido" cuenta={4} seleccionado={false} />,
+    )
+    expect(spanDe(html, 'Recibido')).toContain('text-muted-foreground')
+  })
+})
+
+/** Una fila mínima, ya resuelta a texto — la forma que `Listado` recibe de
+ *  verdad, sin ningún `Date` de Prisma cruzando a un fixture de test (mismo
+ *  criterio que `FILA` en app/(app)/ventas/page.test.tsx). */
+const FILA_ORDEN: Parameters<typeof Listado>[0]['filas'][number] = {
+  id: 'o1',
+  numero: 221,
+  estado: 'EN_REPARACION',
+  anulada: false,
+  equipoLabel: 'Samsung A54',
+  imeiLabel: 'IMEI 356938035643809',
+  clienteNombre: 'Marcos Vera',
+  clienteTelefono: '11 5412-9087',
+  fechaFormateada: '29/07/2026',
+  antiguedadLabel: 'hace 23 días',
+}
+
+function renderListado(props: Partial<Parameters<typeof Listado>[0]> = {}) {
+  return renderToStaticMarkup(
+    <Listado
+      filas={[FILA_ORDEN]}
+      total={1}
+      pagina={1}
+      paginas={1}
+      porPagina={50}
+      filtro={null}
+      buscandoEnTodas={false}
+      busqueda=""
+      {...props}
+    />,
+  )
+}
+
+/**
+ * Task 8 del ciclo móvil: el patrón de listado de la Task 4 — grid en
+ * escritorio, tarjetas apiladas en el teléfono, resuelto con
+ * `display:contents` sobre el MISMO árbol (design/arandano.pen, frame
+ * `F9BzV`). Ver el docblock de `Listado` en page.tsx.
+ */
+describe('Listado (Task 8 del ciclo móvil): el patrón grid + display:contents', () => {
+  it('el contenedor es la tabla ARIA: 1 columna en el teléfono, 5 en escritorio', () => {
+    const html = renderListado()
+    expect(html).toContain('role="table"')
+    expect(html).toMatch(/class="[^"]*\bgrid-cols-1\b[^"]*\blg:grid-cols-\[78px_1fr_190px_150px_170px\]/)
+  })
+
+  it('el encabezado está oculto en el teléfono y se disuelve en escritorio', () => {
+    const html = renderListado()
+    expect(html).toContain('role="row" class="hidden lg:contents"')
+  })
+
+  it('hay tantos role="columnheader" como columnas declara el grid (5)', () => {
+    const html = renderListado()
+    expect(html.match(/role="columnheader"/g)).toHaveLength(5)
+  })
+
+  it('toda fila de datos lleva lg:contents y role="row"', () => {
+    const html = renderListado({ filas: [FILA_ORDEN, { ...FILA_ORDEN, id: 'o2', numero: 228 }], total: 2 })
+    // El encabezado + las dos filas de datos: las tres son role="row" y las
+    // tres llevan lg:contents.
+    const filas = html.match(/role="row" class="[^"]*"/g) ?? []
+    expect(filas).toHaveLength(3)
+    for (const fila of filas) expect(fila).toContain('lg:contents')
+  })
+
+  it('cada fila de datos tiene 5 celdas con role="cell", tantas como columnheader', () => {
+    const html = renderListado()
+    expect(html.match(/role="cell"/g)).toHaveLength(5)
+  })
+
+  it('la fila resalta al pasar el mouse en escritorio (group + group-hover en las 5 celdas)', () => {
+    const html = renderListado()
+    expect(html).toContain('role="row" class="group ')
+    const celdasDeDatos = html.match(/<div[^>]*\brole="cell"[^>]*>/g) ?? []
+    expect(celdasDeDatos).toHaveLength(5)
+    for (const celda of celdasDeDatos) expect(celda).toContain('lg:group-hover:bg-muted/50')
+  })
+
+  it('el borde entre filas vive en cada celda, no en la fila (escritorio)', () => {
+    const html = renderListado({ filas: [FILA_ORDEN, { ...FILA_ORDEN, id: 'o2', numero: 228 }], total: 2 })
+    const celdas = html.match(/<div[^>]*\brole="cell"[^>]*>/g) ?? []
+    expect(celdas).toHaveLength(10) // 5 columnas × 2 filas
+    for (const celda of celdas) expect(celda).toContain('lg:border-b')
+    const conGroupLast = celdas.filter((c) => c.includes('lg:group-last:border-b-0'))
+    expect(conGroupLast).toHaveLength(10)
+  })
+
+  it('el hover funde el color: transition-colors en cada celda', () => {
+    const html = renderListado()
+    const celdas = html.match(/<div[^>]*\brole="cell"[^>]*>/g) ?? []
+    for (const celda of celdas) expect(celda).toContain('lg:transition-colors')
+  })
+
+  it('las celdas más cortas que "Equipo" y "Cliente" centran su contenido con un envoltorio interno, no achicando la celda', () => {
+    const html = renderListado()
+    // Orden y Estado son las dos celdas de una sola línea; Equipo, Cliente e
+    // Ingresó siempre muestran dos (no necesitan el envoltorio).
+    const envoltorios = [...html.matchAll(/class="lg:flex lg:h-full lg:items-center[^"]*"/g)]
+    expect(envoltorios).toHaveLength(2)
+    expect(html).not.toContain('self-center')
+  })
+
+  it('muestra número, equipo, cliente, teléfono, fecha, antigüedad y el chip de estado', () => {
+    const html = renderListado()
+    expect(html).toContain('#221')
+    expect(html).toContain('Samsung A54')
+    expect(html).toContain('Marcos Vera')
+    expect(html).toContain('11 5412-9087')
+    expect(html).toContain('29/07/2026')
+    expect(html).toContain('hace 23 días')
+    expect(html).toContain('IMEI 356938035643809')
+  })
+
+  it('en el teléfono, la fila son tres líneas: agrupador, cliente+teléfono, meta con IMEI e ingreso', () => {
+    const html = renderListado()
+    // Línea 1: número + equipo + chip, en un contenedor lg:hidden propio.
+    expect(html).toMatch(/class="flex items-center gap-\[10px\] lg:hidden"/)
+    // Línea 2 y 3: cliente+teléfono combinados, e IMEI+fecha+antigüedad
+    // combinados — datos que en escritorio viven en celdas DISTINTAS.
+    expect(html).toContain('Marcos Vera · 11 5412-9087')
+    expect(html).toContain('IMEI 356938035643809 · ingresó 29/07/2026 · hace 23 días')
+  })
+
+  it('sin IMEI, la meta del teléfono y la celda de escritorio dicen "Sin IMEI"', () => {
+    const html = renderListado({ filas: [{ ...FILA_ORDEN, imeiLabel: 'Sin IMEI' }] })
+    expect(html).toContain('Sin IMEI · ingresó 29/07/2026 · hace 23 días')
+  })
+
+  it('una orden anulada usa CeldaDeEstado (neutro, "Anulada (…)") en las dos líneas de estado', () => {
+    const html = renderListado({ filas: [{ ...FILA_ORDEN, anulada: true }] })
+    expect(html.match(/Anulada \(En reparación\)/g)).toHaveLength(2) // línea 1 (teléfono) + celda Estado (escritorio)
+  })
+
+  it('sin equipos, lo dice — y no confunde ese vacío con una página fuera de rango', () => {
+    expect(renderListado({ filas: [], total: 0 })).toContain('No hay equipos que mostrar con estos filtros.')
+  })
+
+  it('buscando en todas sin resultados, lo dice con la búsqueda entre comillas', () => {
+    const html = renderListado({ filas: [], total: 0, buscandoEnTodas: true, busqueda: 'motorola' })
+    expect(html).toContain('No apareció ninguna orden con «motorola».')
+  })
+
+  // Hallazgo M8 del barrido final (ver el historial de este archivo): con
+  // `total > 0` la página quedó fuera de rango, y ese vacío tiene que ofrecer
+  // un link de vuelta — distinto del mensaje de "no hay nada" a secas.
+  it('con la página fuera de rango, ofrece volver a la primera', () => {
+    const html = renderListado({ filas: [], total: 5, pagina: 9 })
+    expect(html).toContain('Esta página no tiene equipos.')
+    expect(html).toContain('href="/servicio-tecnico"')
+    expect(html).not.toContain('href="/servicio-tecnico?p=9"')
+  })
+
+  it('con un filtro de estado activo, "volver a la primera" preserva ese filtro', () => {
+    const html = renderListado({ filas: [], total: 5, pagina: 9, filtro: 'LISTO' })
+    expect(html).toContain('href="/servicio-tecnico?estado=LISTO"')
+  })
 })
 
 /**
@@ -367,27 +614,12 @@ describe('el listado pide y usa lo que la fila del rediseño necesita (Task 2 de
     expect(FUENTE).toContain('Buscar alcanza también a las entregadas y anuladas')
   })
 
-  it('el listado usa <Table>, no el <ul> plano de antes del rediseño', () => {
-    expect(FUENTE).toMatch(/<Table\b/)
-  })
-})
-
-describe('el vacío por página fuera de rango ofrece una salida (hallazgo M8 del barrido final)', () => {
-  const FUENTE = readFileSync('app/(app)/servicio-tecnico/page.tsx', 'utf8')
-
-  // El <nav> de paginación vive DENTRO de la rama `ordenes.length > 0` (más
-  // abajo en el mismo archivo), así que una página fuera de rango con
-  // `total > 0` mostraba el mensaje de "no hay equipos" SIN ningún control
-  // para volver — indistinguible de un filtro sin resultados de verdad.
-  it('con total > 0 ofrece un link "Volver a la primera", distinto del mensaje de cero resultados', () => {
-    const inicio = FUENTE.indexOf('{ordenes.length === 0 ? (')
-    const fin = FUENTE.indexOf('</p>', inicio)
-    expect(inicio, 'no se encontró la rama ordenes.length === 0').toBeGreaterThan(-1)
-    const bloque = FUENTE.slice(inicio, fin)
-    expect(bloque).toMatch(/total > 0 \? \(/)
-    expect(bloque).toContain('Volver a la primera')
-    // pagina: 1 y no `pagina` a secas: el link tiene que apuntar SIEMPRE a la
-    // primera página, no a la página fuera de rango que causó el vacío.
-    expect(bloque).toMatch(/hrefTablero\(\{[^}]*pagina:\s*1[^}]*\}\)/)
+  // Task 8 del ciclo móvil: el <Table> de shadcn se reemplazó por el patrón
+  // grid + display:contents (ver describe('Listado') más abajo), así que
+  // esta aserción se dio vuelta — ahora afirma que NO queda ningún rastro
+  // de la tabla vieja, no que siga estando.
+  it('el listado ya no usa <Table> de shadcn: el patrón grid + display:contents lo reemplazó', () => {
+    expect(FUENTE).not.toMatch(/@\/components\/ui\/table/)
+    expect(FUENTE).toContain('role="table"')
   })
 })

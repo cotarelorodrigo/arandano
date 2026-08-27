@@ -217,6 +217,35 @@ del código en la misma task.
 
 ---
 
+## 9. La grilla de estados del teléfono en `/servicio-tecnico` sólo dibuja nueve cards, y le falta "Rechazado"
+
+- **Frame**: `Móvil / Servicio Técnico` (`F9BzV`), nodo `v1PnE3`
+- **Dibuja**: tres filas de tres — Abiertas/Recibido/En diagnóstico,
+  Presupuestado/Aprobado/En reparación, Listo/Sin reparación/Entregado
+- **Le falta**: un card para `RECHAZADO`. El equivalente de escritorio
+  (`G5b3dG`) sí trae los diez —Abiertas más los nueve estados de `ESTADOS`,
+  con Rechazado incluido—, así que no es una decisión de "no cabe": es una
+  card que se quedó afuera al armar la grilla de 3×3.
+
+**Por qué no se copió tal cual.** Sacar "Rechazado" del teléfono sería una
+regresión real y silenciosa: nadie podría ver cuántas órdenes rechazadas hay,
+ni filtrar por ese estado, desde el celular — y no hay ninguna razón de
+espacio o de producto escrita en ningún lado que lo justifique (el resto de
+los ocho SÍ entra). El código de `ChipDeFiltroMovil`/`FilaDeChips`
+(`app/(app)/servicio-tecnico/page.tsx`) mantiene los diez chips: la grilla de
+3 columnas simplemente cae en una cuarta fila con "Entregado" solo, en vez de
+cerrar en tres filas parejas como dibuja la maqueta.
+
+Hace falta sumar la décima card (Rechazado) al frame para que las tres filas
+de tres que hoy dibuja pasen a ser tres filas de tres más una de una — o
+rediagramar la grilla completa si se prefiere otra distribución para diez
+elementos.
+
+Detectado en la Task 8 del ciclo móvil (2026-08-26), al leer el frame con el
+MCP de Pencil antes de implementar el tablero.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el
