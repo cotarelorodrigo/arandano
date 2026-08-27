@@ -8,10 +8,18 @@
  * mismo mecanismo que esos módulos.
  *
  * La card "Dos reglas que el sistema no deja romper" (nodo `H15LFi`) queda
- * AFUERA a propósito: consultado en vivo con el MCP de Pencil, ese título usa
- * `$ar-font` (13px/700), no `$ar-display` — a diferencia de lo que decía el
- * relevamiento escrito, que lo agrupaba con los otros dos títulos de card.
- * El .pen manda: sólo dos de los tres títulos de esta pantalla pagan Archivo.
+ * AFUERA a propósito EN ESCRITORIO: consultado en vivo con el MCP de Pencil,
+ * ese título usa `$ar-font` (13px/700), no `$ar-display` — a diferencia de lo
+ * que decía el relevamiento escrito, que lo agrupaba con los otros dos
+ * títulos de card. El .pen manda: sólo dos de los tres títulos de esta
+ * pantalla pagan Archivo EN ESCRITORIO.
+ *
+ * ESA EXCEPCIÓN SE INVIERTE EN EL TELÉFONO (Task 10 del ciclo móvil, Ronda de
+ * arreglos 1): el nodo móvil `hiqxF` (frame `NIyHG`) le da a este MISMO
+ * título `$ar-display`/14/600 — igual que "El equipo del local" y "Agregar a
+ * alguien". No es que el párrafo de arriba esté mal: son dos frames
+ * distintos (escritorio vs. `NIyHG`) con una decisión distinta cada uno, y
+ * las dos están escritas y vigentes. Ver `.tituloDeReglas`, más abajo.
  *
  * POR QUÉ UN MÓDULO CSS Y NO `style={{ fontFamily: 'var(--font-archivo)' }}`
  * A MANO: evadiría la vigilancia de test/tipografia.test.ts, que sólo
@@ -29,4 +37,30 @@
   composes: archivo;
   font-weight: 600;
   font-size: 0.9375rem; /* 15px */
+}
+
+/*
+ * Título de "Dos reglas que el sistema no deja romper", SÓLO en el teléfono
+ * (Task 10, Ronda de arreglos 1): invierte la excepción documentada arriba
+ * — acá SÍ paga Archivo, a 14px/600, igual que los otros dos títulos de
+ * card. El `@media` revierte a la pila del sistema a 13px/700 en escritorio,
+ * sin tocar lo que ya había ahí.
+ *
+ * El `@media` va ADENTRO de este módulo, y no como un `lg:font-sans` suelto
+ * en el JSX: un CSS Module y las utilidades de Tailwind no tienen un orden
+ * de carga garantizado entre archivos, así que competir por cascada entre
+ * los dos no tendría un ganador determinístico. Con las dos reglas en el
+ * MISMO archivo, el orden es fijo.
+ */
+.tituloDeReglas {
+  composes: archivo;
+  font-size: 0.875rem; /* 14px, el teléfono */
+  font-weight: 600;
+}
+@media (min-width: 1024px) {
+  .tituloDeReglas {
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 0.8125rem; /* 13px, el de escritorio de siempre */
+    font-weight: 700;
+  }
 }

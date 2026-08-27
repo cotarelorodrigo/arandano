@@ -24,9 +24,22 @@ import { Copy, KeyRound } from 'lucide-react'
  */
 export function AvisoClaveGenerada({ nombre, clave }: { nombre: string; clave: string }) {
   return (
-    <div role="alert" className="flex items-center gap-[14px] rounded-2xl bg-warn-soft p-[18px]">
-      <div className="flex size-[38px] shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--card)_50%,transparent)]">
-        <KeyRound aria-hidden="true" className="size-[18px] text-warn" />
+    // Ronda de arreglos 1 (Importante 2): sólo el botón de copiar había
+    // recibido tratamiento móvil — el resto del bloque (nodo `frTpj`) seguía
+    // con los valores de escritorio (`SFTGC`) sin `lg:`, aunque estaba en el
+    // mismo `Get` que ya había traído el botón. gap 11/padding 13/radio 14 en
+    // el teléfono; gap 14/padding 18/rounded-2xl (16px) sin tocar en
+    // escritorio.
+    <div
+      role="alert"
+      className="flex items-center gap-[11px] rounded-[14px] bg-warn-soft p-[13px] lg:gap-[14px] lg:rounded-2xl lg:p-[18px]"
+    >
+      {/* Círculo del ícono (nodo `Q0pc6`): 32px en el teléfono, 38px en
+          escritorio — sin tocar. */}
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--card)_50%,transparent)] lg:size-[38px]">
+        {/* Ícono adentro (nodo `qcq6D`): 16px en el teléfono, 18px en
+            escritorio — sin tocar. */}
+        <KeyRound aria-hidden="true" className="size-4 text-warn lg:size-[18px]" />
       </div>
       <div className="flex flex-1 flex-col gap-[3px]">
         <p className="text-sm font-bold text-warn">

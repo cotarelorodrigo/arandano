@@ -50,6 +50,7 @@ function Resultado({ estado }: { estado: EstadoUsuarios }) {
 function CardConEncabezado({
   id,
   titulo,
+  tituloClassName,
   children,
   accesorio,
 }: {
@@ -57,6 +58,12 @@ function CardConEncabezado({
    *  review final) apunta a `#alta`: esta card es su único destino posible. */
   id?: string
   titulo: string
+  /** Ronda de arreglos 1: `CardReglas` paga una cara distinta de las otras
+   *  dos cards (ver tipografia.module.css) — sin esta prop, la única forma
+   *  de dársela hubiera sido duplicar el header entero a mano, en vez de
+   *  reusar el mismo padding [12,14]/[13,18] mobile-first que ya vale para
+   *  las tres. Default `estilos.tituloDeCard`, el de siempre. */
+  tituloClassName?: string
   children: React.ReactNode
   /** Lo que va a la derecha del título, dentro del mismo encabezado — hoy sin
    *  uso en esta pantalla, pero deja el mismo hueco que ya usa
@@ -65,11 +72,11 @@ function CardConEncabezado({
 }) {
   return (
     <div id={id} className="flex flex-col overflow-hidden rounded-2xl border bg-card">
-      {/* Mobile-first (Task 10 del ciclo móvil, nodos `nd3Fx`/`Q5UJWP` del
-          frame `NIyHG`): padding [12,14] en el teléfono; el de escritorio
+      {/* Mobile-first (Task 10 del ciclo móvil, nodos `nd3Fx`/`Q5UJWP`/`SgnAN`
+          del frame `NIyHG`): padding [12,14] en el teléfono; el de escritorio
           (13/18) es el que ya tenía este header — sin tocar. */}
       <div className="flex items-center justify-between border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
-        <h2 className={`${estilos.tituloDeCard} text-foreground`}>{titulo}</h2>
+        <h2 className={`${tituloClassName ?? estilos.tituloDeCard} text-foreground`}>{titulo}</h2>
         {accesorio}
       </div>
       {children}
@@ -312,7 +319,16 @@ export function AltaDeEmpleado({
           />
         </div>
         {estado.error && <Resultado estado={estado} />}
-        <Button type="submit" disabled={pendiente} className="h-[38px] rounded-[9px]">
+        {/* Ronda de arreglos 1 (Importante 3, nodo `FDeDS`): alto 48/radio
+            11/gap 8 en el teléfono; `lg:gap-1.5` repone el `gap-1.5` que el
+            botón ya traía de fábrica (`size: 'default'` de Button, ver
+            components/ui/button.tsx) y que un `gap-2` suelto sin `lg:`
+            hubiera pisado también en escritorio. */}
+        <Button
+          type="submit"
+          disabled={pendiente}
+          className="h-12 gap-2 rounded-[11px] lg:h-[38px] lg:gap-1.5 lg:rounded-[9px]"
+        >
           <UserPlus aria-hidden="true" className="size-[15px]" />
           {pendiente ? 'Agregando…' : 'Agregar al equipo'}
         </Button>
@@ -323,34 +339,58 @@ export function AltaDeEmpleado({
 
 /**
  * "Dos reglas que el sistema no deja romper" (design/arandano.pen, nodo
- * `U7ROu`): texto fijo, pero NO inventado — las dos reglas existen de verdad
- * en `lib/usuarios/administrar.ts` (el lock del último dueño en
- * `desactivar()`, y el `session.deleteMany` de `resetearClave()`). Esta card
- * no las reimplementa, sólo las cuenta.
+ * `U7ROu` en escritorio, `gfLvS` en el frame móvil `NIyHG`): texto fijo,
+ * pero NO inventado — las dos reglas existen de verdad en
+ * `lib/usuarios/administrar.ts` (el lock del último dueño en `desactivar()`,
+ * y el `session.deleteMany` de `resetearClave()`). Esta card no las
+ * reimplementa, sólo las cuenta.
  *
  * Consultado en vivo con el MCP de Pencil: a diferencia de los otros dos
- * títulos de card de esta pantalla, este título usa `$ar-font` (13px/700),
- * NO `$ar-display` — el relevamiento escrito lo agrupaba con los otros dos,
- * pero el `.pen` manda. Por eso no importa `estilos.tituloDeCard` acá.
+ * títulos de card de esta pantalla, este título usa `$ar-font` (13px/700) en
+ * ESCRITORIO, NO `$ar-display` — el relevamiento escrito lo agrupaba con los
+ * otros dos, pero el `.pen` manda.
+ *
+ * Ronda de arreglos 1 (Importante 1) del ciclo móvil: esta card había
+ * quedado como un bloque plano, sin un solo `lg:`, mientras el nodo móvil la
+ * rediseña entera — encabezado separado por borde (mismo padding [12,14]
+ * mobile-first que ya usan "El equipo del local" y "Agregar a alguien", de
+ * ahí que ahora SÍ reuse `CardConEncabezado`) + Contenido (gap 12, padding
+ * 14). El título usa `estilos.tituloDeReglas` —no `estilos.tituloDeCard`—
+ * porque el teléfono INVIERTE la excepción de arriba: en `NIyHG` este mismo
+ * título paga Archivo/14/600, y el `@media` de ese módulo es lo que lo
+ * revierte a 13/700 sin Archivo en escritorio, sin tocar lo que ya había
+ * (ver el comentario del propio módulo). El ícono también invierte color y
+ * tamaño respecto de escritorio: `$ar-ok`/15px en el teléfono,
+ * `$ar-primary`/14px en escritorio (sin cambios ahí).
+ *
+ * Exportada, mismo criterio que `CardEquipo`: un componente puro y
+ * renderizable sin Prisma ni sesión.
  */
-function CardReglas() {
+export function CardReglas() {
   return (
-    <div className="flex flex-col gap-[9px] rounded-2xl border bg-card p-[18px]">
-      <p className="text-[13px] font-bold text-foreground">Dos reglas que el sistema no deja romper</p>
-      <div className="flex gap-[9px]">
-        <ShieldCheck aria-hidden="true" className="mt-0.5 size-[14px] shrink-0 text-primary" />
-        <p className="text-xs leading-[1.45] text-foreground-soft">
-          Nunca puede quedar el local sin un dueño activo.
-        </p>
+    <CardConEncabezado titulo="Dos reglas que el sistema no deja romper" tituloClassName={estilos.tituloDeReglas}>
+      <div className="flex flex-col gap-3 p-[14px] lg:gap-[9px] lg:p-[18px]">
+        <div className="flex gap-[9px]">
+          <ShieldCheck
+            aria-hidden="true"
+            className="mt-0.5 size-[15px] shrink-0 text-ok lg:size-[14px] lg:text-primary"
+          />
+          <p className="text-xs leading-[1.45] text-foreground-soft">
+            Nunca puede quedar el local sin un dueño activo.
+          </p>
+        </div>
+        <div className="flex gap-[9px]">
+          <ShieldCheck
+            aria-hidden="true"
+            className="mt-0.5 size-[15px] shrink-0 text-ok lg:size-[14px] lg:text-primary"
+          />
+          <p className="text-xs leading-[1.45] text-foreground-soft">
+            Resetear una contraseña cierra todas las sesiones de esa persona — incluida la tuya, si te la
+            cambiás a vos.
+          </p>
+        </div>
       </div>
-      <div className="flex gap-[9px]">
-        <ShieldCheck aria-hidden="true" className="mt-0.5 size-[14px] shrink-0 text-primary" />
-        <p className="text-xs leading-[1.45] text-foreground-soft">
-          Resetear una contraseña cierra todas las sesiones de esa persona — incluida la tuya, si te la
-          cambiás a vos.
-        </p>
-      </div>
-    </div>
+    </CardConEncabezado>
   )
 }
 

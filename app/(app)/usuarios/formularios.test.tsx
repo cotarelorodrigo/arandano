@@ -85,6 +85,18 @@ describe('AltaDeEmpleado', () => {
     const html = await renderAlta()
     expect(html).toContain('class="flex flex-col gap-3 p-[14px] lg:gap-[14px] lg:p-[18px]"')
   })
+
+  // Ronda de arreglos 1 (Importante 3): "Agregar al equipo" (nodo `FDeDS`)
+  // seguía con los valores de escritorio (`UQcir`) sin `lg:`.
+  it('el botón "Agregar al equipo" mide 48px/radio 11/gap 8 en el teléfono, 38px/radio 9/gap 6 en escritorio', async () => {
+    const html = await renderAlta()
+    expect(html).toContain('h-12')
+    expect(html).toContain('rounded-[11px]')
+    expect(html).toContain('gap-2')
+    expect(html).toContain('lg:h-[38px]')
+    expect(html).toContain('lg:rounded-[9px]')
+    expect(html).toContain('lg:gap-1.5')
+  })
 })
 
 /**
@@ -212,6 +224,65 @@ describe('CardEquipo: el patrón grid + display:contents (Task 10)', () => {
     expect(html).toContain('Cambiar clave')
     expect(html).toContain('Reactivar')
     expect(html).not.toContain('Baja')
+  })
+})
+
+/**
+ * Ronda de arreglos 1 (Importante 1): `CardReglas` había quedado como un
+ * bloque plano (`gap-[9px] p-[18px]`, sin un solo `lg:`) mientras el nodo
+ * móvil `gfLvS` la rediseña entera: encabezado separado por borde (`SgnAN`,
+ * padding [12,14]) + Contenido (`n1mqsf`, gap 12, padding 14), con el ícono
+ * en `$ar-ok` (no `$ar-primary`) a 15px. Exportada, mismo criterio que
+ * `CardEquipo`.
+ */
+describe('CardReglas: la card se rediseña entera en el teléfono (Ronda de arreglos 1)', () => {
+  async function render() {
+    const { CardReglas } = await import('./formularios')
+    return renderToStaticMarkup(<CardReglas />)
+  }
+
+  it('el encabezado usa el padding del teléfono (12/14), con borde — el mismo patrón que las otras dos cards', async () => {
+    const html = await render()
+    expect(html).toContain('border-b px-[14px] py-3')
+  })
+
+  it('el título paga Archivo/14/600 en el teléfono, y sigue sin Archivo/13/700 en escritorio (invierte la excepción)', async () => {
+    const html = await render()
+    expect(html).toContain('Dos reglas que el sistema no deja romper')
+    // No se puede afirmar el font-family final (viene de un CSS module con
+    // @media adentro, y vitest corre con css:false — ver el comentario del
+    // propio módulo), pero si el h2 no lleva NINGUNA clase del módulo
+    // (fabricada por el Proxy, con guion bajo), es que el JSX dejó de
+    // importar `estilos` para este título.
+    const h2 = html.match(/<h2[^>]*>Dos reglas que el sistema no deja romper<\/h2>/)?.[0] ?? ''
+    expect(h2).toMatch(/class="_/)
+  })
+
+  it('el contenido pasa a gap 12/padding 14 en el teléfono, sin tocar el gap 9/padding 18 de escritorio', async () => {
+    const html = await render()
+    expect(html).toContain('gap-3 p-[14px]')
+    expect(html).toContain('lg:gap-[9px]')
+    expect(html).toContain('lg:p-[18px]')
+  })
+
+  it('el ícono de cada punto es 15px/text-ok en el teléfono, 14px/text-primary en escritorio (invierte el color)', async () => {
+    const html = await render()
+    const iconos = html.match(/<svg[^>]*lucide-shield-check[^>]*>/g) ?? []
+    expect(iconos).toHaveLength(2)
+    for (const icono of iconos) {
+      expect(icono).toContain('size-[15px]')
+      expect(icono).toContain('text-ok')
+      expect(icono).toContain('lg:size-[14px]')
+      expect(icono).toContain('lg:text-primary')
+    }
+  })
+
+  it('las dos reglas del sistema siguen apareciendo palabra por palabra', async () => {
+    const html = await render()
+    expect(html).toContain('Nunca puede quedar el local sin un dueño activo.')
+    expect(html).toContain(
+      'Resetear una contraseña cierra todas las sesiones de esa persona — incluida la tuya, si te la cambiás a vos.',
+    )
   })
 })
 
