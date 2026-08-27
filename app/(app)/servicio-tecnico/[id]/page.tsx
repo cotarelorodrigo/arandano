@@ -118,7 +118,12 @@ export function CardCliente({
 }) {
   const ordenesPrevias = cliente._count.ordenes - 1
   return (
-    <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border bg-card">
+    // Corrección del coordinador tras el reporte de la Task 9: `flex-1` pasa
+    // a `lg:flex-1` — en escritorio sigue partiendo el ancho a la mitad con
+    // Equipo/Cliente, pero en el teléfono deja de forzar esa mitad, que es
+    // lo que permite apilarse (frame `B3noN`: Cliente y Equipo son dos cards
+    // de ancho completo, una debajo de la otra).
+    <div className="flex flex-col lg:flex-1 overflow-hidden rounded-2xl border bg-card">
       <div className="flex items-center gap-2 border-b px-[18px] py-[13px]">
         <User aria-hidden="true" className="size-4 text-primary" />
         <h2 className={cn(estilos.tituloDeCard, 'text-foreground')}>Cliente</h2>
@@ -167,7 +172,12 @@ function CardEquipo({
   }
 }) {
   return (
-    <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border bg-card">
+    // Corrección del coordinador tras el reporte de la Task 9: `flex-1` pasa
+    // a `lg:flex-1` — en escritorio sigue partiendo el ancho a la mitad con
+    // Equipo/Cliente, pero en el teléfono deja de forzar esa mitad, que es
+    // lo que permite apilarse (frame `B3noN`: Cliente y Equipo son dos cards
+    // de ancho completo, una debajo de la otra).
+    <div className="flex flex-col lg:flex-1 overflow-hidden rounded-2xl border bg-card">
       <div className="flex items-center gap-2 border-b px-[18px] py-[13px]">
         <Smartphone aria-hidden="true" className="size-4 text-primary" />
         <h2 className={cn(estilos.tituloDeCard, 'text-foreground')}>Equipo</h2>
@@ -419,7 +429,10 @@ export default async function DetalleDeOrden({ params }: { params: Promise<{ id:
             diasEnEstado={diasEnEstado}
           />
 
-          <div className="flex gap-4">
+          {/* Corrección del coordinador tras el reporte de la Task 9: se
+              apilan en el teléfono (frame `B3noN`), lado a lado en
+              escritorio como hoy. */}
+          <div className="flex flex-col gap-3 lg:flex-row lg:gap-4">
             <CardCliente cliente={orden.cliente} />
             <CardEquipo orden={orden} />
           </div>

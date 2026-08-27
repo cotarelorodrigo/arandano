@@ -320,14 +320,20 @@ export function FormularioRecepcion({
                   <Input id={`${id}-modelo`} name="equipoModelo" form={FORM_RECEPCION} required className="h-10 rounded-[9px]" />
                 </div>
               </div>
-              <div className="flex gap-[10px]">
-                <div className="flex flex-1 flex-col gap-[5px]">
+              {/* Corrección del coordinador tras el reporte de la Task 9:
+                  design/arandano.pen (frame H1Wm6) dibuja IMEI (`vFqyt`) y
+                  Clave (`nXu5B`) como dos filas de ANCHO COMPLETO en el
+                  teléfono, no la fila fija de dos campos que sigue trayendo
+                  escritorio — a diferencia de "Marca"/"Modelo" (`w6yjn`), que
+                  la maqueta sí dibuja en una sola fila. */}
+              <div className="flex flex-col gap-3 lg:flex-row lg:gap-[10px]">
+                <div className="flex flex-col gap-[5px] lg:flex-1">
                   <Label htmlFor={`${id}-serie`} className="text-[11px] font-semibold text-foreground-soft">
                     IMEI o número de serie
                   </Label>
                   <Input id={`${id}-serie`} name="equipoSerie" form={FORM_RECEPCION} className="h-10 rounded-[9px]" />
                 </div>
-                <div className="flex w-[190px] flex-col gap-[5px]">
+                <div className="flex flex-col gap-[5px] lg:w-[190px]">
                   <Label htmlFor={`${id}-clave`} className="text-[11px] font-semibold text-foreground-soft">
                     Clave de desbloqueo
                   </Label>
@@ -686,16 +692,23 @@ const FORM_ANULAR = 'form-anular-orden'
  * El primer render es SIEMPRE el botón sin confirmar: `confirmando` nace en
  * `false` y este componente no tiene forma de empezar armado.
  */
-function BotonAnular({ anulando }: { anulando: boolean }) {
+// `className` es puramente de tamaño (Corrección del coordinador tras el
+// reporte de la Task 9): este mismo componente se renderiza DOS VECES —
+// compacto en el Topbar (sin className extra, como siempre) y a 46px de
+// alto/ancho completo al final del cuerpo en el teléfono (frame `B3noN`,
+// nodo `Jq2Rf`)—, y el mecanismo de confirmación en dos pasos (hallazgo M5
+// de la review final) no se toca: sigue siendo el mismo `useState` local,
+// la maqueta sólo dibuja el reposo.
+function BotonAnular({ anulando, className }: { anulando: boolean; className?: string }) {
   const [confirmando, setConfirmando] = useState(false)
 
   if (confirmando) {
     return (
       <>
-        <Button type="submit" form={FORM_ANULAR} variant="destructive" disabled={anulando}>
+        <Button type="submit" form={FORM_ANULAR} variant="destructive" disabled={anulando} className={className}>
           {anulando ? 'Anulando…' : 'Sí, anular'}
         </Button>
-        <Button type="button" variant="ghost" onClick={() => setConfirmando(false)}>
+        <Button type="button" variant="ghost" onClick={() => setConfirmando(false)} className={className}>
           Cancelar
         </Button>
       </>
@@ -710,7 +723,7 @@ function BotonAnular({ anulando }: { anulando: boolean }) {
       type="button"
       variant="outline"
       onClick={() => setConfirmando(true)}
-      className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
+      className={cn('border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive', className)}
     >
       <Ban aria-hidden="true" className="size-[15px]" />
       Anular orden
@@ -762,6 +775,18 @@ export function FichaDeOrden({
         titulo={titulo}
         subtitulo={subtitulo}
         atras="/servicio-tecnico"
+        // Corrección del coordinador tras el reporte de la Task 9: el frame
+        // `B3noN` dibuja `printer` como accionMovil con tono 'suave' —no una
+        // ranura apagada—, mismo criterio que /ventas/[id] (la acción de
+        // reimprimir ya existe en el Topbar; esto es la forma que toma en el
+        // teléfono, no una acción nueva). Sin esto, "Reimprimir ticket"
+        // desaparecía bajo 1024px sin reaparecer en ningún lado.
+        accionMovil={{
+          icono: Printer,
+          etiqueta: 'Reimprimir ticket',
+          href: `/servicio-tecnico/${ordenId}/ticket`,
+          tono: 'suave',
+        }}
         acciones={
           <>
             <Button asChild variant="outline">
@@ -791,6 +816,20 @@ export function FichaDeOrden({
           <div className="flex flex-col gap-3 lg:flex-1 lg:gap-4">{columnaIzquierda}</div>
           <div className="flex flex-col gap-3 lg:w-[380px] lg:shrink-0 lg:gap-4">{columnaDerecha}</div>
         </div>
+
+        {/* "Anular orden" en el teléfono (corrección del coordinador, frame
+            `B3noN`, nodo `Jq2Rf`): 46px de alto, ancho completo, al final del
+            cuerpo — no en un pie fijo, porque esta pantalla no tiene "Pie"
+            (spec §2: no está en la lista de pantallas con acciones al pie).
+            En escritorio sigue viviendo sólo en el Topbar (`acciones`,
+            `hidden lg:flex`), así que este bloque es `lg:hidden`. Mismo
+            `BotonAnular`, mismo mecanismo de confirmación — sólo cambia el
+            tamaño (className). */}
+        {puedeAnular ? (
+          <div className="flex gap-[10px] lg:hidden">
+            <BotonAnular anulando={anulando} className="h-[46px] flex-1 rounded-[12px]" />
+          </div>
+        ) : null}
       </div>
     </>
   )

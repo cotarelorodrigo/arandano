@@ -223,6 +223,53 @@ describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
     const html = render()
     expect(html).toMatch(/class="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-4"/)
   })
+
+  /**
+   * Corrección del coordinador tras el reporte de la Task 9: el frame
+   * `B3noN` (Orden ficha) dibuja el ícono `printer` como `accionMovil` con
+   * tono `suave` en el Topbar del teléfono — no una ranura vacía. Sin esto,
+   * "Reimprimir ticket" desaparecía bajo 1024px sin reaparecer en ningún
+   * otro lado: una capacidad perdida, no una simplificación.
+   */
+  it('la ranura derecha del teléfono es "Reimprimir ticket" (printer, tono suave)', () => {
+    const html = render()
+    expect(html).toMatch(
+      /<a href="\/servicio-tecnico\/o-1\/ticket" aria-label="Reimprimir ticket" class="[^"]*bg-muted text-foreground[^"]*"/,
+    )
+  })
+
+  /**
+   * Corrección del coordinador: `B3noN` también baja "Anular orden" al
+   * cuerpo (nodo `Jq2Rf`, 46px de alto, ancho completo) — el Topbar lo sigue
+   * mostrando en escritorio (`hidden lg:flex`, sin cambios), pero bajo
+   * 1024px esa acción no reaparecía en ningún lado. Mismo componente
+   * `BotonAnular`, mismo mecanismo de confirmación en dos pasos: sólo se le
+   * suma una className de tamaño para esta segunda instancia.
+   */
+  it('"Anular orden" se duplica al final del cuerpo en el teléfono, a 46px de alto', () => {
+    const html = render({ esDuenio: true, anulada: false })
+    const apariciones = [...html.matchAll(/Anular orden/g)]
+    expect(apariciones).toHaveLength(2)
+
+    const ultima = html.lastIndexOf('Anular orden')
+    const desde = html.lastIndexOf('<button', ultima)
+    const boton = html.slice(desde, html.indexOf('</button>', ultima))
+    expect(boton).toContain('h-[46px]')
+    // Conserva el lenguaje visual destructivo: no es un botón nuevo desde
+    // cero, es la MISMA instancia de BotonAnular con otro tamaño.
+    expect(boton).toContain('border-destructive')
+    expect(boton).toContain('text-destructive')
+  })
+
+  it('el bloque del cuerpo es lg:hidden: en escritorio sigue viviendo sólo en el Topbar', () => {
+    const html = render({ esDuenio: true, anulada: false })
+    expect(html).toMatch(/class="flex gap-\[10px\] lg:hidden"/)
+  })
+
+  it('sin poder anular (empleado, u orden ya anulada), tampoco aparece el bloque del cuerpo', () => {
+    expect(render({ esDuenio: false, anulada: false })).not.toContain('Anular orden')
+    expect(render({ esDuenio: true, anulada: true })).not.toContain('Anular orden')
+  })
 })
 
 describe('FormularioDiagnostico (Task 4 del rediseño: fila diagnóstico + presupuesto)', () => {

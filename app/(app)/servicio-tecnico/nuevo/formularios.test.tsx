@@ -297,3 +297,52 @@ describe('las cuatro cards se apilan en el teléfono (Task 9 del ciclo móvil)',
     expect(html).toMatch(/class="flex flex-col gap-3 px-\[14px\] py-3 lg:gap-4 lg:p-6"/)
   })
 })
+
+/**
+ * Corrección del coordinador tras el reporte de la Task 9: el frame `H1Wm6`
+ * apila "IMEI o número de serie" y "Clave de desbloqueo" en dos filas de
+ * ancho completo en el teléfono (nodos `vFqyt`/`nXu5B`, cada uno su propia
+ * fila) — no la fila fija de dos campos que sigue trayendo escritorio. El
+ * brief resumió esto como "cards apiladas" en prosa; manda la maqueta.
+ * "Marca"/"Modelo" no se tocan: la maqueta SÍ los dibuja en una fila (nodo
+ * `w6yjn`, sin distinción de ancho).
+ */
+describe('IMEI y Clave de desbloqueo se apilan en el teléfono (corrección del coordinador, frame H1Wm6)', () => {
+  it('la fila de IMEI/Clave pasa a flex-col lg:flex-row', () => {
+    const html = render([])
+    expect(html).toMatch(/class="flex flex-col gap-3 lg:flex-row lg:gap-\[10px\]"/)
+  })
+
+  it('el campo IMEI ocupa el ancho sobrante recién en escritorio (lg:flex-1)', () => {
+    const html = render([])
+    const inicioLabel = html.indexOf('IMEI o número de serie')
+    const desde = html.lastIndexOf('<div', inicioLabel)
+    const hasta = html.indexOf('</div>', html.indexOf('name="equipoSerie"'))
+    const bloque = html.slice(desde, hasta)
+    expect(bloque).toContain('lg:flex-1')
+    expect(bloque).not.toMatch(/class="flex flex-1 flex-col/)
+  })
+
+  it('el campo Clave mide 190px recién en escritorio (lg:w-[190px])', () => {
+    const html = render([])
+    const inicioLabel = html.indexOf('Clave de desbloqueo')
+    const desde = html.lastIndexOf('<div', inicioLabel)
+    const hasta = html.indexOf('</div>', html.indexOf('name="claveDesbloqueo"'))
+    const bloque = html.slice(desde, hasta)
+    expect(bloque).toContain('lg:w-[190px]')
+    expect(bloque).not.toMatch(/class="flex w-\[190px\]/)
+  })
+
+  it('Marca y Modelo siguen en una sola fila fija: la maqueta no los apila', () => {
+    const html = render([])
+    // El campo Marca vive DENTRO de la fila que se quiere afirmar sin
+    // cambios: se busca la fila (name="equipoMarca" es su primer
+    // descendiente) y se comprueba que sigue siendo la de siempre.
+    const posMarca = html.indexOf('name="equipoMarca"')
+    const desde = html.lastIndexOf('<div class="flex gap-[10px]">', posMarca)
+    const hasta = html.indexOf('</div>', html.indexOf('name="equipoModelo"'))
+    expect(desde).toBeGreaterThan(-1)
+    const bloque = html.slice(desde, hasta)
+    expect(bloque).toContain('name="equipoModelo"')
+  })
+})

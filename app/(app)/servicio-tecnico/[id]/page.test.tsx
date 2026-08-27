@@ -269,3 +269,37 @@ describe('la consulta y el armado de la ficha (Task 4 del rediseño)', () => {
     expect(bloque).not.toContain('text-muted-foreground')
   })
 })
+
+/**
+ * Corrección del coordinador tras el reporte de la Task 9: el frame `B3noN`
+ * dibuja "Cliente" y "Equipo" como dos cards de ancho completo, una debajo
+ * de la otra, no lado a lado como hoy en escritorio. El brief resumió esto
+ * como "las dos columnas [se apilan]" pensando en columnaIzquierda/
+ * columnaDerecha; manda la maqueta, y acá hay un segundo par que también se
+ * apila.
+ */
+describe('Cliente y Equipo se apilan en el teléfono (corrección del coordinador, frame B3noN)', () => {
+  it('la fila que las contiene pasa a flex-col lg:flex-row', () => {
+    expect(FUENTE).toContain('<div className="flex flex-col gap-3 lg:flex-row lg:gap-4">')
+  })
+
+  it('CardCliente ya no fuerza flex-1 sin lg: (permite apilarse en el teléfono)', () => {
+    const html = renderToStaticMarkup(
+      <CardCliente cliente={{ nombre: 'X', telefono: null, _count: { ordenes: 1 } }} />,
+    )
+    expect(html).toMatch(/class="flex flex-col lg:flex-1 overflow-hidden rounded-2xl border bg-card"/)
+  })
+
+  // CardEquipo no está exportado (no hay arnés para renderizarlo directo
+  // desde este test, mismo motivo que ya vale para el resto del archivo);
+  // se verifica sobre el FUENTE, acotado a su propia función.
+  it('CardEquipo también pasa a lg:flex-1', () => {
+    const desde = FUENTE.indexOf('function CardEquipo')
+    const hasta = FUENTE.indexOf('function CardFallaYDiagnostico')
+    expect(desde).toBeGreaterThan(-1)
+    expect(hasta).toBeGreaterThan(desde)
+    expect(FUENTE.slice(desde, hasta)).toContain(
+      'flex flex-col lg:flex-1 overflow-hidden rounded-2xl border bg-card',
+    )
+  })
+})
