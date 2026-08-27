@@ -425,27 +425,46 @@ export type FilaDeOrden = {
  * `<TableHead>` de antes: 78px (Orden), auto/`1fr` (Equipo), 190px
  * (Cliente), 150px (Ingresó) y 170px (Estado).
  *
- * La fila del teléfono NO es la de escritorio reordenada por CSS: son TRES
- * líneas nuevas (design/arandano.pen, frame `F9BzV`, nodo `MvJp3` +
- * hermanos) que recombinan datos que en escritorio viven en celdas
- * DISTINTAS —el IMEI hoy es la segunda línea de la celda Equipo, el
- * teléfono la segunda línea de la celda Cliente, la antigüedad la segunda
- * línea de la celda Ingresó, y el chip de estado su propia celda al final—,
- * así que no hay forma de armarlas disolviendo un `lg:contents` compartido
- * sin correr el riesgo de desalinear las columnas de escritorio (el orden
- * en el DOM importa para el auto-placement del grid). En vez de eso, las
- * CINCO celdas reales de escritorio quedan `hidden lg:block` (invisibles y
- * sin participar del layout en el teléfono, pero en su posición correcta
- * para cuando `lg:contents` las vuelve columnas), y las tres líneas del
- * teléfono son elementos nuevos con `lg:hidden` intercalados ANTES de esas
- * celdas — un elemento en `display:none` no ocupa ninguna pista del grid
- * sea cual sea su posición en el DOM, así que esto no le mueve una columna a
- * escritorio.
+ * Ronda de arreglos 1 (Importante): la primera versión de esta función
+ * dejaba las CINCO celdas reales `hidden lg:block` en el teléfono y ponía
+ * las tres líneas nuevas como hermanas suyas sin rol — la fila quedaba sin
+ * ningún `role="cell"` alcanzable en el teléfono, o sea sin *owned
+ * elements* válidos para `role="row"`. La fila ahora es
+ * `flex flex-wrap ... lg:contents` (el mismo mecanismo que
+ * `app/(app)/inventario/page.tsx` ya usa para su propia fila), y TRES de las
+ * cinco celdas —Orden, Equipo y Cliente— son las MISMAS en los dos anchos:
+ * siempre presentes, siempre con su `role="cell"`, sólo que en el teléfono
+ * son ítems de un `flex-wrap` y en escritorio se disuelven en columnas de
+ * grid. `basis-full` en Cliente fuerza su propio renglón en el teléfono —en
+ * escritorio no hace nada, porque una vez disuelta la fila la celda es un
+ * ítem de GRID, que ignora `flex-basis` por completo—.
  *
- * Línea 1 (agrupador): número + modelo + `CeldaDeEstado` — la MISMA función
- * que pinta la celda Estado de escritorio, para que "anulada" se vea igual
- * en los dos anchos. Línea 2: cliente + teléfono. Línea 3 (meta): IMEI +
- * fecha de ingreso + antigüedad.
+ * **Lo que NO se pudo fusionar, y por qué.** El chip de estado (columna 5)
+ * y la línea de meta (IMEI + fecha + antigüedad, que junta un dato de la
+ * columna 2 con dos de la columna 4) no tienen forma de sumarse a esas tres
+ * celdas sin reordenar el grid de escritorio: Cliente (3) e Ingresó (4) se
+ * interponen entre Equipo (2) y Estado (5) en el orden de columnas, y el
+ * auto-placement de CSS Grid llena las columnas en el orden del DOM — mover
+ * el chip o la meta más arriba en el árbol correría a Cliente e Ingresó de
+ * columna al disolver `lg:contents`. La única forma de lograrlo sería con
+ * `order-*` explícito en varias celdas a la vez (reordenar visualmente sin
+ * tocar el DOM), una técnica que no usa ningún otro listado de este ciclo y
+ * que cambia el orden de lectura de un lector de pantalla respecto del
+ * orden visual — más riesgo que beneficio para dos piezas. Así que el chip
+ * y la meta quedan DUPLICADOS: una copia real en su celda de escritorio
+ * (Estado e Ingresó, `hidden lg:block`), y una copia sin rol propio,
+ * visible sólo en el teléfono (`lg:hidden`) — el mismo mecanismo, con el
+ * mismo trade-off, que ya usa `app/(app)/inventario/page.tsx` para su
+ * propio `ChipEstado` y su `detalleMovil` (ver el comentario "el mismo chip
+ * ya salió en la línea de meta" en ese archivo). La fila ya no se queda sin
+ * celdas: tiene tres reales (Orden, Equipo, Cliente) más estas dos copias
+ * puntuales, contra ninguna antes.
+ *
+ * Línea 1 (teléfono): Orden + Equipo (modelo, sin el IMEI) + el chip
+ * duplicado, en ese orden de flujo — ninguno fuerza salto de línea. Línea 2:
+ * Cliente, con el teléfono fusionado inline (mismo mecanismo que la "· " de
+ * Hora en `app/(app)/ventas/page.tsx`) y `basis-full` para su propio
+ * renglón. Línea 3: la meta duplicada, también `basis-full`.
  *
  * **Sin `fallaDeclarada`, a propósito.** Uno de los cinco ejemplos de la
  * maqueta ("Sin IMEI · no enciende · ingresó…") mete el motivo declarado
@@ -533,62 +552,85 @@ export function Listado({
               <div
                 key={f.id}
                 role="row"
-                className="group flex flex-col gap-[5px] border-b p-[11px] px-[14px] last:border-b-0 lg:contents"
+                className="group flex flex-wrap items-center gap-x-[10px] gap-y-[5px] border-b p-[11px] px-[14px] last:border-b-0 lg:contents"
               >
-                {/* Línea 1 (teléfono): número + equipo + chip de estado. */}
-                <div className="flex items-center gap-[10px] lg:hidden">
-                  <Link
-                    href={`/servicio-tecnico/${f.id}`}
-                    className="shrink-0 text-[14px] font-semibold text-primary"
-                  >
-                    #{f.numero}
-                  </Link>
-                  <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-foreground">
-                    {f.equipoLabel}
-                  </span>
-                  <CeldaDeEstado estado={f.estado} anulada={f.anulada} />
-                </div>
-                {/* Línea 2 (teléfono): cliente + teléfono. */}
-                <p className="text-[12px] text-foreground-soft lg:hidden">
-                  {f.clienteNombre} · {f.clienteTelefono}
-                </p>
-                {/* Línea 3 (teléfono): meta — IMEI, fecha de ingreso, antigüedad. */}
-                <p className="text-[11px] leading-[1.2] text-muted-foreground lg:hidden">
-                  {f.imeiLabel} · ingresó {f.fechaFormateada} · {f.antiguedadLabel}
-                </p>
-
-                {/* Las cinco celdas reales de escritorio: invisibles en el
-                    teléfono (`hidden lg:block`), sin cambios de contenido ni
-                    de clase respecto de antes de este ciclo. */}
+                {/* Orden: siempre presente, en los dos anchos —igual que
+                    "Nombre"/"Precio" en app/(app)/inventario/page.tsx—.
+                    `estilos.archivo` (CSS module, no Tailwind) no se puede
+                    condicionar con `lg:`, así que paga Archivo en los dos
+                    anchos —el nodo `imTpQ` de la maqueta pide `$ar-font`
+                    para esta línea puntual del teléfono, una diferencia
+                    menor que no vale la pena perseguir a costa de fusionar
+                    la celda (mismo criterio que ya usa
+                    app/(app)/ventas/page.tsx para su propio "Número")—. */}
                 <div
                   role="cell"
                   className={cn(
                     estilos.archivo,
-                    'hidden text-sm font-bold text-primary lg:block lg:whitespace-nowrap lg:border-b lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors',
+                    'shrink-0 text-[14px] font-semibold text-primary lg:border-b lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:text-sm lg:font-bold lg:whitespace-nowrap lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors',
                   )}
                 >
                   <div className="lg:flex lg:h-full lg:items-center">
                     <Link href={`/servicio-tecnico/${f.id}`}>#{f.numero}</Link>
                   </div>
                 </div>
+
+                {/* Equipo: siempre presente. El IMEI sigue oculto en el
+                    teléfono —ya sale combinado en la Meta, más abajo—. */}
                 <div
                   role="cell"
-                  className="hidden whitespace-normal lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+                  className="min-w-0 flex-1 lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
                 >
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium text-foreground">{f.equipoLabel}</span>
-                    <span className="text-[11px] text-muted-foreground">{f.imeiLabel}</span>
+                    <span className="truncate text-[14px] font-medium text-foreground lg:overflow-visible lg:text-clip lg:whitespace-normal lg:text-sm">
+                      {f.equipoLabel}
+                    </span>
+                    <span className="hidden text-[11px] text-muted-foreground lg:block">{f.imeiLabel}</span>
                   </div>
                 </div>
+
+                {/* El chip de estado, en la MISMA línea que Orden+Equipo en
+                    el teléfono (nodo `MvJp3`): DUPLICADO a propósito, no
+                    fusionado — ver el docblock de Listado, arriba, para el
+                    porqué. La copia real de escritorio es la celda Estado,
+                    más abajo. */}
+                <div className="shrink-0 lg:hidden">
+                  <CeldaDeEstado estado={f.estado} anulada={f.anulada} />
+                </div>
+
+                {/* Cliente: la MISMA celda en los dos anchos, con el
+                    teléfono fusionado inline (mismo mecanismo que la "· " de
+                    Hora en app/(app)/ventas/page.tsx). `basis-full` fuerza su
+                    propio renglón en el teléfono; en escritorio `flex-basis`
+                    no hace nada porque la celda pasa a ser un ítem de grid. */}
                 <div
                   role="cell"
-                  className="hidden whitespace-normal lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+                  className="basis-full whitespace-normal lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
                 >
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium text-foreground">{f.clienteNombre}</span>
-                    <span className="text-[11px] text-muted-foreground">{f.clienteTelefono}</span>
+                  <div className="flex flex-wrap items-baseline gap-x-1 lg:flex-col lg:flex-nowrap lg:gap-0.5">
+                    <span className="text-[12px] font-normal text-foreground-soft lg:text-sm lg:font-medium lg:text-foreground">
+                      {f.clienteNombre}
+                    </span>
+                    <span className="text-[12px] font-normal text-foreground-soft lg:text-[11px] lg:text-muted-foreground">
+                      <span aria-hidden="true" className="lg:hidden">
+                        ·{' '}
+                      </span>
+                      {f.clienteTelefono}
+                    </span>
                   </div>
                 </div>
+
+                {/* Meta (teléfono): IMEI + fecha de ingreso + antigüedad —
+                    DUPLICADA a propósito, no fusionada — ver el docblock de
+                    Listado, arriba, para el porqué. `basis-full` fuerza su
+                    propio renglón. */}
+                <p className="basis-full text-[11px] leading-[1.2] text-muted-foreground lg:hidden">
+                  {f.imeiLabel} · ingresó {f.fechaFormateada} · {f.antiguedadLabel}
+                </p>
+
+                {/* Ingresó: oculta en el teléfono —su dato ya salió en la
+                    Meta de arriba—, sin cambios respecto de antes de este
+                    ciclo. */}
                 <div
                   role="cell"
                   className="hidden lg:block lg:whitespace-nowrap lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
@@ -598,6 +640,9 @@ export function Listado({
                     <span className="text-[11px] text-muted-foreground">{f.antiguedadLabel}</span>
                   </div>
                 </div>
+
+                {/* Estado: oculta en el teléfono —ya salió en la línea 1,
+                    arriba—, sin cambios respecto de antes de este ciclo. */}
                 <div
                   role="cell"
                   className="hidden text-right lg:block lg:whitespace-nowrap lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"

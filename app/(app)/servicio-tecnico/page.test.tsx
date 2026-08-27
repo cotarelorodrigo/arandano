@@ -520,14 +520,58 @@ describe('Listado (Task 8 del ciclo móvil): el patrón grid + display:contents'
     expect(html).toContain('IMEI 356938035643809')
   })
 
-  it('en el teléfono, la fila son tres líneas: agrupador, cliente+teléfono, meta con IMEI e ingreso', () => {
+  // Ronda de arreglos 1 (Menor, calibrado por el revisor): la primera
+  // versión de este test afirmaba sobre un contenedor "línea 1" con
+  // `lg:hidden` que ya no existe — Orden, Equipo y Cliente pasaron a ser las
+  // MISMAS celdas en los dos anchos (ver el docblock de Listado), así que lo
+  // que hay que afirmar ahora es que esas celdas siguen presentes (no
+  // `display:none`) y que sus piezas aparecen en el orden esperado, más las
+  // dos piezas que sí quedaron duplicadas (chip y meta).
+  it('en el teléfono: Orden+Equipo+chip fluyen en una línea, Cliente+teléfono se funden, y la Meta (IMEI+ingreso) es una línea aparte', () => {
     const html = renderListado()
-    // Línea 1: número + equipo + chip, en un contenedor lg:hidden propio.
-    expect(html).toMatch(/class="flex items-center gap-\[10px\] lg:hidden"/)
-    // Línea 2 y 3: cliente+teléfono combinados, e IMEI+fecha+antigüedad
-    // combinados — datos que en escritorio viven en celdas DISTINTAS.
-    expect(html).toContain('Marcos Vera · 11 5412-9087')
+    // Orden, Equipo y Cliente son celdas reales (role="cell"), no divs
+    // `lg:hidden` — la fila SIGUE teniendo owned elements válidos en el
+    // teléfono, a diferencia de la primera versión de este código.
+    const numero = html.indexOf('>#221<')
+    const equipo = html.indexOf('Samsung A54')
+    const chip = html.indexOf('En reparación')
+    const cliente = html.indexOf('Marcos Vera')
+    const separador = html.indexOf('lg:hidden">· ')
+    const telefono = html.indexOf('11 5412-9087')
+    for (const idx of [numero, equipo, chip, cliente, separador, telefono]) {
+      expect(idx).toBeGreaterThan(-1)
+    }
+    // El orden de flujo: número, luego equipo, luego el chip duplicado, y
+    // recién después el teléfono (Cliente es su propia celda con
+    // `basis-full`, forzando su propio renglón).
+    expect(numero).toBeLessThan(equipo)
+    expect(equipo).toBeLessThan(chip)
+    expect(chip).toBeLessThan(cliente)
+    expect(cliente).toBeLessThan(separador)
+    expect(separador).toBeLessThan(telefono)
+    // La Meta: IMEI + fecha + antigüedad, combinados — datos que en
+    // escritorio viven en celdas DISTINTAS (Equipo e Ingresó).
     expect(html).toContain('IMEI 356938035643809 · ingresó 29/07/2026 · hace 23 días')
+  })
+
+  // El hallazgo puntual de la review: antes NINGUNA celda real sobrevivía en
+  // el teléfono (las cinco eran `hidden lg:block`), así que la fila se
+  // quedaba sin ningún `role="cell"` alcanzable ahí —sin *owned elements*
+  // válidos para `role="row"`—. Ahora Orden, Equipo y Cliente son las
+  // MISMAS celdas en los dos anchos: siguen ahí.
+  it('Orden, Equipo y Cliente son celdas reales en el teléfono (no `display:none`): la fila no se queda sin owned elements', () => {
+    const html = renderListado()
+    const celdas = html.match(/<div[^>]*\brole="cell"[^>]*>/g) ?? []
+    expect(celdas).toHaveLength(5)
+    const [orden, equipo, cliente, ingreso, estado] = celdas
+    for (const celda of [orden, equipo, cliente]) {
+      expect(celda).not.toContain('hidden')
+    }
+    // Ingresó y Estado SÍ siguen ocultas en el teléfono: sus datos ya salen
+    // duplicados en la línea 1 (chip) y en la Meta (fecha/antigüedad).
+    for (const celda of [ingreso, estado]) {
+      expect(celda).toContain('hidden')
+    }
   })
 
   it('sin IMEI, la meta del teléfono y la celda de escritorio dicen "Sin IMEI"', () => {
@@ -612,6 +656,20 @@ describe('el listado pide y usa lo que la fila del rediseño necesita (Task 2 de
 
   it('el buscador muestra la ayuda permanente, no sólo el aviso de después de buscar', () => {
     expect(FUENTE).toContain('Buscar alcanza también a las entregadas y anuladas')
+  })
+
+  // Ronda de arreglos 1 (Importante): el Step 1 del brief pedía explícitamente
+  // "el buscador ocupa el ancho y conserva su nota" entre los casos que
+  // tienen que fallar primero, y se implementó sin que ningún test lo
+  // cubriera. Sin esto, una edición futura que devuelva el buscador a una
+  // sola fila en el teléfono pasa `npm test` sin que nada chiste.
+  it('el buscador apila en columna en el teléfono (input a lo ancho, nota debajo) y vuelve a una fila en escritorio', () => {
+    expect(FUENTE).toContain('flex flex-col gap-[6px] lg:flex-row lg:items-center lg:gap-[10px]')
+    // El campo ocupa el ancho completo del teléfono.
+    expect(FUENTE).toContain('h-10 w-full rounded-[9px] border-input bg-card pl-9 text-sm')
+    // La nota permanente, junto al campo: sólo se encoge (no se corta ni se
+    // arrastra a otra fila) a partir de escritorio.
+    expect(FUENTE).toContain('text-[11px] text-muted-foreground lg:shrink-0')
   })
 
   // Task 8 del ciclo móvil: el <Table> de shadcn se reemplazó por el patrón
