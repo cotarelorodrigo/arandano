@@ -311,7 +311,7 @@ en la Task 3.
 
 ---
 
-## 12. El velo del drawer y su botón de cerrar están escritos con hex crudos, y el velo del código no es el que la maqueta pide
+## 12. El velo del drawer y su botón de cerrar están escritos con hex crudos — RESUELTA A MEDIAS
 
 - **Frame**: `klNkg` (`Móvil / Menú (drawer)`)
 - **Nodos**: `k2qBi` (Velo, `fill: #171221A6`) y `hFjNK` (Cerrar, `fill:
@@ -320,29 +320,39 @@ en la Task 3.
 - **Tienen que decir**: variables `$ar-*`, o una variable nueva si ninguna de
   las que hay sirve
 
-**Por qué importa, y no es prolijidad.** `test/maqueta.test.ts` ata las
-variables `ar-*` del `.pen` con los tokens de `app/globals.css` **en las dos
-direcciones**, y ése es el único mecanismo que impide que un color se decida
-escribiendo código. Un color escrito como hex crudo dentro de un frame queda
-**afuera** de ese mecanismo: no lo ve el test por ningún lado. Es exactamente
-el agujero que el ciclo del login cerró creando `--marca-halo` en vez de
-enterrar una mezcla adentro de un `radial-gradient`.
+**Lo que quedó resuelto, en la ola final del ciclo móvil (2026-08-26,
+`components/ui/sheet.tsx`, commit `37d4791`).** Esta entrada nació señalando
+una consecuencia concreta del problema de fondo: `SheetOverlay` pintaba
+`bg-black/10` más `backdrop-blur` —el default que copia el registry de
+shadcn—, y el `.pen` pide `#171221A6`, violeta casi negro al 65 % **sin**
+desenfoque. Ya no hay discrepancia: `SheetOverlay` pinta `bg-foreground/65`,
+sin blur. Fue posible sin inventar ninguna variable porque `#171221` ya era un
+token —es `--foreground`—, así que el color correcto se pudo escribir con lo
+que ya existía. Y con eso, la pregunta que la entrada dejaba abierta para el
+dueño del producto —"si el velo lleva desenfoque o no"— **ya no está
+abierta**: se siguió al `.pen`, sin desenfoque, bajo la misma regla que rige
+todo el proyecto (la maqueta manda). El botón de cerrar no cambió: ya seguía a
+la maqueta desde antes (38×38, círculo, blanco al 15 %, ícono `x` de 19 px,
+`padding [14,12]` desde el borde).
 
-**Y ya tiene una consecuencia medible.** El velo del código no es el de la
-maqueta: `SheetOverlay` (`components/ui/sheet.tsx`, tal como lo copia el
-registry de shadcn) pinta `bg-black/10` más un `backdrop-blur`, y el `.pen`
-pide `#171221A6` — un violeta casi negro al 65 %, sin desenfoque. Nadie lo
-notó durante el ciclo justamente porque el color de la maqueta no es una
-variable: no hay test que los compare. El botón de cerrar sí sigue a la
-maqueta (38×38, círculo, blanco al 15 %, ícono `x` de 19 px, `padding [14,12]`
-desde el borde), sólo que también con literales de los dos lados.
-
-**Lo que hay que decidir primero es de producto y no de diseño**: si el velo
-lleva desenfoque o no. Recién con eso dibujado y tokenizado el código puede
-seguirlo sin inventar.
+**Lo que sigue pendiente, y es lo que justifica que la entrada siga
+abierta.** El frame `klNkg` sigue pintando sus tres colores —incluido el velo,
+ya corregido en el código— con hex crudos en vez de variables `$ar-*`. Eso
+importa por lo mismo que explicaba la versión anterior de esta entrada:
+`test/maqueta.test.ts` ata el `.pen` con `app/globals.css` comparando
+**variables**, así que un color que vive como hex crudo dentro de un frame
+queda afuera de ese mecanismo aunque hoy coincida byte a byte con el código —
+nada evita que alguien cambie uno de los dos lados mañana sin que ningún test
+lo note. Es exactamente el agujero que el ciclo del login cerró creando
+`--marca-halo` en vez de enterrar una mezcla adentro de un `radial-gradient`,
+y acá sigue abierto. Falta que alguien lo aplique en Pencil: reemplazar los
+tres literales de `klNkg` por variables (una nueva si ninguna de las que hay
+sirve) y commitear el archivo.
 
 Detectado en la Task 13 del ciclo móvil (2026-08-26), leyendo `klNkg` con el
-MCP de Pencil para documentar el drawer.
+MCP de Pencil para documentar el drawer. Resolución parcial verificada contra
+el código el 2026-08-27, en la revisión de documentación previa a integrar la
+rama.
 
 ---
 

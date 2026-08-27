@@ -1203,6 +1203,20 @@ Usuarios`).
   una decisión distinta cada uno, y las dos son la autoridad en su ancho. Está
   explicado en `docs/sistema-de-diseno.md`, en la nota bajo la escala
   tipográfica, y en el propio `app/(app)/usuarios/tipografia.module.css`.
+- **La celda Persona ganó `lg:min-w-0` + `lg:truncate`, y eso es la única
+  excepción de todo el ciclo a la consigna de que el escritorio no cambia de
+  aspecto.** Antes de la rama, `<Table className="table-fixed">` venía
+  envuelta en el `overflow-x-auto` que trae `components/ui/table.tsx`, así que
+  un mail largo no truncaba: scrolleaba la tabla entera. El grid de
+  `lg:contents` no tiene ese envoltorio, y "Persona" es la única pista
+  flexible (`1fr`) de esta grilla — sin `min-width: 0`, un ítem de grid no se
+  achica por debajo de su contenido, y el mail (sin espacios donde cortar)
+  ensanchaba la pista y sacaba la card de su contenedor en una ventana
+  angosta de escritorio. Es el mismo mecanismo que ya usa la columna Detalle
+  de `app/(app)/inventario/historial.tsx`. Lo que se ganó: la card ya no se
+  desborda. Lo que cambió, y por eso es una excepción consciente y no gratis:
+  un mail que antes se podía leer entero scrolleando la tabla ahora elide con
+  puntos suspensivos.
 
 <!-- pantallas:fin -->
 
@@ -1239,21 +1253,32 @@ patrón `lg:contents` que comparten los cuatro listados y el carrito está en
 `CLAUDE.md`, en la entrada del ciclo del teléfono.
 
 **La derivada que ese patrón deja abierta, y que conviene tener escrita**: en
-varias filas quedan hijos directos de un `role="row"` que **no son celdas**, y
-una fila ARIA sólo debería tener celdas. Son de dos formas distintas y sólo una
-es deuda:
+varias filas quedan nodos que cuelgan de un `role="row"` sin ser ellos mismos
+una celda, y una fila ARIA sólo debería tener celdas. Son de dos formas
+distintas y sólo una es deuda — pero el criterio para distinguirlas **no** es
+"hijo directo del row": un agrupador `lg:contents` puede anidar otro agrupador
+adentro, y la deuda real puede terminar viviendo un nivel más adentro que el
+propio row, como el caso de `/ventas` más abajo lo prueba. El criterio real es
+si el nodo lleva contenido propio sin colgar de ningún `role="cell"`, sin
+importar cuántos agrupadores lo separen del row:
 
-- **Agrupadores `lg:contents`** — `/ventas`, `/vender` y `/usuarios` juntan dos
-  o tres celdas en una caja para poder apilarlas en el teléfono, y esa caja se
-  disuelve en escritorio. Son andamiaje de layout, no un lugar donde viva un
-  dato.
-- **Líneas fundidas `lg:hidden`** — la meta del teléfono que junta datos que en
-  escritorio son columnas distintas. Ésta sí es la deuda, porque es contenido.
-  Quedan **tres en `/ventas/[id]`** (una en "Qué se vendió", dos en "Cómo se
-  pagó"), **dos en el historial de `/inventario/[id]`** y **una en
-  `/servicio-tecnico`** — esta última con su razón ya escrita en el docblock de
+- **Agrupadores `lg:contents`** — cajas que sólo juntan celdas para poder
+  apilarlas en el teléfono, y se disuelven en escritorio. Son andamiaje de
+  layout puro: todo lo que muestran vive ya en una celda hija. `/vender` y
+  `/usuarios` los usan así de punta a punta. Los de `/ventas` casi cumplen lo
+  mismo, con una excepción — ver el bullet de abajo.
+- **Líneas fundidas `lg:hidden`** — contenido visible en el teléfono que junta
+  datos que en escritorio son columnas distintas, sin colgar de ningún
+  `role="cell"` en ningún nivel. Ésta sí es la deuda, porque es contenido y no
+  layout. Quedan **tres en `/ventas/[id]`** (una en "Qué se vendió", dos en
+  "Cómo se pagó"), **dos en el historial de `/inventario/[id]`**, **una en
+  `/servicio-tecnico`** —esta última con su razón ya escrita en el docblock de
   `Listado` de esa pantalla: fundirla habría corrido dos columnas de escritorio
-  de lugar.
+  de lugar— **y una en `/ventas`**: `{f.itemsLabel} · {f.mediosLabel}`
+  (`app/(app)/ventas/page.tsx:561`) vive dentro del agrupador "Datos", no como
+  hijo directo del row, así que un conteo que sólo mirara hijos directos la
+  pasaba por alto — es la misma deuda que las otras cinco, un nivel más
+  adentro en el DOM.
 
 **`/inventario` ya no tiene ninguna**: la ola final del ciclo fundió su línea de
 meta dentro de la celda real de **Stock**, que es la técnica que
