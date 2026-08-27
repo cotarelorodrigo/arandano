@@ -7,9 +7,14 @@ import { cobrar, buscarArticulos, type EstadoCobro } from './acciones'
 import type { ArticuloVendible } from '@/lib/ventas/buscar'
 import {
   aCentavos, aMilesimas, cantidadEnMilesimas, cotizacionEnDiezMilesimas, deCentavos,
-  deMilesimas, dineroEnCentavos, pesosDePagoEnCentavos, subtotalEnCentavos,
-  totalDePagosEnCentavos, totalEnCentavos,
+  deMilesimas, dineroEnCentavos, pesosDePagoEnCentavos, porcentajeEnMilesimas,
+  recargoEnCentavos, subtotalEnCentavos, totalDePagosEnCentavos, totalEnCentavos,
 } from '@/lib/ventas/centavos'
+// De TIPO y no de valor: `lib/planes/consultar.ts` importa Prisma, y un import
+// de valor desde este archivo —que lleva 'use client'— arrastraría `pg` al
+// bundle del navegador. Mismo caso que `ArticuloVendible`, y lo que vigila
+// test/limite-cliente-servidor.test.ts.
+import type { PlanVisible } from '@/lib/planes/consultar'
 import { formatearPrecio, formatearCantidad, montoSinSigno } from '@/lib/formato/mostrar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -48,7 +53,22 @@ type Pago = {
   // al servidor y NO se guarda — el pago que entra a la caja es el monto, no
   // lo que el cliente apoyó sobre el mostrador.
   recibido: string
+  // El plan con el que se cobra ESTA parte, o null para precio de lista. Sólo
+  // puede tener valor un pago del medio del plan y en pesos: el motor rechaza
+  // lo demás (PLAN_NO_CORRESPONDE, PLAN_EN_DOLARES), así que la fila lo limpia
+  // en cuanto cambia el medio o la moneda.
+  planId: string | null
 }
+
+/**
+ * El valor del ítem "Precio de lista" del selector de plan.
+ *
+ * Un centinela y NO la cadena vacía: Radix reserva `''` para "sin selección" y
+ * un `SelectItem` con `value=""` tira en runtime. Nunca viaja al servidor — la
+ * fila lo traduce a `null` antes de tocar el estado, y el JSON escondido manda
+ * `undefined`, que `JSON.stringify` descarta.
+ */
+const SIN_PLAN = 'sin-plan'
 
 /**
  * Qué carrito es éste, para la clave de idempotencia.
@@ -249,6 +269,95 @@ export function entranPesosCentavos(montoUsd: string, cotizacion: string): numbe
 }
 
 /**
+ * Los planes que UN pago puede elegir: los de su medio, y sólo si es en pesos.
+ *
+ * Las dos mitades son la misma regla —no ofrecer lo que el servidor va a
+ * rechazar—, con dos códigos distintos del motor detrás: un plan de otro medio
+ * es `PLAN_NO_CORRESPONDE` y cualquier plan sobre un pago en dólares es
+ * `PLAN_EN_DOLARES` (`lib/ventas/crear.ts`). Un selector que ofrezca
+ * cualquiera de las dos cosas es un selector que ofrece un error.
+ *
+ * Función pura y exportada por el mismo motivo que `hayFaltanteDeVenta` o
+ * `unidadesDelCarrito`: un filtro escrito inline en el JSX se puede invertir
+ * —o perder una de las dos mitades— sin que ningún caso de render lo note,
+ * porque este harness sólo llega a montar el pago en efectivo y en pesos que
+ * arranca solo.
+ */
+export function planesOfrecidos(
+  pago: { medio: Pago['medio']; moneda: Pago['moneda'] },
+  planes: PlanVisible[],
+): PlanVisible[] {
+  if (pago.moneda !== 'ARS') return []
+  return planes.filter((p) => p.medio === pago.medio)
+}
+
+/** Un importe del pie, con la misma guarda de NaN que el resto de la plata de
+ *  esta pantalla: un monto a medio tipear deja la cuenta en NaN, y
+ *  `formatearPrecio(NaN)` imprime "$ NaN". */
+function montoDelPie(centavos: number): string {
+  return Number.isNaN(centavos) ? '—' : formatearPrecio(deCentavos(centavos))
+}
+
+/**
+ * Las tres líneas del pie del panel de cobro —Mercadería, Recargo y Total a
+ * cobrar—, o ninguna cuando no hay ningún plan elegido: sin recargo el pie no
+ * crece y la pantalla queda exactamente como estaba.
+ *
+ * **La banda de `--marca` sigue mostrando la MERCADERÍA**, que es el ancla de
+ * contenido de esta pantalla y el número contra el que se reparten los pagos.
+ * El total a cobrar vive acá, en el panel donde se decide cuánta plata entra.
+ *
+ * **El total a cobrar es mercadería + recargo**, no la suma de los pagos: es
+ * lo que va a entrar a la caja cuando la venta cierre, y sale del mismo número
+ * que la banda de arriba en vez de una segunda cuenta que pueda decir otra
+ * cosa.
+ *
+ * El recargo se calcula con `recargoEnCentavos` y `porcentajeEnMilesimas`
+ * (`lib/ventas/centavos.ts`), que son el espejo exacto de `recargoDePago` del
+ * servidor —`centavos.test.ts` compara las dos aritméticas caso por caso—, y
+ * no con una cuenta propia: un porcentaje aplicado dos veces de dos formas es
+ * la manera de que el pie diga un número y el motor cobre otro. Sobre la BASE
+ * ya convertida a pesos, igual que el servidor, que sólo acepta plan con
+ * cotización 1.
+ *
+ * Un recargo en NaN (monto a medio tipear) NO esconde el pie: `NaN !== 0`, así
+ * que las tres líneas siguen ahí con "—" donde no se puede calcular. Esconder
+ * el bloque entero mientras se retipea un monto haría parpadear tres líneas en
+ * cada tecla.
+ */
+export function lineasDelPieDeCobro(
+  mercaderiaCentavos: number,
+  pagos: { base: string; cotizacion: string; planId: string | null }[],
+  planes: PlanVisible[],
+): { rotulo: string; monto: string }[] {
+  const conPlan = pagos.flatMap((p) => {
+    const plan = planes.find((pl) => pl.id === p.planId)
+    return plan ? [{ pago: p, plan }] : []
+  })
+  const recargoCentavos = conPlan.reduce(
+    (acc, { pago, plan }) =>
+      acc +
+      recargoEnCentavos(
+        entranPesosCentavos(pago.base, pago.cotizacion),
+        porcentajeEnMilesimas(plan.porcentaje),
+      ),
+    0,
+  )
+  if (recargoCentavos === 0) return []
+
+  // Con UN solo plan elegido el rótulo lo nombra ("Recargo 3 cuotas"): un
+  // "Recargo" pelado no dice de qué recargo habla. Con dos planes distintos el
+  // número es la suma de los dos, así que nombrar a uno sería atribuirle un
+  // recargo que no es suyo.
+  const nombres = [...new Set(conPlan.map(({ plan }) => plan.nombre))]
+  return [
+    { rotulo: 'Mercadería', monto: montoDelPie(mercaderiaCentavos) },
+    { rotulo: nombres.length === 1 ? `Recargo ${nombres[0]}` : 'Recargo', monto: montoDelPie(recargoCentavos) },
+    { rotulo: 'Total a cobrar', monto: montoDelPie(mercaderiaCentavos + recargoCentavos) },
+  ]
+}
+
+/**
  * Si UN pago puede mostrar su chip de vuelto, dado el estado de PAGO
  * agregado de toda la venta.
  *
@@ -310,7 +419,17 @@ function hayOverlayDeRadixAbierto(): boolean {
   return document.querySelector('[role="listbox"], [role="dialog"], [role="menu"]') !== null
 }
 
-export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string | null }) {
+export function PuntoDeVenta({
+  cotizacionInicial,
+  planes,
+}: {
+  cotizacionInicial: string | null
+  // Los planes ACTIVOS del local, leídos en el servidor (`page.tsx`) por lo
+  // mismo que la cotización: el cliente no consulta la base. Vacío es el caso
+  // normal de un local que no cargó ninguno, y entonces la pantalla no dibuja
+  // un solo control nuevo.
+  planes: PlanVisible[]
+}) {
   const [estado, accion, cobrando] = useActionState(cobrar, INICIAL)
   const [lineas, setLineas] = useState<Linea[]>([])
   const [busqueda, setBusqueda] = useState('')
@@ -441,7 +560,14 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
     setPagos((previos) => {
       if (previos.length === 0) {
         return [
-          { medio: 'EFECTIVO', moneda: 'ARS', base: deCentavos(totalCentavos), cotizacion: '1', recibido: '' },
+          {
+            medio: 'EFECTIVO',
+            moneda: 'ARS',
+            base: deCentavos(totalCentavos),
+            cotizacion: '1',
+            recibido: '',
+            planId: null,
+          },
         ]
       }
       if (previos.length === 1 && previos[0].moneda === 'ARS') {
@@ -627,6 +753,12 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   // licencia para mostrarle vuelto a nadie, es exactamente el mismo criterio
   // conservador que ya usa `hayLineaInvalida` más arriba.
   const hayFaltante = hayFaltanteDeVenta(faltanCentavos)
+
+  // El pie del panel de cobro: vacío mientras no haya ningún plan elegido (ver
+  // `lineasDelPieDeCobro`). Se calcula sobre `totalCentavos` —el MISMO número
+  // que pinta la banda de --marca— para que las dos mitades de la pantalla no
+  // puedan decir mercaderías distintas.
+  const lineasDelPie = lineasDelPieDeCobro(totalCentavos, pagos, planes)
 
   // Enter cobra y Esc vacía el carrito — los otros dos atajos que promete la
   // leyenda bajo el botón (design/arandano.pen, nodo `k1dDB`). Van en un
@@ -1067,6 +1199,11 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
                   moneda: p.moneda,
                   base: p.base,
                   cotizacion: p.cotizacion,
+                  // `undefined` y no `null` cuando no hay plan: JSON.stringify
+                  // descarta la clave entera, así que un local sin planes manda
+                  // exactamente el mismo JSON que antes de que este campo
+                  // existiera.
+                  planId: p.planId ?? undefined,
                 })),
               )}
             />
@@ -1078,6 +1215,7 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
                   pago={p}
                   indice={i}
                   cotizacionInicial={cotizacionInicial}
+                  planes={planes}
                   hayFaltante={hayFaltante}
                   onCambiar={(cambio) => cambiarPago(i, cambio)}
                   onQuitar={() => setPagos((p2) => p2.filter((_, j) => j !== i))}
@@ -1108,6 +1246,10 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
                       base: Number.isNaN(faltanCentavos) ? '' : deCentavos(Math.max(0, faltanCentavos)),
                       cotizacion: '1',
                       recibido: '',
+                      // A precio de lista: el pago nuevo arranca en efectivo, y
+                      // heredar el plan del pago de al lado sería cobrar un
+                      // recargo que nadie eligió para esta parte.
+                      planId: null,
                     },
                   ])
                 }
@@ -1140,6 +1282,63 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
                     </Link>
                   </AlertDescription>
                 </Alert>
+              )}
+
+              {/* El pie de tres líneas, sólo cuando hay algún plan elegido
+                  (ver `lineasDelPieDeCobro`). design/arandano.pen no dibuja
+                  este bloque —la maqueta es anterior a los planes de pago, y
+                  la deuda queda anotada en
+                  docs/correcciones-pendientes-del-pen.md—, así que el
+                  tratamiento se toma prestado del renglón "Entran $X" de cada
+                  fila de pago, que es el otro sitio de esta pantalla donde un
+                  rótulo y un importe conviven en una línea: rótulo 12px en
+                  --muted-foreground, importe 13px semibold en Archivo.
+
+                  Va DESPUÉS de los carteles de error/éxito y ANTES del chip de
+                  faltante: los carteles son transitorios y ya viven arriba del
+                  pie; estas tres líneas y el chip son lo que se lee de un
+                  vistazo justo antes de apretar Cobrar, así que quedan
+                  pegadas al botón.
+
+                  La última línea es el total a cobrar, y se destaca: borde
+                  arriba y el mismo peso que el chip. Se decide por POSICIÓN
+                  (la última de las tres) y no por un flag en el dato, porque
+                  el orden lo fija `lineasDelPieDeCobro` y es el único que
+                  tiene sentido — mercadería, lo que se le suma, y el
+                  resultado. */}
+              {lineasDelPie.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  {lineasDelPie.map(({ rotulo, monto }, i) => {
+                    const esTotal = i === lineasDelPie.length - 1
+                    return (
+                      <div
+                        key={rotulo}
+                        className={`flex items-center justify-between px-0.5 ${
+                          esTotal ? 'border-t pt-2' : ''
+                        }`}
+                      >
+                        <span
+                          className={
+                            esTotal
+                              ? 'text-xs font-semibold text-foreground'
+                              : 'text-xs text-muted-foreground'
+                          }
+                        >
+                          {rotulo}
+                        </span>
+                        <span
+                          className={`${estilos.importe} ${
+                            esTotal
+                              ? 'text-[15px] font-bold text-foreground'
+                              : 'text-[13px] font-semibold text-foreground-soft'
+                          }`}
+                        >
+                          {monto}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
 
               {/* El chip de faltante/sobrante (design/arandano.pen, nodo
@@ -1295,6 +1494,7 @@ function FilaDePago({
   pago,
   indice,
   cotizacionInicial,
+  planes,
   hayFaltante,
   onCambiar,
   onQuitar,
@@ -1303,6 +1503,10 @@ function FilaDePago({
   pago: Pago
   indice: number
   cotizacionInicial: string | null
+  // TODOS los planes del local, sin filtrar: la fila filtra por su propio
+  // medio y su moneda (`planesOfrecidos`), y ese filtro tiene que rehacerse en
+  // cada cambio de medio.
+  planes: PlanVisible[]
   // Si la VENTA completa (todos los pagos, no sólo éste) sigue corta — ver
   // `puedeMostrarVuelto` para el porqué de este parámetro.
   hayFaltante: boolean
@@ -1325,6 +1529,10 @@ function FilaDePago({
   // el guard de renderizado y el guard de "Agregar pago" (más abajo, en el
   // componente padre) no puedan divergir en cómo detectan el NaN.
   const pesosDelPagoCentavos = entranPesosCentavos(pago.base, pago.cotizacion)
+  // Los planes que ESTA fila puede ofrecer: los de su medio y sólo en pesos
+  // (ver `planesOfrecidos`). Vacío significa que la fila no dibuja ningún
+  // control de plan — un local sin planes no ve nada nuevo.
+  const planesDelMedio = planesOfrecidos(pago, planes)
 
   return (
     // fill $ar-bg (--background) y no --card: design/arandano.pen pinta cada
@@ -1332,9 +1540,15 @@ function FilaDePago({
     // blanca de Cobro que lo contiene (nodos `XdYjF`/`VnEsm`).
     <div className="flex flex-col gap-2.5 rounded-xl bg-background p-3">
       <div className="flex items-center gap-2">
+        {/* Cambiar el medio LIMPIA el plan, en el mismo cambio de estado: un
+            plan de crédito que sobreviva a un cambio a efectivo es
+            exactamente el PLAN_NO_CORRESPONDE que el motor rechaza, con la
+            pantalla mostrando algo que se ve válido. Esconder el selector no
+            alcanza — el `planId` viejo seguiría en el estado y viajando en el
+            JSON escondido. */}
         <Select
           value={pago.medio}
-          onValueChange={(medio) => onCambiar({ medio: medio as Pago['medio'] })}
+          onValueChange={(medio) => onCambiar({ medio: medio as Pago['medio'], planId: null })}
         >
           {/* h-9! (important): SelectTrigger fija su alto con
               data-[size=default]:h-8, una clase condicionada por atributo que
@@ -1362,6 +1576,12 @@ function FilaDePago({
               // Un pago en pesos lleva cotización 1 SIEMPRE; uno en dólares
               // arranca con la última que usó el local.
               cotizacion: moneda === 'ARS' ? '1' : (cotizacionInicial ?? '1'),
+              // Y limpia el plan, por lo mismo que el selector de medio de al
+              // lado: un plan sobre un pago en dólares es el PLAN_EN_DOLARES
+              // que el motor rechaza. Se limpia en las DOS direcciones —de
+              // vuelta a pesos también— porque un plan que reaparezca solo al
+              // volver de dólares es un recargo que nadie volvió a elegir.
+              planId: null,
             })
           }}
         >
@@ -1377,6 +1597,41 @@ function FilaDePago({
           </SelectContent>
         </Select>
       </div>
+
+      {/* El selector de plan, SÓLO si el medio elegido tiene planes cargados:
+          un local que no cargó ninguno no ve un solo control nuevo, que es la
+          promesa explícita del spec.
+
+          En su propia fila y no al lado de Medio/Moneda: en un panel de 384px
+          un tercer control apretaría justo el de Medio, que es el que más se
+          toca, y el nombre de un plan ("Crédito 3 cuotas sin interés") es
+          largo. design/arandano.pen no dibuja este control —la maqueta es
+          anterior a los planes de pago, y la deuda queda anotada en
+          docs/correcciones-pendientes-del-pen.md—, así que el tratamiento es
+          el mismo del selector de Medio de arriba, que es el control hermano. */}
+      {planesDelMedio.length > 0 && (
+        <Select
+          value={pago.planId ?? SIN_PLAN}
+          onValueChange={(valor) => onCambiar({ planId: valor === SIN_PLAN ? null : valor })}
+        >
+          <SelectTrigger
+            aria-label={`Plan del pago ${indice + 1}`}
+            className="h-9! w-full justify-between rounded-[9px] border-input pr-[11px] pl-[11px] text-[13px] font-medium text-foreground"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {/* Un valor centinela y no "": Radix reserva la cadena vacía para
+                "sin selección" y un SelectItem con value="" tira en runtime. */}
+            <SelectItem value={SIN_PLAN}>Precio de lista</SelectItem>
+            {planesDelMedio.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.nombre}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
 
       {pago.moneda === 'USD' ? (
         // Monto y Cotización lado a lado (design/arandano.pen, frame

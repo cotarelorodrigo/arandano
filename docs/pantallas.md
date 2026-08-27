@@ -156,6 +156,11 @@ shell (sidebar + encabezado) ya venía de un ciclo anterior.
 **Acciones**: `cobrar`, `buscarArticulos`, `abrirCajaDesdeVender`,
 `cerrarCajaDesdeVender`.
 
+**Lecturas del servidor**: `ultimaCotizacionUsd`, `cajaAbierta`,
+`Tenant.cotizacionUsd` y `planesDelTenant` (sólo los activos). Las cuatro se
+leen en `page.tsx` y viajan como props: el cliente no consulta la base, así que
+la pantalla llega con el dato puesto en vez de parpadear.
+
 **Qué se puede hacer**
 
 - Buscar un artículo por nombre o código y agregarlo al carrito, desde una
@@ -167,6 +172,9 @@ shell (sidebar + encabezado) ya venía de un ciclo anterior.
 - Cobrar con **pagos partidos**, en pesos y en dólares, cada uno con su medio
   (efectivo, transferencia, débito, crédito) y su cotización. Un pago en
   dólares muestra cuántos pesos representa (`Entran $X`).
+- Elegir el **plan de pago** de cada parte (`Precio de lista` o uno de los que
+  el local cargó en `/formas-de-pago`), y ver el recargo desglosado en el pie
+  del panel de cobro.
 - Ver el vuelto y el faltante como chips de estado (verde/rojo), excluyentes
   entre sí.
 - Cobrar apretando `Enter` con el foco en `<body>` (sin nada en particular
@@ -217,6 +225,43 @@ shell (sidebar + encabezado) ya venía de un ciclo anterior.
   que ningún `<select>` nativo dibuja en ningún browser, y ésta es una
   pantalla que se opera con teclado, donde el manejo de Radix es mejor que el
   nativo.
+- **El selector de plan aparece sólo si el medio elegido tiene planes
+  cargados.** Un local que no cargó ninguno no ve un solo control nuevo: el
+  mostrador queda exactamente como estaba. El filtro es por medio **y por
+  moneda** —`planesOfrecidos`—, porque las dos cosas las rechaza el motor: un
+  plan de otro medio es `PLAN_NO_CORRESPONDE` y cualquier plan sobre un pago en
+  dólares es `PLAN_EN_DOLARES`. Ofrecer lo que el servidor va a rechazar es
+  ofrecer un error.
+- **Cambiar el medio o la moneda LIMPIA el plan elegido**, en el mismo cambio
+  de estado. Esconder el selector no alcanzaría: el `planId` viejo seguiría en
+  el estado y viajando en el JSON escondido, y la pantalla mostraría algo que
+  se ve válido mientras el motor rechaza la venta. Se limpia también al volver
+  de dólares a pesos — un plan que reaparezca solo es un recargo que nadie
+  volvió a elegir.
+- **El ítem "Precio de lista" lleva un valor centinela y no la cadena vacía.**
+  Radix reserva `''` para "sin selección" y un `SelectItem` con `value=""` tira
+  en runtime.
+- **El pie del panel de cobro pasa a tres líneas —Mercadería, Recargo *nombre
+  del plan*, Total a cobrar— sólo cuando hay algún plan elegido**; sin recargo
+  no crece y la pantalla queda como estaba. Con más de un plan elegido el
+  recargo va sin nombre, porque el número es la suma de todos. **La banda de
+  `--marca` sigue mostrando la MERCADERÍA**: es el ancla de contenido de esta
+  pantalla y el número contra el que se reparten los pagos; el total a cobrar
+  vive en el panel donde se decide cuánta plata entra. El recargo lo calculan
+  `recargoEnCentavos` y `porcentajeEnMilesimas` (`lib/ventas/centavos.ts`), que
+  son el espejo exacto del `recargoDePago` del servidor — no una cuenta propia
+  de la pantalla.
+- **El chip "Faltan / Sobran" sigue midiendo contra la mercadería, no contra lo
+  que entra a la caja.** Es lo que decide si "Cobrar" se puede apretar, y el
+  motor compara la suma de las **bases** contra el total de ítems: si el
+  faltante midiera contra el total a cobrar, una venta financiada no se podría
+  cerrar nunca.
+- **`design/arandano.pen` no dibuja ni el selector de plan ni el pie de tres
+  líneas**: la maqueta es anterior a los planes de pago. No es una
+  contradicción con el `.pen` sino un hueco, y queda anotado en
+  `docs/correcciones-pendientes-del-pen.md`. El tratamiento de los dos
+  controles se toma prestado de sus hermanos de esta misma pantalla —el
+  selector de Medio y el renglón `Entran $X`—, no se inventa.
 - **El chip de caja muestra el estado real y ofrece abrirla o cerrarla ahí
   mismo**, sin pantalla `/caja` ni arqueo — ver el detalle en *Pendiente*.
   `cajaAbierta()` se lee en el servidor (`page.tsx`), igual que

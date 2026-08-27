@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { formatearPrecio } from '@/lib/formato/mostrar'
+import type { PlanVisible } from '@/lib/planes/consultar'
 
 // Las dos funciones que el componente importa viven en un archivo 'use server'.
 // Su contrato ya lo fija app/(app)/vender/acciones.test.ts; acá sólo importa qué
@@ -10,9 +12,38 @@ vi.mock('./acciones', () => ({
   buscarArticulos: vi.fn(async () => []),
 }))
 
-async function render() {
+// Dos planes con la forma exacta que devuelve `planesDelTenant`
+// (lib/planes/consultar.ts), incluido el `porcentaje` como texto CANÓNICO
+// ('40', '-10' — nunca '40.000'), que es lo que esa función garantiza.
+const PLAN_CREDITO: PlanVisible = {
+  id: '11111111-1111-4111-8111-111111111111',
+  nombre: 'Crédito 3 cuotas',
+  medio: 'TARJETA_CREDITO',
+  cuotas: 3,
+  porcentaje: '40',
+  orden: 0,
+  desactivadoEn: null,
+}
+
+// De EFECTIVO a propósito: el único pago que este harness llega a renderizar
+// es el que arranca solo, que es en efectivo y en pesos (ver el caso "el
+// encabezado cuenta cuántos pagos hay cargados"), así que un plan de efectivo
+// es el único que se puede ver OFRECIDO de verdad. Y con descuento (-10 %),
+// que es el otro lado del recargo y el que rompería una cuenta que asuma
+// positivos.
+const PLAN_CONTADO: PlanVisible = {
+  id: '22222222-2222-4222-8222-222222222222',
+  nombre: 'Contado',
+  medio: 'EFECTIVO',
+  cuotas: 1,
+  porcentaje: '-10',
+  orden: 0,
+  desactivadoEn: null,
+}
+
+async function render({ planes = [] }: { planes?: PlanVisible[] } = {}) {
   const { PuntoDeVenta } = await import('./punto-de-venta')
-  return renderToStaticMarkup(<PuntoDeVenta cotizacionInicial={null} />)
+  return renderToStaticMarkup(<PuntoDeVenta cotizacionInicial={null} planes={planes} />)
 }
 
 describe('el punto de venta', () => {
@@ -71,18 +102,23 @@ describe('el punto de venta', () => {
   // el chip de Faltante/Sobrante y el renglón "Entran $X" sumaron cada uno
   // el suyo —de 6 volvió a 8—. El total dio el mismo número por casualidad;
   // la lista de abajo es la que hoy describe esos 8 sitios de verdad.
+  // Subió de 8 a 9 en la Task 6 de precios por forma de pago: el pie del panel
+  // de cobro (Mercadería / Recargo / Total a cobrar) suma un noveno sitio —uno
+  // solo, porque las tres líneas salen de un `.map` sobre
+  // `lineasDelPieDeCobro`, no de tres bloques escritos a mano—.
   it('el rol importe cubre las columnas de plata y los campos de monto', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8').replace(/\s+/g, '')
     const apariciones = [...fuente.matchAll(/estilos\.importe\}/g)].length
     expect(
       apariciones,
       `estilos.importe} aparece ${apariciones} veces en el fuente y tiene que ` +
-        `aparecer 8: el precio de la lista de resultados del buscador, las ` +
+        `aparecer 9: el precio de la lista de resultados del buscador, las ` +
         `columnas Precio y Subtotal de la tabla, el valor del stepper de ` +
         `cantidad, la definición de \`CampoMonto\` (una sola, compartida por ` +
         `Monto, Cotización y Recibido de FilaDePago), el chip de Vuelto, el ` +
-        `chip de Faltante/Sobrante, y el renglón "Entran $X".`,
-    ).toBe(8)
+        `chip de Faltante/Sobrante, el renglón "Entran $X", y el monto de cada ` +
+        `línea del pie del cobro.`,
+    ).toBe(9)
   })
 
   // Una sola vez en pantalla. Antes estaba dos veces —la card de cobro y el
@@ -571,5 +607,235 @@ describe('el punto de venta', () => {
       contexto,
       'el primer Esc tiene que programar el desarme automático a los 3000ms, no dejar el armado colgado',
     ).toMatch(/desarmarVaciado\.current = setTimeout\(\(\) => setVaciadoArmado\(false\), 3000\)/)
+  })
+
+  // --- Task 6: el plan de pago del mostrador ---
+
+  // La promesa explícita del spec: un local que no cargó ningún plan no ve UN
+  // SOLO control nuevo. 'Plan' a secas y no 'Plan del pago': la palabra no
+  // aparece hoy en ninguna parte del HTML de esta pantalla —verificado sobre
+  // el render completo antes de escribir el caso—, así que la aserción amplia
+  // atrapa también un rótulo suelto, un placeholder o un encabezado que se
+  // cuele.
+  it('sin planes cargados no dibuja ningún control de plan', async () => {
+    expect(await render({ planes: [] })).not.toContain('Plan')
+  })
+
+  // El caso POSITIVO, y no es de adorno: sin él los dos negativos de al lado
+  // pasarían igual con el selector borrado del archivo.
+  //
+  // Mira el `aria-label` del trigger y no el nombre del plan porque es lo
+  // único del selector que llega al HTML: Radix monta el contenido del Select
+  // sólo mientras está ABIERTO (`<Presence present={open}>`) y `<SelectValue
+  // />` pinta el texto del ítem elegido a través de un portal, así que
+  // renderToStaticMarkup deja `<span data-slot="select-value"></span>` vacío y
+  // ni un solo `SelectItem` renderizado. Es la misma razón por la que ningún
+  // caso de este archivo afirma sobre "Efectivo" o "Débito", que son los
+  // ítems del selector de medio que ya existía.
+  it('con un plan del medio del pago, la fila ofrece el selector', async () => {
+    expect(await render({ planes: [PLAN_CONTADO] })).toContain('Plan del pago 1')
+  })
+
+  // El select de plan se filtra por el medio del pago: un plan de tarjeta en
+  // una fila de efectivo lo rechaza el servidor (PLAN_NO_CORRESPONDE), así que
+  // ofrecerlo sería ofrecer un error.
+  it('con planes de crédito, el pago en efectivo no ofrece ninguno', async () => {
+    expect(await render({ planes: [PLAN_CREDITO] })).not.toContain('Plan del pago')
+  })
+
+  // La regla en aislamiento, incluida la mitad que el harness no puede
+  // renderizar: un pago en dólares. `planesOfrecidos` está extraída como
+  // función pura por el mismo motivo que `hayFaltanteDeVenta` o
+  // `unidadesDelCarrito` más arriba — un filtro escrito inline en el JSX se
+  // puede invertir sin que ningún caso de render lo note.
+  it('un plan se ofrece sólo para su medio y sólo sobre un pago en pesos', async () => {
+    const { planesOfrecidos } = await import('./punto-de-venta')
+    expect(planesOfrecidos({ medio: 'TARJETA_CREDITO', moneda: 'ARS' }, [PLAN_CREDITO])).toEqual([
+      PLAN_CREDITO,
+    ])
+    expect(planesOfrecidos({ medio: 'EFECTIVO', moneda: 'ARS' }, [PLAN_CREDITO])).toEqual([])
+    // PLAN_EN_DOLARES: el motor rechaza CUALQUIER plan sobre un pago que no
+    // sea en pesos (lib/ventas/crear.ts), así que en dólares no se ofrece
+    // ninguno aunque el medio coincida.
+    expect(planesOfrecidos({ medio: 'TARJETA_CREDITO', moneda: 'USD' }, [PLAN_CREDITO])).toEqual([])
+
+    // Cableado: la fila tiene que decidir con esta función y no con un filtro
+    // propio, y el selector entero tiene que desaparecer cuando no queda
+    // ninguno para ofrecer.
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    expect(fuente).toMatch(/const planesDelMedio = planesOfrecidos\(pago, planes\)/)
+    expect(fuente).toMatch(/\{planesDelMedio\.length > 0 && \(/)
+  })
+
+  // Un plan de crédito que sobreviva a un cambio a efectivo es exactamente el
+  // PLAN_NO_CORRESPONDE que el servidor rechaza, con la pantalla mostrando
+  // algo que se ve válido; el mismo plan sobre un cambio a dólares es
+  // PLAN_EN_DOLARES. Los dos cambios tienen que limpiar el plan, no sólo
+  // esconder el selector — esconderlo dejaría el `planId` viejo en el estado y
+  // viajando en el JSON escondido.
+  it('cambiar el medio o la moneda limpia el plan elegido', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    expect(
+      fuente,
+      'cambiar el medio tiene que limpiar el plan en el MISMO onCambiar',
+    ).toMatch(/onCambiar\(\{ medio: medio as Pago\['medio'\], planId: null \}\)/)
+
+    const posicion = fuente.indexOf("const moneda = valor as Pago['moneda']")
+    expect(posicion, 'el handler de moneda tiene que existir en el fuente').toBeGreaterThan(-1)
+    // Hasta el cierre del handler y no una ventana de N caracteres: el bloque
+    // lleva comentarios largos, y un número fijo se queda corto en cuanto
+    // alguien agrega una línea de prosa.
+    const contexto = fuente.slice(posicion, fuente.indexOf('<SelectTrigger', posicion))
+    expect(
+      contexto,
+      'cambiar la moneda tiene que limpiar el plan en el MISMO onCambiar',
+    ).toMatch(/planId: null/)
+  })
+
+  // El pie de tres líneas. No se puede afirmar sobre el HTML: el harness sólo
+  // renderiza el carrito vacío con su pago inicial sin plan (ver la nota de
+  // `render()`), así que un recargo distinto de cero no tiene forma de llegar
+  // a renderToStaticMarkup — mismo motivo que ya obliga a probar
+  // `resumenDelCarrito` y `entranPesosCentavos` como funciones puras.
+  //
+  // Los importes se comparan contra `formatearPrecio` y no contra un literal
+  // '$ 4.000,00' escrito a mano: el separador que emite Intl es un espacio
+  // DURO (U+00A0), así que un literal tipeado con un espacio normal fallaría
+  // por una razón que no tiene nada que ver con lo que este caso afirma.
+  it('el pie muestra mercadería, recargo y total a cobrar cuando hay plan', async () => {
+    const { lineasDelPieDeCobro } = await import('./punto-de-venta')
+    const lineas = lineasDelPieDeCobro(
+      1_000_000,
+      [{ base: '10000', cotizacion: '1', planId: PLAN_CREDITO.id }],
+      [PLAN_CREDITO],
+    )
+    expect(lineas).toEqual([
+      { rotulo: 'Mercadería', monto: formatearPrecio('10000') },
+      // El nombre del plan en el rótulo: con un solo plan elegido, "Recargo" a
+      // secas no dice de qué recargo habla.
+      { rotulo: 'Recargo Crédito 3 cuotas', monto: formatearPrecio('4000') },
+      { rotulo: 'Total a cobrar', monto: formatearPrecio('14000') },
+    ])
+  })
+
+  // El descuento es el otro lado del mismo cálculo, y el que rompe cualquier
+  // cuenta que asuma positivos: el recargo resta y el total a cobrar queda
+  // POR DEBAJO de la mercadería.
+  it('un plan con porcentaje negativo descuenta en vez de recargar', async () => {
+    const { lineasDelPieDeCobro } = await import('./punto-de-venta')
+    const lineas = lineasDelPieDeCobro(
+      1_000_000,
+      [{ base: '10000', cotizacion: '1', planId: PLAN_CONTADO.id }],
+      [PLAN_CONTADO],
+    )
+    expect(lineas.map((l) => l.monto)).toEqual([
+      formatearPrecio('10000'),
+      formatearPrecio('-1000'),
+      formatearPrecio('9000'),
+    ])
+  })
+
+  // Con dos planes distintos el rótulo no puede nombrar a uno solo: sería
+  // decir que ese plan cobró un recargo que en realidad es la suma de los dos.
+  it('con más de un plan elegido el recargo va sin nombre', async () => {
+    const { lineasDelPieDeCobro } = await import('./punto-de-venta')
+    const lineas = lineasDelPieDeCobro(
+      1_000_000,
+      [
+        { base: '5000', cotizacion: '1', planId: PLAN_CREDITO.id },
+        { base: '5000', cotizacion: '1', planId: PLAN_CONTADO.id },
+      ],
+      [PLAN_CREDITO, PLAN_CONTADO],
+    )
+    // 40 % de 5.000 = 2.000, −10 % de 5.000 = −500.
+    expect(lineas[1]).toEqual({ rotulo: 'Recargo', monto: formatearPrecio('1500') })
+  })
+
+  // "Sin recargo el pie no crece": un local con planes cargados que cobra a
+  // precio de lista tiene que ver exactamente el pie de siempre.
+  it('sin ningún plan elegido el pie no crece: una sola línea, como hoy', async () => {
+    const { lineasDelPieDeCobro } = await import('./punto-de-venta')
+    expect(
+      lineasDelPieDeCobro(1_000_000, [{ base: '10000', cotizacion: '1', planId: null }], [PLAN_CREDITO]),
+    ).toEqual([])
+    // Y en la pantalla de verdad, con planes cargados y ninguno elegido.
+    expect(await render({ planes: [PLAN_CONTADO] })).not.toContain('Total a cobrar')
+  })
+
+  // La regla que este archivo aplica a TODO importe: un monto a medio tipear
+  // deja la cuenta en NaN, y `formatearPrecio(NaN)` imprime "$ NaN". El pie
+  // no es la excepción — y con un plan elegido sigue apareciendo, porque
+  // esconderlo mientras se retipea el monto haría parpadear tres líneas en
+  // cada tecla.
+  it('el pie muestra — y no "$ NaN" con un monto o una mercadería a medio tipear', async () => {
+    const { lineasDelPieDeCobro } = await import('./punto-de-venta')
+    const conMontoRoto = lineasDelPieDeCobro(
+      1_000_000,
+      [{ base: '', cotizacion: '1', planId: PLAN_CREDITO.id }],
+      [PLAN_CREDITO],
+    )
+    expect(conMontoRoto.map((l) => l.monto)).toEqual([formatearPrecio('10000'), '—', '—'])
+
+    const conCarritoRoto = lineasDelPieDeCobro(
+      NaN,
+      [{ base: '10000', cotizacion: '1', planId: PLAN_CREDITO.id }],
+      [PLAN_CREDITO],
+    )
+    expect(conCarritoRoto.map((l) => l.monto)).toEqual(['—', formatearPrecio('4000'), '—'])
+  })
+
+  // Cableado del pie: la mercadería que muestra tiene que ser el MISMO
+  // `totalCentavos` que pinta la banda de --marca, y las líneas tienen que
+  // salir de la función y no de tres bloques de JSX con su propia cuenta.
+  // El agujero que encontró la revisión de esta task: con `lineasDelPie.map(`
+  // exigido a secas, cambiar el guard del JSX a `{false && (` dejaba los 45
+  // casos en verde con el pie BORRADO de la pantalla — ninguno lo reclamaba,
+  // porque el harness no puede montar un carrito con plan y el `.map` seguía
+  // escrito ahí adentro. Por eso el guard y el `.map` se exigen juntos y EN
+  // ORDEN, con `[\s\S]*?` entre medio: es la misma corrección que ya se le
+  // había hecho al caso de las guardas de Enter, más arriba.
+  it('el pie del cobro sale de lineasDelPieDeCobro sobre el total del carrito', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    expect(fuente).toMatch(/const lineasDelPie = lineasDelPieDeCobro\(totalCentavos, pagos, planes\)/)
+    expect(
+      fuente,
+      'el pie tiene que dibujarse cuando lineasDelPie tiene líneas, mapeando ESA lista',
+    ).toMatch(/\{lineasDelPie\.length > 0 && \([\s\S]*?lineasDelPie\.map\(/)
+  })
+
+  // El caso que decide si el botón se puede apretar, y el que más duele si
+  // sale mal: el faltante se mide contra la MERCADERÍA, no contra lo que
+  // entra a la caja. Un carrito de 10.000 con un pago de base 10.000 y 40 %
+  // de recargo CIERRA —el motor compara la suma de las bases contra el total
+  // de ítems—, así que no puede aparecer el chip "Faltan" ni apagarse
+  // "Cobrar". Si el faltante midiera contra los 14.000 que entran, el
+  // mostrador no podría cobrar nunca una venta financiada.
+  //
+  // Es una lectura del FUENTE porque el estado que lo probaría —un carrito
+  // con líneas y un pago con plan— no se puede montar en este harness. Lo que
+  // fija es que el bloque que decide el faltante no sepa nada del recargo.
+  it('el faltante se mide contra la mercadería, no contra lo cobrado', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    const desde = fuente.indexOf('const pagadoCentavos = totalDePagosEnCentavos(')
+    const hasta = fuente.indexOf('const hayFaltante = hayFaltanteDeVenta(')
+    expect(desde, 'el cálculo de lo pagado tiene que existir en el fuente').toBeGreaterThan(-1)
+    expect(hasta, 'el cálculo del faltante tiene que existir en el fuente').toBeGreaterThan(desde)
+    const bloque = fuente.slice(desde, hasta)
+    expect(bloque).toMatch(/const faltanCentavos = totalCentavos - pagadoCentavos/)
+    expect(bloque).toMatch(/const cierra = hayCarrito && faltanCentavos === 0/)
+    expect(
+      bloque,
+      'ni lo pagado ni el faltante ni "cierra" pueden mirar el recargo: el pago se reparte contra la mercadería',
+    ).not.toMatch(/recargo/i)
+  })
+
+  // El plan tiene que llegar al servidor con el resto del pago; sin plan, el
+  // JSON no puede ganar un campo nuevo (`JSON.stringify` descarta
+  // `undefined`), así que un local sin planes manda exactamente lo mismo que
+  // antes de esta task.
+  it('el plan elegido viaja al servidor junto con el pago', async () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    expect(fuente).toMatch(/planId: p\.planId \?\? undefined/)
+    expect(await render({ planes: [PLAN_CONTADO] })).not.toContain('planId')
   })
 })

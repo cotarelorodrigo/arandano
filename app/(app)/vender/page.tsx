@@ -2,6 +2,7 @@ import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { ultimaCotizacionUsd } from '@/lib/ventas/buscar'
 import { cajaAbierta } from '@/lib/caja/abrir-cerrar'
+import { planesDelTenant } from '@/lib/planes/consultar'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { PuntoDeVenta } from './punto-de-venta'
 import { ChipCaja } from './caja'
@@ -24,12 +25,19 @@ export default async function Vender() {
   // (Pago.cotizacion, histórica). Las dos conviven a propósito: el comentario
   // de Tenant.cotizacionUsd en prisma/schema.prisma explica por qué no se
   // unifican.
-  const [caja, tenant] = await Promise.all([
+  // Los planes van en la misma tanda, y por el mismo motivo: se leen en el
+  // SERVIDOR y viajan como prop. Sin los desactivados —el default de
+  // `planesDelTenant`—: un plan dado de baja no se puede usar para cobrar (el
+  // motor lo rechaza con PLAN_INEXISTENTE), así que ofrecerlo sería ofrecer un
+  // error. `PlanVisible` cruza a un componente cliente sin problema: sus campos
+  // son string, number y Date, no Decimal (ver el comentario del tipo).
+  const [caja, tenant, planes] = await Promise.all([
     cajaAbierta(sesion.tenant.id),
     prismaParaTenant(sesion.tenant.id).tenant.findUnique({
       where: { id: sesion.tenant.id },
       select: { cotizacionUsd: true, cotizacionUsdEn: true },
     }),
+    planesDelTenant(sesion.tenant.id),
   ])
 
   return (
@@ -53,7 +61,7 @@ export default async function Vender() {
         }
       />
       <div className="p-6">
-        <PuntoDeVenta cotizacionInicial={cotizacionInicial} />
+        <PuntoDeVenta cotizacionInicial={cotizacionInicial} planes={planes} />
       </div>
     </>
   )
