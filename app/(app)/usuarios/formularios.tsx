@@ -193,13 +193,30 @@ export function CardEquipo({
             {/* "Datos+chips": se disuelve en escritorio en las celdas
                 Persona, Rol, Estado y Acciones — ver el docblock. */}
             <div className="flex min-w-0 flex-1 flex-col gap-[3px] lg:contents">
+              {/* `lg:min-w-0` en la celda y `lg:truncate` adentro, igual que la
+                  columna Detalle de app/(app)/inventario/historial.tsx: ésta
+                  es la única pista flexible (`1fr`) de este grid, y sin
+                  `min-width: 0` un ítem de grid no se achica por debajo de su
+                  contenido. Acá importa de verdad porque lo que muestra es un
+                  MAIL, que no tiene espacios donde cortar: su min-content es
+                  el ancho completo del mail. Con `<Table>` eso lo tapaban
+                  `table-fixed` y el `overflow-x-auto` del envoltorio, que se
+                  fueron con el grid — sin esto, en una ventana angosta de
+                  escritorio la pista se ensancha y saca la card del
+                  contenedor.
+
+                  `lg:truncate` va en las DOS LÍNEAS y no en el envoltorio (a
+                  diferencia de historial.tsx, donde la celda tiene una sola):
+                  el envoltorio es una pila vertical, y un `truncate` ahí
+                  recorta sin puntos suspensivos — `text-overflow` sólo actúa
+                  sobre el contenido inline del propio bloque. */}
               <div
                 role="cell"
-                className="lg:border-b lg:py-[11px] lg:pr-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+                className="lg:min-w-0 lg:border-b lg:py-[11px] lg:pr-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
               >
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium text-foreground">{u.nombre}</span>
-                  <span className="text-[11px] text-muted-foreground">{u.email}</span>
+                <div className="flex flex-col gap-0.5 lg:min-w-0">
+                  <span className="text-sm font-medium text-foreground lg:truncate">{u.nombre}</span>
+                  <span className="text-[11px] text-muted-foreground lg:truncate">{u.email}</span>
                 </div>
               </div>
 

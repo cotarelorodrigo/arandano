@@ -266,6 +266,18 @@ export function Detalle({
                   llegó formateado desde `DetalleDeVenta` (`subtotalItem()` de
                   lib/ventas/totales.ts, la MISMA función con la que
                   `crearVenta` arma el total). */}
+              {/* SIN `last:border-b-0`, a diferencia de la fila de "Cómo se
+                  pagó" más abajo, que sí lo lleva — y la asimetría es a
+                  propósito, no un olvido (la review final la marcó como
+                  candidata a unificar). Lo que viene después de la última
+                  fila NO es lo mismo en las dos tablas: acá sigue la banda
+                  TOTAL, y ese borde es lo que la separa de la lista, igual
+                  que el `border-b` del encabezado la separa por arriba; en
+                  "Cómo se pagó" sigue el borde de la card, y ahí el borde de
+                  la fila haría una línea doble. Sólo cuenta en el teléfono:
+                  en escritorio la fila es `lg:contents`, así que su caja
+                  —y con ella su borde— no existe, y quien dibuja las líneas
+                  es cada celda con `lg:group-last:border-b-0`. */}
               {items.map((i) => (
                 <div
                   key={i.id}

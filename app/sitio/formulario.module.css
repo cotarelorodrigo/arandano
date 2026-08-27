@@ -28,6 +28,19 @@
  * como una única clase con variables CSS de más no deja nada más claro que
  * dos clases chicas.
  */
+/*
+ * LAS DOS REGLAS DE ACÁ ABAJO ESTÁN VACÍAS A PROPÓSITO, y no son un resto de
+ * una versión anterior (la review final las marcó como "código muerto que
+ * hace mirar dos veces", y merecen esta explicación más que su borrado).
+ *
+ * En el teléfono el marco NO EXISTE —ver el comentario de arriba—, así que no
+ * hay ni una propiedad que declarar. Borrarlas funcionaría igual: los nombres
+ * se exportan lo mismo desde el `@media` de más abajo. Pero el bloque vacío es
+ * lo que hace EXPLÍCITA la ausencia en el default mobile-first, en vez de que
+ * haya que deducirla de que el archivo abre directo con una media query —
+ * exactamente la lectura que `app/sitio/formulario.test.tsx` fija, afirmando
+ * que estas dos reglas existen y que su cuerpo está vacío.
+ */
 .marcoClara {
 }
 

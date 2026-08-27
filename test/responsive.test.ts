@@ -24,6 +24,30 @@ const LIMITE = 362
 const ANCHO = /^(?:[a-z0-9@[\]&>_-]+:)*(?:min-)?(?:w|basis)-\[(\d+)px\]$/
 
 /**
+ * LO QUE ESTE CASO NO VE, escrito acá porque un guard con puntos ciegos sin
+ * documentar se lee como si no los tuviera (hallazgo de la review final del
+ * ciclo móvil). Ninguno es un defecto a arreglar: son el precio de mirar el
+ * FUENTE con un regex en vez de medir un layout de verdad, y la única forma
+ * real de cubrirlos sería un navegador. Que estén nombrados es lo que impide
+ * que alguien confunda "el test pasa" con "nada desborda".
+ *
+ * - **Los anchos de la escala de Tailwind**: `w-96` son 384px y este regex no
+ *   los mira, porque sólo reconoce el valor arbitrario entre corchetes.
+ * - **Los valores en `rem` o en otra unidad**: `w-[24rem]` son los mismos
+ *   384px y el regex pide `px` explícito.
+ * - **El modificador `!`**: `w-[400px]!` no matchea (el `$` del regex cae
+ *   justo después del `]`), así que un ancho forzado se escapa entero.
+ * - **`grid-cols-[…px…]`**: una plantilla de grid con pistas fijas —
+ *   `grid-cols-[150px_170px_1fr]`— suma un ancho mínimo mayor que cualquiera
+ *   de sus números, y este caso no lee `grid-cols-` en absoluto. Es lo que
+ *   hace que las tablas de este repo dependan de `lg:grid-cols-…` y de
+ *   `grid-cols-1` sin prefijo, no de este test.
+ * - **Los anchos que viven dentro de un CSS Module**: el archivo `.module.css`
+ *   ni se abre (`fuentes()` filtra `.tsx`), así que un `width: 420px` ahí es
+ *   invisible.
+ */
+
+/**
  * Archivos donde un ancho grande sin `lg:` es correcto, con su razón. Un mapa
  * y no una lista: la razón tiene que estar escrita, igual que en SOLO_EN_CSS
  * de test/maqueta.test.ts.
@@ -75,6 +99,13 @@ describe('ningún ancho fijo desborda un teléfono de 390', () => {
     ).toEqual([])
   })
 
+  // HOY ESTE CASO NO AFIRMA NADA: con EXCEPCIONES vacío, `inexistentes`
+  // siempre da `[]` sin mirar un solo archivo. Se deja igual, y a propósito:
+  // es un guard hacia adelante — el día que alguien anote una excepción, éste
+  // es el que impide que sobreviva a la muerte del archivo que la motivaba y
+  // se convierta en una exención silenciosa para un archivo futuro con el
+  // mismo nombre. El costo de mantenerlo vacío es cero; el de escribirlo
+  // recién cuando haga falta es que nadie se acuerde.
   it('EXCEPCIONES no nombra archivos que ya no existen', () => {
     const inexistentes = Object.keys(EXCEPCIONES).filter((f) => !archivos.includes(f))
     expect(inexistentes, `EXCEPCIONES nombra archivos que no están: ${inexistentes}`).toEqual([])

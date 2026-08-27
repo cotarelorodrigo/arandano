@@ -59,7 +59,10 @@
 }
 @media (min-width: 1024px) {
   .tituloDeReglas {
-    font-family: ui-sans-serif, system-ui, sans-serif;
+    /* `var(--font-sans)` y no la pila escrita a mano: hoy resuelven al mismo
+       string, pero con la pila literal este título sería el único de la app
+       que no seguiría a `--font-sans` el día que ese token cambie. */
+    font-family: var(--font-sans);
     font-size: 0.8125rem; /* 13px, el de escritorio de siempre */
     font-weight: 700;
   }
