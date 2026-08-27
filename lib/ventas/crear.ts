@@ -4,6 +4,7 @@ import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import {
   totalDeItems,
   totalDePagos,
+  recargoDePago,
   excedeEscala,
   ESCALA_CANTIDAD,
   ESCALA_DINERO,
@@ -16,8 +17,17 @@ export type ItemDeVenta = { articuloId: string; cantidad: Prisma.Decimal }
 export type PagoDeVenta = {
   medio: MedioPago
   moneda: Moneda
-  monto: Prisma.Decimal
+  /**
+   * Lo que este pago cubre de la venta, A PRECIO DE LISTA y en la moneda del
+   * pago. NO es lo que entra a la caja: eso es `base + recargo`, y lo calcula
+   * el servidor. Que el llamador mande la base y no el monto es lo que hace
+   * que el invariante de abajo siga siendo el de siempre —los pagos suman el
+   * total— y lo que impide que el navegador decida cuánta plata entró.
+   */
+  base: Prisma.Decimal
   cotizacion: Prisma.Decimal
+  /** El plan con el que se cobra esta parte. Sin plan, precio de lista. */
+  planId?: string
 }
 
 export type EntradaCrearVenta = {
@@ -71,7 +81,7 @@ export async function crearVenta(
   // existe para guardar. Una devolución es una venta anulada, no un pago en
   // negativo.
   for (const p of pagos) {
-    if (p.monto.lessThanOrEqualTo(0)) {
+    if (p.base.lessThanOrEqualTo(0)) {
       throw new ErrorDeVenta(
         'MONTO_INVALIDO',
         `el monto de un pago ${p.medio} tiene que ser mayor que cero`,
@@ -83,7 +93,7 @@ export async function crearVenta(
         `la cotización de un pago ${p.moneda} tiene que ser mayor que cero`,
       )
     }
-    if (excedeEscala(p.monto, ESCALA_DINERO)) {
+    if (excedeEscala(p.base, ESCALA_DINERO)) {
       throw new ErrorDeVenta(
         'ESCALA_EXCEDIDA',
         `el monto de un pago ${p.medio} tiene a lo sumo ${ESCALA_DINERO} decimales`,
@@ -123,6 +133,47 @@ export async function crearVenta(
       if (clienteId !== undefined) await exigirCliente(tx, clienteId)
       await exigirUsuario(tx, usuarioId)
 
+      // Los planes, de una sola consulta y adentro de la transacción del
+      // tenant: RLS ya filtra por tenant, así que el plan de otro local
+      // simplemente no aparece y cae en PLAN_INEXISTENTE, igual que uno
+      // inventado. Son la misma situación para quien está cobrando.
+      const idsDePlan = [...new Set(pagos.flatMap((p) => (p.planId ? [p.planId] : [])))]
+      const planes = idsDePlan.length
+        ? await tx.planDePago.findMany({ where: { id: { in: idsDePlan } } })
+        : []
+      const planPorId = new Map(planes.map((p) => [p.id, p]))
+
+      const pagosConRecargo = pagos.map((p) => {
+        if (p.planId === undefined) {
+          return { ...p, recargo: new Prisma.Decimal(0), monto: p.base }
+        }
+        const plan = planPorId.get(p.planId)
+        // Desactivado se trata como inexistente A PROPÓSITO, al revés que con
+        // los artículos: un plan dado de baja no se reactiva para cobrar una
+        // venta, se elige otro. La distinción no le cambiaría la salida a nadie.
+        if (!plan || plan.desactivadoEn) {
+          throw new ErrorDeVenta('PLAN_INEXISTENTE', `el plan ${p.planId} no está disponible`)
+        }
+        if (plan.medio !== p.medio) {
+          throw new ErrorDeVenta(
+            'PLAN_NO_CORRESPONDE',
+            `${plan.nombre} es un plan de ${plan.medio} y el pago es ${p.medio}`,
+          )
+        }
+        // Sin esto, `monto = base + recargo` de abajo mezclaría dólares con
+        // pesos. El porqué de no resolverlo dividiendo está en el spec: la
+        // división deja ventas que no cierran por un centavo y que nadie puede
+        // arreglar desde el mostrador.
+        if (p.moneda !== 'ARS') {
+          throw new ErrorDeVenta(
+            'PLAN_EN_DOLARES',
+            'un pago en dólares se cobra sin plan: el recargo va sobre la parte en pesos',
+          )
+        }
+        const recargo = recargoDePago(p.base, plan.recargoPorcentaje)
+        return { ...p, recargo, monto: p.base.add(recargo) }
+      })
+
       const articulos = await tx.articulo.findMany({
         where: { id: { in: items.map((i) => i.articuloId) } },
       })
@@ -158,12 +209,21 @@ export async function crearVenta(
       })
 
       const total = totalDeItems(lineas)
-      if (!totalDePagos(pagos).equals(total)) {
+      // Contra las BASES y no contra los montos: el recargo no es mercadería.
+      // Es la misma comparación de siempre, corrida un lugar.
+      const cubierto = totalDePagos(
+        pagosConRecargo.map((p) => ({ monto: p.base, cotizacion: p.cotizacion })),
+      )
+      if (!cubierto.equals(total)) {
         throw new ErrorDeVenta(
           'PAGOS_NO_CIERRAN',
-          `los pagos suman ${totalDePagos(pagos)} y el total es ${total}`,
+          `los pagos suman ${cubierto} y el total es ${total}`,
         )
       }
+      const recargoTotal = pagosConRecargo.reduce(
+        (acc, p) => acc.add(p.recargo),
+        new Prisma.Decimal(0),
+      )
 
       // TODO lo que se puede validar ya se validó: `proximoNumero` toma el lock
       // de la fila del tenant y lo retiene hasta el commit, o sea que serializa
@@ -179,6 +239,10 @@ export async function crearVenta(
           usuarioId,
           claveIdempotencia,
           total,
+          // La suma de los recargos de los pagos. `total` sigue siendo la
+          // mercadería a precio de lista: son dos números distintos y este
+          // ciclo existe justamente para no confundirlos.
+          recargo: recargoTotal,
           items: {
             create: lineas.map((l) => ({
               tenantId,
@@ -194,12 +258,14 @@ export async function crearVenta(
           // —un 500 sin `codigo`— en vez del `ErrorDeVenta` que el resto de esta
           // función usa para todo lo demás.
           pagos: {
-            create: pagos.map((p) => ({
+            create: pagosConRecargo.map((p) => ({
               tenantId,
               medio: p.medio,
               moneda: p.moneda,
               monto: p.monto,
               cotizacion: p.cotizacion,
+              planDePagoId: p.planId,
+              recargo: p.recargo,
             })),
           },
         },

@@ -18,6 +18,8 @@ let ajustarStock: typeof import('@/lib/inventario/stock').ajustarStock
 let buscarArticulosVendibles: typeof import('@/lib/ventas/buscar').buscarArticulosVendibles
 let ultimaCotizacionUsd: typeof import('@/lib/ventas/buscar').ultimaCotizacionUsd
 let prismaParaTenant: typeof import('@/lib/tenant/prisma').prismaParaTenant
+let crearPlan: typeof import('@/lib/planes/administrar').crearPlan
+let desactivarPlan: typeof import('@/lib/planes/administrar').desactivarPlan
 // De app/(app)/ventas/page.tsx, no de lib/: es la regla de negocio que arma
 // el tile "Total del período" de esa pantalla, y este archivo es donde vive
 // el arnés de base efímera que la puede ejercitar de verdad — page.test.tsx
@@ -54,6 +56,7 @@ beforeAll(async () => {
   ;({ ajustarStock } = await import('@/lib/inventario/stock'))
   ;({ buscarArticulosVendibles, ultimaCotizacionUsd } = await import('@/lib/ventas/buscar'))
   ;({ prismaParaTenant } = await import('@/lib/tenant/prisma'))
+  ;({ crearPlan, desactivarPlan } = await import('@/lib/planes/administrar'))
   ;({ totalDelPeriodo } = await import('@/app/(app)/ventas/page'))
 
   owner = new Client({ connectionString: urlOwner() })
@@ -131,7 +134,7 @@ describe('crearVenta', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: remera, cantidad: d('2') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('2000'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('2000'), cotizacion: d('1') }],
     })
 
     expect(numero).toBeGreaterThan(0)
@@ -161,7 +164,7 @@ describe('crearVenta', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: remera, cantidad: d('1') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
     })
 
     await owner.query(`UPDATE articulos SET precio = 9999 WHERE id = $1`, [remera])
@@ -180,7 +183,7 @@ describe('crearVenta', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: servicio, cantidad: d('1') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('500'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500'), cotizacion: d('1') }],
     })
 
     const movs = await enTransaccionDeTenant(tenantId, async (tx) =>
@@ -195,8 +198,8 @@ describe('crearVenta', () => {
       usuarioId,
       items: [{ articuloId: remera, cantidad: d('1') }],
       pagos: [
-        { medio: 'EFECTIVO', moneda: 'ARS', monto: d('500'), cotizacion: d('1') },
-        { medio: 'EFECTIVO', moneda: 'USD', monto: d('0.5'), cotizacion: d('1000') },
+        { medio: 'EFECTIVO', moneda: 'ARS', base: d('500'), cotizacion: d('1') },
+        { medio: 'EFECTIVO', moneda: 'USD', base: d('0.5'), cotizacion: d('1000') },
       ],
     })
 
@@ -217,7 +220,7 @@ describe('crearVenta', () => {
         tenantId,
         usuarioId,
         items: [{ articuloId: remera, cantidad: d('1') }],
-        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('999'), cotizacion: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('999'), cotizacion: d('1') }],
       }),
     ).rejects.toMatchObject({ codigo: 'PAGOS_NO_CIERRAN' })
 
@@ -265,7 +268,7 @@ describe('crearVenta', () => {
         tenantId,
         usuarioId,
         items: [{ articuloId: desbordable, cantidad: d('1000') }],
-        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000000'), cotizacion: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000000'), cotizacion: d('1') }],
       }),
     ).rejects.toMatchObject({ codigo: 'FUERA_DE_RANGO' })
 
@@ -296,7 +299,7 @@ describe('crearVenta', () => {
         usuarioId,
         clienteId: clienteAjeno,
         items: [{ articuloId: remera, cantidad: d('1') }],
-        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000'), cotizacion: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
       }),
     ).rejects.toMatchObject({ codigo: 'CLIENTE_INEXISTENTE' })
 
@@ -307,7 +310,7 @@ describe('crearVenta', () => {
       usuarioId,
       clienteId: clientePropio,
       items: [{ articuloId: remera, cantidad: d('1') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
     })
     const venta = await enTransaccionDeTenant(tenantId, async (tx) =>
       tx.venta.findUniqueOrThrow({ where: { id } }),
@@ -327,7 +330,7 @@ describe('crearVenta', () => {
         tenantId,
         usuarioId: usuarioAjeno,
         items: [{ articuloId: remera, cantidad: d('1') }],
-        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000'), cotizacion: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
       }),
     ).rejects.toMatchObject({ codigo: 'USUARIO_INEXISTENTE' })
   })
@@ -342,7 +345,7 @@ describe('crearVenta', () => {
         tenantId,
         usuarioId,
         items: [{ articuloId: remera, cantidad: d('1.0005') }],
-        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000.50'), cotizacion: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000.50'), cotizacion: d('1') }],
       }),
     ).rejects.toMatchObject({ codigo: 'ESCALA_EXCEDIDA' })
   })
@@ -355,7 +358,7 @@ describe('crearVenta', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: remera, cantidad: d('1.000') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000.00'), cotizacion: d('1.0000') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000.00'), cotizacion: d('1.0000') }],
     })
     expect(id).toBeTruthy()
   })
@@ -366,7 +369,7 @@ describe('crearVenta', () => {
         tenantId,
         usuarioId,
         items: [{ articuloId: remera, cantidad: d('1') }],
-        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000.005'), cotizacion: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000.005'), cotizacion: d('1') }],
       }),
     ).rejects.toMatchObject({ codigo: 'ESCALA_EXCEDIDA' })
   })
@@ -377,7 +380,7 @@ describe('crearVenta', () => {
         tenantId,
         usuarioId,
         items: [{ articuloId: remera, cantidad: d('1') }],
-        pagos: [{ medio: 'EFECTIVO', moneda: 'USD', monto: d('1'), cotizacion: d('1000.00005') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'USD', base: d('1'), cotizacion: d('1000.00005') }],
       }),
     ).rejects.toMatchObject({ codigo: 'ESCALA_EXCEDIDA' })
   })
@@ -392,8 +395,8 @@ describe('crearVenta', () => {
         usuarioId,
         items: [{ articuloId: remera, cantidad: d('1') }],
         pagos: [
-          { medio: 'EFECTIVO', moneda: 'ARS', monto: d('900000'), cotizacion: d('1') },
-          { medio: 'TARJETA_DEBITO', moneda: 'ARS', monto: d('-899000'), cotizacion: d('1') },
+          { medio: 'EFECTIVO', moneda: 'ARS', base: d('900000'), cotizacion: d('1') },
+          { medio: 'TARJETA_DEBITO', moneda: 'ARS', base: d('-899000'), cotizacion: d('1') },
         ],
       }),
     ).rejects.toMatchObject({ codigo: 'MONTO_INVALIDO' })
@@ -407,7 +410,7 @@ describe('crearVenta', () => {
         tenantId,
         usuarioId,
         items: [{ articuloId: remera, cantidad: d('1') }],
-        pagos: [{ medio: 'EFECTIVO', moneda: 'USD', monto: d('1'), cotizacion: d('0') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'USD', base: d('1'), cotizacion: d('0') }],
       }),
     ).rejects.toMatchObject({ codigo: 'COTIZACION_INVALIDA' })
   })
@@ -418,7 +421,7 @@ describe('crearVenta', () => {
         tenantId,
         usuarioId,
         items: [{ articuloId: '00000000-0000-7000-8000-000000000000', cantidad: d('1') }],
-        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1'), cotizacion: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1'), cotizacion: d('1') }],
       }),
     ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
   })
@@ -463,7 +466,7 @@ describe('crearVenta', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: remera, cantidad: d('1000') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000000'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000000'), cotizacion: d('1') }],
     })
     expect(id).toBeTruthy()
     expect(new Prisma.Decimal(await stockDe(remera)).isNegative()).toBe(true)
@@ -478,7 +481,7 @@ describe('crearVenta', () => {
         tenantId,
         usuarioId,
         items: [{ articuloId: remera, cantidad: d('1') }],
-        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000'), cotizacion: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
       })
 
     await Promise.all([venta(), venta(), venta(), venta()])
@@ -513,7 +516,7 @@ describe('crearVenta', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: recon, cantidad: d('7.5') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('750'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('750'), cotizacion: d('1') }],
     })
 
     const { stock, suma } = await enTransaccionDeTenant(tenantId, async (tx) => {
@@ -541,6 +544,243 @@ describe('crearVenta', () => {
   })
 })
 
+describe('cobrar con un plan de pago', () => {
+  /** La venta con sus pagos, leída desde la transacción del tenant. */
+  async function ventaConPagos(id: string) {
+    return enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.venta.findUniqueOrThrow({ where: { id }, include: { pagos: true } }),
+    )
+  }
+
+  // Diez remeras de 1000: 10.000 de mercadería, que es el total redondo con el
+  // que se leen a ojo los porcentajes de todos los casos de abajo. Función y no
+  // constante porque `remera` se resuelve recién en el `beforeAll`.
+  const items = () => [{ articuloId: remera, cantidad: d('10') }]
+
+  it('un plan del 25 % cobra 25 % más, y la venta guarda el recargo', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: 'Crédito 3 cuotas',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 3,
+      recargoPorcentaje: d('25'),
+    })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: items(),
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('10000'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+      ],
+    })
+
+    const venta = await ventaConPagos(id)
+    // La mercadería NO cambia: el margen del artículo se sigue midiendo contra
+    // el precio de lista.
+    expect(venta.total.toString()).toBe('10000')
+    expect(venta.recargo.toString()).toBe('2500')
+    expect(venta.pagos[0].monto.toString()).toBe('12500')
+    expect(venta.pagos[0].recargo.toString()).toBe('2500')
+    expect(venta.pagos[0].planDePagoId).toBe(plan.id)
+  })
+
+  it('un plan con porcentaje negativo descuenta', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: 'Contado',
+      medio: 'EFECTIVO',
+      cuotas: 1,
+      recargoPorcentaje: d('-10'),
+    })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: items(),
+      pagos: [
+        { medio: 'EFECTIVO', moneda: 'ARS', base: d('10000'), cotizacion: d('1'), planId: plan.id },
+      ],
+    })
+
+    const venta = await ventaConPagos(id)
+    expect(venta.recargo.toString()).toBe('-1000')
+    expect(venta.pagos[0].monto.toString()).toBe('9000')
+  })
+
+  it('pago partido: el recargo cae SÓLO sobre la parte financiada', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: 'Crédito 6 cuotas',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 6,
+      recargoPorcentaje: d('40'),
+    })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: items(),
+      pagos: [
+        { medio: 'EFECTIVO', moneda: 'ARS', base: d('4000'), cotizacion: d('1') },
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('6000'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+      ],
+    })
+
+    const venta = await ventaConPagos(id)
+    expect(venta.total.toString()).toBe('10000')
+    // 40 % de 6.000, no de 10.000: los 4.000 en efectivo no pagan el costo de
+    // la tarjeta. Si el recargo se aplicara a la venta entera, acá diría 4000.
+    expect(venta.recargo.toString()).toBe('2400')
+    const enEfectivo = venta.pagos.find((p) => p.medio === 'EFECTIVO')!
+    expect(enEfectivo.monto.toString()).toBe('4000')
+    expect(enEfectivo.recargo.toString()).toBe('0')
+    const conTarjeta = venta.pagos.find((p) => p.medio === 'TARJETA_CREDITO')!
+    expect(conTarjeta.monto.toString()).toBe('8400')
+    expect(conTarjeta.recargo.toString()).toBe('2400')
+  })
+
+  it('sin plan, todo sigue exactamente como antes', async () => {
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: items(),
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('10000'), cotizacion: d('1') }],
+    })
+
+    const venta = await ventaConPagos(id)
+    expect(venta.recargo.toString()).toBe('0')
+    expect(venta.pagos[0].monto.toString()).toBe('10000')
+    expect(venta.pagos[0].recargo.toString()).toBe('0')
+    expect(venta.pagos[0].planDePagoId).toBeNull()
+  })
+
+  it('rechaza un plan que no existe', async () => {
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: items(),
+        pagos: [
+          {
+            medio: 'TARJETA_CREDITO',
+            moneda: 'ARS',
+            base: d('10000'),
+            cotizacion: d('1'),
+            planId: '00000000-0000-7000-8000-000000000000',
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ codigo: 'PLAN_INEXISTENTE' })
+  })
+
+  it('rechaza un plan desactivado', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: 'Viejo',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 3,
+      recargoPorcentaje: d('20'),
+    })
+    await desactivarPlan({ tenantId, id: plan.id })
+
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: items(),
+        pagos: [
+          {
+            medio: 'TARJETA_CREDITO',
+            moneda: 'ARS',
+            base: d('10000'),
+            cotizacion: d('1'),
+            planId: plan.id,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ codigo: 'PLAN_INEXISTENTE' })
+  })
+
+  it('rechaza un plan de OTRO tenant', async () => {
+    const ajeno = await crearPlan({
+      tenantId: otroTenantId,
+      nombre: 'Ajeno',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 3,
+      recargoPorcentaje: d('20'),
+    })
+
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: items(),
+        pagos: [
+          {
+            medio: 'TARJETA_CREDITO',
+            moneda: 'ARS',
+            base: d('10000'),
+            cotizacion: d('1'),
+            planId: ajeno.id,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ codigo: 'PLAN_INEXISTENTE' })
+  })
+
+  it('rechaza un plan de crédito en un pago en efectivo', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: 'Crédito 12 cuotas',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('60'),
+    })
+
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: items(),
+        pagos: [
+          { medio: 'EFECTIVO', moneda: 'ARS', base: d('10000'), cotizacion: d('1'), planId: plan.id },
+        ],
+      }),
+    ).rejects.toMatchObject({ codigo: 'PLAN_NO_CORRESPONDE' })
+  })
+
+  it('rechaza un plan en un pago en dólares', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: 'Contado dólar',
+      medio: 'EFECTIVO',
+      cuotas: 1,
+      recargoPorcentaje: d('-10'),
+    })
+
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: items(),
+        pagos: [
+          { medio: 'EFECTIVO', moneda: 'USD', base: d('10'), cotizacion: d('1000'), planId: plan.id },
+        ],
+      }),
+    ).rejects.toMatchObject({ codigo: 'PLAN_EN_DOLARES' })
+  })
+})
+
 describe('anularVenta', () => {
   it('devuelve el stock y deja la venta legible', async () => {
     await owner.query(`UPDATE articulos SET stock = 50 WHERE id = $1`, [remera])
@@ -550,7 +790,7 @@ describe('anularVenta', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: remera, cantidad: d('3') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('3000'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('3000'), cotizacion: d('1') }],
     })
     expect(new Prisma.Decimal(await stockDe(remera)).toString()).toBe(
       antes.minus(3).toString(),
@@ -585,7 +825,7 @@ describe('anularVenta', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: remera, cantidad: d('1') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
     })
     await anularVenta({ tenantId, ventaId: id, usuarioId })
     const stockTrasPrimera = await stockDe(remera)
@@ -613,7 +853,7 @@ describe('anularVenta', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: remera, cantidad: d('5') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('5000'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('5000'), cotizacion: d('1') }],
     })
 
     await Promise.all([
@@ -635,7 +875,7 @@ describe('anularVenta', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: servicio, cantidad: d('1') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('500'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500'), cotizacion: d('1') }],
     })
     await anularVenta({ tenantId, ventaId: id, usuarioId })
 
@@ -660,7 +900,7 @@ describe('anularVenta', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: remera, cantidad: d('1') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('1000'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
     })
 
     await expect(
@@ -690,7 +930,7 @@ describe('anularVenta', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: mutante, cantidad: d('2') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('200'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('200'), cotizacion: d('1') }],
     })
     expect(new Prisma.Decimal(await stockDe(mutante)).toString()).toBe(antes.minus(2).toString())
 
@@ -730,7 +970,7 @@ describe('totalDelPeriodo (app/(app)/ventas/page.tsx)', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: servicio, cantidad: d('1') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('500'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500'), cotizacion: d('1') }],
     })
     // 1.4 unidades del servicio de $500 = $700: el total de una venta sale de
     // cantidad × precio del artículo (crearVenta lo congela ahí, no lo toma de
@@ -739,7 +979,7 @@ describe('totalDelPeriodo (app/(app)/ventas/page.tsx)', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: servicio, cantidad: d('1.4') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('700'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('700'), cotizacion: d('1') }],
     })
     await anularVenta({ tenantId, ventaId: idAAnular, usuarioId })
 
@@ -761,7 +1001,7 @@ describe('idempotencia del cobro', () => {
       usuarioId,
       claveIdempotencia: clave,
       items: [{ articuloId: remera, cantidad: d('2') }],
-      pagos: [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, monto: d('2000'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, base: d('2000'), cotizacion: d('1') }],
     }
 
     const primera = await crearVenta(entrada)
@@ -785,7 +1025,7 @@ describe('idempotencia del cobro', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: remera, cantidad: d('1') }],
-      pagos: [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, monto: d('1000'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, base: d('1000'), cotizacion: d('1') }],
     }
     const a = await crearVenta(entrada)
     const b = await crearVenta(entrada)
@@ -797,7 +1037,7 @@ describe('idempotencia del cobro', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: remera, cantidad: d('1') }],
-      pagos: [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, monto: d('1000'), cotizacion: d('1') }],
+      pagos: [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, base: d('1000'), cotizacion: d('1') }],
     }
     const a = await crearVenta({ ...base, claveIdempotencia: `a-${Date.now()}` })
     const b = await crearVenta({ ...base, claveIdempotencia: `b-${Date.now()}` })
@@ -818,7 +1058,7 @@ describe('un artículo desactivado no se puede vender', () => {
         tenantId,
         usuarioId,
         items: [{ articuloId: propio.rows[0].id, cantidad: d('1') }],
-        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('500'), cotizacion: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500'), cotizacion: d('1') }],
       }),
     ).rejects.toMatchObject({ codigo: 'ARTICULO_DESACTIVADO' })
   })
@@ -832,7 +1072,7 @@ describe('un artículo desactivado no se puede vender', () => {
         tenantId,
         usuarioId,
         items: [{ articuloId: '00000000-0000-7000-8000-000000000000', cantidad: d('1') }],
-        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', monto: d('500'), cotizacion: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500'), cotizacion: d('1') }],
       }),
     ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
   })
@@ -893,7 +1133,7 @@ describe('ultimaCotizacionUsd', () => {
       tenantId,
       usuarioId,
       items: [{ articuloId: remera, cantidad: d('1') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'USD', monto: d('0.8'), cotizacion: d('1250') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'USD', base: d('0.8'), cotizacion: d('1250') }],
     })
     // Sin ceros de cola, no '1250.0000': el `Decimal` de Prisma normaliza al
     // convertir a string, tal como ya lo prueba "congela el precio" más

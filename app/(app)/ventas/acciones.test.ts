@@ -103,7 +103,7 @@ beforeAll(async () => {
     // por el motivo equivocado.
     pagos: [{
       medio: 'EFECTIVO', moneda: 'ARS',
-      monto: new Prisma.Decimal('2000'), cotizacion: new Prisma.Decimal('1'),
+      base: new Prisma.Decimal('2000'), cotizacion: new Prisma.Decimal('1'),
     }],
   })
   ventaId = venta.id

@@ -116,7 +116,7 @@ function formulario({ clave }: { clave: string }): FormData {
   const datos = new FormData()
   datos.set('items', JSON.stringify([{ articuloId, cantidad: '1' }]))
   datos.set('pagos', JSON.stringify([
-    { medio: 'EFECTIVO', moneda: 'ARS', monto: precioArticulo, cotizacion: '1' },
+    { medio: 'EFECTIVO', moneda: 'ARS', base: precioArticulo, cotizacion: '1' },
   ]))
   datos.set('clave', clave)
   return datos
@@ -167,7 +167,7 @@ describe('cobrar', () => {
     estado.cookie = cookieEmpleado
     const datos = formulario({ clave: `medio-${Date.now()}` })
     datos.set('pagos', JSON.stringify([
-      { medio: 'CRIPTO', moneda: 'ARS', monto: '1000', cotizacion: '1' },
+      { medio: 'CRIPTO', moneda: 'ARS', base: '1000', cotizacion: '1' },
     ]))
     const r = await cobrar(INICIAL, datos)
     expect(r.error).toMatch(/medio de pago desconocido/)
@@ -192,18 +192,32 @@ describe('cobrar', () => {
     const datos = formulario({ clave: `dos-${Date.now()}` })
     datos.set('items', JSON.stringify([{ articuloId, cantidad: deMilesimas(2000) }]))
     datos.set('pagos', JSON.stringify([
-      { medio: 'EFECTIVO', moneda: 'ARS', monto: deCentavos(aCentavos(precioArticulo) * 2), cotizacion: '1' },
+      { medio: 'EFECTIVO', moneda: 'ARS', base: deCentavos(aCentavos(precioArticulo) * 2), cotizacion: '1' },
     ]))
     const r = await cobrar(INICIAL, datos)
     expect(r.error).toBeNull()
     expect(r.venta?.numero).toBeGreaterThan(0)
   })
 
+  // Mismo motivo que el caso del articuloId de arriba, un campo más abajo: sin
+  // el guard, un uuid mal formado llega a Prisma y sale como error sin
+  // `codigo`, o sea un 500 donde correspondía un cartel corregible.
+  it('un planId que no es uuid se rechaza como error de dominio, no como 500', async () => {
+    estado.cookie = cookieEmpleado
+    const datos = formulario({ clave: `plan-uuid-${Date.now()}` })
+    datos.set('pagos', JSON.stringify([
+      { medio: 'TARJETA_CREDITO', moneda: 'ARS', base: precioArticulo, cotizacion: '1',
+        planId: 'no-es-uuid' },
+    ]))
+    const r = await cobrar(INICIAL, datos)
+    expect(r.error).toMatch(/plan/i)
+  })
+
   it('los pagos que no cierran vuelven como error entendible', async () => {
     estado.cookie = cookieEmpleado
     const datos = formulario({ clave: `nocierra-${Date.now()}` })
     datos.set('pagos', JSON.stringify([
-      { medio: 'EFECTIVO', moneda: 'ARS', monto: '1', cotizacion: '1' },
+      { medio: 'EFECTIVO', moneda: 'ARS', base: '1', cotizacion: '1' },
     ]))
     const r = await cobrar(INICIAL, datos)
     expect(r.error).toMatch(/pagos suman/)

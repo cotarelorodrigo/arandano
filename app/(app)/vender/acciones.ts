@@ -74,7 +74,13 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
     })
 
     const pagos = listaDeJson(datos, 'pagos').map((crudo) => {
-      const p = crudo as { medio?: unknown; moneda?: unknown; monto?: unknown; cotizacion?: unknown }
+      const p = crudo as {
+        medio?: unknown
+        moneda?: unknown
+        base?: unknown
+        cotizacion?: unknown
+        planId?: unknown
+      }
       const medio = String(p.medio ?? '')
       const moneda = String(p.moneda ?? '')
       // Campo por campo y contra una lista blanca: lo que llega es un JSON que
@@ -87,11 +93,19 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
       if (!MONEDAS.includes(moneda as Moneda)) {
         throw new ErrorDeVenta('COTIZACION_INVALIDA', `moneda desconocida: ${moneda}`)
       }
+      const planId = String(p.planId ?? '').trim()
+      // Mismo guard que el articuloId: un uuid mal formado hace que Prisma tire
+      // un error sin `codigo` —un 500— en vez del error de dominio que el resto
+      // de esta función usa.
+      if (planId !== '' && !esUuid(planId)) {
+        throw new ErrorDeVenta('PLAN_INEXISTENTE', `no existe el plan ${planId}`)
+      }
       return {
         medio: medio as MedioPago,
         moneda: moneda as Moneda,
-        monto: aDecimal(String(p.monto ?? ''), 'el monto del pago'),
+        base: aDecimal(String(p.base ?? ''), 'el monto del pago'),
         cotizacion: aDecimal(String(p.cotizacion ?? ''), 'la cotización'),
+        planId: planId === '' ? undefined : planId,
       }
     })
 

@@ -18,6 +18,13 @@ export type CodigoErrorDeVenta =
   // nuevo; "está desactivado" se resuelve reactivándolo desde inventario. Un
   // mensaje que no las distinga manda a la persona al lugar equivocado.
   | 'ARTICULO_DESACTIVADO'
+  // Los tres del plan de pago. Separados a propósito, por lo mismo que
+  // ARTICULO_DESACTIVADO está separado de ARTICULO_INEXISTENTE: para el que
+  // está cobrando son tres situaciones con salidas distintas — buscar otro
+  // plan, cambiar el medio, o cobrar los dólares sin plan.
+  | 'PLAN_INEXISTENTE'
+  | 'PLAN_NO_CORRESPONDE'
+  | 'PLAN_EN_DOLARES'
 
 /**
  * Con código y no sólo con mensaje: la UI que venga después tiene que poder

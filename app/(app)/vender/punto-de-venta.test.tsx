@@ -296,12 +296,12 @@ describe('el punto de venta', () => {
     // escribir este valor, no supuesto.
     expect(entranPesosCentavos('20,55', '1485,7382')).toBe(3_053_192)
 
-    // Cableado: FilaDePago tiene que llamarla con pago.monto y
+    // Cableado: FilaDePago tiene que llamarla con pago.base y
     // pago.cotizacion, ni al revés ni con otra cosa — es justo la clase de
     // bug que una función pura probada sola no atrapa (ver la nota del
     // encargo sobre el stepper).
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
-    expect(fuente).toMatch(/entranPesosCentavos\(pago\.monto,\s*pago\.cotizacion\)/)
+    expect(fuente).toMatch(/entranPesosCentavos\(pago\.base,\s*pago\.cotizacion\)/)
   })
 
   // El hallazgo IMPORTANT de la review final: "Entran $X" era el ÚNICO

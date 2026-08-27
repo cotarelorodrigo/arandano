@@ -92,10 +92,10 @@ for (const receta of RECETAS) {
       articuloId: porSku(sku),
       cantidad: d(cantidad),
     })),
-    pagos: receta.pagos.map(([medio, moneda, monto]) => ({
+    pagos: receta.pagos.map(([medio, moneda, base]) => ({
       medio,
       moneda,
-      monto: d(monto),
+      base: d(base),
       cotizacion: moneda === 'USD' ? COTIZACION : d('1'),
     })),
   })

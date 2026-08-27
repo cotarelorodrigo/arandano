@@ -39,7 +39,10 @@ type Linea = {
 type Pago = {
   medio: 'EFECTIVO' | 'TRANSFERENCIA' | 'TARJETA_DEBITO' | 'TARJETA_CREDITO'
   moneda: 'ARS' | 'USD'
-  monto: string
+  // Lo que este pago cubre de la venta, a precio de lista. Se rotula "Monto"
+  // en pantalla y es lo que viaja al servidor; el monto que entra a la caja lo
+  // calcula el motor sumándole el recargo del plan (`lib/ventas/crear.ts`).
+  base: string
   cotizacion: string
   // Sólo UI: con cuánto paga el cliente, para calcular el vuelto. NO se manda
   // al servidor y NO se guarda — el pago que entra a la caja es el monto, no
@@ -438,11 +441,11 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
     setPagos((previos) => {
       if (previos.length === 0) {
         return [
-          { medio: 'EFECTIVO', moneda: 'ARS', monto: deCentavos(totalCentavos), cotizacion: '1', recibido: '' },
+          { medio: 'EFECTIVO', moneda: 'ARS', base: deCentavos(totalCentavos), cotizacion: '1', recibido: '' },
         ]
       }
       if (previos.length === 1 && previos[0].moneda === 'ARS') {
-        return [{ ...previos[0], monto: deCentavos(totalCentavos) }]
+        return [{ ...previos[0], base: deCentavos(totalCentavos) }]
       }
       return previos
     })
@@ -613,7 +616,7 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
   // las dos funciones separadas justamente por esto.
   const pagadoCentavos = totalDePagosEnCentavos(
     pagos.map((p) => ({
-      montoCentavos: dineroEnCentavos(p.monto),
+      montoCentavos: dineroEnCentavos(p.base),
       cotizacionDiezMilesimas: cotizacionEnDiezMilesimas(p.cotizacion),
     })),
   )
@@ -1062,7 +1065,7 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
                 pagos.map((p) => ({
                   medio: p.medio,
                   moneda: p.moneda,
-                  monto: p.monto,
+                  base: p.base,
                   cotizacion: p.cotizacion,
                 })),
               )}
@@ -1102,7 +1105,7 @@ export function PuntoDeVenta({ cotizacionInicial }: { cotizacionInicial: string 
                       // campo Monto de la fila nueva arrancaba mostrando eso —
                       // el mismo defecto preexistente que "Entran $X", acá del
                       // otro lado del cálculo (el precargado, no el mostrado).
-                      monto: Number.isNaN(faltanCentavos) ? '' : deCentavos(Math.max(0, faltanCentavos)),
+                      base: Number.isNaN(faltanCentavos) ? '' : deCentavos(Math.max(0, faltanCentavos)),
                       cotizacion: '1',
                       recibido: '',
                     },
@@ -1321,7 +1324,7 @@ function FilaDePago({
   // total, `:1112` el chip de faltante). Guardado en una constante para que
   // el guard de renderizado y el guard de "Agregar pago" (más abajo, en el
   // componente padre) no puedan divergir en cómo detectan el NaN.
-  const pesosDelPagoCentavos = entranPesosCentavos(pago.monto, pago.cotizacion)
+  const pesosDelPagoCentavos = entranPesosCentavos(pago.base, pago.cotizacion)
 
   return (
     // fill $ar-bg (--background) y no --card: design/arandano.pen pinta cada
@@ -1383,8 +1386,8 @@ function FilaDePago({
           <CampoMonto
             id={`monto-${indice}`}
             etiqueta="Monto"
-            valor={pago.monto}
-            onChange={(v) => onCambiar({ monto: v })}
+            valor={pago.base}
+            onChange={(v) => onCambiar({ base: v })}
           />
           <CampoMonto
             id={`cot-${indice}`}
@@ -1397,8 +1400,8 @@ function FilaDePago({
         <CampoMonto
           id={`monto-${indice}`}
           etiqueta="Monto"
-          valor={pago.monto}
-          onChange={(v) => onCambiar({ monto: v })}
+          valor={pago.base}
+          onChange={(v) => onCambiar({ base: v })}
         />
       )}
 
@@ -1434,7 +1437,7 @@ function FilaDePago({
           pone uno (nodo `USFQ3` sólo tiene rótulo + monto). */}
       {puedeMostrarVuelto(esEfectivoArs, hayFaltante) &&
         pago.recibido.trim() !== '' &&
-        dineroEnCentavos(pago.recibido) > dineroEnCentavos(pago.monto) && (
+        dineroEnCentavos(pago.recibido) > dineroEnCentavos(pago.base) && (
           <Badge
             variant="outline"
             className="h-auto w-full justify-between gap-2 rounded-[9px] border-transparent bg-ok-soft px-[11px] py-2"
@@ -1442,7 +1445,7 @@ function FilaDePago({
             <span className="text-xs font-semibold text-ok">Vuelto</span>
             <span className={`${estilos.importe} text-[15px] font-bold text-ok`}>
               {formatearPrecio(
-                deCentavos(dineroEnCentavos(pago.recibido) - dineroEnCentavos(pago.monto)),
+                deCentavos(dineroEnCentavos(pago.recibido) - dineroEnCentavos(pago.base)),
               )}
             </span>
           </Badge>
