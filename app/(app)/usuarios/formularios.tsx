@@ -12,6 +12,8 @@ import { ChipRol } from './chip-rol'
 import { ChipEstadoUsuario } from './chip-estado'
 import { AvisoClaveGenerada } from './aviso-clave'
 import { FilaAcciones, type UsuarioDeFila } from './fila-acciones'
+import { PermisosDeUsuario } from './permisos-dialogo'
+import type { Permiso } from '@/lib/permisos/catalogo'
 import estilos from './tipografia.module.css'
 
 // Acá y no en acciones.ts: aquel archivo es 'use server' y sólo puede exportar
@@ -148,15 +150,17 @@ function CardConEncabezado({
 export function CardEquipo({
   usuarios,
   usuarioActualId,
+  permisosPorUsuario,
   onClaveGenerada,
 }: {
   usuarios: UsuarioDeFila[]
   usuarioActualId: string
+  permisosPorUsuario: Record<string, Permiso[]>
   onClaveGenerada: (info: { nombre: string; clave: string }) => void
 }) {
   return (
     <CardConEncabezado titulo="El equipo del local">
-      <div role="table" className="grid grid-cols-1 lg:grid-cols-[1fr_112px_118px_180px]">
+      <div role="table" className="grid grid-cols-1 lg:grid-cols-[1fr_112px_118px_140px_180px]">
         <div role="row" className="hidden lg:contents">
           <div role="columnheader" className="bg-muted py-[11px] pr-[7px] pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
             Persona
@@ -166,6 +170,9 @@ export function CardEquipo({
           </div>
           <div role="columnheader" className="bg-muted px-[7px] py-[11px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
             Estado
+          </div>
+          <div role="columnheader" className="bg-muted px-[7px] py-[11px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+            Permisos
           </div>
           <div role="columnheader" className="bg-muted py-[11px] pr-[18px] pl-[7px] text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
             Acciones
@@ -241,6 +248,50 @@ export function CardEquipo({
                     <ChipEstadoUsuario desactivado={u.desactivadoEn !== null} />
                   </div>
                 </div>
+                {/* "Permisos" (columna nueva del ciclo de permisos por
+                    usuario, 2026-08-26). La celda se renderiza SIEMPRE,
+                    también en la fila de un dueño: con `lg:contents` sobre la
+                    fila, cada celda es un ítem del grid, y saltearse una en
+                    algunas filas correría todas las columnas siguientes de
+                    esa fila una posición a la izquierda. Lo que es condicional
+                    es el CONTENIDO — un dueño puede todo por construcción, y
+                    un diálogo con los seis switches prendidos y trabados
+                    sería ruido.
+
+                    Es la única celda más corta que "Persona" que NO lleva el
+                    envoltorio de centrado en la fila de un dueño, porque ahí
+                    no tiene nada que centrar; con contenido sí lo lleva, como
+                    Rol y Estado (nunca `self-center`, que encoge la celda y
+                    desalinea su borde).
+
+                    En el teléfono la celda se funde en la misma línea de
+                    acciones que "Cambiar clave · Baja" (nodo `hfAYV`), un
+                    solo nodo en el DOM: el orden de columnas de escritorio
+                    —Persona, Rol, Estado, Permisos, Acciones— ya deja
+                    "Permisos" pegado a "Acciones", así que no hace falta
+                    duplicar nada ni reordenar escritorio. El separador "·"
+                    de acá es el mismo que ya separa los links entre sí, y
+                    sólo existe en el teléfono. En la fila de un dueño la
+                    celda entera desaparece del teléfono (`hidden lg:block`),
+                    para no dejar el hueco del `gap` de la línea. */}
+                <div
+                  role="cell"
+                  className={`${
+                    u.rol === 'EMPLEADO' ? 'flex items-center gap-1' : 'hidden'
+                  } lg:block lg:border-b lg:px-[7px] lg:py-[11px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}
+                >
+                  {u.rol === 'EMPLEADO' && (
+                    <>
+                      <span aria-hidden="true" className="text-[10px] text-muted-foreground lg:hidden">
+                        ·
+                      </span>
+                      <div className="lg:flex lg:h-full lg:items-center">
+                        <PermisosDeUsuario usuario={u} permisos={permisosPorUsuario[u.id] ?? []} />
+                      </div>
+                    </>
+                  )}
+                </div>
+
                 <div
                   role="cell"
                   className="lg:border-b lg:py-[11px] lg:pr-[18px] lg:pl-[7px] lg:text-right lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
@@ -498,9 +549,11 @@ export function CardReglas() {
 export function CuerpoUsuarios({
   usuarios,
   usuarioActualId,
+  permisosPorUsuario,
 }: {
   usuarios: UsuarioDeFila[]
   usuarioActualId: string
+  permisosPorUsuario: Record<string, Permiso[]>
 }) {
   const [claveGenerada, setClaveGenerada] = useState<{ nombre: string; clave: string } | null>(null)
 
@@ -508,7 +561,12 @@ export function CuerpoUsuarios({
     <div className="flex flex-col gap-3 p-[14px] lg:flex-row lg:items-start lg:gap-4 lg:p-6">
       <div className="contents lg:flex lg:flex-1 lg:flex-col lg:gap-4">
         <div className="order-2 lg:order-none">
-          <CardEquipo usuarios={usuarios} usuarioActualId={usuarioActualId} onClaveGenerada={setClaveGenerada} />
+          <CardEquipo
+            usuarios={usuarios}
+            usuarioActualId={usuarioActualId}
+            permisosPorUsuario={permisosPorUsuario}
+            onClaveGenerada={setClaveGenerada}
+          />
         </div>
         {claveGenerada && (
           <div className="order-1 lg:order-none">

@@ -114,9 +114,11 @@ const CLASES_BOTON_PIE = 'h-[50px] rounded-[12px]'
 export function FormularioDeAlta({
   proximoSku,
   arbol,
+  puedeCostos,
 }: {
   proximoSku: string
   arbol: RamaConHijas[]
+  puedeCostos: boolean
 }) {
   const [estado, accion, pendiente] = useActionState(altaArticulo, INICIAL)
   const [tipo, setTipo] = useState<'PRODUCTO' | 'SERVICIO'>('PRODUCTO')
@@ -316,10 +318,20 @@ export function FormularioDeAlta({
                   <Label htmlFor="stockInicial">Cantidad (opcional)</Label>
                   <Input id="stockInicial" name="stockInicial" inputMode="decimal" className="h-10 rounded-[9px]" />
                 </div>
-                <div className="flex flex-1 flex-col gap-2">
-                  <Label htmlFor="costoUnitario">Costo unitario (opcional)</Label>
-                  <Input id="costoUnitario" name="costoUnitario" inputMode="decimal" className="h-10 rounded-[9px]" />
-                </div>
+                {/* Sin el permiso COSTOS, el campo no se dibuja. El
+                    blindaje real está en el servidor (altaArticulo,
+                    acciones.ts): esconderlo acá es sólo la UI. */}
+                {puedeCostos && (
+                  <div className="flex flex-1 flex-col gap-2">
+                    <Label htmlFor="costoUnitario">Costo unitario (opcional)</Label>
+                    <Input
+                      id="costoUnitario"
+                      name="costoUnitario"
+                      inputMode="decimal"
+                      className="h-10 rounded-[9px]"
+                    />
+                  </div>
+                )}
               </div>
               {/* El tercer campo que la maqueta dibuja en esta card
                   (design/arandano.pen, frame `B4O7t`). **No es una columna
@@ -410,7 +422,7 @@ export function FichaDeArticulo({
   subtitulo,
   articuloId,
   desactivado,
-  esDuenio,
+  puedeEditar,
   nombre,
   sku,
   precio,
@@ -423,7 +435,7 @@ export function FichaDeArticulo({
   subtitulo: ReactNode
   articuloId: string
   desactivado: boolean
-  esDuenio: boolean
+  puedeEditar: boolean
   nombre: string
   sku: string
   precio: string
@@ -450,7 +462,7 @@ export function FichaDeArticulo({
         // exportar CSV) ya están en el cuerpo — no queda nada que ese menú
         // pueda contener sin inventarlo.
         acciones={
-          esDuenio ? (
+          puedeEditar ? (
             <>
               <Button
                 type="submit"
@@ -486,7 +498,7 @@ export function FichaDeArticulo({
       />
       {/* Sin ningún campo visible: existe sólo para que el botón "Desactivar"/
           "Reactivar" del Topbar tenga un <form> al que apuntar por id. */}
-      {esDuenio && (
+      {puedeEditar && (
         <form id={FORM_BAJA_ARTICULO} action={accionBaja} className="hidden" aria-hidden="true">
           <input type="hidden" name="articuloId" value={articuloId} />
         </form>
@@ -495,7 +507,7 @@ export function FichaDeArticulo({
         {/* El aviso de cada acción va arriba de todo, no junto a su campo: con
             el botón en el Topbar y el <form> en la columna derecha, no hay un
             solo lugar "al lado" de los dos a la vez. */}
-        {esDuenio && (
+        {puedeEditar && (
           <>
             <Resultado estado={estadoEditar} />
             <Resultado estado={estadoBaja} />
@@ -521,13 +533,13 @@ export function FichaDeArticulo({
           <div className="contents lg:flex lg:flex-1 lg:flex-col lg:gap-4">{columnaIzquierda}</div>
           {/* Sin la columna entera —no sólo su contenido— cuando no hay nada
               que mostrar: un EMPLEADO mirando un SERVICIO no tiene "Datos"
-              (esDuenio) ni "Cómo se movió" (columnaDerechaExtra, sólo para
+              (puedeEditar) ni "Cómo se movió" (columnaDerechaExtra, sólo para
               productos), y sin esta condición el <div> de 324 px quedaba
               reservando el hueco vacío igual, en vez de dejarle todo el ancho
               a la columna izquierda. */}
-          {(esDuenio || columnaDerechaExtra) && (
+          {(puedeEditar || columnaDerechaExtra) && (
             <div className="contents lg:flex lg:w-[324px] lg:shrink-0 lg:flex-col lg:gap-4">
-              {esDuenio && (
+              {puedeEditar && (
                 <div className="order-2 lg:order-none">
                   <CardDelFormulario titulo="Datos">
                     <form id={FORM_EDITAR_ARTICULO} action={accionEditar} className="contents">
@@ -579,9 +591,15 @@ export function FichaDeArticulo({
       {/* El pie del teléfono (design/arandano.pen, nodo "Pie" de `T5gME`):
           los mismos "Desactivar"/"Reactivar" y "Guardar cambios" del Topbar,
           repetidos — `lg:hidden`, atados a los MISMOS `<form>` por `form=`
-          (nunca por `id=`: los botones del pie no llevan uno propio). Sólo
-          para el dueño, igual que el Topbar. */}
-      {esDuenio && (
+          (nunca por `id=`: los botones del pie no llevan uno propio).
+
+          La guarda es `puedeEditar` —el permiso `ARTICULOS_EDITAR`—, la MISMA
+          que la copia del Topbar (`acciones`, más arriba) y que el `<form>`
+          de baja. Las dos copias del par de botones se guardan con la misma
+          expresión: gatear sólo una dejaría a un empleado sin el permiso con
+          "Desactivar" y "Guardar cambios" a mano en el teléfono.
+          `formularios.test.tsx` lo fija contando ocurrencias. */}
+      {puedeEditar && (
         <div className="sticky bottom-0 z-10 flex items-center gap-[10px] border-t bg-card p-[14px] lg:hidden">
           <Button
             type="submit"
@@ -626,7 +644,13 @@ export function FichaDeArticulo({
  * obligaría a restar en el navegador contra un número que puede tener un
  * minuto y una venta de antigüedad.
  */
-export function MoverStock({ articuloId }: { articuloId: string }) {
+export function MoverStock({
+  articuloId,
+  puedeCostos,
+}: {
+  articuloId: string
+  puedeCostos: boolean
+}) {
   const [ingreso, accionIngreso, ingresando] = useActionState(ingresarMercaderia, INICIAL)
   const [conteo, accionConteo, contando] = useActionState(corregirPorConteo, INICIAL)
 
@@ -648,10 +672,15 @@ export function MoverStock({ articuloId }: { articuloId: string }) {
               <Label htmlFor="i-cantidad">Cantidad que entra</Label>
               <Input id="i-cantidad" name="cantidad" inputMode="decimal" required className="h-10 rounded-[9px]" />
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="i-costo">Costo unitario (opcional)</Label>
-              <Input id="i-costo" name="costoUnitario" inputMode="decimal" className="h-10 rounded-[9px]" />
-            </div>
+            {/* Sin el permiso COSTOS, el campo no se dibuja. El blindaje
+                real está en el servidor (ingresarMercaderia, acciones.ts):
+                esconderlo acá es sólo la UI. */}
+            {puedeCostos && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="i-costo">Costo unitario (opcional)</Label>
+                <Input id="i-costo" name="costoUnitario" inputMode="decimal" className="h-10 rounded-[9px]" />
+              </div>
+            )}
             <div className="flex flex-col gap-2">
               <Label htmlFor="i-nota">Nota (opcional)</Label>
               <Input id="i-nota" name="nota" placeholder="Factura, proveedor…" className="h-10 rounded-[9px]" />

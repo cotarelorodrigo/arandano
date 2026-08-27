@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft, TriangleAlert } from 'lucide-react'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
+import { puedeConSesion } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
@@ -21,15 +22,16 @@ export const dynamic = 'force-dynamic'
 const ROTULO_MONEDA: Record<'ARS' | 'USD', string> = { ARS: 'Pesos', USD: 'Dólares' }
 
 /**
- * Si esta persona puede anular ESTA venta: sólo el dueño, y sólo mientras
- * siga cobrada. Extraída y exportada porque es el único pedazo de la regla
- * que se puede probar sin un request real (mismo criterio que las funciones
- * puras de app/(app)/ventas/page.tsx) — el guard de verdad, el que protege,
- * sigue viviendo en `exigirDuenio()` adentro de la action `anular()`; esto es
- * sólo lo que decide si la pantalla ofrece el botón.
+ * Si esta pantalla OFRECE el botón de anular ESTA venta: que la persona tenga
+ * el permiso `VENTAS_ANULAR`, y que la venta siga cobrada. Extraída y
+ * exportada porque es el único pedazo de la regla que se puede probar sin un
+ * request real (mismo criterio que las funciones puras de
+ * app/(app)/ventas/page.tsx) — el guard de verdad, el que protege, sigue
+ * viviendo en `exigirPermiso('VENTAS_ANULAR')` adentro de la action
+ * `anular()`; esto es sólo comodidad, para no ofrecer lo que va a fallar.
  */
-export function puedeAnular(rol: string, anuladaEn: Date | null): boolean {
-  return rol === 'DUENO' && anuladaEn === null
+export function seOfreceAnular(puedeAnular: boolean, anuladaEn: Date | null): boolean {
+  return puedeAnular && anuladaEn === null
 }
 
 /**
@@ -210,7 +212,7 @@ export type PagoRecibido = {
  * exactamente el fondo y los colores de hoy.
  */
 export function Detalle({
-  resumen, anulada, notaDeAnulacionTexto, items, totalFormateado, pagos, puedeAnularVenta, ventaId,
+  resumen, anulada, notaDeAnulacionTexto, items, totalFormateado, pagos, ofreceAnular, ventaId,
 }: {
   resumen: ResumenTexto
   anulada: boolean
@@ -218,7 +220,14 @@ export function Detalle({
   items: ItemVendido[]
   totalFormateado: string
   pagos: PagoRecibido[]
-  puedeAnularVenta: boolean
+  /** Si se dibuja el botón de anular: el permiso `VENTAS_ANULAR` Y que la
+   *  venta siga cobrada, ya combinados por `seOfreceAnular` en el llamador.
+   *  Se llama `ofreceAnular` y no `puedeAnularVenta` a propósito: ese otro
+   *  nombre es, diez líneas más abajo en esta misma pantalla, el PERMISO
+   *  pelado — sin la parte de "y todavía no está anulada". Dos cosas
+   *  distintas con el mismo nombre es exactamente el modo de falla que el
+   *  merge con el ciclo de permisos (2026-08-26) tenía que evitar. */
+  ofreceAnular: boolean
   ventaId: string
 }) {
   return (
@@ -467,9 +476,13 @@ export function Detalle({
               existe ningún frame de venta anulada contra el que confirmar si
               el botón va en otro lado, así que se lo deja exactamente donde
               el texto lo ubica (ver relevamiento.md, punto 6). El texto
-              queda visible para cualquier rol —explica por qué un empleado
-              no tiene el botón—, y el botón mismo sigue restringido al
-              dueño.
+              queda visible para cualquier rol —explica por qué alguien
+              puede no tener el botón—, y el botón mismo lo gobierna el
+              permiso `VENTAS_ANULAR` (ciclo de permisos por usuario,
+              2026-08-26): sigue en `DUENO` siempre y en `EMPLEADO` sólo si
+              se lo otorgaron. El texto de abajo ("Sólo el dueño puede
+              hacerlo") es copy literal del `.pen` y quedó desactualizado por
+              esa conversión — ver docs/correcciones-pendientes-del-pen.md.
 
               Una vez anulada no hay nada que ADVERTIR —la acción ya no se
               puede tomar—, pero sí algo que INFORMAR: quién y cuándo. La
@@ -498,7 +511,7 @@ export function Detalle({
                 El stock vuelve al inventario con movimientos compensatorios. Los
                 movimientos originales no se borran. Sólo el dueño puede hacerlo.
               </p>
-              {puedeAnularVenta && <AnularVenta ventaId={ventaId} />}
+              {ofreceAnular && <AnularVenta ventaId={ventaId} />}
             </div>
           )}
         </div>
@@ -542,6 +555,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
 
   const resumen = filasDeResumen(venta)
   const anulada = venta.anuladaEn !== null
+  const puedeAnularVenta = await puedeConSesion(sesion, 'VENTAS_ANULAR')
 
   const items: ItemVendido[] = venta.items.map((i) => {
     const subtitulo = subtituloDeItem(i.articulo)
@@ -582,7 +596,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
         items={items}
         totalFormateado={formatearPrecio(venta.total.toString())}
         pagos={pagos}
-        puedeAnularVenta={puedeAnular(sesion.usuario.rol, venta.anuladaEn)}
+        ofreceAnular={seOfreceAnular(puedeAnularVenta, venta.anuladaEn)}
         ventaId={venta.id}
       />
     </>

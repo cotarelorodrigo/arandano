@@ -3,6 +3,7 @@ import type { Prisma } from '@/generated/prisma/client'
 import { Search, Plus, ListTree, X } from 'lucide-react'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
+import { puedeConSesion } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -179,7 +180,8 @@ const OPCIONES_TIPO: { valor: TipoFiltro | null; rotulo: string }[] = [
  * junto al botón de 36px que abre el árbol de categorías en un `Sheet` — ese
  * botón se recibe YA ARMADO en `panelCategorias` (mismo criterio que
  * `controlMovil` de `Encabezado`: quien lo arma necesita `arbol`, el total
- * del catálogo y `esDuenio`, datos que esta función no usa para nada más).
+ * del catálogo y `puedeCategorias`, datos que esta función no usa para nada
+ * más).
  * "Ver desactivados" y "Buscar" no los dibuja la maqueta, pero no se sacan —
  * silencio del `.pen` no es instrucción de borrar una capacidad real (mismo
  * criterio que el typeahead de `/vender`); pasan a su propia fila mobile-
@@ -373,7 +375,7 @@ export function Listado({
   verInactivos,
   tipo,
   cat,
-  esDuenio,
+  puedeCrear,
 }: {
   filas: FilaDeArticulo[]
   total: number
@@ -384,7 +386,10 @@ export function Listado({
   verInactivos: boolean
   tipo: TipoFiltro | null
   cat: string | null
-  esDuenio: boolean
+  /** El permiso `ARTICULOS_CREAR`: lo único que cambia acá es el texto del
+   *  vacío — "Empezá por «Artículo nuevo»" sólo tiene sentido para quien
+   *  puede apretar ese botón. */
+  puedeCrear: boolean
 }) {
   return (
     <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border bg-card">
@@ -431,7 +436,7 @@ export function Listado({
             // Un local recién dado de alta llega acá con cero artículos, y ésta es
             // la primera pantalla que ve. En blanco no diría qué hacer.
             `No hay artículos que coincidan con "${busqueda}".`
-          ) : esDuenio ? (
+          ) : puedeCrear ? (
             'Todavía no cargaste ningún artículo. Empezá por «Artículo nuevo».'
           ) : (
             'Todavía no hay artículos cargados.'
@@ -672,6 +677,10 @@ export default async function Inventario({
   }>
 }) {
   const sesion = await exigirSesion()
+  // Dos preguntas y no `esDuenio`: el botón de alta y el ABM del árbol son
+  // permisos distintos, así que un empleado puede tener uno sin el otro.
+  const puedeCrear = await puedeConSesion(sesion, 'ARTICULOS_CREAR')
+  const puedeCategorias = await puedeConSesion(sesion, 'CATEGORIAS')
   const { q = '', p = '1', inactivos, tipo: tipoQuery, cat: catQuery } = await searchParams
 
   const busqueda = q.trim()
@@ -703,7 +712,6 @@ export default async function Inventario({
   // `null` arriba), así que esto sólo puede dar `null` cuando `cat` también
   // lo es.
   const nombreRama = nombreDeRama(arbol, cat)
-  const esDuenio = sesion.usuario.rol === 'DUENO'
 
   const donde = construirDonde({ busqueda, verInactivos, tipo, categoria: rama })
 
@@ -757,7 +765,7 @@ export default async function Inventario({
           ) : undefined
         }
         acciones={
-          esDuenio ? (
+          puedeCrear ? (
             <Button asChild size="sm">
               <Link href="/inventario/nuevo">Artículo nuevo</Link>
             </Button>
@@ -766,8 +774,14 @@ export default async function Inventario({
         // Task 6 del ciclo móvil: el link a /inventario/nuevo del teléfono
         // (design/arandano.pen, `b1jiWO` > `GZz1a`), tono 'accion' porque el
         // botón CREA algo — mismo criterio que /usuarios.
+        //
+        // La guarda es `puedeCrear` —el permiso `ARTICULOS_CREAR`—, la MISMA
+        // que la copia de escritorio (`acciones`, arriba): son las dos formas
+        // del mismo botón, no dos acciones. Gatear sólo `acciones` dejaba el
+        // atajo del teléfono a mano para un empleado sin el permiso, que
+        // caería en el 403 de `exigirPermiso` en /inventario/nuevo.
         accionMovil={
-          esDuenio
+          puedeCrear
             ? { icono: Plus, etiqueta: 'Artículo nuevo', href: '/inventario/nuevo', tono: 'accion' }
             : undefined
         }
@@ -817,12 +831,18 @@ export default async function Inventario({
                     El árbol de categorías del catálogo: navegar, filtrar y administrar.
                   </SheetDescription>
                 </SheetHeader>
+                {/* `puedeAdministrar` es el permiso `CATEGORIAS`, el MISMO
+                    que recibe la copia de escritorio (más abajo): el panel
+                    del Sheet y el de la columna son el mismo componente
+                    renderizado dos veces, y el ABM (crear, renombrar, mover,
+                    borrar) tiene que aparecer o desaparecer en los dos a la
+                    vez. */}
                 <PanelDeCategorias
                   arbol={arbol}
                   total={totalDelCatalogo}
                   sinCategoria={sinCategoria}
                   activa={cat}
-                  esDuenio={esDuenio}
+                  puedeAdministrar={puedeCategorias}
                   filtros={{ busqueda, verInactivos, tipo }}
                 />
               </SheetContent>
@@ -865,7 +885,7 @@ export default async function Inventario({
               total={totalDelCatalogo}
               sinCategoria={sinCategoria}
               activa={cat}
-              esDuenio={esDuenio}
+              puedeAdministrar={puedeCategorias}
               filtros={{ busqueda, verInactivos, tipo }}
             />
           </div>
@@ -901,7 +921,7 @@ export default async function Inventario({
           verInactivos={verInactivos}
           tipo={tipo}
           cat={cat}
-          esDuenio={esDuenio}
+          puedeCrear={puedeCrear}
         />
         </div>
       </div>

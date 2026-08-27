@@ -77,8 +77,11 @@ describe('los tiles de la ficha (Task 4 del rediseño)', () => {
     expect(FUENTE).toMatch(/esProducto && \(\s*<Tile\s*\n\s*marca\s*\n\s*rotulo="EN STOCK"/)
   })
 
-  it('el tile "Último costo" también está condicionado a esProducto', () => {
-    expect(FUENTE).toMatch(/esProducto && \(\s*<Tile\s*\n\s*rotulo="ÚLTIMO COSTO"/)
+  // Además de esProducto, el tile ahora también está condicionado al
+  // permiso COSTOS: sin él, el tile no se renderea (no se pone en '—', que
+  // afirmaría algo distinto y falso — ver el permiso COSTOS).
+  it('el tile "Último costo" también está condicionado a esProducto y a COSTOS', () => {
+    expect(FUENTE).toMatch(/esProducto && puedeCostos && \(\s*<Tile\s*\n\s*rotulo="ÚLTIMO COSTO"/)
   })
 
   // El último costo sale del movimiento más reciente CON costo cargado, no
@@ -132,8 +135,8 @@ describe('el historial de la ficha (Task 5 del rediseño)', () => {
   // historial.test.tsx prueba a fondo con Decimales reales — acá sólo se
   // verifica el CABLEADO: que page.tsx la llame indexando `saldos[i]`, no un
   // valor fijo o el de otra fila.
-  it('cada fila del historial se arma con filaDeMovimiento(m, saldos[i])', () => {
-    expect(FUENTE).toContain('movimientos.map((m, i) => filaDeMovimiento(m, saldos[i]))')
+  it('cada fila del historial se arma con filaDeMovimiento(m, saldos[i], puedeCostos)', () => {
+    expect(FUENTE).toContain('movimientos.map((m, i) => filaDeMovimiento(m, saldos[i], puedeCostos))')
   })
 
   it('la consulta de movimientos ahora trae costoUnitario, que detalleDeMovimiento necesita', () => {

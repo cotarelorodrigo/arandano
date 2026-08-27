@@ -78,13 +78,25 @@ export function formatearFechaMovimiento(v: Date): string {
  * factura y el costo por sobre quién lo recibió (ninguno de los dos ejemplos
  * de INGRESO del relevamiento nombra a la persona).
  */
-export function detalleDeMovimiento(m: {
-  motivo: string
-  nota: string | null
-  costoUnitario: Prisma.Decimal | null
-  usuario: { nombre: string }
-  venta: { numero: number } | null
-}): string {
+export function detalleDeMovimiento(
+  m: {
+    motivo: string
+    nota: string | null
+    costoUnitario: Prisma.Decimal | null
+    usuario: { nombre: string }
+    venta: { numero: number } | null
+  },
+  /**
+   * Si esta persona puede ver costos (permiso `COSTOS`).
+   *
+   * **Sin valor por defecto a propósito.** Un `= true` dejaría que el
+   * consumidor que se olvide de pasarlo siga mostrando el costo, que es
+   * justamente el modo de falla que el permiso existe para evitar. Obligarlo
+   * hace que agregar un tercer consumidor sea un error de tipos y no una
+   * filtración silenciosa.
+   */
+  mostrarCostos: boolean,
+): string {
   switch (m.motivo) {
     case 'VENTA':
       // `venta` es siempre no-null en una fila VENTA de verdad (lib/ventas/
@@ -94,10 +106,15 @@ export function detalleDeMovimiento(m: {
     case 'ANULACION_VENTA':
       return `Anulación de la venta #${m.venta?.numero ?? '?'}`
     case 'INGRESO': {
-      const costo = m.costoUnitario ? `${formatearPrecio(m.costoUnitario.toString())} c/u` : null
+      const costo =
+        mostrarCostos && m.costoUnitario
+          ? `${formatearPrecio(m.costoUnitario.toString())} c/u`
+          : null
       const partes = [m.nota, costo].filter((p): p is string => Boolean(p))
-      // Ni nota ni costo cargados: no puede quedar una celda vacía, así que
-      // cae a quién lo hizo — mejor eso que nada.
+      // Ni nota ni costo cargados (o cargado y escondido por el permiso): no
+      // puede quedar una celda vacía, así que cae a quién lo hizo — mejor eso
+      // que nada, y sin distinguir los dos casos: revelarían por omisión que
+      // hay un costo escondido.
       return partes.length > 0 ? partes.join(' · ') : `Ingreso · ${m.usuario.nombre}`
     }
     case 'AJUSTE':
@@ -180,12 +197,19 @@ export function filaDeMovimiento(
     venta: { numero: number } | null
   },
   saldo: Prisma.Decimal,
+  /**
+   * Si esta persona puede ver costos (permiso `COSTOS`). **Sin valor por
+   * defecto**, por el mismo motivo que `detalleDeMovimiento` (ver su
+   * docblock, más arriba): un `= true` haría que olvidarse de pasarlo
+   * filtrara el costo en silencio, en vez de romper la compilación.
+   */
+  mostrarCostos: boolean,
 ): FilaDeMovimiento {
   return {
     id: m.id,
     fechaTexto: formatearFechaMovimiento(m.creadoEn),
     motivo: m.motivo,
-    detalleTexto: detalleDeMovimiento(m),
+    detalleTexto: detalleDeMovimiento(m, mostrarCostos),
     // El signo explícito en el positivo: la columna se lee de un vistazo
     // como "entró" o "salió" — mismo criterio que ya usaba la celda "Cambio"
     // antes de esta task.

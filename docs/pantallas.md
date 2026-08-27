@@ -461,13 +461,14 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
   dólares), monto y su equivalente en pesos.
 - Ver el panel **Resumen**: fecha y hora, quién la vendió, el cliente (o
   "Consumidor final"), el estado y el comprobante.
-- **Anular la venta** — sólo el dueño, y sólo mientras siga cobrada.
+- **Anular la venta** — con el permiso `VENTAS_ANULAR` (un dueño siempre lo
+  tiene; un empleado, sólo si se lo otorgaron), y sólo mientras siga cobrada.
 
 **Decisiones**
 
-- El guard de dueño está **en la action**, no sólo en la pantalla: una server
-  action se invoca sin pasar por ningún componente. `puedeAnular()` en
-  `page.tsx` sólo decide si el botón se ofrece.
+- El guard está **en la action**, no sólo en la pantalla: una server action se
+  invoca sin pasar por ningún componente. `puedeAnular()` en `page.tsx` sólo
+  decide si el botón se ofrece.
 - Anular **no borra los movimientos de stock originales**: genera movimientos
   compensatorios. Por eso el aviso puede decir "el stock volvió al inventario"
   sin mentir, y el historial del artículo sigue explicando qué pasó.
@@ -510,8 +511,9 @@ El listado de artículos, con buscador, filtro de tipo y chips de estado
 - **Recorrer el árbol de categorías** desde la columna de la izquierda: un
   rubro arriba (Celulares, Fundas, Cables) y la marca abajo. Clic en un rubro
   filtra a todo el rubro; clic en una marca, a esa marca.
-- **Crear, renombrar, mover y borrar categorías** en esa misma columna (sólo
-  dueño). No hay pantalla de ABM aparte.
+- **Crear, renombrar, mover y borrar categorías** en esa misma columna, con el
+  permiso `CATEGORIAS` (un dueño siempre lo tiene; un empleado, sólo si se lo
+  otorgaron). No hay pantalla de ABM aparte.
 - Filtrar por tipo con el segmentado **Todos / Productos / Servicios**.
 - Ver stock, precio, tipo y la categoría (dos niveles, p. ej. "Accesorios ·
   Protección").
@@ -542,10 +544,13 @@ El listado de artículos, con buscador, filtro de tipo y chips de estado
 - **El colapso de un rubro no persiste** entre navegaciones, y el rubro de la
   rama activa se fuerza abierto: una marca seleccionada dentro de un rubro
   colapsado sería una selección invisible.
-- **El ABM es del dueño**, mismo criterio que el alta de artículo — el catálogo
-  es decisión del negocio. Que el panel no le dibuje los controles a un
-  empleado no alcanza: las cuatro acciones exigen dueño, porque un server
-  action es un endpoint.
+- **El ABM lo gobierna el permiso `CATEGORIAS`**, delegable desde este ciclo de
+  permisos por usuario (antes era del dueño sin excepción, mismo criterio que
+  el alta de artículo). Que el panel no le dibuje los controles a quien no lo
+  tiene no alcanza: las cuatro acciones exigen el permiso en el servidor,
+  porque un server action es un endpoint. El botón "Artículo nuevo" del Topbar
+  responde a `ARTICULOS_CREAR`, un permiso distinto — un empleado puede tener
+  uno sin el otro.
 - **Borrar exige la rama vacía y sin marcas**, y el mensaje dice **cuántos**
   artículos hay: un "no se puede" sin el número no dice si mover uno o cuarenta.
 - **Los avisos del ABM van por toast** (`sonner`, montado una vez en el layout
@@ -626,11 +631,17 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
 - Anotar la **factura del proveedor** del stock inicial.
 - Dejar el SKU vacío y que se genere solo, con el próximo código libre
   mostrado como ayuda.
-- Cargar stock inicial y su costo unitario, que nace como movimiento y no como
-  un número suelto.
+- Cargar stock inicial y, con el permiso `COSTOS`, su costo unitario, que nace
+  como movimiento y no como un número suelto.
 
 **Decisiones**
 
+- **Toda la pantalla exige `ARTICULOS_CREAR`**, no sólo la action: `page.tsx`
+  llama a `exigirPermiso('ARTICULOS_CREAR')` antes de renderizar nada, así que
+  un empleado sin el permiso no llega a ver el formulario. El campo "Costo
+  unitario" del stock inicial es aparte: lo gobierna `COSTOS`, y sin él el
+  campo no se dibuja y el servidor lo ignora si llega igual por fuera de la
+  pantalla.
 - **La secuencia de SKU puede tener huecos, y es a propósito.**
   `Tenant.proximoSkuArticulo` se incrementa en su propia transacción comiteada:
   con el `UPDATE` adentro de la transacción del alta, un choque de unicidad la
@@ -703,22 +714,36 @@ stock y el historial; a la derecha los datos editables y "Cómo se movió"
 **Qué se puede hacer**
 
 - Ver tres tiles: **En stock** (pintado con `--marca`, el ancla de esta
-  pantalla), **Precio de venta** (con hace cuánto se actualizó) y **Último
-  costo** (con el margen contra el precio actual). Un servicio sólo muestra el
-  de precio.
-- Editar nombre, categoría, precio y código desde la card "Datos".
-- **Ingresar mercadería** con su costo unitario y una nota (factura, proveedor).
-- **Corregir por conteo**: se escribe el stock contado, no el delta.
-- Desactivar y reactivar el artículo.
+  pantalla), **Precio de venta** (con hace cuánto se actualizó) y, con el
+  permiso `COSTOS`, **Último costo** (con el margen contra el precio actual).
+  Un servicio sólo muestra el de precio.
+- Editar nombre, categoría, precio y código desde la card "Datos" — con el
+  permiso `ARTICULOS_EDITAR`; sin él la card directamente no se renderea (no
+  es de sólo lectura: no aparece).
+- **Ingresar mercadería** — de cualquiera con sesión, no de `ARTICULOS_EDITAR`:
+  es operación del día, la hace quien está atendiendo — y, con `COSTOS`
+  además, su costo unitario y una nota (factura, proveedor).
+- **Corregir por conteo** — de cualquiera con sesión, mismo motivo que
+  "Ingresar mercadería": se escribe el stock contado, no el delta.
+- Desactivar y reactivar el artículo (`ARTICULOS_EDITAR`).
 - Ver el historial completo de movimientos, con chip de motivo, la celda
-  "Detalle" (combina quién y qué, según el motivo) y la columna **Queda**
-  (el saldo después de cada movimiento).
+  "Detalle" (combina quién y qué, según el motivo — el costo de un ingreso
+  aparece ahí sólo con `COSTOS`) y la columna **Queda** (el saldo después de
+  cada movimiento).
 - Ver **"Cómo se movió"**: seis barras con las unidades vendidas por mes.
 - **Exportar CSV** con el historial completo (sin el límite de la tabla en
-  pantalla).
+  pantalla; la columna de costo del CSV sigue la misma regla de `COSTOS` que la
+  tabla, porque las dos arman su celda con la misma función).
 
 **Decisiones**
 
+- **`ARTICULOS_EDITAR` y `COSTOS` son dos permisos distintos**, y por eso un
+  empleado puede editar nombre y precio sin poder ver ni cargar el costo, o
+  viceversa (aunque no viceversa en la práctica: el default es que un
+  empleado nuevo no tenga ninguno de los dos). `page.tsx` resuelve los dos por
+  separado (`puedeConSesion(sesion, 'ARTICULOS_EDITAR')` y
+  `puedeConSesion(sesion, 'COSTOS')`) y los reparte a `FichaDeArticulo` y a
+  `MoverStock` como props booleanas independientes.
 - En la corrección por conteo **el delta lo calcula el servidor, adentro de la
   transacción, contra el stock del momento**. Si lo calculara el navegador, una
   venta ocurrida entre que se abrió la pantalla y se apretó el botón quedaría
@@ -753,8 +778,10 @@ stock y el historial; a la derecha los datos editables y "Cómo se movió"
   devuelve como string — no hay librería, endpoint nuevo ni streaming. El
   botón lo convierte en una descarga con un `Blob` del lado del cliente,
   porque un server action no puede fijar `Content-Disposition`. Las notas se
-  escapan por RFC 4180 (comillas y comas), y no está restringido a dueño: es
-  de sólo lectura, de datos que la pantalla ya le muestra a cualquier sesión.
+  escapan por RFC 4180 (comillas y comas), y no está restringido a ningún
+  permiso: es de sólo lectura, de datos que la pantalla ya le muestra a
+  cualquier sesión — lo único que varía con `COSTOS` es si esos datos incluyen
+  el costo, no si la exportación misma se ofrece.
 - **"Guardar cambios" y "Desactivar"/"Reactivar" viven en el Topbar.** Como el
   botón está lejos del `<form>` que dispara (el de "Guardar cambios" en la
   card "Datos", el de "Desactivar" invisible), cada uno se asocia por el
@@ -967,7 +994,8 @@ La ficha de una orden: moverla de estado, diagnosticarla y leer su historia.
   el gesto que se hace cuando el equipo queda listo).
 - Reimprimir el ticket.
 - Leer la bitácora completa, más nueva primero.
-- **Anular la orden** — sólo el dueño.
+- **Anular la orden** — con el permiso `ORDENES_ANULAR` (un dueño siempre lo
+  tiene; un empleado, sólo si se lo otorgaron).
 
 **Decisiones**
 
@@ -986,7 +1014,8 @@ La ficha de una orden: moverla de estado, diagnosticarla y leer su historia.
   la tabla que se acaba de cerrar—. Un historial que se puede editar no contesta
   la única pregunta que se le hace: "hace dos semanas que está acá, ¿qué pasó?".
 - Anular es lo único destructivo del módulo, y por eso lleva el mismo corte que
-  anular una venta: guard de dueño **en la action**.
+  anular una venta: guard **en la action**, hoy `exigirPermiso('ORDENES_ANULAR')`
+  (antes `exigirDuenio()`, sin excepción).
 - El guard de uuid está por lo mismo que en `/ventas/[id]` e `/inventario/[id]`:
   Prisma tipa el parámetro por columna, así que un id sin forma de uuid lo
   rechaza antes de consultar, y eso en un server component es un 500 servido
@@ -1044,8 +1073,9 @@ Servicio Técnico):
 - **"Anular orden" y "Reimprimir ticket" suben al Topbar.** El botón de anular
   usa el mismo mecanismo de `<form>` invisible + atributo `form=` que
   `/servicio-tecnico/nuevo`, y sólo existe en el DOM cuando puede aparecer
-  (dueño, orden viva) — esconderlo no reemplaza la revalidación de la action
-  (`exigirDuenio` + `ORDEN_ANULADA`), es sólo comodidad. **"Anular orden" pide
+  (con `ORDENES_ANULAR`, orden viva) — esconderlo no reemplaza la revalidación
+  de la action (`exigirPermiso('ORDENES_ANULAR')` + `ORDEN_ANULADA`), es sólo
+  comodidad. **"Anular orden" pide
   confirmación en dos pasos** (hallazgo M5 de la review final del rediseño):
   el primer click arma "¿Sí, anular?"/"Cancelar" en el mismo lugar del Topbar,
   y sólo el segundo dispara la acción — mismo mecanismo que `AnularVenta`
@@ -1132,7 +1162,7 @@ byte a byte igual.
 El equipo del local (rediseño de `design/arandano.pen`, frame `App /
 Usuarios`).
 
-**Acciones**: `altaEmpleado`, `nuevaClave`, `baja`, `alta`.
+**Acciones**: `altaEmpleado`, `nuevaClave`, `baja`, `alta`, `cambiarPermiso`.
 
 **Qué se puede hacer**
 
@@ -1143,11 +1173,28 @@ Usuarios`).
 - Dar de baja y reactivar personas — "Baja" queda disponible para cualquier
   fila activa que no sea la propia, dueños incluidos (ver más abajo).
 - Copiar la clave recién generada con un botón, desde el aviso ámbar.
+- **Otorgarle y quitarle, a cada `EMPLEADO`, cada uno de los seis permisos del
+  catálogo** (`ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`, `CATEGORIAS`,
+  `VENTAS_ANULAR`, `ORDENES_ANULAR`) desde un diálogo por fila —columna nueva
+  "Permisos", botón "N de 6 permisos" / "Sin permisos" que abre
+  `PermisosDeUsuario` con los seis switches de `FilasDePermisos`—. Una fila de
+  `DUENO` no lleva ese botón: un dueño puede todo por construcción
+  (`exigirPermiso` le da verdadero sin tocar la tabla), así que un diálogo con
+  los seis prendidos y trabados no informaría nada.
 
 **Decisiones**
 
 - **Todo esto es sólo del dueño**, y el guard (`comoDuenio`) está en cada
-  action, no en la pantalla.
+  action, no en la pantalla — **incluida `cambiarPermiso`, a propósito y sin
+  excepción**: ver la entrada de `CLAUDE.md` sobre por qué repartir permisos
+  no es delegable aunque el resto del catálogo sí lo sea.
+- **Cada switch guarda solo**, sin botón "Guardar" — mismo criterio que el ABM
+  de categorías: un formulario con estado sucio para seis booleanos
+  independientes agrega la pregunta "¿guardé?" a cambio de nada. El aviso sale
+  por toast (`sonner`), disparado en el mismo handler que llama a la acción y
+  no en un `useEffect`, con la misma lección que dejó el ABM de categorías: un
+  efecto atado al ciclo de vida del componente pierde el aviso si el
+  `revalidatePath` remonta la fila antes de que corra.
 - **Nunca se puede dejar un local sin dueño activo.** El chequeo del último
   dueño, la escritura de `desactivadoEn` y el borrado de sesiones van en una
   sola transacción.
@@ -1196,8 +1243,28 @@ Usuarios`).
 - **La tabla del equipo pasa a tarjetas**, con un **avatar de 34 px** que sólo
   existe en el teléfono: la inicial del nombre, con el color del rol. No hace
   falta duplicar ninguna celda —a diferencia de `/servicio-tecnico`— porque el
-  orden de escritorio (Persona, Rol, Estado, Acciones) ya es el que el teléfono
-  necesita.
+  orden de escritorio (Persona, Rol, Estado, Permisos, Acciones) ya es el que
+  el teléfono necesita.
+- **El disparador de permisos se funde en la línea de acciones**, con el mismo
+  separador "·" a 10 px y el mismo tratamiento de link que "Cambiar clave" y
+  "Baja": "· 2 de 6 permisos · Cambiar clave · Baja". Es **un solo nodo en el
+  DOM** —el `lg:` de cada clase repone el botón fantasma de 28 px de
+  escritorio—, y eso alcanza porque la columna "Permisos" ya está pegada a
+  "Acciones" en el orden de escritorio: no hubo que reordenar nada ni duplicar
+  la celda. En la fila de un **dueño** la celda entera desaparece del teléfono
+  (`hidden lg:block`) para no dejar el hueco del `gap`; en escritorio sigue
+  ocupando su pista, vacía, porque con `display:contents` sobre la fila una
+  celda salteada correría todas las columnas siguientes.
+- **El diálogo de permisos sigue siendo un `Dialog` centrado, con su propio
+  velo, y no un `Sheet` desde abajo.** El ciclo del teléfono estableció
+  `Sheet` para los overlays móviles y le cambió el velo a `bg-foreground/65`
+  sin desenfoque; el ciclo de permisos llegó con `Dialog` de shadcn. Después
+  del merge conviven los dos velos. **Es una decisión de producto pendiente**,
+  no una que un merge pueda tomar: se dejó funcionando como venía. En la misma
+  bolsa, `components/ui/dialog.tsx` y `components/ui/switch.tsx` traen `sm:`
+  (640 px) del registry de shadcn, un corte que el ciclo del teléfono prohíbe
+  en código propio — están en `components/ui/`, que es código copiado tal cual
+  y que `test/responsive.test.ts` ya excluye, así que tampoco se tocaron.
 - **El título de "Dos reglas que el sistema no deja romper" paga Archivo, y en
   escritorio no.** No es un bug de ninguno de los dos lados: son dos frames con
   una decisión distinta cada uno, y las dos son la autoridad en su ancho. Está

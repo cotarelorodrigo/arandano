@@ -320,7 +320,18 @@ export async function crearArticulo(
   throw new ErrorDeInventario('SKU_REPETIDO', 'no se pudo generar un código libre')
 }
 
-/** El tipo NO está y no es un olvido: ver el comentario del test. */
+/**
+ * El tipo NO está y no es un olvido: ver el comentario del test.
+ *
+ * `categoria` distingue `undefined` de `null`, y la diferencia es a propósito:
+ * `undefined` es "no toques la categoría de este artículo" —lo que manda
+ * `guardarArticulo` cuando quien edita no tiene el permiso `CATEGORIAS`—,
+ * mientras que `null` o un string SÍ la tocan (la vacían o le arman una rama
+ * nueva con `asegurarCategoria`). Sin la distinción, alguien con
+ * `ARTICULOS_EDITAR` y sin `CATEGORIAS` podía escribir texto libre en el campo
+ * y crear rubros y marcas al vuelo saltando el permiso que se supone que lo
+ * autoriza — el mismo bypass que el switch le promete al dueño que no existe.
+ */
 export async function editarArticulo(entrada: {
   tenantId: string
   articuloId: string
@@ -333,7 +344,8 @@ export async function editarArticulo(entrada: {
 
   const nombre = exigirNombre(entrada.nombre)
   exigirPrecio(precio)
-  const categoria = limpiarCategoria(entrada.categoria)
+  const tocaCategoria = entrada.categoria !== undefined
+  const categoria = tocaCategoria ? limpiarCategoria(entrada.categoria) : undefined
 
   const sku = entrada.sku.trim()
   if (sku === '') {
@@ -347,11 +359,20 @@ export async function editarArticulo(entrada: {
       // `updateMany` y no `update`: con RLS, un id de otro tenant no existe
       // para esta conexión, y `update` tira P2025 — un error de Prisma sin
       // `codigo`. Contar filas afectadas deja decirlo con el error del módulo.
-      const categoriaId = await asegurarCategoria(tx, tenantId, categoria)
+      //
+      // `categoria`/`categoriaId` sólo entran a `data` cuando `tocaCategoria`
+      // es verdadero: un `undefined` explícito en `data` ya se comporta como
+      // "no tocar" para Prisma, pero llamar a `asegurarCategoria` igual
+      // insertaría una rama nueva sin necesidad — mejor no llamarlo.
+      const data: Prisma.ArticuloUncheckedUpdateManyInput = { nombre, sku, precio }
+      if (tocaCategoria) {
+        data.categoriaId = await asegurarCategoria(tx, tenantId, categoria)
+        data.categoria = categoria
+      }
 
       const { count } = await tx.articulo.updateMany({
         where: { id: articuloId },
-        data: { nombre, sku, precio, categoria, categoriaId },
+        data,
       })
       if (count === 0) {
         throw new ErrorDeInventario(

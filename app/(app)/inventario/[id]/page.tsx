@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { Prisma } from '@/generated/prisma/client'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { exigirSesion } from '@/lib/auth/sesion'
+import { puedeConSesion } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { FichaDeArticulo, MoverStock, BotonExportarCsv } from '../formularios'
 import { calcularSaldos, filaDeMovimiento, HistorialDeMovimientos } from '../historial'
@@ -160,7 +161,8 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   // mismo 404 — y tienen que serlo: distinguirlos filtraría qué ids existen.
   if (!articulo) notFound()
 
-  const esDuenio = sesion.usuario.rol === 'DUENO'
+  const puedeEditar = await puedeConSesion(sesion, 'ARTICULOS_EDITAR')
+  const puedeCostos = await puedeConSesion(sesion, 'COSTOS')
   const esProducto = articulo.tipo === 'PRODUCTO'
 
   // Seis meses de sobra para "Cómo se movió": agregarVentasPorMes() sólo usa
@@ -190,8 +192,10 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
     // Un servicio nunca tiene movimientos (lib/inventario/stock.ts los
     // rechaza), así que ni vale consultar: `findFirst` sobre un articuloId sin
     // filas siempre da null igual, pero saltearlo evita una ida a Postgres que
-    // ya se sabe vacía.
-    esProducto
+    // ya se sabe vacía. Mismo criterio con `puedeCostos`: sin el permiso el
+    // tile no se renderea (ver más abajo), así que el resultado nunca se usa
+    // — no es una fuga, es un round-trip de más a Postgres.
+    esProducto && puedeCostos
       ? prisma.movimientoStock.findFirst({
           // El ingreso más reciente puede no tener costo cargado —es opcional,
           // CLAUDE.md— así que el filtro es explícito: el primero CON costo,
@@ -242,7 +246,13 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   // detalle, cambio con signo, queda), indexado contra `saldos` — el resto
   // de la lógica (ChipMotivo, el patrón grid) vive en `HistorialDeMovimientos`
   // (historial.tsx), que se renderiza sin Prisma ni sesión.
-  const filasHistorial = movimientos.map((m, i) => filaDeMovimiento(m, saldos[i]))
+  //
+  // `puedeCostos` viaja hasta acá (ciclo de permisos, 2026-08-26) porque el
+  // texto de la celda "Detalle" de un INGRESO incluye el costo unitario: la
+  // fila se resuelve a texto ANTES de renderizarse, así que el permiso tiene
+  // que decidirse en el armado y no en el JSX — esconderlo después sería
+  // mandarlo igual al HTML.
+  const filasHistorial = movimientos.map((m, i) => filaDeMovimiento(m, saldos[i], puedeCostos))
 
   const columnaIzquierda = (
     <>
@@ -267,7 +277,16 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
             valor={formatearPrecio(articulo.precio.toString())}
             pie={actualizadoHace(articulo.actualizadoEn)}
           />
-          {esProducto && (
+          {/* Sin el permiso COSTOS, el tile no se renderea — no se pone en
+              '—': ese guión afirma que ningún ingreso cargó el costo, que es
+              una afirmación distinta y falsa cuando lo que pasa es que a esta
+              persona no se le muestra.
+
+              En el teléfono eso deja a "Precio de venta" solo en su fila, y
+              está bien: los dos Tile son `flex-1`, así que el que queda ocupa
+              el ancho entero — el mismo resultado que ya se ve para un
+              SERVICIO, que tampoco lleva "Último costo". */}
+          {esProducto && puedeCostos && (
             <Tile
               rotulo="ÚLTIMO COSTO"
               valor={ultimoCosto ? formatearPrecio(ultimoCosto.toString()) : '—'}
@@ -283,7 +302,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
 
       {esProducto && !articulo.desactivadoEn && (
         <div className="order-3 lg:order-none">
-          <MoverStock articuloId={articulo.id} />
+          <MoverStock articuloId={articulo.id} puedeCostos={puedeCostos} />
         </div>
       )}
 
@@ -317,7 +336,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
       }
       articuloId={articulo.id}
       desactivado={articulo.desactivadoEn !== null}
-      esDuenio={esDuenio}
+      puedeEditar={puedeEditar}
       nombre={articulo.nombre}
       sku={articulo.sku}
       precio={articulo.precio.toString()}

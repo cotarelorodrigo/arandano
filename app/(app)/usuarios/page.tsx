@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { exigirDuenio } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { contarDuenosActivos } from '@/lib/usuarios/resumen'
+import type { Permiso } from '@/lib/permisos/catalogo'
 import { CuerpoUsuarios } from './formularios'
 
 export const dynamic = 'force-dynamic'
@@ -16,6 +17,20 @@ export default async function Usuarios() {
   })
 
   const duenosActivos = contarDuenosActivos(usuarios)
+
+  // Una sola consulta para todas las filas, no una por empleado: la tabla ya
+  // trajo la lista entera, y N consultas más sobre un pool de 5 conexiones es
+  // justo lo que no hay que hacer en una pantalla de listado.
+  const filas = await prismaParaTenant(sesion.tenant.id).usuarioPermiso.findMany({
+    select: { usuarioId: true, permiso: true },
+  })
+  const permisosPorUsuario = new Map<string, Permiso[]>()
+  for (const f of filas) {
+    permisosPorUsuario.set(f.usuarioId, [
+      ...(permisosPorUsuario.get(f.usuarioId) ?? []),
+      f.permiso as Permiso,
+    ])
+  }
 
   return (
     <>
@@ -59,7 +74,11 @@ export default async function Usuarios() {
           cualquier fila y puede dispararlo tanto el alta como el reseteo de
           una fila cualquiera, así que necesita un estado compartido por
           encima de los dos — ver el comentario de CuerpoUsuarios. */}
-      <CuerpoUsuarios usuarios={usuarios} usuarioActualId={sesion.usuario.id} />
+      <CuerpoUsuarios
+        usuarios={usuarios}
+        usuarioActualId={sesion.usuario.id}
+        permisosPorUsuario={Object.fromEntries(permisosPorUsuario)}
+      />
     </>
   )
 }

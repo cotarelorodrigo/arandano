@@ -188,6 +188,7 @@ RLS protege a un tenant de ver los datos de otro. No protege de un `DROP TABLE` 
 - **Postgres administrado (Supabase) en lugar del Postgres propio**: evaluado el 2026-08-06 y **pospuesto**, no descartado para siempre. A favor pesaban la durabilidad de los datos de clientes (hoy un incidente de disco cuesta hasta 24 h, que es el intervalo del backup nocturno) y liberar los 1536 MiB que reserva prod. En contra: es un ciclo entero de spec, plan e implementación que rehace backups, `verify-infra.sh`, los tres compose y `setup-db-roles.sh` sin entregar una sola feature, y el beneficio principal es proporcional a datos de clientes que todavía no existen. Se decidió seguir con Postgres propio para el MVP. **Lo que hace reconsiderarlo**: que haya clientes reales facturando adentro. **Lo que NO lo bloquea**: el schema, el modelo de RLS y el `tenant_id` son independientes del proveedor, y el camino de migración es `pg_dump` → `pg_restore`, que ya está escrito y verificado — así que mudarse sigue siendo barato después. **Mitigación mientras tanto**: subir la frecuencia del backup, que ataca el 80 % del riesgo con un cambio chico sobre un script probado.
 - **SQLite en dev con Postgres en producción**: descartado. Dejaría el aislamiento entre tenants probado en ningún lado salvo producción: SQLite no tiene RLS (se caen `test/rls.test.ts` y `test/rls-cobertura.test.ts`), no tiene roles (`arandano_owner` / `arandano_app`, los `GRANT` y los default privileges), y no tiene GUCs de sesión, que es el mecanismo con el que `lib/tenant/prisma.ts` ata el cliente al tenant. Además Prisma lleva un historial de migraciones por provider, así que el SQL que corre en prod no se ejecutaría nunca en dev — exactamente el modo de falla del bloqueante 9.
 - **Clerk** (autenticación gestionada como tercero): evaluado en el ciclo de autenticación (2026-08-10) y descartado. Resuelve bien lo aburrido —login, contraseñas, sesiones, todo listo—, pero pone un tercero en el camino de cobrar: si Clerk tiene un incidente, un local no puede abrir el punto de venta aunque Postgres y el resto de la app estén sanos. Cobra por organización activa, US$1 por tenant por mes pasadas las primeras 100, contra comercios argentinos que facturan en pesos — el costo escala justo con lo que más queremos escalar. Y no ahorra la parte difícil: el chequeo de "esta persona pertenece al tenant de este `Host`" sigue siendo código nuestro sobre RLS de todos modos, con o sin Clerk; y si su cookie se setea en `.arandano.app`, ese chequeo pasa de importante a load-bearing, porque la sesión sería válida en todos los subdominios por diseño. Se prefirió Better Auth: self-hosted, en el propio Postgres, con el mismo `tenant_id`. Ver `docs/superpowers/specs/2026-08-10-autenticacion-design.md`.
+- **Roles personalizados** (que cada tenant defina sus propios roles, en vez de un catálogo cerrado de seis permisos sobre `DUENO`/`EMPLEADO`): evaluado en el ciclo de permisos por usuario (2026-08-26) y descartado por ahora. Un catálogo cerrado y un diálogo de switches alcanza mientras dar de alta un empleado signifique prender unos pocos switches una sola vez; un rol personalizado sería resolver un problema — muchos empleados, cada uno con una combinación distinta que se repite— que todavía no existe. **El disparador para reconsiderarlo**: que prender switches de a uno, para cada empleado nuevo, empiece a molestar en un local con planta grande. Ver `docs/superpowers/specs/2026-08-26-permisos-por-usuario-design.md`.
 
 ## Riesgos conocidos
 
@@ -1030,6 +1031,85 @@ Y del producto:
   y no se construyeron: el código de barras (columna nueva, y el buscador de
   `/vender` debería mirarla) y el toggle de catálogo público (que viaja con el
   catálogo, cuando exista).
+- ~~Sumar permisos por usuario, empleado por empleado.~~ **Hecho**
+  (2026-08-26). Sale del feedback textual de un dueño que pidió, en estos
+  términos, poder decidir qué puede hacer cada empleado suyo — y ese pedido lo
+  convirtió de regla fija del producto (algunas cosas son del dueño, punto) en
+  **decisión de cada local** (el dueño de cada local prende o no cada
+  capacidad, para cada empleado suyo). El catálogo queda cerrado en código,
+  seis permisos: `ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`,
+  `CATEGORIAS`, `VENTAS_ANULAR`, `ORDENES_ANULAR`.
+
+  **El estado previo era el inverso del pedido, en las dos mitades.** Antes de
+  este ciclo, el alta y edición de artículos —y el ABM de categorías— estaban
+  **cerrados** al empleado (sólo el dueño), mientras que ver y cargar el costo
+  de un ingreso estaban **abiertos** a cualquiera con sesión. El pedido corre
+  las dos cosas en la dirección contraria: abre lo primero (si el dueño
+  quiere) y cierra lo segundo (por default). Vale la pena tenerlo anotado
+  porque no es una feature que sólo agrega candados — a un rubro de este ciclo
+  le está sacando una capacidad que tenía.
+
+  **Cuatro decisiones valen para releer cuando alguien quiera tocar este
+  esquema:**
+
+  - **La fila de `usuario_permisos` ES el permiso otorgado; su ausencia es la
+    negación.** No hay una columna de "prendido/apagado" que backfillear:
+    otorgar es un `INSERT`, revocar es un `DELETE`, y por eso este ciclo no
+    llevó ninguna migración de datos — la tabla nace vacía y así queda para
+    cualquier empleado sin permisos explícitos.
+  - **El dueño corta antes de la tabla.** `exigirPermiso` le da verdadero a un
+    `DUENO` sin consultar `usuario_permisos` en absoluto. No es un atajo de
+    performance: es lo que garantiza que un dueño no pueda quedarse afuera de
+    su propio local y lo que evita tener que otorgarle nada al crear un
+    tenant.
+  - **`COSTOS` es uno solo y no dos** (ver costo/margen y cargarlo al
+    recibir), pero **`ARTICULOS_CREAR` y `ARTICULOS_EDITAR` sí son dos.**
+    Cargar un costo que no se puede ver no es un caso que exista —el ingreso
+    de mercadería muestra lo que se acaba de escribir—, así que partir
+    `COSTOS` en dos daba combinaciones absurdas. Cargar un producto nuevo y
+    cambiarle el precio a uno que se viene vendiendo hace meses, en cambio, no
+    tienen el mismo riesgo, y el pedido original nombraba sólo el primero.
+  - **`/usuarios` no es delegable**, ni la pantalla ni sus acciones, y no por
+    omisión: un permiso que habilitara a repartir permisos sería una escalada
+    de privilegios con un paso de más, porque el empleado que pudiera editar
+    usuarios se otorgaría los otros cinco y listo. De ahí sale la regla
+    general para cuando el catálogo crezca: **se delega lo que opera el
+    negocio, no lo que reparte poder.**
+
+  **Este ciclo le saca al empleado, por default, ver y cargar costos** —una
+  regresión deliberada frente al comportamiento de hoy, y **gratis exactamente
+  ahora**: todavía no hay tenants reales usándolo. Dentro de seis meses sería
+  sacarle una capacidad a gente que ya la usa a diario.
+
+  **Un ingreso de mercadería hecho por un empleado sin `COSTOS` queda sin
+  costo para siempre** — `MovimientoStock.costoUnitario` ya es, desde el ciclo
+  de inventario, "una puerta de una sola dirección" que no se backfillea (ver
+  *Decisiones abiertas del modelo de datos*), y esconderle el campo a quien
+  recibe la mercadería en algún local donde el dueño no está a la mañana
+  significa que el "Último costo" del artículo no se actualiza ese día. La
+  salida —que el dueño complete el costo después, en un momento en que sí
+  tiene el permiso— no se construyó en este ciclo; el disparador para
+  construirla es concreto y no una fecha: que a un dueño le llegue a molestar
+  de verdad.
+
+  **El disparador de los roles personalizados** —descartados por ahora, ver la
+  entrada de *Opciones evaluadas y descartadas*, más arriba— no es una cantidad
+  de permisos en el catálogo: es que prender seis switches de a uno, uno por
+  uno, para cada empleado nuevo, empiece a molestar en un local con muchos
+  empleados. Mientras eso no pase, un catálogo cerrado de seis y un diálogo de
+  switches alcanza.
+
+  **Queda pendiente, sin confirmar a ojo:** la verificación manual en el
+  navegador de este ciclo no se hizo. El contenedor `arandano-dev-app-1`
+  bind-montea `/root/arandano` —el workspace principal—, no el worktree donde
+  se construyó esta feature, así que el stack de `arandano-dev` no puede
+  servir este código sin tocar infraestructura compartida que este ciclo no
+  tocó. Quedó sin confirmar que el toast del diálogo de permisos aparezca y se
+  vaya solo, que el conteo "N de 6 permisos" de la fila cambie en vivo al
+  tocar un switch, y que otorgarle `ARTICULOS_CREAR` a un empleado le habilite
+  de verdad el botón "Artículo nuevo" en `/inventario`. No se lo da por hecho:
+  hace falta que alguien lo mire en un entorno que sirva este worktree antes
+  de confiar en la pantalla a ojo cerrado.
 - ~~Adaptar las trece pantallas al teléfono.~~ **Hecho** (2026-08-26). Estaban
   construidas contra una maqueta de escritorio de 1440 px y se sirven ahora
   también a 390, contra los **quince frames `Móvil / …`** que
@@ -1181,6 +1261,46 @@ Y del producto:
   heredaban `text-sm`— y hoy caen a los 16 px del navegador en vez de los 14 de
   su rol. Está escrito con nombre y apellido en `docs/sistema-de-diseno.md`,
   bajo la escala tipográfica.
+
+  **Y el merge con el ciclo de permisos por usuario** (2026-08-26, `main` en
+  `v1.17.0`): los dos ciclos tocaron las mismas seis pantallas, y el merge
+  tiene una lección propia que vale más que los diez conflictos que resolvió.
+
+  **Este ciclo DUPLICÓ botones de acción** —uno en el Topbar (`hidden
+  lg:flex`) y otro al pie del cuerpo (`lg:hidden`), atados al mismo `form` y
+  al mismo `useActionState`— y el ciclo de permisos puso sus guardas sobre el
+  botón que existía cuando ese ciclo empezó, o sea sobre **una sola de las dos
+  copias**. La forma en que eso se manifiesta es lo peligroso: **git mergeó
+  sin marcar conflicto** en `app/(app)/servicio-tecnico/formularios.tsx`,
+  porque el ciclo de permisos renombró la prop a `puedeAnular` y el derivado
+  a `seOfreceAnular`, y la copia del teléfono —escrita cuando `puedeAnular`
+  era el derivado— siguió compilando con el nombre nuevo, ahora apuntando al
+  permiso pelado. Resultado del merge automático: "Anular orden" ofrecido en
+  el teléfono sobre una orden **ya anulada**, contra un `<form>` que en ese
+  caso ni existe. Ningún test, ningún `tsc`, ningún lint lo veía.
+
+  La regla que queda escrita: **toda guarda de permiso tiene que alcanzar las
+  dos copias, y el test que lo fija cuenta apariciones en las dos
+  direcciones** —con el permiso tienen que estar las dos, sin el permiso
+  ninguna—. Un `not.toContain` no alcanza: pasa igual si una de las dos
+  quedó gateada y la otra no. Los tres lugares donde vive hoy esa cobertura
+  son `app/(app)/servicio-tecnico/formularios.test.tsx` ("las DOS copias de
+  «Anular orden»"), `app/(app)/inventario/formularios.test.tsx` ("las DOS
+  copias de cada botón las gobierna el mismo `puedeEditar`") y
+  `test/permisos-en-las-dos-copias.test.ts`, que cubre por FUENTE lo que no se
+  puede renderizar (`/inventario`, un Server Component async: el botón
+  "Artículo nuevo" del Topbar y su `accionMovil`, y los DOS
+  `PanelDeCategorias` —el de la columna y el del `Sheet` del teléfono—).
+
+  **Dos cosas quedaron a propósito sin resolver, y las dos están anotadas en
+  `docs/pantallas.md`, sección `/usuarios`**: el diálogo de permisos sigue
+  siendo un `Dialog` centrado con su velo propio mientras el resto de los
+  overlays del teléfono son `Sheet` con `bg-foreground/65` sin desenfoque —dos
+  velos distintos conviviendo, que es una decisión de producto y no de un
+  merge—, y `components/ui/dialog.tsx` / `components/ui/switch.tsx` traen
+  `sm:` (640) del registry de shadcn, un corte que este ciclo prohíbe en
+  código propio pero que vive en `components/ui/`, que es código copiado tal
+  cual.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

@@ -144,7 +144,7 @@ describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
   // que sin `atras` renderiza el SidebarTrigger de shadcn — y ése llama a
   // useSidebar(), que tira si no hay un SidebarProvider como ancestro. Mismo
   // motivo que ya documentó components/shell/encabezado.test.tsx.
-  function render(opts: { anulada?: boolean; esDuenio?: boolean } = {}) {
+  function render(opts: { anulada?: boolean; puedeAnular?: boolean } = {}) {
     return renderToStaticMarkup(
       <SidebarProvider>
         <FichaDeOrden
@@ -152,7 +152,7 @@ describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
           subtitulo="Ingresó el 29/07/2026 · hace 23 días en el local"
           ordenId="o-1"
           anulada={opts.anulada ?? false}
-          esDuenio={opts.esDuenio ?? true}
+          puedeAnular={opts.puedeAnular ?? true}
           accionAnular={accionFalsa}
           columnaIzquierda={<div>cuerpo izquierdo</div>}
           columnaDerecha={<div>bitácora</div>}
@@ -166,25 +166,25 @@ describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
     expect(html).toMatch(/href="\/servicio-tecnico\/o-1\/ticket"[^>]*>[\s\S]*?Reimprimir ticket/)
   })
 
-  it('el dueño con la orden viva ve "Anular orden"', () => {
-    const html = render({ esDuenio: true, anulada: false })
+  it('con el permiso y la orden viva, ve "Anular orden"', () => {
+    const html = render({ puedeAnular: true, anulada: false })
     expect(html).toContain('Anular orden')
   })
 
-  it('un empleado NO ve "Anular orden", aunque la orden esté viva', () => {
-    const html = render({ esDuenio: false, anulada: false })
+  it('sin el permiso NO ve "Anular orden", aunque la orden esté viva', () => {
+    const html = render({ puedeAnular: false, anulada: false })
     expect(html).not.toContain('Anular orden')
   })
 
-  it('una orden YA anulada no ofrece anularla de nuevo, ni para el dueño', () => {
-    const html = render({ esDuenio: true, anulada: true })
+  it('una orden YA anulada no ofrece anularla de nuevo, ni con el permiso', () => {
+    const html = render({ puedeAnular: true, anulada: true })
     expect(html).not.toContain('Anular orden')
   })
 
   it('el <form> invisible de anular sólo existe cuando el botón puede aparecer', () => {
-    expect(render({ esDuenio: true, anulada: false })).toContain('id="form-anular-orden"')
-    expect(render({ esDuenio: false, anulada: false })).not.toContain('id="form-anular-orden"')
-    expect(render({ esDuenio: true, anulada: true })).not.toContain('id="form-anular-orden"')
+    expect(render({ puedeAnular: true, anulada: false })).toContain('id="form-anular-orden"')
+    expect(render({ puedeAnular: false, anulada: false })).not.toContain('id="form-anular-orden"')
+    expect(render({ puedeAnular: true, anulada: true })).not.toContain('id="form-anular-orden"')
   })
 
   it('las dos columnas del cuerpo se renderizan', () => {
@@ -200,7 +200,7 @@ describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
   // anular: si alguien revirtiera el mecanismo a un submit directo, este caso
   // tiene que quedar en rojo.
   it('"Anular orden" arma la confirmación en vez de anular con un solo click', () => {
-    const html = render({ esDuenio: true, anulada: false })
+    const html = render({ puedeAnular: true, anulada: false })
     const inicio = html.indexOf('Anular orden')
     expect(inicio).toBeGreaterThan(-1)
     const desde = html.lastIndexOf('<button', inicio)
@@ -259,7 +259,7 @@ describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
    * suma una className de tamaño para esta segunda instancia.
    */
   it('"Anular orden" se duplica al final del cuerpo en el teléfono, a 46px de alto', () => {
-    const html = render({ esDuenio: true, anulada: false })
+    const html = render({ puedeAnular: true, anulada: false })
     const apariciones = [...html.matchAll(/Anular orden/g)]
     expect(apariciones).toHaveLength(2)
 
@@ -274,13 +274,29 @@ describe('FichaDeOrden (Task 4 del rediseño: Topbar de la ficha)', () => {
   })
 
   it('el bloque del cuerpo es lg:hidden: en escritorio sigue viviendo sólo en el Topbar', () => {
-    const html = render({ esDuenio: true, anulada: false })
+    const html = render({ puedeAnular: true, anulada: false })
     expect(html).toMatch(/class="flex gap-\[10px\] lg:hidden"/)
   })
 
-  it('sin poder anular (empleado, u orden ya anulada), tampoco aparece el bloque del cuerpo', () => {
-    expect(render({ esDuenio: false, anulada: false })).not.toContain('Anular orden')
-    expect(render({ esDuenio: true, anulada: true })).not.toContain('Anular orden')
+  /**
+   * El riesgo propio del merge con el ciclo de permisos (2026-08-26): las DOS
+   * copias del botón —Topbar (`hidden lg:flex`) y cuerpo del teléfono
+   * (`lg:hidden`)— tienen que estar gobernadas por la MISMA expresión,
+   * `seOfreceAnular` (el permiso `ORDENES_ANULAR` Y que la orden no esté ya
+   * anulada). El ciclo de permisos convirtió la guarda cuando existía una
+   * sola copia; el ciclo móvil agregó la segunda.
+   *
+   * Los conteos, y no un `not.toContain`, son lo que hace que este caso
+   * detecte gatear UNA sola: con la guarda mal puesta en el cuerpo daría 1 en
+   * vez de 0 (y 1 en vez de 2 si estuviera mal la del Topbar).
+   */
+  it('las DOS copias de "Anular orden" las gobierna la misma expresión', () => {
+    const cuenta = (opts: { anulada: boolean; puedeAnular: boolean }) =>
+      [...render(opts).matchAll(/Anular orden/g)].length
+
+    expect(cuenta({ puedeAnular: true, anulada: false }), 'con permiso y orden viva: las dos').toBe(2)
+    expect(cuenta({ puedeAnular: false, anulada: false }), 'sin permiso: ninguna').toBe(0)
+    expect(cuenta({ puedeAnular: true, anulada: true }), 'orden ya anulada: ninguna').toBe(0)
   })
 })
 

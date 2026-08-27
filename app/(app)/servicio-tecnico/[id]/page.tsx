@@ -4,6 +4,7 @@ import { Prisma } from '@/generated/prisma/client'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { exigirSesion } from '@/lib/auth/sesion'
+import { puedeConSesion } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { cn } from '@/lib/utils'
 import { formatearFecha, formatearPrecio, montoSinSigno } from '@/lib/formato/mostrar'
@@ -384,7 +385,7 @@ export default async function DetalleDeOrden({ params }: { params: Promise<{ id:
   // vacío.
   const diasEnEstado = diasEnElLocal(orden.eventos[0]?.creadoEn ?? orden.creadoEn)
   const siguientes = transicionesDisponibles(orden.estado, anulada)
-  const esDuenio = sesion.usuario.rol === 'DUENO'
+  const puedeAnular = await puedeConSesion(sesion, 'ORDENES_ANULAR')
 
   return (
     <FichaDeOrden
@@ -398,7 +399,7 @@ export default async function DetalleDeOrden({ params }: { params: Promise<{ id:
       }
       ordenId={orden.id}
       anulada={anulada}
-      esDuenio={esDuenio}
+      puedeAnular={puedeAnular}
       accionAnular={anular}
       columnaIzquierda={
         <>

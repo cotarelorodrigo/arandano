@@ -15,23 +15,23 @@ import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
-  puedeAnular, cotizacionVisible, subtituloDeItem, metaDeItem, metaDePago, filasDeResumen,
+  seOfreceAnular, cotizacionVisible, subtituloDeItem, metaDeItem, metaDePago, filasDeResumen,
   notaDeAnulacion, Detalle, type ItemVendido, type PagoRecibido,
 } from './page'
 import { CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
 
-describe('puedeAnular', () => {
-  it('el dueño puede anular una venta cobrada', () => {
-    expect(puedeAnular('DUENO', null)).toBe(true)
+describe('seOfreceAnular', () => {
+  it('con el permiso, se ofrece anular una venta cobrada', () => {
+    expect(seOfreceAnular(true, null)).toBe(true)
   })
 
-  it('un empleado no ve el botón, sin importar el estado de la venta', () => {
-    expect(puedeAnular('EMPLEADO', null)).toBe(false)
+  it('sin el permiso no se ofrece el botón, sin importar el estado de la venta', () => {
+    expect(seOfreceAnular(false, null)).toBe(false)
   })
 
-  it('nadie anula una venta ya anulada, ni siquiera el dueño', () => {
-    expect(puedeAnular('DUENO', new Date())).toBe(false)
+  it('nadie anula una venta ya anulada, ni con el permiso', () => {
+    expect(seOfreceAnular(true, new Date())).toBe(false)
   })
 })
 
@@ -233,7 +233,7 @@ function renderDetalle(props: Partial<Parameters<typeof Detalle>[0]> = {}) {
       items={[ITEM]}
       totalFormateado="$ 94.000,00"
       pagos={[PAGO_ARS]}
-      puedeAnularVenta={false}
+      ofreceAnular={false}
       ventaId="v1"
       {...props}
     />,
@@ -384,13 +384,13 @@ describe('Detalle: el link "Volver" del cuerpo sólo existe en escritorio', () =
 
 describe('Detalle: Zona de riesgo', () => {
   it('sin anular y sin permiso: muestra la advertencia, sin el botón', () => {
-    const html = renderDetalle({ notaDeAnulacionTexto: null, puedeAnularVenta: false })
+    const html = renderDetalle({ notaDeAnulacionTexto: null, ofreceAnular: false })
     expect(html).toContain('Anular la venta')
     expect(html).not.toContain('<form')
   })
 
   it('sin anular y con permiso: muestra el formulario de anulación', () => {
-    const html = renderDetalle({ notaDeAnulacionTexto: null, puedeAnularVenta: true })
+    const html = renderDetalle({ notaDeAnulacionTexto: null, ofreceAnular: true })
     expect(html).toContain('<form')
   })
 
@@ -398,10 +398,26 @@ describe('Detalle: Zona de riesgo', () => {
     const html = renderDetalle({
       anulada: true,
       notaDeAnulacionTexto: 'Anulada el 20/08/2026 por Rodrigo Cotarelo.',
-      puedeAnularVenta: true,
+      ofreceAnular: true,
     })
     expect(html).toMatch(/role="alert"[^>]*>[\s\S]*Anulada el 20\/08\/2026 por Rodrigo Cotarelo\./)
     expect(html).not.toContain('Anular la venta')
     expect(html).not.toContain('<form')
+  })
+
+  /**
+   * El cableado, que el render no puede ver: `Detalle` recibe `ofreceAnular`
+   * ya resuelto, así que un llamador que le pasara el PERMISO pelado
+   * (`puedeAnularVenta`) en vez de `seOfreceAnular(permiso, anuladaEn)`
+   * ofrecería anular una venta ya anulada, con los tres casos de arriba en
+   * verde. `DetalleDeVenta` es un Server Component async que abre sesión y
+   * consulta Prisma, así que esto se verifica sobre el fuente — misma
+   * excepción que el resto de este archivo ya usa para el `select`.
+   */
+  it('la pantalla combina el permiso con anuladaEn antes de pasarlo a Detalle', () => {
+    const fuente = readFileSync('app/(app)/ventas/[id]/page.tsx', 'utf8')
+    expect(fuente).toContain('ofreceAnular={seOfreceAnular(puedeAnularVenta, venta.anuladaEn)}')
+    // Y al revés: el permiso pelado nunca llega solo al componente.
+    expect(fuente).not.toContain('ofreceAnular={puedeAnularVenta}')
   })
 })

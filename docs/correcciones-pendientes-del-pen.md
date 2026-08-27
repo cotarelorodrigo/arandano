@@ -482,6 +482,43 @@ para el dueño del producto.
 
 ---
 
+## 18. El diálogo de permisos de `/usuarios`, y un texto de `/ventas/[id]` que quedó mintiendo
+
+- **Frame**: `App / Usuarios` (para la primera mitad); `App / Venta detalle`,
+  nodo `TIlD3` (para la segunda)
+
+**Primera mitad: la maqueta no dibuja el diálogo de permisos ni la columna
+nueva.** `design/arandano.pen` fija la tabla de `/usuarios` con las columnas
+Persona/Rol/Estado/Acciones y el resto de esa pantalla (el alta con el control
+segmentado, el aviso ámbar de clave). No dibuja ningún diálogo con switches por
+permiso, ni la columna "Permisos" que el ciclo de permisos por usuario le sumó
+a la tabla (2026-08-26). El código se derivó de lo que la maqueta **sí** fija
+para esa pantalla —el mismo tratamiento de card, tabla y botones fantasma que
+ya usa el resto de `/usuarios`— y no de un frame propio, que no existe. Mismo
+precedente que el panel de categorías de `/inventario` (entrada 6, arriba):
+construir contra lo que la maqueta ya dice sobre esa pantalla, cuando el
+control puntual no tiene frame.
+
+**Segunda mitad: un texto de `/ventas/[id]` quedó mintiendo, y no se corrige
+acá.** El bloque "Anular la venta" de `/ventas/[id]` dice, palabra por palabra,
+"Sólo el dueño puede hacerlo" — copy literal del `.pen` (nodo `TIlD3`), fijado
+antes de que existiera este ciclo. Desde la conversión del botón a
+`exigirPermiso('VENTAS_ANULAR')`, un empleado con ese permiso delegado ve el
+botón de anular al lado de una oración que le dice que no puede usarlo. La
+guarda real —la que importa— sigue siendo la del server action, así que no es
+un agujero de seguridad; es una oración que ya no describe el sistema.
+
+No se cambió el texto en este ciclo, a propósito: la regla escrita del proyecto
+es que la maqueta manda y la divergencia se anota, no que un ciclo de permisos
+reescriba copy de producto por su cuenta — eso es decisión del dueño del
+producto, sobre esta pantalla puntual y sobre si el patrón se repite en algún
+otro lado que use el mismo giro ("Sólo el dueño…").
+
+Detectado al cerrar el ciclo de permisos por usuario (2026-08-26). Ver
+`docs/superpowers/specs/2026-08-26-permisos-por-usuario-design.md`.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

@@ -29,18 +29,18 @@ const ARBOL = [
 // sin `atras` renderiza el SidebarTrigger de shadcn — y ése llama a
 // useSidebar(), que tira si no hay un SidebarProvider como ancestro. Mismo
 // motivo que ya documentó components/shell/encabezado.test.tsx.
-async function renderAlta(arbol = ARBOL) {
+async function renderAlta(arbol = ARBOL, puedeCostos = true) {
   const { FormularioDeAlta } = await import('./formularios')
   return renderToStaticMarkup(
     <SidebarProvider>
-      <FormularioDeAlta proximoSku="A-0043" arbol={arbol} />
+      <FormularioDeAlta proximoSku="A-0043" arbol={arbol} puedeCostos={puedeCostos} />
     </SidebarProvider>,
   )
 }
 
 async function renderFicha(
   categoria: string | null,
-  extra: Partial<{ desactivado: boolean; esDuenio: boolean }> = {},
+  extra: Partial<{ desactivado: boolean; puedeEditar: boolean }> = {},
 ) {
   const { FichaDeArticulo } = await import('./formularios')
   return renderToStaticMarkup(
@@ -54,7 +54,7 @@ async function renderFicha(
         precio="12000"
         categoria={categoria}
         desactivado={extra.desactivado ?? false}
-        esDuenio={extra.esDuenio ?? true}
+        puedeEditar={extra.puedeEditar ?? true}
         columnaIzquierda={<div>columna izquierda</div>}
       />
     </SidebarProvider>,
@@ -252,28 +252,28 @@ describe('FichaDeArticulo', () => {
     expect(boton![1]).toBe('destructive')
   })
 
-  // Sin esDuenio no hay nada que editar ni que desactivar: ni el botón del
+  // Sin puedeEditar no hay nada que editar ni que desactivar: ni el botón del
   // Topbar, ni el <form> oculto de baja, ni la card "Datos".
-  it('sin esDuenio no renderiza ninguna acción de edición', async () => {
-    const html = await renderFicha(null, { esDuenio: false })
+  it('sin puedeEditar no renderiza ninguna acción de edición', async () => {
+    const html = await renderFicha(null, { puedeEditar: false })
     expect(html).not.toContain('Guardar cambios')
     expect(html).not.toContain('Desactivar')
     expect(html).not.toContain('Datos')
     expect(html).not.toMatch(/<form id="form-baja-articulo"/)
   })
 
-  // Minor de la review: un EMPLEADO (esDuenio=false) mirando un SERVICIO (sin
+  // Minor de la review: un EMPLEADO (puedeEditar=false) mirando un SERVICIO (sin
   // columnaDerechaExtra, que sólo arma page.tsx para un producto) se quedaba
   // sin "Datos" y sin "Cómo se movió", pero el <div> de 324 px seguía
   // reservando el hueco vacío igual. La columna entera tiene que desaparecer,
   // no sólo su contenido.
   it('sin nada que mostrar a la derecha, la columna de 324 px no se renderiza', async () => {
-    const html = await renderFicha(null, { esDuenio: false })
+    const html = await renderFicha(null, { puedeEditar: false })
     expect(html).not.toContain('w-[324px]')
   })
 
-  it('con esDuenio, la columna de 324 px sí aparece (trae la card "Datos")', async () => {
-    const html = await renderFicha(null, { esDuenio: true })
+  it('con puedeEditar, la columna de 324 px sí aparece (trae la card "Datos")', async () => {
+    const html = await renderFicha(null, { puedeEditar: true })
     expect(html).toContain('w-[324px]')
   })
 
@@ -296,9 +296,9 @@ describe('FichaDeArticulo', () => {
 })
 
 describe('MoverStock', () => {
-  async function renderMoverStock() {
+  async function renderMoverStock(puedeCostos = true) {
     const { MoverStock } = await import('./formularios')
-    return renderToStaticMarkup(<MoverStock articuloId="a1" />)
+    return renderToStaticMarkup(<MoverStock articuloId="a1" puedeCostos={puedeCostos} />)
   }
 
   // Mismo hallazgo M2: "Ingresar mercadería" y "Corregir por conteo" son las
@@ -473,9 +473,28 @@ describe('el pie del teléfono repite las acciones del Topbar (Task 7 del ciclo 
     expect(new Set(formularios).size).toBe(2)
   })
 
-  it('sin esDuenio, el pie del teléfono tampoco se renderiza', async () => {
-    const html = await renderFicha(null, { esDuenio: false })
+  it('sin puedeEditar, el pie del teléfono tampoco se renderiza', async () => {
+    const html = await renderFicha(null, { puedeEditar: false })
     expect(html).not.toMatch(/border-t bg-card p-\[14px\] lg:hidden/)
+  })
+
+  // El riesgo propio del merge con el ciclo de permisos (2026-08-26): los
+  // botones de esta pantalla están DUPLICADOS —Topbar (`hidden lg:flex`) y
+  // pie del teléfono (`lg:hidden`)—, y el permiso `ARTICULOS_EDITAR` llegó
+  // cuando existía una sola copia. Gatear sólo la de escritorio dejaba a un
+  // empleado sin el permiso con "Desactivar" y "Guardar cambios" a mano en el
+  // teléfono, con el gate entero en verde.
+  //
+  // Este caso cuenta las DOS copias en las dos direcciones: con el permiso
+  // tienen que estar las dos, sin el permiso ninguna. Un `puedeEditar` que
+  // gatee una sola lo rompe (daría 1 y no 0, o 1 y no 2).
+  it('las DOS copias de cada botón las gobierna el mismo puedeEditar', async () => {
+    const con = await renderFicha(null, { puedeEditar: true })
+    const sin = await renderFicha(null, { puedeEditar: false })
+    for (const etiqueta of ['Guardar cambios', 'Desactivar']) {
+      expect([...con.matchAll(new RegExp(etiqueta, 'g'))]).toHaveLength(2)
+      expect([...sin.matchAll(new RegExp(etiqueta, 'g'))]).toHaveLength(0)
+    }
   })
 })
 

@@ -749,7 +749,7 @@ export function FichaDeOrden({
   subtitulo,
   ordenId,
   anulada,
-  esDuenio,
+  puedeAnular,
   accionAnular,
   columnaIzquierda,
   columnaDerecha,
@@ -758,16 +758,16 @@ export function FichaDeOrden({
   subtitulo: ReactNode
   ordenId: string
   anulada: boolean
-  esDuenio: boolean
+  puedeAnular: boolean
   accionAnular: (e: EstadoServicio, d: FormData) => Promise<EstadoServicio>
   columnaIzquierda: ReactNode
   columnaDerecha: ReactNode
 }) {
   const [estadoAnular, ejecutarAnular, anulando] = useActionState(accionAnular, INICIAL)
-  // Sólo el dueño, y sólo si no está anulada ya: la action lo revalida con
-  // exigirDuenio y con ORDEN_ANULADA — esconder el botón acá es comodidad,
-  // no el permiso real.
-  const puedeAnular = esDuenio && !anulada
+  // Quien tenga ORDENES_ANULAR, y sólo si no está anulada ya: la action lo
+  // revalida con exigirPermiso('ORDENES_ANULAR') y con ORDEN_ANULADA —
+  // esconder el botón acá es comodidad, no el permiso real.
+  const seOfreceAnular = puedeAnular && !anulada
 
   return (
     <>
@@ -795,12 +795,12 @@ export function FichaDeOrden({
                 Reimprimir ticket
               </Link>
             </Button>
-            {puedeAnular ? <BotonAnular anulando={anulando} /> : null}
+            {seOfreceAnular ? <BotonAnular anulando={anulando} /> : null}
           </>
         }
       />
 
-      {puedeAnular ? (
+      {seOfreceAnular ? (
         <form id={FORM_ANULAR} action={ejecutarAnular} className="hidden" aria-hidden="true">
           <input type="hidden" name="ordenId" value={ordenId} />
         </form>
@@ -824,8 +824,18 @@ export function FichaDeOrden({
             En escritorio sigue viviendo sólo en el Topbar (`acciones`,
             `hidden lg:flex`), así que este bloque es `lg:hidden`. Mismo
             `BotonAnular`, mismo mecanismo de confirmación — sólo cambia el
-            tamaño (className). */}
-        {puedeAnular ? (
+            tamaño (className).
+
+            La guarda es `seOfreceAnular` —el permiso `ORDENES_ANULAR` Y que
+            la orden no esté ya anulada—, la MISMA que la copia del Topbar, y
+            no el `puedeAnular` pelado: el merge del ciclo de permisos
+            (2026-08-26) renombró la prop a `puedeAnular` y el derivado a
+            `seOfreceAnular`, así que dejar acá el nombre viejo compilaba,
+            pero ofrecía anular una orden ya anulada — y contra un `<form
+            id="form-anular-orden">` que en ese caso ni existe. Las dos copias
+            del botón se guardan con la misma expresión, y
+            `formularios.test.tsx` lo fija contando ocurrencias. */}
+        {seOfreceAnular ? (
           <div className="flex gap-[10px] lg:hidden">
             <BotonAnular anulando={anulando} className="h-[46px] flex-1 rounded-[12px]" />
           </div>

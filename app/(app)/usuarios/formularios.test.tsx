@@ -13,6 +13,7 @@ vi.mock('./acciones', () => ({
   nuevaClave: vi.fn(),
   baja: vi.fn(),
   alta: vi.fn(),
+  cambiarPermiso: vi.fn(),
 }))
 
 async function renderAlta() {
@@ -137,29 +138,41 @@ describe('CardEquipo: el patrón grid + display:contents (Task 10)', () => {
   async function render() {
     const { CardEquipo } = await import('./formularios')
     return renderToStaticMarkup(
-      <CardEquipo usuarios={USUARIOS} usuarioActualId="u1" onClaveGenerada={() => {}} />,
+      <CardEquipo
+        usuarios={USUARIOS}
+        usuarioActualId="u1"
+        permisosPorUsuario={{ u4: ['VENTAS_ANULAR', 'COSTOS'] }}
+        onClaveGenerada={() => {}}
+      />,
     )
   }
 
-  it('el contenedor es la tabla ARIA: 1 columna en el teléfono, 4 en escritorio', async () => {
+  it('el contenedor es la tabla ARIA: 1 columna en el teléfono, 5 en escritorio', async () => {
     const html = await render()
     expect(html).toContain('role="table"')
-    expect(html).toMatch(/class="[^"]*\bgrid-cols-1\b[^"]*\blg:grid-cols-\[1fr_112px_118px_180px\]/)
+    // Cinco pistas desde el ciclo de permisos por usuario (2026-08-26):
+    // "Permisos" (140px, la misma anchura que declaraba su <TableHead> en
+    // origin/main) entra entre Estado y Acciones.
+    expect(html).toMatch(/class="[^"]*\bgrid-cols-1\b[^"]*\blg:grid-cols-\[1fr_112px_118px_140px_180px\]/)
   })
 
-  it('el encabezado está oculto en el teléfono y se disuelve en escritorio, con 4 columnheader', async () => {
+  it('el encabezado está oculto en el teléfono y se disuelve en escritorio, con 5 columnheader', async () => {
     const html = await render()
     expect(html).toContain('role="row" class="hidden lg:contents"')
-    expect(html.match(/role="columnheader"/g)).toHaveLength(4)
+    expect(html.match(/role="columnheader"/g)).toHaveLength(5)
+    expect(html).toContain('Permisos')
   })
 
-  it('toda fila de datos lleva lg:contents y role="row", con 4 celdas cada una', async () => {
+  it('toda fila de datos lleva lg:contents y role="row", con 5 celdas cada una', async () => {
     const html = await render()
     const filas = html.match(/role="row" class="[^"]*"/g) ?? []
     // El encabezado + las 2 filas de datos.
     expect(filas).toHaveLength(3)
     for (const fila of filas) expect(fila).toContain('lg:contents')
-    expect(html.match(/role="cell"/g)).toHaveLength(8) // 4 columnas × 2 filas
+    // 5 columnas × 2 filas. La celda de "Permisos" cuenta también en la fila
+    // del DUEÑO, que no lleva switches: con `lg:contents` sobre la fila, una
+    // celda salteada correría todas las columnas siguientes de ESA fila.
+    expect(html.match(/role="cell"/g)).toHaveLength(10)
   })
 
   it('la fila resalta al pasar el mouse en escritorio: group + group-hover en las 4 celdas', async () => {
@@ -167,7 +180,7 @@ describe('CardEquipo: el patrón grid + display:contents (Task 10)', () => {
     const filasDeDatos = html.match(/role="row" class="group [^"]*"/g) ?? []
     expect(filasDeDatos).toHaveLength(2)
     const celdas = html.match(/<div[^>]*\brole="cell"[^>]*>/g) ?? []
-    expect(celdas).toHaveLength(8)
+    expect(celdas).toHaveLength(10)
     for (const celda of celdas) {
       expect(celda).toContain('lg:group-hover:bg-muted/50')
       expect(celda).toContain('lg:transition-colors')
@@ -214,7 +227,10 @@ describe('CardEquipo: el patrón grid + display:contents (Task 10)', () => {
   it('el separador "·" aparece antes de las acciones, sólo en el teléfono (nodo hfAYV)', async () => {
     const html = await render()
     const separadores = html.match(/<span aria-hidden="true" class="[^"]*lg:hidden[^"]*">·<\/span>/g) ?? []
-    expect(separadores).toHaveLength(2) // uno por fila
+    // Uno por fila antes de las acciones (2), más el de la celda "Permisos"
+    // de la única fila de EMPLEADO — el disparador se funde en esa misma
+    // línea y paga el mismo separador.
+    expect(separadores).toHaveLength(3)
   })
 
   it('las acciones de fila siguen ahí: "Cambiar clave" para uno mismo, "Reactivar" para el desactivado', async () => {
@@ -224,6 +240,72 @@ describe('CardEquipo: el patrón grid + display:contents (Task 10)', () => {
     expect(html).toContain('Cambiar clave')
     expect(html).toContain('Reactivar')
     expect(html).not.toContain('Baja')
+  })
+
+  /**
+   * La columna "Permisos" (ciclo de permisos por usuario, 2026-08-26),
+   * fundida en la fila del teléfono por el merge de los dos ciclos. Lo que
+   * estos casos cuidan es lo que ninguno de los dos lados podía cuidar solo:
+   * que la columna nueva respete el patrón grid + `display:contents`, y que
+   * en el teléfono viva en la línea de acciones con UN SOLO nodo en el DOM.
+   */
+  describe('la columna "Permisos"', () => {
+    it('el disparador muestra el conteo del empleado, y el dueño no lleva ninguno', async () => {
+      const html = await render()
+      expect(html).toContain('2 de 6 permisos')
+      // Un dueño puede todo por construcción: su celda queda vacía.
+      expect(html.match(/permisos</g) ?? []).toHaveLength(1)
+      expect(html).not.toContain('Sin permisos')
+    })
+
+    it('en el teléfono el disparador se funde en la línea de acciones, sin duplicar el nodo', async () => {
+      const html = await render()
+      // Un solo nodo: el mismo <button> sirve a los dos anchos. Si alguien
+      // duplicara la celda (una `lg:hidden` y otra `hidden lg:flex`), el
+      // conteo aparecería dos veces.
+      expect(html.match(/2 de 6 permisos/g) ?? []).toHaveLength(1)
+      // Y vive DENTRO del envoltorio "línea de chips" del teléfono, o sea
+      // después del chip de estado y antes de las acciones.
+      const linea = html.indexOf('flex flex-wrap items-center gap-1.5 lg:contents')
+      expect(linea).toBeGreaterThan(-1)
+      expect(html.indexOf('2 de 6 permisos')).toBeGreaterThan(linea)
+      expect(html.indexOf('Reactivar')).toBeGreaterThan(html.indexOf('2 de 6 permisos'))
+    })
+
+    it('en el teléfono el disparador paga el mismo tratamiento que los links de acciones (10px), y en escritorio el botón de siempre', async () => {
+      const html = await render()
+      const desde = html.lastIndexOf('<button', html.indexOf('2 de 6 permisos'))
+      const boton = html.slice(desde, html.indexOf('>', desde))
+      // Teléfono: 10px, semibold, --primary, sin fondo — igual que ENLACE
+      // (fila-acciones.tsx).
+      expect(boton).toContain('text-[10px]')
+      expect(boton).toContain('font-semibold')
+      expect(boton).toContain('text-primary')
+      // Escritorio: exactamente lo que pintaban size="sm" + variant="ghost"
+      // en origin/main.
+      expect(boton).toContain('lg:h-7')
+      expect(boton).toContain('lg:px-2.5')
+      expect(boton).toContain('lg:text-[0.8rem]')
+      expect(boton).toContain('lg:font-medium')
+      expect(boton).toContain('lg:hover:bg-muted')
+    })
+
+    it('la celda del dueño desaparece del teléfono pero sigue ocupando su pista en escritorio', async () => {
+      const html = await render()
+      const celdas = html.match(/<div[^>]*\brole="cell"[^>]*>/g) ?? []
+      const ocultas = celdas.filter((c) => /class="[^"]*\bhidden\b[^"]*lg:block/.test(c))
+      // Exactamente una: la celda "Permisos" de la fila del DUEÑO.
+      expect(ocultas).toHaveLength(1)
+    })
+
+    it('la celda con contenido centra con envoltorio, nunca con self-center', async () => {
+      const html = await render()
+      expect(html).not.toContain('self-center')
+      // Rol, Estado y Permisos: tres celdas más cortas que "Persona", las
+      // tres con el mismo envoltorio de centrado.
+      const envoltorios = html.match(/class="lg:flex lg:h-full lg:items-center"/g) ?? []
+      expect(envoltorios.length).toBeGreaterThanOrEqual(5)
+    })
   })
 })
 
@@ -373,7 +455,9 @@ describe('CuerpoUsuarios', () => {
 
   async function render() {
     const { CuerpoUsuarios } = await import('./formularios')
-    return renderToStaticMarkup(<CuerpoUsuarios usuarios={USUARIOS} usuarioActualId="u1" />)
+    return renderToStaticMarkup(
+      <CuerpoUsuarios usuarios={USUARIOS} usuarioActualId="u1" permisosPorUsuario={{}} />,
+    )
   }
 
   // Minor 16 de la review final: este nombre decía "cuatro" y la lista de al

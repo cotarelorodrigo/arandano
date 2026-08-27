@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { exigirSesion, exigirDuenio } from '@/lib/auth/sesion'
+import { exigirSesion } from '@/lib/auth/sesion'
+import { exigirPermiso } from '@/lib/permisos/guarda'
 import { crearOrden } from '@/lib/ordenes-de-trabajo/crear'
 import { cambiarEstado, guardarDiagnostico, anularOrden } from '@/lib/ordenes-de-trabajo/operaciones'
 import { ErrorDeOrden } from '@/lib/ordenes-de-trabajo/errores'
@@ -124,10 +125,10 @@ export async function diagnosticar(_e: EstadoServicio, datos: FormData): Promise
   }
 }
 
-/** Sólo el dueño: anular es lo único destructivo del módulo. Mismo corte que
- *  la anulación de una venta. */
+/** Detrás de `ORDENES_ANULAR`: anular es lo único destructivo del módulo.
+ *  Mismo corte que la anulación de una venta. */
 export async function anular(_e: EstadoServicio, datos: FormData): Promise<EstadoServicio> {
-  const sesion = await exigirDuenio()
+  const sesion = await exigirPermiso('ORDENES_ANULAR')
   try {
     await anularOrden({
       tenantId: sesion.tenant.id,

@@ -29,7 +29,7 @@ const pintar = (props: Partial<Parameters<typeof PanelDeCategorias>[0]> = {}) =>
       total={48}
       sinCategoria={1}
       activa={null}
-      esDuenio
+      puedeAdministrar
       filtros={{ busqueda: '', verInactivos: false, tipo: null }}
       {...props}
     />,
@@ -115,16 +115,19 @@ describe('PanelDeCategorias', () => {
     expect(html).toContain('Todavía no creaste categorías')
   })
 
-  // El ABM es del dueño, mismo criterio que el alta de artículo: el catálogo
-  // es decisión del negocio.
-  it('un empleado no ve los controles de administración', () => {
-    const html = pintar({ esDuenio: false })
+  // El ABM lo gobierna el permiso CATEGORIAS (ciclo de permisos por usuario,
+  // 2026-08-26): delegable a un empleado si el dueño se lo otorga, aunque
+  // sigue sin estarlo por default. `puedeAdministrar` es la respuesta ya
+  // resuelta, no distingue por qué: el mismo `false` cubre a un empleado sin
+  // el permiso.
+  it('un empleado sin el permiso no ve los controles de administración', () => {
+    const html = pintar({ puedeAdministrar: false })
     expect(html).not.toContain('Categoría nueva')
     expect(html).toContain('Fundas')
   })
 
-  it('y el dueño sí', () => {
-    expect(pintar({ esDuenio: true })).toContain('Categoría nueva')
+  it('y con el permiso sí', () => {
+    expect(pintar({ puedeAdministrar: true })).toContain('Categoría nueva')
   })
 })
 
@@ -145,12 +148,12 @@ describe('los controles del ABM', () => {
   // El servidor ya rechaza a un empleado (acciones-categorias.test.ts), pero
   // dibujarle botones que van a fallar es ofrecerle algo que no puede hacer.
   it('un empleado no ve el menú de ninguna rama', () => {
-    const html = pintar({ esDuenio: false })
+    const html = pintar({ puedeAdministrar: false })
     expect(html).not.toContain('Opciones de la categoría')
   })
 
   it('el dueño ve un menú por rama, rubros y marcas', () => {
-    const html = pintar({ esDuenio: true })
+    const html = pintar({ puedeAdministrar: true })
     // Dos rubros más dos marcas.
     expect(html.match(/Opciones de la categoría/g)).toHaveLength(4)
   })
@@ -158,7 +161,7 @@ describe('los controles del ABM', () => {
   // El ⋯ ocupa el lugar de la cuenta al hover en vez de sumar una columna:
   // correr el texto haría bailar la lista entera cada vez que pasa el mouse.
   it('el menú aparece en el lugar de la cuenta, no en una columna nueva', () => {
-    const html = pintar({ esDuenio: true })
+    const html = pintar({ puedeAdministrar: true })
     expect(html).toContain('group-hover/rama:hidden')
   })
 
@@ -166,7 +169,7 @@ describe('los controles del ABM', () => {
   // tercer nivel. El servidor lo valida igual, pero no ofrecerlo es lo que
   // evita que alguien reciba un error por algo que la pantalla le sugirió.
   it('"Mover a…" no se ofrece en los rubros', () => {
-    const html = pintar({ esDuenio: true })
+    const html = pintar({ puedeAdministrar: true })
     // Las dos marcas pueden moverse; los dos rubros no, así que el submenú
     // aparece a lo sumo una vez por marca.
     const veces = (html.match(/Mover a…/g) ?? []).length

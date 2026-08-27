@@ -45,7 +45,7 @@ describe('detalleDeMovimiento (Task 5 del rediseño: la celda "Detalle")', () =>
     expect(
       detalleDeMovimiento({
         motivo: 'VENTA', nota: null, costoUnitario: null, usuario, venta: { numero: 1042 },
-      }),
+      }, true),
     ).toBe('Venta #1042 · Florencia')
   })
 
@@ -53,7 +53,7 @@ describe('detalleDeMovimiento (Task 5 del rediseño: la celda "Detalle")', () =>
     expect(
       detalleDeMovimiento({
         motivo: 'ANULACION_VENTA', nota: null, costoUnitario: null, usuario, venta: { numero: 1002 },
-      }),
+      }, true),
     ).toBe('Anulación de la venta #1002')
   })
 
@@ -64,7 +64,7 @@ describe('detalleDeMovimiento (Task 5 del rediseño: la celda "Detalle")', () =>
       costoUnitario: d('7400'),
       usuario,
       venta: null,
-    })
+    }, true)
     // formatearPrecio() y no un literal con espacio a mano: Intl mete un
     // espacio de no separación (NBSP) entre "$" y el número, y un literal
     // con espacio normal nunca iguala byte a byte.
@@ -73,7 +73,7 @@ describe('detalleDeMovimiento (Task 5 del rediseño: la celda "Detalle")', () =>
 
   it('INGRESO sin nota ni costo: cae a quién lo hizo, la celda no queda vacía', () => {
     expect(
-      detalleDeMovimiento({ motivo: 'INGRESO', nota: null, costoUnitario: null, usuario, venta: null }),
+      detalleDeMovimiento({ motivo: 'INGRESO', nota: null, costoUnitario: null, usuario, venta: null }, true),
     ).toBe('Ingreso · Florencia')
   })
 
@@ -81,14 +81,50 @@ describe('detalleDeMovimiento (Task 5 del rediseño: la celda "Detalle")', () =>
     expect(
       detalleDeMovimiento({
         motivo: 'AJUSTE', nota: 'Conteo de fin de mes', costoUnitario: null, usuario, venta: null,
-      }),
+      }, true),
     ).toBe('Conteo de fin de mes · Florencia')
   })
 
   it('AJUSTE sin nota: sólo quién contó', () => {
     expect(
-      detalleDeMovimiento({ motivo: 'AJUSTE', nota: null, costoUnitario: null, usuario, venta: null }),
+      detalleDeMovimiento({ motivo: 'AJUSTE', nota: null, costoUnitario: null, usuario, venta: null }, true),
     ).toBe('Florencia')
+  })
+})
+
+describe('el costo en la celda Detalle', () => {
+  const INGRESO = {
+    motivo: 'INGRESO',
+    nota: 'Factura A-0001',
+    costoUnitario: new Prisma.Decimal('7400'),
+    usuario: { nombre: 'Ana' },
+    venta: null,
+  }
+
+  it('con permiso, el costo va junto a la nota', () => {
+    expect(detalleDeMovimiento(INGRESO, true)).toContain('7.400')
+    expect(detalleDeMovimiento(INGRESO, true)).toContain('Factura A-0001')
+  })
+
+  it('sin permiso, queda la nota y desaparece el costo', () => {
+    expect(detalleDeMovimiento(INGRESO, false)).toBe('Factura A-0001')
+  })
+
+  // El caso que importa de verdad: sin nota Y sin permiso, la celda no puede
+  // quedar vacía. Cae al mismo fallback que ya existe para un ingreso al que
+  // nadie le cargó el costo, así que no revela por omisión que hay un costo
+  // escondido — se ve idéntico a un ingreso sin costo.
+  it('sin nota y sin permiso, cae al fallback de siempre', () => {
+    expect(detalleDeMovimiento({ ...INGRESO, nota: null }, false)).toBe('Ingreso · Ana')
+  })
+
+  // Los otros motivos no llevan costo, así que el permiso no los toca.
+  it('una venta se ve igual con permiso y sin él', () => {
+    const venta = {
+      motivo: 'VENTA', nota: null, costoUnitario: null,
+      usuario: { nombre: 'Ana' }, venta: { numero: 12 },
+    }
+    expect(detalleDeMovimiento(venta, false)).toBe(detalleDeMovimiento(venta, true))
   })
 })
 
@@ -140,7 +176,7 @@ describe('filaDeMovimiento (Task 7 del ciclo móvil)', () => {
   }
 
   it('arma fecha, motivo, detalle, cambio (con signo) y queda, a partir del movimiento y el saldo', () => {
-    const fila = filaDeMovimiento({ ...base, delta: d('-1') }, d('48'))
+    const fila = filaDeMovimiento({ ...base, delta: d('-1') }, d('48'), true)
     expect(fila).toEqual<FilaDeMovimiento>({
       id: 'm1',
       fechaTexto: '21/08 · 14:28',
@@ -156,9 +192,28 @@ describe('filaDeMovimiento (Task 7 del ciclo móvil)', () => {
     const fila = filaDeMovimiento(
       { ...base, motivo: 'INGRESO', venta: null, delta: d('24') },
       d('49'),
+      true,
     )
     expect(fila.cambioTexto).toBe('+24')
     expect(fila.negativo).toBe(false)
+  })
+
+  // Ciclo de permisos (2026-08-26): el costo de un INGRESO se resuelve a
+  // texto ACÁ, no en el JSX, así que si `mostrarCostos` no llegara hasta
+  // `detalleDeMovimiento` el número viajaría igual al HTML del teléfono y de
+  // escritorio (las dos leen la MISMA `FilaDeMovimiento`). Este caso es lo
+  // que ata el cableado.
+  it('sin el permiso COSTOS, el detalle del ingreso no lleva el costo', () => {
+    const ingreso = {
+      ...base,
+      motivo: 'INGRESO',
+      venta: null,
+      nota: 'Factura A-0001',
+      costoUnitario: d('7400'),
+      delta: d('24'),
+    }
+    expect(filaDeMovimiento(ingreso, d('49'), true).detalleTexto).toContain('7.400')
+    expect(filaDeMovimiento(ingreso, d('49'), false).detalleTexto).toBe('Factura A-0001')
   })
 })
 

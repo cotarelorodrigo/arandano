@@ -476,7 +476,7 @@ function renderListado(props: Partial<Parameters<typeof Listado>[0]> = {}) {
       verInactivos={false}
       tipo={null}
       cat={null}
-      esDuenio
+      puedeCrear
       {...props}
     />,
   )
@@ -654,13 +654,13 @@ describe('Listado: el patrón grid + display:contents (Task 6, ronda de arreglos
   })
 
   describe('los vacíos', () => {
-    it('sin nada cargado, el dueño ve la invitación a "Artículo nuevo"', () => {
-      const html = renderListado({ filas: [], total: 0, esDuenio: true })
+    it('con ARTICULOS_CREAR y nada cargado, se ve la invitación a "Artículo nuevo"', () => {
+      const html = renderListado({ filas: [], total: 0, puedeCrear: true })
       expect(html).toContain('Todavía no cargaste ningún artículo. Empezá por «Artículo nuevo».')
     })
 
-    it('sin nada cargado, un empleado ve el mensaje genérico', () => {
-      const html = renderListado({ filas: [], total: 0, esDuenio: false })
+    it('sin ARTICULOS_CREAR y nada cargado, se ve el mensaje genérico', () => {
+      const html = renderListado({ filas: [], total: 0, puedeCrear: false })
       expect(html).toContain('Todavía no hay artículos cargados.')
       expect(html).not.toContain('Artículo nuevo')
     })
