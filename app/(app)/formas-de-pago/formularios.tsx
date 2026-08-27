@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
-  DialogHeader, DialogTitle,
+  DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -247,18 +247,26 @@ export function DialogoDePlan({ plan }: { plan?: FilaDePlan }) {
 
   const clave = plan ? `plan-${plan.id}-edicion` : 'plan-alta'
 
+  // Controlado (`open` + `onOpenChange`) porque el submit lo cierra por su
+  // cuenta, y con `DialogTrigger` igual: el trigger no es sólo quien abre — es
+  // lo que Radix usa para devolver el foco al cerrar y para poner el
+  // aria-haspopup/aria-expanded. Un <button> suelto con onClick abre igual y
+  // deja el foco en el body, que sobre un producto que se opera con teclado no
+  // es un detalle.
   return (
     <Dialog open={abierto} onOpenChange={setAbierto}>
-      {plan ? (
-        <button type="button" onClick={() => setAbierto(true)} className={ENLACE}>
-          Editar
-        </button>
-      ) : (
-        <Button onClick={() => setAbierto(true)}>
-          <Plus aria-hidden="true" className="size-[15px]" />
-          Plan nuevo
-        </Button>
-      )}
+      <DialogTrigger asChild>
+        {plan ? (
+          <button type="button" className={ENLACE}>
+            Editar
+          </button>
+        ) : (
+          <Button>
+            <Plus aria-hidden="true" className="size-[15px]" />
+            Plan nuevo
+          </Button>
+        )}
+      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{plan ? `Editar "${plan.nombre}"` : 'Un plan nuevo'}</DialogTitle>
