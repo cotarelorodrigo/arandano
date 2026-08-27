@@ -759,6 +759,33 @@ describe('cobrar con un plan de pago', () => {
     ).rejects.toMatchObject({ codigo: 'PLAN_NO_CORRESPONDE' })
   })
 
+  // La otra mitad del mismo guard, y la que NO se ve mirando la moneda: el
+  // invariante mide `base × cotizacion` y el recargo se calcula sobre `base` a
+  // secas, así que las dos mitades sólo hablan del mismo número con la
+  // cotización en 1. Un pago en pesos "a cotización 2" con plan sub-cobraría el
+  // recargo. La pantalla nunca lo manda —en ARS ni dibuja el campo—, un POST
+  // armado a mano sí.
+  it('rechaza un plan en un pago en pesos con cotización distinta de 1', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: 'Contado con cotización rara',
+      medio: 'EFECTIVO',
+      cuotas: 1,
+      recargoPorcentaje: d('-10'),
+    })
+
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: items(),
+        pagos: [
+          { medio: 'EFECTIVO', moneda: 'ARS', base: d('5000'), cotizacion: d('2'), planId: plan.id },
+        ],
+      }),
+    ).rejects.toMatchObject({ codigo: 'PLAN_EN_DOLARES' })
+  })
+
   it('rechaza un plan en un pago en dólares', async () => {
     const plan = await crearPlan({
       tenantId,

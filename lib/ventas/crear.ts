@@ -160,14 +160,16 @@ export async function crearVenta(
             `${plan.nombre} es un plan de ${plan.medio} y el pago es ${p.medio}`,
           )
         }
-        // Sin esto, `monto = base + recargo` de abajo mezclaría dólares con
-        // pesos. El porqué de no resolverlo dividiendo está en el spec: la
-        // división deja ventas que no cierran por un centavo y que nadie puede
-        // arreglar desde el mostrador.
-        if (p.moneda !== 'ARS') {
+        // La moneda Y la cotización. Con `cotizacion ≠ 1` el recargo se
+        // calcularía sobre `base` mientras el invariante mide `base ×
+        // cotizacion`: las dos mitades dejarían de hablar del mismo número y
+        // la venta sub-cobraría. Calcular el recargo sobre los pesos y volver
+        // a la moneda del pago exige una división, que es justo lo que este
+        // ciclo descartó por dejar ventas que no cierran por un centavo.
+        if (p.moneda !== 'ARS' || !p.cotizacion.equals(1)) {
           throw new ErrorDeVenta(
             'PLAN_EN_DOLARES',
-            'un pago en dólares se cobra sin plan: el recargo va sobre la parte en pesos',
+            'un pago con plan tiene que ser en pesos y a cotización 1: el recargo va sobre la parte en pesos',
           )
         }
         const recargo = recargoDePago(p.base, plan.recargoPorcentaje)
