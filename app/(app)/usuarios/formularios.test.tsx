@@ -258,11 +258,78 @@ describe('CardReglas: la card se rediseña entera en el teléfono (Ronda de arre
     expect(h2).toMatch(/class="_/)
   })
 
-  it('el contenido pasa a gap 12/padding 14 en el teléfono, sin tocar el gap 9/padding 18 de escritorio', async () => {
+  // Ronda de arreglos 2 (CRÍTICO): la Ronda 1 reusó CardConEncabezado tal
+  // cual y esta card heredó su `border-b` y su padding [13,18] — que en el
+  // nodo de escritorio `U7ROu` NO existen (frame plano: título y puntos
+  // como hermanos directos, sin sub-frame de encabezado). Ninguno de los
+  // tests de la Ronda 1 lo atrapó porque todos verificaban PRESENCIA de
+  // clases nuevas, nunca la AUSENCIA de las viejas en escritorio — el propio
+  // revisor corrió esa suite con la regresión adentro y dio todo en verde.
+  // Este caso verifica la ausencia de verdad: el borde y el padding [13,18]
+  // de las otras dos cards están CANCELADOS acá, con su propio contrapeso.
+  it('en escritorio, el header de "Dos reglas" NO lleva borde ni el padding [13,18] — reconstruye el frame plano de U7ROu', async () => {
+    const html = await render()
+    // El único <div> de esta card con "items-center justify-between" es el
+    // header (el resto son "Punto" o el contenedor de contenido).
+    const header = html.match(/<div class="flex items-center justify-between[^"]*">/)?.[0] ?? ''
+    expect(header).not.toBe('')
+    // El borde SIGUE presente para el teléfono (mobile-first)...
+    expect(header).toContain('border-b')
+    // ...pero cancelado en escritorio, a diferencia de "El equipo del
+    // local"/"Agregar a alguien" (ver el caso de AltaDeEmpleado más arriba,
+    // que exige EXACTAMENTE `lg:py-[13px]` sin ninguna cancelación de borde).
+    expect(header).toContain('lg:border-b-0')
+    // Y el padding vertical de escritorio de las otras dos cards (13px
+    // arriba Y abajo) NO aparece acá — el de esta card es asimétrico
+    // (18 arriba, 0 abajo, el resto lo pone el gap del contenedor raíz).
+    expect(header).not.toContain('lg:py-[13px]')
+    expect(header).toContain('lg:pt-[18px]')
+    expect(header).toContain('lg:pb-0')
+  })
+
+  // El "salto de 9px" entre el título y el primer punto, reconstruido en
+  // escritorio a través de TRES piezas que tienen que sumar exactamente 9 y
+  // no otro número: el pb-0 del header (arriba), el gap-9 del contenedor
+  // raíz (en el medio) y el pt-0 del contenido (abajo). Si cualquiera de las
+  // tres volviera a tener su propio padding vertical, el salto real dejaría
+  // de ser 9px sin que ningún test de "presencia de clase" lo notara.
+  it('el contenedor raíz suma el gap-9 que falta entre el header (plano) y el contenido, sólo en escritorio', async () => {
+    const html = await render()
+    // El contenedor raíz de la card entera: el primer <div> con
+    // "rounded-2xl border bg-card" (CardConEncabezado).
+    const raiz = html.match(/<div class="flex flex-col overflow-hidden rounded-2xl border bg-card[^"]*">/)?.[0] ?? ''
+    expect(raiz).not.toBe('')
+    expect(raiz).toContain('lg:gap-[9px]')
+  })
+
+  it('el contenido pasa a gap 12/padding 14 en el teléfono; en escritorio NO repite el padding de arriba (ya lo puso el header)', async () => {
     const html = await render()
     expect(html).toContain('gap-3 p-[14px]')
     expect(html).toContain('lg:gap-[9px]')
-    expect(html).toContain('lg:p-[18px]')
+    expect(html).toContain('lg:px-[18px]')
+    expect(html).toContain('lg:pb-[18px]')
+    // El punto crítico: SIN `lg:pt-0`, el contenido sumaría sus propios 18px
+    // de arriba a los 18+9 que ya pone el header+gap, y el salto real
+    // dejaría de ser 9px — exactamente el defecto que esta ronda corrige.
+    expect(html).toContain('lg:pt-0')
+    // Y el viejo `lg:p-[18px]` de la Ronda 1 (padding parejo en las 4
+    // direcciones) no puede seguir ahí: es lo que reintroducía el padding de
+    // arriba que el header+gap ya cubren.
+    expect(html).not.toMatch(/lg:p-\[18px\]\b/)
+  })
+
+  // Guarda de no-regresión del lado de las OTRAS dos cards: `plano` es un
+  // opt-in con default `undefined` (falsy). Si alguna vez ese default
+  // cambiara a `true` sin querer, este caso (que renderiza AltaDeEmpleado,
+  // una card que NUNCA pasa `plano`) lo notaría.
+  it('CardConEncabezado sin `plano` (las otras dos cards) sigue con el borde y el padding [13,18] de siempre', async () => {
+    const { AltaDeEmpleado } = await import('./formularios')
+    const html = renderToStaticMarkup(<AltaDeEmpleado onClaveGenerada={() => {}} />)
+    const header = html.match(/<div class="flex items-center justify-between[^"]*">/)?.[0] ?? ''
+    expect(header).not.toBe('')
+    expect(header).toContain('lg:py-[13px]')
+    expect(header).not.toContain('lg:border-b-0')
+    expect(header).not.toContain('lg:pt-[18px]')
   })
 
   it('el ícono de cada punto es 15px/text-ok en el teléfono, 14px/text-primary en escritorio (invierte el color)', async () => {

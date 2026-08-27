@@ -51,6 +51,7 @@ function CardConEncabezado({
   id,
   titulo,
   tituloClassName,
+  plano,
   children,
   accesorio,
 }: {
@@ -64,6 +65,29 @@ function CardConEncabezado({
    *  reusar el mismo padding [12,14]/[13,18] mobile-first que ya vale para
    *  las tres. Default `estilos.tituloDeCard`, el de siempre. */
   tituloClassName?: string
+  /**
+   * Ronda de arreglos 2 (Crítico): a diferencia de `swCOr`/`G7FEq` ("El
+   * equipo del local"/"Agregar a alguien"), cuyo nodo de ESCRITORIO ya tiene
+   * el mismo header separado por borde que el teléfono, el nodo de
+   * escritorio de "Dos reglas" (`U7ROu`) es un frame PLANO: título y los dos
+   * puntos como hermanos directos, `gap:9`/`padding:18`, sin sub-frame de
+   * encabezado ni borde interno — sólo el `stroke` exterior de la card
+   * entera. Reusar este componente tal cual (como hizo la Ronda 1) le pegó
+   * el `border-b` y el padding [13,18] del header a una card que en
+   * escritorio nunca los tuvo.
+   *
+   * `plano` reconstruye ese frame plano SÓLO a partir de `lg:`, sin tocar el
+   * teléfono (que sí quiere el header separado, igual que las otras dos
+   * cards): en escritorio cancela el borde (`lg:border-b-0`) y reparte el
+   * padding vertical entre el header (`lg:pt-[18px] lg:pb-0`, para que
+   * empiece los 18px de arriba) y el gap del contenedor raíz
+   * (`lg:gap-[9px]`, para el salto entre título y el primer punto) — el
+   * contenido, del lado de quien llama, tiene que hacer lo mismo del otro
+   * lado (`lg:pt-0`), ver `CardReglas`. Sin esta prop (default), el
+   * comportamiento de "El equipo del local"/"Agregar a alguien" no cambia:
+   * siguen con `lg:py-[13px]` y su borde, igual que siempre.
+   */
+  plano?: boolean
   children: React.ReactNode
   /** Lo que va a la derecha del título, dentro del mismo encabezado — hoy sin
    *  uso en esta pantalla, pero deja el mismo hueco que ya usa
@@ -71,11 +95,19 @@ function CardConEncabezado({
   accesorio?: React.ReactNode
 }) {
   return (
-    <div id={id} className="flex flex-col overflow-hidden rounded-2xl border bg-card">
+    <div
+      id={id}
+      className={`flex flex-col overflow-hidden rounded-2xl border bg-card ${plano ? 'lg:gap-[9px]' : ''}`}
+    >
       {/* Mobile-first (Task 10 del ciclo móvil, nodos `nd3Fx`/`Q5UJWP`/`SgnAN`
           del frame `NIyHG`): padding [12,14] en el teléfono; el de escritorio
-          (13/18) es el que ya tenía este header — sin tocar. */}
-      <div className="flex items-center justify-between border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
+          (13/18) es el que ya tenía este header para las dos cards que NO
+          pasan `plano` — sin tocar. */}
+      <div
+        className={`flex items-center justify-between border-b px-[14px] py-3 lg:px-[18px] ${
+          plano ? 'lg:border-b-0 lg:pt-[18px] lg:pb-0' : 'lg:py-[13px]'
+        }`}
+      >
         <h2 className={`${tituloClassName ?? estilos.tituloDeCard} text-foreground`}>{titulo}</h2>
         {accesorio}
       </div>
@@ -368,8 +400,19 @@ export function AltaDeEmpleado({
  */
 export function CardReglas() {
   return (
-    <CardConEncabezado titulo="Dos reglas que el sistema no deja romper" tituloClassName={estilos.tituloDeReglas}>
-      <div className="flex flex-col gap-3 p-[14px] lg:gap-[9px] lg:p-[18px]">
+    <CardConEncabezado
+      titulo="Dos reglas que el sistema no deja romper"
+      tituloClassName={estilos.tituloDeReglas}
+      // Ronda de arreglos 2 (Crítico): `plano` reconstruye el frame plano de
+      // escritorio (`U7ROu`) — ver el comentario de la prop en
+      // CardConEncabezado para el porqué completo.
+      plano
+    >
+      {/* `lg:pt-0`: el `lg:pt-[18px]` del header (con `plano`) más el
+          `lg:gap-[9px]` del contenedor raíz ya ponen los 18px de arriba del
+          título y los 9px de salto hasta acá — un `lg:pt-[18px]` propio acá
+          sumaría un padding de más que el frame `U7ROu` no tiene. */}
+      <div className="flex flex-col gap-3 p-[14px] lg:gap-[9px] lg:px-[18px] lg:pt-0 lg:pb-[18px]">
         <div className="flex gap-[9px]">
           <ShieldCheck
             aria-hidden="true"
