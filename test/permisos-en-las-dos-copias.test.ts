@@ -31,12 +31,31 @@ import { readFileSync } from 'node:fs'
 
 const INVENTARIO = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
 
-/** El bloque de JSX que arranca en `marca` y termina donde arranca el
- *  siguiente atributo de primer nivel del mismo `<Encabezado>`. */
+/**
+ * El bloque de JSX que arranca en `${nombre}={` y corta en el primer límite
+ * de atributo REAL que aparece después: la línea que abre el siguiente
+ * atributo de primer nivel del mismo `<Encabezado>` (`\n<espacios><nombre>={`)
+ * o el `/>` que cierra el elemento — lo que venga primero. No es un largo
+ * fijo: la versión anterior cortaba a los 700 caracteres siguientes, y medido
+ * sobre este archivo la separación real entre el cierre de `acciones` y el
+ * inicio de `accionMovil` son 108 caracteres de prosa de comentario — un
+ * comentario un poco más largo que nombrara el permiso de al lado hacía
+ * pasar el `toContain` sin que la guarda existiera.
+ */
 function atributo(fuente: string, nombre: string): string {
   const desde = fuente.indexOf(`${nombre}={`)
   expect(desde, `no se encontró el atributo ${nombre}`).toBeGreaterThan(-1)
-  return fuente.slice(desde, desde + 700)
+
+  const inicioValor = desde + nombre.length + 2 // largo de `${nombre}={`
+  const resto = fuente.slice(inicioValor)
+
+  const proximoAtributo = resto.search(/\n[ \t]*[a-zA-Z]+=\{/)
+  const cierreElemento = resto.search(/\/>/)
+
+  const candidatos = [proximoAtributo, cierreElemento].filter((indice) => indice !== -1)
+  expect(candidatos.length, `no se encontró el fin del atributo ${nombre}`).toBeGreaterThan(0)
+
+  return fuente.slice(desde, inicioValor + Math.min(...candidatos))
 }
 
 describe('/inventario: "Artículo nuevo" existe dos veces y las dos las gobierna ARTICULOS_CREAR', () => {
@@ -108,5 +127,36 @@ describe('/ventas/[id]: el permiso se combina con anuladaEn antes de llegar al c
   // alguien duplica el botón sin duplicar la guarda.
   it('el botón de anular sigue existiendo una sola vez', () => {
     expect([...VENTA.matchAll(/<AnularVenta /g)]).toHaveLength(1)
+  })
+})
+
+describe('/vender: ChipCaja/ControlDeCaja son la sexta acción duplicada del repo, y HOY no llevan permiso', () => {
+  const VENDER = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+  const CAJA = readFileSync('app/(app)/vender/caja.tsx', 'utf8')
+
+  // `ChipCaja` (escritorio, dentro de `acciones`, `hidden lg:flex`) y
+  // `ControlDeCaja` (teléfono, en `controlMovil`) son las dos copias: las dos
+  // montan los mismos `FormularioDeApertura` y `ConfirmarCierre` de
+  // `caja.tsx`. HOY está bien que ninguna lleve guarda de permiso —CLAUDE.md
+  // fija que cualquiera del local, dueño o empleado, abre y cierra la caja—,
+  // así que no hay ninguna fuga. Lo que este caso documenta es el sitio: el
+  // día que exista un permiso de caja (la pieza 6 del roadmap, el arqueo),
+  // este archivo es donde alguien tiene que agregar la cobertura de que las
+  // DOS copias gatean con el MISMO permiso — si no, vuelve exactamente el bug
+  // que este archivo existe para cuidar.
+  it('las dos copias existen: <ChipCaja> en escritorio y <ControlDeCaja> en el teléfono', () => {
+    expect(VENDER).toContain('<ChipCaja')
+    expect(VENDER).toContain('<ControlDeCaja')
+  })
+
+  it('las dos montan FormularioDeApertura/ConfirmarCierre sin que nada tome un permiso todavía', () => {
+    expect(CAJA).toContain('function FormularioDeApertura')
+    expect(CAJA).toContain('function ConfirmarCierre')
+    // Ninguna firma de este archivo recibe un `puedeX: boolean` —la
+    // convención que usan `puedeCrear`, `puedeEditar`, `puedeAnular`,
+    // `puedeCategorias`— todavía. Este caso se pone rojo apenas alguien
+    // empiece a gatear una de las dos copias, que es la señal de "che, vení
+    // a leer el comentario de arriba y gateá la otra también".
+    expect(CAJA).not.toMatch(/puede\w*:\s*boolean/)
   })
 })

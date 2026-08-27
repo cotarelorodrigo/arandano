@@ -1076,6 +1076,21 @@ Y del producto:
     general para cuando el catálogo crezca: **se delega lo que opera el
     negocio, no lo que reparte poder.**
 
+  **Y una quinta que cruza ciclos, y que el merge con el del teléfono
+  (2026-08-26) probó por las malas: toda guarda de permiso tiene que alcanzar
+  las DOS copias de una acción duplicada.** El ciclo del teléfono duplicó
+  varios botones —uno en el Topbar para escritorio (`hidden lg:flex`), otro al
+  pie o en `accionMovil`/`controlMovil` para el teléfono (`lg:hidden`)—, y este
+  ciclo escribió sus guardas contra la copia que existía cuando empezó. El
+  merge automático no lo marcó conflicto: un renombre (`esDuenio→puedeAnular`,
+  `puedeAnular→seOfreceAnular`) dejó la copia del teléfono de "Anular orden"
+  compilando contra el permiso pelado en vez del derivado, ofreciendo anular
+  una orden ya anulada — con `tsc`, lint y el resto del gate en verde.
+  `test/permisos-en-las-dos-copias.test.ts` es la red que quedó, y ya tiene
+  documentado el próximo sitio conocido: `ChipCaja`/`ControlDeCaja` en
+  `/vender`, que hoy no gatean nada porque no existe permiso de caja, pero sí
+  van a necesitarlo el día que el arqueo (pieza 6 del roadmap) lo agregue.
+
   **Este ciclo le saca al empleado, por default, ver y cargar costos** —una
   regresión deliberada frente al comportamiento de hoy, y **gratis exactamente
   ahora**: todavía no hay tenants reales usándolo. Dentro de seis meses sería

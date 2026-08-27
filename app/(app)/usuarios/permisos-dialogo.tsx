@@ -141,13 +141,21 @@ export function PermisosDeUsuario({
             textos de 10. Es UN SOLO nodo en el DOM: el `lg:` de cada clase
             repone exactamente lo que `size="sm"` + `variant="ghost"` ya
             pintaban en escritorio (alto 28, `px-2.5`, `text-[0.8rem]`,
-            `font-medium`, el color heredado —`--foreground`— y el
-            `hover:bg-muted`), así que escritorio queda igual que en
-            `origin/main`. */}
+            `font-medium`, el `hover:bg-muted`), así que escritorio queda
+            igual que en `origin/main`.
+
+            `lg:text-inherit` y no `lg:text-foreground`: en `main` este
+            disparador no declaraba color, así que heredaba el de `body`
+            (`app/globals.css`, `text-foreground`). Los dos resuelven al mismo
+            valor hoy, pero fijar `text-foreground` acá deja una segunda copia
+            del color: si la celda "Permisos" alguna vez se apaga a
+            `--foreground-soft` como el resto de la meta de la fila, un
+            `text-foreground` puesto a mano no se enteraría. `text-inherit`
+            sigue heredando, igual que `main`. */}
         <Button
           variant="ghost"
           size="sm"
-          className="h-auto px-0 text-[10px] font-semibold text-primary hover:bg-transparent hover:text-primary hover:underline lg:h-7 lg:px-2.5 lg:text-[0.8rem] lg:font-medium lg:text-foreground lg:hover:bg-muted lg:hover:text-foreground lg:hover:no-underline"
+          className="h-auto px-0 text-[10px] font-semibold text-primary hover:bg-transparent hover:text-primary hover:underline lg:h-7 lg:px-2.5 lg:text-[0.8rem] lg:font-medium lg:text-inherit lg:hover:bg-muted lg:hover:text-foreground lg:hover:no-underline"
         >
           <KeyRound aria-hidden="true" className="hidden size-[15px] lg:block" />
           {cuenta}

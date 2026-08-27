@@ -304,7 +304,7 @@ describe('CardEquipo: el patrón grid + display:contents (Task 10)', () => {
       // Rol, Estado y Permisos: tres celdas más cortas que "Persona", las
       // tres con el mismo envoltorio de centrado.
       const envoltorios = html.match(/class="lg:flex lg:h-full lg:items-center"/g) ?? []
-      expect(envoltorios.length).toBeGreaterThanOrEqual(5)
+      expect(envoltorios.length).toBe(5)
     })
   })
 })
