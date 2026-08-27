@@ -11,6 +11,15 @@ vi.mock('@/lib/auth/sesion', () => ({
   exigirSesion: () => exigirSesion(),
 }))
 
+// Un EMPLEADO hace que el layout consulte sus permisos para decidir qué
+// pestañas dibuja, y `permisosDe` toca Postgres — que no es lo que este
+// archivo prueba (lo cubre test/permisos.test.ts). El mock lo devuelve vacío
+// por default y el caso que necesita otra cosa lo pisa.
+const permisosDe = vi.fn<(tenantId: string, usuarioId: string) => Promise<Set<string>>>()
+vi.mock('@/lib/permisos/consultar', () => ({
+  permisosDe: (tenantId: string, usuarioId: string) => permisosDe(tenantId, usuarioId),
+}))
+
 // El layout renderiza <Navegacion>, que desde el ciclo del home llama a
 // usePathname(). Sin este mock se cae el archivo entero, y el síntoma no
 // nombra a la navegación por ningún lado.
@@ -30,6 +39,8 @@ describe('layout de la aplicación', () => {
   beforeEach(() => {
     vi.resetModules()
     exigirSesion.mockReset()
+    permisosDe.mockReset()
+    permisosDe.mockResolvedValue(new Set())
     exigirSesion.mockResolvedValue({
       tenant: { id: 'un-id', nombre: 'Local de prueba', estado: 'ACTIVO' },
       usuario: { id: 'otro-id', nombre: 'Quien sea', rol: 'DUENO' },
@@ -99,6 +110,31 @@ describe('layout de la aplicación', () => {
     })
     const html = await render()
     expect(html).not.toContain('href="/usuarios"')
+  })
+
+  // El dueño no paga la consulta a usuario_permisos, y no es una optimización:
+  // es lo que garantiza que en un local recién creado —tabla vacía por
+  // definición— el dueño siga viendo sus pestañas delegables.
+  it('a un dueño le da el catálogo entero sin consultar la tabla', async () => {
+    const html = await render()
+    expect(permisosDe).not.toHaveBeenCalled()
+    expect(html).toContain('href="/formas-de-pago"')
+  })
+
+  // Y la otra dirección: para un empleado, lo que la pestaña muestre tiene que
+  // salir de la tabla y no de un valor fijo.
+  it('a un empleado le pasa los permisos que la tabla devuelve', async () => {
+    exigirSesion.mockResolvedValue({
+      tenant: { id: 'un-id', nombre: 'Local de prueba', estado: 'ACTIVO' },
+      usuario: { id: 'otro-id', nombre: 'Quien sea', rol: 'EMPLEADO' },
+      subdominio: 'prueba',
+    })
+    permisosDe.mockResolvedValue(new Set<string>())
+    expect(await render()).not.toContain('href="/formas-de-pago"')
+
+    permisosDe.mockResolvedValue(new Set(['PLANES_PAGO']))
+    expect(await render()).toContain('href="/formas-de-pago"')
+    expect(permisosDe).toHaveBeenCalledWith('un-id', 'otro-id')
   })
 
   it('renderiza el contenido de adentro', async () => {

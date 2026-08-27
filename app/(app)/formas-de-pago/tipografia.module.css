@@ -1,0 +1,30 @@
+/*
+ * Archivo sin font-stretch propio, mismo caso que los módulos homónimos de
+ * /ventas, /inventario, /servicio-tecnico y /usuarios: el título de card "Los
+ * planes del local" pide la MISMA cara que Cartel e Importe, pero no le pide
+ * un ancho propio al eje `wdth` — se queda en el 100% por default.
+ * test/tipografia.test.ts lo cuida con el mismo mecanismo que esos módulos.
+ *
+ * `design/arandano.pen` no dibuja esta pantalla (queda anotado en
+ * docs/correcciones-pendientes-del-pen.md), así que el tratamiento no sale de
+ * un nodo de la maqueta sino del rol "Título de card" que las otras cinco
+ * pantallas ya comparten: una card estructuralmente igual a "El equipo del
+ * local" con otra tipografía se leería como un accidente.
+ *
+ * POR QUÉ UN MÓDULO CSS Y NO `style={{ fontFamily: 'var(--font-archivo)' }}`
+ * A MANO: evadiría la vigilancia de test/tipografia.test.ts, que sólo
+ * inspecciona archivos `.module.css` — ver CLAUDE.md, "Nada de
+ * `style={{ fontFamily: ... }}` suelto".
+ */
+.archivo {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Título de card: mismo tamaño y peso que .tituloDeCard de /ventas,
+   /inventario, /servicio-tecnico y /usuarios, en su propia clase porque son
+   módulos CSS distintos. */
+.tituloDeCard {
+  composes: archivo;
+  font-weight: 600;
+  font-size: 0.9375rem; /* 15px */
+}

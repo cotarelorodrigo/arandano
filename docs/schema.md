@@ -289,7 +289,7 @@ erDiagram
 - **modulo**: `ORDENES_DE_TRABAJO`, `TURNOS`, `GASTRONOMIA`
 - **moneda**: `ARS`, `USD`
 - **motivo_movimiento**: `VENTA`, `ANULACION_VENTA`, `AJUSTE`, `INGRESO`
-- **permiso**: `ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`, `CATEGORIAS`, `VENTAS_ANULAR`, `ORDENES_ANULAR`
+- **permiso**: `ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`, `CATEGORIAS`, `VENTAS_ANULAR`, `ORDENES_ANULAR`, `PLANES_PAGO`
 - **rol_usuario**: `DUENO`, `EMPLEADO`
 - **tipo_articulo**: `PRODUCTO`, `SERVICIO`
 

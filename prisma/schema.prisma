@@ -46,6 +46,10 @@ enum Permiso {
   CATEGORIAS
   VENTAS_ANULAR
   ORDENES_ANULAR
+  // Administrar los planes de pago del local: cuánto recarga cada forma de
+  // pago. Aparte de ARTICULOS_EDITAR porque no es tocar un precio: es una
+  // palanca de una fila que mueve el precio de TODO el catálogo.
+  PLANES_PAGO
 
   @@map("permiso")
 }

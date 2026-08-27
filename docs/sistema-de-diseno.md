@@ -450,7 +450,7 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | Meta — texto que acompaña a un dato sin competirle | sistema | 12 px | 400; `--muted-foreground` en superficie clara, `--marca-dim` sobre la banda oscura del total |
 | **Importe** — plata en el punto de venta | Archivo | 42 px el monto de la banda del total; 24 px su signo; 15 px los chips de vuelto y faltante; 14 px la columna | 600 el monto y los chips, 500 el signo, 400 la columna; `font-stretch: 85%`, `tabular-nums` |
 | **Cobro** — título de la card y texto del botón "Cobrar" | Archivo | 16 px el título; 17 px el botón | 600 |
-| **Título de card** — encabezados de card en /ventas, /ventas/[id], /inventario/nuevo, /inventario/[id], /servicio-tecnico y /usuarios | Archivo | 15 px | 600 |
+| **Título de card** — encabezados de card en /ventas, /ventas/[id], /inventario/nuevo, /inventario/[id], /servicio-tecnico, /usuarios y /formas-de-pago | Archivo | 15 px | 600 |
 | **Valor de tile** — resumen del período en /ventas; ficha de /inventario/[id] | Archivo | 32 px el tile de marca y 26 px los otros dos, en /ventas; 34 px el tile de marca y 24 px el otro, en la ficha de /inventario/[id] — la maqueta de esa pantalla usa un tamaño distinto para su tile de marca | 600, tracking -0.6 px, `tabular-nums` |
 | **Monto de tabla** — listado de /ventas y detalle de /ventas/[id] | Archivo | 14 px (heredado de `text-sm` de `<Table>`, sin tamaño propio) | 400 a 600 según la columna, `tabular-nums` |
 | **Banda de Total** — pie de la tabla "Qué se vendió" en /ventas/[id] | Archivo | 22 px | 600, `tabular-nums` |

@@ -899,6 +899,80 @@ cargar.
 - La ruta está en `RUTAS_SIN_SMOKE`: no hay id de orden que pedirle al gate sin
   sembrar datos.
 
+## `/formas-de-pago`
+
+El ABM de los planes de pago del local: qué formas de pago ofrece y cuánto
+recarga —o descuenta— cada una. Es la pantalla que hace configurable el pedido
+que abrió el ciclo ("crédito en 1 pago 10 %, crédito en cuotas 40 %").
+
+**Acciones**: `altaDePlan`, `edicionDePlan`, `bajaDePlan`, `reactivacionDePlan`.
+
+**Qué se puede hacer**
+
+- Ver los planes del local en una tabla —activos y dados de baja—, con su forma
+  de pago, sus cuotas, su recargo y **el precio de ejemplo derivado**: "un
+  artículo de $10.000 se cobra $14.000".
+- Crear un plan desde el Topbar: nombre, forma de pago, cuotas y recargo.
+- Editar nombre, cuotas, recargo y orden de uno que ya existe.
+- Darlo de baja (lógica) y reactivarlo desde la misma celda.
+
+**Decisiones**
+
+- **Detrás de su propio permiso, `PLANES_PAGO`**, que un dueño puede delegar en
+  un empleado. No se plegó sobre `ARTICULOS_EDITAR`: editar un artículo mueve
+  el precio de UN artículo, y tocar el recargo de un plan mueve el precio de
+  TODO el catálogo para esa forma de pago. **Cada action lo vuelve a exigir**,
+  no sólo la pantalla: una action es un endpoint y se puede invocar sin pasar
+  por acá. Un `DUENO` pasa sin ninguna fila en `usuario_permisos`, igual que en
+  el resto del catálogo.
+- **El ejemplo de la fila usa un artículo de referencia FIJO de $10.000**, no
+  uno del catálogo: sirve para leer el porcentaje, no para cotizar. Con un
+  artículo real, la columna cambiaría cada vez que alguien le toca el precio a
+  ese artículo, y quien mirara la tabla creería que se movió el recargo. Se
+  calcula en el servidor con `precioConPlan` —la misma función que usa el motor
+  de ventas—, así que la pantalla no puede prometer un precio distinto del que
+  el mostrador cobra.
+- **`orden` sale de `cuotas` en el alta y sólo se toca en la edición.** Es lo
+  que hace que 3 cuotas salga antes que 12 sin que nadie ordene nada a mano; un
+  campo en el alta para confirmar ese default sería una pregunta sin respuesta
+  interesante.
+- **El medio no se edita**, se muestra, con la salida escrita al lado ("dale de
+  baja y creá otro"). El medio define contra qué pagos sirve el plan, y moverlo
+  dejaría las ventas viejas apuntando a un plan que ya no describe cómo se
+  cobraron.
+- **La baja es lógica, no borrado.** Un plan que ya cobró ventas es
+  indestructible por la FK `Restrict` de `pagos`, y esas ventas tienen que
+  seguir diciendo con qué plan se cobraron. El listado los muestra con su
+  leyenda y ofrece reactivarlos; `desactivarPlan`/`reactivarPlan` son
+  idempotentes, así que dos clicks no rompen nada.
+- **El recargo lleva signo, y el formulario lo dice.** `−10` es el descuento por
+  pago contado. El campo es `type="text"` y no `type="number"`: acepta coma
+  decimal (13,755), que un input numérico rechaza según el locale del
+  navegador, no el del local.
+- **El recargo NO pasa por `aDecimal`** (`lib/formato/numeros.ts`), y es la
+  única entrada de número del producto que no lo hace: esa gramática rechaza el
+  signo por diseño —nada de lo que alimenta (precio, cantidad, stock contado)
+  puede ser negativo—, así que un descuento sería inentrable. `porcentajeDe`
+  (en `acciones.ts`) lo parsea aparte, y tampoco hereda el rechazo de lo
+  ambiguo: un porcentaje está topeado en 999,999, así que nunca lleva separador
+  de miles y `13,755` no puede querer decir trece mil setecientos cincuenta y
+  cinco. El RANGO lo sigue validando `lib/planes/administrar.ts`, no la action.
+- **Los avisos van por toast** (`sonner`), lanzados en el mismo handler que
+  ejecuta la acción y nunca desde un `useEffect` sobre `useActionState` — misma
+  lección que dejaron el ABM de categorías y el diálogo de permisos. Los
+  errores no se auto-descartan (son accionables); los de éxito sí. Clave
+  estable por acción y por plan, o sonner apila una copia por render.
+- **Esta pantalla necesita JavaScript**: el alta y la edición viven en un
+  diálogo de Radix y la forma de pago se elige con un `Select` de Radix. Es el
+  mismo trade-off que ya aceptaron `/vender` y el alta de artículos.
+- **Sin planes no muestra una tabla vacía** sino qué está pasando: todo se cobra
+  a precio de lista y el mostrador no dibuja ningún control de más. Un local que
+  nunca cargue un plan es un caso válido y completo.
+- **`design/arandano.pen` no dibuja esta pantalla.** No la contradice: falta.
+  Queda anotado en `docs/correcciones-pendientes-del-pen.md`. El layout, la card
+  y el título reusan los roles que las otras cinco pantallas de tabla ya
+  comparten.
+
 ## `/usuarios`
 
 El equipo del local (rediseño de `design/arandano.pen`, frame `App /
@@ -915,14 +989,15 @@ Usuarios`).
 - Dar de baja y reactivar personas — "Baja" queda disponible para cualquier
   fila activa que no sea la propia, dueños incluidos (ver más abajo).
 - Copiar la clave recién generada con un botón, desde el aviso ámbar.
-- **Otorgarle y quitarle, a cada `EMPLEADO`, cada uno de los seis permisos del
+- **Otorgarle y quitarle, a cada `EMPLEADO`, cada uno de los permisos del
   catálogo** (`ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`, `CATEGORIAS`,
-  `VENTAS_ANULAR`, `ORDENES_ANULAR`) desde un diálogo por fila —columna nueva
-  "Permisos", botón "N de 6 permisos" / "Sin permisos" que abre
-  `PermisosDeUsuario` con los seis switches de `FilasDePermisos`—. Una fila de
+  `PLANES_PAGO`, `VENTAS_ANULAR`, `ORDENES_ANULAR`) desde un diálogo por fila
+  —columna "Permisos", botón "N de M permisos" / "Sin permisos" que abre
+  `PermisosDeUsuario` con los switches de `FilasDePermisos`, uno por permiso
+  del catálogo—. Una fila de
   `DUENO` no lleva ese botón: un dueño puede todo por construcción
   (`exigirPermiso` le da verdadero sin tocar la tabla), así que un diálogo con
-  los seis prendidos y trabados no informaría nada.
+  todos prendidos y trabados no informaría nada.
 
 **Decisiones**
 
@@ -931,7 +1006,7 @@ Usuarios`).
   excepción**: ver la entrada de `CLAUDE.md` sobre por qué repartir permisos
   no es delegable aunque el resto del catálogo sí lo sea.
 - **Cada switch guarda solo**, sin botón "Guardar" — mismo criterio que el ABM
-  de categorías: un formulario con estado sucio para seis booleanos
+  de categorías: un formulario con estado sucio para unos pocos booleanos
   independientes agrega la pregunta "¿guardé?" a cambio de nada. El aviso sale
   por toast (`sonner`), disparado en el mismo handler que llama a la acción y
   no en un `useEffect`, con la misma lección que dejó el ABM de categorías: un
@@ -988,7 +1063,7 @@ heredan cuatro cosas sin que nadie las repita:
   navegación.
 - **El encabezado de 66 px** (`components/shell/encabezado.tsx`, ciclo del
   shell): el único `<h1>` de la pantalla, un subtítulo opcional y un slot de
-  acciones a la derecha. Las diez lo usan; ninguna dibuja su propio `<h1>`.
+  acciones a la derecha. Lo usan todas; ninguna dibuja su propio `<h1>`.
 
 Y todas, sin excepción, leen la base con `prismaParaTenant`, que fuerza el
 filtro por `tenant_id` y ata la conexión al tenant por GUC de sesión. RLS es la

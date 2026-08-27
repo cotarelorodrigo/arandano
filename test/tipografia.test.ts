@@ -72,11 +72,17 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   // de los tres títulos de card de esa pantalla pagan Archivo (ver el
   // comentario del propio módulo: "Dos reglas..." usa la pila del sistema,
   // hallazgo de consultar el .pen en vivo).
+  // La sexta pantalla (ciclo de precios por forma de pago): /formas-de-pago.
+  // Su título de card no sale de un nodo del `.pen` —esa pantalla no está
+  // dibujada, ver docs/correcciones-pendientes-del-pen.md— sino de reusar
+  // este mismo rol, por lo mismo que las cuatro anteriores: es el MISMO rol
+  // (15 px, peso 600), no uno nuevo por pantalla.
   'Título de card': [
     'app/(app)/ventas/tipografia.module.css',
     'app/(app)/inventario/tipografia.module.css',
     'app/(app)/servicio-tecnico/tipografia.module.css',
     'app/(app)/usuarios/tipografia.module.css',
+    'app/(app)/formas-de-pago/tipografia.module.css',
   ],
   'Valor de tile': ['app/(app)/ventas/tipografia.module.css'],
   'Monto de tabla': ['app/(app)/ventas/tipografia.module.css'],

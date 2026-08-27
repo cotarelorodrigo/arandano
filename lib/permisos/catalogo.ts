@@ -1,8 +1,8 @@
 /**
- * Los seis permisos, con lo que la pantalla muestra al lado de cada switch.
+ * Los siete permisos, con lo que la pantalla muestra al lado de cada switch.
  *
  * **Es la única fuente**: el servidor valida contra esta lista y `/usuarios` la
- * renderea, en vez de repetir los seis a mano en el JSX. Agregar un permiso es
+ * renderea, en vez de repetir los siete a mano en el JSX. Agregar un permiso es
  * tocar este archivo, el enum del schema y el lugar que lo exige — nada más.
  *
  * **La unión se escribe acá y no se importa de Prisma**, que es lo que ya hace
@@ -15,6 +15,13 @@
  * acabás de escribir. **`ARTICULOS_CREAR` y `ARTICULOS_EDITAR` sí son dos**, y
  * ésa es la asimetría a propósito: cargar un producto nuevo y cambiarle el
  * precio a uno que se viene vendiendo hace meses no tienen el mismo riesgo.
+ *
+ * **`PLANES_PAGO` no se pliega sobre `ARTICULOS_EDITAR`** por esa misma
+ * asimetría, un escalón más arriba: editar un artículo mueve el precio de UN
+ * artículo, y tocar el recargo de un plan mueve el precio de TODO el catálogo
+ * para esa forma de pago — una palanca de una fila. Quien puede corregir el
+ * precio de una funda no necesariamente puede decidir cuánto recarga el local
+ * por pagar en doce cuotas.
  */
 export const PERMISOS = [
   {
@@ -38,6 +45,11 @@ export const PERMISOS = [
     ayuda: 'Crear, renombrar, mover y borrar rubros y marcas del árbol.',
   },
   {
+    clave: 'PLANES_PAGO',
+    nombre: 'Administrar formas de pago',
+    ayuda: 'Crear y editar los planes de pago del local y cuánto recarga cada uno.',
+  },
+  {
     clave: 'VENTAS_ANULAR',
     nombre: 'Anular ventas',
     ayuda: 'Anular una venta ya cobrada y devolver su stock al inventario.',
@@ -53,7 +65,7 @@ export type Permiso = (typeof PERMISOS)[number]['clave']
 
 export const CLAVES_DE_PERMISO: readonly Permiso[] = PERMISOS.map((p) => p.clave)
 
-/** Si el texto es uno de los seis, lo devuelve tipado; si no, null. Es la
+/** Si el texto es uno de los siete, lo devuelve tipado; si no, null. Es la
  *  validación de entrada de la acción que otorga y revoca: un `permiso` que
  *  llega por FormData es texto de afuera hasta que pasa por acá. */
 export function comoPermiso(texto: string): Permiso | null {

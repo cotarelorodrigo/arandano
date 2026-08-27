@@ -27,8 +27,8 @@ describe('el diálogo de permisos', () => {
       expect(html, `falta la ayuda de ${p.clave}`).toContain(p.ayuda)
     }
     // M5 de la review final: lo de arriba prueba que los seis ESTÁN, no que
-    // sean los ÚNICOS — un switch de más, escrito a mano al lado de los seis
-    // del catálogo, pasaba este test igual. El spec pide las dos direcciones
+    // sean los ÚNICOS — un switch de más, escrito a mano al lado de los del
+    // catálogo, pasaba este test igual. El spec pide las dos direcciones
     // (catálogo ↔ pantalla), así que el conteo de `role="switch"` (el que
     // renderiza `SwitchPrimitive.Root` de Radix) tiene que cerrar exacto
     // contra `PERMISOS.length`.
@@ -40,7 +40,11 @@ describe('el diálogo de permisos', () => {
     const html = renderToStaticMarkup(
       <PermisosDeUsuario usuario={EMPLEADA} permisos={['COSTOS', 'CATEGORIAS']} />,
     )
-    expect(html).toContain('2 de 6 permisos')
+    // El total sale de `PERMISOS.length` y no de un número escrito acá: el
+    // catálogo crece de ciclo en ciclo (siete desde que existe PLANES_PAGO) y
+    // un literal deja este caso fallando por el conteo en vez de por el
+    // comportamiento que prueba.
+    expect(html).toContain(`2 de ${PERMISOS.length} permisos`)
   })
 
   it('sin ninguno, lo dice en vez de mostrar un cero', () => {

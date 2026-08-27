@@ -38,6 +38,30 @@ export function formatearCantidad(v: string): string {
   return CANTIDAD.format(Number(v))
 }
 
+/**
+ * El recargo de un plan de pago, con su signo siempre a la vista.
+ *
+ * `signDisplay: 'exceptZero'` y no el default: el porcentaje del plan LLEVA
+ * signo —+40 % recarga, −10 % descuenta por pago contado— y un `40 %` pelado al
+ * lado de un `−10 %` deja la mitad de la tabla sin decir de qué lado está. El
+ * cero no lo lleva, porque un plan sin recargo no es ni una cosa ni la otra.
+ *
+ * Hasta tres decimales, sin ceros de relleno: es la escala de `Decimal(6,3)`
+ * que la columna guarda —los costos financieros reales vienen así— y un
+ * `40,000 %` sería ruido en una celda que se escanea.
+ */
+const PORCENTAJE = new Intl.NumberFormat('es-AR', {
+  style: 'percent',
+  maximumFractionDigits: 3,
+  signDisplay: 'exceptZero',
+})
+
+export function formatearPorcentaje(v: string): string {
+  // Dividido por 100 porque `style: 'percent'` espera la fracción, no el
+  // número que se escribe delante del símbolo.
+  return PORCENTAJE.format(Number(v) / 100)
+}
+
 // El servidor está en Ashburn. Sin declarar el huso, un movimiento de las 22:00
 // de Buenos Aires aparecería con fecha del día siguiente, y el historial de un
 // cierre de jornada quedaría partido en dos días.

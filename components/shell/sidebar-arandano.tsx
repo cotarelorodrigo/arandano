@@ -1,5 +1,6 @@
 import { LogOut } from 'lucide-react'
 import type { RolUsuario } from '@/lib/auth/sesion'
+import type { Permiso } from '@/lib/permisos/catalogo'
 import {
   Sidebar,
   SidebarContent,
@@ -30,11 +31,15 @@ export function SidebarArandano({
   nombreLocal,
   nombreUsuario,
   rol,
+  permisos,
   alSalir,
 }: {
   nombreLocal: string
   nombreUsuario: string
   rol: RolUsuario
+  /** Los permisos de esta sesión, sólo para decidir qué pestañas se dibujan.
+   *  Los resuelve el layout: este paño no consulta nada. */
+  permisos: readonly Permiso[]
   alSalir: () => Promise<void>
 }) {
   return (
@@ -68,7 +73,7 @@ export function SidebarArandano({
               lector de pantalla perdía la navegación entera, porque un <ul>
               suelto no se anuncia como landmark. */}
           <nav aria-label="Navegación">
-            <Navegacion rol={rol} />
+            <Navegacion rol={rol} permisos={permisos} />
           </nav>
         </SidebarGroup>
       </SidebarContent>

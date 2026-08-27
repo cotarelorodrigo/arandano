@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 import { exigirSesion } from '@/lib/auth/sesion'
+import { CLAVES_DE_PERMISO } from '@/lib/permisos/catalogo'
+import { permisosDe } from '@/lib/permisos/consultar'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { SidebarArandano } from '@/components/shell/sidebar-arandano'
 import { salir } from './acciones'
@@ -16,6 +18,17 @@ export const metadata: Metadata = { robots: { index: false, follow: false } }
 export default async function LayoutApp({ children }: { children: React.ReactNode }) {
   const sesion = await exigirSesion()
 
+  // El dueño los tiene todos sin fila, igual que en la guarda: pedirle la
+  // tabla sería consultar para nada y dejaría la pestaña apagada en un local
+  // recién creado, donde `usuario_permisos` está vacía por definición.
+  //
+  // Para un empleado, `permisosDe` está memoizada por request con `cache()`,
+  // así que esto no suma una consulta por pantalla más allá de la primera.
+  const permisos =
+    sesion.usuario.rol === 'DUENO'
+      ? CLAVES_DE_PERMISO
+      : [...(await permisosDe(sesion.tenant.id, sesion.usuario.id))]
+
   return (
     // 15.5rem = 248 px, que es lo que dibuja design/arandano.pen. El default de
     // shadcn es 16rem: ocho pixeles que arrastrarían las diez pantallas.
@@ -24,6 +37,7 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
         nombreLocal={sesion.tenant.nombre}
         nombreUsuario={sesion.usuario.nombre}
         rol={sesion.usuario.rol}
+        permisos={permisos}
         alSalir={salir}
       />
       <SidebarInset>

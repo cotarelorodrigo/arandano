@@ -1,14 +1,29 @@
 'use client'
 
 import Link from 'next/link'
-import { Package, ReceiptText, ShoppingCart, Users, Wrench } from 'lucide-react'
+import { CreditCard, Package, ReceiptText, ShoppingCart, Users, Wrench } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import type { RolUsuario } from '@/lib/auth/sesion'
+import type { Permiso } from '@/lib/permisos/catalogo'
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar'
 
 // Las pestañas de la aplicación, en un solo lugar.
-type Pestana = { href: string; texto: string; icono: LucideIcon; soloDueno?: boolean }
+type Pestana = {
+  href: string
+  texto: string
+  icono: LucideIcon
+  soloDueno?: boolean
+  /**
+   * La pestaña se muestra si la sesión tiene este permiso. Un DUENO los tiene
+   * todos (ver lib/permisos/guarda.ts), así que no necesita una fila en
+   * `usuario_permisos` para verla — el layout se los arma sin consultar nada.
+   *
+   * Es distinto de `soloDueno`, que no se delega nunca: esto es una capacidad
+   * que el dueño PUEDE repartir, y aquello una que no.
+   */
+  permiso?: Permiso
+}
 
 const PESTANAS: Pestana[] = [
   { href: '/vender', texto: 'Vender', icono: ShoppingCart },
@@ -19,6 +34,7 @@ const PESTANAS: Pestana[] = [
   // exista el registry de módulos, esta entrada sale de TenantModule. El
   // disparador es el primer tenant de un rubro sin servicio técnico.
   { href: '/servicio-tecnico', texto: 'Servicio Técnico', icono: Wrench },
+  { href: '/formas-de-pago', texto: 'Formas de pago', icono: CreditCard, permiso: 'PLANES_PAGO' },
   { href: '/usuarios', texto: 'Usuarios', icono: Users, soloDueno: true },
 ]
 
@@ -49,15 +65,18 @@ export function estaActiva(href: string, ruta: string): boolean {
  * extensión que CLAUDE.md promete para el registry de módulos. Cuando exista
  * Órdenes de Trabajo, sus pestañas entran por esta lista.
  */
-export function Navegacion({ rol }: { rol: RolUsuario }) {
+export function Navegacion({ rol, permisos }: { rol: RolUsuario; permisos: readonly Permiso[] }) {
   const ruta = usePathname()
 
   return (
     // gap-0.5 (2 px) es el frame `Nav` de design/arandano.pen (Shell/Sidebar):
-    // SidebarMenu trae gap-0 por default, y sin pisarlo los cinco ítems
-    // quedaban pegados uno contra el otro.
+    // SidebarMenu trae gap-0 por default, y sin pisarlo los ítems quedaban
+    // pegados uno contra el otro.
     <SidebarMenu className="gap-0.5">
-      {PESTANAS.filter((p) => !p.soloDueno || rol === 'DUENO').map((p) => {
+      {PESTANAS.filter(
+        (p) =>
+          (!p.soloDueno || rol === 'DUENO') && (!p.permiso || permisos.includes(p.permiso)),
+      ).map((p) => {
         const activa = estaActiva(p.href, ruta)
         return (
           <SidebarMenuItem key={p.href}>

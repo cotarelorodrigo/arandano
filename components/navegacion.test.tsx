@@ -2,13 +2,24 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Navegacion } from '@/components/navegacion'
 import { SidebarProvider } from '@/components/ui/sidebar'
+import { CLAVES_DE_PERMISO, type Permiso } from '@/lib/permisos/catalogo'
 
 // usePathname sólo existe adentro del router de Next. Acá interesa qué
 // renderiza la navegación para una ruta dada, no cómo Next la averigua.
 const usePathname = vi.fn()
 vi.mock('next/navigation', () => ({ usePathname: () => usePathname() }))
 
-async function render(rol: 'DUENO' | 'EMPLEADO', ruta: string) {
+/**
+ * `permisos` por default es el catálogo entero, que es lo que el layout le
+ * pasa a un DUENO. Los casos que miran una pestaña delegable lo pasan
+ * explícito: es la única forma de distinguir "no la ve porque no tiene el
+ * permiso" de "no la ve porque la pestaña desapareció".
+ */
+async function render(
+  rol: 'DUENO' | 'EMPLEADO',
+  ruta: string,
+  permisos: readonly Permiso[] = CLAVES_DE_PERMISO,
+) {
   usePathname.mockReturnValue(ruta)
   const { Navegacion } = await import('@/components/navegacion')
   // SidebarMenuButton (components/ui/sidebar.tsx) llama a useSidebar(), que
@@ -29,7 +40,7 @@ async function render(rol: 'DUENO' | 'EMPLEADO', ruta: string) {
   const { SidebarProvider } = await import('@/components/ui/sidebar')
   return renderToStaticMarkup(
     <SidebarProvider>
-      <Navegacion rol={rol} />
+      <Navegacion rol={rol} permisos={permisos} />
     </SidebarProvider>,
   )
 }
@@ -110,11 +121,39 @@ describe('Navegacion', () => {
   })
 
   it('están las cuatro pestañas que ve cualquiera', async () => {
-    const html = await render('EMPLEADO', '/vender')
+    // Sin ningún permiso otorgado: son las que no dependen de ninguno.
+    const html = await render('EMPLEADO', '/vender', [])
     // Vender, Ventas, Inventario y Servicio Técnico. Usuarios no: es del dueño.
+    // Formas de pago tampoco: pide PLANES_PAGO.
     for (const href of ['/vender', '/ventas', '/inventario', '/servicio-tecnico']) {
       expect(html).toContain(`href="${href}"`)
     }
+  })
+
+  // Las dos direcciones de la pestaña delegable. Sin el caso positivo, un
+  // filtro que la escondiera siempre pasaría el negativo en verde.
+  it('un empleado sin PLANES_PAGO no ve Formas de pago', async () => {
+    const html = await render('EMPLEADO', '/vender', [])
+    expect(html).not.toContain('href="/formas-de-pago"')
+  })
+
+  it('un empleado con PLANES_PAGO sí la ve', async () => {
+    const html = await render('EMPLEADO', '/vender', ['PLANES_PAGO'])
+    expect(html).toContain('href="/formas-de-pago"')
+  })
+
+  // El dueño la ve sin ninguna fila en usuario_permisos: el layout le pasa el
+  // catálogo entero, que es lo que `render` usa por default.
+  it('el dueño ve Formas de pago', async () => {
+    const html = await render('DUENO', '/vender')
+    expect(html).toContain('href="/formas-de-pago"')
+  })
+
+  // Un permiso que no es el de esta pestaña no la destraba: sin este caso, un
+  // filtro que mirara `permisos.length` en vez del permiso concreto pasaría.
+  it('otro permiso cualquiera no destraba Formas de pago', async () => {
+    const html = await render('EMPLEADO', '/vender', ['COSTOS'])
+    expect(html).not.toContain('href="/formas-de-pago"')
   })
 
   // El detalle de una orden y el ticket cuelgan de /servicio-tecnico, así que
@@ -128,20 +167,22 @@ describe('Navegacion', () => {
 
   // Frágil a propósito, y por eso va con su motivo escrito: las pestañas no
   // tenían focus-visible y quedaban con el outline del navegador, sobre un
-  // producto que se opera con teclado en un mostrador. Mide sobre los CINCO
+  // producto que se opera con teclado en un mostrador. Mide sobre los SEIS
   // <a> reales, no sobre el HTML entero: `focus-visible:ring-2` es parte fija
   // de sidebarMenuButtonVariants (components/ui/sidebar.tsx), así que aparece
   // en el HTML pase lo que pase adentro del botón — un toContain() sobre el
   // string completo pasaría igual aunque `asChild` no forwardeara la clase al
-  // ancla, o aunque sólo una de las cinco la tuviera. Contando por elemento es
+  // ancla, o aunque sólo una de las seis la tuviera. Contando por elemento es
   // lo único que de verdad impide que el anillo desaparezca en un refactor de
   // estilos sin que nada se queje. Si cambia el nombre de la utilidad de
   // Tailwind, se actualiza acá: ése es el costo y se paga.
   it('cada pestaña lleva anillo de foco propio', async () => {
     const html = await render('DUENO', '/vender')
     const anclas = html.match(/<a\b[^>]*>/g) ?? []
-    expect(anclas).toHaveLength(5)
-    expect(anclas.filter((a) => a.includes('focus-visible:ring-2'))).toHaveLength(5)
+    // Seis: las cuatro de cualquiera, más Formas de pago y Usuarios, que un
+    // dueño ve las dos.
+    expect(anclas).toHaveLength(6)
+    expect(anclas.filter((a) => a.includes('focus-visible:ring-2'))).toHaveLength(6)
   })
 
   // Los íconos los nombra design/arandano.pen. No son decoración: en un
@@ -161,10 +202,10 @@ describe('Navegacion', () => {
     usePathname.mockReturnValue('/vender')
     const html = renderToStaticMarkup(
       <SidebarProvider>
-        <Navegacion rol="DUENO" />
+        <Navegacion rol="DUENO" permisos={CLAVES_DE_PERMISO} />
       </SidebarProvider>,
     )
     const svgs = html.match(/<svg[^>]*aria-hidden="true"[^>]*>/g) ?? []
-    expect(svgs).toHaveLength(5)
+    expect(svgs).toHaveLength(6)
   })
 })

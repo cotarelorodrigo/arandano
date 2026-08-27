@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { SidebarArandano } from './sidebar-arandano'
 import { SidebarProvider } from '@/components/ui/sidebar'
+import { CLAVES_DE_PERMISO } from '@/lib/permisos/catalogo'
 
 // Navegacion llama a usePathname(); sin esto se cae el archivo entero y el
 // síntoma no la nombra por ningún lado.
@@ -22,6 +23,9 @@ function render(props: Partial<Parameters<typeof SidebarArandano>[0]> = {}) {
         nombreLocal="Local de prueba"
         nombreUsuario="Quien sea"
         rol="DUENO"
+        // El catálogo entero, que es lo que el layout le pasa a un DUENO. Qué
+        // pestaña destraba cada permiso lo prueba components/navegacion.test.tsx.
+        permisos={CLAVES_DE_PERMISO}
         alSalir={vi.fn()}
         {...props}
       />

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   formatearPrecio, formatearDolares, formatearCantidad, formatearFecha, formatearHora,
-  formatearFechaCorta, montoSinSigno,
+  formatearFechaCorta, montoSinSigno, formatearPorcentaje,
 } from './mostrar'
 
 // Puro: sin Docker, sin base. `Intl` alcanza y corre en cualquier Node.
@@ -104,5 +104,38 @@ describe('montoSinSigno', () => {
 
   it('no toca un valor que ya viene sin signo', () => {
     expect(montoSinSigno('1.500,50')).toBe('1.500,50')
+  })
+})
+
+describe('formatearPorcentaje', () => {
+  // El signo es la mitad del dato: un `40 %` pelado al lado de un `−10 %` deja
+  // la tabla de planes sin decir cuál recarga y cuál descuenta.
+  it('un recargo lleva el signo adelante', () => {
+    expect(formatearPorcentaje('40')).toMatch(/^\+40/)
+  })
+
+  it('un descuento por pago contado se lee como negativo', () => {
+    const salida = formatearPorcentaje('-10')
+    expect(salida).toContain('10')
+    // El signo lo pone ICU; puede ser `-` o `−` según la versión de Node.
+    expect(salida).not.toMatch(/^\+/)
+    expect(salida.charCodeAt(0)).not.toBe('4'.charCodeAt(0))
+  })
+
+  // Cero no es ni recargo ni descuento, así que no lleva signo.
+  it('un plan sin recargo no lleva signo', () => {
+    expect(formatearPorcentaje('0')).not.toMatch(/[+]/)
+  })
+
+  // La escala de Decimal(6,3): los costos financieros reales vienen así, y
+  // dividir por 100 para el estilo `percent` no puede perderlos.
+  it('conserva los tres decimales que la columna guarda', () => {
+    expect(formatearPorcentaje('13.755')).toContain('13,755')
+    expect(formatearPorcentaje('999.999')).toContain('999,999')
+  })
+
+  // Sin ceros de relleno: un `40,000 %` sería ruido en una celda que se escanea.
+  it('un entero no lleva decimales de relleno', () => {
+    expect(formatearPorcentaje('40')).not.toContain(',')
   })
 })
