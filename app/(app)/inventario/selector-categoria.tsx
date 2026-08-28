@@ -34,6 +34,20 @@ const SIN = '__sin__'
  * eso hace falta un item explícito, que Radix no deja que valga "". Con inputs
  * propios el centinela se traduce acá adentro y al servidor le llega cadena
  * vacía, como siempre.
+ *
+ * **El ítem "Sin categoría"/"Sin marca" se ofrece SIEMPRE, también en el alta,
+ * y eso no es una capacidad nueva — es un agujero que se tapa.** Antes de este
+ * componente, el `<Select>` del alta no tenía ningún item así: el placeholder
+ * "Sin categoría" se veía mientras no se elegía nada, pero una vez elegido
+ * "Fundas" por error no había forma de volver atrás sin recargar la pantalla
+ * —Radix no admite un `SelectItem` con `value=""`, así que no existía ningún
+ * valor que representara "ninguno" una vez que había uno puesto—. El Select
+ * del alta era una puerta de una sola dirección. **Se consideró y se
+ * descartó** ofrecer el item sólo cuando hay una rama inicial (es decir,
+ * mostrarlo en la ficha pero no en el alta): eso dejaría el agujero abierto
+ * justo en la pantalla donde más se carga un artículo a las apuradas, que es
+ * el alta, y el costo de tener el item ahí es cero — no cambia qué se puede
+ * guardar, sólo agrega una forma de deshacer una elección.
  */
 export function SelectorDeCategoria({
   arbol,

@@ -119,4 +119,15 @@ describe('SelectorDeCategoria', () => {
     expect(html).toContain('name="categoriaId"')
     expect(html).toContain('name="marcaId"')
   })
+
+  // La regresión central de este ciclo: el control emite el id de la rama, no
+  // el texto libre que el alta tenía antes del árbol y que la ficha todavía
+  // tiene hasta la task que viene. Si `name="categoria"` reaparece acá, alguien
+  // volvió a poner un campo de texto.
+  it('emite los ids de la rama y nunca el nombre del viejo campo de texto', () => {
+    const html = render(null)
+    expect(html).toContain('name="categoriaId"')
+    expect(html).toContain('name="marcaId"')
+    expect(html).not.toContain('name="categoria"')
+  })
 })
