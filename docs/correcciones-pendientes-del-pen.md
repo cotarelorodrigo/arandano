@@ -49,8 +49,13 @@ dice "Cliente".
 selectores, "Categoría" y "Marca", que es más de lo que esta entrada pedía y
 lo correcto desde que las categorías son un árbol de dos niveles.
 
-**La ficha sigue sin resolverse**, y ahora además quedó contradiciendo al alta:
-ver la entrada 7.
+**La ficha sigue sin resolverse en la maqueta**, y ahí queda contradiciendo al
+alta: ver la entrada 7. **En el código ya no**: desde el 2026-08-28 las dos
+pantallas cargan la categoría con el mismo componente y bajo el mismo permiso.
+
+La distinción de planos no es prolijidad y vale para todo este archivo: desde
+ese ciclo puede haber entradas donde el código ya está resuelto y la maqueta no,
+y una entrada que no diga de cuál de los dos habla envejece mintiendo.
 
 ---
 
@@ -156,7 +161,8 @@ Detectado al cerrar el ciclo de la UI de categorías (2026-08-24). Ver
 
 ## 7. La ficha de artículo quedó atrás del alta — RESUELTA EN CÓDIGO, LA MAQUETA QUEDA ATRÁS
 
-- **Frames**: `y4tEb` (`App / Artículo ficha`) y `Móvil / Artículo ficha`
+- **Frames**: `y4tEb` (`App / Artículo ficha`) y `T5gME`
+  (`Móvil / Artículo ficha`)
 - **Dicen**: un solo campo "Categoría", de texto, en la card "Datos"; y el
   subtítulo `SKU 000412 · Producto · Accesorios`
 - **Tienen que decir**: los dos selectores **Categoría** y **Marca** que el
