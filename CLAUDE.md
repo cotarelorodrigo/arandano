@@ -1491,6 +1491,118 @@ Y del producto:
   cobro sume bien, que el precio derivado de la ficha del artículo sea el mismo
   que termina cobrando el mostrador, y que un empleado sin `PLANES_PAGO` no vea
   la pestaña.
+- ~~Poder elegir la categoría y la marca de un artículo ya cargado, desde su
+  ficha.~~ **Hecho** (2026-08-28). Sale del feedback textual de un dueño: *"el
+  dueño no puede agregar marca o categoria a un producto del inventario ya
+  agregado, tampoco puede agregarle o modificar el costo de un producto ya
+  agregado"*. La primera mitad ya estaba anotada como deuda desde el 2026-08-24,
+  en la entrada 7 de `docs/correcciones-pendientes-del-pen.md` — y vale decirlo
+  así: **la deuda la confirmó un cliente antes que un test.** El gate estaba
+  entero en verde, la ficha guardaba sin tirar ningún error y el camino de
+  servidor funcionaba; lo que no funcionaba era poder usarlo. Ver
+  `docs/superpowers/specs/2026-08-28-categoria-en-la-ficha-design.md`.
+
+  **La causa es lo que vale para el futuro, no el síntoma: había dos
+  implementaciones del mismo control.** Desde el 2026-08-24 el alta elegía la
+  rama con dos selectores encadenados, y la ficha se quedó con el campo de texto
+  de la versión anterior a ese ciclo. Sin campo "Marca", el único separador que
+  se parsea es el middot `·` (`lib/inventario/categorias.ts`), que no está en un
+  teclado argentino; `Celulares / Samsung` no falla, crea una raíz llamada así
+  con la barra adentro del nombre; y tipear sólo `Samsung` crea un rubro raíz
+  nuevo al lado del `Celulares > Samsung` que ya existe, en silencio. **Es la
+  misma familia de defecto que el merge del ciclo móvil documentó con las dos
+  copias de un botón** —una guarda de permiso escrita sobre una sola de las
+  dos—, y la respuesta es la misma: **una sola fuente, no dos que haya que
+  acordarse de sincronizar.** El par de selectores salió a
+  `SelectorDeCategoria` y las dos pantallas lo instancian; la única diferencia
+  que queda entre ellas es que la ficha lo apila y el alta lo deja en fila.
+
+  **Qué se pierde, dicho explícito: desde la ficha ya no se crea una rama
+  tipeando.** Es exactamente la capacidad que el alta perdió el 2026-08-24 al
+  pasar de tipear a elegir, con la misma mitigación —el link al panel de
+  `/inventario`, que es donde se crean—, y con una ventaja que salió del
+  componente compartido: **la mitigación viaja adentro de él**, así que la ficha
+  la heredó sin que ninguna de las dos pantallas la escribiera por su cuenta.
+  Que la capacidad reaparezca en otro lado es lo que la regla del ciclo móvil
+  exige para no llamar simplificación a lo que es un defecto.
+
+  **Y una puerta de una sola dirección que se cerró de paso, en el alta**: el
+  componente ofrece "Sin categoría" y "Sin marca" como ítems explícitos, también
+  ahí, que no los tenía. No es una capacidad nueva sino un agujero viejo que se
+  tapa: el placeholder sólo se ve mientras no hay nada elegido, y Radix no admite
+  un `SelectItem` con `value=""`, así que quien elegía "Fundas" por error no
+  tenía forma de volver a "sin categoría" sin recargar la pantalla.
+
+  **La decisión de permisos, que este ciclo zanja porque nadie la había
+  tomado.** Las dos pantallas pedían cosas distintas para lo mismo: el alta
+  aceptaba `categoriaId` con `ARTICULOS_CREAR` a secas, y la ficha descartaba el
+  cambio de categoría sin `CATEGORIAS` —en silencio, devolviendo "Cambios
+  guardados" y sin cambiar nada—. **Manda el alta: elegir rama es
+  `ARTICULOS_EDITAR`.** La regla general que deja, que es lo que hay que releer
+  cuando el catálogo de permisos crezca: **se delega por lo que la acción mueve,
+  no por el sustantivo que la nombra.** Colgar un artículo de una rama que ya
+  existe mueve un artículo; crear, renombrar, mover o borrar una rama mueve todo
+  el catálogo que cuelga de ella, y esas cuatro siguen pidiendo `CATEGORIAS`, que
+  es exactamente lo que su descripción dice. Es la misma forma de razonar que en
+  el ciclo anterior separó `PLANES_PAGO` de `ARTICULOS_EDITAR`. **El catálogo de
+  permisos no creció en este ciclo**: la fuente sigue siendo
+  `lib/permisos/catalogo.ts`.
+
+  Con eso se fue también la tri-estado de `editarArticulo`, donde `undefined`
+  significaba "no toques la categoría". Existía por una sola razón, escrita en su
+  docblock: era la forma de que alguien con `ARTICULOS_EDITAR` y sin
+  `CATEGORIAS` no creara ramas al vuelo tipeando. Desde que la rama se elige de
+  un árbol que ya existe no hay nada que crear, así que la distinción se quedó
+  sin motivo — y `categoriaId` va **requerido** y no opcional, que es lo que
+  impide que vuelva por la ventana: con un campo opcional, un llamador que lo
+  omitiera por descuido no daría ningún error y no tocaría la categoría en
+  silencio. Efecto colateral que conviene tener anotado: `asegurarCategoria` —la
+  única función que crea ramas desde texto— se quedó sin ningún llamador de
+  pantalla, y hoy sólo la alcanza `scripts/sembrar-catalogo-dev.mts`. Un seed no
+  es una pantalla.
+
+  **`Articulo.categoria` (el texto) se sigue escribiendo**, ahora derivado de la
+  rama elegida en las dos pantallas. Sigue rigiendo el expand/contract del ciclo
+  del modelo: el `DROP COLUMN` es un deploy posterior al de la UI, no éste.
+
+  **La maqueta quedó atrás a propósito, y es un cambio de criterio respecto del
+  2026-08-24**, cuando esa misma entrada 7 dijo lo contrario ("sin el frame
+  dibujado, habría que inventar el tratamiento"). Lo que cambió es la premisa y
+  no la regla: esta vez no había tratamiento que inventar, porque los dos
+  selectores ya están dibujados en el mismo archivo, en `App / Artículo nuevo`.
+  Lo que sí se derivó sin referencia —y por eso la entrada 7 sigue abierta— es el
+  **apilado vertical** de los dos selectores en la card "Datos" de 324 px, que el
+  alta no puede contestar porque su card es mucho más ancha, y el frame `Móvil /
+  Artículo ficha`, que tampoco los dibuja.
+
+  **Queda la deuda del costo, que es la mitad del feedback que este ciclo NO
+  atiende**, y queda con lo investigado escrito para que su ciclo no tenga que
+  redescubrirlo. Cuatro cosas: el único escritor de `costoUnitario` es
+  `ingresarStock` (`lib/inventario/stock.ts`); esa función exige `cantidad > 0`,
+  así que no hay forma de registrar un costo sin además sumar stock; el rodeo
+  —ingresar 1 unidad y corregir por conteo— no sirve porque `corregirStock` no
+  escribe costo y deja un ingreso fantasma en el historial; y `MovimientoStock`
+  es append-only, así que un costo mal tipeado es permanente. La cuarta es un
+  bug de pérdida silenciosa en el alta: en `crearArticulo`
+  (`lib/inventario/articulos.ts`) el movimiento que lleva `costoUnitario` se crea
+  **sólo adentro** de `if (stockInicial && stockInicial.greaterThan(0))`,
+  mientras el formulario muestra "Cantidad (opcional)" y "Costo unitario
+  (opcional)" lado a lado sin nada que sugiera que una depende de la otra — quien
+  carga un producto diciendo "sé cuánto me cuesta, todavía no tengo stock" pierde
+  el costo sin ningún mensaje. **Pero lo primero que ese ciclo tiene que resolver
+  no es ninguna de las cuatro, sino un choque de modelos mentales**: el modelo
+  dice que el costo es un atributo del evento de recepción, y el dueño piensa que
+  es un atributo del producto. Mientras el único lugar donde se escribe un costo
+  sea un ingreso de mercadería y el único donde se lee sea un tile de sólo
+  lectura, el producto no tiene respuesta para "¿cuánto me cuesta esto?" separada
+  de "¿cuándo lo recibí?".
+
+  **Y queda pendiente la verificación manual**, por lo mismo que en los dos
+  ciclos anteriores: `arandano-dev` bind-montea `/root/arandano` y no el
+  worktree. Después del merge hay que mirar que el selector precargue la rama del
+  artículo al abrir la ficha, que "Sin categoría" la borre de verdad, que cambiar
+  de rubro limpie la marca, y que un empleado con `ARTICULOS_EDITAR` y sin
+  `CATEGORIAS` pueda mover el artículo de rama pero no vea el ABM del panel.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~
