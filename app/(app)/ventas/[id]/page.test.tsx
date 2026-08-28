@@ -248,12 +248,15 @@ const ITEM: ItemVendido = {
 const PAGO_ARS: PagoRecibido = {
   id: 'p1',
   medioLabel: 'Efectivo',
-  planLabel: null,
+  // El plan va en el pago en PESOS y no en el de dólares: `PLAN_EN_DOLARES`
+  // (lib/ventas/crear.ts) hace que un pago en dólares con plan no exista, y un
+  // fixture se lee como documentación de qué estados son legales.
+  planLabel: 'Crédito 3 cuotas · 3 cuotas',
   monedaLabel: 'Pesos',
   cotizacionFormateada: '—',
   montoFormateado: '$ 64.300,00',
   enPesosFormateado: '$ 64.300,00',
-  meta: 'Pesos',
+  meta: 'Crédito 3 cuotas · 3 cuotas · Pesos',
   esUsd: false,
 }
 
@@ -261,12 +264,12 @@ const PAGO_ARS: PagoRecibido = {
 const PAGO_USD: PagoRecibido = {
   id: 'p2',
   medioLabel: 'Transferencia',
-  planLabel: 'Crédito 3 cuotas · 3 cuotas',
+  planLabel: null,
   monedaLabel: 'Dólares',
   cotizacionFormateada: '$ 1.485,00',
   montoFormateado: 'US$ 20,00',
   enPesosFormateado: '$ 29.700,00',
-  meta: 'Crédito 3 cuotas · 3 cuotas · Dólares · cotización $ 1.485,00',
+  meta: 'Dólares · cotización $ 1.485,00',
   esUsd: true,
 }
 

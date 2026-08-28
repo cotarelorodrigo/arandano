@@ -1351,12 +1351,14 @@ que abrió el ciclo ("crédito en 1 pago 10 %, crédito en cuotas 40 %").
   Queda anotado en `docs/correcciones-pendientes-del-pen.md`, entrada 22. El
   layout, la card y el título reusan los roles que las otras cinco pantallas de
   tabla ya comparten.
-- **Y por eso es la única pantalla de la aplicación que todavía no se adapta al
-  teléfono.** Su tabla declara anchos fijos y no sigue el patrón `lg:contents`
-  que las otras cinco tablas comparten desde el ciclo del teléfono: este ciclo
-  arrancó de `main` antes de ese merge, y la maqueta tampoco tiene un frame
-  `Móvil / …` del que derivarla. Es deuda declarada, no un olvido — misma
-  entrada 22.
+- **Y es la única pantalla de la aplicación sin su rediseño de teléfono.** En el
+  teléfono las dos cards se apilan y la tabla scrollea adentro de la suya, en vez
+  de volverse tarjetas con el patrón `lg:contents` que las otras cinco tablas
+  comparten desde el ciclo del teléfono: es legible y operable, no es el
+  rediseño. Este ciclo arrancó de `main` antes de ese merge, y la maqueta tampoco
+  tiene un frame `Móvil / …` del que derivarlo. Deuda declarada, no un olvido —
+  misma entrada 22, que además cuenta el defecto de colapso que el merge sí tuvo
+  que arreglar (la tabla quedaba en cero de ancho abajo de ~424 px).
 
 ## `/usuarios`
 

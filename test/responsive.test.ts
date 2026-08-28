@@ -45,6 +45,32 @@ const ANCHO = /^(?:[a-z0-9@[\]&>_-]+:)*(?:min-)?(?:w|basis)-\[(\d+)px\]$/
  * - **Los anchos que viven dentro de un CSS Module**: el archivo `.module.css`
  *   ni se abre (`fuentes()` filtra `.tsx`), así que un `width: 420px` ahí es
  *   invisible.
+ * - **El modo de falla INVERSO: el ancho fijo que no desborda sino que COLAPSA
+ *   a su hermano.** Un contenedor `flex` sin prefijo —o sea, en fila también en
+ *   el teléfono— con un hijo `flex-1` y otro `w-[Npx]`: `flex-1` es
+ *   `flex: 1 1 0%`, así que su tamaño hipotético es 0 y su factor de
+ *   encogimiento (`shrink × base`) también, de modo que cuando el espacio libre
+ *   se vuelve negativo TODO el encogimiento cae sobre el hermano de ancho fijo
+ *   y el `flex-1` se queda en cero. Con `overflow-hidden` encima pierde también
+ *   el mínimo automático de contenido: desaparece, sin desbordar nada.
+ *
+ *   Se llevó puesta a `/formas-de-pago` entera abajo de ~424 px de viewport, y
+ *   este caso no podía verlo por dos motivos a la vez: el ancho culpable era
+ *   `w-[360px]`, POR DEBAJO del umbral, y el número que importa ahí no es el
+ *   del elemento sino el del viewport donde el espacio libre se vuelve
+ *   negativo.
+ *
+ *   **Se intentó un caso automático y se descartó**, y vale saber por qué antes
+ *   de volver a intentarlo: reconocer la forma pide saber qué nodos son
+ *   HERMANOS dentro del mismo contenedor, y eso no se deriva de una ventana de
+ *   caracteres sobre el fuente — la versión que se escribió marcó cuatro
+ *   archivos sanos, con el `flex-1` y el ancho fijo en contenedores distintos.
+ *   Un caso que salta sobre no-defectos es el que se termina ignorando (la
+ *   regla que este repo ya aplica en `test/maqueta.test.ts`). Hacerlo de verdad
+ *   pide parsear el JSX; hasta entonces, la regla vive escrita acá: **un
+ *   `flex-1` al lado de un ancho fijo, adentro de un `flex` sin prefijo, se
+ *   apila en el teléfono (`flex-col … lg:flex-row`) y el ancho se prefija
+ *   (`lg:w-[Npx]`)**.
  */
 
 /**
@@ -111,3 +137,4 @@ describe('ningún ancho fijo desborda un teléfono de 390', () => {
     expect(inexistentes, `EXCEPCIONES nombra archivos que no están: ${inexistentes}`).toEqual([])
   })
 })
+

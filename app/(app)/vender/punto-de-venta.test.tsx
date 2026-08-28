@@ -1072,6 +1072,22 @@ describe('el punto de venta', () => {
     expect(fuente).toMatch(/planId: p\.planId \?\? undefined/)
     expect(await render({ planes: [PLAN_CONTADO] })).not.toContain('planId')
   })
+
+  // La red del bug que el merge con el ciclo del teléfono tuvo que arreglar a
+  // mano: ese ciclo reescribió el panel de cobro, y git se quedó con SU versión
+  // del JSON escondido, que todavía decía `monto:` —el nombre viejo del campo,
+  // de antes de que este ciclo lo renombrara a `base`—. Ni `tsc` ni el lint lo
+  // ven: `monto` sigue siendo un nombre válido en un objeto literal que viaja
+  // como JSON, y el que se queja es `aDecimal(String(p.base ?? ''))` del
+  // servidor, en runtime, en TODA venta.
+  //
+  // Positivo Y negativo, que es la forma que este repo le exige a las guardas
+  // de este tipo: sin el negativo, agregar `monto:` al lado de `base:` pasaría.
+  it('el campo del pago viaja como `base`, y el nombre viejo no puede volver', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    expect(fuente, 'el JSON escondido manda `base: p.base`').toMatch(/base: p\.base/)
+    expect(fuente, '`monto:` era el nombre de antes del renombre').not.toMatch(/monto: p\./)
+  })
 })
 
 // --- El ciclo móvil: el cuerpo en un teléfono de 390 px ---

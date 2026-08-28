@@ -179,12 +179,20 @@ export function PanelPreciosPorFormaDePago({
   if (planes.length === 0) return null
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border bg-card">
-      <div className="border-b px-[18px] py-[13px]">
+      {/* Mobile-first, igual que todas sus cards hermanas de esta pantalla
+          (`CardDelFormulario`, `GraficoDeRotacion`, el historial): 14 px de
+          padding horizontal en el teléfono, 18 en escritorio. Sin esto la card
+          quedaba 4 px más adentro que sus vecinas — esta pantalla SÍ está
+          adaptada, así que acá no hay deuda a la que apuntar. */}
+      <div className="border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
         <h2 className={`${estilos.tituloDeCard} text-foreground`}>Precios por forma de pago</h2>
       </div>
       <div className="flex flex-col divide-y">
         {planes.map((p) => (
-          <div key={p.id} className="flex items-center justify-between gap-3 px-[18px] py-[11px]">
+          <div
+            key={p.id}
+            className="flex items-center justify-between gap-3 px-[14px] py-[11px] lg:px-[18px]"
+          >
             <div className="flex flex-col gap-[2px]">
               <span className="text-[13px] font-medium text-foreground">{p.nombre}</span>
               <span className="text-[11px] text-muted-foreground">

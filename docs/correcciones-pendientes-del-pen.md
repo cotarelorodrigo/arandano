@@ -555,7 +555,7 @@ mide contra la mercadería por la misma razón: si midiera contra lo cobrado, un
 venta financiada no cerraría nunca.
 
 Mismo precedente que el panel de categorías de `/inventario` (entrada 6) y que
-el diálogo de permisos de `/usuarios` (entrada 8): la maqueta no **contradice**
+el diálogo de permisos de `/usuarios` (entrada 18): la maqueta no **contradice**
 al código acá, le **falta** el control, así que se construyó contra lo que el
 `.pen` ya fija para esa pantalla en vez de inventar un tratamiento. Si al
 dibujarlos la maqueta decide otra cosa, manda la maqueta y se corrige el código.
@@ -577,9 +577,9 @@ precio derivado. El código la derivó de las dos cards vecinas que sí están
 dibujadas y viven en la misma columna: el encabezado con borde inferior y la
 cara de display de "Datos" y "Cómo se movió" (`design/arandano.pen`, frame
 `y4tEb`), y el patrón fila-con-importe-a-la-derecha de la tabla de
-`/formas-de-pago` (que tampoco tiene frame propio, ver entrada 9 más arriba).
+`/formas-de-pago` (que tampoco tiene frame propio, ver entrada 22 más abajo).
 
-Mismo precedente que las entradas 6, 8 y 9: la maqueta no **contradice** al
+Mismo precedente que las entradas 6, 18 y 19: la maqueta no **contradice** al
 código acá, le **falta** el control, así que se construyó contra lo que el
 `.pen` ya fija para esa pantalla en vez de inventar un tratamiento. Si al
 dibujarla la maqueta decide otra cosa, manda la maqueta y se corrige el
@@ -615,7 +615,7 @@ sección *Las pantallas*.
    (110px, ampliado a 150px porque un nombre de plan es más largo que
    "Dólares").
 
-Mismo precedente que las entradas 6, 8, 9 y 10: la maqueta no **contradice** al
+Mismo precedente que las entradas 6, 18, 19 y 20: la maqueta no **contradice** al
 código acá, le **falta** el control, así que se construyó contra lo que el
 `.pen` ya fija para esa pantalla en vez de inventar un tratamiento. Si al
 dibujarlos la maqueta decide otra cosa, manda la maqueta y se corrige el
@@ -646,12 +646,27 @@ derivada es el **precio de ejemplo sobre un artículo de referencia fijo de
 $10.000** — la maqueta no tiene opinión sobre esa columna porque no tiene la
 columna.
 
-**Y falta la maqueta del teléfono, que es la deuda con consecuencia
-concreta**: esta pantalla se construyó en un ciclo que arrancó de `main` antes
-del ciclo del teléfono, así que su tabla todavía declara anchos fijos y no
-sigue el patrón `lg:contents` que las otras cinco tablas del producto ya
-comparten. Hasta que se dibuje, cualquier adaptación a 390 px sería otra
-derivada del código sobre una pantalla que la maqueta nunca vio.
+**Y falta la maqueta del teléfono.** Esta pantalla se construyó en un ciclo que
+arrancó de `main` antes del ciclo del teléfono, así que su tabla todavía declara
+anchos fijos y **no** sigue el patrón `lg:contents` que las otras cinco tablas
+del producto ya comparten: en el teléfono las dos cards se apilan y la tabla
+scrollea horizontalmente adentro de la suya, en vez de volverse tarjetas. Es
+legible y operable, no es el rediseño.
+
+Lo que el merge SÍ tuvo que arreglar, porque no era deuda sino un defecto: la
+fila de las dos cards era un `flex` sin prefijo, con la tabla en `flex-1`
+(hipotética 0) y el panel lateral en `w-[360px]`. A 390 px el espacio libre es
+negativo y todo el encogimiento cae sobre el lateral —el factor de la izquierda
+es `shrink × base` = 0—, así que la tabla se quedaba **en cero de ancho**, con
+`overflow-hidden` matándole además el mínimo automático: la pantalla entera
+desaparecía abajo de unos 424 px de viewport. Y el mismo merge le había dado a
+esta pantalla un disparador de alta en el Topbar móvil, o sea que se podía crear
+un plan donde no se veía ninguno. `test/responsive.test.ts` no puede atraparlo:
+su umbral es 362, esto es `w-[360px]`, y sobre todo el modo de falla es colapso
+y no desborde.
+
+Hasta que se dibuje, cualquier adaptación mayor a 390 px sería otra derivada del
+código sobre una pantalla que la maqueta nunca vio.
 
 Detectado al cerrar el ciclo de precios por forma de pago (2026-08-27) y
 confirmado al mergearlo con el ciclo del teléfono (2026-08-28). Ver

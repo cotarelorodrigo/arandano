@@ -290,7 +290,7 @@ export function DialogoDePlan({ plan, movil = false }: { plan?: FilaDePlan; movi
             <Plus aria-hidden="true" className="size-[19px]" />
           </button>
         ) : (
-          <Button className="hidden lg:inline-flex">
+          <Button>
             <Plus aria-hidden="true" className="size-[15px]" />
             Plan nuevo
           </Button>
@@ -504,7 +504,26 @@ export function CuerpoFormasDePago({
   ejemploBase: string
 }) {
   return (
-    <div className="flex gap-4 p-6">
+    // Se apila en el teléfono. NO es cosmética: con `flex` sin prefijo, la
+    // card de la izquierda es `flex-1` (o sea `flex: 1 1 0%`, hipotética 0) y
+    // la de la derecha es `w-[360px]` con base `auto`, así que a 390 px el
+    // espacio libre es negativo y TODO el encogimiento cae sobre la derecha
+    // —el factor de la izquierda es `shrink × base` = 0—. La tabla se quedaba
+    // en cero de ancho, y `overflow-hidden` le mata además el mínimo
+    // automático: la pantalla entera (los planes, Editar, Baja, Reactivar)
+    // desaparecía abajo de ~424 px de viewport. Y esto empeoró con el merge
+    // del ciclo del teléfono, que le dio a esta pantalla un disparador de alta
+    // en el Topbar móvil: se podía crear un plan en una pantalla donde no se
+    // veía ninguno.
+    //
+    // `test/responsive.test.ts` no puede atraparlo: su umbral es 362 y esto es
+    // `w-[360px]`, y sobre todo el modo de falla es COLAPSO, no desborde.
+    //
+    // Sigue sin ser el rediseño móvil de esta pantalla —la maqueta no la dibuja
+    // en ningún ancho, entrada 22 de docs/correcciones-pendientes-del-pen.md—:
+    // la `<Table>` conserva sus anchos fijos y scrollea adentro de su card, que
+    // es el `overflow-x-auto` que shadcn ya le pone.
+    <div className="flex flex-col gap-3 p-[14px] lg:flex-row lg:gap-4 lg:p-6">
       <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border bg-card">
         <div className="flex items-center justify-between border-b px-[18px] py-[13px]">
           <h2 className={`${estilos.tituloDeCard} text-foreground`}>Los planes del local</h2>
@@ -515,7 +534,7 @@ export function CuerpoFormasDePago({
           <TablaDePlanes planes={planes} ejemploBase={ejemploBase} />
         )}
       </div>
-      <div className="flex w-[360px] flex-col gap-4">
+      <div className="flex flex-col gap-3 lg:w-[360px] lg:gap-4">
         <CardComoFunciona ejemploBase={ejemploBase} />
       </div>
     </div>

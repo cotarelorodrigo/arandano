@@ -683,6 +683,32 @@ describe('cobrar con un plan de pago', () => {
     ).rejects.toMatchObject({ codigo: 'PLAN_INEXISTENTE' })
   })
 
+  // El MENSAJE y no sólo el código: `traducir` (app/(app)/vender/acciones.ts)
+  // muestra `e.message` tal cual en el cartel del mostrador, así que este texto
+  // es copy de producto y no un detalle de log. Llevaba el UUID del plan
+  // adentro, que no le dice nada a quien está cobrando ni le indica qué hacer.
+  it('el mensaje que ve el mostrador no lleva el id adentro, y dice qué hacer', async () => {
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: items(),
+        pagos: [
+          {
+            medio: 'TARJETA_CREDITO',
+            moneda: 'ARS',
+            base: d('10000'),
+            cotizacion: d('1'),
+            planId: '00000000-0000-7000-8000-000000000000',
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      codigo: 'PLAN_INEXISTENTE',
+      message: 'Ese plan de pago ya no está disponible. Recargá la pantalla y elegí otro.',
+    })
+  })
+
   it('rechaza un plan desactivado', async () => {
     const plan = await crearPlan({
       tenantId,

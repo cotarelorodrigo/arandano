@@ -581,7 +581,14 @@ export function FichaDeArticulo({
                 </div>
               )}
               {columnaDerechaExtra && (
-                <div className="order-4 lg:order-none">{columnaDerechaExtra}</div>
+                // `flex flex-col gap-*` y no un `div` pelado: el fragmento trae
+                // DOS cards ("Precios por forma de pago" y "Cómo se movió"), y
+                // antes del merge colgaban directo de la columna, heredando su
+                // gap. Envueltas en un bloque sin gap propio quedaban con los
+                // bordes pegados, en los dos anchos.
+                <div className="order-4 flex flex-col gap-3 lg:order-none lg:gap-4">
+                  {columnaDerechaExtra}
+                </div>
               )}
             </div>
           )}

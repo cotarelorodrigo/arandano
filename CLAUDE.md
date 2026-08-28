@@ -1461,11 +1461,24 @@ Y del producto:
     la ranura derecha del Topbar): con sólo la de `acciones`, que `<Encabezado>`
     envuelve en `hidden lg:flex`, el botón desaparecía del teléfono sin
     reaparecer en ningún lado — la regla que el ciclo del teléfono aplicó cinco
-    veces. **El resto de la pantalla sigue sin adaptarse a 390 px**: su tabla
-    declara anchos fijos y no sigue el patrón `lg:contents`. Es deuda declarada
-    (entrada 22 de `docs/correcciones-pendientes-del-pen.md`) y no un olvido —
-    la maqueta tampoco dibuja esta pantalla en ningún ancho, así que adaptarla
-    sería otra derivada del código sobre algo que nadie diseñó.
+    veces. **Y el defecto que eso destapó, que no era deuda sino un bug**: la
+    fila de las dos cards era un `flex` sin prefijo con la tabla en `flex-1`
+    (hipotética 0) y el panel lateral en `w-[360px]`, así que a 390 px todo el
+    encogimiento caía sobre el lateral y la tabla quedaba **en cero de ancho**,
+    con `overflow-hidden` matándole el mínimo automático — la pantalla entera
+    desaparecía abajo de ~424 px, justo cuando el merge le acababa de dar un
+    disparador de alta en el Topbar móvil. Ahora las dos cards se apilan y la
+    tabla scrollea adentro de la suya. **El rediseño de teléfono sigue sin
+    hacerse** —esa tabla no usa `lg:contents`—, y eso sí es deuda declarada
+    (entrada 22 de `docs/correcciones-pendientes-del-pen.md`): la maqueta no
+    dibuja esta pantalla en ningún ancho, así que rediseñarla sería otra
+    derivada del código sobre algo que nadie dibujó.
+
+    **`test/responsive.test.ts` no puede atrapar ese modo de falla**, y conviene
+    tenerlo escrito: ese test marca anchos fijos mayores a 362 que desbordan, y
+    esto era `w-[360px]` **colapsando**, que es el defecto inverso — un
+    `flex-1` con `overflow-hidden` al lado de un ancho fijo, adentro de un
+    `flex` sin prefijo, se va a cero sin desbordar nada.
   - **Un conteo escrito a mano volvió a quedar viejo**: "2 de 6 permisos", en el
     test de `/usuarios`, contra un catálogo que este ciclo llevó a siete. Se
     derivó de `CLAVES_DE_PERMISO.length`. Es la tercera vez que este repo paga
