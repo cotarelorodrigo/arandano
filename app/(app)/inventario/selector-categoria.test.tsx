@@ -24,9 +24,9 @@ function oculto(html: string, nombre: string): string | null {
   return m === null ? null : m[1]
 }
 
-function render(categoriaIdInicial: string | null = null) {
+function render(categoriaIdInicial: string | null = null, arbol = ARBOL) {
   return renderToStaticMarkup(
-    <SelectorDeCategoria arbol={ARBOL} categoriaIdInicial={categoriaIdInicial} />,
+    <SelectorDeCategoria arbol={arbol} categoriaIdInicial={categoriaIdInicial} />,
   )
 }
 
@@ -87,5 +87,36 @@ describe('SelectorDeCategoria', () => {
     // acá SIEMPRE, esté o no deshabilitado el trigger — no es lo que este caso
     // quiere afirmar.
     expect(trigger.slice(0, cierre)).not.toContain('disabled=""')
+  })
+
+  // Los dos triggers miden 40 como el resto de los campos del alta: la
+  // maqueta los dibuja a la misma altura y un selector más bajo que su vecino
+  // se nota enseguida. Migrado desde formularios.test.tsx —el describe "los
+  // selectores de categoría del alta"— porque es geometría del SELECTOR, no
+  // del formulario que lo aloja.
+  it('los dos selectores miden 40px, como los demás campos', () => {
+    const html = render(null)
+    for (const id of ['categoriaId', 'marcaId']) {
+      const trigger = html.slice(html.lastIndexOf('<button', html.indexOf(`id="${id}"`)))
+      expect(trigger.slice(0, trigger.indexOf('>')), `${id} no mide h-10`).toContain('h-10')
+    }
+  })
+
+  // La fricción que introduce elegir en vez de tipear tiene su salida a la
+  // vista: sin esto, un local nuevo no sabe dónde se crean. No es copy
+  // decorativo: es la mitigación escrita de la capacidad que este ciclo
+  // saca —crear una rama tipeando—, así que si el link desaparece, desaparece
+  // la única salida que le queda a quien necesita una categoría que no existe.
+  it('dice dónde se crean las categorías', () => {
+    expect(render(null)).toContain('el panel de Inventario')
+  })
+
+  // El caso de un local recién dado de alta: sin ninguna categoría cargada,
+  // el selector tiene que renderizar igual y no romper el formulario que lo
+  // contiene.
+  it('con el árbol vacío igual renderiza los dos selectores', () => {
+    const html = render(null, [])
+    expect(html).toContain('name="categoriaId"')
+    expect(html).toContain('name="marcaId"')
   })
 })
