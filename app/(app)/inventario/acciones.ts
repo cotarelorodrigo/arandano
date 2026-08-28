@@ -130,13 +130,18 @@ export async function guardarArticulo(
         nombre: texto(datos, 'nombre'),
         sku: texto(datos, 'sku'),
         precio: aDecimal(texto(datos, 'precio'), 'el precio'),
-        // Sin CATEGORIAS el campo no se manda: `undefined` le dice a
-        // `editarArticulo` que no toque la categoría del artículo, ni para
-        // vaciarla ni para crear una rama nueva. La UI ya no dibuja este
-        // campo sin el permiso (ver `formularios.tsx`), pero el <input>
-        // viaja igual si alguien arma el POST a mano — como con COSTOS más
-        // abajo, el servidor es quien autoriza, no quien dibuja.
-        categoria: (await puede('CATEGORIAS')) ? texto(datos, 'categoria') || null : undefined,
+        // La marca gana sobre el rubro cuando hay las dos: la rama más
+        // específica es la que el artículo tiene que ocupar. Con el rubro
+        // solo, el artículo cuelga del rubro, que es un caso válido. Misma
+        // línea que `altaArticulo`, a propósito.
+        //
+        // **Sin guarda de `CATEGORIAS`**, y eso es la decisión de este ciclo
+        // (spec 2026-08-28): colgar un artículo de una rama que ya existe es
+        // editar el artículo. `CATEGORIAS` guarda el ABM del árbol —crear,
+        // renombrar, mover, borrar—, que es lo que su descripción dice. El
+        // bypass que motivaba la guarda vieja era el texto libre creando
+        // ramas al vuelo, y ese camino ya no existe.
+        categoriaId: texto(datos, 'marcaId') || texto(datos, 'categoriaId') || null,
       }),
     )
     revalidatePath('/inventario')

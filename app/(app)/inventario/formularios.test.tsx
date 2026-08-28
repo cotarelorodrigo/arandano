@@ -39,7 +39,7 @@ async function renderAlta(arbol = ARBOL, puedeCostos = true) {
 }
 
 async function renderFicha(
-  categoria: string | null,
+  categoriaId: string | null,
   extra: Partial<{ desactivado: boolean; puedeEditar: boolean }> = {},
 ) {
   const { FichaDeArticulo } = await import('./formularios')
@@ -52,7 +52,8 @@ async function renderFicha(
         nombre="Vidrio templado 9H"
         sku="000412"
         precio="12000"
-        categoria={categoria}
+        arbol={ARBOL}
+        categoriaId={categoriaId}
         desactivado={extra.desactivado ?? false}
         puedeEditar={extra.puedeEditar ?? true}
         columnaIzquierda={<div>columna izquierda</div>}
@@ -164,17 +165,30 @@ describe('FormularioDeAlta', () => {
 })
 
 describe('FichaDeArticulo', () => {
-  it('tiene un campo de categoría prellenado con el valor actual', async () => {
-    const html = await renderFicha('Accesorios · Protección')
-    expect(html).toContain('name="categoria"')
-    expect(html).toContain('value="Accesorios · Protección"')
+  /**
+   * El defecto que este ciclo cierra: la ficha tenía un campo de TEXTO mientras
+   * el alta ya elegía del árbol, así que para ponerle marca a un artículo había
+   * que tipear "Fundas · Apple" con un middot que no está en el teclado, y
+   * tipear sólo "Apple" creaba un rubro raíz nuevo en silencio.
+   */
+  it('elige la categoría del árbol y ya no la tipea', async () => {
+    const html = await renderFicha('id-apple')
+    expect(html).toContain('name="categoriaId"')
+    expect(html).toContain('name="marcaId"')
+    expect(html).not.toContain('name="categoria"')
+  })
+
+  it('precarga la rama del artículo, rubro y marca', async () => {
+    const html = await renderFicha('id-apple')
+    expect(html).toContain('<input type="hidden" name="categoriaId" value="id-fundas"')
+    expect(html).toContain('<input type="hidden" name="marcaId" value="id-apple"')
   })
 
   // Nullable en el schema: un artículo sin categoría no puede romper el
   // formulario de edición.
-  it('sin categoría, el campo queda vacío y no revienta', async () => {
+  it('sin categoría, los dos campos quedan vacíos y no revienta', async () => {
     const html = await renderFicha(null)
-    expect(html).toContain('name="categoria"')
+    expect(html).toContain('<input type="hidden" name="categoriaId" value=""')
     expect(html).not.toContain('value="null"')
   })
 
@@ -284,8 +298,8 @@ describe('FichaDeArticulo', () => {
   // Mismo hallazgo M2 que FormularioDeAlta: los campos de la card "Datos"
   // heredaban el h-8 por default en vez de los 40px que mide el .pen.
   it('los campos de "Datos" miden 40px (h-10)', async () => {
-    const html = await renderFicha('Accesorios')
-    for (const campo of ['name="nombre"', 'name="precio"', 'name="sku"', 'name="categoria"']) {
+    const html = await renderFicha('id-apple')
+    for (const campo of ['name="nombre"', 'name="precio"', 'name="sku"']) {
       const inicio = html.lastIndexOf('<input', html.indexOf(campo))
       const cierre = html.indexOf('/>', inicio)
       expect(inicio, `no se encontró el campo ${campo}`).toBeGreaterThan(-1)

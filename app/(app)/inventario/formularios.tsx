@@ -352,7 +352,8 @@ export function FichaDeArticulo({
   nombre,
   sku,
   precio,
-  categoria,
+  arbol,
+  categoriaId,
   columnaIzquierda,
   columnaDerechaExtra,
   children,
@@ -365,7 +366,8 @@ export function FichaDeArticulo({
   nombre: string
   sku: string
   precio: string
-  categoria: string | null
+  arbol: RamaConHijas[]
+  categoriaId: string | null
   columnaIzquierda: ReactNode
   columnaDerechaExtra?: ReactNode
   children?: ReactNode
@@ -485,19 +487,20 @@ export function FichaDeArticulo({
                           className="h-10 rounded-[9px]"
                         />
                       </div>
-                      <div className="flex gap-2">
-                        <div className="flex flex-1 flex-col gap-2">
-                          <Label htmlFor="e-sku">Código</Label>
-                          <Input id="e-sku" name="sku" defaultValue={sku} required className="h-10 rounded-[9px]" />
-                        </div>
-                        <div className="flex flex-1 flex-col gap-2">
-                          <Label htmlFor="e-categoria">Categoría</Label>
-                          {/* '' y no `categoria` crudo: un <input> no controlado
-                              con defaultValue={null} tira la advertencia de React
-                              de pasar de no-controlado a controlado. */}
-                          <Input id="e-categoria" name="categoria" defaultValue={categoria ?? ''} className="h-10 rounded-[9px]" />
-                        </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="e-sku">Código</Label>
+                        <Input id="e-sku" name="sku" defaultValue={sku} required className="h-10 rounded-[9px]" />
                       </div>
+                      {/* Apilados y no en fila, a diferencia del alta: esta card
+                          mide 324 px, y dos selects lado a lado quedan en ~150
+                          cada uno, donde "Vidrios templados" no entra. La
+                          maqueta no dibuja este control acá — anotado en
+                          docs/correcciones-pendientes-del-pen.md, entrada 7. */}
+                      <SelectorDeCategoria
+                        arbol={arbol}
+                        categoriaIdInicial={categoriaId}
+                        orientacion="columna"
+                      />
                       {/* El tipo no está y no es un olvido: pasar un PRODUCTO con
                           stock y movimientos a SERVICIO deja stock huérfano que el
                           motor ya no descuenta ni explica. Un artículo mal cargado

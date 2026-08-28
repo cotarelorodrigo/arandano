@@ -15,13 +15,19 @@ import type { PlanVisible } from '@/lib/planes/consultar'
 const FUENTE = readFileSync('app/(app)/inventario/[id]/page.tsx', 'utf8')
 const d = (v: string) => new Prisma.Decimal(v)
 
-describe('la ficha muestra y deja editar la categoría (Task 1 del rediseño)', () => {
+describe('la ficha muestra y deja editar la categoría (Task 1 del rediseño; Task 2 de 2026-08-28)', () => {
   it('el subtítulo la muestra cuando el artículo la tiene', () => {
     expect(FUENTE).toContain('articulo.categoria &&')
   })
 
-  it('el formulario de edición la recibe para poder cambiarla', () => {
-    expect(FUENTE).toContain('categoria={articulo.categoria}')
+  // La categoría se ELIGE del árbol, como en el alta, desde 2026-08-28: la
+  // ficha ya no le manda texto a FichaDeArticulo, le manda la rama entera
+  // (el árbol del tenant) más el id de la que el artículo ocupa hoy, y es
+  // SelectorDeCategoria quien deriva de ahí los dos selectores precargados.
+  it('el formulario de edición recibe el árbol y el id de la rama, no el texto', () => {
+    expect(FUENTE).toContain('arbol={arbol}')
+    expect(FUENTE).toContain('categoriaId={articulo.categoriaId}')
+    expect(FUENTE).not.toContain('categoria={articulo.categoria}')
   })
 })
 
