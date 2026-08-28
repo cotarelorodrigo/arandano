@@ -49,8 +49,13 @@ dice "Cliente".
 selectores, "Categoría" y "Marca", que es más de lo que esta entrada pedía y
 lo correcto desde que las categorías son un árbol de dos niveles.
 
-**La ficha sigue sin resolverse**, y ahora además quedó contradiciendo al alta:
-ver la entrada 7.
+**La ficha sigue sin resolverse en la maqueta**, y ahí queda contradiciendo al
+alta: ver la entrada 7. **En el código ya no**: desde el 2026-08-28 las dos
+pantallas cargan la categoría con el mismo componente y bajo el mismo permiso.
+
+La distinción de planos no es prolijidad y vale para todo este archivo: desde
+ese ciclo puede haber entradas donde el código ya está resuelto y la maqueta no,
+y una entrada que no diga de cuál de los dos habla envejece mintiendo.
 
 ---
 
@@ -154,27 +159,60 @@ Detectado al cerrar el ciclo de la UI de categorías (2026-08-24). Ver
 
 ---
 
-## 7. La ficha de artículo quedó atrás del alta
+## 7. La ficha de artículo quedó atrás del alta — RESUELTA EN CÓDIGO, LA MAQUETA QUEDA ATRÁS
 
-- **Frame**: `y4tEb` (`App / Artículo ficha`)
-- **Dice**: un solo campo "Categoría", de texto, en la card "Datos"; y el
+- **Frames**: `y4tEb` (`App / Artículo ficha`) y `T5gME`
+  (`Móvil / Artículo ficha`)
+- **Dicen**: un solo campo "Categoría", de texto, en la card "Datos"; y el
   subtítulo `SKU 000412 · Producto · Accesorios`
-- **Tiene que decir**: dos selectores, **Categoría** y **Marca**, como los que
-  el mismo `.pen` ya dibuja en `App / Artículo nuevo`; y el subtítulo con la
-  rama completa (`Vidrios templados · Apple`)
+- **Tienen que decir**: los dos selectores **Categoría** y **Marca** que el
+  mismo `.pen` ya dibuja en `App / Artículo nuevo` (`B4O7t`) — y en la ficha,
+  **apilados**, uno abajo del otro
 
-**Por qué.** El 2026-08-24 el alta pasó a dos selectores encadenados y la ficha
-no se tocó. Quedan contradiciéndose dentro de la propia maqueta: la misma
-categoría se carga de dos formas distintas según por dónde se entre, y en la
-ficha se puede tipear texto libre que ya no crea ninguna rama.
+**Lo que quedó resuelto, y esta vez del lado del código** (2026-08-28, ciclo de
+la categoría en la ficha —
+`docs/superpowers/specs/2026-08-28-categoria-en-la-ficha-design.md`). La ficha
+ya no tiene un campo de texto: usa `SelectorDeCategoria`
+(`app/(app)/inventario/selector-categoria.tsx`), **el mismo componente** que
+instancia el alta, y `editarArticulo` recibe el id de la rama elegida en vez de
+texto libre. Lo que disparó el ciclo no fue esta entrada sino el feedback de un
+dueño que no podía ponerle marca a un artículo ya cargado: lo que acá estaba
+escrito como "dos pantallas que se contradicen" era, del lado del mostrador, un
+dato que no se podía cargar.
 
-El código **no** siguió a la ficha, a propósito y con el dueño del producto: sin
-el frame dibujado, habría que inventar el tratamiento. Hasta que se dibuje, la
-ficha sigue con su campo de texto, que ahora arma el árbol por detrás
-(`asegurarCategoria`) — o sea que las dos pantallas escriben la misma columna
-por caminos distintos.
+**Y es un cambio de criterio respecto del 2026-08-24, que conviene leer entero
+antes de citarlo.** La versión anterior de esta entrada decía que el código
+**no** iba a seguir a la ficha, "a propósito y con el dueño del producto: sin el
+frame dibujado, habría que inventar el tratamiento". Ir igual también se decidió
+con el dueño del producto, y lo que cambió no es la regla sino la premisa:
+**esta vez no había tratamiento que inventar.** Los dos selectores —sus
+rótulos, su alto, su radio, el encadenamiento de uno con el otro— ya están
+dibujados en este mismo archivo, en `App / Artículo nuevo` (`B4O7t`). Copiar un
+tratamiento que la maqueta ya fijó en la pantalla de al lado no es derivar
+diseño; inventarlo de cero sí lo hubiera sido. La regla no se aflojó: sin
+referencia se sigue sin inventar.
 
-Detectado al leer la maqueta del ciclo de categorías (2026-08-24).
+**Lo que sí se derivó sin referencia es lo que falta dibujar, y es lo que
+justifica que la entrada siga abierta:**
+
+1. **Los dos selectores apilados en vertical**, en la card "Datos" de 324 px. El
+   alta no puede contestarlo: los dibuja en fila porque su card es mucho más
+   ancha, y a 324 px cada uno queda en ~150, donde "Vidrios templados" no entra.
+   El apilado es una decisión del código sobre un ancho que la maqueta nunca
+   miró.
+2. **El frame `Móvil / Artículo ficha`**, que tampoco los dibuja: sigue con el
+   campo de texto único, igual que el de escritorio.
+
+**La otra mitad que esta entrada pedía ya estaba resuelta, y la entrada no lo
+decía**: el subtítulo con la rama completa. `articulo.categoria` es el texto
+canónico de la rama desde el ciclo del modelo, así que el encabezado de la ficha
+viene mostrando `Vidrios templados · Apple` —la rama entera, con su middot— y no
+un nombre suelto. Lo que la maqueta sigue dibujando es un ejemplo de un solo
+nivel, que hoy sólo se da si el artículo cuelga de una raíz.
+
+Detectado al leer la maqueta del ciclo de categorías (2026-08-24). Resuelta en
+código el 2026-08-28. Falta que alguien dibuje los dos frames en Pencil y
+commitee el archivo — y corregir el código si la maqueta decide otra cosa.
 
 ---
 

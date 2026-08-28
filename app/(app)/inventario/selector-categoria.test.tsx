@@ -1,0 +1,155 @@
+import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { SelectorDeCategoria } from './selector-categoria'
+
+// Whitebox sobre el FUENTE: Radix no renderiza `SelectContent` en markup
+// estático (ver el comentario de `oculto`, abajo), así que los dos items
+// "Sin categoría"/"Sin marca" no se pueden afirmar renderizados — mismo
+// criterio que test/permisos-en-las-dos-copias.test.ts y
+// app/(app)/inventario/[id]/page.test.tsx para lo que no se puede montar.
+const FUENTE = readFileSync('app/(app)/inventario/selector-categoria.tsx', 'utf8')
+
+const ARBOL = [
+  { id: 'id-cables', nombre: 'Cables', cuenta: 3, hijas: [] },
+  {
+    id: 'id-fundas', nombre: 'Fundas', cuenta: 12,
+    hijas: [{ id: 'id-apple', nombre: 'Apple', cuenta: 7 }],
+  },
+]
+
+/**
+ * Radix no renderiza `SelectContent` ni sus `SelectItem` en markup estático:
+ * sale el `<button>` del trigger y un `<select>` oculto, nada más. Así que lo
+ * que este archivo afirma NO son las opciones ofrecidas —no se puede— sino los
+ * dos `<input type="hidden">` que el componente emite, que es lo que de verdad
+ * viaja al servidor.
+ */
+function oculto(html: string, nombre: string): string | null {
+  const m = html.match(
+    new RegExp(`<input type="hidden" name="${nombre}" value="([^"]*)"`),
+  )
+  return m === null ? null : m[1]
+}
+
+function render(categoriaIdInicial: string | null = null, arbol = ARBOL) {
+  return renderToStaticMarkup(
+    <SelectorDeCategoria arbol={arbol} categoriaIdInicial={categoriaIdInicial} />,
+  )
+}
+
+describe('SelectorDeCategoria', () => {
+  it('sin rama inicial, los dos campos viajan vacíos', () => {
+    const html = render(null)
+    expect(oculto(html, 'categoriaId')).toBe('')
+    expect(oculto(html, 'marcaId')).toBe('')
+  })
+
+  // El caso que la ficha necesita y el alta nunca tuvo: el artículo ya cuelga
+  // de una HOJA, así que hay que precargar los DOS selectores — el rubro es el
+  // padre de esa hoja, que el componente tiene que deducir del árbol.
+  it('con una hoja, precarga el rubro padre y la marca', () => {
+    const html = render('id-apple')
+    expect(oculto(html, 'categoriaId')).toBe('id-fundas')
+    expect(oculto(html, 'marcaId')).toBe('id-apple')
+  })
+
+  // "Cables" sin marca es una rama válida (CLAUDE.md, ciclo del modelo): un
+  // artículo puede colgar de una RAÍZ, y ahí la marca queda vacía.
+  it('con una raíz, precarga sólo el rubro', () => {
+    const html = render('id-cables')
+    expect(oculto(html, 'categoriaId')).toBe('id-cables')
+    expect(oculto(html, 'marcaId')).toBe('')
+  })
+
+  // Defensivo, y no teórico: un id que el árbol no conoce —por la razón que
+  // sea— tiene que caer en "sin categoría" y no dejar los dos selectores en un
+  // estado que no corresponde a nada.
+  it('un id que no está en el árbol queda como sin categoría', () => {
+    const html = render('id-que-ya-no-existe')
+    expect(oculto(html, 'categoriaId')).toBe('')
+    expect(oculto(html, 'marcaId')).toBe('')
+  })
+
+  it('el selector de marca nace deshabilitado sin rubro elegido', () => {
+    const html = render(null)
+    // El `<button>` del trigger, no un selector de atributos en orden: Radix
+    // emite `disabled` ANTES del `id`, así que un regex que los pida en ese
+    // orden pasa por casualidad o falla por casualidad.
+    const trigger = html.slice(html.lastIndexOf('<button', html.indexOf('id="marcaId"')))
+    // El atributo real `disabled=""`, no la subcadena "disabled": el
+    // className del SelectTrigger de shadcn trae siempre
+    // `disabled:cursor-not-allowed disabled:opacity-50` (la variante de
+    // Tailwind), así que "disabled" a secas está presente en el HTML pase lo
+    // que pase — hay que pedir el atributo booleano puntual.
+    expect(trigger).toContain('disabled=""')
+  })
+
+  // Con rubro elegido y marcas disponibles, el segundo selector se habilita.
+  it('con un rubro que tiene marcas, el selector de marca se habilita', () => {
+    const html = render('id-fundas')
+    const trigger = html.slice(html.lastIndexOf('<button', html.indexOf('id="marcaId"')))
+    const cierre = trigger.indexOf('>')
+    // Mismo motivo que arriba: `disabled:cursor-not-allowed` vive en el
+    // className siempre, así que `.not.toContain('disabled')` a secas fallaría
+    // acá SIEMPRE, esté o no deshabilitado el trigger — no es lo que este caso
+    // quiere afirmar.
+    expect(trigger.slice(0, cierre)).not.toContain('disabled=""')
+  })
+
+  // Los dos triggers miden 40 como el resto de los campos del alta: la
+  // maqueta los dibuja a la misma altura y un selector más bajo que su vecino
+  // se nota enseguida. Migrado desde formularios.test.tsx —el describe "los
+  // selectores de categoría del alta"— porque es geometría del SELECTOR, no
+  // del formulario que lo aloja.
+  it('los dos selectores miden 40px, como los demás campos', () => {
+    const html = render(null)
+    for (const id of ['categoriaId', 'marcaId']) {
+      const trigger = html.slice(html.lastIndexOf('<button', html.indexOf(`id="${id}"`)))
+      expect(trigger.slice(0, trigger.indexOf('>')), `${id} no mide h-10`).toContain('h-10')
+    }
+  })
+
+  // La fricción que introduce elegir en vez de tipear tiene su salida a la
+  // vista: sin esto, un local nuevo no sabe dónde se crean. No es copy
+  // decorativo: es la mitigación escrita de la capacidad que este ciclo
+  // saca —crear una rama tipeando—, así que si el link desaparece, desaparece
+  // la única salida que le queda a quien necesita una categoría que no existe.
+  it('dice dónde se crean las categorías', () => {
+    expect(render(null)).toContain('el panel de Inventario')
+  })
+
+  // El caso de un local recién dado de alta: sin ninguna categoría cargada,
+  // el selector tiene que renderizar igual y no romper el formulario que lo
+  // contiene.
+  it('con el árbol vacío igual renderiza los dos selectores', () => {
+    const html = render(null, [])
+    expect(html).toContain('name="categoriaId"')
+    expect(html).toContain('name="marcaId"')
+  })
+
+  // La regresión central de este ciclo: el control emite el id de la rama, no
+  // el texto libre que el alta tenía antes del árbol y que la ficha todavía
+  // tiene hasta la task que viene. Si `name="categoria"` reaparece acá, alguien
+  // volvió a poner un campo de texto.
+  it('emite los ids de la rama y nunca el nombre del viejo campo de texto', () => {
+    const html = render(null)
+    expect(html).toContain('name="categoriaId"')
+    expect(html).toContain('name="marcaId"')
+    expect(html).not.toContain('name="categoria"')
+  })
+
+  // Puerta de una sola dirección: los dos items "Sin categoría"/"Sin marca"
+  // son la corrección central de este componente (ver su docblock), no un
+  // detalle. Antes de que existieran, el Select del alta no tenía forma de
+  // volver a "ninguna" una vez elegida una rama por error —Radix rechaza un
+  // SelectItem con value=""—, así que había que recargar la pantalla. Borrar
+  // cualquiera de las dos líneas de abajo reabre ese agujero sin que el resto
+  // del gate lo note: renderToStaticMarkup no ve adentro de SelectContent (por
+  // eso los demás casos de este archivo afirman los hidden inputs, nunca las
+  // opciones), así que esto sólo se puede fijar leyendo el fuente.
+  it('los dos SelectItem "sin" existen, en los dos selectores', () => {
+    expect(FUENTE).toContain('<SelectItem value={SIN}>Sin categoría</SelectItem>')
+    expect(FUENTE).toContain('<SelectItem value={SIN}>Sin marca</SelectItem>')
+  })
+})

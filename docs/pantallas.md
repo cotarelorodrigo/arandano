@@ -780,6 +780,21 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
 - **El texto de `Articulo.categoria` se sigue escribiendo**, ahora derivado de
   la rama en vez de tipeado. Es lo que hace que un rollback a la imagen
   anterior encuentre el dato; muere en el deploy del contract.
+- **Los dos selectores salieron a `SelectorDeCategoria`, compartido con
+  `/inventario/[id]`** (spec 2026-08-28: "categoría en la ficha del
+  artículo"). Antes de ese ciclo esta pantalla tenía su propio par de
+  `<Select>` y la ficha un campo de texto — dos implementaciones del mismo
+  control, y una se había quedado atrás. Con un componente único la
+  divergencia no se puede repetir.
+- **Y con ese componente, elegir "Fundas" por error dejó de ser un callejón
+  sin salida.** Antes, el `<Select>` de esta pantalla no ofrecía ningún ítem
+  para volver a "ninguna" una vez elegida una rama —el placeholder "Sin
+  categoría" sólo se veía mientras no se elegía nada, y Radix rechaza un
+  `SelectItem` con `value=""`—, así que deshacer la elección exigía recargar
+  la pantalla. Los dos selectores ofrecen ahora un ítem explícito "Sin
+  categoría"/"Sin marca", siempre, también acá en el alta (no sólo en la
+  ficha, que es donde la capacidad hacía más falta): el costo de tenerlo es
+  cero, no cambia qué se puede guardar.
 - **"Cancelar" y "Guardar artículo" viven en el Topbar**, no al pie del
   formulario: el `<form>` envuelve encabezado y cuerpo por igual
   (`className="contents"`, sin alterar el layout de `SidebarInset`) porque el
@@ -821,7 +836,8 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   pantalla), **Precio de venta** (con hace cuánto se actualizó) y, con el
   permiso `COSTOS`, **Último costo** (con el margen contra el precio actual).
   Un servicio sólo muestra el de precio.
-- Editar nombre, categoría, precio y código desde la card "Datos" — con el
+- Editar nombre, precio y código desde la card "Datos", y **elegir** categoría
+  y marca de los mismos dos selectores encadenados que usa el alta — con el
   permiso `ARTICULOS_EDITAR`; sin él la card directamente no se renderea (no
   es de sólo lectura: no aparece).
 - **Ingresar mercadería** — de cualquiera con sesión, no de `ARTICULOS_EDITAR`:
@@ -855,12 +871,30 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   transacción, contra el stock del momento**. Si lo calculara el navegador, una
   venta ocurrida entre que se abrió la pantalla y se apretó el botón quedaría
   pisada.
-- **El campo de categoría es texto libre en la pantalla, pero al guardar arma
-  el árbol.** Igual que en `/inventario/nuevo`: `guardarArticulo` lo pasa por
-  `asegurarCategoria`, que parte el texto por el `·` y mueve el artículo a la
-  rama que corresponda — o despeja las dos columnas si el campo se vacía. El
-  selector es el ciclo siguiente; el modelo viaja un deploy antes por
-  expand/contract.
+- **La categoría se elige del árbol, con el mismo componente que el alta**
+  (spec 2026-08-28: "categoría en la ficha del artículo"). Hasta esa fecha la
+  ficha tenía un campo de TEXTO mientras `/inventario/nuevo` ya elegía de dos
+  selectores encadenados — dos implementaciones del mismo control, y una se
+  había quedado atrás: poner una marca exigía tipear "Fundas · Apple" con un
+  middot que no está en el teclado argentino, y tipear sólo "Apple" creaba un
+  rubro raíz nuevo en silencio. `SelectorDeCategoria`
+  (`selector-categoria.tsx`) es ahora el único control, en orientación
+  `columna` acá (la card mide 324 px; en fila los dos selects quedan en ~150
+  px cada uno, donde "Vidrios templados" no entra). `editarArticulo` recibe
+  el id de la rama elegida (`categoriaId`, requerido) y lo resuelve con
+  `ramaElegida` adentro de la misma transacción del `UPDATE` — la contraparte
+  de `asegurarCategoria` para una rama que ya existe en vez de crearla. `null`
+  despeja las dos columnas (`categoria` y `categoria_id`) a la vez.
+- **Elegir rama pide `ARTICULOS_EDITAR`, no `CATEGORIAS`** — y es la inversión
+  deliberada de la guarda anterior, que exigía `CATEGORIAS` además. El motivo
+  de esa guarda vieja era el bypass: con texto libre, un empleado con
+  `ARTICULOS_EDITAR` y sin `CATEGORIAS` podía tipear una rama nueva y saltar el
+  permiso pensado para el ABM del árbol. Con selectores no hay nada que crear
+  al vuelo — elegir una rama que YA existe es editar el artículo, no
+  administrar el árbol —, así que el bypass que motivaba la guarda desapareció
+  con el campo de texto. `CATEGORIAS` queda guardando sólo el ABM (crear,
+  renombrar, mover, borrar desde el panel), que es lo que su descripción en
+  `lib/permisos/catalogo.ts` ya decía.
 - **El costo unitario del ingreso dejó de ser un dato que nadie lee.** Es
   opcional, y el tile "Último costo" es su primer lector: busca el ingreso con
   costo cargado más reciente (no el ingreso más reciente a secas, que puede no

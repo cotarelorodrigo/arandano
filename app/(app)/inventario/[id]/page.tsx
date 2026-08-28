@@ -10,6 +10,7 @@ import { GraficoDeRotacion, agregarVentasPorMes } from '../rotacion'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
 import { esUuid } from '@/lib/uuid'
 import { planesDelTenant, type PlanVisible } from '@/lib/planes/consultar'
+import { arbolDeCategorias } from '@/lib/inventario/categorias'
 import { precioConPlan } from '@/lib/planes/precio'
 import { ROTULO_MEDIO } from '@/lib/ventas/medios'
 import estilos from '../tipografia.module.css'
@@ -238,7 +239,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   const SIETE_MESES_ATRAS = new Date()
   SIETE_MESES_ATRAS.setUTCMonth(SIETE_MESES_ATRAS.getUTCMonth() - 7)
 
-  const [movimientos, ultimoConCosto, ventasPorMes, planes] = await Promise.all([
+  const [movimientos, ultimoConCosto, ventasPorMes, planes, arbol] = await Promise.all([
     prisma.movimientoStock.findMany({
       where: { articuloId: id },
       // `id` como segundo criterio, no sólo `creadoEn`: `creado_en` es la
@@ -298,6 +299,13 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
     // tampoco tiene sentido cotizarlo acá. Producto o servicio por igual —el
     // recargo por forma de pago es del medio, no del tipo de artículo—.
     planesDelTenant(sesion.tenant.id),
+    // `verInactivos: true` a propósito, igual que en el alta: acá el árbol es
+    // una LISTA DE OPCIONES, no un informe. Un rubro cuyos artículos están
+    // todos dados de baja sigue siendo una opción válida, y esconderlo
+    // obligaría a recrearlo con el mismo nombre — que chocaría contra el índice
+    // único. Sólo se consulta si esta persona puede editar: sin
+    // `ARTICULOS_EDITAR` la card "Datos" no se renderiza y el árbol no se usa.
+    puedeEditar ? arbolDeCategorias(sesion.tenant.id, { verInactivos: true }) : [],
   ])
 
   const ultimoCosto = ultimoConCosto?.costoUnitario ?? null
@@ -424,7 +432,8 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
       nombre={articulo.nombre}
       sku={articulo.sku}
       precio={articulo.precio.toString()}
-      categoria={articulo.categoria}
+      arbol={arbol}
+      categoriaId={articulo.categoriaId}
       columnaIzquierda={columnaIzquierda}
       columnaDerechaExtra={columnaDerechaExtra}
     >

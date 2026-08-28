@@ -50,6 +50,18 @@ async function categoriaDe(
   return rows.length === 0 ? null : { nombre: rows[0].nombre, padre: rows[0].padre }
 }
 
+/** El id de la rama de la que cuelga un artículo. Desde que la categoría se
+ *  ELIGE en vez de tipearse, los tests necesitan ids, y la forma barata de
+ *  conseguir uno es crear la rama con el camino de texto —que sigue vivo para
+ *  el seed— y leer a dónde quedó apuntando. */
+async function categoriaIdDe(articuloId: string): Promise<string> {
+  const { rows } = await owner.query(
+    `SELECT categoria_id FROM articulos WHERE id = $1`,
+    [articuloId],
+  )
+  return rows[0].categoria_id
+}
+
 beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
@@ -540,6 +552,7 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
     })
     await editarArticulo({
       tenantId, articuloId: a.id, nombre: 'Nombre nuevo', sku: 'NUE-1', precio: d('250.75'),
+      categoriaId: null,
     })
 
     const { rows } = await owner.query(
@@ -553,21 +566,28 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
     expect(rows[0].tipo).toBe('PRODUCTO')
   })
 
-  it('edita la categoría, incluido vaciarla de vuelta a null', async () => {
+  it('edita la categoría eligiendo una rama, incluido vaciarla de vuelta a null', async () => {
+    // Las dos ramas se crean por el camino de TEXTO, que sigue siendo el del
+    // seed: acá sólo hacen falta para tener ids que elegir.
     const a = await crearArticulo({
       tenantId, usuarioId, nombre: 'Con categoría', tipo: 'PRODUCTO', precio: d('100'),
       categoria: 'Repuestos',
     })
+    const destino = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Marca el destino', tipo: 'PRODUCTO', precio: d('100'),
+      categoria: 'Audio',
+    })
+
     await editarArticulo({
       tenantId, articuloId: a.id, nombre: 'Con categoría', sku: a.sku, precio: d('100'),
-      categoria: 'Audio',
+      categoriaId: await categoriaIdDe(destino.id),
     })
     const { rows } = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [a.id])
     expect(rows[0].categoria).toBe('Audio')
 
     await editarArticulo({
       tenantId, articuloId: a.id, nombre: 'Con categoría', sku: a.sku, precio: d('100'),
-      categoria: '',
+      categoriaId: null,
     })
     const vacia = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [a.id])
     expect(vacia.rows[0].categoria).toBeNull()
@@ -581,7 +601,10 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
       tenantId, usuarioId, nombre: 'Quiere ocupar', tipo: 'PRODUCTO', precio: d('100'),
     })
     await expect(
-      editarArticulo({ tenantId, articuloId: otro.id, nombre: 'Quiere ocupar', sku: 'OCU-1', precio: d('100') }),
+      editarArticulo({
+        tenantId, articuloId: otro.id, nombre: 'Quiere ocupar', sku: 'OCU-1', precio: d('100'),
+        categoriaId: null,
+      }),
     ).rejects.toMatchObject({ codigo: 'SKU_REPETIDO' })
   })
 
@@ -590,7 +613,10 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
       tenantId, usuarioId, nombre: 'Con sku', tipo: 'PRODUCTO', precio: d('100'),
     })
     await expect(
-      editarArticulo({ tenantId, articuloId: a.id, nombre: 'Con sku', sku: '  ', precio: d('100') }),
+      editarArticulo({
+        tenantId, articuloId: a.id, nombre: 'Con sku', sku: '  ', precio: d('100'),
+        categoriaId: null,
+      }),
     ).rejects.toMatchObject({ codigo: 'SKU_VACIO' })
   })
 
@@ -620,6 +646,7 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
         tenantId,
         articuloId: '00000000-0000-7000-8000-000000000000',
         nombre: 'X', sku: 'X-1', precio: d('1'),
+        categoriaId: null,
       }),
     ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
   })
@@ -631,7 +658,10 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
   // `marcarBaja`, así que un solo caso alcanza para las tres funciones.
   it('un id malformado sale como artículo inexistente en editarArticulo y en desactivarArticulo', async () => {
     await expect(
-      editarArticulo({ tenantId, articuloId: 'no-es-uuid', nombre: 'X', sku: 'X-1', precio: d('1') }),
+      editarArticulo({
+        tenantId, articuloId: 'no-es-uuid', nombre: 'X', sku: 'X-1', precio: d('1'),
+        categoriaId: null,
+      }),
     ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
     await expect(
       desactivarArticulo({ tenantId, articuloId: 'no-es-uuid' }),
@@ -741,22 +771,32 @@ describe('el árbol de categorías', () => {
     expect(await categoriaDe(a.id)).toEqual({ nombre: 'Fundas · Samsung', padre: 'Accesorios' })
   })
 
-  it('la edición mueve el artículo de rama', async () => {
+  it('la edición mueve el artículo a la rama elegida y escribe el texto canónico', async () => {
     const a = await crearArticulo({
       tenantId, usuarioId, nombre: 'Cargador 33W', tipo: 'PRODUCTO', precio: d('12000'),
       categoria: 'Cables',
     })
-    await editarArticulo({
-      tenantId, articuloId: a.id, nombre: 'Cargador 33W', sku: a.sku, precio: d('12000'),
+    const destino = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Marca el destino', tipo: 'PRODUCTO', precio: d('12000'),
       categoria: 'Cargadores · Xiaomi',
     })
+
+    await editarArticulo({
+      tenantId, articuloId: a.id, nombre: 'Cargador 33W', sku: a.sku, precio: d('12000'),
+      categoriaId: await categoriaIdDe(destino.id),
+    })
+
     expect(await categoriaDe(a.id)).toEqual({ nombre: 'Xiaomi', padre: 'Cargadores' })
+    // Y el TEXTO, que sigue vivo hasta el contract, con la forma canónica de la
+    // rama y no con lo que alguien haya tipeado.
+    const { rows } = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [a.id])
+    expect(rows[0].categoria).toBe('Cargadores · Xiaomi')
   })
 
-  // Vaciar el campo despeja las dos columnas a la vez. Dejar `categoria_id`
-  // apuntando a la rama vieja con el texto ya en null sería el peor de los dos
-  // mundos: la pantalla de hoy diría "sin categoría" y el árbol del ciclo
-  // siguiente lo seguiría contando adentro de "Cables".
+  // Vaciar despeja las dos columnas a la vez. Dejar `categoria_id` apuntando a
+  // la rama vieja con el texto ya en null sería el peor de los dos mundos: la
+  // pantalla diría "sin categoría" y el árbol lo seguiría contando adentro de
+  // "Cables".
   it('y vaciar la categoría al editar despeja las dos columnas', async () => {
     const a = await crearArticulo({
       tenantId, usuarioId, nombre: 'Se despeja', tipo: 'PRODUCTO', precio: d('1000'),
@@ -764,7 +804,7 @@ describe('el árbol de categorías', () => {
     })
     await editarArticulo({
       tenantId, articuloId: a.id, nombre: 'Se despeja', sku: a.sku, precio: d('1000'),
-      categoria: '',
+      categoriaId: null,
     })
     expect(await categoriaDe(a.id)).toBeNull()
     const { rows } = await owner.query(
@@ -772,6 +812,32 @@ describe('el árbol de categorías', () => {
     )
     expect(rows[0].categoria).toBeNull()
     expect(rows[0].categoria_id).toBeNull()
+  })
+
+  // Una rama de OTRO tenant no resuelve a ninguna fila —RLS la vuelve
+  // invisible, `ramaElegida` no filtra por tenant en el SQL: no hace falta,
+  // porque el `tx` ya corre con el GUC del tenant seteado— así que tiene que
+  // salir como error de dominio y no como una FK reventando con un código que
+  // nadie atrapa. Por eso la rama que se pasa tiene que existir DE VERDAD,
+  // sólo que del lado del vecino: un uuid inventado (que no es de nadie) deja
+  // el mismo `WHERE id =` sin filas tanto si RLS funciona como si no, así que
+  // no distingue nada. Con una fila real del otro tenant, si RLS dejara de
+  // esconderla, `ramaElegida` la encontraría y este caso fallaría — que es
+  // justo lo que hace que el caso valga algo.
+  it('rechaza una rama que no existe en este tenant', async () => {
+    const { crearCategoria } = await import('@/lib/inventario/categorias')
+    const ajena = await crearCategoria({
+      tenantId: otroTenantId, nombre: 'Rama del vecino', padreId: null,
+    })
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'No se mueve', tipo: 'PRODUCTO', precio: d('100'),
+    })
+    await expect(
+      editarArticulo({
+        tenantId, articuloId: a.id, nombre: 'No se mueve', sku: a.sku, precio: d('100'),
+        categoriaId: ajena.id,
+      }),
+    ).rejects.toMatchObject({ codigo: 'CATEGORIA_INEXISTENTE' })
   })
 
   /**

@@ -212,6 +212,18 @@ async function crearArticuloDePrueba(nombre: string, stock = '0'): Promise<strin
   return rows[0].id
 }
 
+/** Una rama del árbol de este tenant, creada directo por SQL de dueño. Devuelve
+ *  su id, que es lo que la pantalla manda desde que la categoría se elige. */
+async function crearCategoriaDePrueba(nombre: string, padreId: string | null = null): Promise<string> {
+  const { rows } = await owner.query(
+    `INSERT INTO categorias (id, tenant_id, nombre, padre_id, creado_en, actualizado_en)
+     VALUES (gen_random_uuid(), $1, $2, $3, now(), now())
+     RETURNING id`,
+    [estado.tenantId, nombre, padreId],
+  )
+  return rows[0].id
+}
+
 describe('el rol de cada action de inventario', () => {
   it('un EMPLEADO no puede dar de alta, editar, ni desactivar', async () => {
     estado.cookie = cookieEmpleado
@@ -434,55 +446,115 @@ describe('el rol de cada action de inventario', () => {
     expect(new Prisma.Decimal(rows[0].precio).toString()).toBe('2500')
   })
 
-  it('un DUEÑO edita la categoría de un artículo, y la ficha la deja editar', async () => {
+  it('un DUEÑO mueve un artículo a la rama elegida, y se escriben las dos columnas', async () => {
     estado.cookie = cookieDuenio
     const id = await crearArticuloDePrueba('Para editar categoría')
+    const rubro = await crearCategoriaDePrueba('Repuestos')
     const datos = new FormData()
     datos.set('articuloId', id)
     datos.set('nombre', 'Para editar categoría')
     datos.set('sku', 'ACC-CAT-1')
     datos.set('precio', '2500')
-    datos.set('categoria', 'Repuestos')
+    datos.set('categoriaId', rubro)
     const r = await guardarArticulo(INICIAL, datos)
     expect(r.error).toBeNull()
 
-    const { rows } = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [id])
+    const { rows } = await owner.query(
+      `SELECT categoria, categoria_id FROM articulos WHERE id = $1`, [id],
+    )
     expect(rows[0].categoria).toBe('Repuestos')
+    expect(rows[0].categoria_id).toBe(rubro)
   })
 
-  // I1 de la review final: un EMPLEADO con ARTICULOS_EDITAR y sin CATEGORIAS
-  // escribía texto libre en el campo de categoría y `asegurarCategoria` le
-  // creaba las ramas al vuelo — saltando el permiso que se supone que
-  // autoriza justo eso. El test va contra la base, no por grep del fuente:
-  // ninguna fila nueva en `categorias`, y la categoría existente del artículo
-  // queda IGUAL (no se pierde: "sin permiso" es "no cambia", no "se vacía").
-  it('un EMPLEADO con ARTICULOS_EDITAR y sin CATEGORIAS no puede crear categorías vía guardarArticulo', async () => {
-    const id = await crearArticuloDePrueba('Con categoría previa, sin permiso para tocarla')
-    await owner.query(`UPDATE articulos SET categoria = 'Ya tenía' WHERE id = $1`, [id])
+  // La misma regla que ya tiene el alta: la rama más específica es la que el
+  // artículo tiene que ocupar. Sin esto, elegir "Fundas" y después "Apple"
+  // dejaría el artículo colgado del rubro y la marca elegida se perdería.
+  it('la marca gana sobre el rubro cuando llegan las dos', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Rubro y marca')
+    const rubro = await crearCategoriaDePrueba('Fundas')
+    const marca = await crearCategoriaDePrueba('Apple', rubro)
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('nombre', 'Rubro y marca')
+    datos.set('sku', 'ACC-CAT-2')
+    datos.set('precio', '2500')
+    datos.set('categoriaId', rubro)
+    datos.set('marcaId', marca)
+    const r = await guardarArticulo(INICIAL, datos)
+    expect(r.error).toBeNull()
 
-    const { rows: antes } = await owner.query(`SELECT count(*)::int AS n FROM categorias WHERE tenant_id = $1`, [
-      estado.tenantId,
-    ])
+    const { rows } = await owner.query(
+      `SELECT categoria, categoria_id FROM articulos WHERE id = $1`, [id],
+    )
+    expect(rows[0].categoria_id).toBe(marca)
+    expect(rows[0].categoria).toBe('Fundas · Apple')
+  })
+
+  it('los dos campos vacíos dejan el artículo sin categoría', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Se queda sin rama')
+    // 'Insumos' y no 'Cables': ese nombre ya lo usa, como raíz, el caso 'con el
+    // rubro solo, el artículo cuelga del rubro' más arriba en este mismo
+    // describe, y el índice único parcial de raíces por tenant lo rechazaría.
+    const rubro = await crearCategoriaDePrueba('Insumos')
+    await owner.query(
+      `UPDATE articulos SET categoria = 'Insumos', categoria_id = $2 WHERE id = $1`,
+      [id, rubro],
+    )
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('nombre', 'Se queda sin rama')
+    datos.set('sku', 'ACC-CAT-3')
+    datos.set('precio', '2500')
+    datos.set('categoriaId', '')
+    datos.set('marcaId', '')
+    const r = await guardarArticulo(INICIAL, datos)
+    expect(r.error).toBeNull()
+
+    const { rows } = await owner.query(
+      `SELECT categoria, categoria_id FROM articulos WHERE id = $1`, [id],
+    )
+    expect(rows[0].categoria).toBeNull()
+    expect(rows[0].categoria_id).toBeNull()
+  })
+
+  /**
+   * Este par reemplaza al caso que probaba lo contrario, y la inversión es
+   * deliberada (spec 2026-08-28): elegir una rama que YA existe es editar el
+   * artículo, no administrar el árbol. `CATEGORIAS` pasa a significar sólo lo
+   * segundo — que es lo que su descripción en lib/permisos/catalogo.ts ya
+   * decía.
+   *
+   * El bypass que motivó la guarda vieja era tipear texto libre y que
+   * `asegurarCategoria` creara las ramas al vuelo. Con selectores no hay nada
+   * que crear, y el caso de abajo lo fija: la mitad positiva sin la negativa
+   * sería exactamente el agujero.
+   */
+  it('un EMPLEADO con ARTICULOS_EDITAR y sin CATEGORIAS SÍ puede mover el artículo a una rama existente', async () => {
+    const id = await crearArticuloDePrueba('Lo mueve un empleado')
+    const rubro = await crearCategoriaDePrueba('Ya existía')
 
     estado.cookie = cookieEmpleadoEditarSinCategorias
     const datos = new FormData()
     datos.set('articuloId', id)
-    datos.set('nombre', 'Con categoría previa, sin permiso para tocarla')
+    datos.set('nombre', 'Lo mueve un empleado')
     datos.set('sku', 'ACC-SIN-CAT-1')
     datos.set('precio', '2500')
-    datos.set('categoria', 'Bypass · Intento')
+    datos.set('categoriaId', rubro)
     const r = await guardarArticulo(INICIAL, datos)
     expect(r.error).toBeNull()
 
-    const { rows: despues } = await owner.query(
-      `SELECT count(*)::int AS n FROM categorias WHERE tenant_id = $1`,
-      [estado.tenantId],
-    )
-    expect(despues[0].n).toBe(antes[0].n)
-
-    const { rows: articulo } = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [id])
-    expect(articulo[0].categoria).toBe('Ya tenía')
+    const { rows } = await owner.query(`SELECT categoria_id FROM articulos WHERE id = $1`, [id])
+    expect(rows[0].categoria_id).toBe(rubro)
   })
+
+  // La mitad negativa NO se escribe acá: `acciones-categorias.test.ts` ya
+  // tiene el caso 'las cuatro exigen el permiso CATEGORIAS, no sólo sesión',
+  // que cubre `crearCategoriaAccion`, `renombrarCategoriaAccion`,
+  // `moverCategoriaAccion` y `borrarCategoriaAccion` de una. Duplicarlo acá
+  // con otro mecanismo sería dos casos que pueden llegar a afirmar cosas
+  // distintas sobre el mismo permiso — que es peor que tener uno solo.
 
   it('un DUEÑO desactiva un artículo', async () => {
     estado.cookie = cookieDuenio

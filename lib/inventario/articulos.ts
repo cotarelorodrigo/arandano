@@ -323,14 +323,19 @@ export async function crearArticulo(
 /**
  * El tipo NO está y no es un olvido: ver el comentario del test.
  *
- * `categoria` distingue `undefined` de `null`, y la diferencia es a propósito:
- * `undefined` es "no toques la categoría de este artículo" —lo que manda
- * `guardarArticulo` cuando quien edita no tiene el permiso `CATEGORIAS`—,
- * mientras que `null` o un string SÍ la tocan (la vacían o le arman una rama
- * nueva con `asegurarCategoria`). Sin la distinción, alguien con
- * `ARTICULOS_EDITAR` y sin `CATEGORIAS` podía escribir texto libre en el campo
- * y crear rubros y marcas al vuelo saltando el permiso que se supone que lo
- * autoriza — el mismo bypass que el switch le promete al dueño que no existe.
+ * **`categoriaId` es la rama ELEGIDA, y va requerido, no opcional.** Antes este
+ * parámetro era `categoria?: string | null` —texto libre— y su `undefined`
+ * significaba "no toques la categoría". Esa tri-estado existía por una sola
+ * razón: era la forma de que alguien con `ARTICULOS_EDITAR` y sin `CATEGORIAS`
+ * no creara ramas al vuelo tipeando. Desde que la categoría se ELIGE de un
+ * árbol que ya existe no hay nada que crear, así que la distinción se quedó sin
+ * motivo — y dejarla como opcional la traería de vuelta por la ventana: un
+ * llamador que omitiera el campo por descuido no daría ningún error y no
+ * tocaría la categoría en silencio. Requerido, `tsc` marca al que no lo diga.
+ *
+ * `null` vacía las dos columnas a la vez. Dejar `categoria_id` apuntando a la
+ * rama vieja con el texto ya en null sería el peor de los dos mundos: la
+ * pantalla diría "sin categoría" y el árbol lo seguiría contando adentro.
  */
 export async function editarArticulo(entrada: {
   tenantId: string
@@ -338,14 +343,12 @@ export async function editarArticulo(entrada: {
   nombre: string
   sku: string
   precio: Decimal
-  categoria?: string | null
+  categoriaId: string | null
 }): Promise<void> {
-  const { tenantId, articuloId, precio } = entrada
+  const { tenantId, articuloId, precio, categoriaId } = entrada
 
   const nombre = exigirNombre(entrada.nombre)
   exigirPrecio(precio)
-  const tocaCategoria = entrada.categoria !== undefined
-  const categoria = tocaCategoria ? limpiarCategoria(entrada.categoria) : undefined
 
   const sku = entrada.sku.trim()
   if (sku === '') {
@@ -356,23 +359,21 @@ export async function editarArticulo(entrada: {
 
   try {
     await enTransaccionDeTenant(tenantId, async (tx) => {
+      // Adentro de la MISMA transacción que el update, igual que en
+      // `crearArticulo`: `ramaElegida` valida que la rama exista en este tenant
+      // —un id de otro tenant no resuelve a ninguna fila, RLS lo vuelve
+      // invisible— y devuelve el texto canónico para la columna que sigue viva
+      // hasta el contract.
+      const rama: { id: string | null; texto: string | null } = categoriaId
+        ? await ramaElegida(tx, categoriaId)
+        : { id: null, texto: null }
+
       // `updateMany` y no `update`: con RLS, un id de otro tenant no existe
       // para esta conexión, y `update` tira P2025 — un error de Prisma sin
       // `codigo`. Contar filas afectadas deja decirlo con el error del módulo.
-      //
-      // `categoria`/`categoriaId` sólo entran a `data` cuando `tocaCategoria`
-      // es verdadero: un `undefined` explícito en `data` ya se comporta como
-      // "no tocar" para Prisma, pero llamar a `asegurarCategoria` igual
-      // insertaría una rama nueva sin necesidad — mejor no llamarlo.
-      const data: Prisma.ArticuloUncheckedUpdateManyInput = { nombre, sku, precio }
-      if (tocaCategoria) {
-        data.categoriaId = await asegurarCategoria(tx, tenantId, categoria)
-        data.categoria = categoria
-      }
-
       const { count } = await tx.articulo.updateMany({
         where: { id: articuloId },
-        data,
+        data: { nombre, sku, precio, categoriaId: rama.id, categoria: rama.texto },
       })
       if (count === 0) {
         throw new ErrorDeInventario(
