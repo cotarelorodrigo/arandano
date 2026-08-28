@@ -441,36 +441,112 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 
 | Rol | Cara | Tamaño | Peso y ancho |
 |---|---|---|---|
-| **Cartel** — nombre del local | Archivo | 19 px | 600, `font-stretch: 112%` |
-| Título de pantalla (`h1`) | Archivo | 21 px | 600 |
+| **Cartel** — nombre del local | Archivo | 19 px en el cartel del sidebar, igual en los dos anchos; en el paño del login, 32 px en el teléfono y `clamp(40 px, 7vw, 88 px)` en escritorio | 600, `font-stretch: 112%` |
+| Título de pantalla (`h1`) | Archivo | 17 px en el teléfono, 21 px en escritorio | 600 |
 | Pestaña de navegación | sistema | 14 px | 500; activa 600 |
 | Nombre de usuario, inicial del avatar — pie del sidebar | sistema | 13 px | 600 |
 | Rol del usuario (pie del sidebar), subtítulo del encabezado | sistema | 11 px | 400, `--muted-foreground` |
 | Rótulo "ARÁNDANO", stack · sha — pie del sidebar | sistema | 10 px | 700 el rótulo (`tracking-[0.16em]`); 400 stack · sha, `--muted-foreground` |
 | Meta — texto que acompaña a un dato sin competirle | sistema | 12 px | 400; `--muted-foreground` en superficie clara, `--marca-dim` sobre la banda oscura del total |
 | **Importe** — plata en el punto de venta | Archivo | 42 px el monto de la banda del total; 24 px su signo; 15 px los chips de vuelto y faltante; 14 px la columna | 600 el monto y los chips, 500 el signo, 400 la columna; `font-stretch: 85%`, `tabular-nums` |
-| **Cobro** — título de la card y texto del botón "Cobrar" | Archivo | 16 px el título; 17 px el botón | 600 |
-| **Título de card** — encabezados de card en /ventas, /ventas/[id], /inventario/nuevo, /inventario/[id], /servicio-tecnico, /usuarios y /formas-de-pago | Archivo | 15 px | 600 |
-| **Valor de tile** — resumen del período en /ventas; ficha de /inventario/[id] | Archivo | 32 px el tile de marca y 26 px los otros dos, en /ventas; 34 px el tile de marca y 24 px el otro, en la ficha de /inventario/[id] — la maqueta de esa pantalla usa un tamaño distinto para su tile de marca | 600, tracking -0.6 px, `tabular-nums` |
-| **Monto de tabla** — listado de /ventas y detalle de /ventas/[id] | Archivo | 14 px (heredado de `text-sm` de `<Table>`, sin tamaño propio) | 400 a 600 según la columna, `tabular-nums` |
+| **Cobro** — título de la card y texto del botón "Cobrar" | Archivo | 16 px el título; 17 px el botón; 14 px el encabezado del carrito, que existe **sólo** en el teléfono | 600 |
+| **Título de card** — encabezados de card en /ventas, /ventas/[id], /inventario/nuevo, /inventario/[id], /servicio-tecnico, /usuarios y /formas-de-pago | Archivo | 15 px en los dos anchos; con una excepción en /usuarios que se da vuelta según el ancho — ver la nota debajo de la tabla | 600 |
+| **Valor de tile** — resumen del período en /ventas; ficha de /inventario/[id] | Archivo | en /ventas, 30 px el tile de marca en el teléfono y 32 en escritorio, 24 y 26 los otros dos; en la ficha de /inventario/[id], 34 px el tile de marca en los dos anchos y 19/24 el otro — la maqueta de esa pantalla usa un tamaño distinto para su tile de marca | 600, tracking -0.6 px, `tabular-nums` |
+| **Monto de tabla** — listado de /ventas y detalle de /ventas/[id] | Archivo | 15 px en el teléfono, 14 px en escritorio (ver la nota del `<Table>` debajo de la tabla) | 400 a 600 según la columna, `tabular-nums` |
 | **Banda de Total** — pie de la tabla "Qué se vendió" en /ventas/[id] | Archivo | 22 px | 600, `tabular-nums` |
 | **Número de paginación** — /ventas | Archivo | 13 px | 600 |
-| **Cotización** — columna de la tabla "Cómo se pagó" en /ventas/[id] | Archivo | 14 px | 400, `tabular-nums` |
-| **Código/precio/stock de tabla** — listado de /inventario | Archivo | 14 px (heredado de `text-sm` de `<Table>`, sin tamaño propio) | 400 a 700 según la columna y el estado de la fila, `tabular-nums` |
+| **Cotización** — columna de la tabla "Cómo se pagó" en /ventas/[id] | Archivo | 14 px; en el teléfono esa columna no existe — la cotización va como texto dentro de la línea de meta del pago, en la pila del sistema (ver la nota del `<Table>` debajo de la tabla) | 400, `tabular-nums` |
+| **Código/precio/stock de tabla** — listado de /inventario | Archivo | 14 px el precio en los dos anchos y el código y el stock en escritorio; en el teléfono el stock baja a 12 px en la línea de meta y el código deja de pagar esta cara —va como texto de esa misma línea, en la pila del sistema | 400 a 700 según la columna y el estado de la fila, `tabular-nums` |
 | **Número de paginación** — /inventario | Archivo | 13 px | 600 |
 | **Número de paginación** — /servicio-tecnico | Archivo | 13 px | 600 |
-| **Número de orden** — columna ORDEN del listado de /servicio-tecnico | Archivo | 14 px (heredado de `text-sm` de `<Table>`, sin tamaño propio) | 700 |
-| **Conteo de chip** — chips de filtro del tablero de /servicio-tecnico | Archivo | 12 px | 700 |
-| **H1 de login** — título "Entrar" del formulario | Archivo | 28 px | 600 |
-| **H1 del Hero** — "Todo el local en un solo lugar", landing | Archivo | 62 px | 700, tracking -2 px |
-| **Título de sección** — H2 compartido por Módulos, Rubros y Planes, landing | Archivo | 38 px | 700, tracking -1 px |
-| **H2 del Cierre** — "El alta es instantánea", landing | Archivo | 44 px | 700, tracking -1.4 px |
-| **Marca del Nav** — "Arándano", landing | Archivo | 17 px | 700 |
-| **Título de la card Núcleo** — landing | Archivo | 20 px (`text-xl`) | 600 |
+| **Número de orden** — columna ORDEN del listado de /servicio-tecnico | Archivo | 14 px en los dos anchos | 700 |
+| **Conteo de chip** — chips de filtro del tablero de /servicio-tecnico | Archivo | 12 px en la pastilla de escritorio; 17 px en la card de la grilla del teléfono, donde el conteo pasa a ser el dato principal y el rótulo baja a 10 px | 700 en escritorio; 600 en el teléfono |
+| **H1 de login** — título "Entrar" del formulario | Archivo | 26 px en el teléfono, 28 px en escritorio | 600 |
+| **H1 del Hero** — "Todo el local en un solo lugar", landing | Archivo | 36 px en el teléfono, 62 px en escritorio | 600 sin tracking en el teléfono; 700 y tracking -2 px en escritorio |
+| **Título de sección** — H2 compartido por Módulos, Rubros y Planes, landing | Archivo | 26 px en el teléfono, 38 px en escritorio | 600 sin tracking en el teléfono; 700 y tracking -1 px en escritorio |
+| **H2 del Cierre** — "El alta es instantánea", landing | Archivo | 28 px en el teléfono, 44 px en escritorio | 600 sin tracking en el teléfono; 700 y tracking -1.4 px en escritorio |
+| **Marca del Nav** — "Arándano", landing | Archivo | 16 px en el teléfono, 17 px en escritorio | 600 en el teléfono, 700 en escritorio |
+| **Título de la card Núcleo** — landing | Archivo | 17 px en el teléfono, 20 px (`text-xl`) en escritorio | 600 |
 | **Título de card de módulo** — Órdenes de trabajo / Turnos / Gastronomía, landing | Archivo | 19 px | 600 |
 | **Monto del plan** — precio de cada card en Planes, landing | Archivo | 32 px | 700, tracking -1 px |
 
 <!-- escala:fin -->
+
+**Un rol, dos tamaños: la columna "Tamaño" dice los dos cuando difieren
+(ciclo del teléfono, 2026-08-26).** Hasta ese ciclo cada rol tenía un número
+solo, porque había una sola maqueta. Ahora hay dos —`design/arandano.pen`
+dibuja las trece pantallas en 1440 px y en 390— y el corte entre ellas es
+único, 1024 px, así que un rol que se achica en el teléfono declara acá sus
+dos valores en vez de mudarse a un rol nuevo. **Que cambie de tamaño no lo
+convierte en otro rol**: sigue siendo el mismo texto, con la misma función,
+en una pantalla más angosta. Un rol nuevo se justifica cuando cambia lo que el
+texto *es* —como pasó con los seis de `/ventas`, párrafo de abajo—, no cuando
+cambia cuánto espacio hay. Y al revés: un rol que dice un solo número lo dice
+para los dos anchos, y eso también es una decisión — el Cartel del sidebar
+(19 px), el Importe (42/24/15/14), la Banda de Total (22 px), los tres
+números de paginación (13 px) y el título de card de módulo (19 px) se ven
+igual en un teléfono que en una pantalla de escritorio, a propósito.
+
+**La excepción de `/usuarios` se da vuelta según el ancho, y los dos lados
+están bien.** De los tres títulos de card de esa pantalla, en **escritorio**
+sólo dos pagan Archivo ("El equipo del local" y "Agregar a alguien", 15 px/600):
+el tercero, "Dos reglas que el sistema no deja romper", usa la pila del sistema
+a 13 px/700 — no es un olvido, es lo que dibuja su nodo de escritorio,
+consultado en vivo con el MCP de Pencil. En el **teléfono** la maqueta decide lo
+contrario: el nodo `hiqxF` del frame `NIyHG` le da a ese mismo título
+`$ar-display`/14/600, o sea que ahí los tres títulos pagan Archivo.
+
+No hay ninguna de las dos versiones que corregir. Son **dos frames distintos
+con una decisión distinta cada uno**, y las dos son la autoridad en su ancho —
+la misma regla de siempre, aplicada a un archivo que ahora tiene dos maquetas.
+El código lo implementa con una `@media (min-width: 1024px)` adentro de
+`app/(app)/usuarios/tipografia.module.css` (la clase `.tituloDeReglas`), y no
+con un `lg:font-sans` suelto en el JSX, por una razón que vale para cualquier
+inversión futura: un CSS Module y las utilidades de Tailwind no tienen orden de
+carga garantizado **entre archivos**, así que competir por cascada entre los dos
+no tendría un ganador determinístico; con las dos reglas en el mismo archivo, el
+orden es fijo.
+
+**La nota del `<Table>`: tres roles decían de dónde heredaban su tamaño, y esa
+frase caducó.** *Monto de tabla*, *Cotización*, *Código/precio/stock de tabla* y
+*Número de orden* declaraban "14 px (heredado de `text-sm` de `<Table>`, sin
+tamaño propio)". El ciclo del teléfono sacó `<Table>` de shadcn de los cuatro
+listados y del carrito —pasaron a `grid` + `display: contents`, para que el
+mismo árbol sea una tabla arriba de 1024 y una tarjeta apilada abajo—, así que
+ya no hay ningún `<Table>` del que heredar: el tamaño lo declara cada celda.
+
+Y eso dejó una deuda que conviene tener escrita acá y no sólo en el reporte de
+un ciclo, porque es el modo de falla que más veces se repitió: **DIEZ celdas de
+escritorio, repartidas en DOS pantallas, se quedaron sin tamaño propio al
+desaparecer el `<Table>`** y pasaron a heredar los 16 px del navegador en vez de
+los 14 que declara su rol.
+
+- **`/ventas/[id]`, ocho**: Cantidad, Precio y Subtotal de "Qué se vendió";
+  Medio, Moneda, Cotización, Monto y En pesos de "Cómo se pagó".
+- **`/inventario`, dos**: Cambio y Queda del historial de movimientos
+  (`historial.tsx`). El listado de esa misma pantalla (`page.tsx`) **sí** había
+  repuesto el `text-sm` explícito al hacer el cambio; el historial, que es otro
+  archivo, no — y por eso la primera versión de esta nota, que decía
+  "`/inventario` sí lo repuso", era cierta a medias y dejaba dos celdas
+  desprotegidas.
+
+`/vender` es la única que no lo necesitó: su carrito vive dentro de un `<Card>`,
+que trae `text-sm` propio.
+
+**Las diez están corregidas** (ola final del ciclo del teléfono): cada celda
+declara `text-sm` sin prefijo, porque los 14 px valen en los dos anchos —son los
+de escritorio de antes de la rama, y en el teléfono esas celdas están ocultas.
+**La tabla de arriba siempre dijo 14 px porque el documento es la fuente de
+verdad**: lo que había que corregir era el código, no esa fila.
+
+Y la lección que vale más que el arreglo, porque es la que se escapó tres veces:
+**lo que se pierde al sacar un componente contenedor no son sólo sus clases,
+sino las propiedades heredables que le daba gratis a todo lo de adentro.** El
+ciclo repuso cuatro pérdidas de `<TableRow>`/`<TableCell>` —que eran clases
+visibles en el diff— y se le escaparon éstas, que nunca fueron una clase de
+ninguna celda. Ante un cambio así, la pregunta no es "¿qué clases borré?" sino
+"¿qué heredaban de acá?": `font-size`, `color`, `text-align`, `white-space`,
+`font-family`, `line-height`.
 
 **Los seis roles de arriba son nuevos y no una extensión de *Importe*, a
 propósito.** La plata de `/ventas` y `/ventas/[id]` también es dinero en

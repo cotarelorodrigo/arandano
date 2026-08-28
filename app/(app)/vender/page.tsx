@@ -1,11 +1,9 @@
-import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { ultimaCotizacionUsd } from '@/lib/ventas/buscar'
 import { cajaAbierta } from '@/lib/caja/abrir-cerrar'
 import { planesDelTenant } from '@/lib/planes/consultar'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { PuntoDeVenta } from './punto-de-venta'
-import { ChipCaja } from './caja'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +16,7 @@ export default async function Vender() {
   // de parpadear.
   const cotizacionInicial = await ultimaCotizacionUsd(sesion.tenant.id)
 
-  // El chip del header necesita dos datos más, y los dos se leen acá por el
+  // Los chips de estado necesitan dos datos más, y los dos se leen acá por el
   // mismo motivo que el de arriba: la caja del turno (lib/caja/abrir-cerrar.ts)
   // y la cotización QUE FIJÓ EL DUEÑO hoy (Tenant.cotizacionUsd) — que no es
   // `cotizacionInicial`, esa es la última con la que se cobró un pago
@@ -40,29 +38,22 @@ export default async function Vender() {
     planesDelTenant(sesion.tenant.id),
   ])
 
+  // Esta pantalla NO renderiza su encabezado: lo renderiza `PuntoDeVenta`,
+  // que es un componente cliente. En el teléfono el Topbar cambia con el paso
+  // de la venta (dice "Vender" o "Cobro", y la hamburguesa se vuelve una
+  // flecha de volver), y el paso vive en el estado de cliente — un componente
+  // de servidor no tiene forma de enterarse. Es la única de las diez pantallas
+  // donde pasa; ver el comentario en punto-de-venta.tsx.
   return (
-    <>
-      {/* Sin subtítulo: la maqueta pide fecha Y hora ("14:32"), y un
-          componente de servidor la renderiza una sola vez y la deja
-          congelada — un reloj mentiroso arriba del punto de venta es peor
-          que no tener reloj. Sigue sin resolverse: esta task cierra el chip
-          de caja y los atajos, no el reloj. */}
-      <Encabezado
-        titulo="Vender"
-        acciones={
-          <ChipCaja
-            caja={caja ? { abiertaEn: caja.abiertaEn } : null}
-            // .toString() y no el Decimal crudo: un componente CLIENTE no
-            // puede recibir un Decimal de Prisma a través de la frontera,
-            // mismo motivo que ArticuloVendible en lib/ventas/buscar.ts.
-            cotizacionUsd={tenant?.cotizacionUsd?.toString() ?? null}
-            cotizacionUsdEn={tenant?.cotizacionUsdEn ?? null}
-          />
-        }
-      />
-      <div className="p-6">
-        <PuntoDeVenta cotizacionInicial={cotizacionInicial} planes={planes} />
-      </div>
-    </>
+    <PuntoDeVenta
+      cotizacionInicial={cotizacionInicial}
+      planes={planes}
+      caja={caja ? { abiertaEn: caja.abiertaEn } : null}
+      // .toString() y no el Decimal crudo: un componente CLIENTE no puede
+      // recibir un Decimal de Prisma a través de la frontera, mismo motivo que
+      // ArticuloVendible en lib/ventas/buscar.ts.
+      cotizacionUsd={tenant?.cotizacionUsd?.toString() ?? null}
+      cotizacionUsdEn={tenant?.cotizacionUsdEn ?? null}
+    />
   )
 }

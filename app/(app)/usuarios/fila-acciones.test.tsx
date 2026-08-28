@@ -71,6 +71,28 @@ describe('FilaAcciones', () => {
     expect(html).not.toContain('Baja')
   })
 
+  // Task 10 del ciclo móvil: en el teléfono esta celda se funde en la misma
+  // línea que los chips de rol y estado (design/arandano.pen, frame
+  // `NIyHG`), leída de izquierda a derecha — a diferencia de escritorio,
+  // donde sigue alineada a la derecha de su propia columna "Acciones".
+  it('se alinea a la izquierda en el teléfono y a la derecha en escritorio', async () => {
+    const html = await render(EMPLEADA_ACTIVA, false)
+    expect(html).toContain('items-start')
+    expect(html).toContain('lg:items-end')
+    expect(html).not.toMatch(/(?<!lg:)items-end/) // sin items-end SIN el prefijo lg:
+  })
+
+  // Ronda de arreglos 1 (Menor 4): el separador "·" quedó a 10px (hfAYV)
+  // pero el texto que lo sigue seguía en 12 (text-xs, vía ENLACE) — la
+  // maqueta dibuja "· Cambiar clave" uniforme a 10 en el teléfono. En
+  // escritorio el texto sigue en 12 (text-xs), como siempre.
+  it('el texto de las acciones (Cambiar clave/Baja/Reactivar) es 10px en el teléfono, 12px en escritorio', async () => {
+    const html = await render(EMPLEADA_ACTIVA, false)
+    expect(html).toContain('text-[10px]')
+    expect(html).toContain('lg:text-xs')
+    expect(html).not.toMatch(/(?<!lg:)text-xs\b/) // sin text-xs SIN el prefijo lg:
+  })
+
   // Los tres casos de arriba tienen que rendir HTML distinto entre sí (Minor
   // 16 de la review final: este nombre decía "cuatro" y el cuerpo siempre
   // rindió tres): si alguien rompiera el condicional y devolviera siempre la

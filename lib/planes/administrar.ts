@@ -106,8 +106,21 @@ export async function editarPlan(e: EdicionDePlan): Promise<void> {
   }
 }
 
-/** Idempotente: `updateMany` sobre cero filas no se queja, y dos clicks
- *  seguidos en el menú mandan la orden dos veces. */
+/**
+ * Idempotente: `updateMany` sobre cero filas no se queja, y dos clicks
+ * seguidos en el menú mandan la orden dos veces.
+ *
+ * **Vale para las dos, `desactivarPlan` y `reactivarPlan`**, y con una
+ * consecuencia que conviene tener escrita: un id que no existe —o que es de
+ * otro tenant, que bajo RLS es lo mismo— tampoco se queja. Es a propósito y no
+ * un descuido: distinguir "ya estaba así" de "no existe" pide una consulta
+ * extra en el camino más frecuente, para responderle algo distinto a alguien
+ * que no puede llegar acá desde la pantalla (los ids salen del listado que la
+ * propia pantalla acaba de leer). `editarPlan`, en cambio, SÍ distingue
+ * `PLAN_INEXISTENTE`, y ahí la asimetría está justificada: esa acción cambia
+ * datos que la persona tipeó, así que un "no pasó nada" silencioso le haría
+ * creer que guardó.
+ */
 export async function desactivarPlan({ tenantId, id }: { tenantId: string; id: string }): Promise<void> {
   await prismaParaTenant(tenantId).planDePago.updateMany({
     where: { id, desactivadoEn: null },

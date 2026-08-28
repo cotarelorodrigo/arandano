@@ -80,7 +80,14 @@
   justify-content: space-between;
 }
 
-@media (min-width: 768px) {
+/*
+ * TASK 11 DEL CICLO MÓVIL (2026-08-26): el corte pasa de 768px a 1024px en
+ * TODO este archivo — design/arandano.pen agrega el frame `Móvil / Login`
+ * (`Kp4Eg`, 390px), y el criterio del ciclo es que 1024 es el único corte que
+ * sobrevive. Abajo de 1024 el paño es la franja de 300px que dibuja page.tsx
+ * (`h-[300px]`); acá arriba vuelve a ser esta columna del 58.33%.
+ */
+@media (min-width: 1024px) {
   .pano {
     width: 58.3333%;
   }
@@ -146,15 +153,16 @@
 }
 
 .arandano {
-  /* 14px/600, caja mixta, SIN tracking ni mayúsculas — consultado en vivo con
-     el MCP de Pencil (nodo `EqVux`: fontSize 14, fontWeight "600", sin
-     letterSpacing y sin ningún transform de caja). La versión anterior tenía
-     los cuatro valores mal (12px/500, tracking .18em, uppercase) porque se
-     diseñó como "la firma" leyendo el archivo viejo en vez del nodo — I4 de
-     la review final del cierre: este ciclo tocó esta misma regla para el
-     color y dejó las otras cuatro propiedades contradiciendo al `.pen`. La
-     maqueta dice "Arándano", no "A R Á N D A N O".*/
-  font-size: 0.875rem;
+  /* Mobile-first (Task 11 del ciclo móvil): 13px en el teléfono (nodo
+     `AUcuM`, frame `Móvil / Login`), 14px en escritorio (nodo `EqVux`, ver el
+     media query más abajo) — caja mixta, SIN tracking ni mayúsculas en los
+     dos anchos. La versión anterior a esta task tenía los cuatro valores mal
+     (12px/500, tracking .18em, uppercase) porque se diseñó como "la firma"
+     leyendo el archivo viejo en vez del nodo — I4 de la review final del
+     cierre: aquel ciclo tocó esta misma regla para el color y dejó las otras
+     cuatro propiedades contradiciendo al `.pen`. La maqueta dice "Arándano",
+     no "A R Á N D A N O". */
+  font-size: 0.8125rem;
   font-weight: 600;
   /* --marca-soft y no --marca-dim: consultado en vivo con el MCP de Pencil,
      el nodo `EqVux` ("Arándano") pinta con #B6A6E8, que es exactamente
@@ -167,6 +175,12 @@
   color: var(--marca-soft);
 }
 
+@media (min-width: 1024px) {
+  .arandano {
+    font-size: 0.875rem;
+  }
+}
+
 /* El logo (design/arandano.pen, nodo `K0PRd`): un CÍRCULO de 26px —
    border-radius 13px sobre 26px es la mitad exacta, no una esquina
    redondeada (Minor 15 de la review final: la docs y este comentario lo
@@ -175,11 +189,23 @@
    ningún glifo, así que agregar uno sería inventar contenido que el .pen no
    pide. */
 .logo {
-  width: 26px;
-  height: 26px;
-  border-radius: 13px;
+  /* Mobile-first (Task 11 del ciclo móvil): 22px en el teléfono (nodo
+     `rkk0s`), 26px en escritorio (nodo `K0PRd`, ver el media query más
+     abajo). border-radius siempre a la mitad exacta del ancho, para que siga
+     siendo un CÍRCULO en los dos anchos. */
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
   background-color: var(--marca-soft);
   flex-shrink: 0;
+}
+
+@media (min-width: 1024px) {
+  .logo {
+    width: 26px;
+    height: 26px;
+    border-radius: 13px;
+  }
 }
 
 /* La bajada (design/arandano.pen, nodo `H3uyf9`), bajo el nombre del local:
@@ -187,9 +213,18 @@
    mismo #B6A6E8. Sistema y no Archivo: sólo el cartel paga la cara de
    display en esta pantalla. */
 .bajada {
-  font-size: 1rem;
-  line-height: 1.55;
+  /* Mobile-first (Task 11 del ciclo móvil): 13px/1.45 en el teléfono (nodo
+     `a0SPO`), 16px/1.55 en escritorio (nodo `H3uyf9`, media query abajo). */
+  font-size: 0.8125rem;
+  line-height: 1.45;
   color: var(--marca-soft);
+}
+
+@media (min-width: 1024px) {
+  .bajada {
+    font-size: 1rem;
+    line-height: 1.55;
+  }
 }
 
 /* El pie (design/arandano.pen, nodo `y8KkFc`): la URL del tenant en
@@ -229,19 +264,36 @@
 .nombre {
   font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   font-weight: 600;
+  /* font-stretch NO es responsive a propósito: el schema del .pen no puede
+     representar esta propiedad (ver docs/sistema-de-diseno.md), así que no
+     hay forma de verificar contra el frame móvil si cambia o no. Se deja
+     igual en los dos anchos, que es la opción que no inventa un dato. */
   font-stretch: 112%;
-  /* Grande de verdad. A 3.75rem el nombre quedaba chico dentro del paño y la
-     pantalla parecía a medio hacer; el max-width en em lo hace envolver a dos
-     o tres líneas, que es como se escribe un nombre largo en un frente y no
-     como se escribe un título de aplicación. */
-  font-size: clamp(2.5rem, 7vw, 5.5rem);
+  /* Mobile-first (Task 11 del ciclo móvil): 32px/1.15 sin tracking en el
+     teléfono (nodo `P2DdCo`, frame `Móvil / Login`) — el `clamp` de
+     escritorio (nodo `A0YWO`) tiene 2.5rem=40px de piso, más grande que los
+     32px que pide el teléfono, así que no alcanzaba con dejarlo correr solo.
+     El override de escritorio, con el mismo clamp/line-height/tracking de
+     siempre, vive en el media query de abajo. */
+  font-size: 2rem;
   max-width: 7em;
-  line-height: 1.02;
-  letter-spacing: -0.022em;
+  line-height: 1.15;
   text-wrap: balance;
   /* Mismo motivo que la firma: el texto que va sobre el paño sale de los tokens
      del paño. 15.11:1 sobre --marca. */
   color: var(--marca-foreground);
+}
+
+@media (min-width: 1024px) {
+  .nombre {
+    /* Grande de verdad. A 3.75rem el nombre quedaba chico dentro del paño y
+       la pantalla parecía a medio hacer; el max-width en em lo hace envolver
+       a dos o tres líneas, que es como se escribe un nombre largo en un
+       frente y no como se escribe un título de aplicación. */
+    font-size: clamp(2.5rem, 7vw, 5.5rem);
+    line-height: 1.02;
+    letter-spacing: -0.022em;
+  }
 }
 
 /*
@@ -262,8 +314,17 @@
 .tituloEntrar {
   font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   font-weight: 600;
-  font-size: 1.75rem; /* 28px */
+  /* Mobile-first (Task 11 del ciclo móvil): 26px en el teléfono (nodo
+     `t4laN`, frame `Móvil / Login`), 28px en escritorio (nodo `M6mNY`, media
+     query abajo). */
+  font-size: 1.625rem; /* 26px */
   color: var(--foreground);
+}
+
+@media (min-width: 1024px) {
+  .tituloEntrar {
+    font-size: 1.75rem; /* 28px */
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

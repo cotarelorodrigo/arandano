@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { readFileSync } from 'node:fs'
 import { Nav, Hero, Modulos, Rubros, Planes, Cierre, Pie, MODULOS, RUBROS, PLANES } from './secciones'
 import type { BaseDeTenant } from './entrar'
 
@@ -67,6 +68,73 @@ describe('Nav', () => {
     expect(markup).toContain('Entrar a mi local')
     expect(markup).not.toContain('<input')
   })
+
+  // Task 11 del ciclo móvil (design/arandano.pen, frame `Móvil / Sitio ·
+  // Landing`, nodo `fI6bl`): el Nav baja de 76 a 60px en el teléfono.
+  it('el Nav mide 60px en el teléfono y 76px desde escritorio (nodo fI6bl)', () => {
+    const markup = html()
+    expect(markup).toContain('h-[60px]')
+    expect(markup).toContain('lg:h-[76px]')
+  })
+
+  // Los tres links de sección y "Entrar a mi local" siguen sin verse en el
+  // teléfono (la maqueta sólo dibuja el ícono de menú, nodo `K60WPs`), pero
+  // no pueden desaparecer sin más — regla del ciclo. Reaparecen dentro de un
+  // `Sheet` que abre el ícono de menú.
+  //
+  // Importante de la Ronda de arreglos 1: `renderToStaticMarkup` no puede
+  // verificar el CONTENIDO del Sheet. `SheetContent` vive detrás del
+  // `Portal` de Radix, que sólo monta cuando `mounted` pasa a `true` en un
+  // `useLayoutEffect` — y `renderToStaticMarkup` no tiene fase de commit, así
+  // que ese efecto nunca corre y el contenido del Sheet JAMÁS aparece en
+  // este HTML (no es que "esté montado pero cerrado": no está montado). Por
+  // eso lo que se afirma sobre el HTML es sólo el ícono/trigger, y lo que se
+  // afirma sobre los links y "Entrar a mi local" se lee del FUENTE — mismo
+  // mecanismo que ya usa app/(app)/ventas/page.tsx (ver el comentario de
+  // `FormularioDeFechas` ahí) y su test (page.test.tsx).
+  // Hallazgo I5 de la review final: este caso afirmaba el `lg:hidden` sobre la
+  // clase del `<Menu>` de lucide, que es el ÍCONO. Quien decide si el botón se
+  // ve es el `SheetTrigger` que lo contiene, así que sacarle el `lg:hidden` al
+  // trigger dejaba la hamburguesa visible a 1440 con el caso en verde — y el
+  // `lg:hidden` del ícono era redundante, puesto ahí para este test. Ahora se
+  // afirma sobre la etiqueta de apertura del disparador.
+  it('el botón de menú sólo existe abajo de 1024px', () => {
+    const markup = html()
+    // El ícono sigue teniendo que estar: es lo que se ve del botón.
+    expect(markup, 'no se renderizó el ícono lucide-menu').toContain('lucide-menu')
+
+    const apertura = markup.match(/<button[^>]*aria-label="Abrir menú"[^>]*>/)?.[0]
+    expect(
+      apertura,
+      `no se encontró el disparador del menú (<button aria-label="Abrir menú">) en: ${markup}`,
+    ).toBeTruthy()
+    expect(
+      apertura,
+      'el disparador del menú no lleva lg:hidden: la hamburguesa se ve en escritorio',
+    ).toContain('lg:hidden')
+  })
+
+  it('los links de sección y "Entrar a mi local" viven DENTRO del <SheetContent> (leído del fuente)', () => {
+    const fuente = readFileSync('app/sitio/secciones.tsx', 'utf8')
+    const inicio = fuente.indexOf('<SheetContent')
+    const fin = fuente.indexOf('</SheetContent>', inicio)
+    expect(inicio, 'no se encontró <SheetContent> en el fuente').toBeGreaterThan(-1)
+    expect(fin, 'no se encontró el cierre </SheetContent>').toBeGreaterThan(inicio)
+    const cuerpo = fuente.slice(inicio, fin)
+    // Los tres links de sección: el mismo array LINKS_DE_SECCION que arma la
+    // barra de escritorio, no una lista escrita a mano una segunda vez.
+    expect(cuerpo).toContain('LINKS_DE_SECCION.map')
+    // "Entrar a mi local" — el toggle real, no un texto suelto.
+    expect(cuerpo).toContain('<EntradaDeSubdominio')
+  })
+
+  it('no se hace pasar por una página de tenant ni rompe con el ícono de menú montado', () => {
+    // El Sheet no está abierto por defecto: no debería haber ningún rol de
+    // diálogo visible en el HTML inicial más allá de lo que Radix monta
+    // colapsado (data-state="closed").
+    const markup = html()
+    expect(markup).not.toContain('data-state="open"')
+  })
 })
 
 describe('Hero', () => {
@@ -99,6 +167,29 @@ describe('Hero', () => {
     // El retrato en sí (role="img") viene de app/sitio/retrato.tsx y ya
     // tiene su propio test — acá sólo se comprueba que Hero lo renderiza.
     expect(markup).toContain('role="img"')
+  })
+
+  // Task 11 del ciclo móvil: la grilla de dos columnas (7fr/9fr) es sólo de
+  // escritorio — en el teléfono el Hero es una sola columna (design/arandano.pen,
+  // frame `Móvil / Sitio · Landing`, nodo `Sv9VR`) y la "Muestra" (barra +
+  // retrato) se oculta acá (se promueve a sección propia entre Hero y
+  // Módulos, ver `landing.test.tsx`) — nunca desaparece sin más.
+  it('la grilla de 7fr/9fr es lg:, no default — en el teléfono es una columna', () => {
+    const html2 = renderToStaticMarkup(<Hero whatsapp="5491155555555" />)
+    expect(html2).not.toMatch(/(?<!lg:)grid-cols-\[7fr_9fr\]/)
+    expect(html2).toContain('lg:grid-cols-[7fr_9fr]')
+  })
+
+  it('la "Muestra" (barra + retrato) de acá adentro es hidden lg:block — sólo de escritorio', () => {
+    const markup = html()
+    const idx = markup.indexOf('flor.arandano.app/vender')
+    const inicioDiv = markup.lastIndexOf('<div class="hidden ', idx)
+    expect(inicioDiv, 'no se encontró un <div class="hidden ..."> antes de la Muestra').toBeGreaterThan(
+      -1,
+    )
+    const clases = markup.slice(inicioDiv).match(/^<div class="([^"]*)"/)?.[1]
+    expect(clases).toContain('hidden')
+    expect(clases).toContain('lg:block')
   })
 
   // Minor 6 de la review final: el .pen (nodo udK1D) pide $ar-font para la
@@ -140,6 +231,16 @@ describe('Modulos', () => {
     ]) {
       expect(markup).toContain(pieza)
     }
+  })
+
+  // Task 11 del ciclo móvil: las tres tarjetas de módulo son una columna en
+  // el teléfono (design/arandano.pen, frame `Móvil / Sitio · Landing`, nodo
+  // `Csb0k`: Encabezado/Núcleo/Órdenes/Turnos/Gastronomía son 5 hermanos
+  // apilados) y recién desde `lg:` pasan a 3 columnas.
+  it('la grilla de módulos es una columna en el teléfono, 3 desde escritorio', () => {
+    const markup = html()
+    expect(markup).toContain('grid-cols-1')
+    expect(markup).toContain('lg:grid-cols-3')
   })
 
   // El requisito explícito de la Task 4: Órdenes de trabajo dice
@@ -190,6 +291,68 @@ describe('Rubros', () => {
     // Kiosco, Ropa, Ferretería, Pet shop y Dietética: los cinco que el .pen
     // no ata a ningún módulo.
     expect(soloNucleo).toHaveLength(5)
+  })
+
+  // Task 11 del ciclo móvil: a diferencia de Módulos y Planes (una columna),
+  // el .pen (frame `Móvil / Sitio · Landing`, nodo `dDugH`) arma Rubros en
+  // PARES — seis filas de a dos tarjetas — así que en el teléfono son 2
+  // columnas, no 1. Recién desde `lg:` pasa a las 4 de siempre. Verificado en
+  // vivo con el MCP de Pencil: contradice la prosa del brief de esta task
+  // ("pasan a una columna"), y manda el .pen.
+  it('la grilla de rubros es 2 columnas en el teléfono (nodo dDugH), 4 desde escritorio', () => {
+    const markup = html()
+    expect(markup).toContain('grid-cols-2')
+    expect(markup).toContain('lg:grid-cols-4')
+  })
+
+  // Fix de la Ronda de arreglos 1 sobre la Task 11 del ciclo móvil: en
+  // escritorio la nota vive al lado del encabezado (nodo `bHS71`); en el
+  // teléfono el .pen (`EKea9`) la pone DESPUÉS de la grilla, como hermano
+  // aparte, no del encabezado. Dos copias, una por ancho — ninguna
+  // desaparece, y cada una se afirma con su ausencia en el ancho contrario,
+  // no sólo con la presencia de la clase que la cancela (eso pasaría igual
+  // si alguien reintrodujera la nota sin `hidden`/`lg:hidden` al lado de una
+  // copia vieja que ya la mostraba siempre).
+  it('la nota "¿No está el tuyo?" aparece dos veces: oculta en escritorio dentro del encabezado, oculta en el teléfono después de la grilla', () => {
+    const markup = html()
+    const apariciones = [...markup.matchAll(/¿No está el tuyo\? Se agrega sin desarrollo\./g)]
+    expect(apariciones).toHaveLength(2)
+
+    // La primera (la del encabezado) es la de escritorio: hidden lg:block.
+    const idxHeader = apariciones[0].index!
+    const inicioHeader = markup.lastIndexOf('<p class="', idxHeader)
+    const clasesHeader = markup.slice(inicioHeader).match(/^<p class="([^"]*)"/)?.[1]
+    expect(clasesHeader, 'no se encontró el <p> de la nota en el encabezado').toBeTruthy()
+    expect(clasesHeader).toContain('hidden')
+    expect(clasesHeader).toContain('lg:block')
+    // Negación explícita: esta copia NO puede ser la que se ve en el
+    // teléfono (lg:hidden) — si alguien le cambia la clase por error, esto
+    // tiene que quedar en rojo, no sólo "existe algo con hidden".
+    expect(clasesHeader).not.toContain('lg:hidden')
+
+    // La segunda (después de la grilla) es la del teléfono: lg:hidden, y sin
+    // "hidden" a secas (que la sacaría también de escritorio: ahí es donde
+    // tiene que reaparecer).
+    const idxDespuesDeGrilla = apariciones[1].index!
+    const inicioDespuesDeGrilla = markup.lastIndexOf('<p class="', idxDespuesDeGrilla)
+    const clasesDespuesDeGrilla = markup
+      .slice(inicioDespuesDeGrilla)
+      .match(/^<p class="([^"]*)"/)?.[1]
+    expect(
+      clasesDespuesDeGrilla,
+      'no se encontró el <p> de la nota después de la grilla',
+    ).toBeTruthy()
+    expect(clasesDespuesDeGrilla).toContain('lg:hidden')
+    expect(clasesDespuesDeGrilla).not.toContain('hidden lg:block')
+    // Y en escritorio esta segunda copia tiene que desaparecer de verdad: no
+    // alcanza con "lg:hidden" en la clase si en algún momento se le suma un
+    // "lg:block" que lo cancele — se niega esa combinación explícitamente.
+    expect(clasesDespuesDeGrilla).not.toMatch(/\blg:block\b/)
+
+    // Y la que aparece DESPUÉS de la grilla en el DOM tiene que ser,
+    // justamente, la segunda — no una tercera copia suelta en otro lado.
+    const idxGrilla = markup.indexOf('grid-cols-2')
+    expect(idxDespuesDeGrilla).toBeGreaterThan(idxGrilla)
   })
 })
 
@@ -246,6 +409,16 @@ describe('Planes', () => {
       expect(a).toContain('border-input')
     }
   })
+
+  // Task 11 del ciclo móvil: los cuatro planes son una columna en el
+  // teléfono (design/arandano.pen, frame `Móvil / Sitio · Landing`, nodo
+  // `IvCnb`: Básico/Negocio/Profesional/Premium son 4 hermanos apilados) y
+  // recién desde `lg:` pasan a las 4 columnas de siempre.
+  it('la grilla de planes es una columna en el teléfono, 4 desde escritorio', () => {
+    const markup = html()
+    expect(markup).toContain('grid-cols-1')
+    expect(markup).toContain('lg:grid-cols-4')
+  })
 })
 
 describe('Cierre', () => {
@@ -277,5 +450,33 @@ describe('Pie', () => {
     const markup = renderToStaticMarkup(<Pie />)
     expect(markup).toContain('Arándano · Buenos Aires, Argentina')
     expect(markup).toContain('Términos · Privacidad · Estado del servicio')
+  })
+
+  // Task 11 del ciclo móvil: el Pie apila la marca sobre los links en el
+  // teléfono (design/arandano.pen, frame `Móvil / Sitio · Landing`, nodo
+  // `itZnH`: layout vertical) y recién en escritorio vuelve a la fila con
+  // justify-between de siempre.
+  it('apila en el teléfono (flex-col) y vuelve a fila desde escritorio (lg:flex-row)', () => {
+    const markup = renderToStaticMarkup(<Pie />)
+    const inicio = markup.indexOf('<div class="')
+    const clases = markup.slice(inicio).match(/^<div class="([^"]*)"/)?.[1]
+    expect(clases).toContain('flex-col')
+    expect(clases).toContain('lg:flex-row')
+  })
+
+  // Menor de la Ronda de arreglos 1 sobre la Task 11: el padding vertical
+  // del teléfono NO es simétrico (nodo `itZnH`: [24,20,28,20], 28 abajo) —
+  // había quedado en py-6 (24/24) parejo en los dos lados. Desde escritorio
+  // sigue siendo py-6 simétrico, sin tocar.
+  it('el padding vertical del teléfono es 24 arriba / 28 abajo, no 24/24 parejo', () => {
+    const markup = renderToStaticMarkup(<Pie />)
+    const inicio = markup.indexOf('<div class="')
+    const clases = markup.slice(inicio).match(/^<div class="([^"]*)"/)?.[1]
+    expect(clases).toContain('pt-6')
+    expect(clases).toContain('pb-7')
+    expect(clases).toContain('lg:py-6')
+    // Negación explícita: "py-6" sin el prefijo lg: volvería a los 24/24
+    // parejos que este caso corrige.
+    expect(clases).not.toMatch(/(?<!lg:)py-6/)
   })
 })

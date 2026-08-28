@@ -12,6 +12,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Navegacion } from '@/components/navegacion'
 import { Contexto } from '@/components/contexto'
+import { BotonCerrarDrawer } from '@/components/shell/boton-cerrar-drawer'
 import estilos from '@/components/cartel.module.css'
 
 /**
@@ -25,7 +26,10 @@ import estilos from '@/components/cartel.module.css'
  * único que precisa saber la ruta es `Navegacion`, que ya es `'use client'` y
  * se las arregla sola; el resto del paño es marcado estático más un
  * `<form action={alSalir}>` que el servidor resuelve. Quedarse de servidor es
- * lo que deja del lado del cliente lo mínimo posible.
+ * lo que deja del lado del cliente lo mínimo posible. `BotonCerrarDrawer`
+ * (el botón de cerrar del teléfono) es la segunda excepción, por el mismo
+ * motivo que `Navegacion`: necesita `useSidebar()` para cerrar el drawer, y
+ * ese hook no existe fuera de un componente de cliente.
  */
 export function SidebarArandano({
   nombreLocal,
@@ -44,6 +48,12 @@ export function SidebarArandano({
 }) {
   return (
     <Sidebar collapsible="offcanvas">
+      {/* Sólo se ve en el teléfono (lg:hidden adentro del propio componente):
+          en escritorio `Sidebar` renderiza estos children directo, sin
+          `Sheet` alrededor, y ahí este botón no tiene nada de qué colgarse
+          más que `lg:hidden` — ver el comentario del propio archivo para el
+          por qué de `setOpenMobile` en vez de `SheetClose`. */}
+      <BotonCerrarDrawer />
       <SidebarHeader className="gap-0.5 px-5 pt-[22px] pb-[18px]">
         {/* El producto arriba y el local abajo, y no al revés: adentro del
             sistema, quién sos importa menos que dónde estás parado. Es la misma

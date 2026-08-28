@@ -152,7 +152,17 @@ export async function crearVenta(
         // los artículos: un plan dado de baja no se reactiva para cobrar una
         // venta, se elige otro. La distinción no le cambiaría la salida a nadie.
         if (!plan || plan.desactivadoEn) {
-          throw new ErrorDeVenta('PLAN_INEXISTENTE', `el plan ${p.planId} no está disponible`)
+          // Sin el UUID en el mensaje: `traducir` (app/(app)/vender/acciones.ts)
+          // muestra `e.message` tal cual en el cartel del mostrador, y un id
+          // opaco no le dice nada a quien está cobrando ni le indica qué hacer.
+          // El caso real es que el dueño dio de baja el plan desde otra
+          // pestaña mientras el mostrador tenía la pantalla abierta, y la
+          // salida es recargar y elegir otro. El id sí queda en el log del
+          // servidor, que es donde se lo necesita para diagnosticar.
+          throw new ErrorDeVenta(
+            'PLAN_INEXISTENTE',
+            'Ese plan de pago ya no está disponible. Recargá la pantalla y elegí otro.',
+          )
         }
         if (plan.medio !== p.medio) {
           throw new ErrorDeVenta(

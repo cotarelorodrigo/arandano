@@ -97,6 +97,59 @@ describe('página de login', () => {
     expect(html).toContain('Ventas, stock, caja y servicio técnico del local')
   })
 
+  // Task 11 del ciclo móvil (design/arandano.pen, frame `Móvil / Login`,
+  // `Kp4Eg`): el contenedor invierte de columna a fila, y el paño pasa de
+  // franja fija a la columna de siempre — mobile-first, sin ningún md:/sm:
+  // sobreviviendo.
+  it('el contenedor pasa de columna (teléfono) a fila (escritorio), sin md:/sm:', async () => {
+    tenantDelRequest.mockResolvedValue({
+      tipo: 'tenant',
+      tenant: { id: 't1', nombre: 'Celulares Flor', estado: 'ACTIVO' },
+      subdominio: 'flor',
+    })
+    sesionActual.mockResolvedValue(null)
+
+    const html = renderToStaticMarkup(await render())
+    expect(html).toContain('flex-col lg:flex-row')
+    expect(html).not.toMatch(/\bmd:/)
+    expect(html).not.toMatch(/\bsm:/)
+    expect(html).not.toMatch(/\bxl:/)
+  })
+
+  it('el paño mide 300px de alto en el teléfono y auto en escritorio (h-[300px] lg:h-auto)', async () => {
+    tenantDelRequest.mockResolvedValue({
+      tipo: 'tenant',
+      tenant: { id: 't1', nombre: 'Celulares Flor', estado: 'ACTIVO' },
+      subdominio: 'flor',
+    })
+    sesionActual.mockResolvedValue(null)
+
+    const html = renderToStaticMarkup(await render())
+    expect(html).toContain('h-[300px]')
+    expect(html).toContain('lg:h-auto')
+  })
+
+  // El pie (URL del tenant) vive en dos lugares distintos según el ancho —
+  // dentro del paño en escritorio (nodo `y8KkFc`), al pie del formulario en
+  // el teléfono (nodo `eY0BS`, dentro de `FormularioLogin`) — pero tiene que
+  // seguir existiendo en los dos, nunca desaparecer sin más (regla del ciclo:
+  // una capacidad que se pierde en el teléfono y no reaparece en otro lado es
+  // un defecto). Se afirma explícitamente CADA mitad: `hidden lg:flex` para
+  // la de escritorio (visible sólo desde 1024) y que el dominio también
+  // aparece fuera de esa mitad (la de FormularioLogin, mockeada más abajo).
+  it('el pie de escritorio (dentro del paño) es hidden lg:flex, no lg:hidden', async () => {
+    tenantDelRequest.mockResolvedValue({
+      tipo: 'tenant',
+      tenant: { id: 't1', nombre: 'Celulares Flor', estado: 'ACTIVO' },
+      subdominio: 'flor',
+    })
+    sesionActual.mockResolvedValue(null)
+
+    const html = renderToStaticMarkup(await render())
+    expect(html).toContain('hidden')
+    expect(html).toMatch(/hidden[^"]*lg:flex/)
+  })
+
   // El testid que consume scripts/smoke.sh: sigue pegado al nombre, sin
   // ningún <span> en el medio (ver el comentario de page.tsx).
   it('el nombre del local lleva el testid pegado, sin span en el medio', async () => {

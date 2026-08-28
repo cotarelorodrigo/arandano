@@ -183,13 +183,39 @@ function archivosPropios(): string[] {
  * Los consumidores de `--primary-foreground` que hay fuera de components/ui/,
  * por ruta completa desde la raíz del repo (`app/sitio/secciones.tsx`).
  *
- * Hoy está vacía, y ése es el estado sano. Si alguna vez una pantalla necesita
- * de verdad el par `bg-primary` + `text-primary-foreground` —que es legítimo, es
- * el botón de acción—, se anota acá con su razón en vez de aflojar el caso.
- * Mismo patrón que EXCEPCIONES en scripts/contraste.mts, RUTAS_SIN_SMOKE en
- * scripts/lib/rutas-comun.sh y SIN_TENANT_ID en test/rls-cobertura.test.ts.
+ * Estuvo vacía hasta el ciclo del shell móvil (2026-08-26): la ranura derecha
+ * de <Encabezado> en el teléfono es de verdad el mismo botón de acción que el
+ * comentario de abajo prevé, así que entró con su razón en vez de aflojar el
+ * caso. Si alguna otra pantalla necesita de verdad el par `bg-primary` +
+ * `text-primary-foreground` —que es legítimo, es el botón de acción—, se
+ * anota acá con su razón. Mismo patrón que EXCEPCIONES en
+ * scripts/contraste.mts, RUTAS_SIN_SMOKE en scripts/lib/rutas-comun.sh y
+ * SIN_TENANT_ID en test/rls-cobertura.test.ts.
  */
-const CONSUMIDORES_LEGITIMOS: Record<string, string> = {}
+const CONSUMIDORES_LEGITIMOS: Record<string, string> = {
+  'components/shell/encabezado.tsx':
+    'la ranura derecha del teléfono (prop accionMovil, tono "accion") es el ' +
+    'mismo botón de acción que ya es legítimo en components/ui/ — un link de ' +
+    '38 px, no un <Button>, porque Encabezado no es un componente de shadcn.',
+  'components/shell/encabezado.test.tsx':
+    'ejercita el par bg-primary/text-primary-foreground de accionMovil que ' +
+    'declara components/shell/encabezado.tsx, arriba.',
+  'app/(app)/servicio-tecnico/[id]/ticket/imprimir.tsx':
+    'el botón de imprimir del ticket ocupa esa MISMA ranura derecha con el ' +
+    'MISMO tono "accion" — es LA acción de esa pantalla. Va por controlMovil ' +
+    'y no por accionMovil sólo porque imprimir no es navegar a ninguna URL ' +
+    '(hallazgo I2 de la review final del ciclo móvil), así que el par de ' +
+    'colores lo tiene que escribir él y no <Encabezado>.',
+  'app/(app)/servicio-tecnico/[id]/ticket/page.test.tsx':
+    'ejercita el par bg-primary/text-primary-foreground de BotonImprimir que ' +
+    'declara app/(app)/servicio-tecnico/[id]/ticket/imprimir.tsx, arriba.',
+  'app/(app)/formas-de-pago/formularios.tsx':
+    'el trigger de "Plan nuevo" en el teléfono ocupa esa MISMA ranura derecha ' +
+    'con el MISMO tono "accion" — es LA acción de esa pantalla. Va por ' +
+    'controlMovil y no por accionMovil por el mismo motivo que el botón de ' +
+    'imprimir de arriba: abrir un diálogo no es navegar a ninguna URL, así ' +
+    'que el par de colores lo tiene que escribir él y no <Encabezado>.',
+}
 
 describe('nadie toma --primary-foreground por "el color claro"', () => {
   // El bug que este caso existe para que no vuelva: al pasar a la paleta

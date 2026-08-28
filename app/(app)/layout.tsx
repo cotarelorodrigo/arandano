@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { CLAVES_DE_PERMISO } from '@/lib/permisos/catalogo'
 import { permisosDe } from '@/lib/permisos/consultar'
-import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { SidebarArandano } from '@/components/shell/sidebar-arandano'
 import { salir } from './acciones'
 
@@ -40,12 +40,12 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
         permisos={permisos}
         alSalir={salir}
       />
-      <SidebarInset>
-        {/* El único control que la maqueta no dibuja, y existe sólo para que en
-            un teléfono el paño se pueda abrir. En el 1440 del diseño no se ve. */}
-        <SidebarTrigger className="m-2 md:hidden" />
-        {children}
-      </SidebarInset>
+      {/* El SidebarTrigger vivía suelto acá (m-2 md:hidden) sólo para que en
+          un teléfono el paño se pudiera abrir. Se mudó a la ranura izquierda
+          de <Encabezado> (components/shell/encabezado.tsx), que cada
+          page.tsx ya renderiza — así el control queda al lado del título en
+          vez de flotando arriba de él. */}
+      <SidebarInset>{children}</SidebarInset>
     </SidebarProvider>
   )
 }

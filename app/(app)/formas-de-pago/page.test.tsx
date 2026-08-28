@@ -26,9 +26,21 @@ vi.mock('./formularios', async (original) => {
   return { ...real, DialogoDePlan: () => <span>DIALOGO</span> }
 })
 
+// El <SidebarProvider> lo pone app/(app)/layout.tsx alrededor de cada
+// page.tsx; acá hace falta porque el <Encabezado> —que esta pantalla gana en
+// el merge con el ciclo del teléfono— trae el SidebarTrigger, y ése llama a
+// useSidebar(), que tira sin un provider como ancestro (mismo helper que
+// components/shell/encabezado.test.tsx).
+//
+// Se importa DENTRO de esta función, no arriba del archivo: el `beforeEach`
+// llama a `vi.resetModules()`, así que la página se carga de un registro
+// nuevo en cada caso. Un provider importado estáticamente vendría del registro
+// VIEJO, con otro `SidebarContext`, y el `useSidebar()` de la página no lo
+// vería — el error sería exactamente el mismo que si no hubiera provider.
 async function render() {
+  const { SidebarProvider } = await import('@/components/ui/sidebar')
   const { default: FormasDePago } = await import('./page')
-  return renderToStaticMarkup(await FormasDePago())
+  return renderToStaticMarkup(<SidebarProvider>{await FormasDePago()}</SidebarProvider>)
 }
 
 const PLAN: PlanVisible = {

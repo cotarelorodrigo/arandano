@@ -1080,6 +1080,21 @@ Y del producto:
     general para cuando el catálogo crezca: **se delega lo que opera el
     negocio, no lo que reparte poder.**
 
+  **Y una quinta que cruza ciclos, y que el merge con el del teléfono
+  (2026-08-26) probó por las malas: toda guarda de permiso tiene que alcanzar
+  las DOS copias de una acción duplicada.** El ciclo del teléfono duplicó
+  varios botones —uno en el Topbar para escritorio (`hidden lg:flex`), otro al
+  pie o en `accionMovil`/`controlMovil` para el teléfono (`lg:hidden`)—, y este
+  ciclo escribió sus guardas contra la copia que existía cuando empezó. El
+  merge automático no lo marcó conflicto: un renombre (`esDuenio→puedeAnular`,
+  `puedeAnular→seOfreceAnular`) dejó la copia del teléfono de "Anular orden"
+  compilando contra el permiso pelado en vez del derivado, ofreciendo anular
+  una orden ya anulada — con `tsc`, lint y el resto del gate en verde.
+  `test/permisos-en-las-dos-copias.test.ts` es la red que quedó, y ya tiene
+  documentado el próximo sitio conocido: `ChipCaja`/`ControlDeCaja` en
+  `/vender`, que hoy no gatean nada porque no existe permiso de caja, pero sí
+  van a necesitarlo el día que el arqueo (pieza 6 del roadmap) lo agregue.
+
   **Este ciclo le saca al empleado, por default, ver y cargar costos** —una
   regresión deliberada frente al comportamiento de hoy, y **gratis exactamente
   ahora**: todavía no hay tenants reales usándolo. Dentro de seis meses sería
@@ -1114,6 +1129,197 @@ Y del producto:
   de verdad el botón "Artículo nuevo" en `/inventario`. No se lo da por hecho:
   hace falta que alguien lo mire en un entorno que sirva este worktree antes
   de confiar en la pantalla a ojo cerrado.
+- ~~Adaptar las trece pantallas al teléfono.~~ **Hecho** (2026-08-26). Estaban
+  construidas contra una maqueta de escritorio de 1440 px y se sirven ahora
+  también a 390, contra los **quince frames `Móvil / …`** que
+  `design/arandano.pen` sumó después —trece pantallas más el cobro de
+  `/vender`, que en el teléfono es pantalla propia, más el drawer, que no
+  tiene ruta— y el componente reusable `Móvil/Topbar`. Ver
+  `docs/superpowers/specs/2026-08-26-movil-design.md` y `design/LEEME.md`.
+
+  **Es presentación pura, y eso fue una condición y no una casualidad.** No se
+  tocó el schema, ni una server action, ni una consulta: el deploy más grande
+  que tuvo el proyecto —trece pantallas de una, sin flags— se vuelve atrás por
+  completo revirtiendo la imagen, porque no hay ninguna migración que revertir.
+  Y los colores tampoco cambian: los frames móviles usan las mismas variables
+  `ar-*` que `test/maqueta.test.ts` ya ata a `app/globals.css`, así que ese
+  test pasó el ciclo entero sin una línea nueva.
+
+  **Un solo corte, 1024 px, y el número es aritmética.** shadcn trae 768 por
+  default y no alcanza: en escritorio `/vender` pone en una fila el sidebar de
+  248, el carrito y el panel de cobro de 384, así que a 768 px de viewport al
+  carrito le quedan **136 px** — está roto hoy, con el `md:flex-row` que el
+  código ya tenía. A 1024 le quedan **392**, que es el mínimo que funciona. El
+  costo aceptado es que un iPad vertical recibe la versión de teléfono, y es la
+  respuesta correcta: a ese ancho la de teléfono se ve bien y la de escritorio
+  no. **Ese mismo número gobierna las dos mitades**: el `lg:` de Tailwind y el
+  `Sheet` del sidebar de shadcn, que lo lee por `useIsMobile`
+  (`MOBILE_BREAKPOINT`, `hooks/use-mobile.ts`). Un corte para el CSS y otro
+  para el JavaScript es la clase de desincronización que nadie ve hasta que
+  alguien mira desde un ancho intermedio. Las clases se escriben mobile-first
+  —el valor del teléfono sin prefijo, el de escritorio con `lg:`—, que es la
+  convención de Tailwind y la de `components/ui/*`.
+
+  **Un solo árbol, no dos presentaciones: el patrón `lg:contents`.** Los cuatro
+  listados (`/ventas`, `/inventario`, `/servicio-tecnico`, `/usuarios`) y el
+  carrito de `/vender` dejaron de ser `<Table>` de shadcn: hoy son un `grid`
+  cuyo contenedor pasa de `grid-cols-1` a las mismas anchuras de columna que
+  declaraban los `<TableHead>`, y cuyas filas y agrupadores llevan
+  `lg:contents`. `display: contents` borra al envoltorio de la caja de layout y
+  sus hijos pasan a ser celdas del grid del padre, así que el **mismo marcado**
+  es una tarjeta apilada abajo de 1024 y una tabla arriba. La alternativa
+  —renderizar dos veces y ocultar una con CSS— deja el mismo dato dos veces en
+  el DOM, y el dueño del producto eligió explícitamente lo contrario.
+
+  **Lo que ese patrón cuesta, que es real y no se disimula.** Primero, **se
+  pierde `<Table>` y con él la semántica nativa**: `display: contents` saca del
+  árbol de accesibilidad a todo elemento sin rol explícito, así que
+  `role="table"`, `"row"`, `"columnheader"` y `"cell"` sobre los mismos divs
+  dejan de ser prolijidad y pasan a ser obligatorios — y en los **dos** anchos,
+  no sólo en escritorio. Sigue siendo peor que un `<table>` de verdad; es el
+  precio de tener un solo árbol.
+
+  Y segundo, **hay cuatro cosas que `<TableRow>`/`<TableCell>` daban gratis y
+  que `display: contents` se lleva puestas**, porque un elemento sin caja no
+  pinta nada: el **fondo** (el hover de fila), el **borde** entre filas, el
+  **padding** de cada celda y el **centrado vertical**. Las cuatro hay que
+  devolverlas a mano, en las celdas y no en la fila. La del centrado es la más
+  sutil y la que se arregla mal a la primera: `self-center` **encoge la celda**
+  —`align-self: center` deja de estirarla—, así que su `border-b` queda a
+  distinta altura que el del resto de la fila; el arreglo es un envoltorio
+  interno con `lg:h-full lg:flex lg:items-center`, que centra el contenido
+  dejando la celda estirada. Ninguna de las dos alternativas obvias sirve:
+  `align-items` en el contenedor produce el mismo defecto, e `items-center` en
+  la fila es un no-op, porque un elemento sin caja no tiene modelo de flex
+  propio que alinear.
+
+  **El paso de cobro de `/vender` se sincroniza con `pushState`, no con
+  `router.push`,** y esa diferencia es la que decide si el carrito sobrevive:
+  `pushState` no dispara navegación de Next, así que el server component no
+  vuelve a renderizar y `PuntoDeVenta` no se remonta con la venta a medias
+  adentro. Un listener de `popstate` atiende el botón Atrás del teléfono, que
+  es lo que hace que la flecha de la maqueta y el gesto del sistema signifiquen
+  lo mismo — que es exactamente por lo que el dueño del producto eligió este
+  diseño.
+
+  **Y de ahí salió la distinción que vale más que el mecanismo: un gesto deja
+  su entrada en el historial, una consecuencia consume la suya.** Entrar al
+  cobro es un gesto y empuja una entrada; volver al carrito **después de
+  cobrar** es una consecuencia y tiene que consumirla. Sin esa distinción, cada
+  venta dejaba una entrada duplicada permanente —el par no era estático sino
+  **acumulativo**—, así que después de cincuenta ventas en un turno cincuenta
+  toques de Atrás no cambiaban nada a la vista. El mecanismo: `pushState` marca
+  la entrada propia con un objeto de estado, y la vuelta por consecuencia la
+  consume con `history.back()` si la entrada actual es la nuestra, o la
+  `replaceState` si no lo es (alguien tipeó o compartió `/vender?paso=cobro`, y
+  ahí un `back()` saldría de la aplicación). Vive entero en
+  `app/(app)/vender/paso.ts`.
+
+  **La regla que este ciclo aplicó cinco veces: una capacidad que desaparece
+  del teléfono y no reaparece en ningún otro lado es un defecto, no una
+  simplificación.** Pasó con el vaciado del carrito (en escritorio lo da el
+  doble `Esc`, y un teléfono no tiene `Esc`), con el saldo inicial de la caja
+  (un `DropdownMenu` de Radix no puede alojar un `<input>` sin pelearle a su
+  typeahead, así que la caja abría en 0 en silencio — el control pasó a un
+  `Sheet` con los mismos mini-formularios del escritorio), con reimprimir y con
+  anular una orden (el `<Encabezado>` envuelve sus `acciones` en `hidden
+  lg:flex`, y nada había entrado en su lugar), y con los filtros de estado de
+  `/servicio-tecnico`, donde la maqueta dibuja nueve chips y el código mantuvo
+  los diez porque sacar "Rechazado" dejaba sin ver ni filtrar esas órdenes
+  desde el celular. **En los cinco casos la pregunta correcta no fue qué dibuja
+  el `.pen` sino qué pierde el producto si se saca** — el mismo criterio que ya
+  había salvado al typeahead de `/vender` en un ciclo anterior.
+
+  **Y el criterio inverso, que es el que evita el error opuesto: un control
+  cuyo destino habría que inventar es peor que su ausencia.** Por eso no se
+  construyó el "Ingresar mercadería" del listado de `/inventario` —esa acción
+  vive por artículo, y a nivel del listado no hay a dónde mandar— ni el
+  `more-vertical` de la ficha de artículo, cuyas dos acciones ya están al pie y
+  las secundarias en el cuerpo. Los dos los dibuja la maqueta; los dos quedaron
+  anotados en `docs/correcciones-pendientes-del-pen.md`. **La diferencia con la
+  regla de arriba es de dirección**: ahí faltaba un lugar donde poner algo que
+  el producto ya hacía; acá sobraba un botón que prometía algo que el producto
+  no hace.
+
+  **La red que queda es `test/responsive.test.ts`**, y cubre exactamente el
+  modo de falla de este trabajo: un ancho fijo olvidado sin `lg:` que en un
+  teléfono desborda y arrastra la página entera al scroll horizontal, sin que
+  nada avise. Marca todo `w-[Npx]`, `min-w-[Npx]` y `basis-[Npx]` mayor a
+  **362** —390 menos los dos paddings de 14— que no venga prefijado. **`max-w-`
+  queda afuera a propósito**: un `max-width` sólo topea el ancho, nunca lo
+  ensancha, así que estructuralmente no puede desbordar; incluirlo entrenaría a
+  poner un `lg:` que no significa nada, y este repo ya tiene escrito el
+  criterio inverso —"un test que se rompa al mover una card es el que se
+  termina ignorando"—. La primera versión marcó ocho `max-w-` y los ocho se
+  revirtieron cuando quedó claro que ninguno prevenía un desborde real.
+
+  **Y hay un rol tipográfico que ahora depende del ancho**, con su fila
+  actualizada en `docs/sistema-de-diseno.md`: el título de pantalla pasa a 17
+  px en el teléfono contra 21 en escritorio, y no es el único — la columna
+  "Tamaño" de esa tabla dice los dos valores cada vez que difieren, sin
+  contarlos acá, por lo mismo que este documento no lleva el número de
+  pantallas de la maqueta. **Que un
+  rol cambie de tamaño no lo convierte en otro rol**; un rol nuevo se justifica
+  cuando cambia lo que el texto *es*, no cuánto espacio hay. El caso que más
+  fácil se lee como un bug y no lo es: de los tres títulos de card de
+  `/usuarios`, en escritorio sólo dos pagan Archivo y en el teléfono los pagan
+  los tres — son **dos frames con una decisión distinta cada uno**, y las dos
+  son la autoridad en su ancho.
+
+  **Queda pendiente**, y es lo que cierra el ciclo de verdad: **la verificación
+  visual en un teléfono real**. Ningún test la reemplaza — el gate no puede
+  responder si un espaciado se ve apretado o si un botón se alcanza con el
+  pulgar. El obstáculo concreto es que el tenant se resuelve por subdominio y
+  `flor.localhost` no resuelve en un teléfono: se sale poniendo `DOMINIO_BASE`
+  a un `nip.io` de la IP de la Mac en la red local
+  (`flor.192-168-0-10.nip.io:3001`), con el catálogo del canario sembrado y con
+  importes de distinta cantidad de dígitos, por lo mismo que la verificación
+  visual anterior dejó anotado. **Y un defecto conocido que la documentación de
+  este ciclo destapó y no arregló**: en `/ventas/[id]`, ocho celdas de
+  escritorio se quedaron sin tamaño propio al desaparecer el `<Table>` —del que
+  heredaban `text-sm`— y hoy caen a los 16 px del navegador en vez de los 14 de
+  su rol. Está escrito con nombre y apellido en `docs/sistema-de-diseno.md`,
+  bajo la escala tipográfica.
+
+  **Y el merge con el ciclo de permisos por usuario** (2026-08-26, `main` en
+  `v1.17.0`): los dos ciclos tocaron las mismas seis pantallas, y el merge
+  tiene una lección propia que vale más que los diez conflictos que resolvió.
+
+  **Este ciclo DUPLICÓ botones de acción** —uno en el Topbar (`hidden
+  lg:flex`) y otro al pie del cuerpo (`lg:hidden`), atados al mismo `form` y
+  al mismo `useActionState`— y el ciclo de permisos puso sus guardas sobre el
+  botón que existía cuando ese ciclo empezó, o sea sobre **una sola de las dos
+  copias**. La forma en que eso se manifiesta es lo peligroso: **git mergeó
+  sin marcar conflicto** en `app/(app)/servicio-tecnico/formularios.tsx`,
+  porque el ciclo de permisos renombró la prop a `puedeAnular` y el derivado
+  a `seOfreceAnular`, y la copia del teléfono —escrita cuando `puedeAnular`
+  era el derivado— siguió compilando con el nombre nuevo, ahora apuntando al
+  permiso pelado. Resultado del merge automático: "Anular orden" ofrecido en
+  el teléfono sobre una orden **ya anulada**, contra un `<form>` que en ese
+  caso ni existe. Ningún test, ningún `tsc`, ningún lint lo veía.
+
+  La regla que queda escrita: **toda guarda de permiso tiene que alcanzar las
+  dos copias, y el test que lo fija cuenta apariciones en las dos
+  direcciones** —con el permiso tienen que estar las dos, sin el permiso
+  ninguna—. Un `not.toContain` no alcanza: pasa igual si una de las dos
+  quedó gateada y la otra no. Los tres lugares donde vive hoy esa cobertura
+  son `app/(app)/servicio-tecnico/formularios.test.tsx` ("las DOS copias de
+  «Anular orden»"), `app/(app)/inventario/formularios.test.tsx` ("las DOS
+  copias de cada botón las gobierna el mismo `puedeEditar`") y
+  `test/permisos-en-las-dos-copias.test.ts`, que cubre por FUENTE lo que no se
+  puede renderizar (`/inventario`, un Server Component async: el botón
+  "Artículo nuevo" del Topbar y su `accionMovil`, y los DOS
+  `PanelDeCategorias` —el de la columna y el del `Sheet` del teléfono—).
+
+  **Dos cosas quedaron a propósito sin resolver, y las dos están anotadas en
+  `docs/pantallas.md`, sección `/usuarios`**: el diálogo de permisos sigue
+  siendo un `Dialog` centrado con su velo propio mientras el resto de los
+  overlays del teléfono son `Sheet` con `bg-foreground/65` sin desenfoque —dos
+  velos distintos conviviendo, que es una decisión de producto y no de un
+  merge—, y `components/ui/dialog.tsx` / `components/ui/switch.tsx` traen
+  `sm:` (640) del registry de shadcn, un corte que este ciclo prohíbe en
+  código propio pero que vive en `components/ui/`, que es código copiado tal
+  cual.
 - ~~Cobrar distinto según la forma de pago.~~ **Hecho** (2026-08-27). Sale del
   feedback textual de un cliente: *"también necesitaría poder diferenciar valor
   que se abona con crédito, del valor débito o transferencia. Porque no es el
@@ -1208,6 +1414,62 @@ Y del producto:
   entero**: que un local necesite que el recargo dependa del emisor de la
   tarjeta y no sólo de las cuotas — ahí la tabla de planes deja de alcanzar y
   empieza a ser un motor de promociones, que es otro producto.
+
+  **Y el merge con el ciclo del teléfono** (2026-08-28, `main` en el merge de
+  las trece pantallas móviles): este ciclo arrancó de `main` **antes** de ese
+  merge, así que las cinco pantallas que tocó las dos ramas —`/vender`,
+  `/ventas`, `/ventas/[id]`, `/inventario/[id]` y el layout— se integraron a
+  mano. Lo que vale para releer:
+
+  - **Se mergeó, no se rebasó, y la razón es medible.** Tres commits de esta
+    rama tocan `punto-de-venta.tsx` y dos tocan `ventas/page.tsx`, contra una
+    estructura (`<Table>` de shadcn) que el ciclo del teléfono ya había
+    reemplazado por el grid `lg:contents`. Rebasar significaba reimplementar la
+    misma pantalla tres veces y dejar commits intermedios que nunca existieron
+    ni se testearon; un merge deja **un solo punto de resolución**, con el
+    estado final y probado de la rama en la mano. La regla que queda: cuando la
+    otra rama REESCRIBIÓ el archivo, el rebase pierde justamente lo que lo hace
+    valer —el contexto de qué intentaba cada commit—, porque ese contexto ya no
+    existe.
+  - **Lo que git mergeó solo y estaba mal.** El panel de cobro de `/vender`
+    quedó con `monto:` (el nombre viejo del campo) en el JSON escondido y en el
+    pago nuevo, porque esa parte la reescribió el ciclo del teléfono y el
+    renombre a `base` de este ciclo vivía en el bloque que el conflicto
+    descartó. `tsc` no lo veía: `monto` seguía siendo un nombre válido en un
+    objeto literal que viaja como JSON.
+  - **El pie de tres líneas del cobro pasó a ser UN componente**
+    (`PieDeTotales`) usado en las dos copias — la card de escritorio y
+    `PieDeVenta`, el pie fijo del teléfono—, con el caso que cuenta las dos
+    apariciones. Es la misma regla que el merge anterior dejó escrita, aplicada
+    antes de que produjera el bug en vez de después.
+  - **El bug de plata que el merge destapó, y que no era del merge**: el chip
+    de vuelto restaba la BASE del pago, no lo que hay que cobrar por esa fila.
+    Con un plan de efectivo en pesos —el descuento por pago contado, que este
+    producto trata como caso de primera clase— los dos números no coinciden, así
+    que quien pagaba 10.000 con un descuento del 10 % se iba sin su vuelto de
+    1.000. Plata real, del cajón, en la única pantalla donde se cuentan
+    billetes. El agujero por el que llegó a existir es instructivo:
+    `planesOfrecidos` ofrece planes de efectivo —correctamente, el motor los
+    acepta— pero **ningún caso cruzaba el vuelto con un plan elegido**. Ahora la
+    cuenta vive en `aCobrarDeLaFilaEnCentavos`, exportada y probada, y la usa
+    también el pie: una sola aplicación del porcentaje para las dos.
+  - **Y de ahí salió un renglón nuevo, "A cobrar $X", por fila de pago.** El
+    campo se rotula "Monto" y muestra la base; con un plan, eso no es lo que hay
+    que pedirle a la persona. El pie da el total de la VENTA, que con pagos
+    partidos entre dos planes no alcanza para saber cuánto cobrar por cada uno.
+  - **`/formas-de-pago` ganó su copia móvil de "Plan nuevo"** (`controlMovil`,
+    la ranura derecha del Topbar): con sólo la de `acciones`, que `<Encabezado>`
+    envuelve en `hidden lg:flex`, el botón desaparecía del teléfono sin
+    reaparecer en ningún lado — la regla que el ciclo del teléfono aplicó cinco
+    veces. **El resto de la pantalla sigue sin adaptarse a 390 px**: su tabla
+    declara anchos fijos y no sigue el patrón `lg:contents`. Es deuda declarada
+    (entrada 22 de `docs/correcciones-pendientes-del-pen.md`) y no un olvido —
+    la maqueta tampoco dibuja esta pantalla en ningún ancho, así que adaptarla
+    sería otra derivada del código sobre algo que nadie diseñó.
+  - **Un conteo escrito a mano volvió a quedar viejo**: "2 de 6 permisos", en el
+    test de `/usuarios`, contra un catálogo que este ciclo llevó a siete. Se
+    derivó de `CLAVES_DE_PERMISO.length`. Es la tercera vez que este repo paga
+    el mismo peaje.
 
   **Y queda pendiente la verificación manual**, por lo mismo que la dejó
   pendiente el ciclo de permisos: `arandano-dev` bind-montea `/root/arandano` y

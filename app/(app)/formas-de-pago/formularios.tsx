@@ -18,6 +18,7 @@ import { MEDIOS, ROTULO_MEDIO } from '@/lib/ventas/medios'
 import {
   altaDePlan, edicionDePlan, bajaDePlan, reactivacionDePlan, type EstadoPlanes,
 } from './acciones'
+import { CLASES_RANURA_MOVIL } from '@/components/shell/encabezado'
 import estilos from './tipografia.module.css'
 
 // Acá y no en acciones.ts: aquel archivo es 'use server' y sólo puede exportar
@@ -253,7 +254,7 @@ export function CamposDePlan({ plan, pendiente }: { plan?: FilaDePlan; pendiente
  * diálogo es de Radix y el `Select` del medio tampoco funciona sin JS — es el
  * mismo trade-off que ya aceptaron `/vender` y el alta de artículos.
  */
-export function DialogoDePlan({ plan }: { plan?: FilaDePlan }) {
+export function DialogoDePlan({ plan, movil = false }: { plan?: FilaDePlan; movil?: boolean }) {
   const [abierto, setAbierto] = useState(false)
   const [enCurso, empezar] = useTransition()
 
@@ -272,8 +273,24 @@ export function DialogoDePlan({ plan }: { plan?: FilaDePlan }) {
           <button type="button" className={ENLACE}>
             Editar
           </button>
+        ) : movil ? (
+          // La copia del teléfono: la ranura derecha del Topbar, que
+          // `<Encabezado>` sólo puede llenar con `controlMovil` —un diálogo
+          // trae estado propio, no es un link—. Sin ella, "Plan nuevo"
+          // desaparecía del teléfono sin reaparecer en ningún lado: la regla
+          // que el ciclo del teléfono aplicó cinco veces (CLAUDE.md). Es una
+          // SEGUNDA instancia del mismo diálogo, montada en paralelo, igual
+          // que los dos `PanelDeCategorias` de /inventario — en cada ancho se
+          // ve una sola.
+          <button
+            type="button"
+            aria-label="Plan nuevo"
+            className={`${CLASES_RANURA_MOVIL} bg-primary text-primary-foreground`}
+          >
+            <Plus aria-hidden="true" className="size-[19px]" />
+          </button>
         ) : (
-          <Button>
+          <Button className="hidden lg:inline-flex">
             <Plus aria-hidden="true" className="size-[15px]" />
             Plan nuevo
           </Button>

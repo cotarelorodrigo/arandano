@@ -136,7 +136,10 @@ export default async function NoEncontrado() {
       {/* La firma va chica y arriba, no como cartel: quien llega acá llegó por
           error, y lo que necesita es entender qué pasó y salir. */}
       <p className="text-xs tracking-[0.06em] text-muted-foreground uppercase">Arándano</p>
-      <h1 className="mt-4 text-3xl font-semibold tracking-tight md:text-4xl">
+      {/* `lg:` y no `md:`: el ciclo del teléfono dejó UN SOLO corte en 1024
+          para todo el repo (hooks/use-mobile.ts), y éste era el último `md:`
+          vivo de `app/`. */}
+      <h1 className="mt-4 text-3xl font-semibold tracking-tight lg:text-4xl">
         No encontramos esta página.
       </h1>
       <p className="mt-4 max-w-md text-muted-foreground">

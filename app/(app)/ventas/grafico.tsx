@@ -72,10 +72,13 @@ export function GraficoDeMedios({ composicion }: { composicion: Composicion }) {
   const porcentajes = porcentajesQueSuman100(barras.map((b) => Number(b.total)), Number(total))
 
   return (
-    // shrink-0, igual que su equivalente de /ventas/[id] (`w-[324px]
-    // shrink-0`): sin esto, un vecino ancho en el mismo row flex podía
-    // angostar este panel por debajo de sus 344px de diseño.
-    <section className="flex w-[344px] shrink-0 flex-col overflow-hidden rounded-2xl border bg-card">
+    // Ancho completo en el teléfono —el `.pen` no dibuja un panel angosto ahí,
+    // el panel ocupa todo el ancho del cuerpo apilado— y recién a partir de
+    // `lg:` (donde el contenedor pasa a `flex-row`, ver page.tsx) se fija en
+    // 344px con `lg:shrink-0`, igual que su equivalente de /ventas/[id]
+    // (`lg:w-[324px] lg:shrink-0`): sin esto, un vecino ancho en el mismo row
+    // flex podía angostar este panel por debajo de sus 344px de diseño.
+    <section className="flex w-full flex-col overflow-hidden rounded-2xl border bg-card lg:w-[344px] lg:shrink-0">
       <div className="flex items-center justify-between border-b px-[18px] py-[13px]">
         <h2 className={`${estilos.tituloDeCard} text-foreground`}>Cómo entró la plata</h2>
       </div>

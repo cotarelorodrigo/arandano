@@ -155,11 +155,16 @@ describe('layout de la aplicación', () => {
     expect(html).toContain('15.5rem')
   })
 
-  // La maqueta no dibuja un botón de colapsar. El trigger existe sólo para que
-  // en un teléfono el sidebar se pueda abrir, y no se ve en el 1440 del diseño.
-  it('el trigger de mobile no se muestra en desktop', async () => {
+  // El trigger existía suelto acá (m-2 md:hidden) sólo para que en un
+  // teléfono el sidebar se pudiera abrir. Se mudó a la ranura izquierda de
+  // <Encabezado> (components/shell/encabezado.tsx), que cada page.tsx ya
+  // renderiza dentro de {children} — este caso ahora afirma que el LAYOUT no
+  // lo emite más; la intención original ("no se muestra en desktop") vive en
+  // components/shell/encabezado.test.tsx, que sí puede ejercitar las dos
+  // ramas del prop `atras`.
+  it('el trigger de mobile ya no lo emite el layout — vive en Encabezado', async () => {
     const html = await render()
-    expect(html).toMatch(/class="[^"]*md:hidden/)
+    expect(html).not.toContain('data-slot="sidebar-trigger"')
   })
 })
 

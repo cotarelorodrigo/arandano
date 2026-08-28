@@ -1785,13 +1785,53 @@ Usar `superpowers:requesting-code-review`. Con un solo desarrollador es la únic
 3. Que `Venta.total` siga siendo mercadería en todos sus lectores — el margen de `/inventario/[id]` se mide contra él.
 4. Que el plan se limpie al cambiar el medio en la fila de pago.
 
+- [ ] **Step 5b: Integrar con `main`, que se movió abajo del ciclo**
+
+Mientras este ciclo se escribía, `main` recibió el merge del ciclo del teléfono
+(las trece pantallas a 390 px). Las dos ramas tocaron las mismas cinco
+pantallas: `/vender`, `/ventas`, `/ventas/[id]`, `/inventario/[id]` y el layout
+de `(app)`.
+
+**Se integra con `git merge main` adentro de la rama, no con rebase**, y la
+razón es medible y no una preferencia: tres commits de esta rama tocan
+`punto-de-venta.tsx` y dos tocan `ventas/page.tsx`, contra una estructura
+(`<Table>` de shadcn) que el ciclo del teléfono ya reemplazó por el grid
+`lg:contents`. Rebasar obliga a reimplementar la misma pantalla tres veces y
+deja commits intermedios que nunca existieron ni se testearon; el merge deja un
+solo punto de resolución, con el estado final y probado de la rama en la mano.
+
+**Lo que hay que revisar a mano después de resolver**, porque git lo mergea sin
+marcar conflicto: que el renombre `Pago.monto → Pago.base` y el campo `planId`
+hayan sobrevivido en el panel de cobro que el ciclo del teléfono reescribió.
+`tsc` no lo ve — `monto` sigue siendo un nombre válido en un objeto literal que
+viaja como JSON.
+
 - [ ] **Step 6: Deployar en dos pasos, en este orden**
 
 No es una sugerencia: es lo que hace que el rollback automático signifique algo.
 
-1. **Deploy 1 (patch)**: `deploy.sh` sobre un commit que tenga **sólo las dos
-   migraciones** de la Task 1 (schema, SQL y `docs/schema.md`). Ningún código
-   las lee todavía, así que la imagen anterior sigue sirviendo igual.
+1. **Deploy 1 (patch)**: `deploy.sh` sobre `118a360` ("la tabla de planes de
+   pago, con su RLS"), que es donde vive la migración `planes_de_pago` —tabla
+   `PlanDePago`, `Pago.planDePagoId`, `Pago.recargo` y `Venta.recargo`—, sola,
+   sin una línea de código que la lea. Ningún código la lee todavía, así que la
+   imagen anterior sigue sirviendo igual.
+
+   **Corrección al plan original, que decía "un commit con las dos
+   migraciones": ese commit no existe.** La segunda migración es el `ALTER
+   TYPE` que agrega `PLANES_PAGO` al enum `Permiso`, y viaja adentro de
+   `970bbed`, un commit de feature entero — no por descuido: la Ruling 1 del
+   ciclo la movió ahí porque `test/permisos-catalogo.test.ts` exige que el
+   valor del enum, su entrada en el catálogo y su primer `exigirPermiso` caigan
+   en el mismo commit, así que separarla habría dejado el gate en rojo en el
+   commit del medio.
+
+   No rompe nada: lo que la regla de expand/contract protege es que ningún
+   código en producción lea una columna que la base no tiene, y el único lector
+   de ese valor del enum es el código que viaja con él. El costo real es más
+   chico y hay que nombrarlo: si el deploy 2 falla el healthcheck, "fue el
+   código y no el schema" es cierto para la tabla y las tres columnas —que ya
+   estuvieron vivas un deploy entero— pero no para el `ALTER TYPE`, que se
+   estrena en ese mismo deploy.
 2. **Deploy 2 (minor)**: el resto. Si el healthcheck lo rechaza, el rollback
    encuentra la base con columnas de más y ninguna de menos.
 

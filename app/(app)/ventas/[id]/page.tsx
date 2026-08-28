@@ -7,7 +7,6 @@ import { exigirSesion } from '@/lib/auth/sesion'
 import { puedeConSesion } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   formatearPrecio, formatearDolares, formatearCantidad, formatearHora, formatearFechaCorta,
   formatearFecha,
@@ -113,6 +112,44 @@ export function rotuloDePlan(plan: { nombre: string; cuotas: number } | null): s
 }
 
 /**
+ * La línea de "meta" de un ítem vendido en el teléfono: el mismo subtítulo
+ * que ya calcula `subtituloDeItem`, más cantidad × precio unitario en una
+ * sola línea. En escritorio esos dos números tienen su propia columna cada
+ * uno (Cantidad, Precio); en el teléfono no hay lugar para dos columnas más,
+ * así que se funden acá (design/arandano.pen, frame `WBV5G`, nodos
+ * `A2Q2X3`/`rWnNJ`/`hgu3n`: "SKU 000412 · 1 × $ 12.000,00").
+ */
+export function metaDeItem(i: { subtitulo: string; cantidad: string; precioUnitario: string }): string {
+  return `${i.subtitulo} · ${formatearCantidad(i.cantidad)} × ${formatearPrecio(i.precioUnitario)}`
+}
+
+/**
+ * La línea de "meta" de un pago en el teléfono: la moneda, y sólo si es
+ * dólares, la cotización con la que se tomó — un pago en pesos no se tomó a
+ * ninguna, mismo criterio que `cotizacionVisible` (design/arandano.pen, frame
+ * `WBV5G`, nodos `QUPwD`/`q8yOvI`: "Pesos" / "Dólares · cotización 1.485,00").
+ *
+ * **El plan va primero cuando lo hay** (merge del ciclo de precios por forma
+ * de pago con el del teléfono): en escritorio "Plan" es una columna, y en el
+ * teléfono esa columna no existe — se funde acá, que es el mecanismo que este
+ * repo ya fijó para toda columna que el teléfono no muestra por separado ("el
+ * dato no desaparece, se funde en la línea de meta"). Va DELANTE de la moneda
+ * porque es lo que distingue un pago de otro del mismo medio; sin plan, la
+ * línea queda exactamente como estaba.
+ */
+export function metaDePago(p: {
+  moneda: 'ARS' | 'USD'
+  cotizacion: string
+  plan?: string | null
+}): string {
+  const moneda =
+    p.moneda === 'USD'
+      ? `${ROTULO_MONEDA.USD} · cotización ${formatearPrecio(p.cotizacion)}`
+      : ROTULO_MONEDA.ARS
+  return p.plan ? `${p.plan} · ${moneda}` : moneda
+}
+
+/**
  * Las cuatro filas de texto del panel Resumen. La quinta —Estado— no es
  * texto: es el `ChipEstado` compartido con el listado, así que queda afuera
  * de esta función y se renderiza aparte.
@@ -135,6 +172,7 @@ export function filasDeResumen(v: {
     comprobante: 'Sin factura ARCA',
   }
 }
+export type ResumenTexto = ReturnType<typeof filasDeResumen>
 
 /**
  * "Anulada el ... por ...": quién y cuándo, no sólo que está anulada.
@@ -155,12 +193,462 @@ export function notaDeAnulacion(v: { anuladaEn: Date; anuladaPor: { nombre: stri
   return `Anulada el ${formatearFecha(v.anuladaEn)}${v.anuladaPor ? ` por ${v.anuladaPor.nombre}` : ''}.`
 }
 
-/** Una fila clave/valor del panel Resumen. */
+/** Una fila clave/valor del panel Resumen. Mobile-first: 14px de padding
+ *  horizontal en el teléfono (cuerpo `padding [12,14]`), 18px en escritorio
+ *  —sin cambios ahí— (design/arandano.pen, frame `WBV5G`, nodos
+ *  `eRwl3`/`fMtOE`/`WtVJz`/`f2u3zu`/`jjrWA`, `padding [11,14]`). */
 function FilaResumen({ clave, children }: { clave: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b px-[18px] py-[11px] last:border-b-0">
+    <div className="flex items-center justify-between gap-3 border-b px-[14px] py-[11px] last:border-b-0 lg:px-[18px]">
       <span className="text-[12px] text-muted-foreground">{clave}</span>
       <span className="text-[13px] font-medium text-foreground">{children}</span>
+    </div>
+  )
+}
+
+/** Un ítem vendido, ya resuelto a texto: lo que `Detalle` recibe de verdad,
+ *  sin ningún `Decimal` de Prisma cruzando a un fixture de test (mismo
+ *  criterio que `FilaDeVenta` en app/(app)/ventas/page.tsx). `subtitulo` y
+ *  `meta` son DOS textos distintos con el mismo origen (`subtituloDeItem`):
+ *  el primero es lo único que muestra escritorio bajo el nombre; el segundo
+ *  —que además suma cantidad × precio— es lo único que muestra el teléfono,
+ *  fundido con el subtotal en la meta de la card. */
+export type ItemVendido = {
+  id: string
+  nombre: string
+  subtitulo: string
+  meta: string
+  cantidadFormateada: string
+  precioFormateado: string
+  subtotalFormateado: string
+}
+
+/** Un pago recibido, ya resuelto a texto. `esUsd` decide si el teléfono suma
+ *  la línea "entraron $X" bajo la meta —sólo tiene sentido para un pago en
+ *  dólares, mismo motivo que `cotizacionVisible`. */
+export type PagoRecibido = {
+  id: string
+  medioLabel: string
+  /** El plan con el que se cobró ese pago, ya resuelto por `rotuloDePlan()`,
+   *  o `null` sin plan — que es todo pago de antes del ciclo de precios por
+   *  forma de pago y cualquier pago nuevo cobrado sin elegir uno. En el
+   *  teléfono no tiene celda propia: se funde en la línea de meta, mismo
+   *  mecanismo que "Moneda" y "Cotización". */
+  planLabel: string | null
+  monedaLabel: string
+  cotizacionFormateada: string
+  montoFormateado: string
+  enPesosFormateado: string
+  meta: string
+  esUsd: boolean
+}
+
+/**
+ * El cuerpo entero del detalle de una venta: el panel Resumen, las dos
+ * tablas ("Qué se vendió", "Cómo se pagó") y la Zona de riesgo — todo lo que
+ * `design/arandano.pen` dibuja en `WBV5G` (Móvil / Venta detalle) y en
+ * `App / Venta detalle` (escritorio, nodo `NjMl1`).
+ *
+ * No abre sesión ni toca Prisma —recibe todo ya resuelto a texto—, así que
+ * se renderiza directo en el test con `renderToStaticMarkup` (mismo criterio
+ * que `Listado` en app/(app)/ventas/page.tsx).
+ *
+ * **Las dos tablas siguen el patrón `lg:contents` de la Task 4** (ver el
+ * docblock de `Listado`, en app/(app)/ventas/page.tsx:344-408): grid en
+ * escritorio con las mismas anchuras que hoy declaraban los `<TableHead>`
+ * (`[1fr_100px_130px_140px]` para "Qué se vendió",
+ * `[1fr_110px_130px_130px_140px]` para "Cómo se pagó"), tarjetas apiladas en
+ * el teléfono. Cada columna que el teléfono no muestra por separado
+ * (Cantidad/Precio en la primera, Medio/Moneda/Cotización/Monto/En pesos en
+ * la segunda) sigue existiendo como celda `hidden lg:block` — el dato no
+ * desaparece, se funde en la línea de "meta" de la card (mismo mecanismo que
+ * ya usa "Medios" en `Listado`).
+ *
+ * **El orden se invierte entre anchos, y por eso las dos columnas de
+ * escritorio son `contents lg:flex` en vez de `flex lg:flex`.** El teléfono
+ * (`WBV5G`) apila Resumen primero, después "Qué se vendió", "Cómo se pagó" y
+ * por último la Zona de riesgo — pero escritorio pone "Qué se vendió"/"Cómo
+ * se pagó" a la izquierda y Resumen/Zona de riesgo a la derecha, con "Qué se
+ * vendió" ANTES que Resumen en el DOM. Un `order` por card sobre el MISMO
+ * árbol no alcanza si las dos columnas siguen siendo cajas reales en las dos
+ * anchuras, porque `order` sólo reordena hermanos DENTRO del mismo contenedor
+ * flex — así que cada columna se disuelve en el teléfono (`contents`, mismo
+ * truco que ya usa `app/(app)/vender/caja.tsx` para su variante píldora): sus
+ * dos cards pasan a ser hijos directos del `flex-col` externo, cada una con
+ * su propio `order-N` (1: Resumen, 2: Qué se vendió, 3: Cómo se pagó, 4: Zona
+ * de riesgo). En escritorio (`lg:flex`) cada columna vuelve a ser una caja
+ * real y `lg:order-none` restaura el orden natural del DOM adentro de ella
+ * (Qué se vendió antes que Cómo se pagó; Resumen antes que Zona de riesgo) —
+ * el `order` del teléfono no tiene ningún efecto ahí porque cada columna sólo
+ * tiene 2 hijos entre los que reordenar, y los dos ya están en su lugar.
+ *
+ * **La banda TOTAL pinta con `--marca`, sólo en el teléfono.** El nodo `Cv4xd`
+ * de `WBV5G` declara `fill: $ar-primary-deep` (`--marca`, ver
+ * `design/LEEME.md`) en vez del `bg-muted` de hoy — la maqueta la trata como
+ * el ancla de esta pantalla ("el importe que se dice en voz alta", mismo
+ * criterio que ya documenta `docs/sistema-de-diseno.md` para la banda
+ * homóloga de `/vender`). Escritorio no cambia: `lg:bg-muted` restaura
+ * exactamente el fondo y los colores de hoy.
+ */
+export function Detalle({
+  resumen, anulada, notaDeAnulacionTexto, items, totalFormateado, lineasDeTotal = null, pagos,
+  ofreceAnular, ventaId,
+}: {
+  resumen: ResumenTexto
+  anulada: boolean
+  notaDeAnulacionTexto: string | null
+  items: ItemVendido[]
+  /** El renglón único de siempre. Sigue siendo la fuente del importe cuando
+   *  `lineasDeTotal` es `null`, que es toda venta sin recargo — o sea toda
+   *  venta grabada antes del ciclo de precios por forma de pago, y la
+   *  mayoría después. */
+  totalFormateado: string
+  /** El desglose de tres líneas cuando la venta llevó recargo (Task 8), ya
+   *  resuelto a texto por `lineasDeRecargo()` en el llamador. `null` —el
+   *  default— deja el renglón único de `totalFormateado`. */
+  lineasDeTotal?: { rotulo: string; montoFormateado: string }[] | null
+  pagos: PagoRecibido[]
+  /** Si se dibuja el botón de anular: el permiso `VENTAS_ANULAR` Y que la
+   *  venta siga cobrada, ya combinados por `seOfreceAnular` en el llamador.
+   *  Se llama `ofreceAnular` y no `puedeAnularVenta` a propósito: ese otro
+   *  nombre es, diez líneas más abajo en esta misma pantalla, el PERMISO
+   *  pelado — sin la parte de "y todavía no está anulada". Dos cosas
+   *  distintas con el mismo nombre es exactamente el modo de falla que el
+   *  merge con el ciclo de permisos (2026-08-26) tenía que evitar. */
+  ofreceAnular: boolean
+  ventaId: string
+}) {
+  return (
+    <div className="flex flex-col gap-3 px-[14px] py-3 lg:gap-4 lg:p-6">
+      {/* Sólo en escritorio: en el teléfono la flecha del Topbar (`atras`
+          del Encabezado) ya vuelve a /ventas, y dos flechas de volver en la
+          misma pantalla es un error. */}
+      <Link
+        href="/ventas"
+        className="hidden w-fit items-center gap-[6px] text-[12px] font-semibold text-muted-foreground lg:flex"
+      >
+        <ArrowLeft aria-hidden="true" className="size-[14px]" />
+        Ventas
+      </Link>
+
+      {/* Fila: las dos columnas — qué se vendió/cómo se pagó a la
+          izquierda, resumen y anulación a la derecha (design/arandano.pen,
+          nodo `NjMl1`). En el teléfono (`WBV5G`) no hay columnas: una sola
+          pila, con Resumen primero — ver el docblock de `Detalle`, arriba,
+          para el mecanismo `contents lg:flex` + `order-N`. */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-4">
+        <div className="contents lg:flex lg:flex-1 lg:flex-col lg:gap-4">
+          <div className="order-2 flex flex-col overflow-hidden rounded-2xl border bg-card lg:order-none">
+            <div className="border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
+              <h2 className={`${estilos.tituloDeCard} text-foreground`}>Qué se vendió</h2>
+            </div>
+            <div role="table" className="grid grid-cols-1 lg:grid-cols-[1fr_100px_130px_140px]">
+              <div role="row" className="hidden lg:contents">
+                <div role="columnheader" className="bg-muted px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Artículo
+                </div>
+                <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Cantidad
+                </div>
+                <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Precio
+                </div>
+                <div role="columnheader" className="bg-muted px-[7px] py-3 pr-[18px] text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Subtotal
+                </div>
+              </div>
+
+              {/* Los datos CONGELADOS: lo que se cobró ese día, no lo que el
+                  artículo vale hoy — VentaItem guarda copia, y todo acá ya
+                  llegó formateado desde `DetalleDeVenta` (`subtotalItem()` de
+                  lib/ventas/totales.ts, la MISMA función con la que
+                  `crearVenta` arma el total). */}
+              {/* SIN `last:border-b-0`, a diferencia de la fila de "Cómo se
+                  pagó" más abajo, que sí lo lleva — y la asimetría es a
+                  propósito, no un olvido (la review final la marcó como
+                  candidata a unificar). Lo que viene después de la última
+                  fila NO es lo mismo en las dos tablas: acá sigue la banda
+                  TOTAL, y ese borde es lo que la separa de la lista, igual
+                  que el `border-b` del encabezado la separa por arriba; en
+                  "Cómo se pagó" sigue el borde de la card, y ahí el borde de
+                  la fila haría una línea doble. Sólo cuenta en el teléfono:
+                  en escritorio la fila es `lg:contents`, así que su caja
+                  —y con ella su borde— no existe, y quien dibuja las líneas
+                  es cada celda con `lg:group-last:border-b-0`. */}
+              {items.map((i) => (
+                <div
+                  key={i.id}
+                  role="row"
+                  className="group flex flex-col gap-[5px] border-b p-[11px] px-[14px] lg:contents"
+                >
+                  {/* Nombre + subtítulo (SKU/Servicio): la celda "Artículo"
+                      de escritorio, sin cambios — es la más alta de la fila
+                      (dos líneas), así que no lleva envoltorio de centrado
+                      (mismo criterio que "Cliente" en `Listado`). En el
+                      teléfono el subtítulo se oculta: ya va fundido, junto
+                      con cantidad y precio, en la meta de más abajo. */}
+                  <div role="cell" className="lg:border-b lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
+                    <div className="flex flex-col gap-0.5 whitespace-normal">
+                      <span className="text-[14px] font-medium text-foreground lg:text-sm">{i.nombre}</span>
+                      <span className="hidden text-[11px] text-muted-foreground lg:block">{i.subtitulo}</span>
+                    </div>
+                  </div>
+
+                  {/* Meta del teléfono: subtítulo + cantidad × precio a la
+                      izquierda, subtotal a la derecha — oculta en
+                      escritorio, donde esos tres números ya tienen su propia
+                      celda. */}
+                  <div className="flex items-center justify-between gap-[10px] lg:hidden">
+                    <span className="text-[11px] text-muted-foreground">{i.meta}</span>
+                    <span className={`${estilos.archivo} text-[15px] font-semibold text-foreground tabular-nums`}>
+                      {i.subtotalFormateado}
+                    </span>
+                  </div>
+
+                  {/* Cantidad — su propia celda, sólo escritorio.
+
+                      Las celdas de escritorio de las DOS tablas de esta
+                      pantalla llevan `text-sm` propio, sin prefijo. Antes de
+                      esta rama lo heredaban del `<Table>` de shadcn
+                      (components/ui/table.tsx), que se fue con el grid; acá
+                      ningún ancestro lo repone —`.archivo` sólo declara la
+                      familia, y el contenedor es un `<div>` con borde, no un
+                      `<Card>` de shadcn, que sí lo trae (por eso el carrito
+                      de /vender no lo necesitó)—, así que sin esto caerían a
+                      los 16 px del navegador. Los 14 px valen en los dos
+                      anchos: son los de escritorio de antes de la rama, y en
+                      el teléfono estas celdas están ocultas. */}
+                  <div role="cell" className={`${estilos.archivo} hidden text-right text-sm text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
+                    <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{i.cantidadFormateada}</div>
+                  </div>
+
+                  {/* Precio — su propia celda, sólo escritorio. */}
+                  <div role="cell" className={`${estilos.archivo} hidden text-right text-sm text-foreground-soft tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
+                    <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{i.precioFormateado}</div>
+                  </div>
+
+                  {/* Subtotal — su propia celda, sólo escritorio (el
+                      teléfono ya lo mostró arriba, en la meta). */}
+                  <div role="cell" className={`${estilos.archivo} hidden text-right text-sm font-semibold text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
+                    <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{i.subtotalFormateado}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Un renglón ("Total") sin recargo — toda venta grabada antes
+                de este ciclo, y la mayoría después —, o tres con
+                `lineasDeRecargo()` (Task 8): Mercadería, Recargo/Descuento y
+                Cobrado. La ÚLTIMA es siempre la banda destacada de siempre,
+                lleve el rótulo que lleve, así que el desglose no cambia el
+                ancla visual de la pantalla: `--marca` en el teléfono
+                (design/arandano.pen, nodo `Cv4xd`), `bg-muted` de siempre en
+                escritorio — ver el docblock de `Detalle`, arriba.
+                `design/arandano.pen` no dibuja el desglose de tres líneas
+                —es anterior a los planes de pago—, y la deuda queda anotada
+                en docs/correcciones-pendientes-del-pen.md junto con las
+                otras de este mismo ciclo. */}
+            <div className="flex flex-col">
+              {(lineasDeTotal ?? [{ rotulo: 'Total', montoFormateado: totalFormateado }]).map(
+                ({ rotulo, montoFormateado }, i, arr) =>
+                  i === arr.length - 1 ? (
+                    <div
+                      key={rotulo}
+                      className="flex items-center justify-between bg-[var(--marca)] px-[14px] py-[13px] lg:bg-muted lg:px-[18px] lg:py-[14px]"
+                    >
+                      <span className="text-[10px] font-bold tracking-[1px] text-[var(--marca-soft)] uppercase lg:tracking-[1.2px] lg:text-muted-foreground">
+                        {rotulo}
+                      </span>
+                      <span
+                        className={`${estilos.archivo} text-[22px] font-semibold text-[var(--marca-foreground)] tabular-nums lg:text-foreground`}
+                      >
+                        {montoFormateado}
+                      </span>
+                    </div>
+                  ) : (
+                    <div
+                      key={rotulo}
+                      className="flex items-center justify-between border-b px-[14px] py-[11px] lg:px-[18px] lg:py-[12px]"
+                    >
+                      <span className="text-[12px] text-muted-foreground">{rotulo}</span>
+                      <span
+                        className={`${estilos.archivo} text-[13px] font-semibold text-foreground-soft tabular-nums`}
+                      >
+                        {montoFormateado}
+                      </span>
+                    </div>
+                  ),
+              )}
+            </div>
+          </div>
+
+          <div className="order-3 flex flex-col overflow-hidden rounded-2xl border bg-card lg:order-none">
+            <div className="border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
+              <h2 className={`${estilos.tituloDeCard} text-foreground`}>Cómo se pagó</h2>
+            </div>
+            <div role="table" className="grid grid-cols-1 lg:grid-cols-[1fr_150px_110px_130px_130px_140px]">
+              <div role="row" className="hidden lg:contents">
+                <div role="columnheader" className="bg-muted px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Medio
+                </div>
+                {/* Con qué plan se cobró (Task 8) — "—" sin plan, que es todo
+                    pago de antes de este ciclo y cualquier pago nuevo cobrado
+                    sin elegir uno. */}
+                <div role="columnheader" className="bg-muted px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Plan
+                </div>
+                <div role="columnheader" className="bg-muted px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Moneda
+                </div>
+                <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Cotización
+                </div>
+                <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  Monto
+                </div>
+                <div role="columnheader" className="bg-muted px-[7px] py-3 pr-[18px] text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                  En pesos
+                </div>
+              </div>
+
+              {pagos.map((p) => (
+                <div
+                  key={p.id}
+                  role="row"
+                  className="group flex flex-col gap-1 border-b p-[11px] px-[14px] last:border-b-0 lg:contents"
+                >
+                  {/* Fila superior del teléfono: medio + monto — oculta en
+                      escritorio, donde cada uno ya tiene su propia celda. */}
+                  <div className="flex items-center justify-between gap-[10px] lg:hidden">
+                    <span className="text-[14px] font-medium text-foreground">{p.medioLabel}</span>
+                    <span className={`${estilos.archivo} text-[15px] font-semibold text-foreground tabular-nums`}>
+                      {p.montoFormateado}
+                    </span>
+                  </div>
+
+                  {/* Medio — su propia celda, sólo escritorio. Todas las
+                      celdas de esta tabla son de una sola línea —a
+                      diferencia de "Artículo" en la de arriba—, así que
+                      TODAS necesitan el envoltorio de centrado (ninguna es
+                      "la más alta" de por sí). */}
+                  <div role="cell" className="hidden text-sm text-foreground lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
+                    <div className="lg:flex lg:h-full lg:items-center">{p.medioLabel}</div>
+                  </div>
+
+                  {/* Plan — su propia celda, sólo escritorio (el teléfono la
+                      funde en la meta, igual que Moneda y Cotización). */}
+                  <div role="cell" className="hidden text-sm text-foreground-soft lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
+                    <div className="lg:flex lg:h-full lg:items-center">{p.planLabel ?? '—'}</div>
+                  </div>
+
+                  {/* Moneda — su propia celda, sólo escritorio (el teléfono
+                      la funde en la meta). */}
+                  <div role="cell" className="hidden text-sm text-foreground lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
+                    <div className="lg:flex lg:h-full lg:items-center">{p.monedaLabel}</div>
+                  </div>
+
+                  {/* Cotización — su propia celda, sólo escritorio. */}
+                  <div role="cell" className={`${estilos.archivo} hidden text-right text-sm text-foreground-soft tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
+                    <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{p.cotizacionFormateada}</div>
+                  </div>
+
+                  {/* Monto — su propia celda, sólo escritorio (el teléfono
+                      ya lo mostró arriba). Cada moneda con su formateador ya
+                      resuelto en `montoFormateado` — `formatearPrecio` ya
+                      emite el `$` de pesos, así que anteponerle "US$ " a mano
+                      daba "US$ $ 0,80". */}
+                  <div role="cell" className={`${estilos.archivo} hidden text-right text-sm text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
+                    <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{p.montoFormateado}</div>
+                  </div>
+
+                  {/* En pesos — su propia celda, sólo escritorio (el
+                      teléfono la muestra abajo, sólo si es un pago en
+                      dólares). `montoEnPesos()` de lib/ventas/totales.ts, la
+                      MISMA función con la que `componerPorMedio` arma "Cómo
+                      entró la plata" en /ventas. */}
+                  <div role="cell" className={`${estilos.archivo} hidden text-right text-sm font-semibold text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
+                    <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{p.enPesosFormateado}</div>
+                  </div>
+
+                  {/* Meta del teléfono: moneda (+ cotización si es dólares)
+                      y, sólo para un pago en dólares, "entraron $X" — un
+                      pago en pesos no tiene nada más que decir ahí, mismo
+                      motivo que ya explica `cotizacionVisible`. */}
+                  <div className="flex items-center justify-between gap-[10px] lg:hidden">
+                    <span className="text-[11px] text-muted-foreground">{p.meta}</span>
+                    {p.esUsd && (
+                      <span className="text-[11px] font-semibold text-foreground-soft">
+                        entraron {p.enPesosFormateado}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="contents lg:flex lg:w-[324px] lg:shrink-0 lg:flex-col lg:gap-4">
+          <div className="order-1 flex flex-col overflow-hidden rounded-2xl border bg-card lg:order-none">
+            <div className="border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
+              <h2 className={`${estilos.tituloDeCard} text-foreground`}>Resumen</h2>
+            </div>
+            <div className="flex flex-col">
+              <FilaResumen clave="Fecha">{resumen.fecha}</FilaResumen>
+              <FilaResumen clave="Vendió">{resumen.vendio}</FilaResumen>
+              <FilaResumen clave="Cliente">{resumen.cliente}</FilaResumen>
+              <FilaResumen clave="Estado">
+                <ChipEstado anulada={anulada} />
+              </FilaResumen>
+              <FilaResumen clave="Comprobante">{resumen.comprobante}</FilaResumen>
+            </div>
+          </div>
+
+          {/* Zona de riesgo (design/arandano.pen, nodo `TIlD3`): la maqueta
+              sólo dibuja el texto de advertencia, sin ningún botón — no
+              existe ningún frame de venta anulada contra el que confirmar si
+              el botón va en otro lado, así que se lo deja exactamente donde
+              el texto lo ubica (ver relevamiento.md, punto 6). El texto
+              queda visible para cualquier rol —explica por qué alguien
+              puede no tener el botón—, y el botón mismo lo gobierna el
+              permiso `VENTAS_ANULAR` (ciclo de permisos por usuario,
+              2026-08-26): sigue en `DUENO` siempre y en `EMPLEADO` sólo si
+              se lo otorgaron. El texto de abajo ("Sólo el dueño puede
+              hacerlo") es copy literal del `.pen` y quedó desactualizado por
+              esa conversión — ver docs/correcciones-pendientes-del-pen.md.
+
+              Una vez anulada no hay nada que ADVERTIR —la acción ya no se
+              puede tomar—, pero sí algo que INFORMAR: quién y cuándo. La
+              maqueta no dice nada sobre este estado (no dibuja ningún frame
+              de venta anulada, ni de escritorio ni del teléfono), y "no dice
+              nada" no es "sacalo": el dato vive en
+              `Venta.anuladaEn`/`anuladaPorId` desde el schema original, y una
+              venta anulada revierte stock y da de baja plata cobrada —
+              perder de vista quién lo hizo y cuándo es perder el único
+              rastro de una operación que mueve caja e inventario. Ocupa el
+              mismo lugar que la advertencia, así que la columna nunca queda
+              con las dos cosas a la vez. */}
+          {notaDeAnulacionTexto ? (
+            <Alert className="order-4 rounded-2xl bg-destructive-soft px-[14px] py-[14px] lg:order-none lg:px-4 lg:py-4">
+              <AlertDescription className="text-[11px] leading-[1.45] text-destructive opacity-85">
+                {notaDeAnulacionTexto}
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <div className="order-4 flex flex-col gap-[9px] rounded-2xl bg-destructive-soft p-[14px] lg:order-none lg:p-4">
+              <div className="flex items-center gap-[7px]">
+                <TriangleAlert aria-hidden="true" className="size-[14px] text-destructive" />
+                <span className="text-[13px] font-bold text-destructive">Anular la venta</span>
+              </div>
+              <p className="text-[11px] leading-[1.45] text-destructive opacity-85">
+                El stock vuelve al inventario con movimientos compensatorios. Los
+                movimientos originales no se borran. Sólo el dueño puede hacerlo.
+              </p>
+              {ofreceAnular && <AnularVenta ventaId={ventaId} />}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -212,276 +700,62 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
   // 404, y tienen que serlo — distinguirlos filtraría qué ids existen.
   if (!venta) notFound()
 
-  const filas = filasDeResumen(venta)
+  const resumen = filasDeResumen(venta)
   const anulada = venta.anuladaEn !== null
   const puedeAnularVenta = await puedeConSesion(sesion, 'VENTAS_ANULAR')
   // null cuando la venta no llevó recargo: el pie de "Qué se vendió" cae al
   // renglón único "Total" de siempre, más abajo.
   const lineasDeTotal = lineasDeRecargo(venta)
 
+  const items: ItemVendido[] = venta.items.map((i) => {
+    const subtitulo = subtituloDeItem(i.articulo)
+    const cantidad = i.cantidad.toString()
+    const precioUnitario = i.precioUnitario.toString()
+    return {
+      id: i.id,
+      nombre: i.descripcion,
+      subtitulo,
+      meta: metaDeItem({ subtitulo, cantidad, precioUnitario }),
+      cantidadFormateada: formatearCantidad(cantidad),
+      precioFormateado: formatearPrecio(precioUnitario),
+      subtotalFormateado: formatearPrecio(subtotalItem(i.cantidad, i.precioUnitario).toString()),
+    }
+  })
+
+  const pagos: PagoRecibido[] = venta.pagos.map((p) => {
+    const cotizacion = p.cotizacion.toString()
+    return {
+      id: p.id,
+      medioLabel: ROTULO_MEDIO[p.medio],
+      monedaLabel: ROTULO_MONEDA[p.moneda],
+      cotizacionFormateada: cotizacionVisible({ moneda: p.moneda, cotizacion }),
+      montoFormateado: p.moneda === 'USD' ? formatearDolares(p.monto.toString()) : formatearPrecio(p.monto.toString()),
+      enPesosFormateado: formatearPrecio(montoEnPesos(p.monto, p.cotizacion).toString()),
+      planLabel: rotuloDePlan(p.plan),
+      meta: metaDePago({ moneda: p.moneda, cotizacion, plan: rotuloDePlan(p.plan) }),
+      esUsd: p.moneda === 'USD',
+    }
+  })
+
   return (
     <>
-      <Encabezado titulo={`Venta #${venta.numero}`} />
-      <div className="flex flex-col gap-4 p-6">
-        <Link
-          href="/ventas"
-          className="flex w-fit items-center gap-[6px] text-[12px] font-semibold text-muted-foreground"
-        >
-          <ArrowLeft aria-hidden="true" className="size-[14px]" />
-          Ventas
-        </Link>
-
-        {/* Fila: las dos columnas — qué se vendió/cómo se pagó a la
-            izquierda, resumen y anulación a la derecha (design/arandano.pen,
-            nodo `NjMl1`). */}
-        <div className="flex items-start gap-4">
-          <div className="flex flex-1 flex-col gap-4">
-            <div className="flex flex-col overflow-hidden rounded-2xl border bg-card">
-              <div className="border-b px-[18px] py-[13px]">
-                <h2 className={`${estilos.tituloDeCard} text-foreground`}>Qué se vendió</h2>
-              </div>
-              <Table className="table-fixed">
-                <TableHeader>
-                  <TableRow className="bg-muted hover:bg-muted">
-                    <TableHead className="h-auto px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                      Artículo
-                    </TableHead>
-                    <TableHead className="h-auto w-[100px] px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                      Cantidad
-                    </TableHead>
-                    <TableHead className="h-auto w-[130px] px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                      Precio
-                    </TableHead>
-                    <TableHead className="h-auto w-[140px] px-[7px] py-3 pr-[18px] text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                      Subtotal
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {/* Los datos CONGELADOS: lo que se cobró ese día, no lo que
-                      el artículo vale hoy. Es para lo que VentaItem guarda
-                      copia — el subtotal sí se recalcula acá (cantidad ×
-                      precioUnitario CONGELADO), no porque el dato falte sino
-                      porque es aritmética sobre lo que ya se guardó. Con
-                      `subtotalItem()` de lib/ventas/totales.ts, la MISMA
-                      función con la que `crearVenta` arma el total —ese
-                      archivo explica por qué los dos tienen que redondear en
-                      el mismo momento y de la misma forma, y reimplementarla
-                      acá a mano (`cantidad.mul(precio).toFixed(2)`) es
-                      exactamente el riesgo que ese comentario advierte. */}
-                  {venta.items.map((i) => (
-                    <TableRow key={i.id}>
-                      <TableCell className="p-[11px] px-[7px] pl-[18px] whitespace-normal">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-sm font-medium text-foreground">{i.descripcion}</span>
-                          <span className="text-[11px] text-muted-foreground">
-                            {subtituloDeItem(i.articulo)}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell
-                        className={`${estilos.archivo} p-[11px] px-[7px] text-right text-foreground tabular-nums`}
-                      >
-                        {formatearCantidad(i.cantidad.toString())}
-                      </TableCell>
-                      <TableCell
-                        className={`${estilos.archivo} p-[11px] px-[7px] text-right text-foreground-soft tabular-nums`}
-                      >
-                        {formatearPrecio(i.precioUnitario.toString())}
-                      </TableCell>
-                      <TableCell
-                        className={`${estilos.archivo} p-[11px] px-[7px] pr-[18px] text-right font-semibold text-foreground tabular-nums`}
-                      >
-                        {formatearPrecio(subtotalItem(i.cantidad, i.precioUnitario).toString())}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {/* Un renglón ("Total") sin recargo — toda venta grabada antes
-                  de este ciclo, y la mayoría después —, o tres con
-                  `lineasDeRecargo()` (Task 8): Mercadería, Recargo/Descuento y
-                  Cobrado, la última destacada igual que el único renglón de
-                  antes. `design/arandano.pen` no dibuja el desglose de tres
-                  líneas —es anterior a los planes de pago—, y la deuda queda
-                  anotada en docs/correcciones-pendientes-del-pen.md junto con
-                  las otras de este mismo ciclo. */}
-              <div className="flex flex-col divide-y">
-                {(lineasDeTotal ?? [{ rotulo: 'Total', monto: venta.total }]).map(
-                  ({ rotulo, monto }, i, arr) => {
-                    const esUltima = i === arr.length - 1
-                    return (
-                      <div
-                        key={rotulo}
-                        className={`flex items-center justify-between px-[18px] py-[14px] ${
-                          esUltima ? 'bg-muted' : ''
-                        }`}
-                      >
-                        <span
-                          className={
-                            esUltima
-                              ? 'text-[10px] font-bold tracking-[1.2px] text-muted-foreground uppercase'
-                              : 'text-[12px] text-muted-foreground'
-                          }
-                        >
-                          {rotulo}
-                        </span>
-                        <span
-                          className={`${estilos.archivo} tabular-nums ${
-                            esUltima
-                              ? 'text-[22px] font-semibold text-foreground'
-                              : 'text-[13px] font-semibold text-foreground-soft'
-                          }`}
-                        >
-                          {formatearPrecio(monto.toString())}
-                        </span>
-                      </div>
-                    )
-                  },
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-col overflow-hidden rounded-2xl border bg-card">
-              <div className="border-b px-[18px] py-[13px]">
-                <h2 className={`${estilos.tituloDeCard} text-foreground`}>Cómo se pagó</h2>
-              </div>
-              <Table className="table-fixed">
-                <TableHeader>
-                  <TableRow className="bg-muted hover:bg-muted">
-                    <TableHead className="h-auto px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                      Medio
-                    </TableHead>
-                    {/* Con qué plan se cobró (Task 8) — "—" sin plan, que es
-                        todo pago de antes de este ciclo y cualquier pago
-                        nuevo cobrado sin elegir uno. */}
-                    <TableHead className="h-auto w-[150px] px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                      Plan
-                    </TableHead>
-                    <TableHead className="h-auto w-[110px] px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                      Moneda
-                    </TableHead>
-                    <TableHead className="h-auto w-[130px] px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                      Cotización
-                    </TableHead>
-                    <TableHead className="h-auto w-[130px] px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                      Monto
-                    </TableHead>
-                    <TableHead className="h-auto w-[140px] px-[7px] py-3 pr-[18px] text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                      En pesos
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {venta.pagos.map((p) => (
-                    <TableRow key={p.id}>
-                      <TableCell className="p-[11px] px-[7px] pl-[18px] text-foreground">
-                        {ROTULO_MEDIO[p.medio]}
-                      </TableCell>
-                      <TableCell className="p-[11px] px-[7px] text-foreground-soft">
-                        {rotuloDePlan(p.plan) ?? '—'}
-                      </TableCell>
-                      <TableCell className="p-[11px] px-[7px] text-foreground">
-                        {ROTULO_MONEDA[p.moneda]}
-                      </TableCell>
-                      <TableCell
-                        className={`${estilos.archivo} p-[11px] px-[7px] text-right text-foreground-soft tabular-nums`}
-                      >
-                        {cotizacionVisible({ moneda: p.moneda, cotizacion: p.cotizacion.toString() })}
-                      </TableCell>
-                      {/* Cada moneda con su formateador: `formatearPrecio` ya
-                          emite el `$` de pesos, así que anteponerle "US$ " a
-                          mano daba "US$ $ 0,80". */}
-                      <TableCell
-                        className={`${estilos.archivo} p-[11px] px-[7px] text-right text-foreground tabular-nums`}
-                      >
-                        {p.moneda === 'USD'
-                          ? formatearDolares(p.monto.toString())
-                          : formatearPrecio(p.monto.toString())}
-                      </TableCell>
-                      {/* montoEnPesos() de lib/ventas/totales.ts, no
-                          `p.monto.mul(p.cotizacion).toFixed(2)` a mano —
-                          mismo motivo que el subtotal de arriba: es la MISMA
-                          función con la que `componerPorMedio` arma "Cómo
-                          entró la plata" en /ventas, así que esta columna y
-                          ese panel redondean en el mismo momento y de la
-                          misma forma. */}
-                      <TableCell
-                        className={`${estilos.archivo} p-[11px] px-[7px] pr-[18px] text-right font-semibold text-foreground tabular-nums`}
-                      >
-                        {formatearPrecio(montoEnPesos(p.monto, p.cotizacion).toString())}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-
-          <div className="flex w-[324px] shrink-0 flex-col gap-4">
-            <div className="flex flex-col overflow-hidden rounded-2xl border bg-card">
-              <div className="border-b px-[18px] py-[13px]">
-                <h2 className={`${estilos.tituloDeCard} text-foreground`}>Resumen</h2>
-              </div>
-              <div className="flex flex-col">
-                <FilaResumen clave="Fecha">{filas.fecha}</FilaResumen>
-                <FilaResumen clave="Vendió">{filas.vendio}</FilaResumen>
-                <FilaResumen clave="Cliente">{filas.cliente}</FilaResumen>
-                <FilaResumen clave="Estado">
-                  <ChipEstado anulada={anulada} />
-                </FilaResumen>
-                <FilaResumen clave="Comprobante">{filas.comprobante}</FilaResumen>
-              </div>
-            </div>
-
-            {/* Zona de riesgo (design/arandano.pen, nodo `TIlD3`): la maqueta
-                sólo dibuja el texto de advertencia, sin ningún botón — no
-                existe ningún frame de venta anulada contra el que confirmar
-                si el botón va en otro lado, así que se lo deja exactamente
-                donde el texto lo ubica (ver relevamiento.md, punto 6). El
-                texto queda visible para cualquier rol —explica por qué
-                alguien puede no tener el botón—, y el botón mismo lo
-                gobierna el permiso `VENTAS_ANULAR` (ciclo de permisos por
-                usuario, 2026-08-26): sigue en `DUENO` siempre y en
-                `EMPLEADO` sólo si se lo otorgaron. El texto de abajo ("Sólo
-                el dueño puede hacerlo") es copy literal del `.pen` y quedó
-                desactualizado por esa conversión — ver
-                docs/correcciones-pendientes-del-pen.md.
-
-                Una vez anulada no hay nada que ADVERTIR —la acción ya no se
-                puede tomar—, pero sí algo que INFORMAR: quién y cuándo. La
-                maqueta no dice nada sobre este estado (no dibuja ningún frame
-                de venta anulada), y "no dice nada" no es "sacalo": el dato
-                vive en `Venta.anuladaEn`/`anuladaPorId` desde el schema
-                original, y una venta anulada revierte stock y da de baja
-                plata cobrada — perder de vista quién lo hizo y cuándo es
-                perder el único rastro de una operación que mueve caja e
-                inventario. Ocupa el mismo lugar que la advertencia, así que
-                la columna nunca queda con las dos cosas a la vez. */}
-            {venta.anuladaEn ? (
-              <Alert className="rounded-2xl bg-destructive-soft px-4 py-4">
-                <AlertDescription className="text-[11px] leading-[1.45] text-destructive opacity-85">
-                  {notaDeAnulacion({ anuladaEn: venta.anuladaEn, anuladaPor: venta.anuladaPor })}
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <div className="flex flex-col gap-[9px] rounded-2xl bg-destructive-soft p-4">
-                <div className="flex items-center gap-[7px]">
-                  <TriangleAlert aria-hidden="true" className="size-[14px] text-destructive" />
-                  <span className="text-[13px] font-bold text-destructive">Anular la venta</span>
-                </div>
-                <p className="text-[11px] leading-[1.45] text-destructive opacity-85">
-                  El stock vuelve al inventario con movimientos compensatorios. Los
-                  movimientos originales no se borran. Sólo el dueño puede hacerlo.
-                </p>
-                {seOfreceAnular(puedeAnularVenta, venta.anuladaEn) && (
-                  <AnularVenta ventaId={venta.id} />
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      <Encabezado titulo={`Venta #${venta.numero}`} atras="/ventas" />
+      <Detalle
+        resumen={resumen}
+        anulada={anulada}
+        notaDeAnulacionTexto={venta.anuladaEn ? notaDeAnulacion({ anuladaEn: venta.anuladaEn, anuladaPor: venta.anuladaPor }) : null}
+        items={items}
+        totalFormateado={formatearPrecio(venta.total.toString())}
+        lineasDeTotal={
+          lineasDeTotal?.map(({ rotulo, monto }) => ({
+            rotulo,
+            montoFormateado: formatearPrecio(monto.toString()),
+          })) ?? null
+        }
+        pagos={pagos}
+        ofreceAnular={seOfreceAnular(puedeAnularVenta, venta.anuladaEn)}
+        ventaId={venta.id}
+      />
     </>
   )
 }

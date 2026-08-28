@@ -8,8 +8,11 @@ está en el archivo es lo que se construyó o lo que se descartó.
 
 ## Qué hay adentro
 
-Trece pantallas, que son todas las que el producto tiene hoy — la lista y lo que
-hace cada una vive en `docs/pantallas.md`, no acá:
+Las trece pantallas que el producto tiene hoy, **dos veces**: una en la maqueta
+de escritorio de 1440 px y otra en la del teléfono de 390 px. La lista de lo que
+hace cada una vive en `docs/pantallas.md`, no acá.
+
+### Escritorio — 1440 px
 
 | Frame | Ruta |
 |---|---|
@@ -27,10 +30,59 @@ hace cada una vive en `docs/pantallas.md`, no acá:
 | `App / Login` | `/login` |
 | `Sitio / Landing` | `/` en el ápex |
 
-Más `Shell/Sidebar`, que es un componente reusable: de los doce frames
-`App /`, las **diez** pantallas de aplicación lo instancian y sólo overridean
-cuál entrada está activa —el ticket de 80 mm y el login no llevan shell—. Si
-la navegación cambia, cambia en un lugar.
+### Teléfono — 390 px
+
+Quince frames, y son quince y no trece por dos razones que conviene leer antes
+de buscar la que falta: `/vender` se parte en dos porque en el teléfono el cobro
+es **pantalla propia**, y el drawer de navegación **no tiene ruta** — es un
+estado del shell que en escritorio no existe, porque ahí el sidebar está
+siempre a la vista.
+
+| Frame | Ruta |
+|---|---|
+| `Móvil / Vender` | `/vender` |
+| `Móvil / Vender · Cobro` | `/vender`, con el paso en cobro (`?paso=cobro`) |
+| `Móvil / Ventas` | `/ventas` |
+| `Móvil / Venta detalle` | `/ventas/[id]` |
+| `Móvil / Inventario` | `/inventario` |
+| `Móvil / Artículo nuevo` | `/inventario/nuevo` |
+| `Móvil / Artículo ficha` | `/inventario/[id]` |
+| `Móvil / Servicio Técnico` | `/servicio-tecnico` |
+| `Móvil / Recibir equipo` | `/servicio-tecnico/nuevo` |
+| `Móvil / Orden ficha` | `/servicio-tecnico/[id]` |
+| `Móvil / Ticket 80 mm` | `/servicio-tecnico/[id]/ticket` |
+| `Móvil / Usuarios` | `/usuarios` |
+| `Móvil / Login` | `/login` |
+| `Móvil / Sitio · Landing` | `/` en el ápex |
+| `Móvil / Menú (drawer)` | ninguna — el shell abierto sobre el velo |
+
+Los frames móviles se diseñaron **después** de los de escritorio, y son la
+autoridad para el teléfono con la misma regla de siempre. Cuál manda se decide
+por ancho, no por antigüedad: la maqueta de escritorio sigue siendo la autoridad
+de 1024 px para arriba y la del teléfono de ahí para abajo. El código las sirve
+a las dos desde un solo árbol, mobile-first (ver `CLAUDE.md`, la entrada del
+ciclo del teléfono).
+
+### Los dos componentes reusables
+
+| Componente | Quién lo instancia |
+|---|---|
+| `Shell/Sidebar` | Las **diez** pantallas de aplicación de escritorio (el ticket de 80 mm y el login no llevan shell), **más `Móvil / Menú (drawer)`** — el drawer del teléfono no es un segundo diseño de la navegación, es el mismo paño sobre un velo |
+| `Móvil/Topbar` | Los **doce** frames `Móvil /` que llevan la franja de 56 px — todos menos el login, el drawer y la landing |
+
+Cada instancia sólo overridea lo suyo: el sidebar, cuál entrada está activa; el
+Topbar, título, subtítulo e íconos de las dos ranuras. Si la navegación cambia,
+cambia en un lugar; si cambia la franja de arriba, también.
+
+**Y el código los trata igual que la maqueta**: `components/shell/encabezado.tsx`
+es una sola franja que sirve a los dos anchos (`h-14 lg:h-[66px]`), no dos
+componentes — de la misma forma que `kyXe1` no es un frame nuevo por pantalla.
+Una pantalla de aplicación instancia el Topbar exactamente como instancia el
+`Shell/Sidebar`: no lo redibuja, le pasa props.
+
+**Hay además un frame suelto, `PRUEBA` (`WFcZP`)**, que no documenta ninguna
+pantalla — es un resto de trabajo de diseño. No lo mira ningún test ni ningún
+ciclo; se puede borrar en Pencil cuando alguien tenga el archivo abierto.
 
 ## Los colores
 

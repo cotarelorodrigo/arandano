@@ -1,12 +1,15 @@
 import {
-  Box, CalendarClock, Car, Check, Coffee, Dog, Hammer, HeartPulse, Leaf,
+  Box, CalendarClock, Car, Check, Coffee, Dog, Hammer, HeartPulse, Leaf, Menu,
   Scissors, Shirt, Smartphone, Sparkles, Stethoscope, Store, Utensils, Wrench, Zap,
 } from 'lucide-react'
 import { EntradaDeSubdominio, type BaseDeTenant } from './entrar'
 import { Formulario } from './formulario'
-import { Retrato } from './retrato'
+import { Retrato, RetratoMovil } from './retrato'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import {
+  Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger,
+} from '@/components/ui/sheet'
 import estilos from './cierre.module.css'
 import tipografia from './tipografia.module.css'
 
@@ -49,7 +52,13 @@ import tipografia from './tipografia.module.css'
  * ve como una tabla rota.
  */
 
-const ANCHO = 'mx-auto w-full max-w-[1440px] px-14'
+// Task 11 del ciclo móvil: el padding lateral pasa de 56px (px-14) a 20px
+// (px-5) abajo de 1024 — design/arandano.pen, frame `Móvil / Sitio ·
+// Landing`, consultado nodo por nodo (Nav, Hero, Muestra, Módulos, Rubros,
+// Planes, Cierre y Pie miden 20px de margen lateral, los ocho). Como las ocho
+// secciones ya comparten esta constante, migrar acá alcanza para las ocho a
+// la vez — el mx-auto/max-w siguen sin tocarse, no atan nada abajo de 1440.
+const ANCHO = 'mx-auto w-full max-w-[1440px] px-5 lg:px-14'
 
 /**
  * El H2 que comparten Módulos, Rubros y Planes: 38px/700 Archivo, tracking
@@ -58,53 +67,115 @@ const ANCHO = 'mx-auto w-full max-w-[1440px] px-14'
  * Un solo lugar para las tres en vez de repetir la clase tres veces: si la
  * maqueta cambia este tamaño, cambia acá y no en tres sitios que se pueden
  * desincronizar.
+ *
+ * Task 11 del ciclo móvil: mobile-first, con el valor del teléfono (26px/600,
+ * sin tracking, line-height 1.15 — nodos `jY4rO`/`Mr56Z`/`d2y7WB`, frame
+ * `Móvil / Sitio · Landing`) sin prefijo, y el de escritorio (el de siempre)
+ * detrás de `lg:`.
  */
 function TituloDeSeccion({ children }: { children: React.ReactNode }) {
   return (
     <h2
-      className={`${tipografia.archivo} text-[38px] leading-[1.12] font-bold tracking-[-1px] text-foreground`}
+      className={`${tipografia.archivo} text-[26px] leading-[1.15] font-semibold text-foreground lg:text-[38px] lg:leading-[1.12] lg:font-bold lg:tracking-[-1px]`}
     >
       {children}
     </h2>
   )
 }
 
+/**
+ * Los tres links de sección — extraídos para no repetir el mismo `<a>` × 3
+ * entre la barra de escritorio y el `Sheet` del teléfono (Task 11 del ciclo
+ * móvil).
+ */
+const LINKS_DE_SECCION: { href: string; texto: string }[] = [
+  { href: '#que-hace', texto: 'Qué hace' },
+  { href: '#rubros', texto: 'Rubros' },
+  { href: '#precios', texto: 'Precios' },
+]
+
 export function Nav({ base }: { base: BaseDeTenant }) {
   // Sin border-b (Minor 7 de la review final): el .pen (nodo g3oxH) no
   // dibuja stroke acá. El Pie sí lo lleva (border-t, más abajo) y ahí
   // corresponde: son nodos distintos con decisiones distintas.
+  //
+  // Task 11 del ciclo móvil (design/arandano.pen, frame `Móvil / Sitio ·
+  // Landing`, nodo `fI6bl`): el Nav baja de 76 a 60px, el logo de 26 a 22, y
+  // "Arándano" de 17/700 a 16/600 — mobile-first. Los tres links de sección y
+  // "Entrar a mi local" (nodo `BEen9`) siguen sin verse en la fila —la
+  // maqueta sólo dibuja el ícono de menú (`K60WPs`)— pero no pueden
+  // desaparecer sin más: reaparecen dentro del `Sheet` que ese ícono abre.
   return (
     <header>
-      <div className={`${ANCHO} flex h-[76px] items-center justify-between`}>
+      <div className={`${ANCHO} flex h-[60px] items-center justify-between lg:h-[76px]`}>
         <div className="flex items-center gap-[9px]">
-          <span aria-hidden="true" className="size-[26px] rounded-full bg-primary" />
-          <span className={`${tipografia.archivo} text-[17px] font-bold text-foreground`}>
+          <span aria-hidden="true" className="size-[22px] rounded-full bg-primary lg:size-[26px]" />
+          <span
+            className={`${tipografia.archivo} text-[16px] font-semibold text-foreground lg:text-[17px] lg:font-bold`}
+          >
             Arándano
           </span>
         </div>
-        <nav className="hidden items-center gap-[26px] md:flex">
-          <a href="#que-hace" className="text-[13px] font-medium text-foreground-soft">
-            Qué hace
-          </a>
-          <a href="#rubros" className="text-[13px] font-medium text-foreground-soft">
-            Rubros
-          </a>
-          <a href="#precios" className="text-[13px] font-medium text-foreground-soft">
-            Precios
-          </a>
+        <nav className="hidden items-center gap-[26px] lg:flex">
+          {LINKS_DE_SECCION.map((link) => (
+            <a key={link.href} href={link.href} className="text-[13px] font-medium text-foreground-soft">
+              {link.texto}
+            </a>
+          ))}
         </nav>
         <div className="flex items-center gap-2.5">
           {/* El toggle de "Entrar a mi local" es su propio componente cliente
               (./entrar): la maqueta sólo dibuja el texto en reposo —un click
               revela el campo de subdominio—, mismo patrón que ya usan
-              "Cambiar clave" en /usuarios y los mini-forms de caja.tsx. */}
-          <EntradaDeSubdominio base={base} />
+              "Cambiar clave" en /usuarios y los mini-forms de caja.tsx. Sólo
+              de escritorio: en el teléfono vive dentro del Sheet, más abajo. */}
+          <div className="hidden lg:block">
+            <EntradaDeSubdominio base={base} />
+          </div>
           {/* h-[38px]/rounded-[9px]/gap-[7px]/px-[15px]: la geometría real de
               o0Cl42 (Minor 8 de la review final, consultado en vivo) —
-              `size="sm"` da 28px de alto, r=12, gap=4, pad-x=10. */}
+              `size="sm"` da 28px de alto, r=12, gap=4, pad-x=10. Se mantiene
+              igual en el teléfono: la maqueta mueve el resto de la barra
+              (links, entrada) a un Sheet, no a este botón. */}
           <Button asChild className="h-[38px] gap-[7px] rounded-[9px] px-[15px]">
             <a href="#contacto">Probar 5 días</a>
           </Button>
+          {/* El ícono de menú (nodo `K60WPs`, `bT6Ao`): sólo existe abajo de
+              1024px, y abre un Sheet con lo que la fila angosta no tiene
+              lugar para mostrar — los tres links de sección y "Entrar a mi
+              local". Mismo patrón que el botón de fechas de `/ventas`
+              (app/(app)/ventas/page.tsx).
+
+              `lg:hidden` va en el TRIGGER y en ningún lado más: es él quien
+              decide si el botón se ve. El `<Menu>` lo llevaba también, y era
+              redundante —un ícono adentro de un botón oculto no se ve igual—;
+              peor, estaba ahí para que el test lo encontrara, así que sacarle
+              el `lg:hidden` al trigger dejaba la hamburguesa visible a 1440
+              con el caso en verde (hallazgo I5 de la review final). */}
+          <Sheet>
+            <SheetTrigger
+              aria-label="Abrir menú"
+              className="flex size-9 shrink-0 items-center justify-center rounded-[9px] lg:hidden"
+            >
+              <Menu aria-hidden="true" className="size-5" />
+            </SheetTrigger>
+            <SheetContent side="right">
+              <SheetHeader>
+                <SheetTitle>Menú</SheetTitle>
+                <SheetDescription>Navegación del sitio y acceso a tu local.</SheetDescription>
+              </SheetHeader>
+              <nav className="flex flex-col gap-4 px-4">
+                {LINKS_DE_SECCION.map((link) => (
+                  <a key={link.href} href={link.href} className="text-sm font-medium text-foreground-soft">
+                    {link.texto}
+                  </a>
+                ))}
+              </nav>
+              <div className="px-4">
+                <EntradaDeSubdominio base={base} />
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
     </header>
@@ -117,37 +188,61 @@ export function Hero({ whatsapp }: { whatsapp: string }) {
     // (`eUCUn`) y 720 a la Muestra (`g5k1vK`), con 48 de gap — 560:720 es 7:9.
     // En `fr` en vez de píxeles para que la proporción se sostenga sola cuando
     // el contenedor no llega a 1328.
-    <section className={`${ANCHO} grid gap-12 py-12 md:grid-cols-[7fr_9fr] md:items-center`}>
-      <div className="flex flex-col gap-[22px]">
-        <span className="flex w-fit items-center gap-[7px] rounded-full bg-accent px-3 py-1.5">
+    //
+    // Task 11 del ciclo móvil (design/arandano.pen, frame `Móvil / Sitio ·
+    // Landing`, nodo `Sv9VR`): abajo de 1024 esto es una sola columna
+    // (`grid` sin `grid-cols` propio hasta `lg:`), con su propio gap/padding
+    // (20/32/28 contra 48/48/48 de escritorio) — y la Muestra NO vive acá: se
+    // oculta (`hidden lg:block`, más abajo) porque el `.pen` la promueve a su
+    // propia sección entre Hero y Módulos (`Muestra`, definida después de
+    // `Cierre`/`Pie` en este archivo). Nunca desaparece sin más: sigue
+    // existiendo acá para escritorio y reaparece ahí para el teléfono.
+    <section
+      className={`${ANCHO} grid gap-5 pt-8 pb-7 lg:grid-cols-[7fr_9fr] lg:items-center lg:gap-12 lg:py-12`}
+    >
+      <div className="flex flex-col gap-5 lg:gap-[22px]">
+        <span className="flex w-fit items-center gap-[7px] rounded-full bg-accent px-[11px] py-1.5 lg:px-3">
           <Sparkles aria-hidden="true" className="size-[13px] text-primary" />
-          <span className="text-xs font-semibold text-primary">Hecho para el mercado argentino</span>
+          <span className="text-[11px] font-semibold text-primary lg:text-xs">
+            Hecho para el mercado argentino
+          </span>
         </span>
 
-        <h1
-          className={`${tipografia.archivo} text-[62px] leading-[1.03] font-bold tracking-[-2px] text-foreground`}
-        >
-          Todo el local en un solo lugar
-        </h1>
+        {/* H1 + bajada comparten un gap propio de 12px en el teléfono (nodo
+            `rLKaR`); `lg:contents` los disuelve como hermanos directos del
+            gap-[22px] de arriba, que es exactamente cómo ya vivían en
+            escritorio antes de este ciclo — mismo mecanismo que ya usa
+            `Listado` (app/(app)/ventas/page.tsx) para no mover el aspecto de
+            escritorio ni un píxel. */}
+        <div className="flex flex-col gap-3 lg:contents">
+          <h1
+            className={`${tipografia.archivo} text-[36px] leading-[1.1] font-semibold text-foreground lg:text-[62px] lg:leading-[1.03] lg:font-bold lg:tracking-[-2px]`}
+          >
+            Todo el local en un solo lugar
+          </h1>
 
-        <p className="text-[17px] leading-[1.6] text-foreground-soft">
-          Ventas, stock, caja en pesos y dólares, facturación ARCA, catálogo público y un bot de
-          WhatsApp conectado a los datos reales del negocio. Sobre eso, cada rubro suma lo suyo.
-        </p>
+          <p className="text-sm leading-[1.5] text-foreground-soft lg:text-[17px] lg:leading-[1.6]">
+            Ventas, stock, caja en pesos y dólares, facturación ARCA, catálogo público y un bot de
+            WhatsApp conectado a los datos reales del negocio. Sobre eso, cada rubro suma lo suyo.
+          </p>
+        </div>
 
         {/* "Quiero probarlo": el .pen le pone un texto de botón distinto al
             del Cierre ("Empezar", el default) — mismo campo, mismo action,
             invitación distinta según dónde aparece. */}
         <Formulario whatsapp={whatsapp} textoBoton="Quiero probarlo" />
 
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[11px] text-muted-foreground lg:text-xs">
           5 días gratis · sin tarjeta · el alta es instantánea
         </p>
       </div>
 
       {/* La "Muestra": barra de navegador + el carrito real + el pie que
-          aclara que no es una captura (design/arandano.pen, nodo `g5k1vK`). */}
-      <div className="w-full rounded-[18px] border bg-background p-5">
+          aclara que no es una captura (design/arandano.pen, nodo `g5k1vK`).
+          `hidden lg:block`: en el teléfono esta versión no se dibuja — la de
+          abajo de 1024 es la sección `Muestra` propia, con su propio carrito
+          en cards (RetratoMovil) contra el nodo `TVNp5`. */}
+      <div className="hidden w-full rounded-[18px] border bg-background p-5 lg:block">
         <div className="mb-3.5 flex items-center gap-2">
           {/* Los tres puntos del navegador: rojo/ámbar/verde. El .pen los
               declara en hex crudo sin ningún token asociado (son chrome
@@ -179,6 +274,39 @@ export function Hero({ whatsapp }: { whatsapp: string }) {
           punto de venta.
         </p>
       </div>
+    </section>
+  )
+}
+
+/**
+ * La "Muestra": la promoción a sección propia del bloque barra+carrito+nota
+ * del Hero, sólo para el teléfono (design/arandano.pen, frame `Móvil / Sitio
+ * · Landing`, nodo `tsOj4`, entre Hero y Módulos). `lg:hidden`: desde
+ * escritorio esta sección no existe — ahí la Muestra sigue viviendo dentro
+ * del Hero (ver arriba), que es donde el `.pen` de escritorio la dibuja.
+ *
+ * El carrito en sí es `RetratoMovil` (app/sitio/retrato.tsx) y no `Retrato`:
+ * la maqueta del teléfono no colapsa la tabla, la REDIBUJA como una lista de
+ * cards (nodo `TVNp5`) — mismo dato (`ITEMS`/`TOTAL`/…), marcado distinto.
+ */
+export function Muestra() {
+  return (
+    <section className={`${ANCHO} flex flex-col gap-3 pb-8 lg:hidden`}>
+      <div className="flex h-[34px] items-center gap-[7px] rounded-t-[12px] bg-muted px-3">
+        <span aria-hidden="true" className="size-[7px] rounded-full bg-muted-foreground/40" />
+        <span aria-hidden="true" className="size-[7px] rounded-full bg-muted-foreground/40" />
+        <span aria-hidden="true" className="size-[7px] rounded-full bg-muted-foreground/40" />
+        <span className="flex-1 text-center text-[10px] font-medium text-muted-foreground">
+          flor.arandano.app/vender
+        </span>
+      </div>
+
+      <RetratoMovil />
+
+      <p className="text-[11px] leading-[1.4] text-muted-foreground">
+        No es una captura: es el mismo componente y el mismo formateo de plata que corre en el punto
+        de venta.
+      </p>
     </section>
   )
 }
@@ -239,11 +367,13 @@ function ChipDeEstado({ estado }: { estado: EstadoModulo }) {
 
 export function Modulos() {
   return (
-    <section id="que-hace" className="bg-background py-16">
-      <div className={`${ANCHO} flex flex-col gap-7`}>
-        <div className="flex max-w-[640px] flex-col gap-3">
+    // Task 11 del ciclo móvil (nodo `Csb0k`): py-16(64px) es sólo de
+    // escritorio; en el teléfono es py-8(32px).
+    <section id="que-hace" className="bg-background py-8 lg:py-16">
+      <div className={`${ANCHO} flex flex-col gap-[18px] lg:gap-7`}>
+        <div className="flex max-w-[640px] flex-col gap-[10px] lg:gap-3">
           <TituloDeSeccion>Un núcleo, tres módulos, rubros ilimitados</TituloDeSeccion>
-          <p className="text-[15px] leading-[1.6] text-foreground-soft">
+          <p className="text-[13px] leading-[1.5] text-foreground-soft lg:text-[15px] lg:leading-[1.6]">
             El núcleo solo ya cubre un comercio completo. Los módulos agregan comportamiento, y un
             rubro nuevo es un archivo de configuración, no desarrollo.
           </p>
@@ -257,30 +387,31 @@ export function Modulos() {
             superficie": una landing no es una pantalla de aplicación con UN
             dato operativo, así que la regla de "una por pantalla" se aplica
             por SECCIÓN visible a la vez, no por documento entero, igual que
-            ya la reescribió la excepción del avatar del sidebar. */}
-        <div className="rounded-[18px] p-[26px]" style={{ backgroundColor: 'var(--marca)' }}>
+            ya la reescribió la excepción del avatar del sidebar.
+
+            Task 11: p-[26px] es de escritorio (nodo QeDxe); el teléfono
+            (nodo `pfHPO`) usa p-4(16px). */}
+        <div className="rounded-[18px] p-4 lg:p-[26px]" style={{ backgroundColor: 'var(--marca)' }}>
           <div className="flex items-center gap-2.5">
-            <Box aria-hidden="true" className="size-[19px]" style={{ color: 'var(--marca-soft)' }} />
+            <Box aria-hidden="true" className="size-[17px] lg:size-[19px]" style={{ color: 'var(--marca-soft)' }} />
             <span
-              className={`${tipografia.archivo} text-xl font-semibold`}
+              className={`${tipografia.archivo} text-[17px] font-semibold lg:text-xl`}
               style={{ color: 'var(--marca-foreground)' }}
             >
               Núcleo
             </span>
-            <span className="text-[13px]" style={{ color: 'var(--marca-dim)' }}>
+            <span className="text-[11px] lg:text-[13px]" style={{ color: 'var(--marca-dim)' }}>
               lo que todo negocio necesita
             </span>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2.5">
+          {/* Las ocho piezas: en el teléfono son 4 filas de 2 chips llenos
+              (34px, nodos UQrG7/jlqSU/…), no la fila de chips-píldora que
+              queda desde escritorio (nodo `r3jDf` vs. lo que ya había). */}
+          <div className="mt-3 grid grid-cols-2 gap-2 lg:mt-4 lg:flex lg:flex-wrap lg:gap-2.5">
             {NUCLEO.map((pieza) => (
               <span
                 key={pieza}
-                className="rounded-full px-[13px] py-2 text-xs font-medium"
-                style={{
-                  color: 'var(--marca-foreground)',
-                  backgroundColor: 'color-mix(in srgb, var(--marca-foreground) 8%, transparent)',
-                  border: '1px solid color-mix(in srgb, var(--marca-foreground) 15%, transparent)',
-                }}
+                className="flex h-[34px] items-center justify-center rounded-[9px] bg-[#FFFFFF1A] px-2 text-xs font-medium text-[var(--marca-foreground)] lg:h-auto lg:justify-start lg:rounded-full lg:border lg:border-[color-mix(in_srgb,var(--marca-foreground)_15%,transparent)] lg:bg-[color-mix(in_srgb,var(--marca-foreground)_8%,transparent)] lg:px-[13px] lg:py-2"
               >
                 {pieza}
               </span>
@@ -288,7 +419,10 @@ export function Modulos() {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
+        {/* Task 11: las tres tarjetas son una columna en el teléfono (nodo
+            `Csb0k`: Órdenes/Turnos/Gastronomía son hermanos apilados) y
+            recién desde lg: pasan a 3. */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           {MODULOS.map((modulo) => (
             <Card key={modulo.titulo} className="rounded-[16px] py-[22px]">
               <CardContent className="flex flex-col gap-3">
@@ -338,35 +472,60 @@ export const RUBROS: { icono: typeof Smartphone; titulo: string; modulos: string
 
 export function Rubros() {
   return (
-    <section id="rubros" className="py-16">
-      <div className={`${ANCHO} flex flex-col gap-6`}>
-        <div className="flex flex-wrap items-end justify-between gap-10">
-          <div className="flex max-w-[600px] flex-col gap-3">
+    // Task 11 del ciclo móvil (nodo `EKea9`): py-16 es sólo de escritorio;
+    // el teléfono es py-8.
+    <section id="rubros" className="py-8 lg:py-16">
+      <div className={`${ANCHO} flex flex-col gap-[18px] lg:gap-6`}>
+        <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end lg:justify-between lg:gap-10">
+          <div className="flex max-w-[600px] flex-col gap-[10px] lg:gap-3">
             <TituloDeSeccion>Tu rubro ya está adentro</TituloDeSeccion>
-            <p className="text-[15px] leading-[1.6] text-foreground-soft">
+            <p className="text-[13px] leading-[1.5] text-foreground-soft lg:text-[15px] lg:leading-[1.6]">
               Un rubro no es código: es qué módulos vienen activados, qué datos demo se cargan y
               cómo se llaman las cosas en la pantalla.
             </p>
           </div>
-          <p className="text-xs font-semibold text-primary">¿No está el tuyo? Se agrega sin desarrollo.</p>
+          {/* Fix de la Ronda de arreglos 1 sobre la Task 11: en escritorio la
+              nota vive ACÁ, al lado del encabezado (nodo `bHS71`, la maqueta
+              de escritorio la reparte con justify-between) — pero en el
+              .pen del teléfono (`EKea9`) es un hermano APARTE, DESPUÉS de la
+              grilla, no del encabezado. `hidden lg:block` la saca de acá
+              abajo de 1024; la copia de después de la grilla es la que se ve
+              en el teléfono. */}
+          <p className="hidden text-xs font-semibold text-primary lg:block">
+            ¿No está el tuyo? Se agrega sin desarrollo.
+          </p>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-4">
+        {/* Task 11: a diferencia de Módulos y Planes (una columna), el .pen
+            (nodo `dDugH`) arma esta grilla en PARES — 2 columnas en el
+            teléfono, no 1 — y recién desde lg: pasa a las 4 de siempre. Cada
+            card, además, cambia de fila (ícono+texto, escritorio) a columna
+            (ícono arriba, texto abajo, teléfono — nodo `E39sL`): sin el
+            círculo de fondo del ícono, que la maqueta del teléfono no
+            dibuja. */}
+        <div className="grid grid-cols-2 gap-[10px] lg:grid-cols-4 lg:gap-3">
           {RUBROS.map((rubro) => (
             <div
               key={rubro.titulo}
-              className="flex items-center gap-3 rounded-[13px] border bg-card p-4"
+              className="flex flex-col items-start gap-2 rounded-[13px] bg-card p-[13px] lg:flex-row lg:items-center lg:gap-3 lg:border lg:p-4"
             >
-              <span className="flex size-[34px] shrink-0 items-center justify-center rounded-[10px] bg-background">
-                <rubro.icono aria-hidden="true" className="size-[17px] text-primary" />
+              <span className="lg:flex lg:size-[34px] lg:shrink-0 lg:items-center lg:justify-center lg:rounded-[10px] lg:bg-background">
+                <rubro.icono aria-hidden="true" className="size-[19px] text-primary lg:size-[17px]" />
               </span>
-              <div className="flex flex-col gap-0.5">
+              <div className="flex flex-col gap-[3px] lg:gap-0.5">
                 <span className="text-[13px] leading-[1.3] font-semibold text-foreground">{rubro.titulo}</span>
                 <span className="text-[11px] leading-[1.35] text-muted-foreground">{rubro.modulos}</span>
               </div>
             </div>
           ))}
         </div>
+
+        {/* La copia del teléfono (nodo `FR90j`, hermano de la Grilla, no del
+            Encabezado): `lg:hidden` la saca desde escritorio, donde la nota
+            de arriba (`hidden lg:block`) ya la muestra. */}
+        <p className="text-xs font-semibold text-primary lg:hidden">
+          ¿No está el tuyo? Se agrega sin desarrollo.
+        </p>
       </div>
     </section>
   )
@@ -431,25 +590,32 @@ export const PLANES: Plan[] = [
 
 export function Planes() {
   return (
-    <section id="precios" className="bg-background py-16">
-      <div className={`${ANCHO} flex flex-col gap-7`}>
-        <div className="flex max-w-[640px] flex-col gap-3">
+    // Task 11 del ciclo móvil (nodo `IvCnb`): py-16 es sólo de escritorio;
+    // el teléfono es py-8.
+    <section id="precios" className="bg-background py-8 lg:py-16">
+      <div className={`${ANCHO} flex flex-col gap-[18px] lg:gap-7`}>
+        <div className="flex max-w-[640px] flex-col gap-[10px] lg:gap-3">
           <TituloDeSeccion>Precios claros, en pesos</TituloDeSeccion>
-          <p className="text-[15px] leading-[1.6] text-foreground-soft">
+          <p className="text-[13px] leading-[1.5] text-foreground-soft lg:text-[15px] lg:leading-[1.6]">
             Los módulos no se cobran aparte ni dependen del plan: activás los que necesites. El
             plan limita capacidad, no rubro.
           </p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4">
+        {/* Task 11: los cuatro planes son una columna en el teléfono (nodo
+            `IvCnb`: Básico/Negocio/Profesional/Premium son hermanos
+            apilados) y recién desde lg: pasan a 4. */}
+        <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-4 lg:gap-4">
           {PLANES.map((plan) => (
             <div
               key={plan.nombre}
               // El destacado (Profesional) es la TERCERA superficie de --marca
               // del sitio, y la misma nota de arriba (card Núcleo) aplica acá:
               // design/arandano.pen la dibuja así (nodo `riAck`), verificado
-              // en vivo — no es un invento de este código.
-              className={`flex flex-col gap-4 rounded-[18px] p-6 ${
+              // en vivo — no es un invento de este código. Padding/gap: 16/12
+              // en el teléfono (nodos atnSX/gQWor/lfOtz/PvUHb), 24/16 desde
+              // escritorio (el valor de siempre).
+              className={`flex flex-col gap-3 rounded-[18px] p-4 lg:gap-4 lg:p-6 ${
                 plan.destacado ? '' : 'border bg-card'
               }`}
               style={plan.destacado ? { backgroundColor: 'var(--marca)' } : undefined}
@@ -522,7 +688,7 @@ export function Planes() {
                 // sidebar para "texto oscuro sobre superficie clara".
                 <a
                   href="#contacto"
-                  className="flex h-[42px] items-center justify-center rounded-[10px] text-[13px] font-semibold"
+                  className="flex h-11 items-center justify-center rounded-[10px] text-[13px] font-semibold lg:h-[42px]"
                   style={{ backgroundColor: 'var(--marca-foreground)', color: 'var(--marca)' }}
                 >
                   {plan.accion}
@@ -532,7 +698,9 @@ export function Planes() {
                 // de la review final, consultado en vivo) — variant="outline"
                 // solo pinta bg-background + border-border, un blanco/gris
                 // distinto del $ar-surface + $ar-line-strong que pide el .pen.
-                <Button asChild variant="outline" className="h-[42px] border-input bg-card">
+                // 44px en el teléfono (nodos j68gaY/GCzWp/Q4u0t), 42px desde
+                // escritorio (el valor de siempre).
+                <Button asChild variant="outline" className="h-11 border-input bg-card lg:h-[42px]">
                   <a href="#contacto">{plan.accion}</a>
                 </Button>
               )}
@@ -546,14 +714,16 @@ export function Planes() {
 
 export function Cierre({ children }: { children: React.ReactNode }) {
   return (
-    <section id="contacto" className={`${estilos.franja} py-[72px]`}>
-      <div className={`${ANCHO} flex flex-col items-center gap-[22px] text-center`}>
+    // Task 11 del ciclo móvil (nodo `OVMBq`): py-[72px]/gap-[22px] son de
+    // escritorio; el teléfono es py-9(36px)/gap-4(16px).
+    <section id="contacto" className={`${estilos.franja} py-9 lg:py-[72px]`}>
+      <div className={`${ANCHO} flex flex-col items-center gap-4 text-center lg:gap-[22px]`}>
         <h2
-          className={`${estilos.titulo} ${tipografia.archivo} max-w-[720px] text-[44px] leading-[1.1] font-bold tracking-[-1.4px]`}
+          className={`${estilos.titulo} ${tipografia.archivo} max-w-[720px] text-[28px] leading-[1.15] font-semibold lg:text-[44px] lg:leading-[1.1] lg:font-bold lg:tracking-[-1.4px]`}
         >
           El alta es instantánea
         </h2>
-        <p className={`${estilos.bajada} max-w-[620px] text-base leading-[1.6]`}>
+        <p className={`${estilos.bajada} max-w-[620px] text-[13px] leading-[1.5] lg:text-base lg:leading-[1.6]`}>
           Dejás tu WhatsApp, elegís el rubro y en dos minutos tenés tu local cargado con datos de
           ejemplo para probarlo de verdad.
         </p>
@@ -563,7 +733,7 @@ export function Cierre({ children }: { children: React.ReactNode }) {
             campo. */}
         <div className="w-full max-w-[520px]">{children}</div>
 
-        <p className="text-xs" style={{ color: 'var(--marca-dim)' }}>
+        <p className="text-[11px] lg:text-xs" style={{ color: 'var(--marca-dim)' }}>
           Sin tarjeta · exportás tus datos cuando quieras · soporte por WhatsApp
         </p>
       </div>
@@ -574,7 +744,15 @@ export function Cierre({ children }: { children: React.ReactNode }) {
 export function Pie() {
   return (
     <footer className="border-t">
-      <div className={`${ANCHO} flex items-center justify-between gap-6 py-6`}>
+      {/* Task 11 del ciclo móvil (nodo `itZnH`): apila en el teléfono
+          (flex-col, gap 10) y vuelve a la fila con justify-between de
+          siempre desde escritorio.
+
+          Menor de la Ronda de arreglos 1: el padding vertical del teléfono
+          NO es simétrico — el nodo pide [24,20,28,20] (24 arriba, 28 abajo),
+          no los 24/24 (py-6) que había quedado acá. Desde escritorio sigue
+          siendo py-6 simétrico, sin tocar. */}
+      <div className={`${ANCHO} flex flex-col gap-[10px] pt-6 pb-7 lg:flex-row lg:items-center lg:justify-between lg:gap-6 lg:py-6`}>
         <div className="flex items-center gap-2">
           <span aria-hidden="true" className="size-[18px] rounded-full bg-primary" />
           <span className="text-xs text-muted-foreground">Arándano · Buenos Aires, Argentina</span>

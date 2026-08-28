@@ -226,6 +226,16 @@ function redondearMitadLejosDelCero(v: number): number {
  *
  * centavos × milésimas de porcentaje son 10^-5 de un porcentaje; dividir por
  * 100.000 los deja en centavos.
+ *
+ * El producto intermedio es un `number`, así que tiene el techo de los enteros
+ * exactos de JavaScript (2^53). Con el porcentaje topeado en 999,999 —o sea
+ * 999.999 milésimas, `Decimal(6,3)`— eso da margen hasta una base de unos 9×10^9
+ * centavos, o 90 millones de pesos EN UNA SOLA LÍNEA de pago. No se guarda: esto
+ * es el espejo de pantalla, y el número que se cobra sale de `recargoDePago`
+ * (`totales.ts`), que trabaja en `Decimal` y no tiene techo. Lo que pasaría
+ * arriba de esa base es que el pie mostrara un recargo levemente distinto del
+ * que cobra el motor; queda anotado en vez de pagar un `BigInt` en el camino
+ * caliente por un caso que hoy no existe.
  */
 export function recargoEnCentavos(
   baseEnPesosCentavos: number,

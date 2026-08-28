@@ -131,6 +131,19 @@ describe('PanelDeCategorias', () => {
   })
 })
 
+// Task 6 del ciclo móvil: el MISMO componente se sirve dos veces — la
+// columna de escritorio (248px fijo) y adentro de un Sheet en el teléfono,
+// donde 248px fijo puede desbordar o dejar un hueco según el ancho de la
+// hoja. El único cambio que le pide esta task: el ancho pasa a ser
+// responsivo (lleno en el teléfono, 248px recién en escritorio); el ABM
+// entero sigue sin tocarse.
+describe('el ancho del panel es responsivo (Task 6)', () => {
+  it('w-full en el teléfono, w-[248px] recién en escritorio', () => {
+    const html = pintar()
+    expect(html).toMatch(/<aside class="[^"]*\bw-full\b[^"]*lg:w-\[248px\]/)
+  })
+})
+
 describe('los controles del ABM', () => {
   // El servidor ya rechaza a un empleado (acciones-categorias.test.ts), pero
   // dibujarle botones que van a fallar es ofrecerle algo que no puede hacer.

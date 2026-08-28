@@ -1,17 +1,27 @@
-// Puro: importa sólo las funciones exportadas de page.tsx, nunca el
-// componente en sí — es un Server Component async que abre sesión y consulta
-// Prisma (mismo criterio que app/(app)/ventas/page.test.tsx, que documenta
-// el porqué con más detalle). La única excepción es el bloque final, que lee
-// el FUENTE como texto (mismo criterio que app/(app)/vender/caja.test.tsx)
-// para cablear una regresión concreta que ningún test puro puede atrapar.
+// Puro: importa sólo las funciones exportadas de page.tsx y `Detalle`. La
+// pantalla en sí (`DetalleDeVenta`, el default export) NO se renderiza acá:
+// es un Server Component async que abre sesión y consulta Prisma, y este
+// repo no tiene el arnés para montarlo fuera de un request real (mismo
+// criterio que documenta app/(app)/ventas/page.test.tsx).
+//
+// `Detalle`, en cambio, SÍ es un componente y SÍ se renderiza acá
+// (renderToStaticMarkup): no abre sesión ni toca Prisma — recibe todo ya
+// resuelto a texto — así que puede afirmarse sobre el HTML real y no por
+// grep, que es lo que una review anterior de este ciclo marcó como
+// preferible cuando el render lo permite. Lo que NO se puede renderizar (el
+// `select` de Prisma en `DetalleDeVenta`) se verifica sobre el fuente, igual
+// que ya lo hace el resto de este archivo.
 import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { Prisma } from '@/generated/prisma/client'
+import { renderToStaticMarkup } from 'react-dom/server'
 import {
-  seOfreceAnular, cotizacionVisible, subtituloDeItem, filasDeResumen, notaDeAnulacion,
+  seOfreceAnular, cotizacionVisible, subtituloDeItem, metaDeItem, metaDePago, filasDeResumen,
+  notaDeAnulacion, Detalle, type ItemVendido, type PagoRecibido,
   lineasDeRecargo, rotuloDePlan,
 } from './page'
 import { CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
+import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -90,6 +100,38 @@ describe('rotuloDePlan', () => {
   })
 })
 
+describe('metaDeItem', () => {
+  // `formatearPrecio`/`formatearCantidad` usan `Intl.NumberFormat`, que en
+  // Node emite un espacio NO separable (` `) entre "$" y el número —
+  // no el espacio normal que se tipea a mano. Comparar contra el resultado
+  // REAL de esas funciones evita el mismo problema que ya evitaba
+  // `cotizacionVisible` de más arriba, comparando sólo desde el número.
+  it('funde subtítulo, cantidad y precio en una sola línea', () => {
+    const meta = metaDeItem({ subtitulo: 'SKU 000412', cantidad: '1', precioUnitario: '12000' })
+    expect(meta).toBe(`SKU 000412 · ${formatearCantidad('1')} × ${formatearPrecio('12000')}`)
+    expect(meta).toContain('SKU 000412 · 1 ×')
+    expect(meta).toContain('12.000,00')
+  })
+
+  it('funciona igual para un servicio, sin SKU', () => {
+    const meta = metaDeItem({ subtitulo: 'Servicio', cantidad: '1', precioUnitario: '45000' })
+    expect(meta).toBe(`Servicio · ${formatearCantidad('1')} × ${formatearPrecio('45000')}`)
+    expect(meta).toContain('45.000,00')
+  })
+})
+
+describe('metaDePago', () => {
+  it('un pago en pesos sólo dice la moneda', () => {
+    expect(metaDePago({ moneda: 'ARS', cotizacion: '1' })).toBe('Pesos')
+  })
+
+  it('un pago en dólares suma la cotización con la que se tomó', () => {
+    const meta = metaDePago({ moneda: 'USD', cotizacion: '1485' })
+    expect(meta).toBe(`Dólares · cotización ${formatearPrecio('1485')}`)
+    expect(meta).toContain('1.485,00')
+  })
+})
+
 describe('filasDeResumen', () => {
   it('arma fecha, vendió, cliente y comprobante (estado va aparte, en ChipEstado)', () => {
     // 20:28 UTC son las 17:28 en Buenos Aires (UTC-3) — no coinciden con el
@@ -141,10 +183,11 @@ describe('notaDeAnulacion', () => {
 // final del rediseño): un diff anterior sacó `anuladaPor` del `select` y
 // borró el bloque que lo mostraba, y NADA lo notó — sólo quedó un chip que
 // dice QUE la venta está anulada, no quién ni cuándo. `notaDeAnulacion` de
-// arriba prueba el TEXTO; esto prueba que la pantalla todavía lo PIDE y lo
-// MUESTRA. Leer el fuente como texto es el mismo criterio que ya usa
+// arriba prueba el TEXTO; esto prueba que `DetalleDeVenta` todavía lo PIDE y
+// lo CALCULA. Leer el fuente como texto es el mismo criterio que ya usa
 // app/(app)/vender/caja.test.tsx para cablear algo que ni jsdom ni una
-// sesión real de este repo pueden ejercitar.
+// sesión real de este repo pueden ejercitar — acá además porque el `select`
+// de Prisma no tiene ningún componente puro que lo represente.
 describe('el dato de quién anuló no se vuelve a perder', () => {
   const fuente = readFileSync('app/(app)/ventas/[id]/page.tsx', 'utf8')
 
@@ -157,20 +200,272 @@ describe('el dato de quién anuló no se vuelve a perder', () => {
       'notaDeAnulacion({ anuladaEn: venta.anuladaEn, anuladaPor: venta.anuladaPor })',
     )
   })
+})
 
-  it('esa nota vive dentro de un <Alert>, que es lo que emite role="alert"', () => {
-    // Un <Badge> —como el chip de Estado— no emite ningún role: por eso la
-    // nota tiene que estar en un <Alert> y no en un <span> suelto. Sin
-    // parsear JSX: alcanza con que el `<Alert` más cercano aparezca ANTES
-    // que la llamada, dentro de la misma rama condicional. `lastIndexOf` y
-    // no `indexOf` para ubicar la LLAMADA: la primera aparición de
-    // "notaDeAnulacion(" en el archivo es la propia declaración de la
-    // función (`export function notaDeAnulacion(`), no el sitio donde se usa.
-    const posLlamada = fuente.lastIndexOf('notaDeAnulacion(')
-    const posDeclaracion = fuente.indexOf('notaDeAnulacion(')
-    expect(posLlamada).toBeGreaterThan(posDeclaracion)
-    const posAlert = fuente.lastIndexOf('<Alert', posLlamada)
-    expect(posAlert).toBeGreaterThan(-1)
+// Hallazgo de la review (Ronda de arreglos 1): dos de los seis requisitos
+// del Step 1 del brief no tenian ningun test — que el `Encabezado` reciba
+// `atras="/ventas"` y que NO se le pase `accionMovil`. El codigo ya lo
+// cumplia (nadie lo discute), pero nada lo protegia: alguien que copie el
+// `<Encabezado>` de otra pantalla —que si trae `accionMovil`— o que borre
+// el `atras` en un merge no rompe ningun test, y la pantalla queda con dos
+// flechas de volver (el link del cuerpo YA muestra la suya en escritorio, si
+// el Topbar sumara otra) o con ninguna. Mismo criterio que el bloque de
+// arriba: `DetalleDeVenta` es un Server Component que no se puede montar sin
+// sesion ni Prisma, asi que se verifica sobre el fuente.
+describe('el Encabezado vuelve a /ventas por atras, nunca por accionMovil', () => {
+  const fuente = readFileSync('app/(app)/ventas/[id]/page.tsx', 'utf8')
+  // La etiqueta completa, no lineas sueltas: asi 'accionMovil' en un
+  // comentario de mas arriba (hay varios, explicando la ranura vacia) no
+  // puede colar como si estuviera en el JSX.
+  const etiqueta = fuente.match(/<Encabezado[^>]*\/>/)?.[0]
+
+  it('existe el <Encabezado> de esta pantalla', () => {
+    expect(etiqueta, `no se encontro <Encabezado ... /> en: ${fuente}`).toBeTruthy()
+  })
+
+  it('recibe atras="/ventas"', () => {
+    expect(etiqueta).toContain('atras="/ventas"')
+  })
+
+  it('NO recibe accionMovil — la ranura derecha queda vacia a proposito (spec Ss7, printer)', () => {
+    expect(etiqueta).not.toContain('accionMovil')
+  })
+})
+
+/** Un ítem mínimo, ya resuelto a texto — la forma que `Detalle` recibe de
+ *  verdad, sin ningún `Decimal` de Prisma. */
+const ITEM: ItemVendido = {
+  id: 'i1',
+  nombre: 'Vidrio templado 9H · iPhone 13',
+  subtitulo: 'SKU 000412',
+  meta: 'SKU 000412 · 1 × $ 12.000,00',
+  cantidadFormateada: '1',
+  precioFormateado: '$ 12.000,00',
+  subtotalFormateado: '$ 12.000,00',
+}
+
+/** Un pago mínimo en pesos: `esUsd: false`, sin la línea "entraron $X". */
+const PAGO_ARS: PagoRecibido = {
+  id: 'p1',
+  medioLabel: 'Efectivo',
+  planLabel: null,
+  monedaLabel: 'Pesos',
+  cotizacionFormateada: '—',
+  montoFormateado: '$ 64.300,00',
+  enPesosFormateado: '$ 64.300,00',
+  meta: 'Pesos',
+  esUsd: false,
+}
+
+/** Un pago en dólares: `esUsd: true`, con "entraron $X" en el teléfono. */
+const PAGO_USD: PagoRecibido = {
+  id: 'p2',
+  medioLabel: 'Transferencia',
+  planLabel: 'Crédito 3 cuotas · 3 cuotas',
+  monedaLabel: 'Dólares',
+  cotizacionFormateada: '$ 1.485,00',
+  montoFormateado: 'US$ 20,00',
+  enPesosFormateado: '$ 29.700,00',
+  meta: 'Crédito 3 cuotas · 3 cuotas · Dólares · cotización $ 1.485,00',
+  esUsd: true,
+}
+
+function renderDetalle(props: Partial<Parameters<typeof Detalle>[0]> = {}) {
+  return renderToStaticMarkup(
+    <Detalle
+      resumen={{ fecha: '21/08/2026 · 14:28', vendio: 'Florencia Díaz', cliente: CONSUMIDOR_FINAL, comprobante: 'Sin factura ARCA' }}
+      anulada={false}
+      notaDeAnulacionTexto={null}
+      items={[ITEM]}
+      totalFormateado="$ 94.000,00"
+      pagos={[PAGO_ARS]}
+      ofreceAnular={false}
+      ventaId="v1"
+      {...props}
+    />,
+  )
+}
+
+// Task 4 del ciclo móvil (docblock de `Listado` en app/(app)/ventas/page.tsx,
+// líneas 344-408): grid + `display:contents` sobre las dos tablas, tarjetas
+// apiladas en el teléfono, las mismas anchuras de columna que hoy declaraban
+// los `<TableHead>` en escritorio.
+describe('Detalle: "Qué se vendió" — el patrón grid + display:contents', () => {
+  it('el contenedor es la tabla ARIA: 1 columna en el teléfono, 4 en escritorio', () => {
+    const html = renderDetalle()
+    expect(html).toContain('role="table"')
+    expect(html).toMatch(/class="[^"]*\bgrid-cols-1\b[^"]*\blg:grid-cols-\[1fr_100px_130px_140px\]/)
+  })
+
+  it('hay 4 role="columnheader": Artículo, Cantidad, Precio, Subtotal', () => {
+    const html = renderDetalle()
+    expect(html.match(/role="columnheader"/g)).toHaveLength(4 + 6) // + las 6 de "Cómo se pagó"
+    expect(html).toContain('>Artículo<')
+    expect(html).toContain('>Cantidad<')
+    expect(html).toContain('>Precio<')
+  })
+
+  it('cada fila de ítem lleva lg:contents, role="row" y 4 celdas role="cell"', () => {
+    const html = renderDetalle({ items: [ITEM, { ...ITEM, id: 'i2' }] })
+    // `gap-[5px]` distingue las filas de ÍTEM (design/arandano.pen, nodo
+    // `Vxkrb`: `gap:5`) de la fila de PAGO (`gap-1`, más abajo) — las dos
+    // llevan `group ... lg:contents`, así que hay que separarlas para no
+    // contar de más.
+    const filas = html.match(/role="row" class="group flex flex-col gap-\[5px\][^"]*lg:contents[^"]*"/g) ?? []
+    expect(filas).toHaveLength(2)
+    // 4 celdas por ítem × 2 ítems, más las 6 de "Cómo se pagó" (1 pago).
+    expect(html.match(/role="cell"/g)).toHaveLength(4 * 2 + 6)
+  })
+
+  it('la fila resalta al pasar el mouse en escritorio (group + lg:group-hover en las 4 celdas)', () => {
+    const html = renderDetalle()
+    const celdaArticulo = html.match(/<div[^>]*\brole="cell"[^>]*>/g) ?? []
+    for (const celda of celdaArticulo) expect(celda).toContain('lg:group-hover:bg-muted/50')
+  })
+
+  it('en el teléfono, cantidad y precio se funden en la meta junto al subtítulo', () => {
+    const html = renderDetalle()
+    expect(html).toContain('SKU 000412 · 1 × $ 12.000,00')
+  })
+
+  it('el nombre y el subtotal se muestran (subtotal aparece dos veces: meta del teléfono y celda de escritorio)', () => {
+    const html = renderDetalle()
+    expect(html).toContain('Vidrio templado 9H · iPhone 13')
+    expect(html.match(/\$ 12\.000,00/g)?.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('el subtítulo del artículo está oculto en el teléfono y visible en escritorio', () => {
+    const html = renderDetalle()
+    expect(html).toMatch(/class="hidden text-\[11px\] text-muted-foreground lg:block">SKU 000412</)
+  })
+
+  it('la banda TOTAL pinta con --marca en el teléfono y con bg-muted en escritorio', () => {
+    const html = renderDetalle({ totalFormateado: '$ 94.000,00' })
+    expect(html).toMatch(/class="flex items-center justify-between bg-\[var\(--marca\)\][^"]*lg:bg-muted[^"]*"/)
+    expect(html).toContain('$ 94.000,00')
+  })
+})
+
+describe('Detalle: "Cómo se pagó" — el patrón grid + display:contents', () => {
+  it('el contenedor es la tabla ARIA: 1 columna en el teléfono, 6 en escritorio', () => {
+    const html = renderDetalle()
+    expect(html).toMatch(/class="[^"]*\bgrid-cols-1\b[^"]*\blg:grid-cols-\[1fr_150px_110px_130px_130px_140px\]/)
+  })
+
+  it('hay 6 role="columnheader" para esta tabla: Medio, Plan, Moneda, Cotización, Monto, En pesos', () => {
+    const html = renderDetalle()
+    expect(html).toContain('>Medio<')
+    expect(html).toContain('>Plan<')
+    expect(html).toContain('>Moneda<')
+    expect(html).toContain('>Cotización<')
+    expect(html).toContain('>Monto<')
+    expect(html).toContain('>En pesos<')
+  })
+
+  it('un pago en pesos NO muestra "entraron $" en el teléfono', () => {
+    const html = renderDetalle({ pagos: [PAGO_ARS] })
+    expect(html).not.toContain('entraron')
+  })
+
+  it('un pago en dólares SÍ muestra "entraron $" en el teléfono', () => {
+    const html = renderDetalle({ pagos: [PAGO_USD] })
+    expect(html).toContain('entraron $ 29.700,00')
+    expect(html).toContain('Dólares · cotización $ 1.485,00')
+  })
+
+  it('la última fila de pagos no lleva borde en el teléfono (nada la sigue dentro de la card)', () => {
+    const html = renderDetalle({ pagos: [PAGO_ARS, PAGO_USD] })
+    const filas = html.match(/role="row" class="group [^"]*"/g) ?? []
+    // La última tiene que declarar last:border-b-0 (sin prefijo: corta el
+    // borde también en el teléfono, a diferencia de "Qué se vendió", donde
+    // el Total sigue después y el borde se mantiene en todas las filas).
+    const filaDePagos = filas.filter((f) => f.includes('gap-1'))
+    expect(filaDePagos.length).toBeGreaterThan(0)
+    for (const f of filaDePagos) expect(f).toContain('last:border-b-0')
+  })
+})
+
+describe('Detalle: el panel Resumen — pares apilados con el mismo padding de siempre en escritorio', () => {
+  it('cada fila tiene el padding mobile-first: 14px en el teléfono, 18px en escritorio', () => {
+    const html = renderDetalle()
+    expect(html).toMatch(/class="flex items-center justify-between gap-3 border-b px-\[14px\] py-\[11px\] last:border-b-0 lg:px-\[18px\]"/)
+  })
+
+  it('muestra fecha, vendió, cliente, estado (vía ChipEstado) y comprobante', () => {
+    const html = renderDetalle()
+    expect(html).toContain('21/08/2026 · 14:28')
+    expect(html).toContain('Florencia Díaz')
+    expect(html).toContain(CONSUMIDOR_FINAL)
+    expect(html).toContain('Sin factura ARCA')
+    expect(html).toContain('Cobrada')
+  })
+
+  it('con la venta anulada, el chip dice "Anulada"', () => {
+    const html = renderDetalle({ anulada: true })
+    expect(html).toContain('Anulada')
+  })
+})
+
+describe('Detalle: el orden se invierte entre el teléfono y escritorio', () => {
+  it('las dos columnas de escritorio se disuelven en el teléfono con contents lg:flex', () => {
+    const html = renderDetalle()
+    expect(html.match(/class="contents lg:flex lg:flex-1 lg:flex-col lg:gap-4"/g)).toHaveLength(1)
+    expect(html.match(/class="contents lg:flex lg:w-\[324px\] lg:shrink-0 lg:flex-col lg:gap-4"/g)).toHaveLength(1)
+  })
+
+  it('Resumen es order-1, Qué se vendió order-2, Cómo se pagó order-3, Zona de riesgo order-4 — todas lg:order-none', () => {
+    const html = renderDetalle()
+    for (const orden of ['order-1', 'order-2', 'order-3', 'order-4']) {
+      expect(html).toContain(`${orden} flex flex-col`)
+    }
+    expect(html.match(/lg:order-none/g)).toHaveLength(4)
+  })
+})
+
+describe('Detalle: el link "Volver" del cuerpo sólo existe en escritorio', () => {
+  it('lleva hidden lg:flex — en el teléfono esa función la cumple la flecha del Topbar', () => {
+    const html = renderDetalle()
+    expect(html).toMatch(/class="hidden w-fit items-center gap-\[6px\] text-\[12px\] font-semibold text-muted-foreground lg:flex"/)
+  })
+})
+
+describe('Detalle: Zona de riesgo', () => {
+  it('sin anular y sin permiso: muestra la advertencia, sin el botón', () => {
+    const html = renderDetalle({ notaDeAnulacionTexto: null, ofreceAnular: false })
+    expect(html).toContain('Anular la venta')
+    expect(html).not.toContain('<form')
+  })
+
+  it('sin anular y con permiso: muestra el formulario de anulación', () => {
+    const html = renderDetalle({ notaDeAnulacionTexto: null, ofreceAnular: true })
+    expect(html).toContain('<form')
+  })
+
+  it('anulada: la nota vive dentro de un <Alert> (role="alert"), sin la advertencia ni el botón', () => {
+    const html = renderDetalle({
+      anulada: true,
+      notaDeAnulacionTexto: 'Anulada el 20/08/2026 por Rodrigo Cotarelo.',
+      ofreceAnular: true,
+    })
+    expect(html).toMatch(/role="alert"[^>]*>[\s\S]*Anulada el 20\/08\/2026 por Rodrigo Cotarelo\./)
+    expect(html).not.toContain('Anular la venta')
+    expect(html).not.toContain('<form')
+  })
+
+  /**
+   * El cableado, que el render no puede ver: `Detalle` recibe `ofreceAnular`
+   * ya resuelto, así que un llamador que le pasara el PERMISO pelado
+   * (`puedeAnularVenta`) en vez de `seOfreceAnular(permiso, anuladaEn)`
+   * ofrecería anular una venta ya anulada, con los tres casos de arriba en
+   * verde. `DetalleDeVenta` es un Server Component async que abre sesión y
+   * consulta Prisma, así que esto se verifica sobre el fuente — misma
+   * excepción que el resto de este archivo ya usa para el `select`.
+   */
+  it('la pantalla combina el permiso con anuladaEn antes de pasarlo a Detalle', () => {
+    const fuente = readFileSync('app/(app)/ventas/[id]/page.tsx', 'utf8')
+    expect(fuente).toContain('ofreceAnular={seOfreceAnular(puedeAnularVenta, venta.anuladaEn)}')
+    // Y al revés: el permiso pelado nunca llega solo al componente.
+    expect(fuente).not.toContain('ofreceAnular={puedeAnularVenta}')
   })
 })
 

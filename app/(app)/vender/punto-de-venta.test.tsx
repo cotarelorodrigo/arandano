@@ -3,13 +3,18 @@ import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { formatearPrecio } from '@/lib/formato/mostrar'
 import type { PlanVisible } from '@/lib/planes/consultar'
+import { SidebarProvider } from '@/components/ui/sidebar'
 
-// Las dos funciones que el componente importa viven en un archivo 'use server'.
+// Las funciones que el componente importa viven en un archivo 'use server'.
 // Su contrato ya lo fija app/(app)/vender/acciones.test.ts; acá sólo importa qué
-// renderiza la pantalla, así que se mockean.
+// renderiza la pantalla, así que se mockean. Las dos de caja entraron cuando el
+// <Encabezado> —y con él el chip y el menú de caja— pasó a renderizarse desde
+// este componente y no desde page.tsx.
 vi.mock('./acciones', () => ({
   cobrar: vi.fn(),
   buscarArticulos: vi.fn(async () => []),
+  abrirCajaDesdeVender: vi.fn(),
+  cerrarCajaDesdeVender: vi.fn(),
 }))
 
 // Dos planes con la forma exacta que devuelve `planesDelTenant`
@@ -41,9 +46,35 @@ const PLAN_CONTADO: PlanVisible = {
   desactivadoEn: null,
 }
 
-async function render({ planes = [] }: { planes?: PlanVisible[] } = {}) {
+const FUENTE = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+
+// El mismo fuente sin comentarios, para los casos que buscan la AUSENCIA de
+// una utilidad de Tailwind. Este archivo explica en prosa por qué NO usa `md:`
+// ni `max-lg:`, y también qué trae `Input` por default (`md:text-sm`), así que
+// un `not.toMatch(/\bmd:/)` sobre el texto crudo se dispara contra la
+// explicación en vez de contra una clase real — un rojo por la razón
+// equivocada, que es peor que no tener el caso.
+const SIN_COMENTARIOS = FUENTE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+
+// El <SidebarProvider> lo pone app/(app)/layout.tsx alrededor de cada
+// page.tsx; acá hace falta porque el <Encabezado> que ahora renderiza este
+// componente trae el SidebarTrigger, y ése llama a useSidebar(), que tira sin
+// un provider como ancestro (mismo helper que components/shell/encabezado.test.tsx).
+async function render(
+  props: { caja?: { abiertaEn: Date } | null; planes?: PlanVisible[] } = {},
+) {
   const { PuntoDeVenta } = await import('./punto-de-venta')
-  return renderToStaticMarkup(<PuntoDeVenta cotizacionInicial={null} planes={planes} />)
+  return renderToStaticMarkup(
+    <SidebarProvider>
+      <PuntoDeVenta
+        cotizacionInicial={null}
+        planes={props.planes ?? []}
+        caja={props.caja ?? null}
+        cotizacionUsd={null}
+        cotizacionUsdEn={null}
+      />
+    </SidebarProvider>,
+  )
 }
 
 describe('el punto de venta', () => {
@@ -105,7 +136,9 @@ describe('el punto de venta', () => {
   // Subió de 8 a 9 en la Task 6 de precios por forma de pago: el pie del panel
   // de cobro (Mercadería / Recargo / Total a cobrar) suma un noveno sitio —uno
   // solo, porque las tres líneas salen de un `.map` sobre
-  // `lineasDelPieDeCobro`, no de tres bloques escritos a mano—.
+  // `lineasDelPieDeCobro`, no de tres bloques escritos a mano—. Y de 9 a 10 al
+  // mergear con el ciclo del teléfono, con el renglón "A cobrar $X" de cada
+  // fila de pago (ver el arreglo del vuelto, más abajo).
   it('el rol importe cubre las columnas de plata y los campos de monto', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8').replace(/\s+/g, '')
     const apariciones = [...fuente.matchAll(/estilos\.importe\}/g)].length
@@ -116,9 +149,9 @@ describe('el punto de venta', () => {
         `columnas Precio y Subtotal de la tabla, el valor del stepper de ` +
         `cantidad, la definición de \`CampoMonto\` (una sola, compartida por ` +
         `Monto, Cotización y Recibido de FilaDePago), el chip de Vuelto, el ` +
-        `chip de Faltante/Sobrante, el renglón "Entran $X", y el monto de cada ` +
-        `línea del pie del cobro.`,
-    ).toBe(9)
+        `chip de Faltante/Sobrante, el renglón "Entran $X", el renglón ` +
+        `"A cobrar $X", y el monto de cada línea del pie del cobro.`,
+    ).toBe(10)
   })
 
   // Una sola vez en pantalla. Antes estaba dos veces —la card de cobro y el
@@ -364,8 +397,13 @@ describe('el punto de venta', () => {
   // archivo para "no se puede calcular": no inventar un cero ni un NaN.
   it('"Agregar pago" no precarga el monto con NaN cuando el carrito tiene una línea inválida', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
-    const posicion = fuente.indexOf('Agregar pago')
-    expect(posicion, '"Agregar pago" tiene que existir en el fuente').toBeGreaterThan(-1)
+    // El TEXTO del botón, no la primera aparición de la frase: la ronda de
+    // arreglos del ciclo móvil sumó un comentario que la nombraba en prosa más
+    // arriba en el archivo, y este caso se puso rojo apuntando a ese
+    // comentario en vez de al botón. Mismo criterio que ya usaban `>Vuelto<` y
+    // `'Faltan'` un poco más abajo.
+    const posicion = fuente.search(/Agregar pago\s*<\/Button>/)
+    expect(posicion, '"Agregar pago" tiene que existir como texto del botón').toBeGreaterThan(-1)
     const contexto = fuente.slice(Math.max(0, posicion - 700), posicion)
     expect(
       contexto,
@@ -464,6 +502,98 @@ describe('el punto de venta', () => {
     expect(fuente).toMatch(/\{puedeMostrarVuelto\(esEfectivoArs, hayFaltante\) &&/)
   })
 
+  /**
+   * El vuelto se calcula contra lo que hay que COBRAR por esa fila, no contra
+   * su base. Es plata real del cajón, en la única pantalla del producto donde
+   * se cuentan billetes: con un plan de efectivo en pesos —el descuento por
+   * pago contado, que este producto trata como caso de primera clase— la base
+   * y lo que hay que cobrar no coinciden, y restar la base devolvía de MENOS
+   * con descuento y de MÁS con recargo.
+   *
+   * El agujero por el que esto llegó a existir: `planesOfrecidos` sí ofrece
+   * planes de EFECTIVO —correctamente, el motor los acepta— pero ningún caso
+   * cruzaba el vuelto con un plan elegido.
+   */
+  describe('el vuelto se calcula contra lo que hay que cobrar, no contra la base', () => {
+    it('sin plan, lo que hay que cobrar es la base pelada', async () => {
+      const { aCobrarDeLaFilaEnCentavos } = await import('./punto-de-venta')
+      expect(
+        aCobrarDeLaFilaEnCentavos({ base: '10000', cotizacion: '1', planId: null }, [PLAN_CONTADO]),
+      ).toBe(1_000_000)
+    })
+
+    it('con un descuento de contado, hay que cobrar MENOS que la base', async () => {
+      const { aCobrarDeLaFilaEnCentavos } = await import('./punto-de-venta')
+      // −10 % sobre 10.000 = 9.000. Con el bug, quien pagaba con un billete de
+      // 10.000 se iba sin su vuelto de 1.000.
+      expect(
+        aCobrarDeLaFilaEnCentavos(
+          { base: '10000', cotizacion: '1', planId: PLAN_CONTADO.id },
+          [PLAN_CONTADO],
+        ),
+      ).toBe(900_000)
+    })
+
+    it('con un recargo, hay que cobrar MÁS que la base', async () => {
+      const { aCobrarDeLaFilaEnCentavos } = await import('./punto-de-venta')
+      const efectivoConRecargo = { ...PLAN_CONTADO, porcentaje: '40' }
+      expect(
+        aCobrarDeLaFilaEnCentavos(
+          { base: '10000', cotizacion: '1', planId: efectivoConRecargo.id },
+          [efectivoConRecargo],
+        ),
+      ).toBe(1_400_000)
+    })
+
+    it('un plan que no está en la lista no mueve el número', async () => {
+      const { aCobrarDeLaFilaEnCentavos } = await import('./punto-de-venta')
+      expect(
+        aCobrarDeLaFilaEnCentavos({ base: '10000', cotizacion: '1', planId: 'inexistente' }, [
+          PLAN_CONTADO,
+        ]),
+      ).toBe(1_000_000)
+    })
+
+    // El cableado, por FUENTE: el harness no llega a montar una fila con plan,
+    // así que sin esto la función podría estar perfecta y el JSX seguir
+    // restando la base. Las DOS mitades del chip —el guard que decide si se
+    // pinta y el importe que muestra— tienen que mirar el mismo número.
+    it('el chip resta lo que hay que cobrar, en el guard y en el importe', () => {
+      const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+      expect(fuente).toMatch(/const aCobrarCentavos = aCobrarDeLaFilaEnCentavos\(pago, planes\)/)
+      expect(
+        fuente,
+        'el guard del chip compara "con cuánto paga" contra lo que hay que cobrar',
+      ).toMatch(/dineroEnCentavos\(pago\.recibido\) > aCobrarCentavos/)
+      expect(fuente, 'y el importe resta ESE mismo número').toMatch(
+        /dineroEnCentavos\(pago\.recibido\) - aCobrarCentavos/,
+      )
+      expect(
+        fuente,
+        'y ya nadie resta la base: era el bug',
+      ).not.toMatch(/dineroEnCentavos\(pago\.recibido\)[^)]*dineroEnCentavos\(pago\.base\)/)
+    })
+
+    // El pie de la card y el chip de cada fila aplican el porcentaje con la
+    // MISMA función: dos cuentas separadas es cómo el pie diría un total y las
+    // filas otro.
+    it('el pie del cobro reusa la misma función que el chip', () => {
+      const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+      expect(fuente).toMatch(/acc \+ recargoDeLaFilaEnCentavos\(pago, planes\)/)
+    })
+
+    // "Monto" es la BASE, y con un plan no es lo que hay que pedirle a la
+    // persona. Sin este renglón la pantalla no dice en ningún lado cuánto
+    // cobrar por esa fila — el pie da el total de la venta, que con pagos
+    // partidos entre dos planes no alcanza.
+    it('la fila muestra "A cobrar" cuando su plan mueve el número', () => {
+      const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+      expect(fuente).toMatch(
+        /aCobrarCentavos !== pesosDelPagoCentavos &&[\s\S]*?>A cobrar<[\s\S]*?deCentavos\(aCobrarCentavos\)/,
+      )
+    })
+  })
+
   // --- Task 5: el chip de caja y los atajos de teclado ---
 
   it('Enter es el atajo que cobra, y ninguna otra tecla lo es', async () => {
@@ -554,7 +684,10 @@ describe('el punto de venta', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
     const posicion = fuente.indexOf('esAtajoDeVaciar(e.key)')
     expect(posicion, 'el atajo de vaciar tiene que existir en el fuente').toBeGreaterThan(-1)
-    const contexto = fuente.slice(posicion, posicion + 200)
+    // La ventana se ensanchó de 200 a 500 con el ciclo móvil: la rama ganó el
+    // comentario que explica por qué este chequeo convive con el de
+    // `alternarVaciado`. Sigue acotada a la rama de Escape.
+    const contexto = fuente.slice(posicion, posicion + 500)
     expect(
       contexto,
       'nada que vaciar tiene que cortar antes de armar cualquier confirmación',
@@ -874,20 +1007,34 @@ describe('el punto de venta', () => {
   // Cableado del pie: la mercadería que muestra tiene que ser el MISMO
   // `totalCentavos` que pinta la banda de --marca, y las líneas tienen que
   // salir de la función y no de tres bloques de JSX con su propia cuenta.
-  // El agujero que encontró la revisión de esta task: con `lineasDelPie.map(`
-  // exigido a secas, cambiar el guard del JSX a `{false && (` dejaba los 45
-  // casos en verde con el pie BORRADO de la pantalla — ninguno lo reclamaba,
-  // porque el harness no puede montar un carrito con plan y el `.map` seguía
-  // escrito ahí adentro. Por eso el guard y el `.map` se exigen juntos y EN
-  // ORDEN, con `[\s\S]*?` entre medio: es la misma corrección que ya se le
-  // había hecho al caso de las guardas de Enter, más arriba.
+  // El agujero que encontró la revisión de esta task: con el `.map` exigido a
+  // secas, cambiar el guard a `{false && (` dejaba los casos en verde con el
+  // pie BORRADO de la pantalla — ninguno lo reclamaba, porque el harness no
+  // puede montar un carrito con plan y el `.map` seguía escrito ahí adentro.
+  // Por eso el guard y el `.map` se exigen juntos y EN ORDEN, con `[\s\S]*?`
+  // entre medio: es la misma corrección que ya se le había hecho al caso de
+  // las guardas de Enter, más arriba.
   it('el pie del cobro sale de lineasDelPieDeCobro sobre el total del carrito', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
     expect(fuente).toMatch(/const lineasDelPie = lineasDelPieDeCobro\(totalCentavos, pagos, planes\)/)
     expect(
       fuente,
-      'el pie tiene que dibujarse cuando lineasDelPie tiene líneas, mapeando ESA lista',
-    ).toMatch(/\{lineasDelPie\.length > 0 && \([\s\S]*?lineasDelPie\.map\(/)
+      'el pie tiene que dibujarse cuando hay líneas, mapeando ESA lista',
+    ).toMatch(/if \(lineas\.length === 0\) return null[\s\S]*?lineas\.map\(/)
+  })
+
+  // Las DOS copias del pie, en las dos direcciones (CLAUDE.md, la regla que
+  // dejó el merge del ciclo de permisos con el del teléfono): el pie de la
+  // card de cobro (escritorio) y `PieDeVenta` (el fijo del teléfono). Un
+  // `toContain` solo pasaría igual con una sola de las dos escrita, que es
+  // exactamente el modo de falla que esa regla existe para atrapar.
+  it('las DOS copias del pie reciben la MISMA lista', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    const usos = fuente.match(/<PieDeTotales lineas=\{lineasDelPie\} \/>/g) ?? []
+    expect(usos, 'una en el pie de escritorio y otra en PieDeVenta, el del teléfono').toHaveLength(2)
+    // Y que la del teléfono llegue de verdad: `PieDeVenta` es otro componente,
+    // así que la lista tiene que viajarle como prop desde `PuntoDeVenta`.
+    expect(fuente).toMatch(/<PieDeVenta[\s\S]*?lineasDelPie=\{lineasDelPie\}/)
   })
 
   // El caso que decide si el botón se puede apretar, y el que más duele si
@@ -924,5 +1071,425 @@ describe('el punto de venta', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
     expect(fuente).toMatch(/planId: p\.planId \?\? undefined/)
     expect(await render({ planes: [PLAN_CONTADO] })).not.toContain('planId')
+  })
+})
+
+// --- El ciclo móvil: el cuerpo en un teléfono de 390 px ---
+//
+// Un solo árbol de marcado, mobile-first, con un único corte en `lg:` (1024,
+// hooks/use-mobile.ts). Frames `VaHod` (carrito) y `keRdN` (cobro) de
+// design/arandano.pen.
+
+describe('el punto de venta en el teléfono', () => {
+  // El carrito de una venta en curso vive en el estado de cliente de este
+  // componente: cualquier navegación de Next lo remonta y se lo lleva puesto.
+  // Por eso el paso vive en `window.history.pushState` (app/(app)/vender/paso.ts)
+  // y no en el router — este caso es la red que impide que alguien "simplifique"
+  // el hook a un useSearchParams más adelante.
+  it('el paso de cobro no pasa por el router de Next', () => {
+    expect(FUENTE).toContain('usePasoDeCobro')
+    expect(FUENTE, 'router.push/useSearchParams remontarían el carrito').not.toMatch(
+      /useRouter|useSearchParams|next\/navigation/,
+    )
+  })
+
+  // El <Encabezado> se mudó de page.tsx (servidor) a acá: sus props dependen
+  // del paso, y el paso es estado de cliente. Encabezado es JSX puro, sin
+  // ninguna API de servidor, así que un componente cliente puede renderizarlo.
+  it('el Encabezado lo renderiza este componente, no page.tsx', () => {
+    const page = readFileSync('app/(app)/vender/page.tsx', 'utf8')
+    expect(
+      page,
+      'page.tsx ya no puede renderizar el Encabezado: sus props dependen del paso',
+    ).not.toMatch(/<Encabezado|from '@\/components\/shell\/encabezado'/)
+    expect(FUENTE).toContain('<Encabezado')
+  })
+
+  it('el Topbar cambia de título, subtítulo y flecha con el paso', () => {
+    expect(FUENTE).toMatch(/titulo=\{pasoVisible === 'cobro' \? 'Cobro' : 'Vender'\}/)
+    expect(FUENTE).toMatch(/alVolver=\{pasoVisible === 'cobro' \? volverAlCarrito : undefined\}/)
+    // La flecha vuelve por el hook, no por un href: un link a /vender es
+    // justamente la navegación que perdería el carrito.
+    expect(FUENTE, 'la flecha del cobro no puede ser un href').not.toMatch(/atras=/)
+  })
+
+  // "En escritorio `paso` se ignora por completo" (spec §4): las dos columnas
+  // se ven siempre y el Topbar no cambia, aunque la URL traiga ?paso=cobro
+  // —por ejemplo al agrandar la ventana a mitad de un cobro—.
+  it('en escritorio el paso se ignora', () => {
+    expect(FUENTE).toMatch(/const pasoVisible = enTelefono \? paso : 'carrito'/)
+  })
+
+  it('los dos chips de estado se ven en el cuerpo del teléfono y en el header de escritorio', async () => {
+    const html = await render({ caja: { abiertaEn: new Date('2026-08-21T17:32:00Z') } })
+    const veces = [...html.matchAll(/Caja abierta/g)].length
+    expect(
+      veces,
+      'el estado de la caja tiene que estar dos veces: el chip interactivo del ' +
+        'header (hidden lg:flex) y el de sólo lectura del cuerpo (lg:hidden)',
+    ).toBe(2)
+    expect(FUENTE).toContain('<ChipsDeEstado')
+    expect(FUENTE).toContain('<ChipCaja')
+  })
+
+  // Los chips del cuerpo son de sólo lectura (design/arandano.pen no les pone
+  // ningún control adentro), así que abrir y cerrar el turno se van a la
+  // ranura derecha del Topbar.
+  it('la ranura derecha del Topbar lleva el control de caja', () => {
+    expect(FUENTE).toMatch(/controlMovil=\{[\s\S]{0,90}<ControlDeCaja/)
+  })
+
+  it('la fila de columnas corta en lg, y no queda ningún md: en la pantalla', () => {
+    expect(FUENTE).toMatch(/flex flex-col gap-\[18px\] lg:flex-row/)
+    expect(
+      SIN_COMENTARIOS,
+      'el único corte del ciclo móvil es lg: (1024) — ningún md:, sm: ni xl: nuevo',
+    ).not.toMatch(/\bmd:/)
+  })
+
+  // Mobile-first y NO `max-lg:`: el valor del teléfono va sin prefijo y el de
+  // escritorio con `lg:`. En `lg:` las dos columnas terminan en `flex`, sin
+  // mirar el paso.
+  it('el paso esconde una columna y muestra la otra, sólo en el teléfono', () => {
+    expect(FUENTE).toMatch(/paso === 'cobro' \? 'hidden lg:flex' : 'flex'/)
+    expect(FUENTE).toMatch(/paso === 'cobro' \? 'flex' : 'hidden lg:flex'/)
+    expect(SIN_COMENTARIOS, 'la constraint del ciclo prohíbe max-lg:').not.toMatch(/max-lg:/)
+  })
+
+  it('el buscador mide 52 en el teléfono y 58 en escritorio', async () => {
+    const html = await render()
+    expect(html).toContain('h-[52px]')
+    expect(html).toContain('lg:h-[58px]')
+  })
+
+  // El chip "F2" promete un atajo de teclado, y un teléfono no tiene teclas de
+  // función: en el teléfono es un cartel que no se puede cumplir. `I5IuID` (el
+  // buscador de VaHod) tampoco lo dibuja.
+  it('el chip F2 no se muestra en un teléfono', async () => {
+    const html = await render()
+    const chip = html.match(/<span class="([^"]*)"[^>]*>\s*F2\s*<\/span>/)
+    expect(chip, 'no se encontró el chip F2').toBeTruthy()
+    expect(chip![1]).toContain('hidden')
+    expect(chip![1]).toContain('lg:inline-block')
+  })
+
+  it('el panel de cobro ocupa todo el ancho del teléfono', async () => {
+    const html = await render()
+    expect(html).toContain('w-full')
+    expect(html).toContain('lg:w-96')
+  })
+
+  it('el pie del teléfono repite el botón Cobrar de 54 px y no existe en escritorio', async () => {
+    const html = await render()
+    const veces = [...html.matchAll(/h-\[54px\]/g)].length
+    expect(
+      veces,
+      'el botón de 54 px tiene que estar dos veces: el pie del teléfono (lg:hidden) ' +
+        'y el pie de la card de cobro (hidden lg:flex)',
+    ).toBe(2)
+
+    const posicion = FUENTE.indexOf('function PieDeVenta')
+    expect(posicion, 'el pie del teléfono tiene que ser su propio componente').toBeGreaterThan(-1)
+    const contexto = FUENTE.slice(posicion)
+    expect(contexto).toMatch(/lg:hidden/)
+    expect(contexto).toMatch(/h-\[54px\]/)
+    expect(contexto, 'radio 12, como el nodo f4EIb de VaHod').toMatch(/rounded-\[12px\]/)
+  })
+
+  // Dos pantallas, dos botones con el mismo rótulo y trabajos distintos: en el
+  // carrito el botón AVANZA al cobro (el frame VaHod lleva a keRdN), y recién
+  // en el cobro cobra de verdad.
+  it('en el carrito el botón del pie lleva al cobro; en el cobro, cobra', () => {
+    const contexto = FUENTE.slice(FUENTE.indexOf('function PieDeVenta'))
+    expect(contexto).toMatch(/onClick=\{irACobro\}/)
+    expect(contexto).toMatch(/form=\{ID_FORMULARIO_DE_COBRO\}/)
+    // Y el <form> del cobro tiene que llevar ese mismo id, o el botón del pie
+    // —que vive afuera del form— no dispararía nada.
+    expect(FUENTE).toMatch(/id=\{ID_FORMULARIO_DE_COBRO\}/)
+  })
+
+  it('el pie del cobro suma la banda de faltante', () => {
+    const contexto = FUENTE.slice(FUENTE.indexOf('function PieDeVenta'))
+    expect(contexto).toMatch(/paso === 'cobro' && <ChipDeFaltante/)
+  })
+
+  // El chip de faltante está en dos lugares (el pie del teléfono y el pie de
+  // la card de escritorio) y se define UNA vez: dos copias del mismo JSX es
+  // como una se queda atrás sin que nada avise.
+  it('el chip de faltante se define una sola vez y se usa en los dos pies', () => {
+    expect([...FUENTE.matchAll(/<ChipDeFaltante/g)].length).toBe(2)
+    expect([...FUENTE.matchAll(/function ChipDeFaltante/g)].length).toBe(1)
+  })
+
+
+  // --- El vaciado del carrito ---
+  //
+  // En escritorio esa capacidad la da el doble Esc. En un teléfono no hay Esc,
+  // y sin este botón la única forma de deshacer una venta mal armada era
+  // borrar ítem por ítem con la ✕. El nodo `L5UIo` de VaHod lo dibuja: un
+  // encabezado de card con "Carrito" a la izquierda y "Vaciar" a la derecha.
+
+  it('el carrito del teléfono tiene su encabezado con "Vaciar"', async () => {
+    const html = await render()
+    const encabezado = html.match(/<div class="([^"]*)"[^>]*><span[^>]*>Carrito<\/span>/)
+    expect(encabezado, 'no se encontró el encabezado del carrito').toBeTruthy()
+    expect(encabezado![1], 'en escritorio manda la fila de encabezados de la tabla').toContain(
+      'lg:hidden',
+    )
+    // padding [11,14] y borde inferior (nodo `L5UIo`).
+    expect(encabezado![1]).toContain('px-[14px]')
+    expect(encabezado![1]).toContain('py-[11px]')
+    expect(encabezado![1]).toContain('border-b')
+    expect(html).toContain('Vaciar')
+  })
+
+  // Con el carrito vacío no hay nada que vaciar, y el atajo Esc ya se abstiene
+  // en ese caso: el botón tiene que hacer lo mismo o las dos mitades del mismo
+  // gesto dirían cosas distintas.
+  it('con el carrito vacío el botón de vaciar está apagado', async () => {
+    const html = await render()
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Vaciar<\/button>/)
+  })
+
+  // LO QUE MÁS IMPORTA DE ESTE BOTÓN: comparte el estado de confirmación con
+  // el atajo, no tiene el suyo. Con dos estados separados, armar por Esc y
+  // confirmar por botón (o al revés) quedaría desincronizado, y el desarme
+  // automático a los 3 segundos sólo bajaría uno de los dos.
+  it('el botón Vaciar y el atajo Esc comparten la confirmación en dos pasos', () => {
+    // UN solo estado de confirmación, UN solo lugar donde se arma, UNA sola
+    // función que decide. Es lo que este caso existe para proteger: con dos
+    // estados, armar por Esc y confirmar por botón no se entenderían.
+    expect([...FUENTE.matchAll(/\[vaciadoArmado, setVaciadoArmado\] = useState/g)].length).toBe(1)
+    expect([...FUENTE.matchAll(/setVaciadoArmado\(true\)/g)].length).toBe(1)
+    expect([...FUENTE.matchAll(/const alternarVaciado = useCallback/g)].length).toBe(1)
+
+    // Y los dos caminos entran por ahí: el botón por su onClick, el atajo
+    // desde la rama de Escape del listener global.
+    expect(FUENTE).toMatch(/onClick=\{alternarVaciado\}/)
+    const rama = FUENTE.slice(FUENTE.indexOf('esAtajoDeVaciar(e.key)'))
+    expect(rama.slice(0, 500)).toMatch(/alternarVaciado\(\)/)
+
+    // El rótulo cambia con el mismo estado que la leyenda de escritorio, y usa
+    // la fórmula "Sí, <verbo>" que ya eligieron AnularVenta y ConfirmarCierre.
+    expect(FUENTE).toMatch(/vaciadoArmado \? 'Sí, vaciar' : 'Vaciar'/)
+  })
+
+  // Un teléfono no tiene Esc, así que la leyenda de atajos no puede ser la
+  // única señal de que hay una confirmación armada: el botón la lleva encima.
+  it('el botón armado se pinta con el rojo de "esto no se deshace"', () => {
+    const posicion = FUENTE.indexOf("'Sí, vaciar'")
+    expect(posicion, 'el rótulo confirmado tiene que existir en el fuente').toBeGreaterThan(-1)
+    const contexto = FUENTE.slice(Math.max(0, posicion - 500), posicion)
+    expect(contexto).toMatch(/text-destructive/)
+  })
+
+  // Después de cobrar, el carrito y los pagos se vacían y el foco vuelve al
+  // buscador para el próximo escaneo. En el teléfono eso no alcanza: la
+  // pantalla sigue en el paso de cobro, así que la card del carrito y su banda
+  // de total están en `hidden`, y ese escaneo agrega líneas a una tabla que no
+  // se ve y a un total que no se ve. Es el flujo NORMAL —venta tras venta—, y
+  // ahí se pierde el ancla de la pantalla.
+  it('después de cobrar la pantalla vuelve al carrito, y recién ahí devuelve el foco', () => {
+    const deps = FUENTE.indexOf('}, [ventaProcesada, paso, descartarElCobro])')
+    expect(
+      deps,
+      'el efecto del fin de venta tiene que depender también del paso y de descartarElCobro',
+    ).toBeGreaterThan(-1)
+    const cuerpo = FUENTE.slice(FUENTE.lastIndexOf('useEffect(() => {', deps), deps)
+    // Y en ESTE orden, con la vuelta cortando la pasada: con el paso todavía
+    // en cobro el buscador está en display:none y `focus()` no hace nada, así
+    // que el foco tiene que esperar a la pasada siguiente del efecto.
+    expect(cuerpo).toMatch(/descartarElCobro\(\)[\s\S]*?return[\s\S]*?buscador\.current\?\.focus\(\)/)
+  })
+
+  // La vuelta automática NO puede ser la misma que la de la flecha. Con
+  // `volverAlCarrito` (que empuja una entrada), tocar Atrás después de cobrar
+  // restauraba `paso='cobro'` con `ventaProcesada` todavía seteado —nadie lo
+  // limpia, y no se puede: gatea el cartel de "Venta #N cobrada" y la guarda
+  // del ajuste durante el render—, así que el efecto volvía a disparar y a
+  // empujar otra entrada. El gesto de volver quedaba muerto en la ventana
+  // entre cobrar y escanear el artículo siguiente, o sea después de CADA venta.
+  it('la vuelta automática no deja entrada de historial, y la flecha sí', () => {
+    const deps = FUENTE.indexOf('}, [ventaProcesada, paso, descartarElCobro])')
+    // La existencia, antes del slice: sin esto `indexOf` da -1, el slice sale
+    // vacío y el caso pasa sin haber mirado nada — el mismo falso verde que ya
+    // apareció dos veces en esta task.
+    expect(deps, 'no se encontró el efecto del fin de venta').toBeGreaterThan(-1)
+    const cuerpo = FUENTE.slice(FUENTE.lastIndexOf('useEffect(() => {', deps), deps)
+    expect(
+      cuerpo,
+      'la vuelta de después de cobrar no la pidió nadie: no le corresponde una entrada propia',
+    ).not.toMatch(/volverAlCarrito\(\)/)
+    // Y la flecha del Topbar sigue siendo la vuelta CON entrada: es un gesto
+    // de la persona, y ahí Atrás tiene que deshacerlo.
+    expect(FUENTE).toMatch(/alVolver=\{pasoVisible === 'cobro' \? volverAlCarrito : undefined\}/)
+  })
+
+  // `keRdN` no dibuja el buscador: su Cuerpo es la banda del total, los pagos y
+  // el botón que suma uno. Es además lo que vuelve silencioso al defecto de
+  // arriba — es lo que permite escanear desde una pantalla donde el carrito no
+  // se ve.
+  it('el buscador no se ve en el paso de cobro', () => {
+    expect(FUENTE).toMatch(/paso === 'cobro' \? 'hidden lg:block' : 'block'/)
+  })
+
+  // La constraint más frágil de la task: a 1024 o más, /vender tiene que verse
+  // exactamente como antes del ciclo móvil. El padding del cuerpo es la pieza
+  // que lo decide —se mudó de page.tsx a acá adentro— y no la fijaba ningún
+  // caso.
+  it('el cuerpo mide 12/14 en el teléfono y vuelve a p-6 en escritorio', async () => {
+    const html = await render()
+    const cuerpo = html.match(/<div class="([^"]*lg:p-6[^"]*)"/)?.[1]
+    expect(cuerpo, 'no se encontró el cuerpo').toBeTruthy()
+    expect(cuerpo).toContain('px-[14px]')
+    expect(cuerpo).toContain('py-3')
+    expect(cuerpo).toContain('gap-3')
+    expect(cuerpo).toContain('lg:gap-[18px]')
+  })
+
+  // Los tres atajos de teclado se abstienen mientras haya un overlay de Radix
+  // montado, y el selector que los detecta nombra un rol por primitivo. LOS
+  // TRES, no uno: la primera versión de este caso afirmaba `role="menu"` —el
+  // del DropdownMenu que esta pantalla YA NO USA— mientras se llamaba "con la
+  // hoja de caja abierta", así que borrar `[role="dialog"]` del selector lo
+  // dejaba en verde y devolvía el bug de cobro que esta pantalla ya tuvo.
+  // Que el `Sheet` SEA un dialog de Radix lo verifica caja.test.tsx contra el
+  // paquete instalado; que el selector lo BUSQUE se verifica acá.
+  it('el selector de overlays nombra los tres roles de Radix, la hoja de caja incluida', () => {
+    const posicion = FUENTE.indexOf('function hayOverlayDeRadixAbierto')
+    expect(posicion).toBeGreaterThan(-1)
+    const cuerpo = FUENTE.slice(posicion, posicion + 300)
+    // listbox: los Select de medio y moneda. dialog: la hoja de caja (Sheet).
+    // menu: ninguno hoy, y se queda por si vuelve un menú — sacarlo sería
+    // gratis de reintroducir mal.
+    expect(cuerpo, 'sin listbox, Enter cobra con el medio/moneda anterior').toContain(
+      'role="listbox"',
+    )
+    expect(cuerpo, 'sin dialog, Escape para cerrar la hoja de caja arma el vaciado del carrito').toContain(
+      'role="dialog"',
+    )
+    expect(cuerpo).toContain('role="menu"')
+  })
+
+  // El escritorio no puede cambiar de aspecto: el pie de la card de cobro
+  // sigue con sus tres piezas, sólo que ahora oculto en el teléfono.
+  it('el pie de la card de cobro sigue entero, y sólo se ve en escritorio', () => {
+    const inicio = FUENTE.search(/<div className="hidden flex-col[^"]*lg:flex">/)
+    expect(inicio, 'el pie de la card tiene que quedar oculto en el teléfono').toBeGreaterThan(-1)
+    // Hasta el cierre del <form>, que es donde termina el pie: así el caso
+    // afirma que las tres piezas siguen ADENTRO de este bloque y no que
+    // existan sueltas en algún otro lado del archivo.
+    const contexto = FUENTE.slice(inicio, FUENTE.indexOf('</form>', inicio))
+    expect(contexto).toContain('<AvisosDelCobro')
+    expect(contexto).toContain('<ChipDeFaltante')
+    expect(contexto).toContain('Enter para cobrar · Esc para vaciar')
+  })
+
+  // --- Task 4b: la fila del carrito, con el patrón ya estrenado por
+  // app/(app)/ventas/page.tsx (`Listado`) ---
+  //
+  // El carrito arranca vacío en `render()` (no hay prop para precargar
+  // líneas), así que ninguno de estos casos puede mirar el HTML de una fila
+  // real — igual que "cada fila del carrito muestra el SKU" y "el aviso de
+  // stock insuficiente" más arriba, miran el FUENTE.
+
+  it('el carrito ya no es una <Table>: el patrón es grid + role, como en /ventas', () => {
+    expect(FUENTE, 'sin <Table>: el nuevo contenedor es un <div role="table">').not.toMatch(/<Table[\s>]/)
+    expect(FUENTE).not.toContain("from '@/components/ui/table'")
+    expect(FUENTE).toMatch(
+      /role="table" className="grid grid-cols-1 lg:grid-cols-\[1fr_104px_110px_130px_28px\]"/,
+    )
+  })
+
+  // La Task 3 la había escondido del todo (mitigación temporal mientras la
+  // fila seguía siendo una <table> sin reflow, ver el comentario que dejó en
+  // el <TableHead>). Con el reflow resuelto acá, tiene que volver.
+  it('la columna "Precio" vuelve a existir en escritorio', () => {
+    expect(FUENTE, 'lg:table-cell era la marca de la Table vieja').not.toMatch(/lg:table-cell/)
+    expect(FUENTE).toMatch(/hidden text-foreground-soft lg:block/)
+  })
+
+  it('la fila del carrito lleva role="row", lg:contents y group para el hover de escritorio', () => {
+    expect(FUENTE).toContain(
+      'className="group relative flex flex-col gap-2 border-b p-[11px] px-[14px] last:border-b-0 lg:contents"',
+    )
+  })
+
+  it('la fila tiene 5 celdas con role="cell", tantas como columnheader', () => {
+    const columnas = [...FUENTE.matchAll(/role="columnheader"/g)].length
+    const celdas = [...FUENTE.matchAll(/role="cell"/g)].length
+    expect(columnas, 'Artículo, Cantidad, Precio, Subtotal y Quitar').toBe(5)
+    expect(celdas, 'una celda de datos por columna, escrita una sola vez en el .map').toBe(5)
+  })
+
+  // Mismo mecanismo que /ventas: `display:contents` no genera caja pero
+  // sigue en la cadena de ancestros para :hover, así que `group` en la fila
+  // + `lg:group-hover:bg-muted/50` en cada celda restituye el resaltado que
+  // antes daba gratis `hover:bg-muted/50` de <TableRow>. Sin el prefijo
+  // `lg:` el resaltado se dispararía también en el teléfono.
+  it('el hover de escritorio: group-hover siempre con el prefijo lg:, una vez por celda', () => {
+    const total = [...FUENTE.matchAll(/group-hover:bg-muted\/50/g)].length
+    const conPrefijo = [...FUENTE.matchAll(/lg:group-hover:bg-muted\/50/g)].length
+    expect(total, 'una celda de datos por columna: Artículo, Cantidad, Precio, Subtotal, Quitar').toBe(5)
+    expect(conPrefijo, 'group-hover sin lg: dispararía el resaltado también en el teléfono').toBe(total)
+  })
+
+  // El agrupador que junta Cantidad, Precio (oculto ahí) y Subtotal en una
+  // sola línea del teléfono; disuelto en escritorio.
+  it('cantidad y subtotal se agrupan en una línea del teléfono, y se disuelven en escritorio', () => {
+    expect(FUENTE).toContain('className="flex items-center gap-[10px] lg:contents"')
+  })
+
+  // "Quitar" es la última columna en escritorio, pero en el teléfono tiene
+  // que convivir con el NOMBRE (la primera columna) en la misma línea —lejos
+  // en el DOM, con Cantidad/Precio/Subtotal en el medio. No se resuelve
+  // agrupando (no son columnas adyacentes): se ancla con `absolute` al
+  // padding del ítem, independiente de dónde cae en el flujo normal.
+  it('"Quitar" se ancla arriba a la derecha en el teléfono, y es celda de grid normal en escritorio', () => {
+    expect(FUENTE).toMatch(/role="cell"\s+className="absolute top-\[11px\] right-\[14px\] lg:static/)
+  })
+
+  // Ronda de arreglos 1 (Importante 2): sin esto, en escritorio el contenido
+  // de las 4 celdas más cortas (Cantidad, Precio, Subtotal, Quitar) quedaría
+  // pegado arriba de la fila en vez de centrado contra ella cuando el nombre
+  // del artículo ocupa dos líneas — lo que antes daba gratis `align-middle`
+  // de <TableCell>, que `display:contents` no tiene forma de heredar.
+  //
+  // La primera versión de este arreglo usaba `lg:self-center` en la CELDA —
+  // la review encontró que eso la achica a su contenido y la despega del
+  // fondo real de la fila, así que su propio `border-b` (más abajo) quedaba
+  // flotando a mitad de camino en vez de alinear con el de las demás. La
+  // celda se queda estirada (el default de Grid); quien centra es un
+  // envoltorio interno con `lg:flex lg:h-full lg:items-center` — el
+  // `h-full` resuelve al 100% de la celda estirada.
+  it('las celdas más cortas se centran con un envoltorio interno, no achicando la celda', () => {
+    const envoltorios = [...FUENTE.matchAll(/lg:flex lg:h-full lg:items-center/g)].length
+    expect(envoltorios, 'Cantidad, Precio, Subtotal y Quitar: las 4 celdas más cortas que Artículo').toBe(4)
+    expect(FUENTE, 'self-center desalinearía el borde inferior del resto de la fila').not.toContain('self-center')
+  })
+
+  // Ronda de arreglos 1 (Importante 1): `border-b`/`last:border-b-0` en la
+  // FILA no pintan nada en escritorio (`display:contents` no genera caja).
+  // Cada celda lleva su propio `lg:border-b`, y `lg:group-last:border-b-0`
+  // apaga el de la ÚLTIMA fila — la fila sigue en el DOM aunque no pinte,
+  // así que el selector `:last-child` de `group-last` la sigue encontrando.
+  it('el borde entre filas vive en cada celda, no sólo en la fila (escritorio)', () => {
+    // SIN_COMENTARIOS y no FUENTE: el comentario de la fila (más arriba en
+    // el archivo) nombra `lg:border-b` en prosa para explicar la decisión, y
+    // eso también matchea la clase — mismo motivo que ya documenta
+    // SIN_COMENTARIOS más arriba en este archivo.
+    const conBorde = [...SIN_COMENTARIOS.matchAll(/lg:border-b\b/g)].length
+    const conGroupLast = [...SIN_COMENTARIOS.matchAll(/lg:group-last:border-b-0/g)].length
+    expect(conBorde, 'una por columna: Artículo, Cantidad, Precio, Subtotal, Quitar').toBe(5)
+    expect(conGroupLast, 'las 5 celdas apagan su borde en la última fila').toBe(5)
+  })
+
+  // Ronda de arreglos 1 (Menor 3): <TableRow> traía `transition-colors` de
+  // fábrica; al mudar el hover a cada celda (Task 4b) se copió el color pero
+  // no la transición, así que el resaltado aparecía de golpe en vez de
+  // fundirse.
+  it('el hover funde el color: transition-colors en cada celda', () => {
+    const veces = [...FUENTE.matchAll(/lg:transition-colors/g)].length
+    expect(veces, 'una por columna: Artículo, Cantidad, Precio, Subtotal, Quitar').toBe(5)
   })
 })

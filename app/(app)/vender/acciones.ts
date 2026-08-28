@@ -98,7 +98,12 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
       // un error sin `codigo` —un 500— en vez del error de dominio que el resto
       // de esta función usa.
       if (planId !== '' && !esUuid(planId)) {
-        throw new ErrorDeVenta('PLAN_INEXISTENTE', `no existe el plan ${planId}`)
+        // Mismo criterio que el mensaje homólogo de lib/ventas/crear.ts: sin
+        // el id en el texto, porque este mensaje se muestra tal cual.
+        throw new ErrorDeVenta(
+          'PLAN_INEXISTENTE',
+          'Ese plan de pago ya no está disponible. Recargá la pantalla y elegí otro.',
+        )
       }
       return {
         medio: medio as MedioPago,

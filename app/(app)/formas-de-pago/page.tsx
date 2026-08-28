@@ -63,6 +63,10 @@ export default async function FormasDePago() {
         // verde (ver CLAUDE.md, ciclo de la UI de categorías). Acá `Encabezado`
         // es de servidor y sólo coloca el nodo donde va.
         acciones={<DialogoDePlan />}
+        // La copia del teléfono. `controlMovil` y no `accionMovil` porque el
+        // alta es un diálogo con estado propio, no una navegación a otra URL
+        // — ver el docblock de esas dos props en `Encabezado`.
+        controlMovil={<DialogoDePlan movil />}
       />
       <CuerpoFormasDePago planes={filas} ejemploBase={formatearPrecio(EJEMPLO.toString())} />
     </>
