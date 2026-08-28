@@ -20,10 +20,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select'
 import type { RamaConHijas } from '@/lib/inventario/categorias'
+import { SelectorDeCategoria } from './selector-categoria'
 import estilos from './tipografia.module.css'
 
 // Acá y no en acciones.ts: aquel archivo es 'use server' y sólo puede exportar
@@ -122,16 +120,6 @@ export function FormularioDeAlta({
 }) {
   const [estado, accion, pendiente] = useActionState(altaArticulo, INICIAL)
   const [tipo, setTipo] = useState<'PRODUCTO' | 'SERVICIO'>('PRODUCTO')
-  /**
-   * El rubro elegido, que es lo que decide qué marcas ofrece el segundo
-   * selector. Vive acá y no adentro del bloque de categoría porque cambiar de
-   * rubro tiene que LIMPIAR la marca: dejarla puesta guardaría una marca que
-   * pertenece a otro rubro, y el servidor la aceptaría sin chistar porque el
-   * id existe.
-   */
-  const [rubroId, setRubroId] = useState<string>('')
-  const [marcaId, setMarcaId] = useState<string>('')
-  const marcasDelRubro = arbol.find((r) => r.id === rubroId)?.hijas ?? []
 
   return (
     <form action={accion} className="contents">
@@ -209,72 +197,10 @@ export function FormularioDeAlta({
               <Label htmlFor="nombre">Nombre</Label>
               <Input id="nombre" name="nombre" required autoFocus className="h-10 rounded-[9px]" />
             </div>
-            {/* Dos selectores y no un campo de texto (design/arandano.pen,
-                frame `B4O7t`: "Categoría" y "Marca", cada uno con su
-                chevron-down). Es el cambio que trae el árbol, y **quita una
-                capacidad que existía**: hasta ahora, escribir "Fundas ·
-                Samsung" acá CREABA las dos ramas al vuelo. Ahora se elige de
-                lo que hay, y para crear una categoría se va al panel de
-                /inventario — de ahí el link de abajo, que es la mitigación de
-                esa fricción. Es la consecuencia directa de haber elegido
-                "catálogo propio" sobre "catálogo creable al vuelo". */}
-            <div className="flex gap-3">
-              <div className="flex flex-1 flex-col gap-2">
-                <Label htmlFor="categoriaId">Categoría</Label>
-                <Select
-                  name="categoriaId"
-                  value={rubroId}
-                  onValueChange={(v) => {
-                    setRubroId(v)
-                    // Cambiar de rubro limpia la marca: si no, quedaría
-                    // elegida una marca de otro rubro.
-                    setMarcaId('')
-                  }}
-                >
-                  <SelectTrigger id="categoriaId" className="h-10 w-full rounded-[9px]">
-                    <SelectValue placeholder="Sin categoría" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {arbol.map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        {r.nombre}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex flex-1 flex-col gap-2">
-                <Label htmlFor="marcaId">Marca</Label>
-                <Select
-                  name="marcaId"
-                  value={marcaId}
-                  onValueChange={setMarcaId}
-                  // Deshabilitado y no vacío-y-clickeable: un selector que se
-                  // abre para no mostrar nada invita a buscar algo que no está.
-                  disabled={marcasDelRubro.length === 0}
-                >
-                  <SelectTrigger id="marcaId" className="h-10 w-full rounded-[9px]">
-                    <SelectValue
-                      placeholder={rubroId === '' ? 'Elegí una categoría' : 'Sin marca'}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {marcasDelRubro.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.nombre}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <p className="text-[11px] leading-[1.4] text-muted-foreground">
-              Las categorías se crean y se ordenan en{' '}
-              <Link href="/inventario" className="underline">
-                el panel de Inventario
-              </Link>
-              .
-            </p>
+            {/* El par de selectores vive en su propio componente desde el ciclo
+                de la categoría en la ficha: la ficha usa el MISMO, que es lo
+                que impide que las dos pantallas vuelvan a divergir. */}
+            <SelectorDeCategoria arbol={arbol} />
             <div className="flex gap-3">
               <div className="flex flex-1 flex-col gap-2">
                 <Label htmlFor="sku">Código (SKU)</Label>
