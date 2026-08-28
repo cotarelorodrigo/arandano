@@ -780,6 +780,21 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
 - **El texto de `Articulo.categoria` se sigue escribiendo**, ahora derivado de
   la rama en vez de tipeado. Es lo que hace que un rollback a la imagen
   anterior encuentre el dato; muere en el deploy del contract.
+- **Los dos selectores salieron a `SelectorDeCategoria`, compartido con
+  `/inventario/[id]`** (spec 2026-08-28: "categoría en la ficha del
+  artículo"). Antes de ese ciclo esta pantalla tenía su propio par de
+  `<Select>` y la ficha un campo de texto — dos implementaciones del mismo
+  control, y una se había quedado atrás. Con un componente único la
+  divergencia no se puede repetir.
+- **Y con ese componente, elegir "Fundas" por error dejó de ser un callejón
+  sin salida.** Antes, el `<Select>` de esta pantalla no ofrecía ningún ítem
+  para volver a "ninguna" una vez elegida una rama —el placeholder "Sin
+  categoría" sólo se veía mientras no se elegía nada, y Radix rechaza un
+  `SelectItem` con `value=""`—, así que deshacer la elección exigía recargar
+  la pantalla. Los dos selectores ofrecen ahora un ítem explícito "Sin
+  categoría"/"Sin marca", siempre, también acá en el alta (no sólo en la
+  ficha, que es donde la capacidad hacía más falta): el costo de tenerlo es
+  cero, no cambia qué se puede guardar.
 - **"Cancelar" y "Guardar artículo" viven en el Topbar**, no al pie del
   formulario: el `<form>` envuelve encabezado y cuerpo por igual
   (`className="contents"`, sin alterar el layout de `SidebarInset`) porque el

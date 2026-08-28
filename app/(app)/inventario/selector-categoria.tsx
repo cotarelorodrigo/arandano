@@ -73,7 +73,11 @@ export function SelectorDeCategoria({
     <>
       <input type="hidden" name="categoriaId" value={rubroId} />
       <input type="hidden" name="marcaId" value={marcaId} />
-      <div className={orientacion === 'fila' ? 'flex gap-3' : 'flex flex-col gap-2'}>
+      <div
+        className={
+          orientacion === 'fila' ? 'flex gap-3' : 'flex flex-col gap-3 lg:gap-[14px]'
+        }
+      >
         <div className="flex flex-1 flex-col gap-2">
           <Label htmlFor="categoriaId">Categoría</Label>
           <Select
@@ -140,9 +144,12 @@ export function SelectorDeCategoria({
  *
  * Un artículo puede colgar de una RAÍZ o de una HOJA, indistinto (CLAUDE.md,
  * ciclo del modelo), así que hay que probar las dos formas. Un id que el árbol
- * no conoce —otra pestaña borró la rama entre que la pantalla se dibujó y
- * alguien la miró— cae en "sin categoría" en vez de dejar los selectores en un
- * estado imposible.
+ * no conoce —sea cual sea la razón— cae en "sin categoría" en vez de dejar los
+ * selectores en un estado que no corresponde a nada. (No es un escenario de
+ * concurrencia: `borrarCategoria`, en `lib/inventario/categorias.ts`, rechaza
+ * con `CATEGORIA_CON_ARTICULOS` mientras algún artículo —activo o
+ * desactivado— siga apuntando a la rama, así que un artículo no puede
+ * sobrevivir a su categoría.)
  */
 function ramaInicial(
   arbol: RamaConHijas[],

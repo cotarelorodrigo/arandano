@@ -815,17 +815,27 @@ describe('el árbol de categorías', () => {
   })
 
   // Una rama de OTRO tenant no resuelve a ninguna fila —RLS la vuelve
-  // invisible— así que tiene que salir como error de dominio y no como una FK
-  // reventando con un código que nadie atrapa. `ramaElegida` es quien lo
-  // decide; este caso fija que `editarArticulo` la use de verdad.
+  // invisible, `ramaElegida` no filtra por tenant en el SQL: no hace falta,
+  // porque el `tx` ya corre con el GUC del tenant seteado— así que tiene que
+  // salir como error de dominio y no como una FK reventando con un código que
+  // nadie atrapa. Por eso la rama que se pasa tiene que existir DE VERDAD,
+  // sólo que del lado del vecino: un uuid inventado (que no es de nadie) deja
+  // el mismo `WHERE id =` sin filas tanto si RLS funciona como si no, así que
+  // no distingue nada. Con una fila real del otro tenant, si RLS dejara de
+  // esconderla, `ramaElegida` la encontraría y este caso fallaría — que es
+  // justo lo que hace que el caso valga algo.
   it('rechaza una rama que no existe en este tenant', async () => {
+    const { crearCategoria } = await import('@/lib/inventario/categorias')
+    const ajena = await crearCategoria({
+      tenantId: otroTenantId, nombre: 'Rama del vecino', padreId: null,
+    })
     const a = await crearArticulo({
       tenantId, usuarioId, nombre: 'No se mueve', tipo: 'PRODUCTO', precio: d('100'),
     })
     await expect(
       editarArticulo({
         tenantId, articuloId: a.id, nombre: 'No se mueve', sku: a.sku, precio: d('100'),
-        categoriaId: '00000000-0000-4000-8000-000000000000',
+        categoriaId: ajena.id,
       }),
     ).rejects.toMatchObject({ codigo: 'CATEGORIA_INEXISTENTE' })
   })

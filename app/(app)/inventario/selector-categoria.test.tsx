@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { SelectorDeCategoria } from './selector-categoria'
+
+// Whitebox sobre el FUENTE: Radix no renderiza `SelectContent` en markup
+// estático (ver el comentario de `oculto`, abajo), así que los dos items
+// "Sin categoría"/"Sin marca" no se pueden afirmar renderizados — mismo
+// criterio que test/permisos-en-las-dos-copias.test.ts y
+// app/(app)/inventario/[id]/page.test.tsx para lo que no se puede montar.
+const FUENTE = readFileSync('app/(app)/inventario/selector-categoria.tsx', 'utf8')
 
 const ARBOL = [
   { id: 'id-cables', nombre: 'Cables', cuenta: 3, hijas: [] },
@@ -129,5 +137,19 @@ describe('SelectorDeCategoria', () => {
     expect(html).toContain('name="categoriaId"')
     expect(html).toContain('name="marcaId"')
     expect(html).not.toContain('name="categoria"')
+  })
+
+  // Puerta de una sola dirección: los dos items "Sin categoría"/"Sin marca"
+  // son la corrección central de este componente (ver su docblock), no un
+  // detalle. Antes de que existieran, el Select del alta no tenía forma de
+  // volver a "ninguna" una vez elegida una rama por error —Radix rechaza un
+  // SelectItem con value=""—, así que había que recargar la pantalla. Borrar
+  // cualquiera de las dos líneas de abajo reabre ese agujero sin que el resto
+  // del gate lo note: renderToStaticMarkup no ve adentro de SelectContent (por
+  // eso los demás casos de este archivo afirman los hidden inputs, nunca las
+  // opciones), así que esto sólo se puede fijar leyendo el fuente.
+  it('los dos SelectItem "sin" existen, en los dos selectores', () => {
+    expect(FUENTE).toContain('<SelectItem value={SIN}>Sin categoría</SelectItem>')
+    expect(FUENTE).toContain('<SelectItem value={SIN}>Sin marca</SelectItem>')
   })
 })
