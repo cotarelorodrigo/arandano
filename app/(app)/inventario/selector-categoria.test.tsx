@@ -62,9 +62,9 @@ describe('SelectorDeCategoria', () => {
     expect(oculto(html, 'marcaId')).toBe('')
   })
 
-  // Defensivo, y no teórico: entre que la pantalla se dibuja y alguien la mira,
-  // otra pestaña puede haber borrado la rama desde el panel. Un id que el árbol
-  // no conoce no puede dejar los selectores en un estado imposible.
+  // Defensivo, y no teórico: un id que el árbol no conoce —por la razón que
+  // sea— tiene que caer en "sin categoría" y no dejar los dos selectores en un
+  // estado que no corresponde a nada.
   it('un id que no está en el árbol queda como sin categoría', () => {
     const html = render('id-que-ya-no-existe')
     expect(oculto(html, 'categoriaId')).toBe('')
