@@ -1299,6 +1299,36 @@ describe('totalDelPeriodo (app/(app)/ventas/page.tsx)', () => {
     // 20 % de $500 = $100.
     expect(sumaDespues.minus(sumaAntes).toString()).toBe('100')
   })
+
+  // Task 11 (precio en dólares): el tile "Total del período" agrega una
+  // segunda línea con lo que el período movió en dólares, así que
+  // `totalDelPeriodo()` tiene que sumar `totalUsd` también — mismo criterio
+  // de antes/después que los dos tests de arriba.
+  it('también suma el totalUsd del período, para la segunda línea del tile', async () => {
+    const prisma = prismaParaTenant(tenantId)
+    const donde = { creadoEn: { gte: new Date('2000-01-01T00:00:00Z'), lt: new Date('2999-01-01T00:00:00Z') } }
+
+    const antes = await totalDelPeriodo(prisma, donde)
+    const sumaAntes = new Prisma.Decimal(antes._sum.totalUsd ?? 0)
+
+    const iphone = await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, moneda, stock, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, $2, 'iPhone de totalDelPeriodo', 'PRODUCTO', 300, 'USD', 10, now(), now())
+       RETURNING id`,
+      [tenantId, `USD-TDP-${Date.now()}`],
+    )
+    await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: iphone.rows[0].id, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'USD', cubre: 'USD', base: d('300'), cotizacion: d('1') }],
+    })
+
+    const despues = await totalDelPeriodo(prisma, donde)
+    const sumaDespues = new Prisma.Decimal(despues._sum.totalUsd ?? 0)
+
+    expect(sumaDespues.minus(sumaAntes).toString()).toBe('300')
+  })
 })
 
 describe('idempotencia del cobro', () => {

@@ -111,6 +111,20 @@ export function recargoDePago(baseEnPesos: Decimal, porcentaje: Decimal): Decima
  * pantalla, es lo que hace que `/ventas` (la columna Total y el tile "Total
  * del período") y `/ventas/[id]` (el desglose del pie) nunca puedan
  * desacordar en qué es "lo cobrado".
+ *
+ * **Con `totalUsd !== 0`, este número DEJA DE SER "todo lo que entró".**
+ * Un iPhone de US$300 cobrado en pesos con un plan del 40 % da `total = 0`,
+ * `totalUsd = 300` y `recargo = 178.200` — `totalCobrado` devuelve $178.200,
+ * aunque al cajón hayan entrado $623.700 (los $445.500 que cubrieron los
+ * dólares, más el recargo). No es un bug: el spec de este ciclo fija que
+ * `/ventas` muestra DOS números y no convierte nada, y los pesos que
+ * cubrieron la mitad en dólares son precisamente una conversión — mezclarlos
+ * acá volvería a convertir lo que el resto del ciclo se cuidó de no
+ * convertir. El par que sí describe la venta sin convertir es `totalUsd`
+ * (la mercadería en dólares) de un lado, y este número —TODO peso que no es
+ * esa mercadería: mercadería en pesos + recargo— del otro. Quien mire
+ * `totalCobrado` sin leer este comentario y encuentre un número bajo al lado
+ * de un `totalUsd` alto va a creer que es un bug: no lo es.
  */
 export function totalCobrado(v: { total: Decimal; recargo: Decimal }): Decimal {
   return v.total.add(v.recargo)

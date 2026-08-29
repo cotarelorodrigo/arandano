@@ -429,6 +429,8 @@ El historial por período.
 - Ver el listado dentro de su propia card ("Últimas ventas"), con la columna
   "Cliente" (quién compró, no quién vendió — eso vive en el detalle), cuántos
   artículos, con qué medios se pagó, el **total cobrado** y su estado.
+  **Con algo en dólares, la columna Total suma un segundo número** ("$
+  178.200,00 + US$ 300,00"), sin convertir nada.
 - Ver **"Cómo entró la plata"**: una barra por medio de pago, de un solo color,
   con los dólares convertidos a pesos a la cotización de cada pago —sin
   segunda serie: la maqueta nunca pidió una (`docs/sistema-de-diseno.md`,
@@ -461,6 +463,19 @@ El historial por período.
   y esconderlas sería tapar la respuesta. Van con un chip (`ChipEstado`,
   compartido con el panel Resumen del detalle), no con texto suelto: quien no
   distingue el rojo igual ve que la fila está marcada.
+- **El tile "Total del período" muestra una segunda línea, en dólares, sólo si
+  el período movió algo en dólares** (Task 11): un local sin ninguna venta en
+  dólares ve el tile exactamente igual que antes de este ciclo. Las dos líneas
+  NO se suman entre sí — son dos totales independientes, uno por moneda, sin
+  ninguna conversión. Sale de `totalDelPeriodo()` sumando `totalUsd` aparte de
+  `total`/`recargo`.
+  **El número de la línea de pesos puede sorprender**: con `totalUsd ≠ 0`,
+  `totalCobrado()` deja de ser "todo lo que entró" — un iPhone de US$300
+  cobrado en pesos con un plan del 40 % muestra $178.200 en esa línea, aunque
+  al cajón hayan entrado $623.700 (los pesos que cubrieron los dólares están
+  del lado de la línea de dólares, no convertidos). No es un bug: ver el
+  docblock de `totalCobrado()` en `lib/ventas/totales.ts` para el porqué
+  completo.
 - Los tiles cuelgan del **período**, no de la página: colgados de la página, un
   `?p=5` los hacía desaparecer.
 - **La columna "Medios" de un pago partido** lista los medios distintos
@@ -529,13 +544,21 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 **Qué se puede hacer**
 
 - Ver los ítems con su SKU (o "Servicio" si no lleva stock), cantidad, precio
-  unitario y subtotal.
+  unitario y subtotal — **cada uno en su propia moneda** (Task 11): un ítem en
+  dólares muestra "US$", sin convertirlo a pesos.
 - Ver el pie de "Qué se vendió" **desglosado en Mercadería / Recargo (o
   Descuento) / Cobrado si la venta llevó recargo**, o el renglón único "Total"
-  de siempre si no.
+  de siempre si no. **Con algo en dólares, se agrega una banda más, "Total en
+  dólares"** (Task 11) — puede haber DOS bandas destacadas a la vez, una por
+  moneda, en vez de una sola; el recargo sigue yendo siempre del lado de los
+  pesos (nunca hay un "Recargo" en dólares que desglosar).
 - Ver los pagos con su medio, **el plan con el que se cobró cada uno** (o "—"
-  sin plan), moneda, cotización (sólo en los pagos en dólares), monto y su
-  equivalente en pesos.
+  sin plan), moneda, cotización (en los pagos que tocan dólares de algún
+  lado — el que se paga en dólares o el que cruza a cubrir el total en
+  dólares), monto y su equivalente en pesos. **Cuando corresponde, dice
+  también qué total cubrió** ("Cubre el total en dólares"): sólo si el pago
+  cubre dólares, o si la venta tiene los dos totales — el caso común (venta
+  sólo en pesos, pago que cubre pesos) no lo dice, para no ensuciarlo.
 - Ver el panel **Resumen**: fecha y hora, quién la vendió, el cliente (o
   "Consumidor final"), el estado y el comprobante.
 - **Anular la venta** — con el permiso `VENTAS_ANULAR` (un dueño siempre lo

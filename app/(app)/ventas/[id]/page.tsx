@@ -9,10 +9,10 @@ import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   formatearPrecio, formatearDolares, formatearCantidad, formatearHora, formatearFechaCorta,
-  formatearFecha,
+  formatearFecha, precioEnSuMoneda,
 } from '@/lib/formato/mostrar'
 import { ROTULO_MEDIO, CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
-import { subtotalItem, pesosEntregados, totalCobrado } from '@/lib/ventas/totales'
+import { subtotalItem, pesosEntregados, totalCobrado, baseEnDolares } from '@/lib/ventas/totales'
 import { ChipEstado } from '../chip-estado'
 import { AnularVenta } from '../formularios'
 import { esUuid } from '@/lib/uuid'
@@ -38,12 +38,23 @@ export function seOfreceAnular(puedeAnular: boolean, anuladaEn: Date | null): bo
 }
 
 /**
- * La columna "Cotización" de la tabla de pagos: sólo tiene sentido para un
- * pago en dólares — un pago en pesos no se tomó a ninguna cotización, y
- * mostrar "1" ahí sería inventar un dato que el pago no tiene.
+ * La columna "Cotización" de la tabla de pagos: tiene sentido siempre que el
+ * pago toque dólares de ALGÚN lado —la moneda que entra o el total que
+ * cubre— (`baseEnDolares`, lib/ventas/totales.ts), no sólo cuando `moneda`
+ * es dólares.
+ *
+ * **Corregido de la review de la Task 3**: la versión anterior sólo miraba
+ * `moneda` y su docblock decía "un pago en pesos no se tomó a ninguna
+ * cotización" — cierto hasta este ciclo, falso desde que existe el pago que
+ * CRUZA monedas (Task 3): un pago en pesos que cubre el total en dólares SÍ
+ * se tomó a una cotización real (1485, no 1), y es justo el dato que explica
+ * de dónde salió el monto — con la regla vieja quedaba oculto detrás de un
+ * "—". `cubre` es opcional para no romper un llamador que sólo tiene
+ * `moneda` a mano: sin él, `baseEnDolares` cae al mismo criterio de antes
+ * (`moneda === 'USD'`).
  */
-export function cotizacionVisible(p: { moneda: 'ARS' | 'USD'; cotizacion: string }): string {
-  return p.moneda === 'USD' ? formatearPrecio(p.cotizacion) : '—'
+export function cotizacionVisible(p: { moneda: 'ARS' | 'USD'; cubre?: 'ARS' | 'USD'; cotizacion: string }): string {
+  return baseEnDolares({ moneda: p.moneda, cubre: p.cubre ?? p.moneda }) ? formatearPrecio(p.cotizacion) : '—'
 }
 
 /**
@@ -55,20 +66,35 @@ export function subtituloDeItem(articulo: { sku: string; tipo: 'PRODUCTO' | 'SER
   return articulo.tipo === 'SERVICIO' ? 'Servicio' : `SKU ${articulo.sku}`
 }
 
-/** Una línea del pie de "Qué se vendió": un rótulo y su importe. */
-export type LineaDeTotal = { rotulo: string; monto: Decimal }
+/** Una línea del pie de "Qué se vendió": rótulo, importe, en qué moneda se
+ *  formatea (nunca se convierte de una a otra) y si es una de las que pinta
+ *  la banda destacada (--marca) — antes sólo podía haber UNA (siempre la
+ *  última), pero con dólares en juego puede haber DOS, una por moneda (ver
+ *  `lineasDeRecargo`, abajo). */
+export type LineaDeTotal = { rotulo: string; monto: Decimal; moneda: 'ARS' | 'USD'; destacada: boolean }
 
 /**
- * Las líneas del pie de "Qué se vendió", según si la venta llevó recargo.
+ * Las líneas del pie de "Qué se vendió", según si la venta llevó recargo y/o
+ * tiene algo en dólares.
  *
- * `null` cuando `recargo` es cero — que es toda venta grabada antes de este
- * ciclo, y la inmensa mayoría después: no hay nada que desglosar, y tres
- * líneas que dicen el mismo número tres veces es ruido, no información
- * (Task 8). El llamador cae al viejo renglón único "Total" en ese caso, sin
- * que este archivo tenga que nombrarlo acá.
+ * `null` sólo cuando NO hay recargo NI dólares — toda venta grabada antes de
+ * este ciclo, y la inmensa mayoría después: no hay nada que desglosar, y el
+ * llamador cae al viejo renglón único "Total". `totalUsd` es opcional
+ * (default cero) para no romper un llamador que sólo tenga `total`/`recargo`
+ * a mano.
  *
- * Con recargo, tres líneas: Mercadería (`total`, sin tocar — sigue siendo el
- * precio de lista), la línea del recargo, y Cobrado (`totalCobrado`).
+ * **El lado de los pesos** (Mercadería/Recargo/Cobrado, o "Total" solo sin
+ * recargo) no cambia con este ciclo: el recargo SIEMPRE se suma del lado de
+ * los pesos (Task 3, `Pago.recargo`/`Venta.recargo` son en pesos por
+ * diseño), incluso cuando el pago que lo generó cubría el total en
+ * dólares — así que nunca hay un "Recargo" que desglosar en dólares.
+ *
+ * **El lado de los dólares** es una línea más, "Total en dólares" —siempre
+ * destacada, nunca desglosada en Mercadería/Recargo porque no lleva
+ * recargo—, agregada DESPUÉS del lado de los pesos cuando `totalUsd !== 0`.
+ * Nada se convierte entre las dos: son dos bandas independientes, mismo
+ * criterio que `lineasDeTotal` en el pie de cobro de /vender
+ * (punto-de-venta.tsx).
  *
  * **El rótulo de la línea del recargo sigue la misma gramática que ya fijó
  * `/vender`** (Task 6, `lineasDelPieDeCobro` en punto-de-venta.tsx): la
@@ -83,14 +109,27 @@ export type LineaDeTotal = { rotulo: string; monto: Decimal }
  * partidos entre dos planes distintos, nombrar uno solo en el resumen le
  * atribuiría el recargo entero a uno de los dos.
  */
-export function lineasDeRecargo(v: { total: Decimal; recargo: Decimal }): LineaDeTotal[] | null {
-  if (v.recargo.isZero()) return null
-  const palabra = v.recargo.isNegative() ? 'Descuento' : 'Recargo'
-  return [
-    { rotulo: 'Mercadería', monto: v.total },
-    { rotulo: palabra, monto: v.recargo.abs() },
-    { rotulo: 'Cobrado', monto: totalCobrado(v) },
-  ]
+export function lineasDeRecargo(
+  v: { total: Decimal; recargo: Decimal; totalUsd?: Decimal },
+): LineaDeTotal[] | null {
+  const totalUsd = v.totalUsd ?? new Prisma.Decimal(0)
+  const hayRecargo = !v.recargo.isZero()
+  const hayUsd = !totalUsd.isZero()
+  if (!hayRecargo && !hayUsd) return null
+
+  const lineas: LineaDeTotal[] = []
+  if (hayRecargo) {
+    const palabra = v.recargo.isNegative() ? 'Descuento' : 'Recargo'
+    lineas.push({ rotulo: 'Mercadería', monto: v.total, moneda: 'ARS', destacada: false })
+    lineas.push({ rotulo: palabra, monto: v.recargo.abs(), moneda: 'ARS', destacada: false })
+    lineas.push({ rotulo: 'Cobrado', monto: totalCobrado(v), moneda: 'ARS', destacada: true })
+  } else {
+    lineas.push({ rotulo: 'Total', monto: v.total, moneda: 'ARS', destacada: true })
+  }
+  if (hayUsd) {
+    lineas.push({ rotulo: 'Total en dólares', monto: totalUsd, moneda: 'USD', destacada: true })
+  }
+  return lineas
 }
 
 /**
@@ -118,16 +157,25 @@ export function rotuloDePlan(plan: { nombre: string; cuotas: number } | null): s
  * uno (Cantidad, Precio); en el teléfono no hay lugar para dos columnas más,
  * así que se funden acá (design/arandano.pen, frame `WBV5G`, nodos
  * `A2Q2X3`/`rWnNJ`/`hgu3n`: "SKU 000412 · 1 × $ 12.000,00").
+ *
+ * `moneda` es opcional (default 'ARS', el precio de lista en pesos de
+ * siempre) — con `precioEnSuMoneda` en vez de `formatearPrecio` a secas
+ * (Task 11), un ítem en dólares muestra su propio precio con "US$" sin
+ * convertirlo a pesos.
  */
-export function metaDeItem(i: { subtitulo: string; cantidad: string; precioUnitario: string }): string {
-  return `${i.subtitulo} · ${formatearCantidad(i.cantidad)} × ${formatearPrecio(i.precioUnitario)}`
+export function metaDeItem(
+  i: { subtitulo: string; cantidad: string; precioUnitario: string; moneda?: 'ARS' | 'USD' },
+): string {
+  return `${i.subtitulo} · ${formatearCantidad(i.cantidad)} × ${precioEnSuMoneda(i.precioUnitario, i.moneda ?? 'ARS')}`
 }
 
 /**
- * La línea de "meta" de un pago en el teléfono: la moneda, y sólo si es
- * dólares, la cotización con la que se tomó — un pago en pesos no se tomó a
- * ninguna, mismo criterio que `cotizacionVisible` (design/arandano.pen, frame
- * `WBV5G`, nodos `QUPwD`/`q8yOvI`: "Pesos" / "Dólares · cotización 1.485,00").
+ * La línea de "meta" de un pago en el teléfono: la moneda, y —cuando el pago
+ * toca dólares de algún lado (`baseEnDolares`)— la cotización con la que se
+ * tomó; mismo criterio que `cotizacionVisible`, corregido en el mismo
+ * sentido por la misma review (design/arandano.pen, frame `WBV5G`, nodos
+ * `QUPwD`/`q8yOvI`: "Pesos" / "Dólares · cotización 1.485,00"). `cubre` es
+ * opcional por lo mismo que en `cotizacionVisible`.
  *
  * **El plan va primero cuando lo hay** (merge del ciclo de precios por forma
  * de pago con el del teléfono): en escritorio "Plan" es una columna, y en el
@@ -136,17 +184,46 @@ export function metaDeItem(i: { subtitulo: string; cantidad: string; precioUnita
  * dato no desaparece, se funde en la línea de meta"). Va DELANTE de la moneda
  * porque es lo que distingue un pago de otro del mismo medio; sin plan, la
  * línea queda exactamente como estaba.
+ *
+ * **`cubreLabel` va al final** (Task 11): qué total cubrió este pago, ya
+ * resuelto por `seMuestraCubre`/`ROTULO_CUBRE` en el llamador —`null` en el
+ * caso común, que no ensucia la línea de siempre.
  */
 export function metaDePago(p: {
   moneda: 'ARS' | 'USD'
+  cubre?: 'ARS' | 'USD'
   cotizacion: string
   plan?: string | null
+  cubreLabel?: string | null
 }): string {
-  const moneda =
-    p.moneda === 'USD'
-      ? `${ROTULO_MONEDA.USD} · cotización ${formatearPrecio(p.cotizacion)}`
-      : ROTULO_MONEDA.ARS
-  return p.plan ? `${p.plan} · ${moneda}` : moneda
+  const cruzaMonedas = baseEnDolares({ moneda: p.moneda, cubre: p.cubre ?? p.moneda })
+  const moneda = cruzaMonedas
+    ? `${ROTULO_MONEDA[p.moneda]} · cotización ${formatearPrecio(p.cotizacion)}`
+    : ROTULO_MONEDA[p.moneda]
+  const base = p.plan ? `${p.plan} · ${moneda}` : moneda
+  return p.cubreLabel ? `${base} · ${p.cubreLabel}` : base
+}
+
+/**
+ * Si esta fila necesita decir qué total cubrió el pago.
+ *
+ * El caso común —una venta sólo en pesos, con un pago que cubre el único
+ * total que tiene— no lo necesita: decirlo ahí sería ruido (mismo criterio
+ * que ya fijó `lineasDeRecargo`, con `totalUsd = 0` cayendo al renglón único
+ * de siempre). Se activa en dos casos: un pago que cubre dólares
+ * (`cubre === 'USD'`, siempre digno de aclarar porque no es lo que hace la
+ * mayoría de los pagos) o, cuando la VENTA tiene los dos totales, hasta un
+ * pago que cubre pesos necesita decirlo — con dos totales en juego, "cubre
+ * pesos" deja de ser el default obvio.
+ */
+export function seMuestraCubre(cubre: 'ARS' | 'USD', venta: { total: Decimal; totalUsd: Decimal }): boolean {
+  return cubre === 'USD' || (!venta.total.isZero() && !venta.totalUsd.isZero())
+}
+
+/** El texto de `seMuestraCubre`, por moneda. */
+export const ROTULO_CUBRE: Record<'ARS' | 'USD', string> = {
+  ARS: 'Cubre el total en pesos',
+  USD: 'Cubre el total en dólares',
 }
 
 /**
@@ -236,6 +313,12 @@ export type PagoRecibido = {
    *  mecanismo que "Moneda" y "Cotización". */
   planLabel: string | null
   monedaLabel: string
+  /** Qué total cubrió este pago ("Cubre el total en dólares"), ya resuelto
+   *  por `seMuestraCubre`/`ROTULO_CUBRE` en el llamador — `null` en el caso
+   *  común (Task 11), que no agrega nada a la celda "Moneda" de escritorio
+   *  ni a la meta del teléfono. Opcional para no romper un fixture que no lo
+   *  necesita. */
+  cubreLabel?: string | null
   cotizacionFormateada: string
   montoFormateado: string
   enPesosFormateado: string
@@ -303,10 +386,14 @@ export function Detalle({
    *  venta grabada antes del ciclo de precios por forma de pago, y la
    *  mayoría después. */
   totalFormateado: string
-  /** El desglose de tres líneas cuando la venta llevó recargo (Task 8), ya
-   *  resuelto a texto por `lineasDeRecargo()` en el llamador. `null` —el
-   *  default— deja el renglón único de `totalFormateado`. */
-  lineasDeTotal?: { rotulo: string; montoFormateado: string }[] | null
+  /** El desglose de líneas cuando la venta llevó recargo y/o tiene algo en
+   *  dólares (Task 8 y Task 11), ya resuelto a texto por `lineasDeRecargo()`
+   *  en el llamador. `null` —el default— deja el renglón único de
+   *  `totalFormateado`. `destacada` reemplaza el viejo criterio posicional
+   *  ("la última línea es la banda"): con dólares puede haber DOS bandas,
+   *  una por moneda, así que la última posición ya no alcanza para decidir
+   *  cuál pinta con --marca. */
+  lineasDeTotal?: { rotulo: string; montoFormateado: string; destacada: boolean }[] | null
   pagos: PagoRecibido[]
   /** Si se dibuja el botón de anular: el permiso `VENTAS_ANULAR` Y que la
    *  venta siga cobrada, ya combinados por `seOfreceAnular` en el llamador.
@@ -436,22 +523,25 @@ export function Detalle({
               ))}
             </div>
 
-            {/* Un renglón ("Total") sin recargo — toda venta grabada antes
-                de este ciclo, y la mayoría después —, o tres con
-                `lineasDeRecargo()` (Task 8): Mercadería, Recargo/Descuento y
-                Cobrado. La ÚLTIMA es siempre la banda destacada de siempre,
-                lleve el rótulo que lleve, así que el desglose no cambia el
-                ancla visual de la pantalla: `--marca` en el teléfono
+            {/* Un renglón ("Total") sin recargo ni dólares — toda venta
+                grabada antes de este ciclo, y la mayoría después —, o más
+                con `lineasDeRecargo()` (Task 8 y Task 11): Mercadería,
+                Recargo/Descuento y Cobrado del lado de los pesos, más "Total
+                en dólares" cuando corresponde. Cada línea trae su propio
+                `destacada` en vez de que la ÚLTIMA posición decida —con
+                dólares en juego puede haber DOS bandas, una por moneda, así
+                que la posición ya no alcanza (ver el docblock de
+                `lineasDeRecargo`)—: `--marca` en el teléfono
                 (design/arandano.pen, nodo `Cv4xd`), `bg-muted` de siempre en
                 escritorio — ver el docblock de `Detalle`, arriba.
-                `design/arandano.pen` no dibuja el desglose de tres líneas
-                —es anterior a los planes de pago—, y la deuda queda anotada
-                en docs/correcciones-pendientes-del-pen.md junto con las
-                otras de este mismo ciclo. */}
+                `design/arandano.pen` no dibuja ningún desglose —es anterior
+                a los planes de pago y al precio en dólares—, y la deuda
+                queda anotada en docs/correcciones-pendientes-del-pen.md
+                junto con las otras de este mismo ciclo. */}
             <div className="flex flex-col">
-              {(lineasDeTotal ?? [{ rotulo: 'Total', montoFormateado: totalFormateado }]).map(
-                ({ rotulo, montoFormateado }, i, arr) =>
-                  i === arr.length - 1 ? (
+              {(lineasDeTotal ?? [{ rotulo: 'Total', montoFormateado: totalFormateado, destacada: true }]).map(
+                ({ rotulo, montoFormateado, destacada }) =>
+                  destacada ? (
                     <div
                       key={rotulo}
                       className="flex items-center justify-between bg-[var(--marca)] px-[14px] py-[13px] lg:bg-muted lg:px-[18px] lg:py-[14px]"
@@ -542,9 +632,20 @@ export function Detalle({
                   </div>
 
                   {/* Moneda — su propia celda, sólo escritorio (el teléfono
-                      la funde en la meta). */}
+                      la funde en la meta). `cubreLabel` (Task 11) agrega una
+                      segunda línea, más chica, sólo cuando corresponde
+                      (`seMuestraCubre`) — el caso común sigue siendo una
+                      sola línea, igual que antes. Por eso el envoltorio pasa
+                      de `items-center` a `flex-col justify-center`: con una
+                      sola línea el resultado es idéntico (una fila
+                      centrada), y con dos apila sin desalinear el borde de
+                      la celda (que sigue estirada — mismo criterio que el
+                      resto de las celdas de esta tabla). */}
                   <div role="cell" className="hidden text-sm text-foreground lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
-                    <div className="lg:flex lg:h-full lg:items-center">{p.monedaLabel}</div>
+                    <div className="lg:flex lg:h-full lg:flex-col lg:justify-center lg:gap-0.5">
+                      <span>{p.monedaLabel}</span>
+                      {p.cubreLabel && <span className="text-[10px] text-muted-foreground">{p.cubreLabel}</span>}
+                    </div>
                   </div>
 
                   {/* Cotización — su propia celda, sólo escritorio. */}
@@ -668,8 +769,9 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
     select: {
       // `recargo` para el pie de "Qué se vendió" (Task 8): `lineasDeRecargo`
       // decide con este número si desglosa en tres líneas o deja el único
-      // "Total" de siempre.
-      id: true, numero: true, total: true, recargo: true, creadoEn: true, anuladaEn: true,
+      // "Total" de siempre. `totalUsd` (Task 11) entra por lo mismo, para la
+      // línea "Total en dólares" del mismo pie.
+      id: true, numero: true, total: true, recargo: true, creadoEn: true, anuladaEn: true, totalUsd: true,
       usuario: { select: { nombre: true } },
       // Quién anuló, no sólo que esté anulada: `Venta.anuladaPorId` existe en
       // el schema para responder esa pregunta (CLAUDE.md, el modelo `Pago`
@@ -681,12 +783,20 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
       items: {
         select: {
           id: true, descripcion: true, cantidad: true, precioUnitario: true,
+          // `moneda` (Task 11): congelada en el ítem desde el artículo,
+          // igual que `descripcion`/`precioUnitario` — el precio se muestra
+          // en SU moneda, sin convertir.
+          moneda: true,
           articulo: { select: { sku: true, tipo: true } },
         },
       },
       pagos: {
         select: {
           id: true, medio: true, moneda: true, monto: true, cotizacion: true,
+          // `cubre` (Task 11): qué total de la venta paga esta fila —
+          // `seMuestraCubre` decide con esto y con los dos totales de la
+          // venta si hace falta decirlo.
+          cubre: true,
           // Sin filtrar por `desactivadoEn`: la FK `Pago.planDePagoId` es
           // `Restrict` y la baja de un plan es lógica (Task 1), así que la
           // fila del plan sigue estando ahí aunque el local ya no lo ofrezca.
@@ -717,24 +827,33 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
       id: i.id,
       nombre: i.descripcion,
       subtitulo,
-      meta: metaDeItem({ subtitulo, cantidad, precioUnitario }),
+      meta: metaDeItem({ subtitulo, cantidad, precioUnitario, moneda: i.moneda }),
       cantidadFormateada: formatearCantidad(cantidad),
-      precioFormateado: formatearPrecio(precioUnitario),
-      subtotalFormateado: formatearPrecio(subtotalItem(i.cantidad, i.precioUnitario).toString()),
+      // `precioEnSuMoneda` y no `formatearPrecio` a secas (Task 11): un ítem
+      // en dólares muestra su precio y su subtotal con "US$", sin
+      // convertirlos a pesos.
+      precioFormateado: precioEnSuMoneda(precioUnitario, i.moneda),
+      subtotalFormateado: precioEnSuMoneda(subtotalItem(i.cantidad, i.precioUnitario).toString(), i.moneda),
     }
   })
 
   const pagos: PagoRecibido[] = venta.pagos.map((p) => {
     const cotizacion = p.cotizacion.toString()
+    const planLabel = rotuloDePlan(p.plan)
+    // Qué total cubrió (Task 11): `null` en el caso común —una venta sólo en
+    // pesos con un pago que cubre pesos—, que no debe agregar nada ni a la
+    // celda "Moneda" de escritorio ni a la meta del teléfono.
+    const cubreLabel = seMuestraCubre(p.cubre, venta) ? ROTULO_CUBRE[p.cubre] : null
     return {
       id: p.id,
       medioLabel: ROTULO_MEDIO[p.medio],
       monedaLabel: ROTULO_MONEDA[p.moneda],
-      cotizacionFormateada: cotizacionVisible({ moneda: p.moneda, cotizacion }),
+      cubreLabel,
+      cotizacionFormateada: cotizacionVisible({ moneda: p.moneda, cubre: p.cubre, cotizacion }),
       montoFormateado: p.moneda === 'USD' ? formatearDolares(p.monto.toString()) : formatearPrecio(p.monto.toString()),
       enPesosFormateado: formatearPrecio(pesosEntregados(p).toString()),
-      planLabel: rotuloDePlan(p.plan),
-      meta: metaDePago({ moneda: p.moneda, cotizacion, plan: rotuloDePlan(p.plan) }),
+      planLabel,
+      meta: metaDePago({ moneda: p.moneda, cubre: p.cubre, cotizacion, plan: planLabel, cubreLabel }),
       esUsd: p.moneda === 'USD',
     }
   })
@@ -749,9 +868,13 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
         items={items}
         totalFormateado={formatearPrecio(venta.total.toString())}
         lineasDeTotal={
-          lineasDeTotal?.map(({ rotulo, monto }) => ({
+          lineasDeTotal?.map(({ rotulo, monto, moneda, destacada }) => ({
             rotulo,
-            montoFormateado: formatearPrecio(monto.toString()),
+            // `precioEnSuMoneda` y no `formatearPrecio` a secas: la línea
+            // "Total en dólares" (Task 11) tiene que verse en dólares, no
+            // convertida a pesos.
+            montoFormateado: precioEnSuMoneda(monto.toString(), moneda),
+            destacada,
           })) ?? null
         }
         pagos={pagos}
