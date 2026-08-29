@@ -64,7 +64,7 @@ describe('pieDeCobradas', () => {
     // cobradas por $ 1.284.500,00 en total dan $ 29.193,18 de promedio. Sin
     // el string exacto (el espacio entre "$" y el número es NBSP, cosa de
     // ICU, no del formateador) — mismo criterio que lib/formato/mostrar.test.ts.
-    const pie = pieDeCobradas('1284500', 44)
+    const pie = pieDeCobradas('1284500', 44, false)
     expect(pie).toMatch(/^promedio \$/)
     expect(pie).toContain('29.193,18')
   })
@@ -72,7 +72,29 @@ describe('pieDeCobradas', () => {
   it('sin ninguna venta cobrada no hay promedio que mostrar, y no NaN', () => {
     // Todo el período pudo haberse anulado entero: 0 cobradas es un estado
     // real, no un caso imposible. "promedio $ NaN" es peor que ningún pie.
-    expect(pieDeCobradas('0', 0)).toBeUndefined()
+    expect(pieDeCobradas('0', 0, false)).toBeUndefined()
+  })
+
+  // Ola final del ciclo del precio en dólares: el local que pidió la feature
+  // carga TODO su catálogo en dólares, así que todas sus ventas tienen
+  // `total = 0` y `recargo = 0`. El pie decía `promedio $ 0,00` justo debajo
+  // de un tile que decía `US$ 3.000,00` — no omitía, AFIRMABA, y afirmaba lo
+  // contrario de lo que la pantalla mostraba dos centímetros más arriba.
+  it('con lo cobrado en pesos en cero y dólares en el período, no hay pie', () => {
+    expect(pieDeCobradas('0', 10, true)).toBeUndefined()
+  })
+
+  // El otro lado de la misma condición, para que la guarda no se vuelva un
+  // "nunca muestres el pie con dólares en el período": un local mixto sí
+  // tiene un promedio en pesos que decir.
+  it('con dólares en el período pero algo cobrado en pesos, el pie sigue estando', () => {
+    expect(pieDeCobradas('20000', 2, true)).toContain('10.000,00')
+  })
+
+  // Y el caso en que el cero es cierto: sin dólares, `promedio $ 0,00` no
+  // miente, así que se muestra igual que siempre.
+  it('cero en pesos SIN dólares sigue mostrando el promedio, que ahí es cierto', () => {
+    expect(pieDeCobradas('0', 3, false)).toContain('0,00')
   })
 
   // Minor 3 de la review de Task 8: `Number(sumaCobradas) / cobradas` seguido
@@ -86,7 +108,7 @@ describe('pieDeCobradas', () => {
   // MISMA función que usa el resto de lib/ventas/totales.ts) el promedio
   // redondea para el lado correcto.
   it('redondea el promedio con la MISMA regla que el resto de la plata (ROUND_HALF_UP), no con Number().toFixed()', () => {
-    const pie = pieDeCobradas('2010', 2000)
+    const pie = pieDeCobradas('2010', 2000, false)
     expect(pie).toContain('1,01')
     expect(pie).not.toContain('1,00')
   })
@@ -94,13 +116,19 @@ describe('pieDeCobradas', () => {
 
 describe('pieDeAnuladas', () => {
   it('formatea lo devuelto, no el total del período', () => {
-    const pie = pieDeAnuladas('61200')
+    const pie = pieDeAnuladas('61200', false)
     expect(pie).toContain('61.200,00')
     expect(pie).toContain('devueltos')
   })
 
   it('sin anuladas, devuelve $ 0,00 y no rompe', () => {
-    expect(pieDeAnuladas('0')).toContain('0,00')
+    expect(pieDeAnuladas('0', false)).toContain('0,00')
+  })
+
+  // El espejo de la guarda de `pieDeCobradas`: una venta anulada de US$ 300
+  // devolvió dólares, y `$ 0,00 devueltos` dice que no se devolvió nada.
+  it('con lo devuelto en pesos en cero y dólares entre las anuladas, no hay pie', () => {
+    expect(pieDeAnuladas('0', true)).toBeUndefined()
   })
 })
 
@@ -194,13 +222,24 @@ describe('la columna Total y el tile del período muestran lo cobrado', () => {
   // para que no alcance con que la cadena nueva aparezca en CUALQUIER lado del
   // archivo.
   it('el pie de "Ventas cobradas" recibe sumaCobrada, no suma._sum.total a secas', () => {
-    expect(fuente).toContain('pieDeCobradas(sumaCobrada.toString(), cobradas)')
+    expect(fuente).toContain(
+      'pieDeCobradas(sumaCobrada.toString(), cobradas, !sumaUsdPeriodo.isZero())',
+    )
     expect(fuente).not.toContain("pieDeCobradas((suma._sum.total ?? '0').toString(), cobradas)")
   })
 
   it('el pie de "Anuladas" recibe devueltoCobrado, no devueltas._sum.total a secas', () => {
-    expect(fuente).toContain('pieDeAnuladas(devueltoCobrado.toString())')
+    expect(fuente).toContain('pieDeAnuladas(devueltoCobrado.toString(), !devueltoUsd.isZero())')
     expect(fuente).not.toContain("pieDeAnuladas((devueltas._sum.total ?? '0').toString())")
+  })
+
+  // La guarda de los dos pies necesita saber si el período movió dólares, y
+  // el lado de las anuladas no lo sabía: su `_sum` no pedía `totalUsd`. Sin
+  // esta columna en el agregado, `devueltoUsd` sería siempre 0 y la guarda
+  // de `pieDeAnuladas` no se dispararía nunca — verde y muda.
+  it('el agregado de anuladas pide totalUsd, que es lo que alimenta la guarda del pie', () => {
+    expect(fuente).toContain('_sum: { total: true, recargo: true, totalUsd: true }')
+    expect(fuente).toContain('const devueltoUsd = devueltas._sum.totalUsd ?? new Prisma.Decimal(0)')
   })
 })
 

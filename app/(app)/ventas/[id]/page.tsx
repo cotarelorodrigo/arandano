@@ -8,7 +8,7 @@ import { puedeConSesion } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
-  formatearPrecio, formatearDolares, formatearCantidad, formatearHora, formatearFechaCorta,
+  formatearPrecio, formatearCantidad, formatearHora, formatearFechaCorta,
   formatearFecha, precioEnSuMoneda,
 } from '@/lib/formato/mostrar'
 import { ROTULO_MEDIO, CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
@@ -852,7 +852,10 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
       monedaLabel: ROTULO_MONEDA[p.moneda],
       cubreLabel,
       cotizacionFormateada: cotizacionVisible({ moneda: p.moneda, cubre: p.cubre, cotizacion }),
-      montoFormateado: p.moneda === 'USD' ? formatearDolares(p.monto.toString()) : formatearPrecio(p.monto.toString()),
+      // `precioEnSuMoneda` y no el ternario a mano: es exactamente el que ese
+      // helper encapsula, y las otras dos celdas de plata de este mismo `map`
+      // ya lo usan.
+      montoFormateado: precioEnSuMoneda(p.monto.toString(), p.moneda),
       enPesosFormateado: formatearPrecio(pesosEntregados(p).toString()),
       planLabel,
       meta: metaDePago({ moneda: p.moneda, cubre: p.cubre, cotizacion, plan: planLabel, cubreLabel }),
