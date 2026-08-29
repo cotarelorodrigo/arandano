@@ -243,3 +243,67 @@ export function recargoEnCentavos(
 ): number {
   return redondearMitadLejosDelCero((baseEnPesosCentavos * porcentajeMilesimas) / 100000)
 }
+
+/** La moneda, escrita a mano: este archivo NO puede importar Prisma. */
+type MonedaTexto = 'ARS' | 'USD'
+
+/** Los dos totales del carrito, en centavos de su propia moneda. */
+export type TotalesEnCentavos = { ars: number; usd: number }
+
+type FilaDePagoCentavos = {
+  moneda: MonedaTexto
+  cubre: MonedaTexto
+  baseCentavos: number
+  cotizacionDiezMilesimas: number
+}
+
+/** Espeja a `baseEnDolares` de totales.ts. */
+export function baseEnDolaresCentavos(p: { moneda: MonedaTexto; cubre: MonedaTexto }): boolean {
+  return p.moneda === 'USD' || p.cubre === 'USD'
+}
+
+/** Espeja a `aporteDePago` de totales.ts, incluido cuándo multiplica y cuándo no. */
+export function aporteEnCentavos(p: FilaDePagoCentavos): number {
+  if (p.cubre === 'ARS' && baseEnDolaresCentavos(p)) {
+    return pesosDePagoEnCentavos(p.baseCentavos, p.cotizacionDiezMilesimas)
+  }
+  return p.baseCentavos
+}
+
+/** Espeja a `montoEntregado` de totales.ts. */
+export function montoEntregadoEnCentavos(p: FilaDePagoCentavos): number {
+  if (p.moneda === 'ARS' && baseEnDolaresCentavos(p)) {
+    return pesosDePagoEnCentavos(p.baseCentavos, p.cotizacionDiezMilesimas)
+  }
+  return p.baseCentavos
+}
+
+/**
+ * Los dos totales del carrito, igual que `totalesDeItems`.
+ *
+ * Un NaN envenena SÓLO la moneda de la línea inválida, y eso es a propósito:
+ * una cantidad a medio tipear en la funda no tiene por qué apagar el total en
+ * dólares del iPhone de al lado.
+ */
+export function totalesEnCentavos(
+  lineas: { cantidadMilesimas: number; precioCentavos: number; moneda: MonedaTexto }[],
+): TotalesEnCentavos {
+  return lineas.reduce<TotalesEnCentavos>(
+    (acc, l) => {
+      const sub = subtotalEnCentavos(l.cantidadMilesimas, l.precioCentavos)
+      return l.moneda === 'USD' ? { ...acc, usd: acc.usd + sub } : { ...acc, ars: acc.ars + sub }
+    },
+    { ars: 0, usd: 0 },
+  )
+}
+
+/** Lo que los pagos cubren, acumulado por moneda. Espeja a `totalesDePagos`. */
+export function totalesDePagosEnCentavos(pagos: FilaDePagoCentavos[]): TotalesEnCentavos {
+  return pagos.reduce<TotalesEnCentavos>(
+    (acc, p) => {
+      const a = aporteEnCentavos(p)
+      return p.cubre === 'USD' ? { ...acc, usd: acc.usd + a } : { ...acc, ars: acc.ars + a }
+    },
+    { ars: 0, usd: 0 },
+  )
+}
