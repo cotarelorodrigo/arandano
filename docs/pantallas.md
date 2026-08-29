@@ -200,10 +200,12 @@ shell (sidebar + encabezado) ya venía de un ciclo anterior.
 **Acciones**: `cobrar`, `buscarArticulos`, `abrirCajaDesdeVender`,
 `cerrarCajaDesdeVender`.
 
-**Lecturas del servidor**: `ultimaCotizacionUsd`, `cajaAbierta`,
-`Tenant.cotizacionUsd` y `planesDelTenant` (sólo los activos). Las cuatro se
-leen en `page.tsx` y viajan como props: el cliente no consulta la base, así que
-la pantalla llega con el dato puesto en vez de parpadear.
+**Lecturas del servidor**: `cajaAbierta`, `Tenant.cotizacionUsd` y
+`planesDelTenant` (sólo los activos). Las tres se leen en `page.tsx` y viajan
+como props: el cliente no consulta la base, así que la pantalla llega con el
+dato puesto en vez de parpadear. **Eran cuatro hasta el ciclo del precio en
+dólares** (2026-08-29): `ultimaCotizacionUsd` se borró junto con el prefill del
+campo de cotización, ver *Decisiones*.
 
 **Qué se puede hacer**
 
@@ -216,6 +218,12 @@ la pantalla llega con el dato puesto en vez de parpadear.
 - Cobrar con **pagos partidos**, en pesos y en dólares, cada uno con su medio
   (efectivo, transferencia, débito, crédito) y su cotización. Un pago en
   dólares muestra cuántos pesos representa (`Entran $X`).
+- Vender un carrito **mixto** —algo en dólares y algo en pesos— y ver los **dos
+  totales**, uno por moneda, sin que la pantalla obligue a elegir ninguna.
+- Elegir, en cada pago, **cuál de los dos totales cubre** (selector `Cubre`), y
+  cubrir el total en dólares entregando pesos: se tipea cuántos **dólares**
+  cubre y una cotización, y el renglón `A cobrar $X` de esa fila dice cuántos
+  pesos hay que pedir.
 - Elegir el **plan de pago** de cada parte (`Precio de lista` o uno de los que
   el local cargó en `/formas-de-pago`), ver cuánto hay que cobrar por esa fila
   (`A cobrar $X`, sólo cuando el plan mueve el número) y el recargo desglosado
@@ -242,14 +250,51 @@ la pantalla llega con el dato puesto en vez de parpadear.
   pintada con `--marca` (la única superficie de marca de esta pantalla, junto
   con el avatar del pie del sidebar), desde el carrito vacío y en `$ 0,00`. Un
   ancla que aparece y desaparece no es un ancla.
+- **La banda del total muestra una línea por moneda, y sólo las que la venta
+  tiene** (ciclo del precio en dólares). Un carrito enteramente en pesos se ve
+  **exactamente** como antes —una sola línea— y un local que nunca marcó un
+  artículo en dólares no ve ni un control nuevo en toda la pantalla. Es el
+  principio que gobierna el ciclo entero: cada control aparece únicamente
+  cuando hay algo que decidir. El carrito vacío sigue mostrando `$ 0,00`, por
+  lo del ancla de arriba: sin ítems no hay ninguna moneda de la cual derivar
+  las líneas.
+- **El selector `Cubre` aparece únicamente cuando la venta tiene los DOS
+  totales.** Con uno solo no hay elección que ofrecer, así que el control no se
+  dibuja y el pago que se crea solo apunta al único total que existe
+  (`cubrePorDefecto`). Y lleva **rótulo visible**, a diferencia de Medio y
+  Moneda, que se conforman con `aria-label`: aquellos dos se leen del valor
+  elegido ("Efectivo", "USD"), y "total en dólares" sin rótulo no dice si es lo
+  que se entrega o lo que se cubre — que es justamente la distinción que la
+  fila entera existe para hacer.
+- **Con UN solo pago, la pantalla lo re-apunta cuando su total desaparece del
+  carrito.** Sacar la funda de un carrito mixto deja la venta sólo en dólares:
+  sin re-apuntado, el pago quedaba apuntando a un total que ya no existe, con
+  el `Cubre` escondido (porque ya no hay dos), un `planId` invisible e
+  incorregible, "Cobrar" habilitado y el motor rechazando con un mensaje que no
+  dice qué tocar. `reapuntarPagoUnico` mueve `cubre`, la moneda, la base y la
+  cotización juntas, y **limpia el plan** si hubo re-apuntado. **Con dos o más
+  pagos no lo hace**: ahí no hay una respuesta única sobre cuál mover, y queda
+  anotado como el mismo callejón un pago más adelante.
 - Con una cantidad a medio tipear muestra `—`, nunca `$ NaN`.
-- La cotización que **precarga el campo de un pago en dólares** sale de la
-  última con la que se cobró (`ultimaCotizacionUsd`, sobre `Pago.cotizacion`,
-  histórica) — **no** es la misma que el chip del header, que muestra
-  `Tenant.cotizacionUsd` (la que el dueño fija para hoy). Las dos conviven a
-  propósito: una es "a cuánto se cobró", la otra es "a cuánto se cobra ahora
-  si no se toca nada". El comentario del campo en `prisma/schema.prisma` lo
-  explica.
+- **El campo de cotización arranca VACÍO, siempre** (ciclo del precio en
+  dólares, 2026-08-29). Hasta entonces venía precargado con
+  `ultimaCotizacionUsd()` —la última cotización con la que el local había
+  cobrado—, que es exactamente el número del jueves pasado si nadie pagó en
+  dólares desde entonces: la misma clase de dato envejecido contra la que el
+  cliente escribió el feedback que originó ese ciclo. El prefill se fue y
+  `ultimaCotizacionUsd()` se borró con él, sin dejar ningún consumidor. La que
+  el chip del header muestra (`Tenant.cotizacionUsd`, la que el dueño fija para
+  hoy) es **otra cosa** y sigue sin escritor: es un dato para mirar, no un
+  valor que precargue nada.
+- **La cotización sólo aparece cuando un pago cruza monedas.** Con
+  `moneda === cubre` no hay ninguna conversión ocurriendo —pagar US$ 300 en
+  billetes contra un total de US$ 300 no convierte nada—, así que la fila
+  guarda `cotizacion = 1`, que no es un valor inventado sino literalmente
+  cuánto convierte. El campo se dibuja únicamente en el cruce, y
+  `cotizacionParaElCruce` la vuelve a poner en `1` (o a vaciarla) en cada
+  cambio de `moneda`/`cubre`: sin eso, tipear 1485 con `Cubre: dólares` y
+  después volver el selector a pesos persistía una cotización mentirosa que la
+  pantalla ya no mostraba.
 - Todo producto se redondea **antes** de entrar en cualquier suma: el total de
   los ítems y el de los pagos se comparan por igualdad, así que los dos tienen
   que redondear en el mismo momento y de la misma forma.
@@ -276,16 +321,20 @@ la pantalla llega con el dato puesto en vez de parpadear.
 - **El selector de plan aparece sólo si el medio elegido tiene planes
   cargados.** Un local que no cargó ninguno no ve un solo control nuevo: el
   mostrador queda exactamente como estaba. El filtro es por medio **y por
-  moneda** —`planesOfrecidos`—, porque las dos cosas las rechaza el motor: un
-  plan de otro medio es `PLAN_NO_CORRESPONDE` y cualquier plan sobre un pago en
-  dólares es `PLAN_EN_DOLARES`. Ofrecer lo que el servidor va a rechazar es
-  ofrecer un error.
-- **Cambiar el medio o la moneda LIMPIA el plan elegido**, en el mismo cambio
-  de estado. Esconder el selector no alcanzaría: el `planId` viejo seguiría en
-  el estado y viajando en el JSON escondido, y la pantalla mostraría algo que
-  se ve válido mientras el motor rechaza la venta. Se limpia también al volver
-  de dólares a pesos — un plan que reaparezca solo es un recargo que nadie
-  volvió a elegir.
+  moneda entregada** —`planesOfrecidos`—, porque las dos cosas las rechaza el
+  motor: un plan de otro medio es `PLAN_NO_CORRESPONDE` y un plan sobre un pago
+  **entregado** en dólares es `PLAN_EN_DOLARES`. Ofrecer lo que el servidor va
+  a rechazar es ofrecer un error. **No filtra por `cubre`, y no es un olvido**:
+  el motor prohíbe el plan sobre lo que se entrega en dólares, no sobre lo que
+  cubre el total en dólares — y ese cruce (pesos que cubren dólares, en cuotas)
+  es justo el caso más caro de la pantalla, el del feedback que originó el
+  ciclo. Filtrarlo por `cubre` se lo sacaría al mostrador.
+- **Cambiar el medio, la moneda o `Cubre` LIMPIA el plan elegido**, en el mismo
+  cambio de estado. Esconder el selector no alcanzaría: el `planId` viejo
+  seguiría en el estado y viajando en el JSON escondido, y la pantalla
+  mostraría algo que se ve válido mientras el motor rechaza la venta. Se limpia
+  también al volver de dólares a pesos — un plan que reaparezca solo es un
+  recargo que nadie volvió a elegir.
 - **El ítem "Precio de lista" lleva un valor centinela y no la cadena vacía.**
   Radix reserva `''` para "sin selección" y un `SelectItem` con `value=""` tira
   en runtime.
@@ -313,6 +362,17 @@ la pantalla llega con el dato puesto en vez de parpadear.
   motor compara la suma de las **bases** contra el total de ítems: si el
   faltante midiera contra el total a cobrar, una venta financiada no se podría
   cerrar nunca.
+- **Y es UN chip por moneda**, no uno solo (ciclo del precio en dólares):
+  aparecen las monedas que la venta tiene, en el mismo orden que la banda del
+  total, y "Cobrar" se habilita cuando cierran **las dos**. Una venta que
+  cierra en pesos y no en dólares se rechaza igual que hoy se rechaza la que no
+  cierra. Con un solo total el panel se ve como antes: un chip.
+- **El pie del cobro dice "Total a cobrar en PESOS" cuando la venta tiene
+  totales en las dos monedas** (hallazgo Important de la review de esa task).
+  Ese pie suma sólo la mitad en pesos —los dólares que se entregan en billetes
+  no entran en ninguna de sus líneas—, así que sin la aclaración un cajero que
+  confiara en esa línea cobraba de menos y la venta cerraba igual. Con un solo
+  total el rótulo es el de siempre, "Total a cobrar".
 - **`design/arandano.pen` no dibuja ni el selector de plan ni el pie de tres
   líneas**: la maqueta es anterior a los planes de pago. No es una
   contradicción con el `.pen` sino un hueco, y queda anotado en
@@ -321,9 +381,9 @@ la pantalla llega con el dato puesto en vez de parpadear.
   selector de Medio y el renglón `Entran $X`—, no se inventa.
 - **El chip de caja muestra el estado real y ofrece abrirla o cerrarla ahí
   mismo**, sin pantalla `/caja` ni arqueo — ver el detalle en *Pendiente*.
-  `cajaAbierta()` se lee en el servidor (`page.tsx`), igual que
-  `ultimaCotizacionUsd`, así que el chip llega con el dato puesto en vez de
-  parpadear entre "sin caja" y "caja abierta" en cada carga.
+  `cajaAbierta()` se lee en el servidor (`page.tsx`), igual que los planes, así
+  que el chip llega con el dato puesto en vez de parpadear entre "sin caja" y
+  "caja abierta" en cada carga.
 - **`Esc` vacía el carrito con confirmación en dos pasos, no con `confirm()`
   ni con un deshacer.** El primer `Esc` arma la confirmación (la leyenda bajo
   el botón cambia a "Esc de nuevo para vaciar el carrito") y se desarma solo a
@@ -375,7 +435,10 @@ Es la pantalla que más cambia del ciclo, y la única que se parte en dos frames
   —qué empuja una entrada y qué la consume— está en `app/(app)/vender/paso.ts`
   y resumido en `CLAUDE.md`.
 - **El Topbar cambia con el paso**: título "Vender"/"Cobro", subtítulo con el
-  monto en el cobro, flecha de volver, y la ranura derecha apagada mientras se
+  monto en el cobro —los **dos** montos unidos por ` + ` si la venta tiene las
+  dos monedas, calculados con la misma `lineasDeTotal` que la banda de
+  `--marca`, para que el título del paso no diga menos que la pantalla de la
+  que se viene—, flecha de volver, y la ranura derecha apagada mientras se
   cobra. Por eso el `<Encabezado>` de esta pantalla se renderiza desde
   `PuntoDeVenta` (que es cliente) y no desde `page.tsx`, y la flecha es un
   `alVolver` —una función— y no un `href`: un link a `/vender` dispararía
@@ -414,6 +477,23 @@ Es la pantalla que más cambia del ciclo, y la única que se parte en dos frames
   que haya una caja abierta para cobrar — a propósito: eso rompería el cobro
   de cualquier tenant que no use la caja. El chip del header cubre abrir y
   cerrar; el arqueo es su propio ciclo futuro.
+- **El renglón "Entran $X" deja de ser lo que entra cuando el pago cruza y
+  además lleva plan**: dice la base convertida ($445.500) arriba de un "A
+  cobrar $623.700". No se pierde plata —el cajero actúa sobre "A cobrar", que
+  es el número correcto—, pero el rótulo es el equivocado y espera un ciclo que
+  lo renombre.
+- **El re-apuntado sólo cubre el pago único.** Con dos o más pagos, un total
+  que desaparece del carrito deja un pago apuntando a una moneda que la venta
+  ya no tiene: el mismo callejón que `reapuntarPagoUnico` vino a tapar, un pago
+  más adelante.
+- **Un plan sobre un pago ENTREGADO en dólares sigue prohibido**
+  (`PLAN_EN_DOLARES`), por la división que el ciclo entero se cuidó de no
+  hacer. Cubrir dólares **entregando pesos** sí lo admite: es el caso del
+  feedback.
+- **`design/arandano.pen` no dibuja nada de esto** —es anterior al precio en
+  dólares—: ni el selector `Cubre`, ni la banda de dos líneas, ni el segundo
+  chip de faltante. Anotado en `docs/correcciones-pendientes-del-pen.md`,
+  entrada 23.
 
 ## `/ventas`
 
@@ -641,13 +721,20 @@ El listado de artículos, con buscador, filtro de tipo y chips de estado
   permiso `CATEGORIAS` (un dueño siempre lo tiene; un empleado, sólo si se lo
   otorgaron). No hay pantalla de ABM aparte.
 - Filtrar por tipo con el segmentado **Todos / Productos / Servicios**.
-- Ver stock, precio, tipo y la categoría (dos niveles, p. ej. "Accesorios ·
-  Protección").
+- Ver stock, precio **en su moneda** (`$` o `US$`), tipo y la categoría (dos
+  niveles, p. ej. "Accesorios · Protección").
 - Mostrar u ocultar los artículos desactivados.
 - Paginar de a 50, con botones numerados.
 
 **Decisiones**
 
+- **El precio se muestra en su moneda y SIN equivalente en pesos** (ciclo del
+  precio en dólares, 2026-08-29). Fuera de una venta no hay ninguna cotización
+  de la cual derivarlo, y un número inventado es peor que ninguno — la misma
+  regla por la que el chip de cotización del header de `/vender` muestra `—` en
+  vez de fabricar un valor. La columna no se ordena ni se suma, así que dos
+  monedas conviviendo en ella no rompen nada: `precioEnSuMoneda`
+  (`lib/formato/mostrar.ts`) elige el formateador y no convierte.
 - **El conteo de una rama incluye el de sus marcas**, más los artículos
   colgados del rubro mismo. Si no cerrara, el número de arriba no coincidiría
   con la suma de abajo y el árbol dejaría de servir para decidir.
@@ -752,8 +839,10 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
 
 - Elegir Producto o Servicio con dos tarjetas seleccionables (no un
   `<select>`): un servicio oculta la card de stock inicial entera.
-- Cargar nombre y precio, y **elegir** categoría y marca de dos selectores
-  encadenados: el de marca ofrece las hijas del rubro elegido.
+- Cargar nombre y precio, **elegir en qué moneda está ese precio** (`$` por
+  default o `US$`, desde un selector pegado al campo) y **elegir** categoría y
+  marca de dos selectores encadenados: el de marca ofrece las hijas del rubro
+  elegido.
 - Anotar la **factura del proveedor** del stock inicial.
 - Dejar el SKU vacío y que se genere solo, con el próximo código libre
   mostrado como ayuda.
@@ -768,6 +857,19 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
   unitario" del stock inicial es aparte: lo gobierna `COSTOS`, y sin él el
   campo no se dibuja y el servidor lo ignora si llega igual por fuera de la
   pantalla.
+- **La moneda del precio se elige con `SelectorDeMoneda`, el mismo componente
+  que la ficha** (`components/selector-de-moneda.tsx`, ciclo del precio en
+  dólares). Es la lección directa del ciclo del 2026-08-28 aplicada **antes**
+  de pagarla: la categoría vivió cuatro días con dos implementaciones —dos
+  selectores acá y un campo de texto en la ficha—, el gate entero en verde, y
+  lo reportó un cliente antes que un test. Un solo componente instanciado dos
+  veces no se puede desincronizar; el caso lo cuenta igual, porque es la regla
+  que este repo ya pagó varias veces.
+- **El selector emite por un `<input type="hidden">`**, no por un `<select>`:
+  `Select` de Radix no renderiza ninguno (el trigger es un `<button>`), así que
+  sin el hidden el `FormData` del server action llegaría sin el campo. Mismo
+  trade-off que la categoría, y con la misma consecuencia: **sin JavaScript no
+  se puede elegir la moneda**, aunque el default de pesos sí viaja.
 - **La secuencia de SKU puede tener huecos, y es a propósito.**
   `Tenant.proximoSkuArticulo` se incrementa en su propia transacción comiteada:
   con el `UPDATE` adentro de la transacción del alta, un choque de unicidad la
@@ -856,13 +958,13 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
 **Qué se puede hacer**
 
 - Ver tres tiles: **En stock** (pintado con `--marca`, el ancla de esta
-  pantalla), **Precio de venta** (con hace cuánto se actualizó) y, con el
-  permiso `COSTOS`, **Último costo** (con el margen contra el precio actual).
-  Un servicio sólo muestra el de precio.
-- Editar nombre, precio y código desde la card "Datos", y **elegir** categoría
-  y marca de los mismos dos selectores encadenados que usa el alta — con el
-  permiso `ARTICULOS_EDITAR`; sin él la card directamente no se renderea (no
-  es de sólo lectura: no aparece).
+  pantalla), **Precio de venta** (en su moneda, con hace cuánto se actualizó)
+  y, con el permiso `COSTOS`, **Último costo** (siempre en pesos, con el margen
+  contra el precio actual). Un servicio sólo muestra el de precio.
+- Editar nombre, precio, **la moneda del precio** y código desde la card
+  "Datos", y **elegir** categoría y marca de los mismos dos selectores
+  encadenados que usa el alta — con el permiso `ARTICULOS_EDITAR`; sin él la
+  card directamente no se renderea (no es de sólo lectura: no aparece).
 - **Ingresar mercadería** — de cualquiera con sesión, no de `ARTICULOS_EDITAR`:
   es operación del día, la hace quien está atendiendo — y, con `COSTOS`
   además, su costo unitario y una nota (factura, proveedor).
@@ -908,6 +1010,23 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   `ramaElegida` adentro de la misma transacción del `UPDATE` — la contraparte
   de `asegurarCategoria` para una rama que ya existe en vez de crearla. `null`
   despeja las dos columnas (`categoria` y `categoria_id`) a la vez.
+- **La moneda del precio se elige con el mismo `SelectorDeMoneda` que el
+  alta**, y cambiarla **avisa en vez de impedir** (ciclo del precio en dólares).
+  Pasar 300 de dólares a pesos hace que el número diga otra cosa —`US$ 300`
+  pasa a ser `$ 300`—, y ninguna validación puede distinguir eso de un cambio
+  deliberado (alguien que además va a recargar el precio real en la otra
+  moneda). Así que el control muestra, apenas la moneda difiere de la que el
+  artículo tenía, "el precio no se convierte: lo que estaba en pesos ahora se
+  lee en dólares" — y la decisión queda de quien carga el precio, que es el
+  único que sabe cuál de las dos cosas está haciendo. Es lo que el spec llama
+  explícitamente "lo que queda sin red".
+- **Elegir la moneda pide `ARTICULOS_EDITAR`, y ningún permiso nuevo.** Mueve
+  el precio de **un** artículo, así que viaja con el precio mismo — la misma
+  forma de razonar con la que el ciclo de precios por forma de pago sí separó
+  `PLANES_PAGO`, que mueve el precio de todo el catálogo de una. `moneda` es
+  **requerida** en `editarArticulo`, no opcional, por el mismo motivo que
+  `categoriaId`: un llamador que la omitiera dejaría la moneda vieja sin que
+  nadie lo haya decidido y sin ningún error que lo avise.
 - **Elegir rama pide `ARTICULOS_EDITAR`, no `CATEGORIAS`** — y es la inversión
   deliberada de la guarda anterior, que exigía `CATEGORIAS` además. El motivo
   de esa guarda vieja era el bypass: con texto libre, un empleado con
@@ -923,6 +1042,20 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   costo cargado más reciente (no el ingreso más reciente a secas, que puede no
   tenerlo) y calcula el margen contra el precio de venta actual. Sin ningún
   ingreso con costo, el tile muestra "—", nunca un número inventado.
+- **Un artículo en dólares no tiene margen, y el pie del tile lo dice con
+  todas las letras** (ciclo del precio en dólares): `MovimientoStock.costoUnitario`
+  se guarda **siempre en pesos** —no distingue moneda—, así que comparar ese
+  costo contra un precio en dólares exigiría inventar una cotización, que es
+  exactamente lo que este ciclo no hace en ningún lado. El valor del tile sigue
+  siendo el costo en pesos; el pie pasa a "el costo está en pesos: sin margen
+  para un artículo en dólares", **distinto** del "el precio no permite calcular
+  el margen" que ya existía: aquél es "no se puede dividir", éste es "no hay
+  contra qué comparar". **No es un agujero de este ciclo**: es la costura
+  declarada con la deuda del costo (CLAUDE.md, *Decisiones abiertas del modelo
+  de datos*), y `textoDeMargen` recibe la moneda como tercer parámetro
+  **requerido** por el mismo motivo que `editarArticulo` — omitirlo mostraría
+  un margen en pesos para un artículo en dólares, o sea un número equivocado
+  sobre plata.
 - **"Precios por forma de pago" calcula con `precioConPlan`, la misma función
   que después usa el cobro en `/vender`** — no una cuenta propia — para que la
   ficha nunca pueda decir un número distinto del que cobra el mostrador. Es el
@@ -937,6 +1070,11 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   permiso**: es de sólo lectura sobre un precio que la misma ficha ya muestra
   arriba, y quien cobra necesita poder decirle a un cliente el precio en
   cuotas — `COSTOS` sigue tapando el costo y el margen, que son otra cosa.
+  **El precio derivado sale en la moneda del artículo**: el recargo es un
+  porcentaje puro, así que US$ 300 al 40 % son US$ 420, que es el equivalente
+  exacto de los $623.700 que el mostrador va a cobrar. No hay ninguna
+  conversión acá, sólo el formateo — `precioConPlan` no sabe de monedas y no
+  tiene por qué saberlo.
 - **La columna "Queda" se reconstruye, no se guarda.** `MovimientoStock` no
   tiene columna de saldo por fila, y `Articulo.stock` es apenas el caché de la
   suma de sus movimientos. `calcularSaldos` (`historial.tsx`) recorre los

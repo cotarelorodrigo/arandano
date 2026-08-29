@@ -17,15 +17,18 @@
  * recetas de `sembrar-ventas-dev.mts`. Los dos archivos están acoplados por ese
  * literal, y está bien que lo estén: sembrar el catálogo con otros códigos
  * dejaría el sembrador de ventas roto de una forma que sólo se ve al correrlo.
- * `A-0008` es la excepción y por eso va último: existe para el árbol de
- * categorías, ninguna venta lo nombra, y agregarlo no le toca nada al otro
- * sembrador — pero un `A-0009` que SÍ quiera venderse hay que darlo de alta en
- * los dos lados.
+ * `A-0008` y `A-0009` son las excepciones y por eso van últimos: existen para
+ * el árbol de categorías y para el precio en dólares, ninguna venta los nombra,
+ * y agregarlos no le toca nada al otro sembrador — pero un `A-0010` que SÍ
+ * quiera venderse hay que darlo de alta en los dos lados.
  *
  * Importes de distinta cantidad de dígitos a propósito —de $ 990 a $ 899.999—
  * porque con montos parejos no se puede ver si las columnas de números bailan.
  * Es la misma lección que ya dejaron anotada los otros dos sembradores, y la
- * razón por la que este archivo existe en vez de ser cinco INSERT.
+ * razón por la que este archivo existe en vez de ser cinco INSERT. `A-0009`
+ * suma el otro eje de esa misma lección: **US$ 300**, tres dígitos y otro
+ * símbolo, que es lo único que deja ver si la columna de precios se desalinea
+ * cuando conviven las dos monedas.
  *
  * Un SERVICIO y un artículo con STOCK NEGATIVO entre ellos, que son los dos
  * casos que la pantalla dibuja distinto: el servicio lleva un guion en la
@@ -41,13 +44,24 @@
  * - Un rubro con DOS marcas hermanas (`Fundas` → Apple y Samsung), que es lo
  *   único que ejercita el anidado de verdad y el conteo de una raíz sumando sus
  *   hijas.
- * - La MISMA marca bajo tres rubros distintos (Apple en Fundas, en Vidrios
- *   templados y en Repuestos). Son tres filas distintas, no una compartida, y
- *   confundirlas es el error fácil de cometer en la pantalla.
+ * - La MISMA marca bajo cuatro rubros distintos (Apple en Fundas, en Vidrios
+ *   templados, en Repuestos y en Celulares). Son cuatro filas distintas, no una
+ *   compartida, y confundirlas es el error fácil de cometer en la pantalla.
  * - Dos rubros SIN marca (`Cables`, `Cargadores`), que el cliente nombró
  *   sueltos: un artículo colgado de una raíz es un caso normal.
  * - Uno SIN categoría (el servicio), porque "sin categoría" es una rama más y
  *   siempre va a haber alguien ahí.
+ *
+ * **Y uno en DÓLARES** (`A-0009`, ciclo del precio en USD, 2026-08-29), que es
+ * el que le da a la verificación manual contra qué mirar: sin ningún artículo
+ * marcado en dólares la feature entera es invisible —el selector de `Cubre` no
+ * se dibuja, la banda del total sigue teniendo una sola línea y el margen nunca
+ * llega al caso nuevo—, así que sembrar sólo pesos deja el ciclo sin nada que
+ * verificar. Lleva costo cargado **a propósito**, aunque el costo se guarde
+ * siempre en pesos: es lo único que ejercita el "sin margen para un artículo en
+ * dólares" del tile, que es la costura declarada con la deuda del costo. Con el
+ * costo vacío el tile cae en "ningún ingreso cargó el costo todavía" y esa rama
+ * no se mira nunca.
  */
 import { Prisma } from '@/generated/prisma/client'
 import { crearArticulo } from '@/lib/inventario/articulos'
@@ -70,6 +84,10 @@ type Receta = {
   nombre: string
   tipo: 'PRODUCTO' | 'SERVICIO'
   precio: string
+  /** En qué moneda está `precio`. Ausente vale pesos, igual que en
+   *  `crearArticulo`: son ocho de nueve recetas, y repetir `'ARS'` en todas
+   *  sería ruido sobre el único caso que importa mirar. */
+  moneda?: 'ARS' | 'USD'
   stockInicial: string | null
   costoUnitario: string | null
   /** Ventas de mentira que dejan el stock abajo de cero, para ver el aviso. */
@@ -169,6 +187,29 @@ const RECETAS: Receta[] = [
     stockInicial: '9',
     costoUnitario: '8700',
   },
+  {
+    // El noveno, y el único EN DÓLARES. Es el artículo del feedback que
+    // originó el ciclo ("si lo compro en usd y lo cargo en pesos tengo que
+    // estar modificando el precio todo el tiempo"), y el que aparece en los
+    // tres números del spec: US$ 300 de lista, US$ 420 con el plan de 12
+    // cuotas al 40 %, $ 623.700 cobrados en pesos a 1485.
+    sku: 'A-0009',
+    // Bajo un rubro que YA existe (Celulares, que hoy sólo tiene Samsung), así
+    // que además deja el árbol con un segundo rubro de dos marcas hermanas.
+    categoria: 'Celulares · Apple',
+    nombre: 'iPhone 13 128 GB',
+    tipo: 'PRODUCTO',
+    moneda: 'USD',
+    // Tres dígitos, que es el ancho que ninguno de los otros ocho tiene: los
+    // precios en pesos van de 3 a 6 dígitos, pero éste llega además con otro
+    // símbolo delante ("US$"), que es lo que hace bailar la columna si algo
+    // está mal alineado.
+    precio: '300',
+    stockInicial: '4',
+    // En PESOS, como todo costo (lib/inventario/stock.ts no conoce monedas).
+    // Es lo que deja ver el "sin margen para un artículo en dólares" del tile.
+    costoUnitario: '385000',
+  },
 ]
 
 for (const receta of RECETAS) {
@@ -179,6 +220,9 @@ for (const receta of RECETAS) {
     sku: receta.sku,
     tipo: receta.tipo,
     precio: d(receta.precio),
+    // Sin `?? 'ARS'`: `crearArticulo` ya toma pesos como default para el campo
+    // ausente, y repetirlo acá sería una segunda copia del mismo default.
+    moneda: receta.moneda,
     categoria: receta.categoria,
     stockInicial: receta.stockInicial === null ? null : d(receta.stockInicial),
     costoUnitario: receta.costoUnitario === null ? null : d(receta.costoUnitario),

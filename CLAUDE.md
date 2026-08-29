@@ -1603,6 +1603,191 @@ Y del producto:
   artículo al abrir la ficha, que "Sin categoría" la borre de verdad, que cambiar
   de rubro limpie la marca, y que un empleado con `ARTICULOS_EDITAR` y sin
   `CATEGORIAS` pueda mover el artículo de rama pero no vea el ABM del panel.
+- ~~Poder cargar el precio de un artículo en dólares.~~ **Hecho** (2026-08-29).
+  Sale del feedback textual de un cliente: *"un producto del inventario debería
+  poder cargarlo con precio en usd. ya que si lo compro en usd y lo carga en
+  pesos tiene que estar modificando el precio del artículo todo el tiempo ya que
+  la cotización del dólar puede cambiar"*. El pedido es chico de enunciar y
+  grande de implementar, y conviene decir por qué antes de nada: **no pide un
+  campo más, pide que el precio deje de estar siempre en pesos**. Todo el motor
+  de ventas estaba construido sobre el supuesto contrario —un total, en pesos,
+  contra el que los pagos tienen que cerrar—, así que la pregunta nunca fue
+  dónde poner el número sino qué pasa con la suma. Ver
+  `docs/superpowers/specs/2026-08-29-precio-en-usd-design.md`.
+
+  **Las cinco decisiones del ciclo, cada una con la alternativa que se
+  descartó** — se tomaron con el dueño del producto antes de escribir una línea:
+
+  - **El precio se carga directo en dólares, sin pedir ninguna cotización al
+    cargarlo.** La alternativa era guardarlo en pesos y recalcularlo contra "el
+    dólar del local" (`Tenant.cotizacionUsd`), que además le habría dado por fin
+    un escritor a esa columna. Se descartó porque el dueño fue explícito en que
+    la cotización se tipea **en cada venta**, no que se fija una para el local:
+    un precio derivado de un número del local es exactamente el número que
+    después nadie actualiza, o sea el problema del que el cliente se queja,
+    movido de lugar.
+  - **La venta tiene DOS totales, no uno.** Es la decisión que le da forma a
+    todo el ciclo, y salió de una pregunta del dueño: *"¿no podemos manejar una
+    venta con pago en pesos y pago en dólares? tener dos totales"*. La
+    alternativa era colapsar todo a pesos al cerrar la venta, con una cotización
+    de la venta. Se descartó porque obliga a inventar una cotización incluso
+    cuando no hace falta ninguna: si el iPhone está en US$ 300 y el cliente paga
+    US$ 300 en billetes **no hay ninguna conversión ocurriendo**, y guardar una
+    cotización sería registrar un hecho que no pasó.
+  - **Cada total se cobra por separado, y cada pago declara cuál cubre**
+    (`Pago.cubre`). Un carrito mixto —un iPhone en dólares y una funda en
+    pesos— no fuerza ninguna elección de moneda: muestra los dos números y quien
+    cobra reparte los pagos entre ellos. La alternativa —prohibir el carrito
+    mixto y obligar a dos ventas— se descartó sola: un local de celulares vende
+    el iPhone y la funda en la misma operación todos los días.
+  - **La cotización se tipea siempre, y el campo arranca vacío.** Hasta este
+    ciclo venía **precargado** con `ultimaCotizacionUsd()`, la última cotización
+    con la que el local había cobrado — que es justamente el número viejo del
+    jueves pasado si nadie pagó en dólares desde entonces, la misma clase de
+    dato envejecido contra la que el cliente escribió el feedback. La
+    alternativa era conservar el prefill "por comodidad del mostrador"; se
+    descartó porque un default equivocado en un campo de plata se acepta sin
+    mirarlo. El prefill se fue y `ultimaCotizacionUsd()` se borró con él, sin
+    dejar ningún consumidor.
+  - **Ningún permiso nuevo.** Elegir la moneda de un artículo mueve el precio de
+    **un** artículo, así que viaja con `ARTICULOS_CREAR` / `ARTICULOS_EDITAR`,
+    igual que el precio mismo. La alternativa —un permiso propio, como el
+    `PLANES_PAGO` del ciclo anterior— se descartó por la misma forma de razonar
+    que lo justificó allá y lo desaconseja acá: `PLANES_PAGO` mueve el precio de
+    **todo** el catálogo de una, y esto no. El catálogo de
+    `lib/permisos/catalogo.ts` **no crece en este ciclo**.
+
+  **El principio que gobierna las pantallas: un local que no usa dólares no ve
+  ninguna diferencia.** Cada control nuevo —el selector de moneda del artículo,
+  el selector `Cubre` del cobro, la segunda línea de la banda del total, el
+  segundo chip de faltante— aparece únicamente cuando hay algo que decidir. Es
+  la misma forma en que los planes de pago entraron sin que un local sin planes
+  viera nada.
+
+  **El cambio de significado que ninguna migración anuncia, y por eso vive acá:
+  `Articulo.precio` deja de significar "pesos" y pasa a significar "la cantidad,
+  en `Articulo.moneda`".** Es la **segunda** vez que esta columna cambia de
+  significado sin cambiar de tipo — el ciclo de precios por forma de pago
+  (2026-08-27) ya la había pasado de "precio de contado" a "precio de lista" —,
+  y las dos veces por lo mismo: un `Decimal(12,2)` no tiene dónde decir de qué
+  habla, así que ninguna migración lo puede anunciar y ningún test lo puede
+  atar. Este párrafo es el único registro que hay.
+
+  **`Venta.total` NO cambia de significado para ninguna fila ya escrita.** Pasa
+  a ser la mercadería **en pesos** a precio de lista, y toda venta anterior a
+  este ciclo tiene `totalUsd = 0`, así que sigue diciendo exactamente lo que
+  decía. No se renombra, por lo mismo que no se renombró cuando llegaron los
+  planes. **`Pago.recargo` y `Venta.recargo` siguen siendo en pesos**, sin
+  partirse en dos — es la regla de abajo la que lo hace posible.
+
+  **La regla que gobierna todo el cálculo, y por la que nada divide nunca:
+  `base` va en dólares si el pago toca dólares de algún lado** —sea la moneda
+  que entra o el total que cubre—, y `cotizacion` sigue significando pesos por
+  dólar, multiplicando siempre **desde** el lado del dólar. Las cuatro
+  combinaciones viven en una sola función (`aporteDePago`,
+  `lib/ventas/totales.ts`) y sólo una multiplica: la de dólares entregados
+  contra el total en pesos. La alternativa —definir `base` **siempre** en la
+  moneda del pago, o **siempre** en la del total— es la que parece más simple y
+  es la que rompe: cualquiera de las dos deja uno de los cuatro cruces
+  necesitando `base / cotizacion`, y una división ahí produce ventas que no
+  cierran por un centavo y que la persona del mostrador no tiene forma de
+  arreglar. Es el mismo motivo por el que el ciclo del 2026-08-27 prohibió el
+  plan sobre un pago en dólares, y por el que ese plan **sigue** prohibido: lo
+  que se relajó es la regla vieja ("un pago con plan tiene que ser en pesos y a
+  cotización 1") a **"un pago con plan tiene que entregarse en pesos"**, con el
+  recargo calculado sobre los pesos entregados. Consecuencia concreta del caso
+  del feedback: un iPhone de US$ 300 en 12 cuotas al 40 % se cobra **$623.700**
+  y aporta **US$ 300 exactos** al total en dólares, sin dividir y sin partir
+  `Venta.recargo` en dos columnas.
+
+  **En el cruce se tipea cuántos DÓLARES cubre el pago, no cuántos pesos**, y no
+  es sólo la aritmética: es el mejor flujo de mostrador. Quien cobra tiene el
+  total en dólares delante y la cotización en la cabeza; el número de pesos lo
+  calcula el servidor y lo muestra el renglón "A cobrar $X" de esa fila. Que la
+  persona tipee 445.500 sería pedirle que haga la cuenta ella y después
+  verificarla.
+
+  **El bug que el ciclo destapó y arregló, y que no era de este ciclo:
+  `montoEnPesos` multiplica siempre.** Eso era correcto mientras todo pago en
+  pesos llevara cotización 1 — y la llevaba, porque no existía ninguna fila
+  donde las dos definiciones dieran distinto. Desde que un pago en pesos puede
+  cubrir el total en dólares, esa fila lleva la cotización de verdad (1485) con
+  el monto **ya** en pesos, y los dos lectores de un pago guardado lo
+  multiplicaban de nuevo: el panel "Cómo entró la plata" de `/ventas`
+  (`lib/ventas/composicion.ts`) y la columna "En pesos" de `/ventas/[id]`
+  mostraban un número mil quinientas veces más grande. La salida es
+  `pesosEntregados`, que ramifica por la moneda del pago y por la que pasa ahora
+  toda lectura de un pago guardado. No es una función nueva por prolijidad: es
+  la definición que `montoEnPesos` siempre debería haber tenido, y que recién
+  ahora se puede distinguir de la vieja.
+
+  **Y la consecuencia que la review destapó, aceptada a propósito: con
+  `totalUsd ≠ 0`, `totalCobrado()` deja de ser "todo lo que entró".** Una venta
+  de US$ 300 cobrada en pesos con un plan del 40 % muestra **$178.200** en la
+  línea de pesos del tile "Total del período", aunque al cajón hayan entrado
+  **$623.700**. El número asusta y no es un bug: el spec fija que `/ventas`
+  muestra dos números y **no convierte nada**, y los pesos que cubrieron la
+  mitad en dólares son precisamente una conversión, así que no pueden entrar en
+  la línea de pesos sin romper la regla del ciclo entero. El par que queda —la
+  mercadería en dólares de un lado, y del otro todo peso que no es esa
+  mercadería (mercadería en pesos + recargo)— sí describe la venta sin
+  convertir. **Y no se pierde ningún dato**: lo que entró de verdad lo
+  reconstruye `Σ pesosEntregados(Pago)`, que es una función y una pantalla, no
+  una migración. El docblock de `totalCobrado` lo dice con todas las letras,
+  para quien lo lea sin este párrafo delante.
+
+  **Un solo componente de moneda para las dos pantallas de artículo**
+  (`components/selector-de-moneda.tsx`), y esta vez **antes** de pagar el peaje:
+  el ciclo del 2026-08-28 llegó ahí después de que un cliente reportara que el
+  alta y la ficha se habían desincronizado en silencio durante cuatro días, con
+  el gate entero en verde. **Cambiar de moneda avisa y no impide**, que es "lo
+  que queda sin red" de este ciclo: pasar 300 de dólares a pesos hace que el
+  número diga otra cosa, y ninguna validación puede distinguir eso de un cambio
+  deliberado, así que la decisión queda de quien carga el precio.
+
+  **La migración es genuinamente inerte, y por eso viaja en su propio deploy
+  antes que la UI.** Cuatro columnas aditivas con default (`Articulo.moneda`,
+  `VentaItem.moneda`, `Venta.totalUsd`, `Pago.cubre`), cero `DROP`, sobre un
+  enum `Moneda` que ya existía. Mientras ningún artículo esté marcado en
+  dólares, ninguna venta puede tener `totalUsd > 0`, así que la imagen anterior
+  no se puede encontrar con una fila que no sepa leer: **la feature no existe
+  hasta que alguien marca el primer artículo**, y para entonces el código que la
+  lee ya está en producción.
+
+  **Queda para los ciclos siguientes**:
+
+  - **El costo en dólares.** `MovimientoStock.costoUnitario` sigue siendo en
+    pesos, así que el tile "Último costo" de un artículo en dólares muestra el
+    costo en pesos y el margen en `—`, con el porqué escrito en el pie. **No es
+    un agujero de este ciclo**: es la costura declarada con la deuda del costo,
+    que ya tiene su investigación hecha unos ítems más arriba, y es ese ciclo el
+    que le devuelve el margen a estos artículos.
+  - **El plan sobre un pago entregado en dólares.** Sigue prohibido
+    (`PLAN_EN_DOLARES`); habilitarlo exige resolver antes la división que hoy lo
+    bloquea.
+  - **El `DROP` del índice `@@index([tenantId, moneda, creadoEn])` de `Pago`**,
+    que existía para `ultimaCotizacionUsd()` y quedó **sin lector** al borrarse
+    esa función. Es un deploy **posterior**, no éste: un índice de más no le
+    hace daño a nadie, y borrarlo junto con el código que lo dejó de usar es
+    exactamente lo que expand/contract prohíbe. El comentario que lo explica
+    vive al lado del índice, en `prisma/schema.prisma`.
+  - **`Tenant.cotizacionUsd` sigue sin ningún escritor** y el chip del header
+    sigue mostrando `—`. Este ciclo no se apoya en ella y no la arregla — es
+    justamente lo que la decisión 1 descartó.
+  - **Lo que la maqueta no dibuja**: `design/arandano.pen` es anterior al precio
+    en dólares, así que ninguna de las pantallas de este ciclo tiene frame para
+    lo nuevo. Anotado en `docs/correcciones-pendientes-del-pen.md`, entrada 23.
+
+  **Y queda pendiente la verificación manual**, por lo mismo que en los tres
+  ciclos anteriores: `arandano-dev` bind-montea `/root/arandano` y no el
+  worktree. `scripts/sembrar-catalogo-dev.mts` siembra un artículo en dólares
+  (`A-0009`, un iPhone a US$ 300) para que haya contra qué mirar. Después del
+  merge hay que ver que el selector de moneda precargue la del artículo al abrir
+  la ficha y avise al cambiarla; que un carrito sólo en pesos se vea
+  **exactamente** como antes (un total, sin `Cubre`, un solo chip); que un
+  carrito mixto muestre los dos totales y los dos chips; que el campo de
+  cotización arranque vacío; y que cubrir los US$ 300 con pesos y un plan de 12
+  cuotas al 40 % cobre $623.700 y deje la venta cerrada.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

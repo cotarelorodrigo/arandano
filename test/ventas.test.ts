@@ -789,13 +789,14 @@ describe('cobrar con un plan de pago', () => {
     ).rejects.toMatchObject({ codigo: 'PLAN_NO_CORRESPONDE' })
   })
 
-  // La otra mitad del mismo guard, y la que NO se ve mirando la moneda: el
-  // invariante mide `base × cotizacion` y el recargo se calcula sobre `base` a
-  // secas, así que las dos mitades sólo hablan del mismo número con la
-  // cotización en 1. Un pago en pesos "a cotización 2" con plan sub-cobraría el
-  // recargo. La pantalla nunca lo manda —en ARS ni dibuja el campo—, un POST
-  // armado a mano sí.
-  // Task 3 (2026-08-29) le sacó la mitad a esta guarda: antes rechazaba
+  // La otra mitad del mismo guard, y la que NO se veía mirando la moneda —
+  // párrafo escrito en pasado a propósito, porque describe cómo era ANTES de
+  // Task 3 y hoy ya no es cierto: el invariante medía `base × cotizacion`
+  // mientras el recargo se calculaba sobre `base` a secas, así que las dos
+  // mitades sólo hablaban del mismo número con la cotización en 1, y un pago en
+  // pesos "a cotización 2" con plan sub-cobraba el recargo. La pantalla nunca
+  // lo mandaba —en ARS ni dibujaba el campo—, un POST armado a mano sí.
+  // Task 3 (2026-08-29) le sacó esa mitad a la guarda: antes rechazaba
   // moneda ≠ ARS O cotización ≠ 1, ahora sólo la moneda (ver el comentario de
   // `PLAN_EN_DOLARES` en crear.ts). Un pago ARS que cubre el total en ARS
   // ignora la cotización —no hay ningún cruce de moneda que multiplicar—, así

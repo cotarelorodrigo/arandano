@@ -536,8 +536,10 @@ export function Detalle({
                 escritorio — ver el docblock de `Detalle`, arriba.
                 `design/arandano.pen` no dibuja ningún desglose —es anterior
                 a los planes de pago y al precio en dólares—, y la deuda
-                queda anotada en docs/correcciones-pendientes-del-pen.md
-                junto con las otras de este mismo ciclo. */}
+                queda anotada en docs/correcciones-pendientes-del-pen.md:
+                el desglose de recargo en la entrada 21, y la banda de
+                dólares (más el resto de lo que este ciclo construyó sin
+                frame) en la 23. */}
             <div className="flex flex-col">
               {(lineasDeTotal ?? [{ rotulo: 'Total', montoFormateado: totalFormateado, destacada: true }]).map(
                 ({ rotulo, montoFormateado, destacada }) =>
