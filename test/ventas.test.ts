@@ -791,7 +791,14 @@ describe('cobrar con un plan de pago', () => {
   // cotización en 1. Un pago en pesos "a cotización 2" con plan sub-cobraría el
   // recargo. La pantalla nunca lo manda —en ARS ni dibuja el campo—, un POST
   // armado a mano sí.
-  it('rechaza un plan en un pago en pesos con cotización distinta de 1', async () => {
+  // Task 3 (2026-08-29) le sacó la mitad a esta guarda: antes rechazaba
+  // moneda ≠ ARS O cotización ≠ 1, ahora sólo la moneda (ver el comentario de
+  // `PLAN_EN_DOLARES` en crear.ts). Un pago ARS que cubre el total en ARS
+  // ignora la cotización —no hay ningún cruce de moneda que multiplicar—, así
+  // que una cotización rara ya no es un caso especial: el pago simplemente
+  // aporta su `base` tal cual, no cierra contra el total, y el invariante
+  // general (`PAGOS_NO_CIERRAN`) es quien lo frena.
+  it('un plan en un pago en pesos ignora la cotización: si no cierra, no cierra por el invariante general', async () => {
     const plan = await crearPlan({
       tenantId,
       nombre: 'Contado con cotización rara',
@@ -809,7 +816,7 @@ describe('cobrar con un plan de pago', () => {
           { medio: 'EFECTIVO', moneda: 'ARS', base: d('5000'), cotizacion: d('2'), planId: plan.id },
         ],
       }),
-    ).rejects.toMatchObject({ codigo: 'PLAN_EN_DOLARES' })
+    ).rejects.toMatchObject({ codigo: 'PAGOS_NO_CIERRAN' })
   })
 
   it('rechaza un plan en un pago en dólares', async () => {
@@ -872,6 +879,170 @@ describe('cobrar con un plan de pago', () => {
     expect(venta.pagos[0].plan).not.toBeNull()
     expect(venta.pagos[0].plan?.nombre).toBe('Crédito 18 cuotas')
     expect(venta.pagos[0].plan?.cuotas).toBe(18)
+  })
+})
+
+describe('venta con artículos en dólares', () => {
+  // Alta cruda como owner, igual que el `beforeAll` de arriba: `crearArticulo`
+  // de lib/inventario/articulos.ts recibe `moneda` recién en la Task 6, y
+  // usarla acá invertiría el orden de las tasks. `sku` se sortea para no
+  // chocar con los fixtures fijos del `beforeAll` ni entre sí.
+  let contador = 0
+  async function crearArticulo(e: {
+    nombre: string
+    precio: Prisma.Decimal
+    moneda: 'ARS' | 'USD'
+  }): Promise<{ id: string }> {
+    contador += 1
+    const r = await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, moneda, stock, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'PRODUCTO', $4, $5, 1000, now(), now())
+       RETURNING id`,
+      [tenantId, `USD-${Date.now()}-${contador}`, e.nombre, e.precio.toString(), e.moneda],
+    )
+    return { id: r.rows[0].id }
+  }
+
+  /** La venta con sus ítems y pagos, leída desde la transacción del tenant. */
+  async function leerVenta(id: string) {
+    return enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.venta.findUniqueOrThrow({ where: { id }, include: { items: true, pagos: true } }),
+    )
+  }
+
+  it('un carrito todo en dólares se cobra en dólares, sin ninguna cotización', async () => {
+    const iphone = await crearArticulo({ nombre: 'iPhone', precio: d('300'), moneda: 'USD' })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: iphone.id, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'USD', cubre: 'USD', base: d('300'), cotizacion: d('1') }],
+    })
+    const v = await leerVenta(id)
+    expect(v.total.toString()).toBe('0')
+    expect(v.totalUsd.toString()).toBe('300')
+    expect(v.items[0].moneda).toBe('USD')
+    expect(v.pagos[0].cubre).toBe('USD')
+    expect(v.pagos[0].monto.toString()).toBe('300')
+  })
+
+  it('un carrito mixto lleva los dos totales y cada pago cubre el suyo', async () => {
+    const iphone = await crearArticulo({ nombre: 'iPhone', precio: d('300'), moneda: 'USD' })
+    const funda = await crearArticulo({ nombre: 'Funda', precio: d('15000'), moneda: 'ARS' })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [
+        { articuloId: iphone.id, cantidad: d('1') },
+        { articuloId: funda.id, cantidad: d('1') },
+      ],
+      pagos: [
+        { medio: 'EFECTIVO', moneda: 'USD', cubre: 'USD', base: d('300'), cotizacion: d('1') },
+        { medio: 'TARJETA_DEBITO', moneda: 'ARS', cubre: 'ARS', base: d('15000'), cotizacion: d('1') },
+      ],
+    })
+    const v = await leerVenta(id)
+    expect(v.total.toString()).toBe('15000')
+    expect(v.totalUsd.toString()).toBe('300')
+  })
+
+  it('pagar el total en dólares CON PESOS: se tipea la cotización y se cobran los pesos', async () => {
+    const iphone = await crearArticulo({ nombre: 'iPhone', precio: d('300'), moneda: 'USD' })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: iphone.id, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', cubre: 'USD', base: d('300'), cotizacion: d('1485') }],
+    })
+    const v = await leerVenta(id)
+    expect(v.totalUsd.toString()).toBe('300')
+    expect(v.pagos[0].monto.toString()).toBe('445500')
+    expect(v.pagos[0].moneda).toBe('ARS')
+    expect(v.pagos[0].cubre).toBe('USD')
+  })
+
+  it('un plan de cuotas sobre el total en dólares cobra 623700 y aporta 300 exactos', async () => {
+    const iphone = await crearArticulo({ nombre: 'iPhone', precio: d('300'), moneda: 'USD' })
+    const plan = await crearPlan({
+      tenantId,
+      nombre: '12 cuotas',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('40'),
+    })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: iphone.id, cantidad: d('1') }],
+      pagos: [{
+        medio: 'TARJETA_CREDITO', moneda: 'ARS', cubre: 'USD',
+        base: d('300'), cotizacion: d('1485'), planId: plan.id,
+      }],
+    })
+    const v = await leerVenta(id)
+    expect(v.totalUsd.toString()).toBe('300')
+    expect(v.recargo.toString()).toBe('178200')
+    expect(v.pagos[0].monto.toString()).toBe('623700')
+    expect(v.pagos[0].recargo.toString()).toBe('178200')
+  })
+
+  it('rechaza la venta si cierra en pesos pero no en dólares', async () => {
+    const iphone = await crearArticulo({ nombre: 'iPhone', precio: d('300'), moneda: 'USD' })
+    const funda = await crearArticulo({ nombre: 'Funda', precio: d('15000'), moneda: 'ARS' })
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: [
+          { articuloId: iphone.id, cantidad: d('1') },
+          { articuloId: funda.id, cantidad: d('1') },
+        ],
+        pagos: [
+          { medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: d('15000'), cotizacion: d('1') },
+        ],
+      }),
+    ).rejects.toMatchObject({ codigo: 'PAGOS_NO_CIERRAN' })
+  })
+
+  it('sigue rechazando un plan sobre un pago ENTREGADO en dólares', async () => {
+    const iphone = await crearArticulo({ nombre: 'iPhone', precio: d('300'), moneda: 'USD' })
+    // Nombre distinto del plan del test anterior: la unicidad es
+    // `(tenantId, medio, nombre)` y los dos comparten medio y tenant.
+    const plan = await crearPlan({
+      tenantId,
+      nombre: '12 cuotas (pago en dólares)',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('40'),
+    })
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: [{ articuloId: iphone.id, cantidad: d('1') }],
+        pagos: [{
+          medio: 'TARJETA_CREDITO', moneda: 'USD', cubre: 'USD',
+          base: d('300'), cotizacion: d('1'), planId: plan.id,
+        }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'PLAN_EN_DOLARES' })
+  })
+
+  it('una venta SIN nada en dólares produce exactamente lo de siempre', async () => {
+    const funda = await crearArticulo({ nombre: 'Funda', precio: d('15000'), moneda: 'ARS' })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: funda.id, cantidad: d('1') }],
+      // Sin `cubre`: el default del tipo tiene que valer ARS.
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('15000'), cotizacion: d('1') }],
+    })
+    const v = await leerVenta(id)
+    expect(v.total.toString()).toBe('15000')
+    expect(v.totalUsd.toString()).toBe('0')
+    expect(v.recargo.toString()).toBe('0')
+    expect(v.pagos[0].cubre).toBe('ARS')
+    expect(v.items[0].moneda).toBe('ARS')
   })
 })
 

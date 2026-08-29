@@ -2,8 +2,9 @@ import { Prisma } from '@/generated/prisma/client'
 import type { MedioPago, Moneda } from '@/generated/prisma/client'
 import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import {
-  totalDeItems,
-  totalDePagos,
+  totalesDeItems,
+  totalesDePagos,
+  montoEntregado,
   recargoDePago,
   excedeEscala,
   ESCALA_CANTIDAD,
@@ -18,14 +19,19 @@ export type PagoDeVenta = {
   medio: MedioPago
   moneda: Moneda
   /**
-   * Lo que este pago cubre de la venta, A PRECIO DE LISTA y en la moneda del
-   * pago. NO es lo que entra a la caja: eso es `base + recargo`, y lo calcula
-   * el servidor. Que el llamador mande la base y no el monto es lo que hace
-   * que el invariante de abajo siga siendo el de siempre —los pagos suman el
-   * total— y lo que impide que el navegador decida cuánta plata entró.
+   * Lo que este pago cubre de la venta, A PRECIO DE LISTA. Va **en dólares si
+   * el pago toca dólares de algún lado** (`moneda` o `cubre`), y en pesos si
+   * no toca ninguno — ver `baseEnDolares` en totales.ts, que es donde vive esa
+   * regla y por qué nada divide. NO es lo que entra a la caja: eso es
+   * `montoEntregado(p) + recargo`, y lo calcula el servidor.
    */
   base: Prisma.Decimal
   cotizacion: Prisma.Decimal
+  /**
+   * Cuál de los dos totales paga esta fila. Ausente vale `ARS`, que es lo que
+   * era toda venta antes de este ciclo — así ningún llamador viejo cambia.
+   */
+  cubre?: Moneda
   /** El plan con el que se cobra esta parte. Sin plan, precio de lista. */
   planId?: string
 }
@@ -72,6 +78,11 @@ export async function crearVenta(
       )
     }
   }
+  // Normalizado ACÁ, una sola vez: `cubre` ausente vale `ARS`, que es lo que
+  // era toda venta antes de este ciclo, y de acá en más ningún otro lugar de
+  // la función repite el `?? 'ARS'`.
+  const pagosNormalizados = pagos.map((p) => ({ ...p, cubre: p.cubre ?? 'ARS' }))
+
   // Invariantes del DOMINIO, no del transporte, y por eso viven acá y no en un
   // validador de la capa HTTP que todavía no existe: un pago negativo cierra la
   // suma contra el total —`[+900000 EFECTIVO, -899000 TARJETA]` contra un total
@@ -80,7 +91,7 @@ export async function crearVenta(
   // puede reconstruir a qué valor se tomó, que es exactamente lo que el campo
   // existe para guardar. Una devolución es una venta anulada, no un pago en
   // negativo.
-  for (const p of pagos) {
+  for (const p of pagosNormalizados) {
     if (p.base.lessThanOrEqualTo(0)) {
       throw new ErrorDeVenta(
         'MONTO_INVALIDO',
@@ -137,15 +148,17 @@ export async function crearVenta(
       // tenant: RLS ya filtra por tenant, así que el plan de otro local
       // simplemente no aparece y cae en PLAN_INEXISTENTE, igual que uno
       // inventado. Son la misma situación para quien está cobrando.
-      const idsDePlan = [...new Set(pagos.flatMap((p) => (p.planId ? [p.planId] : [])))]
+      const idsDePlan = [
+        ...new Set(pagosNormalizados.flatMap((p) => (p.planId ? [p.planId] : []))),
+      ]
       const planes = idsDePlan.length
         ? await tx.planDePago.findMany({ where: { id: { in: idsDePlan } } })
         : []
       const planPorId = new Map(planes.map((p) => [p.id, p]))
 
-      const pagosConRecargo = pagos.map((p) => {
+      const pagosConRecargo = pagosNormalizados.map((p) => {
         if (p.planId === undefined) {
-          return { ...p, recargo: new Prisma.Decimal(0), monto: p.base }
+          return { ...p, recargo: new Prisma.Decimal(0), monto: montoEntregado(p) }
         }
         const plan = planPorId.get(p.planId)
         // Desactivado se trata como inexistente A PROPÓSITO, al revés que con
@@ -170,20 +183,22 @@ export async function crearVenta(
             `${plan.nombre} es un plan de ${plan.medio} y el pago es ${p.medio}`,
           )
         }
-        // La moneda Y la cotización. Con `cotizacion ≠ 1` el recargo se
-        // calcularía sobre `base` mientras el invariante mide `base ×
-        // cotizacion`: las dos mitades dejarían de hablar del mismo número y
-        // la venta sub-cobraría. Calcular el recargo sobre los pesos y volver
-        // a la moneda del pago exige una división, que es justo lo que este
-        // ciclo descartó por dejar ventas que no cierran por un centavo.
-        if (p.moneda !== 'ARS' || !p.cotizacion.equals(1)) {
+        // Sólo la MONEDA, ya no también la cotización. Un pago en pesos que
+        // cubre el total en dólares lleva la cotización de verdad, y el
+        // recargo se calcula sobre los pesos que efectivamente se entregan
+        // —`montoEntregado`—, así que la cuenta cierra igual y sin dividir.
+        // Lo que sigue prohibido es el plan sobre un pago ENTREGADO en
+        // dólares: ahí el recargo saldría en dólares y volver a pesos sí
+        // exigiría una división.
+        if (p.moneda !== 'ARS') {
           throw new ErrorDeVenta(
             'PLAN_EN_DOLARES',
-            'un pago con plan tiene que ser en pesos y a cotización 1: el recargo va sobre la parte en pesos',
+            'un pago con plan tiene que entregarse en pesos: el recargo va sobre la parte en pesos',
           )
         }
-        const recargo = recargoDePago(p.base, plan.recargoPorcentaje)
-        return { ...p, recargo, monto: p.base.add(recargo) }
+        const enPesos = montoEntregado(p)
+        const recargo = recargoDePago(enPesos, plan.recargoPorcentaje)
+        return { ...p, recargo, monto: enPesos.add(recargo) }
       })
 
       const articulos = await tx.articulo.findMany({
@@ -216,20 +231,26 @@ export async function crearVenta(
           descripcion: a.nombre,
           cantidad: i.cantidad,
           precioUnitario: a.precio,
+          moneda: a.moneda,
           esProducto: a.tipo === 'PRODUCTO',
         }
       })
 
-      const total = totalDeItems(lineas)
+      const totales = totalesDeItems(lineas)
       // Contra las BASES y no contra los montos: el recargo no es mercadería.
-      // Es la misma comparación de siempre, corrida un lugar.
-      const cubierto = totalDePagos(
-        pagosConRecargo.map((p) => ({ monto: p.base, cotizacion: p.cotizacion })),
-      )
-      if (!cubierto.equals(total)) {
+      // Y ahora son DOS comparaciones, una por moneda: una venta que cierra en
+      // pesos y no en dólares es tan inválida como la que no cierra a secas.
+      const cubierto = totalesDePagos(pagosConRecargo)
+      if (!cubierto.ars.equals(totales.ars)) {
         throw new ErrorDeVenta(
           'PAGOS_NO_CIERRAN',
-          `los pagos suman ${cubierto} y el total es ${total}`,
+          `los pagos en pesos suman ${cubierto.ars} y el total en pesos es ${totales.ars}`,
+        )
+      }
+      if (!cubierto.usd.equals(totales.usd)) {
+        throw new ErrorDeVenta(
+          'PAGOS_NO_CIERRAN',
+          `los pagos en dólares suman ${cubierto.usd} y el total en dólares es ${totales.usd}`,
         )
       }
       const recargoTotal = pagosConRecargo.reduce(
@@ -250,7 +271,11 @@ export async function crearVenta(
           clienteId,
           usuarioId,
           claveIdempotencia,
-          total,
+          total: totales.ars,
+          // La mercadería EN DÓLARES, a precio de lista. `total` es la mitad
+          // en pesos de lo mismo, y ninguna venta anterior a este ciclo pasa a
+          // decir otra cosa: sin ítems en dólares, `totales.usd` da cero.
+          totalUsd: totales.usd,
           // La suma de los recargos de los pagos. `total` sigue siendo la
           // mercadería a precio de lista: son dos números distintos y este
           // ciclo existe justamente para no confundirlos.
@@ -262,6 +287,7 @@ export async function crearVenta(
               descripcion: l.descripcion,
               cantidad: l.cantidad,
               precioUnitario: l.precioUnitario,
+              moneda: l.moneda,
             })),
           },
           // Campo por campo, igual que los ítems dos líneas arriba: un
@@ -274,6 +300,7 @@ export async function crearVenta(
               tenantId,
               medio: p.medio,
               moneda: p.moneda,
+              cubre: p.cubre,
               monto: p.monto,
               cotizacion: p.cotizacion,
               planDePagoId: p.planId,

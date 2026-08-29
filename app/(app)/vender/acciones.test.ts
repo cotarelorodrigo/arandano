@@ -220,7 +220,9 @@ describe('cobrar', () => {
       { medio: 'EFECTIVO', moneda: 'ARS', base: '1', cotizacion: '1' },
     ]))
     const r = await cobrar(INICIAL, datos)
-    expect(r.error).toMatch(/pagos suman/)
+    // Task 3 (2026-08-29) partió el mensaje en dos invariantes, uno por
+    // moneda: "los pagos EN PESOS suman…" y no "los pagos suman…" a secas.
+    expect(r.error).toMatch(/pagos en pesos suman/)
   })
 })
 
