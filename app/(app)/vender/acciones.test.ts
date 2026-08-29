@@ -46,6 +46,7 @@ const MAIL_DUENO = 'duenia-vender@ejemplo.test'
 
 let owner: Client
 let articuloId: string
+let articuloUsdId: string
 let precioArticulo: string
 let cookieEmpleado: string
 
@@ -89,6 +90,17 @@ beforeAll(async () => {
   )
   articuloId = a.rows[0].id
   precioArticulo = a.rows[0].precio
+
+  // Un artículo de lista EN DÓLARES, para el pago que cruza monedas: es el
+  // único camino por el que el `cubre` que manda la pantalla llega al motor y
+  // se puede afirmar sobre el resultado.
+  const u = await owner.query(
+    `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, moneda, stock, creado_en, actualizado_en)
+     VALUES (gen_random_uuid(), $1, 'VEN-USD', 'Artículo en dólares', 'PRODUCTO', 300.00, 'USD', 10, now(), now())
+     RETURNING id`,
+    [estado.tenantId],
+  )
+  articuloUsdId = u.rows[0].id
 
   cookieEmpleado = await cookieDe(MAIL_EMPLEADO)
 })
@@ -211,6 +223,55 @@ describe('cobrar', () => {
     ]))
     const r = await cobrar(INICIAL, datos)
     expect(r.error).toMatch(/plan/i)
+  })
+
+  // El pago que este ciclo hizo posible: se entregan PESOS contra el total en
+  // DÓLARES. La base va en dólares (300, el precio de lista) y la cotización
+  // convierte; el motor no divide en ningún lado.
+  it('un pago en pesos puede cubrir el total en dólares', async () => {
+    estado.cookie = cookieEmpleado
+    const datos = formulario({ clave: `cruce-${Date.now()}` })
+    datos.set('items', JSON.stringify([{ articuloId: articuloUsdId, cantidad: '1' }]))
+    datos.set('pagos', JSON.stringify([
+      { medio: 'EFECTIVO', moneda: 'ARS', cubre: 'USD', base: '300', cotizacion: '1485' },
+    ]))
+    const r = await cobrar(INICIAL, datos)
+    expect(r.error).toBeNull()
+    // Y en la base quedó lo que entró al cajón: 300 × 1485 pesos, con el
+    // `cubre` que declaró la pantalla.
+    const { rows } = await owner.query(
+      `SELECT p.moneda, p.cubre, p.monto FROM pagos p WHERE p.venta_id = $1`,
+      [r.venta?.id],
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0].cubre).toBe('USD')
+    expect(rows[0].moneda).toBe('ARS')
+    expect(Number(rows[0].monto)).toBe(445_500)
+  })
+
+  // Sin `cubre` en el JSON, el pago cubre el total en pesos: es lo que era
+  // toda venta antes de este ciclo, y lo que sigue mandando una pestaña que
+  // quedó abierta desde antes del deploy.
+  it('un pago sin `cubre` cubre el total en pesos, como siempre', async () => {
+    estado.cookie = cookieEmpleado
+    const r = await cobrar(INICIAL, formulario({ clave: `sin-cubre-${Date.now()}` }))
+    expect(r.error).toBeNull()
+    const { rows } = await owner.query(
+      `SELECT cubre FROM pagos WHERE venta_id = $1`, [r.venta?.id],
+    )
+    expect(rows[0].cubre).toBe('ARS')
+  })
+
+  // Mismo criterio que el medio y la moneda: contra lista blanca, para que un
+  // enum inventado vuelva como error de dominio y no como un 500 de Prisma.
+  it('un `cubre` inventado vuelve como error, no como 500', async () => {
+    estado.cookie = cookieEmpleado
+    const datos = formulario({ clave: `cubre-roto-${Date.now()}` })
+    datos.set('pagos', JSON.stringify([
+      { medio: 'EFECTIVO', moneda: 'ARS', cubre: 'EUR', base: precioArticulo, cotizacion: '1' },
+    ]))
+    const r = await cobrar(INICIAL, datos)
+    expect(r.error).toMatch(/moneda desconocida: EUR/)
   })
 
   it('los pagos que no cierran vuelven como error entendible', async () => {

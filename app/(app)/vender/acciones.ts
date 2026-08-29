@@ -77,12 +77,18 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
       const p = crudo as {
         medio?: unknown
         moneda?: unknown
+        cubre?: unknown
         base?: unknown
         cotizacion?: unknown
         planId?: unknown
       }
       const medio = String(p.medio ?? '')
       const moneda = String(p.moneda ?? '')
+      // Ausente vale 'ARS', que es lo mismo que hace el motor
+      // (`PagoDeVenta.cubre`) y lo que era toda venta antes de este ciclo. Un
+      // JSON viejo —una pestaña que quedó abierta desde antes del deploy—
+      // sigue cobrando exactamente como cobraba.
+      const cubre = String(p.cubre ?? 'ARS')
       // Campo por campo y contra una lista blanca: lo que llega es un JSON que
       // armó el navegador, y Prisma rechazaría un enum inventado con un
       // PrismaClientValidationError —un 500 sin `codigo`— en vez del error de
@@ -92,6 +98,13 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
       }
       if (!MONEDAS.includes(moneda as Moneda)) {
         throw new ErrorDeVenta('COTIZACION_INVALIDA', `moneda desconocida: ${moneda}`)
+      }
+      // La misma lista blanca que la moneda, por el mismo motivo: un enum
+      // inventado lo rechazaría Prisma con un PrismaClientValidationError —un
+      // 500 sin `codigo`— en vez del error de dominio que usa el resto de esta
+      // función.
+      if (!MONEDAS.includes(cubre as Moneda)) {
+        throw new ErrorDeVenta('COTIZACION_INVALIDA', `moneda desconocida: ${cubre}`)
       }
       const planId = String(p.planId ?? '').trim()
       // Mismo guard que el articuloId: un uuid mal formado hace que Prisma tire
@@ -108,6 +121,7 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
       return {
         medio: medio as MedioPago,
         moneda: moneda as Moneda,
+        cubre: cubre as Moneda,
         base: aDecimal(String(p.base ?? ''), 'el monto del pago'),
         cotizacion: aDecimal(String(p.cotizacion ?? ''), 'la cotización'),
         planId: planId === '' ? undefined : planId,

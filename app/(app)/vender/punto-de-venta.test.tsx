@@ -48,6 +48,20 @@ const PLAN_CONTADO: PlanVisible = {
 
 const FUENTE = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
 
+/**
+ * Una fila del panel de cobro que NO cruza monedas: entrega pesos contra el
+ * total en pesos.
+ *
+ * Es lo único que existía antes de este ciclo —cuando una fila era `{ base,
+ * cotizacion, planId }` y `cubre` no existía—, así que los casos de recargo,
+ * vuelto y pie que ya estaban escritos siguen describiendo exactamente el
+ * mismo pago. Los casos del CRUCE arman su fila a mano, para que se vea de
+ * qué lado va cada moneda.
+ */
+function enPesos(base: string, planId: string | null = null) {
+  return { moneda: 'ARS' as const, cubre: 'ARS' as const, base, cotizacion: '1', planId }
+}
+
 // El mismo fuente sin comentarios, para los casos que buscan la AUSENCIA de
 // una utilidad de Tailwind. Este archivo explica en prosa por qué NO usa `md:`
 // ni `max-lg:`, y también qué trae `Input` por default (`md:text-sm`), así que
@@ -67,7 +81,6 @@ async function render(
   return renderToStaticMarkup(
     <SidebarProvider>
       <PuntoDeVenta
-        cotizacionInicial={null}
         planes={props.planes ?? []}
         caja={props.caja ?? null}
         cotizacionUsd={null}
@@ -489,9 +502,9 @@ describe('el punto de venta', () => {
   // El mismo defecto preexistente, del otro lado del cálculo: "Agregar pago"
   // precargaba el campo Monto de la fila nueva con `deCentavos(NaN)` —el
   // string literal "NaN.NaN"— en cuanto una línea del carrito quedaba
-  // inválida (`faltanCentavos` se calcula sobre `totales.ars`, que es NaN
-  // ahí). Vacío es la salida honesta, mismo criterio que ya usa el resto del
-  // archivo para "no se puede calcular": no inventar un cero ni un NaN.
+  // inválida (el faltante de esa moneda es NaN ahí). Vacío es la salida
+  // honesta, mismo criterio que ya usa el resto del archivo para "no se puede
+  // calcular": no inventar un cero ni un NaN.
   it('"Agregar pago" no precarga el monto con NaN cuando el carrito tiene una línea inválida', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
     // El TEXTO del botón, no la primera aparición de la frase: la ronda de
@@ -501,11 +514,19 @@ describe('el punto de venta', () => {
     // `'Faltan'` un poco más abajo.
     const posicion = fuente.search(/Agregar pago\s*<\/Button>/)
     expect(posicion, '"Agregar pago" tiene que existir como texto del botón').toBeGreaterThan(-1)
-    const contexto = fuente.slice(Math.max(0, posicion - 700), posicion)
+    const desdeElOnClick = fuente.lastIndexOf('onClick={() =>', posicion)
+    expect(desdeElOnClick, 'el botón tiene que traer su onClick').toBeGreaterThan(-1)
+    const contexto = fuente.slice(desdeElOnClick, posicion)
     expect(
       contexto,
       'el monto precargado tiene que guardarse contra faltanCentavos en NaN',
-    ).toMatch(/Number\.isNaN\(faltanCentavos\)\s*\?\s*''\s*:\s*deCentavos\(Math\.max\(0, faltanCentavos\)\)/)
+    ).toMatch(
+      /Number\.isNaN\(faltaEnEseTotal\)\s*\?\s*''\s*:\s*deCentavos\(Math\.max\(0, faltaEnEseTotal\)\)/,
+    )
+    // Y el pago nuevo va contra el total que TODAVÍA falta, no fijo contra el
+    // de pesos: con los pesos ya cubiertos, precargar otra vez el faltante en
+    // pesos (cero) daría una fila de monto 0 que el motor rechaza.
+    expect(contexto).toMatch(/const cubre = cubrePorDefecto\(faltan\)/)
   })
 
   it('el vuelto aparece como chip cuando sobra plata', () => {
@@ -585,7 +606,12 @@ describe('el punto de venta', () => {
     // adentro de FilaDePago, o dejaría de describir "el conjunto", que es la
     // parte que este caso existe para proteger.
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
-    expect(fuente).toMatch(/const hayFaltante = hayFaltanteDeVenta\(faltanCentavos\)/)
+    // Sobre las DOS monedas, y con `||`: alcanza con que falte una para que
+    // el vuelto se apague. Con `&&` una venta mixta con los pesos cubiertos y
+    // los dólares no mostraría vuelto sobre una venta que no cerró.
+    expect(fuente).toMatch(
+      /const hayFaltante = hayFaltanteDeVenta\(faltan\.ars\) \|\| hayFaltanteDeVenta\(faltan\.usd\)/,
+    )
     expect(fuente).toMatch(/hayFaltante=\{hayFaltante\}/)
 
     // Y el guard que de verdad decide si el chip de Vuelto se pinta tiene
@@ -615,7 +641,7 @@ describe('el punto de venta', () => {
     it('sin plan, lo que hay que cobrar es la base pelada', async () => {
       const { aCobrarDeLaFilaEnCentavos } = await import('./punto-de-venta')
       expect(
-        aCobrarDeLaFilaEnCentavos({ base: '10000', cotizacion: '1', planId: null }, [PLAN_CONTADO]),
+        aCobrarDeLaFilaEnCentavos(enPesos('10000', null), [PLAN_CONTADO]),
       ).toBe(1_000_000)
     })
 
@@ -625,7 +651,7 @@ describe('el punto de venta', () => {
       // 10.000 se iba sin su vuelto de 1.000.
       expect(
         aCobrarDeLaFilaEnCentavos(
-          { base: '10000', cotizacion: '1', planId: PLAN_CONTADO.id },
+          enPesos('10000', PLAN_CONTADO.id),
           [PLAN_CONTADO],
         ),
       ).toBe(900_000)
@@ -636,7 +662,7 @@ describe('el punto de venta', () => {
       const efectivoConRecargo = { ...PLAN_CONTADO, porcentaje: '40' }
       expect(
         aCobrarDeLaFilaEnCentavos(
-          { base: '10000', cotizacion: '1', planId: efectivoConRecargo.id },
+          enPesos('10000', efectivoConRecargo.id),
           [efectivoConRecargo],
         ),
       ).toBe(1_400_000)
@@ -645,7 +671,7 @@ describe('el punto de venta', () => {
     it('un plan que no está en la lista no mueve el número', async () => {
       const { aCobrarDeLaFilaEnCentavos } = await import('./punto-de-venta')
       expect(
-        aCobrarDeLaFilaEnCentavos({ base: '10000', cotizacion: '1', planId: 'inexistente' }, [
+        aCobrarDeLaFilaEnCentavos(enPesos('10000', 'inexistente'), [
           PLAN_CONTADO,
         ]),
       ).toBe(1_000_000)
@@ -686,7 +712,7 @@ describe('el punto de venta', () => {
     it('la fila muestra "A cobrar" cuando su plan mueve el número', () => {
       const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
       expect(fuente).toMatch(
-        /aCobrarCentavos !== pesosDelPagoCentavos &&[\s\S]*?>A cobrar<[\s\S]*?deCentavos\(aCobrarCentavos\)/,
+        /aCobrarCentavos !== entregadoCentavos &&[\s\S]*?>A cobrar<[\s\S]*?deCentavos\(aCobrarCentavos\)/,
       )
     })
   })
@@ -988,7 +1014,7 @@ describe('el punto de venta', () => {
     const { lineasDelPieDeCobro } = await import('./punto-de-venta')
     const lineas = lineasDelPieDeCobro(
       1_000_000,
-      [{ base: '10000', cotizacion: '1', planId: PLAN_CREDITO.id }],
+      [enPesos('10000', PLAN_CREDITO.id)],
       [PLAN_CREDITO],
     )
     expect(lineas).toEqual([
@@ -1014,7 +1040,7 @@ describe('el punto de venta', () => {
     const { lineasDelPieDeCobro } = await import('./punto-de-venta')
     const lineas = lineasDelPieDeCobro(
       1_000_000,
-      [{ base: '10000', cotizacion: '1', planId: PLAN_CONTADO.id }],
+      [enPesos('10000', PLAN_CONTADO.id)],
       [PLAN_CONTADO],
     )
     expect(lineas).toEqual([
@@ -1028,7 +1054,7 @@ describe('el punto de venta', () => {
     // es el de más arriba; acá se afirma el contraste.)
     const conRecargo = lineasDelPieDeCobro(
       1_000_000,
-      [{ base: '10000', cotizacion: '1', planId: PLAN_CREDITO.id }],
+      [enPesos('10000', PLAN_CREDITO.id)],
       [PLAN_CREDITO],
     )
     expect(conRecargo[1].rotulo).toBe('Recargo Crédito 3 cuotas')
@@ -1045,8 +1071,8 @@ describe('el punto de venta', () => {
     const netoPositivo = lineasDelPieDeCobro(
       1_000_000,
       [
-        { base: '5000', cotizacion: '1', planId: PLAN_CREDITO.id },
-        { base: '5000', cotizacion: '1', planId: PLAN_CONTADO.id },
+        enPesos('5000', PLAN_CREDITO.id),
+        enPesos('5000', PLAN_CONTADO.id),
       ],
       [PLAN_CREDITO, PLAN_CONTADO],
     )
@@ -1056,8 +1082,8 @@ describe('el punto de venta', () => {
     const netoNegativo = lineasDelPieDeCobro(
       1_000_000,
       [
-        { base: '1000', cotizacion: '1', planId: PLAN_CREDITO.id },
-        { base: '9000', cotizacion: '1', planId: PLAN_CONTADO.id },
+        enPesos('1000', PLAN_CREDITO.id),
+        enPesos('9000', PLAN_CONTADO.id),
       ],
       [PLAN_CREDITO, PLAN_CONTADO],
     )
@@ -1073,7 +1099,7 @@ describe('el punto de venta', () => {
   it('sin ningún plan elegido el pie no crece: una sola línea, como hoy', async () => {
     const { lineasDelPieDeCobro } = await import('./punto-de-venta')
     expect(
-      lineasDelPieDeCobro(1_000_000, [{ base: '10000', cotizacion: '1', planId: null }], [PLAN_CREDITO]),
+      lineasDelPieDeCobro(1_000_000, [enPesos('10000', null)], [PLAN_CREDITO]),
     ).toEqual([])
     // Y en la pantalla de verdad, con planes cargados y ninguno elegido.
     expect(await render({ planes: [PLAN_CONTADO] })).not.toContain('Total a cobrar')
@@ -1088,14 +1114,14 @@ describe('el punto de venta', () => {
     const { lineasDelPieDeCobro } = await import('./punto-de-venta')
     const conMontoRoto = lineasDelPieDeCobro(
       1_000_000,
-      [{ base: '', cotizacion: '1', planId: PLAN_CREDITO.id }],
+      [enPesos('', PLAN_CREDITO.id)],
       [PLAN_CREDITO],
     )
     expect(conMontoRoto.map((l) => l.monto)).toEqual([formatearPrecio('10000'), '—', '—'])
 
     const conCarritoRoto = lineasDelPieDeCobro(
       NaN,
-      [{ base: '10000', cotizacion: '1', planId: PLAN_CREDITO.id }],
+      [enPesos('10000', PLAN_CREDITO.id)],
       [PLAN_CREDITO],
     )
     expect(conCarritoRoto.map((l) => l.monto)).toEqual(['—', formatearPrecio('4000'), '—'])
@@ -1112,12 +1138,15 @@ describe('el punto de venta', () => {
   // entre medio: es la misma corrección que ya se le había hecho al caso de
   // las guardas de Enter, más arriba.
   //
-  // `totales.ars` y no los dos totales: la Task 9 dejó este llamado
-  // compilando contra sólo pesos —provisorio, con su propio comentario en el
-  // fuente— porque el reparto del pie por moneda es de la Task 10.
-  it('el pie del cobro sale de lineasDelPieDeCobro sobre el total del carrito', () => {
+  // Sobre `mercaderiaEnPesosCentavos` y ya no sobre `totales.ars`: ése era el
+  // provisorio que dejó la Task 9, y con un carrito en dólares pagado en pesos
+  // hacía que el pie dijera "Mercadería $0" mientras la fila de arriba pedía
+  // seiscientos mil.
+  it('el pie del cobro sale de lineasDelPieDeCobro sobre la mercadería en pesos', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
-    expect(fuente).toMatch(/const lineasDelPie = lineasDelPieDeCobro\(totales\.ars, pagos, planes\)/)
+    expect(fuente).toMatch(
+      /const lineasDelPie = lineasDelPieDeCobro\(\s*mercaderiaEnPesosCentavos\(totales, pagos\),\s*pagos,\s*planes,?\s*\)/,
+    )
     expect(
       fuente,
       'el pie tiene que dibujarse cuando hay líneas, mapeando ESA lista',
@@ -1150,17 +1179,28 @@ describe('el punto de venta', () => {
   // con líneas y un pago con plan— no se puede montar en este harness. Lo que
   // fija es que el bloque que decide el faltante no sepa nada del recargo.
   //
-  // `totales.ars` y no los dos totales, por lo mismo que el caso de arriba:
-  // provisorio de la Task 9, a la espera del reparto por moneda de la Task 10.
-  it('el faltante se mide contra la mercadería, no contra lo cobrado', () => {
+  // Y ahora POR MONEDA, que es lo que la Task 9 dejó provisorio: cada pago
+  // declara contra qué total va, así que el faltante en pesos se mide contra
+  // lo que los pagos cubren en pesos y el de dólares contra lo suyo. Antes,
+  // un pago en dólares que cubría exacto la parte en dólares dejaba "Faltan"
+  // prendido igual.
+  it('el faltante se mide contra la mercadería, no contra lo cobrado, y por moneda', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
-    const desde = fuente.indexOf('const pagadoCentavos = totalDePagosEnCentavos(')
+    const desde = fuente.indexOf('const pagadoTotales = totalesDePagosEnCentavos(')
     const hasta = fuente.indexOf('const hayFaltante = hayFaltanteDeVenta(')
     expect(desde, 'el cálculo de lo pagado tiene que existir en el fuente').toBeGreaterThan(-1)
     expect(hasta, 'el cálculo del faltante tiene que existir en el fuente').toBeGreaterThan(desde)
     const bloque = fuente.slice(desde, hasta)
-    expect(bloque).toMatch(/const faltanCentavos = totales\.ars - pagadoCentavos/)
-    expect(bloque).toMatch(/const cierra = hayCarrito && faltanCentavos === 0/)
+    expect(bloque, 'cada pago viaja con su moneda Y con qué total cubre').toMatch(
+      /moneda: p\.moneda,\s*cubre: p\.cubre,/,
+    )
+    expect(bloque).toMatch(/ars: totales\.ars - pagadoTotales\.ars/)
+    expect(bloque).toMatch(/usd: totales\.usd - pagadoTotales\.usd/)
+    // Las DOS en cero: una venta mixta no cierra por tener cubierta la mitad
+    // en pesos.
+    expect(bloque).toMatch(
+      /const cierra = hayCarrito && faltan\.ars === 0 && faltan\.usd === 0/,
+    )
     expect(
       bloque,
       'ni lo pagado ni el faltante ni "cierra" pueden mirar el recargo: el pago se reparte contra la mercadería',
@@ -1191,6 +1231,239 @@ describe('el punto de venta', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
     expect(fuente, 'el JSON escondido manda `base: p.base`').toMatch(/base: p\.base/)
     expect(fuente, '`monto:` era el nombre de antes del renombre').not.toMatch(/monto: p\./)
+  })
+
+  // --- Task 10: el panel de cobro con los dos totales ---
+  //
+  // Todo lo de acá abajo se prueba como función pura + cableado por FUENTE,
+  // por el mismo motivo que el resto del archivo: `render()` monta el carrito
+  // VACÍO (renderToStaticMarkup, sin clics ni tipeo), así que una venta con
+  // las dos monedas y un pago que las cruza no tiene forma de llegar al HTML.
+
+  // Con una sola moneda no hay nada que elegir, y la fila tiene que quedar
+  // EXACTAMENTE como antes de este ciclo: sin selector, sin chip de más. Es la
+  // lectura de design/arandano.pen que rige el ciclo entero — la maqueta
+  // modela reposo y su silencio no es una instrucción de agregar controles.
+  it('el selector Cubre se ofrece sólo cuando la venta tiene los DOS totales', async () => {
+    // El cableado: la condición vive en `PuntoDeVenta` (es una propiedad de la
+    // VENTA, no del pago) y viaja como prop.
+    expect(FUENTE).toMatch(/ofreceCubre=\{totales\.ars > 0 && totales\.usd > 0\}/)
+    // Y la fila no lo dibuja sin esa prop.
+    expect(FUENTE).toMatch(/\{ofreceCubre && \(/)
+    expect(FUENTE).toMatch(/aria-label=\{`Cubre del pago \$\{indice \+ 1\}`\}/)
+    // El carrito vacío tiene los dos totales en cero, así que la palabra no
+    // puede aparecer en la pantalla: ni el selector ni el rótulo "Cubre US$"
+    // del campo de monto, que también es del cruce.
+    expect(await render()).not.toContain('Cubre')
+  })
+
+  // El pago que nace solo se ENTREGA en la moneda del total que CUBRE. Sin
+  // esto, el pago inicial de un carrito de un solo iPhone arrancaba cubriendo
+  // un total en pesos que vale cero —la venta no cerraba nunca— y el selector
+  // para corregirlo tampoco se dibuja, porque hay una sola moneda.
+  it('cubrePorDefecto manda al total que la venta tiene de verdad', async () => {
+    const { cubrePorDefecto } = await import('./punto-de-venta')
+    expect(cubrePorDefecto({ ars: 1_000_000, usd: 0 })).toBe('ARS')
+    expect(cubrePorDefecto({ ars: 0, usd: 30_000 })).toBe('USD')
+    // Con las dos, manda pesos: es el default de siempre, y el selector queda
+    // para decidir.
+    expect(cubrePorDefecto({ ars: 1_000_000, usd: 30_000 })).toBe('ARS')
+  })
+
+  it('el pago inicial y el pago nuevo se entregan en la moneda que cubren', () => {
+    // `moneda: cubre` en los dos lugares donde nace un pago: así ninguno
+    // arranca cruzando, y por lo tanto ninguno arranca pidiendo una cotización
+    // que nadie tipeó.
+    const inicial = FUENTE.slice(
+      FUENTE.indexOf('const cubre = cubrePorDefecto(totales)'),
+      FUENTE.indexOf('if (previos.length === 1)'),
+    )
+    expect(inicial).toMatch(/moneda: cubre,\s*cubre,/)
+    expect(inicial, 'no cruza, así que la cotización es 1').toMatch(
+      /cotizacion: cotizacionParaElCruce\(cubre, cubre\)/,
+    )
+  })
+
+  // La cotización NO se precarga nunca: ni con la del local, ni con la del
+  // último pago (que era `cotizacionInicial`, borrada en este ciclo), ni con
+  // un '1' heredado —que sobre un pago que cruza es un dólar a un peso—.
+  it('la cotización arranca vacía y no queda ningún rastro de cotizacionInicial', () => {
+    const PAGE = readFileSync('app/(app)/vender/page.tsx', 'utf8')
+    expect(FUENTE, 'la prop se borró de toda la cadena').not.toContain('cotizacionInicial={')
+    expect(PAGE).not.toContain('cotizacionInicial')
+    // El campo se dibuja SÓLO cuando el pago cruza monedas.
+    expect(FUENTE).toMatch(/\{cruza \? \(/)
+    expect(FUENTE).toMatch(/const cruza = pago\.moneda !== pago\.cubre/)
+  })
+
+  it('cotizacionParaElCruce deja el campo vacío al cruzar y lo limpia al dejar de cruzar', async () => {
+    const { cotizacionParaElCruce } = await import('./punto-de-venta')
+    // Cruza: vacía. Un '1' acá es una venta que cierra por un número que nadie
+    // tipeó.
+    expect(cotizacionParaElCruce('ARS', 'USD')).toBe('')
+    expect(cotizacionParaElCruce('USD', 'ARS')).toBe('')
+    // No cruza: '1'. El servidor no usa la cotización en ese caso, pero la
+    // exige mayor que cero igual (COTIZACION_INVALIDA), así que la cadena
+    // vacía no puede viajar.
+    expect(cotizacionParaElCruce('ARS', 'ARS')).toBe('1')
+    expect(cotizacionParaElCruce('USD', 'USD')).toBe('1')
+  })
+
+  // La cotización MENTIROSA, hallazgo de la review de la Task 3: con
+  // `moneda === cubre` el servidor ni mira la cotización, así que tipear 1485
+  // con `cubre: 'USD'` y después volver el selector a pesos dejaba ese 1485
+  // pegado a un pago que no convierte nada, guardado para siempre en
+  // `Pago.cotizacion` sin que ninguna cuenta lo notara. Los DOS selectores que
+  // pueden cambiar el cruce tienen que rehacerla.
+  it('cambiar la moneda o el total que cubre rehace la cotización', () => {
+    const desdeLaMoneda = FUENTE.indexOf("const moneda = valor as Pago['moneda']")
+    expect(desdeLaMoneda, 'el handler de moneda tiene que existir').toBeGreaterThan(-1)
+    expect(
+      FUENTE.slice(desdeLaMoneda, FUENTE.indexOf('<SelectTrigger', desdeLaMoneda)),
+    ).toMatch(/cotizacion: cotizacionParaElCruce\(moneda, pago\.cubre\)/)
+
+    const desdeElCubre = FUENTE.indexOf("const cubre = valor as Pago['cubre']")
+    expect(desdeElCubre, 'el handler de cubre tiene que existir').toBeGreaterThan(-1)
+    expect(
+      FUENTE.slice(desdeElCubre, FUENTE.indexOf('<SelectTrigger', desdeElCubre)),
+    ).toMatch(/cotizacion: cotizacionParaElCruce\(pago\.moneda, cubre\)/)
+  })
+
+  // Igual que cambiar el medio o la moneda: un plan que sobreviva a un cambio
+  // que lo vuelve inválido —o que le cambia la base al recargo, que es lo que
+  // hace `cubre`— es un error del motor con la pantalla en verde.
+  it('cambiar el total que cubre limpia el plan elegido', () => {
+    const desde = FUENTE.indexOf("const cubre = valor as Pago['cubre']")
+    expect(desde, 'el handler de cubre tiene que existir en el fuente').toBeGreaterThan(-1)
+    // Hasta el cierre del handler y no una ventana de N caracteres, mismo
+    // criterio que el caso hermano de medio/moneda.
+    const contexto = FUENTE.slice(desde, FUENTE.indexOf('<SelectTrigger', desde))
+    expect(
+      contexto,
+      'cambiar el total que cubre tiene que limpiar el plan en el MISMO onCambiar',
+    ).toMatch(/planId: null/)
+  })
+
+  // El bug de plata que este ciclo NO puede repetir. Un pago en pesos que
+  // cubre el total en dólares tiene base 300 —en dólares, porque el pago toca
+  // dólares de algún lado— y entrega 445.500 pesos. Aplicarle el 40 % a 300
+  // daría un recargo mil veces más chico que el que cobra el motor, y el
+  // vuelto saldría de otro planeta.
+  it('el recargo y el vuelto salen de los PESOS que entrega la fila, no de la base', async () => {
+    const { recargoDeLaFilaEnCentavos, aCobrarDeLaFilaEnCentavos } = await import('./punto-de-venta')
+    const enPesosCubriendoUsd = {
+      moneda: 'ARS' as const,
+      cubre: 'USD' as const,
+      base: '300',
+      cotizacion: '1485',
+      planId: PLAN_CREDITO.id,
+    }
+    // 300 × 1485 = 445.500 pesos entregados; 40 % de eso son 178.200.
+    expect(recargoDeLaFilaEnCentavos(enPesosCubriendoUsd, [PLAN_CREDITO])).toBe(17_820_000)
+    // Y lo que hay que cobrar por esa fila son los 623.700 del ejemplo del
+    // spec, no 300 ni 420.
+    expect(aCobrarDeLaFilaEnCentavos(enPesosCubriendoUsd, [PLAN_CREDITO])).toBe(62_370_000)
+  })
+
+  // El cableado del renglón "A cobrar": tiene que comparar contra los pesos
+  // ENTREGADOS y no contra la base, que desde este ciclo puede estar en
+  // dólares — si comparara contra la base, el renglón aparecería en toda fila
+  // que cruce, con plan o sin plan, diciendo dos números en dos monedas
+  // distintas como si fueran comparables.
+  it('el renglón "A cobrar" se mide contra montoEntregadoEnCentavos, no contra la base', () => {
+    expect(FUENTE).toMatch(/montoEntregadoEnCentavos\(\{/)
+    expect(FUENTE).toMatch(/const entregadoCentavos = pesosDeLaFilaEnCentavos\(pago\)/)
+    expect(FUENTE).toMatch(
+      /function pesosDeLaFilaEnCentavos[\s\S]*?return montoEntregadoEnCentavos\(/,
+    )
+  })
+
+  // El pie sigue siendo un desglose EN PESOS, así que la mercadería contra la
+  // que suma el recargo tiene que incluir los pesos con los que se cubre la
+  // parte en dólares. Sin esto, un carrito de un solo iPhone pagado en pesos
+  // con un plan mostraba "Mercadería $0 / Total a cobrar $178.200" mientras la
+  // fila de arriba pedía $623.700.
+  it('la mercadería del pie suma los pesos que cubren el total en dólares', async () => {
+    const { mercaderiaEnPesosCentavos } = await import('./punto-de-venta')
+    const enPesosCubriendoUsd = {
+      moneda: 'ARS' as const,
+      cubre: 'USD' as const,
+      base: '300',
+      cotizacion: '1485',
+      planId: null,
+    }
+    // Carrito en dólares solo: la mercadería en pesos es lo que ese pago
+    // entrega.
+    expect(
+      mercaderiaEnPesosCentavos({ ars: 0, usd: 30_000 }, [enPesosCubriendoUsd]),
+    ).toBe(44_550_000)
+    // Carrito mixto: los pesos del carrito MÁS esos.
+    expect(
+      mercaderiaEnPesosCentavos({ ars: 1_000_000, usd: 30_000 }, [
+        enPesos('10000'),
+        enPesosCubriendoUsd,
+      ]),
+    ).toBe(45_550_000)
+    // La parte que se paga EN dólares no suma pesos: no hay pesos que sumar, y
+    // el plan tampoco puede tocarla.
+    expect(
+      mercaderiaEnPesosCentavos({ ars: 1_000_000, usd: 30_000 }, [
+        enPesos('10000'),
+        { moneda: 'USD', cubre: 'USD', base: '300', cotizacion: '1', planId: null },
+      ]),
+    ).toBe(1_000_000)
+    // Un carrito en pesos con un pago en pesos queda exactamente como antes de
+    // este ciclo.
+    expect(mercaderiaEnPesosCentavos({ ars: 1_000_000, usd: 0 }, [enPesos('10000')])).toBe(
+      1_000_000,
+    )
+  })
+
+  // Un chip por moneda que la venta tenga: con una sola moneda sale UNO, igual
+  // que antes de este ciclo; con las dos salen los dos, y cada uno se mide
+  // contra su propio total.
+  it('hay un chip de faltante por cada moneda que la venta tenga', async () => {
+    const { chipsDeFaltante } = await import('./punto-de-venta')
+    expect(chipsDeFaltante({ ars: 1_000_000, usd: 0 }, { ars: 500_000, usd: 0 })).toEqual([
+      { moneda: 'ARS', faltanCentavos: 500_000 },
+    ])
+    expect(chipsDeFaltante({ ars: 0, usd: 30_000 }, { ars: 0, usd: 30_000 })).toEqual([
+      { moneda: 'USD', faltanCentavos: 30_000 },
+    ])
+    expect(chipsDeFaltante({ ars: 1_000_000, usd: 30_000 }, { ars: 0, usd: 30_000 })).toEqual([
+      { moneda: 'ARS', faltanCentavos: 0 },
+      { moneda: 'USD', faltanCentavos: 30_000 },
+    ])
+    // El carrito vacío no reserva ningún chip.
+    expect(chipsDeFaltante({ ars: 0, usd: 0 }, { ars: 0, usd: 0 })).toEqual([])
+    // Una línea a medio tipear deja su moneda en NaN, que también es distinto
+    // de cero: el chip sigue reservado y lo apaga `ChipDeFaltante`, que ya
+    // trata el NaN.
+    expect(chipsDeFaltante({ ars: NaN, usd: 0 }, { ars: NaN, usd: 0 })).toHaveLength(1)
+  })
+
+  // Las DOS copias, en las dos direcciones (CLAUDE.md, la regla que dejó el
+  // merge del ciclo de permisos con el del teléfono): el pie de la card
+  // (escritorio) y `PieDeVenta` (el fijo del teléfono) mapean la MISMA lista.
+  // Un `toContain` solo pasaría igual con una sola de las dos mapeando y la
+  // otra pintando el primer chip.
+  it('los DOS pies mapean la misma lista de chips', () => {
+    expect([...FUENTE.matchAll(/chipsDelFaltante\.map\(/g)]).toHaveLength(2)
+    expect(FUENTE).toMatch(/<PieDeVenta[\s\S]*?chipsDelFaltante=\{chipsDelFaltante\}/)
+    // Y el importe de cada chip sale en SU moneda: el de dólares tiene que
+    // decir "US$ 300,00" y no "$ 300,00".
+    expect(FUENTE).toMatch(
+      /precioEnSuMoneda\(deCentavos\(Math\.abs\(faltanCentavos\)\), moneda\)/,
+    )
+  })
+
+  // El campo que la Task 3 sumó del lado del servidor tiene que llegar hasta
+  // ahí. Y la cotización que viaja no puede ser la cadena vacía: cuando el
+  // pago NO cruza, el servidor no la usa para ninguna cuenta pero la exige
+  // mayor que cero igual (COTIZACION_INVALIDA), así que ahí manda '1'.
+  it('cada pago le dice al servidor qué total cubre, y con qué cotización', () => {
+    expect(FUENTE, 'el JSON escondido manda `cubre: p.cubre`').toMatch(/cubre: p\.cubre/)
+    expect(FUENTE).toMatch(/cotizacion: p\.moneda === p\.cubre \? '1' : p\.cotizacion/)
   })
 })
 
@@ -1330,7 +1603,9 @@ describe('el punto de venta en el teléfono', () => {
 
   it('el pie del cobro suma la banda de faltante', () => {
     const contexto = FUENTE.slice(FUENTE.indexOf('function PieDeVenta'))
-    expect(contexto).toMatch(/paso === 'cobro' && <ChipDeFaltante/)
+    // `[\s\S]*?` entre el guard y el chip: desde la Task 10 son varios chips
+    // —uno por moneda— y el `.map` queda en el medio.
+    expect(contexto).toMatch(/paso === 'cobro' &&[\s\S]*?<ChipDeFaltante/)
   })
 
   // El chip de faltante está en dos lugares (el pie del teléfono y el pie de

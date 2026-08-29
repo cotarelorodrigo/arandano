@@ -13,11 +13,10 @@ export default async function Vender() {
 
   // Los chips de estado necesitan dos datos más, y los dos se leen acá por el
   // mismo motivo que el de arriba: la caja del turno (lib/caja/abrir-cerrar.ts)
-  // y la cotización QUE FIJÓ EL DUEÑO hoy (Tenant.cotizacionUsd) — que no es
-  // `cotizacionInicial`, esa es la última con la que se cobró un pago
-  // (Pago.cotizacion, histórica). Las dos conviven a propósito: el comentario
-  // de Tenant.cotizacionUsd en prisma/schema.prisma explica por qué no se
-  // unifican.
+  // y la cotización QUE FIJÓ EL DUEÑO hoy (Tenant.cotizacionUsd), que es un
+  // dato del chip del header y NO precarga ningún campo de cobro — la
+  // cotización de cada pago se tipea, siempre (ver `cotizacionParaElCruce` en
+  // punto-de-venta.tsx).
   // Los planes van en la misma tanda, y por el mismo motivo: se leen en el
   // SERVIDOR y viajan como prop. Sin los desactivados —el default de
   // `planesDelTenant`—: un plan dado de baja no se puede usar para cobrar (el
@@ -41,11 +40,6 @@ export default async function Vender() {
   // donde pasa; ver el comentario en punto-de-venta.tsx.
   return (
     <PuntoDeVenta
-      // `ultimaCotizacionUsd` se borró en esta task: era el único lector de
-      // `Pago.cotizacion` fuera del motor y ya no tiene sentido con precios
-      // en dólares. La prop entera se elimina en la Task 10; hasta entonces
-      // queda en `null`.
-      cotizacionInicial={null}
       planes={planes}
       caja={caja ? { abiertaEn: caja.abiertaEn } : null}
       // .toString() y no el Decimal crudo: un componente CLIENTE no puede
