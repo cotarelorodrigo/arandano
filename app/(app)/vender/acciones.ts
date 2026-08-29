@@ -85,9 +85,21 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
       const medio = String(p.medio ?? '')
       const moneda = String(p.moneda ?? '')
       // Ausente vale 'ARS', que es lo mismo que hace el motor
-      // (`PagoDeVenta.cubre`) y lo que era toda venta antes de este ciclo. Un
-      // JSON viejo —una pestaña que quedó abierta desde antes del deploy—
-      // sigue cobrando exactamente como cobraba.
+      // (`PagoDeVenta.cubre`, opcional con el mismo default) y lo que era toda
+      // venta antes de este ciclo: el default está para que las dos puntas
+      // digan lo mismo, no para tapar un campo que falte.
+      //
+      // **Lo que este default NO cubre, aunque la primera versión de este
+      // comentario lo afirmara: una pestaña abierta desde antes del deploy.**
+      // Un server action se identifica por un id que se genera EN EL BUILD, y
+      // este proyecto no fija `deploymentId` ni
+      // `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` (`next.config.ts`), así que cada
+      // deploy los renueva. La pestaña vieja postea un id que la imagen nueva
+      // no tiene en su module map, y Next tira "Failed to find Server Action"
+      // ANTES de decodificar el cuerpo: este handler no llega a correr, y por
+      // lo tanto tampoco llega a defaultear nada. Es el mismo hecho —y no uno
+      // contrario— que sostiene el `Error` pelado de `monedaDe` en
+      // `app/(app)/inventario/acciones.ts`.
       const cubre = String(p.cubre ?? 'ARS')
       // Campo por campo y contra una lista blanca: lo que llega es un JSON que
       // armó el navegador, y Prisma rechazaría un enum inventado con un

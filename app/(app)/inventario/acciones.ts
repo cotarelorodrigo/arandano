@@ -90,6 +90,14 @@ const texto = (datos: FormData, campo: string) => String(datos.get(campo) ?? '')
  * pueda corregir tipeando distinto, así que no se traduce a
  * `ErrorDeInventario`: cae en el error genérico de la acción, como cualquier
  * otro bug real.
+ *
+ * **Y tampoco puede ser una pestaña vieja**, que es la otra sospecha
+ * razonable: el id de un server action se genera en el BUILD, y este proyecto
+ * no fija `deploymentId` ni `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`
+ * (`next.config.ts`), así que cada deploy los renueva y una pestaña anterior
+ * choca contra "Failed to find Server Action" antes de que Next decodifique
+ * el cuerpo. El handler no llega a correr. Es el mismo hecho que se explica
+ * al lado del default de `cubre` en `app/(app)/vender/acciones.ts`.
  */
 function monedaDe(datos: FormData): Moneda {
   const valor = texto(datos, 'moneda')

@@ -59,6 +59,16 @@ export function subtotalItem(cantidad: Decimal, precioUnitario: Decimal): Decima
   return redondearDinero(cantidad.mul(precioUnitario))
 }
 
+/**
+ * **Sin ningún consumidor de producción: sobrevive como ancla de test.** Suma
+ * TODOS los ítems en una sola pila, sin mirar `moneda`, así que desde el ciclo
+ * del precio en dólares ya no describe el dominio — una venta tiene dos
+ * totales. El motor usa el plural, `totalesDeItems`. Ésta se conserva porque
+ * es contra ella que `lib/ventas/centavos.test.ts` fija el espejo de la
+ * aritmética en enteros del navegador; no se la llama desde ninguna pantalla
+ * ni desde `crearVenta`, y llamarla sería ignorar la mitad en dólares en
+ * silencio.
+ */
 export function totalDeItems(
   items: { cantidad: Decimal; precioUnitario: Decimal }[],
 ): Decimal {
@@ -74,6 +84,14 @@ export function montoEnPesos(monto: Decimal, cotizacion: Decimal): Decimal {
   return redondearDinero(monto.mul(cotizacion))
 }
 
+/**
+ * **Sin ningún consumidor de producción: sobrevive como ancla de test**, igual
+ * que `totalDeItems` y por la misma razón. Suma todo en pesos multiplicando
+ * siempre por la cotización, que desde este ciclo son dos supuestos rotos a la
+ * vez: los pagos van a dos pilas según `cubre`, y un pago EN pesos que cubre
+ * dólares no se multiplica (ver `pesosEntregados`, más abajo). El motor usa
+ * el plural, `totalesDePagos`.
+ */
 export function totalDePagos(
   pagos: { monto: Decimal; cotizacion: Decimal }[],
 ): Decimal {
