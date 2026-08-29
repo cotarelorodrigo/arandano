@@ -291,6 +291,8 @@ suma la moneda a cada ítem y, en cada pago, qué total cubrió.
 - `lib/ventas/centavos.ts`: el espejo en enteros para el navegador. Es la mitad
   que decide si "Cobrar" se habilita, así que tiene que dar exactamente lo mismo
   que el servidor — misma regla de redondeo, mismo momento.
+- `lib/ventas/composicion.ts` y `/ventas/[id]`: pasan a `pesosEntregados`. Ver
+  abajo — es un bug que este modelo destapa.
 - `lib/ventas/buscar.ts`: los resultados del buscador devuelven `moneda`;
   `ultimaCotizacionUsd()` se borra.
 - `lib/inventario/articulos.ts`: `crearArticulo` y `editarArticulo` aceptan
@@ -300,6 +302,22 @@ suma la moneda a cada ítem y, en cada pago, qué total cubrió.
 
 `scripts/sembrar-catalogo-dev.mts` siembra al menos un artículo en dólares, para
 que la verificación manual tenga contra qué mirar.
+
+### El bug que el modelo destapa, y que no es de este ciclo
+
+`montoEnPesos(monto, cotizacion)` multiplica **siempre**, y eso era correcto
+mientras todo pago en pesos llevara cotización 1. Desde que un pago en pesos
+puede cubrir el total en dólares, esa fila lleva la cotización de verdad (1485)
+y `monto` **ya** en pesos: multiplicarla otra vez da un número mil quinientas
+veces más grande. Los dos lugares que hoy leen un pago guardado así son el panel
+"Cómo entró la plata" de `/ventas` (`lib/ventas/composicion.ts`) y la columna
+"En pesos" de `/ventas/[id]`.
+
+La salida es `pesosEntregados({ moneda, monto, cotizacion })`, que ramifica por
+la moneda del pago. No es una función nueva por prolijidad: es la definición que
+`montoEnPesos` siempre debería haber tenido, y que sólo ahora se puede
+distinguir de la vieja porque recién ahora existe una fila donde las dos dan
+distinto.
 
 ## Cómo se verifica
 
