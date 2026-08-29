@@ -8,6 +8,12 @@ import {
   totalDePagos,
   recargoDePago,
   totalCobrado,
+  baseEnDolares,
+  aporteDePago,
+  montoEntregado,
+  totalesDeItems,
+  totalesDePagos,
+  pesosEntregados,
 } from './totales'
 
 const d = (v: string) => new Prisma.Decimal(v)
@@ -137,5 +143,89 @@ describe('totalCobrado', () => {
     // plan, todo sigue exactamente como antes") — éste es el caso que
     // describe a todas ellas.
     expect(totalCobrado({ total: d('10000'), recargo: d('0') }).toString()).toBe('10000')
+  })
+})
+
+describe('baseEnDolares', () => {
+  it('es falso sólo cuando ninguna de las dos puntas toca dólares', () => {
+    expect(baseEnDolares({ moneda: 'ARS', cubre: 'ARS' })).toBe(false)
+    expect(baseEnDolares({ moneda: 'USD', cubre: 'ARS' })).toBe(true)
+    expect(baseEnDolares({ moneda: 'USD', cubre: 'USD' })).toBe(true)
+    expect(baseEnDolares({ moneda: 'ARS', cubre: 'USD' })).toBe(true)
+  })
+})
+
+describe('aporteDePago', () => {
+  it('pesos cubriendo pesos aporta su base', () => {
+    const p = { moneda: 'ARS' as const, cubre: 'ARS' as const, base: d('15000'), cotizacion: d('1') }
+    expect(aporteDePago(p).toString()).toBe('15000')
+    expect(montoEntregado(p).toString()).toBe('15000')
+  })
+
+  it('dólares cubriendo pesos aporta base × cotización, y se entregan los dólares', () => {
+    const p = { moneda: 'USD' as const, cubre: 'ARS' as const, base: d('300'), cotizacion: d('1485') }
+    expect(aporteDePago(p).toString()).toBe('445500')
+    expect(montoEntregado(p).toString()).toBe('300')
+  })
+
+  it('dólares cubriendo dólares aporta su base, sin cotización de por medio', () => {
+    const p = { moneda: 'USD' as const, cubre: 'USD' as const, base: d('300'), cotizacion: d('1') }
+    expect(aporteDePago(p).toString()).toBe('300')
+    expect(montoEntregado(p).toString()).toBe('300')
+  })
+
+  it('pesos cubriendo dólares aporta los DÓLARES de la base, y se entregan los pesos', () => {
+    // El caso del feedback: la base se tipea en dólares y el peso se
+    // MULTIPLICA. Si algún día esto divide, está mal.
+    const p = { moneda: 'ARS' as const, cubre: 'USD' as const, base: d('300'), cotizacion: d('1485') }
+    expect(aporteDePago(p).toString()).toBe('300')
+    expect(montoEntregado(p).toString()).toBe('445500')
+  })
+})
+
+describe('totalesDeItems', () => {
+  it('parte el carrito por moneda y redondea cada línea antes de sumar', () => {
+    const t = totalesDeItems([
+      { cantidad: d('2'), precioUnitario: d('7500'), moneda: 'ARS' },
+      { cantidad: d('1'), precioUnitario: d('300'), moneda: 'USD' },
+      { cantidad: d('3'), precioUnitario: d('0.335'), moneda: 'ARS' },
+    ])
+    // 15000 + 1.01 (0.335×3 = 1.005 → 1.01 con ROUND_HALF_UP)
+    expect(t.ars.toString()).toBe('15001.01')
+    expect(t.usd.toString()).toBe('300')
+  })
+
+  it('un carrito vacío da cero en las dos monedas', () => {
+    const t = totalesDeItems([])
+    expect(t.ars.toString()).toBe('0')
+    expect(t.usd.toString()).toBe('0')
+  })
+})
+
+describe('totalesDePagos', () => {
+  it('acumula cada pago contra el total que declara cubrir', () => {
+    const t = totalesDePagos([
+      { moneda: 'USD', cubre: 'USD', base: d('300'), cotizacion: d('1') },
+      { moneda: 'ARS', cubre: 'ARS', base: d('15000'), cotizacion: d('1') },
+      { moneda: 'USD', cubre: 'ARS', base: d('10'), cotizacion: d('1485') },
+    ])
+    expect(t.usd.toString()).toBe('300')
+    expect(t.ars.toString()).toBe('29850')
+  })
+})
+
+describe('pesosEntregados', () => {
+  it('un pago en pesos vale su monto, aunque su cotización no sea 1', () => {
+    // Un pago en pesos que cubre el total en dólares lleva `cotizacion = 1485`
+    // y `monto` YA en pesos: multiplicarlo otra vez daba 926 millones.
+    expect(
+      pesosEntregados({ moneda: 'ARS', monto: d('623700'), cotizacion: d('1485') }).toString(),
+    ).toBe('623700')
+  })
+
+  it('un pago en dólares vale monto × cotización', () => {
+    expect(
+      pesosEntregados({ moneda: 'USD', monto: d('300'), cotizacion: d('1485') }).toString(),
+    ).toBe('445500')
   })
 })
