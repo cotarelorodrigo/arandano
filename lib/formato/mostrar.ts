@@ -30,6 +30,17 @@ export function formatearDolares(v: string): string {
   return DOLARES.format(Number(v))
 }
 
+/**
+ * El precio de un artículo, en su moneda y SIN equivalente en pesos.
+ *
+ * Fuera de una venta no hay ninguna cotización de la cual derivarlo, y un
+ * número inventado es peor que ninguno — la misma regla por la que el chip de
+ * cotización del header de /vender muestra "—" en vez de fabricar un valor.
+ */
+export function precioEnSuMoneda(precio: string, moneda: 'ARS' | 'USD'): string {
+  return moneda === 'USD' ? formatearDolares(precio) : formatearPrecio(precio)
+}
+
 // Hasta 3 decimales pero sin ceros de relleno: "4" y no "4,000". Medio kilo de
 // harina necesita los decimales; una unidad no tiene por qué mostrarlos.
 const CANTIDAD = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 })

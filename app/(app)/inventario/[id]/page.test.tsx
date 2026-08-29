@@ -9,7 +9,7 @@ import { Prisma } from '@/generated/prisma/client'
 import { textoDeMargen, actualizadoHace, Tile, PanelPreciosPorFormaDePago } from './page'
 import { precioConPlan } from '@/lib/planes/precio'
 import { recargoDePago } from '@/lib/ventas/totales'
-import { formatearPrecio } from '@/lib/formato/mostrar'
+import { formatearPrecio, formatearDolares } from '@/lib/formato/mostrar'
 import type { PlanVisible } from '@/lib/planes/consultar'
 
 const FUENTE = readFileSync('app/(app)/inventario/[id]/page.tsx', 'utf8')
@@ -38,24 +38,32 @@ describe('textoDeMargen (Task 4 del rediseño: el tile "Último costo")', () => 
   // 62,2 % — un número distinto que confirma que la fórmula usa el precio
   // como base y no el costo.
   it('se calcula contra el PRECIO DE VENTA, no contra el costo', () => {
-    expect(textoDeMargen(d('12000'), d('7400'))).toBe('margen 38,3 %')
-    expect(textoDeMargen(d('12000'), d('7400'))).not.toContain('62,2')
+    expect(textoDeMargen(d('12000'), d('7400'), 'ARS')).toBe('margen 38,3 %')
+    expect(textoDeMargen(d('12000'), d('7400'), 'ARS')).not.toContain('62,2')
   })
 
   // El caso que CLAUDE.md pide explícitamente: sin costo cargado, no se
   // inventa un margen.
   it('sin costo cargado (null) no muestra un margen falso', () => {
-    expect(textoDeMargen(d('12000'), null)).toBeNull()
+    expect(textoDeMargen(d('12000'), null, 'ARS')).toBeNull()
   })
 
   // Guarda de NaN/Infinity: un precio en cero (permitido por exigirPrecio,
   // que sólo prohíbe negativo) divide por cero si nadie lo ataja.
   it('con precio en cero no divide por cero', () => {
-    expect(textoDeMargen(d('0'), d('100'))).toBeNull()
+    expect(textoDeMargen(d('0'), d('100'), 'ARS')).toBeNull()
   })
 
   it('un costo mayor al precio da un margen negativo, no null', () => {
-    expect(textoDeMargen(d('100'), d('150'))).toBe('margen -50,0 %')
+    expect(textoDeMargen(d('100'), d('150'), 'ARS')).toBe('margen -50,0 %')
+  })
+
+  // Task 8 (ciclo de USD): el costo se guarda en pesos y este ciclo no lo
+  // cambia, así que un artículo en dólares no tiene contra qué comparar su
+  // costo sin inventar una cotización — la misma regla que "—" en el chip
+  // de cotización de /vender en vez de un número fabricado.
+  it('un artículo en dólares no calcula margen, aunque haya costo cargado', () => {
+    expect(textoDeMargen(d('300'), d('150000'), 'USD')).toBeNull()
   })
 })
 
@@ -119,6 +127,23 @@ describe('los tiles de la ficha (Task 4 del rediseño)', () => {
     expect(FUENTE).toContain("ultimoCosto ? formatearPrecio(ultimoCosto.toString()) : '—'")
   })
 
+  // Task 8 (ciclo de USD): el pie de "Último costo" distingue DOS null
+  // distintos de textoDeMargen — sin costo comparable en pesos (el caso de
+  // siempre) y sin margen posible porque el artículo está en dólares (el
+  // caso nuevo) — con un texto propio para cada uno, no el mismo genérico
+  // para los dos.
+  it('el pie de "Último costo" distingue el artículo en dólares del resto de los casos sin margen', () => {
+    expect(FUENTE).toContain("articulo.moneda === 'USD'")
+    expect(FUENTE).toContain('sin margen para un artículo en dólares')
+    expect(FUENTE).toContain("'el precio no permite calcular el margen'")
+    // La distinción vive DENTRO del `??` de textoDeMargen, no en un `if`
+    // aparte: sólo se pregunta la moneda cuando textoDeMargen ya dijo null.
+    const desde = FUENTE.indexOf('rotulo="ÚLTIMO COSTO"')
+    const bloque = FUENTE.slice(desde, desde + 1200)
+    expect(bloque).toContain('textoDeMargen(articulo.precio, ultimoCosto, articulo.moneda)')
+    expect(bloque).toContain("articulo.moneda === 'USD'")
+  })
+
   // I3 de la review: ningún caso verificaba que el valor mostrado saliera del
   // artículo — un `valor={formatearCantidad('0')}` fijo pasaba los 22/22
   // tests igual. Éstas atan cada tile a la columna real que lo alimenta.
@@ -126,8 +151,11 @@ describe('los tiles de la ficha (Task 4 del rediseño)', () => {
     expect(FUENTE).toContain('valor={formatearCantidad(articulo.stock.toString())}')
   })
 
-  it('el tile "Precio de venta" muestra articulo.precio, no un valor fijo', () => {
-    expect(FUENTE).toContain('valor={formatearPrecio(articulo.precio.toString())}')
+  // Task 8 (ciclo de USD): ya no es formatearPrecio a secas — tiene que
+  // pasar también articulo.moneda, o un artículo en dólares se mostraría en
+  // pesos.
+  it('el tile "Precio de venta" muestra articulo.precio, en la moneda del artículo', () => {
+    expect(FUENTE).toContain('valor={precioEnSuMoneda(articulo.precio.toString(), articulo.moneda)}')
   })
 })
 
@@ -221,17 +249,33 @@ describe('"Precios por forma de pago" (Task 7 del ciclo de planes de pago)', () 
 
   it('el panel lista un precio por plan activo', () => {
     const html = renderToStaticMarkup(
-      <PanelPreciosPorFormaDePago precio={d('10000')} planes={[PLAN_40, PLAN_MENOS_10]} />,
+      <PanelPreciosPorFormaDePago precio={d('10000')} moneda="ARS" planes={[PLAN_40, PLAN_MENOS_10]} />,
     )
     expect(html).toContain('Precios por forma de pago')
     expect(html).toContain(formatearPrecio('14000'))
     expect(html).toContain(formatearPrecio('9000'))
   })
 
+  // Task 8 (ciclo de USD): el recargo es un porcentaje puro, así que
+  // aplicarlo sobre un precio en dólares da un resultado en dólares — sin
+  // convertir nada, sólo cambia el formateo.
+  it('un artículo en dólares muestra el precio con plan también en dólares', () => {
+    const html = renderToStaticMarkup(
+      <PanelPreciosPorFormaDePago precio={d('300')} moneda="USD" planes={[PLAN_40]} />,
+    )
+    expect(html).toContain(formatearDolares('420'))
+    // No se cuela el formato de pesos (el "$ 420,00" pelado, sin "US"
+    // adelante) — formatearDolares('420') ya lo contiene como substring, así
+    // que un `not.toContain` liso daría un falso negativo.
+    expect(html).not.toContain(`>${formatearPrecio('420')}<`)
+  })
+
   // Un panel con una sola fila que repite el precio de arriba es ruido: el
   // local que no usa planes no tiene nada que mirar acá.
   it('sin planes cargados el panel no aparece', () => {
-    const html = renderToStaticMarkup(<PanelPreciosPorFormaDePago precio={d('10000')} planes={[]} />)
+    const html = renderToStaticMarkup(
+      <PanelPreciosPorFormaDePago precio={d('10000')} moneda="ARS" planes={[]} />,
+    )
     expect(html).not.toContain('Precios por forma de pago')
   })
 

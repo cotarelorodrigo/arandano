@@ -11,7 +11,7 @@ import {
   Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger,
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
-import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
+import { precioEnSuMoneda, formatearCantidad } from '@/lib/formato/mostrar'
 import { estadoDeFila, ChipEstado, type EstadoDeFila } from './chip-estado'
 import { PanelDeCategorias } from './panel-categorias'
 import {
@@ -722,7 +722,7 @@ export default async function Inventario({
       skip: (pagina - 1) * POR_PAGINA,
       take: POR_PAGINA,
       select: {
-        id: true, sku: true, nombre: true, tipo: true, precio: true,
+        id: true, sku: true, nombre: true, tipo: true, precio: true, moneda: true,
         stock: true, desactivadoEn: true, categoria: true,
       },
     }),
@@ -903,7 +903,7 @@ export default async function Inventario({
               nombre: a.nombre,
               categoria: a.categoria,
               tipo: a.tipo,
-              precioFormateado: formatearPrecio(a.precio.toString()),
+              precioFormateado: precioEnSuMoneda(a.precio.toString(), a.moneda),
               // Un guion y NO un 0: el motor no le descuenta stock a un
               // servicio (lib/ventas/crear.ts filtra por esProducto), así
               // que un 0 se leería como faltante y alguien saldría a
