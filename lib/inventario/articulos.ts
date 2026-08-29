@@ -1,4 +1,4 @@
-import { Prisma } from '@/generated/prisma/client'
+import { Prisma, type Moneda } from '@/generated/prisma/client'
 import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import { excedeEscala, ESCALA_DINERO, ESCALA_CANTIDAD } from '@/lib/ventas/totales'
 import { exigirUsuario } from '@/lib/ventas/pertenencia'
@@ -37,6 +37,13 @@ export type EntradaCrearArticulo = {
    * complicarlo por nada.
    */
   categoriaId?: string | null
+  /**
+   * En qué moneda está `precio`. Ausente vale pesos, que es lo que era todo
+   * artículo antes de este ciclo. Opcional acá y REQUERIDO en `editarArticulo`
+   * a propósito: el alta tiene un default sensato, y una edición que omita el
+   * campo estaría dejando la moneda vieja sin que nadie lo haya decidido.
+   */
+  moneda?: Moneda
   stockInicial?: Decimal | null
   costoUnitario?: Decimal | null
   /**
@@ -269,6 +276,7 @@ export async function crearArticulo(
         const articulo = await tx.articulo.create({
           data: {
             tenantId, sku, nombre, tipo, precio,
+            moneda: entrada.moneda ?? 'ARS',
             categoria: rama.texto,
             categoriaId: rama.id,
           },
@@ -344,8 +352,14 @@ export async function editarArticulo(entrada: {
   sku: string
   precio: Decimal
   categoriaId: string | null
+  /**
+   * Requerida y no opcional, por la misma razón que `categoriaId`: un
+   * llamador que la omitiera por descuido dejaría la moneda vieja sin que
+   * nadie lo haya decidido, y sin ningún error que lo avise.
+   */
+  moneda: Moneda
 }): Promise<void> {
-  const { tenantId, articuloId, precio, categoriaId } = entrada
+  const { tenantId, articuloId, precio, categoriaId, moneda } = entrada
 
   const nombre = exigirNombre(entrada.nombre)
   exigirPrecio(precio)
@@ -373,7 +387,7 @@ export async function editarArticulo(entrada: {
       // `codigo`. Contar filas afectadas deja decirlo con el error del módulo.
       const { count } = await tx.articulo.updateMany({
         where: { id: articuloId },
-        data: { nombre, sku, precio, categoriaId: rama.id, categoria: rama.texto },
+        data: { nombre, sku, precio, moneda, categoriaId: rama.id, categoria: rama.texto },
       })
       if (count === 0) {
         throw new ErrorDeInventario(

@@ -16,8 +16,11 @@ let crearVenta: typeof import('@/lib/ventas/crear').crearVenta
 let anularVenta: typeof import('@/lib/ventas/anular').anularVenta
 let ajustarStock: typeof import('@/lib/inventario/stock').ajustarStock
 let buscarArticulosVendibles: typeof import('@/lib/ventas/buscar').buscarArticulosVendibles
-let ultimaCotizacionUsd: typeof import('@/lib/ventas/buscar').ultimaCotizacionUsd
 let prismaParaTenant: typeof import('@/lib/tenant/prisma').prismaParaTenant
+// Sólo para el test de `buscarArticulosVendibles` que necesita un artículo en
+// dólares: el resto del archivo sigue dando de alta artículos con SQL crudo
+// contra `owner` (ver el `beforeAll`), y así se queda.
+let crearArticulo: typeof import('@/lib/inventario/articulos').crearArticulo
 let crearPlan: typeof import('@/lib/planes/administrar').crearPlan
 let desactivarPlan: typeof import('@/lib/planes/administrar').desactivarPlan
 // De app/(app)/ventas/page.tsx, no de lib/: es la regla de negocio que arma
@@ -54,8 +57,9 @@ beforeAll(async () => {
   ;({ crearVenta } = await import('@/lib/ventas/crear'))
   ;({ anularVenta } = await import('@/lib/ventas/anular'))
   ;({ ajustarStock } = await import('@/lib/inventario/stock'))
-  ;({ buscarArticulosVendibles, ultimaCotizacionUsd } = await import('@/lib/ventas/buscar'))
+  ;({ buscarArticulosVendibles } = await import('@/lib/ventas/buscar'))
   ;({ prismaParaTenant } = await import('@/lib/tenant/prisma'))
+  ;({ crearArticulo } = await import('@/lib/inventario/articulos'))
   ;({ crearPlan, desactivarPlan } = await import('@/lib/planes/administrar'))
   ;({ totalDelPeriodo } = await import('@/app/(app)/ventas/page'))
 
@@ -1422,30 +1426,12 @@ describe('buscarArticulosVendibles', () => {
     // Sin este guard, el primer foco en el buscador traería todo.
     expect(await buscarArticulosVendibles(tenantId, '   ')).toHaveLength(0)
   })
-})
 
-describe('ultimaCotizacionUsd', () => {
-  it('es null cuando el local nunca cobró en dólares', async () => {
-    const virgen = await crearTenant(owner, `sin-usd-${Date.now()}`)
-    expect(await ultimaCotizacionUsd(virgen)).toBeNull()
-  })
-
-  it('devuelve la del último pago en dólares y no la de otro tenant', async () => {
-    // `remera` cuesta 1000, así que una unidad son $1000 de total. US$ 0,80 a
-    // 1250 dan exactamente eso: los pagos TIENEN que cerrar contra el total o
-    // el motor rechaza la venta, y el test estaría probando otra cosa.
-    await crearVenta({
-      tenantId,
-      usuarioId,
-      items: [{ articuloId: remera, cantidad: d('1') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'USD', base: d('0.8'), cotizacion: d('1250') }],
+  it('el resultado dice en qué moneda está el precio', async () => {
+    await crearArticulo({
+      tenantId, usuarioId, nombre: 'iPhone', tipo: 'PRODUCTO', precio: d('300'), moneda: 'USD',
     })
-    // Sin ceros de cola, no '1250.0000': el `Decimal` de Prisma normaliza al
-    // convertir a string, tal como ya lo prueba "congela el precio" más
-    // arriba con `precioUnitario` (Decimal(12,2), guarda 1000.00 y da '1000').
-    // La suposición original de este test —que el toString conserva la
-    // escala de la columna— no vale para el `Decimal` de Prisma.
-    expect(await ultimaCotizacionUsd(tenantId)).toBe('1250')
-    expect(await ultimaCotizacionUsd(otroTenantId)).toBeNull()
+    const [r] = await buscarArticulosVendibles(tenantId, 'iPhone')
+    expect(r.moneda).toBe('USD')
   })
 })

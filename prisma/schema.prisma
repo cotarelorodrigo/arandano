@@ -554,12 +554,12 @@ model Pago {
   plan   PlanDePago? @relation(fields: [planDePagoId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, ventaId])
-  // La última cotización en dólares del local, que el punto de venta pide en
-  // CADA carga de /vender (`ultimaCotizacionUsd`). Sin este índice esa consulta
-  // es un scan de todos los pagos de la tabla compartida más un sort, sobre la
-  // pantalla más caliente del sistema. Se agrega ahora, con la tabla vacía, por
-  // el mismo motivo que el índice de idempotencia: crearlo después es un
-  // bloqueo sobre datos de clientes.
+  // Servía a `ultimaCotizacionUsd` — la última cotización en dólares del
+  // local, que el punto de venta pedía en CADA carga de /vender —, borrada en
+  // la Task 6 de este ciclo (2026-08-29): con precio de artículo en dólares,
+  // ese default dejó de tener sentido. Queda SIN LECTOR y el índice NO se
+  // borra: este ciclo es sólo aditivo, y el `DROP` de un índice es una
+  // migración destructiva que corresponde a un deploy posterior.
   @@index([tenantId, moneda, creadoEn])
   @@map("pagos")
 }

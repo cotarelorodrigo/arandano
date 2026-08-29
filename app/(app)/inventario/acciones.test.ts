@@ -446,6 +446,44 @@ describe('el rol de cada action de inventario', () => {
     expect(new Prisma.Decimal(rows[0].precio).toString()).toBe('2500')
   })
 
+  // `editarArticulo` pide `moneda` REQUERIDA (Task 6), pero el `<form>` de esta
+  // pantalla todavía no manda ese campo — el selector llega en la Task 7. Sin
+  // este caso, un descuido al leer la moneda actual del artículo pasaría
+  // desapercibido: el gate entero seguiría en verde con la moneda reseteándose
+  // a pesos en cada guardado.
+  it('guardar la ficha no resetea a pesos un artículo cargado en dólares', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('En dólares')
+    await owner.query(`UPDATE articulos SET moneda = 'USD' WHERE id = $1`, [id])
+
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('nombre', 'En dólares')
+    datos.set('sku', 'ACC-USD-1')
+    datos.set('precio', '300')
+    const r = await guardarArticulo(INICIAL, datos)
+    expect(r.error).toBeNull()
+
+    const { rows } = await owner.query(`SELECT moneda FROM articulos WHERE id = $1`, [id])
+    expect(rows[0].moneda).toBe('USD')
+  })
+
+  // `findUnique` —a diferencia del `updateMany` de `editarArticulo`— tira P2007
+  // directo ante un id sin forma de uuid, y ese código no lo traduce nadie más
+  // que `traducirErrorDeBase`. Sin el guard de `esUuid` de este archivo, este
+  // caso sale como 500 en vez de como el cartel rojo que ya sabe mostrar
+  // ARTICULO_INEXISTENTE.
+  it('un articuloId sin forma de uuid es artículo inexistente, no un 500', async () => {
+    estado.cookie = cookieDuenio
+    const datos = new FormData()
+    datos.set('articuloId', 'no-es-uuid')
+    datos.set('nombre', 'X')
+    datos.set('sku', 'X-1')
+    datos.set('precio', '100')
+    const r = await guardarArticulo(INICIAL, datos)
+    expect(r.error).toMatch(/no existe/)
+  })
+
   it('un DUEÑO mueve un artículo a la rama elegida, y se escriben las dos columnas', async () => {
     estado.cookie = cookieDuenio
     const id = await crearArticuloDePrueba('Para editar categoría')

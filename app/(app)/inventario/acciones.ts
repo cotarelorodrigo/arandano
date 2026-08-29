@@ -123,8 +123,37 @@ export async function guardarArticulo(
 ): Promise<EstadoInventario> {
   try {
     const articuloId = texto(datos, 'articuloId')
-    await comoPuede('ARTICULOS_EDITAR', async (tenantId) =>
-      editarArticulo({
+    await comoPuede('ARTICULOS_EDITAR', async (tenantId) => {
+      // `editarArticulo` pide `moneda` REQUERIDA (Task 6), pero esta pantalla
+      // todavía no tiene el control para cambiarla — eso llega en la Task 7,
+      // que sí la va a leer del FormData. Hasta entonces se lee la moneda
+      // ACTUAL del artículo y se pasa sin tocar: guardar la ficha no puede
+      // resetearla a pesos en silencio sólo porque el campo no existe
+      // todavía en la pantalla.
+      //
+      // El guard de `esUuid` va ACÁ, antes del `findUnique` de acá abajo, y no
+      // sólo en `editarArticulo`: a diferencia de `updateMany`, `findUnique`
+      // tira P2007 directo ante un id sin forma de uuid, y ese código no lo
+      // traduce nadie en este archivo — sólo `traducirErrorDeBase`, del lado
+      // de `lib/inventario/`. Mismo motivo que el guard de
+      // `exportarHistorialCsv`, más abajo en este archivo.
+      if (!esUuid(articuloId)) {
+        throw new ErrorDeInventario(
+          'ARTICULO_INEXISTENTE',
+          `el artículo ${articuloId} no existe en este tenant`,
+        )
+      }
+      const actual = await prismaParaTenant(tenantId).articulo.findUnique({
+        where: { id: articuloId },
+        select: { moneda: true },
+      })
+      if (!actual) {
+        throw new ErrorDeInventario(
+          'ARTICULO_INEXISTENTE',
+          `el artículo ${articuloId} no existe en este tenant`,
+        )
+      }
+      return editarArticulo({
         tenantId,
         articuloId,
         nombre: texto(datos, 'nombre'),
@@ -142,8 +171,9 @@ export async function guardarArticulo(
         // bypass que motivaba la guarda vieja era el texto libre creando
         // ramas al vuelo, y ese camino ya no existe.
         categoriaId: texto(datos, 'marcaId') || texto(datos, 'categoriaId') || null,
-      }),
-    )
+        moneda: actual.moneda,
+      })
+    })
     revalidatePath('/inventario')
     revalidatePath(`/inventario/${articuloId}`)
     return { error: null, aviso: 'Cambios guardados.' }
