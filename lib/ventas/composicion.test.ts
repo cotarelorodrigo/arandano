@@ -88,4 +88,14 @@ describe('componerPorMedio', () => {
   it('un grupo sin pagos no aporta nada', () => {
     expect(componerPorMedio([fila('EFECTIVO', 'ARS', '1500', '1', 0)]).barras).toEqual([])
   })
+
+  it('un pago en PESOS que cubre el total en dólares no se multiplica dos veces', () => {
+    // moneda ARS + cotizacion 1485: `monto` ya está en pesos. Con `montoEnPesos`
+    // esto daba 926.194.500.
+    const c = componerPorMedio([
+      { medio: 'TARJETA_CREDITO', moneda: 'ARS', monto: d('623700'), cotizacion: d('1485'), _count: 1 },
+    ])
+    expect(c.barras[0].total).toBe('623700')
+    expect(c.hayDolares).toBe(false)
+  })
 })

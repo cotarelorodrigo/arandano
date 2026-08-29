@@ -12,7 +12,7 @@ import {
   formatearFecha,
 } from '@/lib/formato/mostrar'
 import { ROTULO_MEDIO, CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
-import { subtotalItem, montoEnPesos, totalCobrado } from '@/lib/ventas/totales'
+import { subtotalItem, pesosEntregados, totalCobrado } from '@/lib/ventas/totales'
 import { ChipEstado } from '../chip-estado'
 import { AnularVenta } from '../formularios'
 import { esUuid } from '@/lib/uuid'
@@ -563,9 +563,11 @@ export function Detalle({
 
                   {/* En pesos — su propia celda, sólo escritorio (el
                       teléfono la muestra abajo, sólo si es un pago en
-                      dólares). `montoEnPesos()` de lib/ventas/totales.ts, la
-                      MISMA función con la que `componerPorMedio` arma "Cómo
-                      entró la plata" en /ventas. */}
+                      dólares). `pesosEntregados()` de lib/ventas/totales.ts,
+                      la MISMA función con la que `componerPorMedio` arma
+                      "Cómo entró la plata" en /ventas — y no `montoEnPesos`,
+                      que multiplicaría dos veces un pago en pesos que cubre
+                      el total en dólares. */}
                   <div role="cell" className={`${estilos.archivo} hidden text-right text-sm font-semibold text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
                     <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{p.enPesosFormateado}</div>
                   </div>
@@ -730,7 +732,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
       monedaLabel: ROTULO_MONEDA[p.moneda],
       cotizacionFormateada: cotizacionVisible({ moneda: p.moneda, cotizacion }),
       montoFormateado: p.moneda === 'USD' ? formatearDolares(p.monto.toString()) : formatearPrecio(p.monto.toString()),
-      enPesosFormateado: formatearPrecio(montoEnPesos(p.monto, p.cotizacion).toString()),
+      enPesosFormateado: formatearPrecio(pesosEntregados(p).toString()),
       planLabel: rotuloDePlan(p.plan),
       meta: metaDePago({ moneda: p.moneda, cotizacion, plan: rotuloDePlan(p.plan) }),
       esUsd: p.moneda === 'USD',
