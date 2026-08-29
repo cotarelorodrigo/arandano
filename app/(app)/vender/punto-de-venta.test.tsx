@@ -427,6 +427,38 @@ describe('el punto de venta', () => {
     expect(fuente).toMatch(/descripcion: a\.nombre,\s*\n\s*precio: a\.precio,\s*\n\s*moneda: a\.moneda,/)
   })
 
+  // Los CUATRO lugares donde el punto de venta escribe el precio de un
+  // artículo, que hasta la ola final del ciclo formateaban con
+  // `formatearPrecio` a secas: el typeahead, la meta del teléfono, la columna
+  // "Precio" de escritorio y el subtotal de la línea. Con un iPhone de lista
+  // US$ 300 los cuatro decían "$ 300,00" — tres órdenes de magnitud abajo, en
+  // la pantalla insignia del ciclo.
+  //
+  // Por FUENTE y con aserción NEGATIVA, mismo patrón que
+  // app/(app)/inventario/page.test.tsx: el harness sólo monta el carrito
+  // vacío (ver la nota de `lineasDeTotal`, arriba), así que un render real no
+  // llega nunca a una fila con precio; y sin el `not.toContain` el caso
+  // pasaría igual con la llamada vieja agregada al lado. Es lo único que
+  // impide que vuelva.
+  it('los cuatro precios del carrito salen en la moneda de su línea, no en pesos siempre', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+
+    // El typeahead y la meta del teléfono.
+    expect(fuente).toContain('precioEnSuMoneda(a.precio, a.moneda)')
+    expect(fuente).toContain('precioEnSuMoneda(l.precio, l.moneda)')
+    expect(fuente).not.toContain('formatearPrecio(a.precio)')
+    expect(fuente).not.toContain('formatearPrecio(l.precio)')
+
+    // El subtotal de la línea, que hereda la moneda de la línea porque es
+    // cantidad × precio.
+    expect(fuente).toMatch(
+      /precioEnSuMoneda\(\s*\n\s*deCentavos\(subtotalEnCentavos\(cantidadMilesimas, aCentavos\(l\.precio\)\)\),\s*\n\s*l\.moneda,/,
+    )
+    expect(fuente).not.toMatch(
+      /formatearPrecio\(\s*\n\s*deCentavos\(subtotalEnCentavos\(cantidadMilesimas, aCentavos\(l\.precio\)\)\)/,
+    )
+  })
+
   // La SEGUNDA copia del mismo total: el subtítulo del Encabezado en el paso
   // de cobro del teléfono, que reemplaza a la banda de --marca mientras esa
   // banda queda oculta (`hidden lg:flex`). Antes de esta task mostraba sólo
@@ -490,13 +522,33 @@ describe('el punto de venta', () => {
   // `formatearPrecio` imprimía el cartel sin sentido "Entran $ NaN".
   it('"Entran $X" muestra — y no "$ NaN" con un monto o una cotización a medio tipear', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
-    const posicion = fuente.indexOf('>Entran<')
+    const posicion = fuente.indexOf("'Base en pesos' : 'Entran'")
     expect(posicion, 'el rótulo "Entran" tiene que existir en el fuente').toBeGreaterThan(-1)
     const contexto = fuente.slice(posicion, posicion + 300)
     expect(
       contexto,
       'el renglón "Entran $X" tiene que guardarse contra NaN, igual que el resto de la plata de la pantalla',
     ).toMatch(/Number\.isNaN\(pesosDelPagoCentavos\)\s*\?\s*'—'/)
+  })
+
+  // Ola final del ciclo: con un plan que mueve el número, "Entran $ 445.500"
+  // y "A cobrar $ 623.700" convivían pegados en la misma fila, y sólo el
+  // segundo es lo que entra al cajón. El renglón no se esconde —el número es
+  // el puente entre "Cubre US$ 300" y lo que se cobra— sino que se llama por
+  // su nombre. Los DOS renglones se gobiernan con la MISMA condición: si se
+  // separaran, volverían a poder contradecirse.
+  it('el rótulo de "Entran" y el renglón "A cobrar" salen de la misma condición', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    expect(fuente).toMatch(
+      /const elPlanMueveElNumero =\s*\n?\s*!Number\.isNaN\(aCobrarCentavos\) && aCobrarCentavos !== entregadoCentavos/,
+    )
+    expect(fuente).toContain("{elPlanMueveElNumero ? 'Base en pesos' : 'Entran'}")
+    // Las TRES apariciones: la declaración, el rótulo condicional y la guarda
+    // del renglón de "A cobrar". Con dos, uno de los dos renglones se quedó
+    // atrás. Sobre `SIN_COMENTARIOS` porque los comentarios de esta pantalla
+    // nombran la constante en prosa, y ahí un conteo sobre el texto crudo
+    // mide la explicación en vez del código.
+    expect([...SIN_COMENTARIOS.matchAll(/elPlanMueveElNumero/g)]).toHaveLength(3)
   })
 
   // El mismo defecto preexistente, del otro lado del cálculo: "Agregar pago"
@@ -712,7 +764,7 @@ describe('el punto de venta', () => {
     it('la fila muestra "A cobrar" cuando su plan mueve el número', () => {
       const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
       expect(fuente).toMatch(
-        /aCobrarCentavos !== entregadoCentavos &&[\s\S]*?>A cobrar<[\s\S]*?deCentavos\(aCobrarCentavos\)/,
+        /\{elPlanMueveElNumero && \([\s\S]*?>A cobrar<[\s\S]*?deCentavos\(aCobrarCentavos\)/,
       )
     })
   })
@@ -1447,6 +1499,30 @@ describe('el punto de venta', () => {
     // de cero: el chip sigue reservado y lo apaga `ChipDeFaltante`, que ya
     // trata el NaN.
     expect(chipsDeFaltante({ ars: NaN, usd: 0 }, { ars: NaN, usd: 0 })).toHaveLength(1)
+  })
+
+  // Ola final del ciclo: el camino que dejaba "Cobrar" apagado y MUDO. Con
+  // DOS pagos —uno por total— sacar del carrito la última línea en pesos deja
+  // `totales.ars` en 0 mientras el segundo pago sigue apuntado a pesos con su
+  // base vieja; `reapuntarPagoUnico` no corre (sólo re-apunta con UN pago) y
+  // `ofreceCubre` tampoco dibuja el selector que permitiría corregirlo. Con
+  // la condición vieja (`totales.ars !== 0` a secas) no salía ningún chip:
+  // botón deshabilitado, sin cartel y sin control. Ahora sale `Sobran`.
+  it('un total que desapareció pero sigue teniendo pagos apuntados igual dibuja su chip', async () => {
+    const { chipsDeFaltante } = await import('./punto-de-venta')
+    expect(chipsDeFaltante({ ars: 0, usd: 30_000 }, { ars: -1_500_000, usd: 0 })).toEqual([
+      { moneda: 'ARS', faltanCentavos: -1_500_000 },
+      { moneda: 'USD', faltanCentavos: 0 },
+    ])
+    // El espejo del otro lado: los dólares desaparecidos con un pago que
+    // seguía cubriéndolos.
+    expect(chipsDeFaltante({ ars: 1_000_000, usd: 0 }, { ars: 0, usd: -30_000 })).toEqual([
+      { moneda: 'ARS', faltanCentavos: 0 },
+      { moneda: 'USD', faltanCentavos: -30_000 },
+    ])
+    // Y la guarda que el `o` NO puede aflojar: sin total y sin faltante no
+    // hay nada que decir, así que el carrito vacío sigue sin reservar chips.
+    expect(chipsDeFaltante({ ars: 0, usd: 0 }, { ars: 0, usd: 0 })).toEqual([])
   })
 
   // Las DOS copias, en las dos direcciones (CLAUDE.md, la regla que dejó el

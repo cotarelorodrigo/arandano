@@ -21,7 +21,7 @@ import {
 // test/limite-cliente-servidor.test.ts.
 import type { PlanVisible } from '@/lib/planes/consultar'
 import {
-  formatearPrecio, formatearDolares, formatearCantidad, montoSinSigno, precioEnSuMoneda,
+  formatearPrecio, formatearCantidad, montoSinSigno, precioEnSuMoneda,
 } from '@/lib/formato/mostrar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -312,13 +312,14 @@ export function lineasDeTotal(
   const linea = (moneda: 'ARS' | 'USD', centavos: number) => ({
     moneda,
     signo: moneda === 'USD' ? 'US$' : '$',
+    // `precioEnSuMoneda` adentro de `montoSinSigno` y no el ternario a mano:
+    // el helper es exactamente ese ternario, y el `montoSinSigno` de afuera no
+    // le estorba — la banda pinta su `$`/`US$` como SU PROPIO elemento (`signo`,
+    // acá al lado), así que lo que se quita es el símbolo duplicado, no la
+    // elección de moneda.
     monto: Number.isNaN(centavos)
       ? '—'
-      : montoSinSigno(
-          moneda === 'USD'
-            ? formatearDolares(deCentavos(centavos))
-            : formatearPrecio(deCentavos(centavos)),
-        ),
+      : montoSinSigno(precioEnSuMoneda(deCentavos(centavos), moneda)),
   })
   const hayArs = totales.ars !== 0
   const hayUsd = totales.usd !== 0
@@ -734,16 +735,40 @@ export function mercaderiaEnPesosCentavos(
  * medio tipear deja esa moneda en NaN, que también es distinto de cero, y el
  * chip se sigue reservando su lugar —lo pinta o no lo pinta `ChipDeFaltante`,
  * que ya trata el NaN—. Con una sola moneda en la venta sale UN chip, igual
- * que antes de este ciclo; con el carrito vacío no sale ninguno, que es lo
- * mismo que hacía el chip único con `hayCarrito` en falso.
+ * que antes de este ciclo; con el carrito vacío y sin pagos no sale ninguno,
+ * que es lo mismo que hacía el chip único con `hayCarrito` en falso.
+ *
+ * **O `faltan.x !== 0`, aunque el total de esa moneda sea cero** (ola final
+ * del ciclo del precio en dólares). Ese `o` cubre el único camino que dejaba
+ * "Cobrar" apagado y MUDO, y hace falta describirlo entero porque la
+ * condición sola no lo sugiere:
+ *
+ *  1. Carrito mixto (un iPhone en dólares + una funda de $15.000) y DOS
+ *     pagos, uno apuntado a cada total.
+ *  2. Se saca la funda: `totales.ars` pasa a 0.
+ *  3. `reapuntarPagoUnico` no corre —sólo re-apunta cuando hay UN pago, ver
+ *     ahí—, así que el segundo pago se queda cubriendo pesos con base 15.000.
+ *  4. `faltan.ars = 0 − 15.000 = −15.000`, la venta no cierra y "Cobrar"
+ *     queda deshabilitado.
+ *  5. Con la condición vieja (`totales.ars !== 0`) el chip que lo explicaría
+ *     no se dibujaba, y el selector `Cubre` tampoco (`ofreceCubre` pide las
+ *     dos monedas presentes), así que no quedaba ni cartel ni control.
+ *
+ * Con el `o`, ese estado muestra `Sobran $ 15.000,00` — que es exactamente el
+ * cartel que faltaba. Es recuperable como siempre ("Quitar pago", Esc-Esc),
+ * pero ahora la pantalla dice qué pasó en vez de apagar el botón sin motivo
+ * visible. Es el reverso del defecto simétrico que ya se corrigió en este
+ * mismo ciclo, donde "Cobrar" quedaba habilitado y el motor rechazaba.
  */
 export function chipsDeFaltante(
   totales: TotalesEnCentavos,
   faltan: TotalesEnCentavos,
 ): { moneda: 'ARS' | 'USD'; faltanCentavos: number }[] {
   return [
-    ...(totales.ars !== 0 ? [{ moneda: 'ARS' as const, faltanCentavos: faltan.ars }] : []),
-    ...(totales.usd !== 0 ? [{ moneda: 'USD' as const, faltanCentavos: faltan.usd }] : []),
+    ...(totales.ars !== 0 || faltan.ars !== 0
+      ? [{ moneda: 'ARS' as const, faltanCentavos: faltan.ars }] : []),
+    ...(totales.usd !== 0 || faltan.usd !== 0
+      ? [{ moneda: 'USD' as const, faltanCentavos: faltan.usd }] : []),
   ]
 }
 
@@ -945,8 +970,19 @@ export function PuntoDeVenta({
   // "Too many re-renders", perdiendo la venta en curso. Con CUALQUIERA de las
   // dos monedas inválida los pagos se quedan con el último total bueno; el
   // botón ya está apagado por `hayLineaInvalida`, así que no hace falta nada
-  // más — partir la guarda por moneda es la clase de cosa que le toca a la
-  // Task 10, que sí va a tener que decidir a qué pila sigue cada pago.
+  // más.
+  //
+  // **La guarda es de las DOS monedas juntas a propósito, y es un límite
+  // aceptado, no algo diferido.** Partirla por moneda —dejar que el pago que
+  // cubre dólares siga su total mientras la línea en pesos está a medio
+  // tipear— es más fino y no está construido: obliga a decidir, pago por
+  // pago, a qué pila sigue cada uno, y a que `reapuntarPagoUnico` conviva con
+  // un total envenenado de un solo lado. Lo que se pierde mientras tanto es
+  // chico y transitorio: mientras una cantidad esté ilegible, los pagos se
+  // quedan quietos en el último total bueno, y en cuanto se termine de tipear
+  // vuelven a seguirlo. **El disparador para partirla**: que a alguien del
+  // mostrador le moleste de verdad tener que retocar el monto de un pago
+  // después de corregir una cantidad en la OTRA moneda.
   const totalesValidos = !Number.isNaN(totales.ars) && !Number.isNaN(totales.usd)
   const totalesCambiaron =
     totalReflejado === null || totales.ars !== totalReflejado.ars || totales.usd !== totalReflejado.usd
@@ -1452,7 +1488,13 @@ export function PuntoDeVenta({
                       {a.nombre} <span className="text-muted-foreground">· {a.sku}</span>
                     </span>
                     <span>
-                      <span className={estilos.importe}>{formatearPrecio(a.precio)}</span>
+                      {/* `precioEnSuMoneda` y no `formatearPrecio`: el precio
+                          del artículo está en SU moneda (`Articulo.moneda`), y
+                          un iPhone de lista US$ 300 mostrado como "$ 300,00"
+                          se lee tres órdenes de magnitud abajo. Es el primer
+                          número que ve quien busca el artículo, así que es
+                          donde más caro sale equivocarse. */}
+                      <span className={estilos.importe}>{precioEnSuMoneda(a.precio, a.moneda)}</span>
                       {/* El stock no es plata, así que no lleva estilos.importe —
                           pero sigue siendo una cifra que se compara de un
                           vistazo, así que conserva tabular-nums. Un servicio
@@ -1637,7 +1679,12 @@ export function PuntoDeVenta({
                                 pegado al SKU, con el mismo tratamiento de
                                 meta. En escritorio desaparece de esta línea,
                                 porque su columna vuelve. */}
-                            <span className="lg:hidden"> · {formatearPrecio(l.precio)} c/u</span>
+                            {/* En la moneda de la línea, igual que la columna
+                                "Precio" de escritorio: el carrito mixto tiene
+                                una línea en pesos y otra en dólares al mismo
+                                tiempo, así que el símbolo es lo único que las
+                                distingue. */}
+                            <span className="lg:hidden"> · {precioEnSuMoneda(l.precio, l.moneda)} c/u</span>
                           </span>
                           {/* Antes que el aviso de stock: una cantidad que no
                               se entiende ni siquiera se puede evaluar contra
@@ -1748,7 +1795,7 @@ export function PuntoDeVenta({
                         className={`hidden text-foreground-soft lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors ${estilos.importe}`}
                       >
                         <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
-                          {formatearPrecio(l.precio)}
+                          {precioEnSuMoneda(l.precio, l.moneda)}
                         </div>
                       </div>
                       {/* `ml-auto` empuja el subtotal a la derecha del
@@ -1763,10 +1810,15 @@ export function PuntoDeVenta({
                         className={`ml-auto text-[15px] font-semibold text-foreground lg:ml-0 lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors ${estilos.importe}`}
                       >
                         <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
+                          {/* El subtotal hereda la moneda de su línea: es
+                              cantidad × precio, así que no puede estar en otra
+                              — y es el número que la banda de total suma a la
+                              pila de esa misma moneda. */}
                           {invalida
                             ? '—'
-                            : formatearPrecio(
+                            : precioEnSuMoneda(
                                 deCentavos(subtotalEnCentavos(cantidadMilesimas, aCentavos(l.precio))),
+                                l.moneda,
                               )}
                         </div>
                       </div>
@@ -2511,6 +2563,13 @@ function FilaDePago({
   // plan. Contra esto se calcula el vuelto, no contra la base — ver
   // `aCobrarDeLaFilaEnCentavos` para el porqué.
   const aCobrarCentavos = aCobrarDeLaFilaEnCentavos(pago, planes)
+  // Si el plan de esta fila mueve el número o no. Gobierna DOS renglones —el
+  // de "A cobrar", que sólo existe cuando difieren, y el rótulo del de
+  // arriba— para que no puedan contradecirse: si uno aparece, el otro cambia
+  // de nombre. Un plan al 0 % (o ningún plan) no mueve nada y deja la fila
+  // exactamente como estaba antes del ciclo de planes.
+  const elPlanMueveElNumero =
+    !Number.isNaN(aCobrarCentavos) && aCobrarCentavos !== entregadoCentavos
   // Los planes que ESTA fila puede ofrecer: los de su medio y sólo en pesos
   // (ver `planesOfrecidos`). Vacío significa que la fila no dibuja ningún
   // control de plan — un local sin planes no ve nada nuevo.
@@ -2706,8 +2765,26 @@ function FilaDePago({
         // NaN igual que el resto de la plata de esta pantalla: borrar el
         // campo Monto o Cotización para retipearlo deja `pesosDelPagoCentavos`
         // en NaN, y "Entran $ NaN" es un cartel sin sentido.
+        //
+        // **El rótulo cambia a "Base en pesos" cuando la fila lleva un plan
+        // que mueve el número** (ola final del ciclo del precio en dólares).
+        // Con base US$ 300 a 1485 y un plan del 40 %, la fila decía
+        // `Entran $ 445.500,00` y dos renglones más abajo
+        // `A cobrar $ 623.700,00`: dos importes contradictorios pegados, en
+        // la única pantalla donde se cuentan billetes. Lo que entra al cajón
+        // son los 623.700; los 445.500 son la mercadería convertida, antes
+        // del recargo. No se esconde el renglón —el número es el que deja ver
+        // que la cotización aplicada es la que se tipeó, y es el puente entre
+        // "Cubre US$ 300" y "A cobrar"— sino que se lo llama por su nombre.
+        //
+        // Y el rótulo es CONDICIONAL y no fijo a propósito: sin plan (que es
+        // el estado que la maqueta dibuja, y el de todo local que no financia)
+        // "Entran" sigue siendo exacto y la fila queda byte a byte como el
+        // `.pen` la modela.
         <div className="flex items-center justify-between px-0.5">
-          <span className="text-xs text-muted-foreground">Entran</span>
+          <span className="text-xs text-muted-foreground">
+            {elPlanMueveElNumero ? 'Base en pesos' : 'Entran'}
+          </span>
           <span className={`${estilos.importe} text-[13px] font-semibold text-foreground-soft`}>
             {Number.isNaN(pesosDelPagoCentavos) ? '—' : formatearPrecio(deCentavos(pesosDelPagoCentavos))}
           </span>
@@ -2723,8 +2800,11 @@ function FilaDePago({
           partidos entre dos planes no alcanza. Sólo aparece cuando los dos
           números difieren: sin plan sería repetir el campo de arriba.
           Mismo tratamiento que "Entran", que es el otro renglón de esta fila
-          donde un rótulo y un importe derivado conviven en una línea. */}
-      {!Number.isNaN(aCobrarCentavos) && aCobrarCentavos !== entregadoCentavos && (
+          donde un rótulo y un importe derivado conviven en una línea — y la
+          MISMA condición, `elPlanMueveElNumero`, que le cambia el rótulo a
+          ése: los dos renglones tienen que hablar del mismo caso o vuelven a
+          contradecirse. */}
+      {elPlanMueveElNumero && (
         <div className="flex items-center justify-between px-0.5">
           <span className="text-xs text-muted-foreground">A cobrar</span>
           <span className={`${estilos.importe} text-[13px] font-semibold text-foreground-soft`}>
