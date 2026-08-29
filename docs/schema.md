@@ -53,6 +53,7 @@ erDiagram
     text categoria "opcional"
     uuid categoria_id FK "opcional"
     decimal(12,2) precio
+    moneda moneda
     decimal(12,3) stock
     timestamptz(3) desactivado_en "opcional"
     timestamptz(3) creado_en
@@ -144,6 +145,7 @@ erDiagram
     uuid venta_id FK
     medio_pago medio
     moneda moneda
+    moneda cubre
     decimal(12,2) monto
     decimal(12,4) cotizacion
     uuid plan_de_pago_id FK "opcional"
@@ -217,6 +219,7 @@ erDiagram
     text descripcion
     decimal(12,3) cantidad
     decimal(12,2) precio_unitario
+    moneda moneda
   }
   ventas {
     uuid id PK
@@ -227,6 +230,7 @@ erDiagram
     uuid usuario_id FK
     decimal(12,2) total
     decimal(12,2) recargo
+    decimal(12,2) total_usd
     timestamptz(3) anulada_en "opcional"
     uuid anulada_por_id FK "opcional"
     timestamptz(3) creado_en
