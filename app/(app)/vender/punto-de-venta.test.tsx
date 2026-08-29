@@ -336,6 +336,84 @@ describe('el punto de venta', () => {
     expect(fuente).toMatch(/resumenDelCarrito\(lineas\.length,\s*unidadesMilesimas\)/)
   })
 
+  // --- Task 9: el carrito con dos totales ---
+
+  // `lineasDeTotal` en aislamiento, y no un render con un carrito mixto: este
+  // harness usa `renderToStaticMarkup` (sin clics ni tipeo, ver la nota de
+  // render() al principio del archivo) y sólo puede montar el carrito VACÍO
+  // —la Task 3 ya lo dejó escrito arriba—, así que un carrito con líneas de
+  // las dos monedas no tiene forma de llegar a un render real acá. Mismo
+  // criterio que ya usan `resumenDelCarrito`/`unidadesDelCarrito` y
+  // `lineasDelPieDeCobro`: la función pura se prueba sola, y el cableado se
+  // fija leyendo el fuente (el caso de abajo).
+  it('un carrito todo en pesos muestra UNA sola línea de total, igual que antes', async () => {
+    const { lineasDeTotal } = await import('./punto-de-venta')
+    const lineas = lineasDeTotal({ ars: 150_000, usd: 0 })
+    expect(lineas).toHaveLength(1)
+    expect(lineas[0]).toEqual({ moneda: 'ARS', signo: '$', monto: '1.500,00' })
+  })
+
+  it('un carrito mixto muestra las dos', async () => {
+    const { lineasDeTotal } = await import('./punto-de-venta')
+    const lineas = lineasDeTotal({ ars: 150_000, usd: 100_000 })
+    expect(lineas).toHaveLength(2)
+    expect(lineas[0].moneda).toBe('ARS')
+    expect(lineas[1]).toEqual({ moneda: 'USD', signo: 'US$', monto: '1.000,00' })
+  })
+
+  // El espejo del caso mixto: un carrito TODO en dólares (sin ningún artículo
+  // en pesos) también se ve como una sola línea — "una sola moneda con total
+  // distinto de cero" no significa "en pesos", significa una sola.
+  it('un carrito todo en dólares también muestra UNA sola línea, en dólares', async () => {
+    const { lineasDeTotal } = await import('./punto-de-venta')
+    const lineas = lineasDeTotal({ ars: 0, usd: 100_000 })
+    expect(lineas).toEqual([{ moneda: 'USD', signo: 'US$', monto: '1.000,00' }])
+  })
+
+  // El carrito vacío (las dos monedas en $0) es el caso que ya cubre el
+  // render real de más arriba ("el signo y el monto son dos elementos"): acá
+  // se fija en aislamiento que el ancla cae del lado de los pesos, no que
+  // desaparezca.
+  it('con las dos monedas en cero, el ancla es la línea de pesos', async () => {
+    const { lineasDeTotal } = await import('./punto-de-venta')
+    expect(lineasDeTotal({ ars: 0, usd: 0 })).toEqual([{ moneda: 'ARS', signo: '$', monto: '0,00' }])
+  })
+
+  // Un NaN en una moneda (una cantidad a medio tipear en ESA línea) muestra
+  // "—" ahí sin apagar la otra — la regla que ya documenta `totalesEnCentavos`
+  // (lib/ventas/centavos.ts) y que esta función tiene que respetar en vez de
+  // esconder la línea entera.
+  it('un NaN envenena sólo su moneda, no la banda entera', async () => {
+    const { lineasDeTotal } = await import('./punto-de-venta')
+    expect(lineasDeTotal({ ars: NaN, usd: 100_000 })).toEqual([
+      { moneda: 'ARS', signo: '$', monto: '—' },
+      { moneda: 'USD', signo: 'US$', monto: '1.000,00' },
+    ])
+    // Sola en su moneda (sin nada en pesos) sigue mostrando el "—": el carrito
+    // no está vacío, sólo ilegible.
+    expect(lineasDeTotal({ ars: NaN, usd: 0 })).toEqual([{ moneda: 'ARS', signo: '$', monto: '—' }])
+  })
+
+  // El cableado real: `enCentavos` tiene que llevar la moneda de cada línea
+  // (si no, `totalesEnCentavos` no tiene cómo repartir), `totales` tiene que
+  // salir de esa lista, `hayCarrito` tiene que mirar las DOS monedas, y la
+  // banda tiene que pintar `lineasTotal` —no un total suelto— para que el
+  // carrito mixto de verdad llegue a la pantalla.
+  it('el carrito arma enCentavos con la moneda de cada línea y hayCarrito mira las dos', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    expect(fuente).toMatch(/precioCentavos: aCentavos\(l\.precio\),\s*\n\s*moneda: l\.moneda,/)
+    expect(fuente).toMatch(/const totales = totalesEnCentavos\(enCentavos\)/)
+    expect(fuente).toMatch(
+      /const hayCarrito = lineas\.length > 0 && \(totales\.ars > 0 \|\| totales\.usd > 0\) && !hayLineaInvalida/,
+    )
+    expect(fuente).toMatch(/const lineasTotal = lineasDeTotal\(totales\)/)
+    expect(fuente).toMatch(/\{lineasTotal\.map\(\(l\) => \(/)
+    // `agregar()` tiene que copiar la moneda del resultado del buscador a la
+    // línea nueva: sin esto, todo artículo agregado quedaría 'ARS' fijo sin
+    // importar lo que diga `ArticuloVendible.moneda` (Task 6).
+    expect(fuente).toMatch(/descripcion: a\.nombre,\s*\n\s*precio: a\.precio,\s*\n\s*moneda: a\.moneda,/)
+  })
+
   // --- Task 4: el panel de cobro ---
 
   // El carrito vacío YA arranca con UN pago en pesos (el ajuste de "seguir el
@@ -392,7 +470,7 @@ describe('el punto de venta', () => {
   // El mismo defecto preexistente, del otro lado del cálculo: "Agregar pago"
   // precargaba el campo Monto de la fila nueva con `deCentavos(NaN)` —el
   // string literal "NaN.NaN"— en cuanto una línea del carrito quedaba
-  // inválida (`faltanCentavos` se calcula sobre `totalCentavos`, que es NaN
+  // inválida (`faltanCentavos` se calcula sobre `totales.ars`, que es NaN
   // ahí). Vacío es la salida honesta, mismo criterio que ya usa el resto del
   // archivo para "no se puede calcular": no inventar un cero ni un NaN.
   it('"Agregar pago" no precarga el monto con NaN cuando el carrito tiene una línea inválida', () => {
@@ -1004,8 +1082,8 @@ describe('el punto de venta', () => {
     expect(conCarritoRoto.map((l) => l.monto)).toEqual(['—', formatearPrecio('4000'), '—'])
   })
 
-  // Cableado del pie: la mercadería que muestra tiene que ser el MISMO
-  // `totalCentavos` que pinta la banda de --marca, y las líneas tienen que
+  // Cableado del pie: la mercadería que muestra tiene que salir del mismo
+  // cálculo de totales que pinta la banda de --marca, y las líneas tienen que
   // salir de la función y no de tres bloques de JSX con su propia cuenta.
   // El agujero que encontró la revisión de esta task: con el `.map` exigido a
   // secas, cambiar el guard a `{false && (` dejaba los casos en verde con el
@@ -1014,9 +1092,13 @@ describe('el punto de venta', () => {
   // Por eso el guard y el `.map` se exigen juntos y EN ORDEN, con `[\s\S]*?`
   // entre medio: es la misma corrección que ya se le había hecho al caso de
   // las guardas de Enter, más arriba.
+  //
+  // `totales.ars` y no los dos totales: la Task 9 dejó este llamado
+  // compilando contra sólo pesos —provisorio, con su propio comentario en el
+  // fuente— porque el reparto del pie por moneda es de la Task 10.
   it('el pie del cobro sale de lineasDelPieDeCobro sobre el total del carrito', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
-    expect(fuente).toMatch(/const lineasDelPie = lineasDelPieDeCobro\(totalCentavos, pagos, planes\)/)
+    expect(fuente).toMatch(/const lineasDelPie = lineasDelPieDeCobro\(totales\.ars, pagos, planes\)/)
     expect(
       fuente,
       'el pie tiene que dibujarse cuando hay líneas, mapeando ESA lista',
@@ -1048,6 +1130,9 @@ describe('el punto de venta', () => {
   // Es una lectura del FUENTE porque el estado que lo probaría —un carrito
   // con líneas y un pago con plan— no se puede montar en este harness. Lo que
   // fija es que el bloque que decide el faltante no sepa nada del recargo.
+  //
+  // `totales.ars` y no los dos totales, por lo mismo que el caso de arriba:
+  // provisorio de la Task 9, a la espera del reparto por moneda de la Task 10.
   it('el faltante se mide contra la mercadería, no contra lo cobrado', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
     const desde = fuente.indexOf('const pagadoCentavos = totalDePagosEnCentavos(')
@@ -1055,7 +1140,7 @@ describe('el punto de venta', () => {
     expect(desde, 'el cálculo de lo pagado tiene que existir en el fuente').toBeGreaterThan(-1)
     expect(hasta, 'el cálculo del faltante tiene que existir en el fuente').toBeGreaterThan(desde)
     const bloque = fuente.slice(desde, hasta)
-    expect(bloque).toMatch(/const faltanCentavos = totalCentavos - pagadoCentavos/)
+    expect(bloque).toMatch(/const faltanCentavos = totales\.ars - pagadoCentavos/)
     expect(bloque).toMatch(/const cierra = hayCarrito && faltanCentavos === 0/)
     expect(
       bloque,

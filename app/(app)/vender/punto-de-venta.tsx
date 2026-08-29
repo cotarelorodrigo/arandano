@@ -12,14 +12,15 @@ import { Encabezado } from '@/components/shell/encabezado'
 import {
   aCentavos, aMilesimas, cantidadEnMilesimas, cotizacionEnDiezMilesimas, deCentavos,
   deMilesimas, dineroEnCentavos, pesosDePagoEnCentavos, porcentajeEnMilesimas,
-  recargoEnCentavos, subtotalEnCentavos, totalDePagosEnCentavos, totalEnCentavos,
+  recargoEnCentavos, subtotalEnCentavos, totalDePagosEnCentavos, totalesEnCentavos,
+  type TotalesEnCentavos,
 } from '@/lib/ventas/centavos'
 // De TIPO y no de valor: `lib/planes/consultar.ts` importa Prisma, y un import
 // de valor desde este archivo —que lleva 'use client'— arrastraría `pg` al
 // bundle del navegador. Mismo caso que `ArticuloVendible`, y lo que vigila
 // test/limite-cliente-servidor.test.ts.
 import type { PlanVisible } from '@/lib/planes/consultar'
-import { formatearPrecio, formatearCantidad, montoSinSigno } from '@/lib/formato/mostrar'
+import { formatearPrecio, formatearDolares, formatearCantidad, montoSinSigno } from '@/lib/formato/mostrar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -49,6 +50,11 @@ type Linea = {
   sku: string
   descripcion: string
   precio: string
+  // La moneda EN LA QUE ESTÁ el precio del artículo (Task 6), no en la que se
+  // cobra: dos líneas pueden convivir en el mismo carrito, una en pesos y otra
+  // en dólares, y cada una arrastra la suya para que `totalesEnCentavos` sepa
+  // a qué pila sumar su subtotal.
+  moneda: 'ARS' | 'USD'
   stock: string
   esProducto: boolean
   // Lo que la persona tipeó, tal cual: se parsea al calcular y se manda como
@@ -252,8 +258,9 @@ export function resumenDelCarrito(articulos: number, unidadesMilesimas: number):
  * Las unidades totales del carrito, en milésimas: la suma de cantidades de
  * TODAS las líneas, no la cantidad de líneas (eso ya lo da `lineas.length`,
  * el otro término de `resumenDelCarrito`). Una línea inválida (NaN) suma 0
- * acá — no puede envenenar el conteo entero, a diferencia de `totalCentavos`,
- * que si es el precio de esa línea el que importa se vuelve "—" más abajo.
+ * acá — no puede envenenar el conteo entero, a diferencia de `totales`, donde
+ * si es el precio de esa línea el que importa esa moneda se vuelve "—" más
+ * abajo.
  *
  * Extraída como función pura por el mismo motivo que `resumenDelCarrito`
  * arriba: la review final de esta task encontró que forzar este resultado a
@@ -265,6 +272,45 @@ export function resumenDelCarrito(articulos: number, unidadesMilesimas: number):
  */
 export function unidadesDelCarrito(enCentavos: { cantidadMilesimas: number }[]): number {
   return enCentavos.reduce((acc, l) => acc + (Number.isNaN(l.cantidadMilesimas) ? 0 : l.cantidadMilesimas), 0)
+}
+
+/**
+ * Las líneas de la banda de --marca: una por moneda con algo que mostrar, o
+ * la de pesos sola cuando no hay ninguna otra — el ancla no puede desaparecer
+ * con el carrito vacío (ver el comentario de la banda, más abajo).
+ *
+ * `totales.ars/usd !== 0` y no `> 0` decide si esa moneda "tiene algo que
+ * mostrar": un `NaN` (una línea a medio tipear en esa moneda) también es
+ * distinto de cero, así que la línea sigue ahí con "—" en vez de
+ * desaparecer — la misma regla que ya usaba la banda de un solo total antes
+ * de esta task. Con las DOS en cero (el carrito vacío, o el caso imposible en
+ * la práctica de artículos a precio $0) se cae al caso de arriba: una sola
+ * línea, en pesos.
+ *
+ * Con una sola moneda con algo que mostrar la banda queda con UNA línea,
+ * igual que antes de esta task; las dos aparecen sólo con un carrito mixto —
+ * es la lectura de `design/arandano.pen` que rige acá: la maqueta modela
+ * reposo, no cada combinación posible, y su silencio sobre el carrito mixto
+ * no es instrucción de no mostrar el total en dólares.
+ */
+export function lineasDeTotal(
+  totales: TotalesEnCentavos,
+): { moneda: 'ARS' | 'USD'; signo: string; monto: string }[] {
+  const linea = (moneda: 'ARS' | 'USD', centavos: number) => ({
+    moneda,
+    signo: moneda === 'USD' ? 'US$' : '$',
+    monto: Number.isNaN(centavos)
+      ? '—'
+      : montoSinSigno(
+          moneda === 'USD'
+            ? formatearDolares(deCentavos(centavos))
+            : formatearPrecio(deCentavos(centavos)),
+        ),
+  })
+  const hayArs = totales.ars !== 0
+  const hayUsd = totales.usd !== 0
+  if (!hayArs && !hayUsd) return [linea('ARS', totales.ars)]
+  return [...(hayArs ? [linea('ARS', totales.ars)] : []), ...(hayUsd ? [linea('USD', totales.usd)] : [])]
 }
 
 /**
@@ -561,8 +607,10 @@ export function PuntoDeVenta({
   const [pagos, setPagos] = useState<Pago[]>([])
   // El último total que los pagos ya reflejaron, para el ajuste de más abajo:
   // sin esto, "seguir el total" se repetiría en cada render y pisaría un monto
-  // que la persona ya tocó a mano.
-  const [totalReflejado, setTotalReflejado] = useState<number | null>(null)
+  // que la persona ya tocó a mano. Los DOS totales (Task 9): un pago en pesos
+  // y uno en dólares siguen totales distintos, así que hace falta poder
+  // comparar los dos por separado.
+  const [totalReflejado, setTotalReflejado] = useState<TotalesEnCentavos | null>(null)
   const buscador = useRef<HTMLInputElement>(null)
   // La búsqueda vigente, para que la respuesta de una búsqueda vieja no pueda
   // pisar la de una más nueva: `clearTimeout` cancela el TIMER si `busqueda`
@@ -615,15 +663,23 @@ export function PuntoDeVenta({
   const enCentavos = lineas.map((l) => ({
     cantidadMilesimas: cantidadEnMilesimas(l.cantidad),
     precioCentavos: aCentavos(l.precio),
+    moneda: l.moneda,
   }))
-  const totalCentavos = totalEnCentavos(enCentavos)
+  // Los DOS totales del carrito, uno por moneda (Task 9): `totalesEnCentavos`
+  // ya los separa, así que un `NaN` en una línea en pesos no apaga el total en
+  // dólares del iPhone de al lado, y viceversa.
+  const totales = totalesEnCentavos(enCentavos)
   // NaN cubre las tres formas de estar mal, porque `cantidadEnMilesimas`
   // devuelve NaN para todas: no es un número, la gramática lo considera
   // ambiguo, o el campo quedó VACÍO. El vacío importa aparte: antes contaba
   // como cero, la línea pasaba por buena, Cobrar se encendía y el servidor
   // rechazaba la venta entera con "falta la cantidad".
   const hayLineaInvalida = enCentavos.some((l) => Number.isNaN(l.cantidadMilesimas))
-  const hayCarrito = lineas.length > 0 && totalCentavos > 0 && !hayLineaInvalida
+  const hayCarrito = lineas.length > 0 && (totales.ars > 0 || totales.usd > 0) && !hayLineaInvalida
+  // Las líneas que pinta la banda de --marca (más abajo) y el subtítulo del
+  // Encabezado en el cobro del teléfono: las DOS copias del mismo total leen
+  // de ACÁ, no cada una su propia cuenta.
+  const lineasTotal = lineasDeTotal(totales)
 
   // unidadesDelCarrito (arriba): la suma de cantidades, no la cantidad de
   // líneas (eso ya lo da `lineas.length`, el otro término de
@@ -642,40 +698,47 @@ export function PuntoDeVenta({
     setClave(lineas.length === 0 ? '' : crypto.randomUUID())
   }
 
-  // Cuando el carrito cambia y hay un solo pago en pesos, se le sigue el
-  // total: el caso del 90% es cobrar todo junto y no tener que retocar el
-  // monto cada vez que se agrega un artículo. Con dos pagos, o con uno en
-  // dólares, se deja de tocar — ahí la persona ya decidió cómo reparte.
+  // Cuando el carrito cambia y hay un solo pago, se le sigue el total DE SU
+  // MONEDA (Task 9 — antes sólo pesos, porque no existía un total en dólares
+  // del cual seguir a un pago en USD): el caso del 90% es cobrar todo junto
+  // y no tener que retocar el monto cada vez que se agrega un artículo, sea
+  // cual sea la moneda del único pago. Con dos pagos se deja de tocar — ahí
+  // la persona ya decidió cómo reparte.
   // Ajuste durante el render (no un efecto) por la misma razón que el bloque
   // de `ventaProcesada` de abajo: comparar contra `totalReflejado`, que este
   // mismo bloque actualiza, es lo que hace que el segundo render no vuelva a
   // dispararlo.
   //
-  // Una cantidad a medio tipear deja `totalCentavos` en NaN, y `NaN !==
-  // NaN` es siempre verdadero: sin este `!Number.isNaN`, la guarda nunca
-  // cerraría y `setPagos` seguiría devolviendo un array y un objeto nuevos en
-  // cada pasada —aunque `setTotalReflejado(NaN)` sí frene por el bail-out de
-  // React, `Object.is(NaN, NaN)` es `true`— hasta "Too many re-renders",
-  // perdiendo la venta en curso. Mientras la línea sea inválida los pagos se
-  // quedan con el último total bueno; el botón ya está apagado por
-  // `hayLineaInvalida`, así que no hace falta nada más.
-  if (!Number.isNaN(totalCentavos) && totalCentavos !== totalReflejado) {
-    setTotalReflejado(totalCentavos)
+  // Una cantidad a medio tipear deja NaN en LA MONEDA de esa línea (ver
+  // `totalesEnCentavos`), y `NaN !== NaN` es siempre verdadero: sin el
+  // `!Number.isNaN` de las dos mitades, la guarda nunca cerraría y `setPagos`
+  // seguiría devolviendo un array y un objeto nuevos en cada pasada hasta
+  // "Too many re-renders", perdiendo la venta en curso. Con CUALQUIERA de las
+  // dos monedas inválida los pagos se quedan con el último total bueno; el
+  // botón ya está apagado por `hayLineaInvalida`, así que no hace falta nada
+  // más — partir la guarda por moneda es la clase de cosa que le toca a la
+  // Task 10, que sí va a tener que decidir a qué pila sigue cada pago.
+  const totalesValidos = !Number.isNaN(totales.ars) && !Number.isNaN(totales.usd)
+  const totalesCambiaron =
+    totalReflejado === null || totales.ars !== totalReflejado.ars || totales.usd !== totalReflejado.usd
+  if (totalesValidos && totalesCambiaron) {
+    setTotalReflejado(totales)
     setPagos((previos) => {
       if (previos.length === 0) {
         return [
           {
             medio: 'EFECTIVO',
             moneda: 'ARS',
-            base: deCentavos(totalCentavos),
+            base: deCentavos(totales.ars),
             cotizacion: '1',
             recibido: '',
             planId: null,
           },
         ]
       }
-      if (previos.length === 1 && previos[0].moneda === 'ARS') {
-        return [{ ...previos[0], base: deCentavos(totalCentavos) }]
+      if (previos.length === 1) {
+        const totalDeSuMoneda = previos[0].moneda === 'ARS' ? totales.ars : totales.usd
+        return [{ ...previos[0], base: deCentavos(totalDeSuMoneda) }]
       }
       return previos
     })
@@ -811,6 +874,7 @@ export function PuntoDeVenta({
           sku: a.sku,
           descripcion: a.nombre,
           precio: a.precio,
+          moneda: a.moneda,
           stock: a.stock,
           esProducto: a.esProducto,
           cantidad: '1',
@@ -884,7 +948,10 @@ export function PuntoDeVenta({
       cotizacionDiezMilesimas: cotizacionEnDiezMilesimas(p.cotizacion),
     })),
   )
-  const faltanCentavos = totalCentavos - pagadoCentavos
+  // totales.ars y no los dos totales: el reparto del faltante por moneda es
+  // de la Task 10 (panel de cobro), que va a reemplazar este bloque entero.
+  // Provisorio — Task 9 sólo lo dejó compilando.
+  const faltanCentavos = totales.ars - pagadoCentavos
   const cierra = hayCarrito && faltanCentavos === 0
   // hayFaltanteDeVenta (arriba): NaN (un monto a medio tipear en CUALQUIER
   // pago) cuenta como "sí hay faltante" — "no se sabe si cierra" no es
@@ -893,10 +960,10 @@ export function PuntoDeVenta({
   const hayFaltante = hayFaltanteDeVenta(faltanCentavos)
 
   // El pie del panel de cobro: vacío mientras no haya ningún plan elegido (ver
-  // `lineasDelPieDeCobro`). Se calcula sobre `totalCentavos` —el MISMO número
-  // que pinta la banda de --marca— para que las dos mitades de la pantalla no
-  // puedan decir mercaderías distintas.
-  const lineasDelPie = lineasDelPieDeCobro(totalCentavos, pagos, planes)
+  // `lineasDelPieDeCobro`). Se calcula sobre totales.ars —provisorio, Task 9
+  // sólo lo dejó compilando: la Task 10 lo reemplaza por el desglose por
+  // moneda.
+  const lineasDelPie = lineasDelPieDeCobro(totales.ars, pagos, planes)
 
   /**
    * Un paso del vaciado del carrito en dos golpes: el primero arma la
@@ -1028,8 +1095,13 @@ export function PuntoDeVenta({
       <Encabezado
         titulo={pasoVisible === 'cobro' ? 'Cobro' : 'Vender'}
         subtitulo={
-          pasoVisible === 'cobro' && !Number.isNaN(totalCentavos)
-            ? `Venta de ${formatearPrecio(deCentavos(totalCentavos))}`
+          // `lineasTotal` (arriba): la MISMA cuenta que la banda de --marca,
+          // y no una tercera hecha a mano — es la copia de ese dato para el
+          // Topbar del teléfono, que reemplaza a la banda mientras dura el
+          // paso de cobro (ver el comentario de la Card del carrito, más
+          // abajo: se esconde con `hidden lg:flex` en ese paso).
+          pasoVisible === 'cobro' && !lineasTotal.some((l) => l.monto === '—')
+            ? `Venta de ${lineasTotal.map((l) => `${l.signo} ${l.monto}`).join(' + ')}`
             : undefined
         }
         alVolver={pasoVisible === 'cobro' ? volverAlCarrito : undefined}
@@ -1514,9 +1586,16 @@ export function PuntoDeVenta({
 
                 Está siempre, incluso con el carrito vacío en $ 0,00 — un ancla
                 que aparece y desaparece no es un ancla. Con una cantidad a
-                medio tipear `totalCentavos` queda en NaN, y el monto muestra
-                "—", igual que ya hace la columna Subtotal de cada línea
-                inválida unas líneas más arriba. */}
+                medio tipear `totales` queda en NaN EN SU MONEDA, y esa línea
+                muestra "—", igual que ya hace la columna Subtotal de cada
+                línea inválida unas líneas más arriba.
+
+                UNA línea por moneda con algo que mostrar (Task 9,
+                `lineasTotal` = `lineasDeTotal(totales)`, arriba): con un solo
+                pago en pesos —el caso de siempre— es EXACTAMENTE el markup de
+                antes, un signo y un monto; las dos aparecen sólo con un
+                carrito mixto, que es la lectura de `design/arandano.pen` que
+                rige acá (ver el comentario de `lineasDeTotal`). */}
             <div
               className="flex items-center justify-between px-[22px] py-5"
               style={{ backgroundColor: 'var(--marca)' }}
@@ -1539,19 +1618,22 @@ export function PuntoDeVenta({
                   {resumenDelCarrito(lineas.length, unidadesMilesimas)}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className={estilos.signo} style={{ color: 'var(--marca-soft)' }}>
-                  $
-                </span>
-                <span className={estilos.total} style={{ color: 'var(--marca-foreground)' }}>
-                  {Number.isNaN(totalCentavos)
-                    ? '—'
-                    : // El "$ " que formatearPrecio() ya antepone se descarta con
-                      // montoSinSigno() (lib/formato/mostrar.ts): el signo es SU
-                      // PROPIO elemento (arriba), no parte de esta cadena — es
-                      // justo lo que separa esta banda del pie viejo.
-                      montoSinSigno(formatearPrecio(deCentavos(totalCentavos)))}
-                </span>
+              <div className="flex flex-col items-end gap-1">
+                {lineasTotal.map((l) => (
+                  <div key={l.moneda} className="flex items-center gap-2">
+                    <span className={estilos.signo} style={{ color: 'var(--marca-soft)' }}>
+                      {l.signo}
+                    </span>
+                    <span className={estilos.total} style={{ color: 'var(--marca-foreground)' }}>
+                      {/* El "$ "/"US$ " que formatearPrecio()/formatearDolares() ya
+                          anteponen se descartan con montoSinSigno()
+                          (lib/formato/mostrar.ts, dentro de `lineasDeTotal`): el
+                          signo es SU PROPIO elemento (arriba), no parte de esta
+                          cadena — es justo lo que separa esta banda del pie viejo. */}
+                      {l.monto}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           </Card>
