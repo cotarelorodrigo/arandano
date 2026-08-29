@@ -414,6 +414,25 @@ describe('el punto de venta', () => {
     expect(fuente).toMatch(/descripcion: a\.nombre,\s*\n\s*precio: a\.precio,\s*\n\s*moneda: a\.moneda,/)
   })
 
+  // La SEGUNDA copia del mismo total: el subtítulo del Encabezado en el paso
+  // de cobro del teléfono, que reemplaza a la banda de --marca mientras esa
+  // banda queda oculta (`hidden lg:flex`). Antes de esta task mostraba sólo
+  // pesos con su propia cuenta (`formatearPrecio(deCentavos(totalCentavos))`);
+  // ahora arma la lista completa desde `lineasTotal`, la MISMA que pinta la
+  // banda — sin este caso, esa segunda copia podía quedarse atrás de la
+  // primera sin que ningún test lo note, que es exactamente el modo de falla
+  // que CLAUDE.md ya documenta para los controles duplicados de esta
+  // pantalla (el bug de las "DOS copias" del ciclo móvil+permisos). No hay
+  // forma de renderizarlo de verdad —el harness sólo monta el carrito vacío,
+  // y en escritorio `pasoVisible` nunca vale 'cobro'—, así que es una lectura
+  // del fuente, igual que el resto del cableado de este bloque.
+  it('el subtítulo del cobro móvil sale de lineasTotal, la MISMA lista que la banda', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    expect(fuente).toContain(
+      "? `Venta de ${lineasTotal.map((l) => `${l.signo} ${l.monto}`).join(' + ')}`",
+    )
+  })
+
   // --- Task 4: el panel de cobro ---
 
   // El carrito vacío YA arranca con UN pago en pesos (el ajuste de "seguir el
