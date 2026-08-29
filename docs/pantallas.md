@@ -502,8 +502,9 @@ Es la pantalla que más cambia del ciclo, y la única que se parte en dos frames
   ya no tiene: el mismo callejón que `reapuntarPagoUnico` vino a tapar, un pago
   más adelante. **La pantalla ya no queda muda en ese estado** —el chip de esa
   moneda se dibuja igual y dice `Sobran $X`, ver *Decisiones*—, pero corregirlo
-  sigue siendo a mano ("Quitar pago", o el selector `Cubre` si la otra moneda
-  todavía está en el carrito).
+  sigue siendo a mano: "Quitar pago", o volver a poner mercadería de esa
+  moneda en el carrito. El selector `Cubre` no sirve acá: pide las dos monedas
+  presentes, y este estado es justamente una de las dos en cero.
 - **Un plan sobre un pago ENTREGADO en dólares sigue prohibido**
   (`PLAN_EN_DOLARES`), por la división que el ciclo entero se cuidó de no
   hacer. Cubrir dólares **entregando pesos** sí lo admite: es el caso del
