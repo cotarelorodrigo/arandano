@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { SidebarProvider } from '@/components/ui/sidebar'
+import { SelectorDeMoneda } from '@/components/selector-de-moneda'
 
 // Mismo criterio que app/(app)/vender/caja.test.tsx: acciones.ts es
 // 'use server' y su contrato ya lo prueba acciones.test.ts contra una base
@@ -40,7 +41,7 @@ async function renderAlta(arbol = ARBOL, puedeCostos = true) {
 
 async function renderFicha(
   categoriaId: string | null,
-  extra: Partial<{ desactivado: boolean; puedeEditar: boolean }> = {},
+  extra: Partial<{ desactivado: boolean; puedeEditar: boolean; moneda: 'ARS' | 'USD' }> = {},
 ) {
   const { FichaDeArticulo } = await import('./formularios')
   return renderToStaticMarkup(
@@ -52,6 +53,7 @@ async function renderFicha(
         nombre="Vidrio templado 9H"
         sku="000412"
         precio="12000"
+        moneda={extra.moneda ?? 'ARS'}
         arbol={ARBOL}
         categoriaId={categoriaId}
         desactivado={extra.desactivado ?? false}
@@ -506,5 +508,39 @@ describe('las tarjetas y las columnas pasan a flex-col lg:flex-row (Task 7 del c
   it('las dos columnas de la ficha (columnaIzquierda + Datos/Gráfico) se apilan en el teléfono', async () => {
     const html = await renderFicha(null)
     expect(html).toMatch(/class="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-4"/)
+  })
+})
+
+describe('el selector de moneda está en las DOS pantallas', () => {
+  const fuente = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')
+
+  // El punto entero de esta task: si alguna pantalla arma su propio Select en
+  // vez de instanciar el componente compartido, este caso lo detecta. Cuenta
+  // apariciones, no compara un string armado a mano con las dos etiquetas
+  // adentro, porque lo que importa es que existan las DOS, no en qué orden
+  // caen los atributos de cada tag.
+  it('lo instancian el alta y la ficha, y ninguna arma su propio Select', () => {
+    const apariciones = fuente.match(/<SelectorDeMoneda/g) ?? []
+    expect(apariciones).toHaveLength(2)
+  })
+
+  // Separado del caso de arriba a propósito: congelar el ORDEN de atributos en
+  // un único string es la clase de aserción que se rompe con un reformateo
+  // cosmético y se termina ignorando. Acá cada expectativa se limita a lo que
+  // de verdad distingue a una pantalla de la otra.
+  it('el alta arranca en pesos', () => {
+    expect(fuente).toContain('<SelectorDeMoneda id="moneda" name="moneda" valorInicial="ARS"')
+  })
+
+  it('la ficha precarga la moneda del artículo', () => {
+    expect(fuente).toContain('<SelectorDeMoneda id="e-moneda" name="moneda" valorInicial={moneda}')
+  })
+})
+
+describe('SelectorDeMoneda', () => {
+  it('avisa al pasar de pesos a dólares, porque el número no se reinterpreta solo', () => {
+    const html = renderToStaticMarkup(<SelectorDeMoneda id="m" name="moneda" valorInicial="USD" />)
+    expect(html).toContain('name="moneda"')
+    expect(html).toContain('value="USD"')
   })
 })

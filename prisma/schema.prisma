@@ -288,6 +288,11 @@ model Articulo {
   // Decimal y nunca Float: un flotante binario no representa 0,10 y el error
   // se acumula en cada suma de una caja.
   precio        Decimal      @db.Decimal(12, 2)
+  // En qué moneda está cargado `precio`. Con USD, `precio` NO son pesos: son
+  // dólares, y la conversión se hace recién al vender, con la cotización que
+  // se tipea en ese momento. El default cubre todo lo cargado antes de este
+  // ciclo, que era pesos por no haber otra opción.
+  moneda        Moneda       @default(ARS)
   // Decimal(12,3) y no entero, aunque un local de celulares venda unidades:
   // CLAUDE.md ya tiene previsto gastronomía descontando insumos por receta, y
   // medio kilo de harina no es un entero. Cambiar el tipo después toca todas
@@ -459,6 +464,10 @@ model Venta {
   // `total` NO cambia de significado: sigue siendo la mercadería a precio de
   // lista, así que ninguna venta ya cobrada queda diciendo otra cosa.
   recargo           Decimal   @default(0) @db.Decimal(12, 2)
+  // La mercadería EN DÓLARES, a precio de lista. `total` es la mitad en pesos
+  // de lo mismo, y no cambió de significado para ninguna fila anterior a este
+  // ciclo: todas tienen `totalUsd = 0`.
+  totalUsd          Decimal   @default(0) @map("total_usd") @db.Decimal(12, 2)
   // La venta anulada NO se borra: sus ítems y su total quedan intactos porque
   // el historial tiene que poder responder qué se cobró, y cuando llegue ARCA
   // ésta va a ser el comprobante que necesita su nota de crédito.
@@ -494,6 +503,10 @@ model VentaItem {
   descripcion    String
   cantidad       Decimal @db.Decimal(12, 3)
   precioUnitario Decimal @map("precio_unitario") @db.Decimal(12, 2)
+  // Congelada al vender, igual que `descripcion` y `precioUnitario`: el
+  // artículo puede pasar de dólares a pesos mañana y esta venta tiene que
+  // seguir diciendo en qué moneda se cobró.
+  moneda         Moneda  @default(ARS)
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   venta    Venta    @relation(fields: [ventaId], references: [id], onDelete: Cascade)
@@ -511,6 +524,12 @@ model Pago {
   ventaId      String    @map("venta_id") @db.Uuid
   medio        MedioPago
   moneda       Moneda
+  // Cuál de los dos totales de la venta paga esta fila. NO es lo mismo que
+  // `moneda`, que es lo que la persona entrega: un pago en pesos puede cubrir
+  // el total en dólares (se tipea la cotización y cuántos DÓLARES cubre), y
+  // ahí `moneda = ARS` con `cubre = USD`. Ver la tabla de cuatro filas en
+  // docs/superpowers/specs/2026-08-29-precio-en-usd-design.md.
+  cubre        Moneda    @default(ARS)
   // En la moneda del pago, no en pesos.
   monto        Decimal   @db.Decimal(12, 2)
   // Los ARS que valía una unidad de esa moneda EN ESE MOMENTO. Un pago en pesos
@@ -535,12 +554,12 @@ model Pago {
   plan   PlanDePago? @relation(fields: [planDePagoId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, ventaId])
-  // La última cotización en dólares del local, que el punto de venta pide en
-  // CADA carga de /vender (`ultimaCotizacionUsd`). Sin este índice esa consulta
-  // es un scan de todos los pagos de la tabla compartida más un sort, sobre la
-  // pantalla más caliente del sistema. Se agrega ahora, con la tabla vacía, por
-  // el mismo motivo que el índice de idempotencia: crearlo después es un
-  // bloqueo sobre datos de clientes.
+  // Servía a `ultimaCotizacionUsd` — la última cotización en dólares del
+  // local, que el punto de venta pedía en CADA carga de /vender —, borrada en
+  // la Task 6 de este ciclo (2026-08-29): con precio de artículo en dólares,
+  // ese default dejó de tener sentido. Queda SIN LECTOR y el índice NO se
+  // borra: este ciclo es sólo aditivo, y el `DROP` de un índice es una
+  // migración destructiva que corresponde a un deploy posterior.
   @@index([tenantId, moneda, creadoEn])
   @@map("pagos")
 }

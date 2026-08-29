@@ -62,6 +62,18 @@ async function categoriaIdDe(articuloId: string): Promise<string> {
   return rows[0].categoria_id
 }
 
+/** El artículo tal como quedó escrito, leído con el OWNER —mismo motivo que
+ *  `categoriaDe`—. `precio` vuelve como `Decimal` de Prisma y no como string
+ *  crudo de `pg`, para que los tests puedan comparar `.toString()` igual que
+ *  en el resto del archivo. */
+async function leerArticulo(articuloId: string): Promise<{ moneda: string; precio: Prisma.Decimal }> {
+  const { rows } = await owner.query(
+    `SELECT moneda, precio FROM articulos WHERE id = $1`,
+    [articuloId],
+  )
+  return { moneda: rows[0].moneda, precio: new Prisma.Decimal(rows[0].precio) }
+}
+
 beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
@@ -543,6 +555,20 @@ describe('crearArticulo', () => {
     await expect(promesa).rejects.toMatchObject({ codigo: 'FUERA_DE_RANGO' })
     await expect(promesa).rejects.toBeInstanceOf(ErrorDeInventario)
   })
+
+  it('un artículo se puede crear en dólares', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'iPhone', tipo: 'PRODUCTO', precio: d('300'), moneda: 'USD',
+    })
+    expect((await leerArticulo(a.id)).moneda).toBe('USD')
+  })
+
+  it('sin moneda se crea en pesos', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Funda', tipo: 'PRODUCTO', precio: d('15000'),
+    })
+    expect((await leerArticulo(a.id)).moneda).toBe('ARS')
+  })
 })
 
 describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
@@ -553,6 +579,7 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
     await editarArticulo({
       tenantId, articuloId: a.id, nombre: 'Nombre nuevo', sku: 'NUE-1', precio: d('250.75'),
       categoriaId: null,
+      moneda: 'ARS',
     })
 
     const { rows } = await owner.query(
@@ -564,6 +591,19 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
     // El tipo NO se edita: cambiarlo dejaría stock huérfano que el motor de
     // ventas ya no descuenta ni explica. No hay parámetro para hacerlo.
     expect(rows[0].tipo).toBe('PRODUCTO')
+  })
+
+  it('editar cambia la moneda sin tocar el precio', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'iPhone', tipo: 'PRODUCTO', precio: d('300'),
+    })
+    await editarArticulo({
+      tenantId, articuloId: a.id, nombre: 'iPhone', sku: a.sku, precio: d('300'),
+      categoriaId: null, moneda: 'USD',
+    })
+    const leido = await leerArticulo(a.id)
+    expect(leido.moneda).toBe('USD')
+    expect(leido.precio.toString()).toBe('300')
   })
 
   it('edita la categoría eligiendo una rama, incluido vaciarla de vuelta a null', async () => {
@@ -581,6 +621,7 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
     await editarArticulo({
       tenantId, articuloId: a.id, nombre: 'Con categoría', sku: a.sku, precio: d('100'),
       categoriaId: await categoriaIdDe(destino.id),
+      moneda: 'ARS',
     })
     const { rows } = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [a.id])
     expect(rows[0].categoria).toBe('Audio')
@@ -588,6 +629,7 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
     await editarArticulo({
       tenantId, articuloId: a.id, nombre: 'Con categoría', sku: a.sku, precio: d('100'),
       categoriaId: null,
+      moneda: 'ARS',
     })
     const vacia = await owner.query(`SELECT categoria FROM articulos WHERE id = $1`, [a.id])
     expect(vacia.rows[0].categoria).toBeNull()
@@ -604,6 +646,7 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
       editarArticulo({
         tenantId, articuloId: otro.id, nombre: 'Quiere ocupar', sku: 'OCU-1', precio: d('100'),
         categoriaId: null,
+        moneda: 'ARS',
       }),
     ).rejects.toMatchObject({ codigo: 'SKU_REPETIDO' })
   })
@@ -616,6 +659,7 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
       editarArticulo({
         tenantId, articuloId: a.id, nombre: 'Con sku', sku: '  ', precio: d('100'),
         categoriaId: null,
+        moneda: 'ARS',
       }),
     ).rejects.toMatchObject({ codigo: 'SKU_VACIO' })
   })
@@ -647,6 +691,7 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
         articuloId: '00000000-0000-7000-8000-000000000000',
         nombre: 'X', sku: 'X-1', precio: d('1'),
         categoriaId: null,
+        moneda: 'ARS',
       }),
     ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
   })
@@ -661,6 +706,7 @@ describe('editarArticulo, desactivarArticulo y reactivarArticulo', () => {
       editarArticulo({
         tenantId, articuloId: 'no-es-uuid', nombre: 'X', sku: 'X-1', precio: d('1'),
         categoriaId: null,
+        moneda: 'ARS',
       }),
     ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
     await expect(
@@ -784,6 +830,7 @@ describe('el árbol de categorías', () => {
     await editarArticulo({
       tenantId, articuloId: a.id, nombre: 'Cargador 33W', sku: a.sku, precio: d('12000'),
       categoriaId: await categoriaIdDe(destino.id),
+      moneda: 'ARS',
     })
 
     expect(await categoriaDe(a.id)).toEqual({ nombre: 'Xiaomi', padre: 'Cargadores' })
@@ -805,6 +852,7 @@ describe('el árbol de categorías', () => {
     await editarArticulo({
       tenantId, articuloId: a.id, nombre: 'Se despeja', sku: a.sku, precio: d('1000'),
       categoriaId: null,
+      moneda: 'ARS',
     })
     expect(await categoriaDe(a.id)).toBeNull()
     const { rows } = await owner.query(
@@ -836,6 +884,7 @@ describe('el árbol de categorías', () => {
       editarArticulo({
         tenantId, articuloId: a.id, nombre: 'No se mueve', sku: a.sku, precio: d('100'),
         categoriaId: ajena.id,
+        moneda: 'ARS',
       }),
     ).rejects.toMatchObject({ codigo: 'CATEGORIA_INEXISTENTE' })
   })

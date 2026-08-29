@@ -77,12 +77,30 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
       const p = crudo as {
         medio?: unknown
         moneda?: unknown
+        cubre?: unknown
         base?: unknown
         cotizacion?: unknown
         planId?: unknown
       }
       const medio = String(p.medio ?? '')
       const moneda = String(p.moneda ?? '')
+      // Ausente vale 'ARS', que es lo mismo que hace el motor
+      // (`PagoDeVenta.cubre`, opcional con el mismo default) y lo que era toda
+      // venta antes de este ciclo: el default está para que las dos puntas
+      // digan lo mismo, no para tapar un campo que falte.
+      //
+      // **Lo que este default NO cubre, aunque la primera versión de este
+      // comentario lo afirmara: una pestaña abierta desde antes del deploy.**
+      // Un server action se identifica por un id que se genera EN EL BUILD, y
+      // este proyecto no fija `deploymentId` ni
+      // `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` (`next.config.ts`), así que cada
+      // deploy los renueva. La pestaña vieja postea un id que la imagen nueva
+      // no tiene en su module map, y Next tira "Failed to find Server Action"
+      // ANTES de decodificar el cuerpo: este handler no llega a correr, y por
+      // lo tanto tampoco llega a defaultear nada. Es el mismo hecho —y no uno
+      // contrario— que sostiene el `Error` pelado de `monedaDe` en
+      // `app/(app)/inventario/acciones.ts`.
+      const cubre = String(p.cubre ?? 'ARS')
       // Campo por campo y contra una lista blanca: lo que llega es un JSON que
       // armó el navegador, y Prisma rechazaría un enum inventado con un
       // PrismaClientValidationError —un 500 sin `codigo`— en vez del error de
@@ -92,6 +110,13 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
       }
       if (!MONEDAS.includes(moneda as Moneda)) {
         throw new ErrorDeVenta('COTIZACION_INVALIDA', `moneda desconocida: ${moneda}`)
+      }
+      // La misma lista blanca que la moneda, por el mismo motivo: un enum
+      // inventado lo rechazaría Prisma con un PrismaClientValidationError —un
+      // 500 sin `codigo`— en vez del error de dominio que usa el resto de esta
+      // función.
+      if (!MONEDAS.includes(cubre as Moneda)) {
+        throw new ErrorDeVenta('COTIZACION_INVALIDA', `moneda desconocida: ${cubre}`)
       }
       const planId = String(p.planId ?? '').trim()
       // Mismo guard que el articuloId: un uuid mal formado hace que Prisma tire
@@ -108,6 +133,7 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
       return {
         medio: medio as MedioPago,
         moneda: moneda as Moneda,
+        cubre: cubre as Moneda,
         base: aDecimal(String(p.base ?? ''), 'el monto del pago'),
         cotizacion: aDecimal(String(p.cotizacion ?? ''), 'la cotización'),
         planId: planId === '' ? undefined : planId,

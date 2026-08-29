@@ -23,6 +23,7 @@ import {
   ramaDelArbol, nombreDeRama, Listado,
 } from './page'
 import { SIN_CATEGORIA } from './consulta'
+import { precioEnSuMoneda, formatearPrecio } from '@/lib/formato/mostrar'
 
 describe('tipoDeQuery', () => {
   it('reconoce PRODUCTO y SERVICIO', () => {
@@ -217,6 +218,24 @@ describe('el listado pide la columna categoria', () => {
   // renderizando `Listado` de verdad (Task 6, ronda de arreglos 1).
   it('el select de Prisma trae la columna categoria', () => {
     expect(FUENTE).toMatch(/select:\s*\{[\s\S]*?categoria:\s*true/)
+  })
+})
+
+describe('el listado pide la columna moneda (Task 8 del ciclo de USD)', () => {
+  const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
+
+  // Mismo criterio que "el listado pide la columna categoria": el SELECT y
+  // el armado de `precioFormateado` viven en `Inventario` (Server Component
+  // async), que ningún test puro puede ejercitar sin sesión real. Que la
+  // fila lo MUESTRE bien se prueba más abajo, renderizando `Listado` de
+  // verdad (ver "el precio de cada fila, en su moneda").
+  it('el select de Prisma trae la columna moneda', () => {
+    expect(FUENTE).toMatch(/select:\s*\{[\s\S]*?moneda:\s*true/)
+  })
+
+  it('usa precioEnSuMoneda y no formatearPrecio a secas, que ignoraría un artículo en USD', () => {
+    expect(FUENTE).toContain('precioEnSuMoneda(a.precio.toString(), a.moneda)')
+    expect(FUENTE).not.toContain('formatearPrecio(a.precio.toString())')
   })
 })
 
@@ -699,6 +718,26 @@ describe('Listado: el patrón grid + display:contents (Task 6, ronda de arreglos
       // pagina: 1 y no la página fuera de rango que causó el vacío.
       expect(html).toContain('/inventario"')
     })
+  })
+})
+
+describe('el precio de cada fila, en su moneda (Task 8 del ciclo de USD)', () => {
+  it('un artículo en dólares se muestra con US$, no como si fueran pesos', () => {
+    const html = renderListado({
+      filas: [{ ...FILA, precioFormateado: precioEnSuMoneda('300', 'USD') }],
+    })
+    expect(html).toContain('US$')
+    // No se cuela el formato de pesos ($ 300,00, sin la "US" adelante): son
+    // la misma cifra, y confundirlas es justo lo que este cambio evita.
+    expect(html).not.toContain(`>${formatearPrecio('300')}<`)
+  })
+
+  it('un artículo en pesos sigue mostrándose como siempre', () => {
+    const html = renderListado({
+      filas: [{ ...FILA, precioFormateado: precioEnSuMoneda('300', 'ARS') }],
+    })
+    expect(html).toContain(formatearPrecio('300'))
+    expect(html).not.toContain('US$')
   })
 })
 

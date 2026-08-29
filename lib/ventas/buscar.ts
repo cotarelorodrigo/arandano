@@ -14,6 +14,7 @@ export type ArticuloVendible = {
   sku: string
   nombre: string
   precio: string
+  moneda: 'ARS' | 'USD'
   stock: string
   esProducto: boolean
 }
@@ -48,7 +49,7 @@ export async function buscarArticulosVendibles(
     },
     orderBy: { nombre: 'asc' },
     take: RESULTADOS,
-    select: { id: true, sku: true, nombre: true, precio: true, stock: true, tipo: true },
+    select: { id: true, sku: true, nombre: true, precio: true, moneda: true, stock: true, tipo: true },
   })
 
   return articulos.map((a) => ({
@@ -56,26 +57,8 @@ export async function buscarArticulosVendibles(
     sku: a.sku,
     nombre: a.nombre,
     precio: a.precio.toString(),
+    moneda: a.moneda,
     stock: a.stock.toString(),
     esProducto: a.tipo === 'PRODUCTO',
   }))
-}
-
-/**
- * La cotización del último pago en dólares de este local, o null.
- *
- * Es el default del campo de cotización del punto de venta. Sale de los pagos
- * ya hechos y no de una columna de configuración: cada local tiene su propia
- * cotización y cambia todos los días, así que "la última que usaste" es la
- * mejor aproximación disponible sin pedirle a nadie que mantenga un número.
- *
- * String y no `Decimal`, por lo mismo que `ArticuloVendible`.
- */
-export async function ultimaCotizacionUsd(tenantId: string): Promise<string | null> {
-  const ultimo = await prismaParaTenant(tenantId).pago.findFirst({
-    where: { moneda: 'USD' },
-    orderBy: { creadoEn: 'desc' },
-    select: { cotizacion: true },
-  })
-  return ultimo?.cotizacion.toString() ?? null
 }

@@ -6,8 +6,11 @@ import {
   subtotalEnCentavos, totalEnCentavos,
   pesosDePagoEnCentavos, totalDePagosEnCentavos,
   recargoEnCentavos, porcentajeEnMilesimas,
+  aporteEnCentavos, montoEntregadoEnCentavos, totalesEnCentavos, totalesDePagosEnCentavos,
 } from './centavos'
-import { totalDeItems, totalDePagos, recargoDePago } from './totales'
+import {
+  totalDeItems, totalDePagos, totalesDePagos, recargoDePago, aporteDePago, montoEntregado,
+} from './totales'
 import { aDecimal, ErrorDeFormato } from '@/lib/formato/numeros'
 
 describe('conversión a enteros', () => {
@@ -252,5 +255,111 @@ describe('el recargo del navegador espeja al del servidor', () => {
   it('un porcentaje que no se entiende da NaN, no cero', () => {
     expect(porcentajeEnMilesimas('')).toBeNaN()
     expect(porcentajeEnMilesimas('cuarenta')).toBeNaN()
+  })
+})
+
+// El caso que separa las dos aritméticas si alguna redondea en un momento
+// distinto del otro: base chica, cotización con sus cuatro decimales.
+describe('aporteEnCentavos espeja a aporteDePago', () => {
+  const casos = [
+    { moneda: 'ARS', cubre: 'ARS', base: '15000', cotizacion: '1' },
+    { moneda: 'USD', cubre: 'ARS', base: '300', cotizacion: '1485' },
+    { moneda: 'USD', cubre: 'USD', base: '300', cotizacion: '1' },
+    { moneda: 'ARS', cubre: 'USD', base: '300', cotizacion: '1485' },
+    { moneda: 'USD', cubre: 'ARS', base: '0.05', cotizacion: '1485.3333' },
+  ] as const
+
+  it.each(casos)('mismo aporte y mismo monto entregado: %j', (c) => {
+    const delServidor = aporteDePago({
+      moneda: c.moneda, cubre: c.cubre,
+      base: new Prisma.Decimal(c.base), cotizacion: new Prisma.Decimal(c.cotizacion),
+    })
+    const delCliente = aporteEnCentavos({
+      moneda: c.moneda, cubre: c.cubre,
+      baseCentavos: aCentavos(c.base),
+      cotizacionDiezMilesimas: aDiezMilesimas(c.cotizacion),
+    })
+    expect(delCliente).toBe(aCentavos(delServidor.toString()))
+
+    const entregadoServidor = montoEntregado({
+      moneda: c.moneda, cubre: c.cubre,
+      base: new Prisma.Decimal(c.base), cotizacion: new Prisma.Decimal(c.cotizacion),
+    })
+    const entregadoCliente = montoEntregadoEnCentavos({
+      moneda: c.moneda, cubre: c.cubre,
+      baseCentavos: aCentavos(c.base),
+      cotizacionDiezMilesimas: aDiezMilesimas(c.cotizacion),
+    })
+    expect(entregadoCliente).toBe(aCentavos(entregadoServidor.toString()))
+  })
+
+  // `totalesDePagosEnCentavos` no tenía NINGÚN caso, y es la función que
+  // decide si "Cobrar" se habilita: `faltan = totales − totalesDePagos`, y
+  // `cierra` pide las dos monedas en cero. Verificado por mutación en la
+  // review de rama: invirtiendo su rama de acumulación (`cubre === 'ARS' ?
+  // usd : ars`) la suite entera seguía en verde, mientras un carrito
+  // enteramente en pesos —el 100 % de los locales de hoy— dejaba de poder
+  // cobrar. Todo lo que la rodea sí tenía red; ella no.
+  //
+  // Con UN pago por cuadrante y comparando contra `totalesDePagos` del
+  // servidor, que es el espejo que este archivo existe para sostener: la
+  // pila la elige `cubre` —no `moneda`—, así que un pago entregado en pesos
+  // contra un iPhone en dólares tiene que caer del lado de los dólares.
+  it('totalesDePagosEnCentavos reparte por `cubre` igual que totalesDePagos', () => {
+    const filas = [
+      // Pesos contra pesos: la funda de $15.000.
+      { moneda: 'ARS', cubre: 'ARS', base: '15000', cotizacion: '1' },
+      // Pesos contra dólares: el caso canónico del ciclo, el iPhone de
+      // US$ 300 pagado en pesos a 1485. Aporta 300 a la pila de DÓLARES.
+      { moneda: 'ARS', cubre: 'USD', base: '300', cotizacion: '1485' },
+      // Dólares contra dólares.
+      { moneda: 'USD', cubre: 'USD', base: '120', cotizacion: '1' },
+      // Dólares contra pesos: alguien deja billetes verdes por una venta en
+      // pesos. Aporta 1485 × 50 a la pila de PESOS.
+      { moneda: 'USD', cubre: 'ARS', base: '50', cotizacion: '1485' },
+    ] as const
+
+    const delServidor = totalesDePagos(
+      filas.map((f) => ({
+        moneda: f.moneda, cubre: f.cubre,
+        base: new Prisma.Decimal(f.base), cotizacion: new Prisma.Decimal(f.cotizacion),
+      })),
+    )
+    const delCliente = totalesDePagosEnCentavos(
+      filas.map((f) => ({
+        moneda: f.moneda, cubre: f.cubre,
+        baseCentavos: aCentavos(f.base),
+        cotizacionDiezMilesimas: aDiezMilesimas(f.cotizacion),
+      })),
+    )
+
+    expect(delCliente.ars).toBe(aCentavos(delServidor.ars.toString()))
+    expect(delCliente.usd).toBe(aCentavos(delServidor.usd.toString()))
+
+    // Y los valores absolutos, para que el caso no pueda pasar con las DOS
+    // implementaciones invertidas al mismo tiempo: 15.000 + 74.250 de pesos,
+    // 300 + 120 de dólares.
+    expect(delCliente.ars).toBe(aCentavos('89250'))
+    expect(delCliente.usd).toBe(aCentavos('420'))
+  })
+})
+
+describe('totalesEnCentavos', () => {
+  it('parte el carrito por moneda', () => {
+    const t = totalesEnCentavos([
+      { cantidadMilesimas: 2000, precioCentavos: 750000, moneda: 'ARS' },
+      { cantidadMilesimas: 1000, precioCentavos: 30000, moneda: 'USD' },
+    ])
+    expect(t.ars).toBe(1500000)
+    expect(t.usd).toBe(30000)
+  })
+
+  it('una cantidad en NaN envenena SÓLO su moneda', () => {
+    const t = totalesEnCentavos([
+      { cantidadMilesimas: NaN, precioCentavos: 750000, moneda: 'ARS' },
+      { cantidadMilesimas: 1000, precioCentavos: 30000, moneda: 'USD' },
+    ])
+    expect(Number.isNaN(t.ars)).toBe(true)
+    expect(t.usd).toBe(30000)
   })
 })

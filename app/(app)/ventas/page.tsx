@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import {
   Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger,
 } from '@/components/ui/sheet'
-import { formatearPrecio, formatearHora, formatearCantidad } from '@/lib/formato/mostrar'
+import { formatearPrecio, formatearDolares, formatearHora, formatearCantidad } from '@/lib/formato/mostrar'
 import { componerPorMedio } from '@/lib/ventas/composicion'
 import { totalCobrado, redondearDinero } from '@/lib/ventas/totales'
 import { ROTULO_MEDIO, CONSUMIDOR_FINAL, type Medio } from '@/lib/ventas/medios'
@@ -156,6 +156,11 @@ type FiltroDePeriodo = { creadoEn: { gte: Date; lt: Date } }
  * función sigue devolviendo el agregado crudo, no la suma ya hecha, porque
  * `test/ventas.test.ts` también lee `_sum.total` solo para probar la regla de
  * arriba (que una venta anulada no cuenta).
+ *
+ * Suma `totalUsd` también (Task 11, precio en dólares): es la mitad en
+ * dólares del mismo tile, y no se convierte a pesos ni se mezcla con
+ * `total`/`recargo` — el llamador arma la segunda línea del tile con este
+ * número tal cual, sin pasar por `totalCobrado()`.
  */
 export function totalDelPeriodo(
   prisma: ReturnType<typeof prismaParaTenant>,
@@ -163,7 +168,7 @@ export function totalDelPeriodo(
 ) {
   return prisma.venta.aggregate({
     where: { ...donde, anuladaEn: null },
-    _sum: { total: true, recargo: true },
+    _sum: { total: true, recargo: true, totalUsd: true },
   })
 }
 
@@ -179,9 +184,32 @@ export function totalDelPeriodo(
  * `undefined` y no `NaN` cuando no hubo ninguna cobrada — un período puede
  * anularse entero, y "promedio $ NaN" es peor que no mostrar ningún pie: ver
  * el mismo criterio en `hayFaltanteDeVenta` de punto-de-venta.tsx.
+ *
+ * **Y `undefined` también cuando lo cobrado en pesos es CERO y el período
+ * movió dólares** (ola final del ciclo del precio en dólares). El local que
+ * pidió esta feature carga todo su catálogo en dólares, así que todas sus
+ * ventas tienen `total = 0` y `recargo = 0`: el pie decía `promedio $ 0,00`
+ * al lado de un tile que decía `US$ 3.000,00`, o sea afirmaba lo contrario de
+ * lo que el tile de al lado mostraba. Un tile sin pie OMITE; un
+ * `promedio $ 0,00` AFIRMA, y afirma algo falso — es el mismo modo de falla
+ * que ya se corrigió una vez en este ciclo (una línea rotulada con un número
+ * que no es el que dice ser).
+ *
+ * Se omite y no se agrega una segunda línea en dólares, que era la otra
+ * salida: el promedio en dólares sería `sumaUsd / cobradas`, y en un período
+ * MIXTO ese denominador incluye las ventas que no movieron un solo dólar —
+ * un cuarto número derivado, en 10px, debajo de un conteo. La regla del
+ * ciclo es que fuera de una venta no hay conversión ni número inventado, y
+ * acá el número honesto es ninguno.
+ *
+ * `sumaCobradas` en cero SIN dólares en el período sigue mostrando el pie:
+ * ahí `promedio $ 0,00` es cierto.
  */
-export function pieDeCobradas(sumaCobradas: string, cobradas: number): string | undefined {
+export function pieDeCobradas(
+  sumaCobradas: string, cobradas: number, hayDolares: boolean,
+): string | undefined {
   if (cobradas <= 0) return undefined
+  if (hayDolares && new Prisma.Decimal(sumaCobradas).isZero()) return undefined
   // Decimal.div + redondearDinero, no Number()/toFixed(2): plata en Decimal,
   // nunca number con decimales (regla del ciclo). No es sólo estilo — 2010 /
   // 2000 = 1,005 exacto en decimal (ROUND_HALF_UP redondea a 1,01), pero el
@@ -204,8 +232,14 @@ export function pieDeCobradas(sumaCobradas: string, cobradas: number): string | 
  * también el recargo de esa financiación, no sólo el precio de lista—, así
  * que "devuelto" tiene que decir lo mismo que decía "cobrado" antes de
  * anularse.
+ *
+ * `undefined` cuando lo devuelto en pesos es cero y las anuladas movieron
+ * dólares — mismo criterio y misma razón que `pieDeCobradas`: `$ 0,00
+ * devueltos` sobre una venta anulada de US$ 300 no es una omisión, es una
+ * afirmación falsa.
  */
-export function pieDeAnuladas(montoDevuelto: string): string {
+export function pieDeAnuladas(montoDevuelto: string, hayDolares: boolean): string | undefined {
+  if (hayDolares && new Prisma.Decimal(montoDevuelto).isZero()) return undefined
   return `${formatearPrecio(montoDevuelto)} devueltos`
 }
 
@@ -230,6 +264,20 @@ export function rotuloDeMedios(pagos: { medio: Medio; moneda: 'ARS' | 'USD' }[])
   return [...conDolares.entries()]
     .map(([medio, usd]) => ROTULO_MEDIO[medio] + (usd ? ' · US$' : ''))
     .join(' + ')
+}
+
+/**
+ * La columna Total de una fila: lo cobrado en pesos y, sólo si la venta tiene
+ * algo en dólares, la mercadería en dólares aparte — unidas por " + " y SIN
+ * convertir nada (mismo criterio que `rotuloDeMedios`, arriba, y que
+ * `lineasDeTotal` del pie de cobro de /vender, punto-de-venta.tsx: cada
+ * moneda dice su propio número, ninguna se pasa por la cotización de la
+ * otra). Con `totalUsd = 0` —toda venta grabada antes de este ciclo, y la
+ * inmensa mayoría después— es EXACTAMENTE el string único de siempre.
+ */
+export function totalesFormateados(v: { total: Prisma.Decimal; recargo: Prisma.Decimal; totalUsd: Prisma.Decimal }): string {
+  const ars = formatearPrecio(totalCobrado(v).toString())
+  return v.totalUsd.isZero() ? ars : `${ars} + ${formatearDolares(v.totalUsd.toString())}`
 }
 
 /**
@@ -258,16 +306,28 @@ export function ventanaDePaginas(actual: number, total: number): number[] {
  * `--marca` que docs/sistema-de-diseno.md ya lista para esta pantalla ("Lo
  * que entró en el período"), así que ANTES de este ciclo el código
  * contradecía su propio sistema de diseño escrito — no sólo la maqueta.
+ *
+ * `valorUsd` (Task 11, precio en dólares) sólo lo usa el mismo tile de
+ * marca: la segunda línea, debajo de `valor`, con lo que el período movió en
+ * dólares — "los dos números, uno debajo del otro" (spec del ciclo). Ausente
+ * en todo local sin ninguna venta en dólares, que es el caso común y no
+ * puede verse distinto de como se veía antes de este ciclo.
  */
 export function Tile({
-  rotulo, valor, pie, marca = false,
-}: { rotulo: string; valor: string; pie?: string; marca?: boolean }) {
+  rotulo, valor, valorUsd, pie, marca = false,
+}: { rotulo: string; valor: string; valorUsd?: string; pie?: string; marca?: boolean }) {
   // Paddings y tamaños mobile-first: el teléfono (`nwW2V`) achica el padding
   // y la Valor respecto de lo que ya declaraba escritorio, así que el valor
   // sin prefijo es el del teléfono y `lg:` restaura los números de siempre —
   // el escritorio no puede cambiar de aspecto (mG0u7: padding [15,17], Valor
   // 30px; H6aISK/a7MuT: padding [14,15], Valor 24px).
   if (marca) {
+    // La misma clase para las dos líneas de plata (`valor`/`valorUsd`):
+    // ninguna moneda pesa más que la otra en esta pantalla, así que ninguna
+    // se dibuja más chica — mismo criterio que `estilos.total` en el pie de
+    // cobro de /vender (punto-de-venta.tsx), que tampoco distingue tamaño
+    // entre la línea de pesos y la de dólares.
+    const claseValor = `${estilos.archivo} text-[30px] leading-none font-semibold tracking-[-0.6px] tabular-nums lg:text-[32px]`
     return (
       <div
         className="flex flex-1 flex-col gap-[3px] rounded-2xl px-[17px] py-[15px] lg:px-[18px] lg:py-4"
@@ -279,11 +339,15 @@ export function Tile({
         >
           {rotulo}
         </div>
-        <div
-          style={{ color: 'var(--marca-foreground)' }}
-          className={`${estilos.archivo} text-[30px] leading-none font-semibold tracking-[-0.6px] tabular-nums lg:text-[32px]`}
-        >
-          {valor}
+        <div className="flex flex-col gap-0.5">
+          <div style={{ color: 'var(--marca-foreground)' }} className={claseValor}>
+            {valor}
+          </div>
+          {valorUsd && (
+            <div style={{ color: 'var(--marca-foreground)' }} className={claseValor}>
+              {valorUsd}
+            </div>
+          )}
         </div>
         {pie && (
           <div className="text-[11px]" style={{ color: 'var(--marca-dim)' }}>
@@ -722,8 +786,9 @@ export default async function Ventas({
         // el recargo pago por pago acá —sería exactamente el join de pagos
         // que la columna evita, y para eso está el caché en `Venta.recargo`
         // (CLAUDE.md, "El costo del movimiento" — mismo criterio que
-        // `Articulo.stock` contra sus movimientos).
-        id: true, numero: true, total: true, recargo: true, creadoEn: true, anuladaEn: true,
+        // `Articulo.stock` contra sus movimientos). `totalUsd` (Task 11)
+        // entra por lo mismo, para la mitad en dólares de la misma columna.
+        id: true, numero: true, total: true, recargo: true, creadoEn: true, anuladaEn: true, totalUsd: true,
         cliente: { select: { nombre: true } },
         // orderBy explícito: rotuloDeMedios() documenta "en el orden en que
         // se cobraron", y sin esto Postgres no promete ningún orden — el
@@ -747,27 +812,55 @@ export default async function Ventas({
     // `suma` de arriba con el filtro invertido reusado a mano — son sumas de
     // conjuntos disjuntos y cada una necesita su propio `_sum`. `recargo`
     // entra por lo mismo que en `totalDelPeriodo`: lo devuelto es lo que se
-    // había cobrado, recargo incluido.
+    // había cobrado, recargo incluido. Y `totalUsd` por lo mismo que lo pide
+    // `totalDelPeriodo`: sin él, el pie de este tile no tiene cómo saber que
+    // un `$ 0,00 devueltos` es falso porque lo anulado estaba en dólares.
     prisma.venta.aggregate({
       where: { ...donde, anuladaEn: { not: null } },
-      _sum: { total: true, recargo: true },
+      _sum: { total: true, recargo: true, totalUsd: true },
     }),
     // Los pagos del período, para el panel de composición. Se filtran por la
     // VENTA y no por `pago.creadoEn`: es el mismo `donde` que el listado y que
     // los tiles, así que las tres cosas de la pantalla no pueden hablar de
     // períodos distintos.
     //
-    // Decisión de Task 8, dejada explícita porque no es obvia mirando sólo
-    // este archivo: `Pago.monto` YA es `base + recargo` (`lib/ventas/crear.ts`,
-    // Task 4) — no `Venta.total`, que es sólo mercadería. Este panel suma
-    // `monto`, así que "Cómo entró la plata" ya mostraba, desde que el motor
-    // empezó a cobrar con plan, la plata REAL que entró por cada medio,
-    // recargo incluido — sin que nadie lo tocara. Antes de este ciclo eso
-    // dejaba a este panel y al tile "Total del período" de arriba contando
-    // dos cosas distintas por el mismo importe (mercadería acá, cobrado allá);
-    // ahora que el tile también suma `recargo`, los dos números vuelven a
-    // cerrar entre sí. Por eso `componerPorMedio` NO se toca en este ciclo:
-    // ya estaba bien, lo que estaba mal era lo que había al lado.
+    // Decisión del ciclo de precios por forma de pago, dejada explícita
+    // porque no es obvia mirando sólo este archivo: `Pago.monto` YA es
+    // `base + recargo` (`lib/ventas/crear.ts`) — no `Venta.total`, que es
+    // sólo mercadería. Este panel suma `monto`, así que "Cómo entró la plata"
+    // muestra la plata REAL que entró por cada medio, recargo incluido.
+    //
+    // **Y este panel NO cierra contra el tile "Total del período" de arriba
+    // desde que existen ventas en dólares.** No es un defecto de ninguno de
+    // los dos: contestan preguntas distintas y sólo una convierte.
+    //
+    // El caso canónico del ciclo —un iPhone de lista US$ 300 pagado en pesos
+    // a 1485 con un plan de 12 cuotas al 40 %— se ve así, en la misma
+    // pantalla y a diez centímetros de distancia:
+    //
+    //   tile  "Total del período"  → $ 178.200,00   y debajo   US$ 300,00
+    //   panel "Cómo entró la plata" → Crédito $ 623.700,00 · 100 %
+    //
+    // El tile suma `total + recargo` (mercadería en pesos, que acá es 0, más
+    // el recargo, que siempre es en pesos) y lleva la mitad en dólares a una
+    // SEGUNDA línea sin convertirla, porque el spec fija que `/ventas` no
+    // convierte nada. El panel, en cambio, multiplica cada pago por
+    // `Pago.cotizacion` justamente para poder comparar una barra contra la de
+    // al lado — una barra por medio que mezclara unidades no se podría leer.
+    //
+    // El puente entre los dos números existe y es exacto (445.500 de base
+    // convertida + 178.200 de recargo = 623.700), pero es una conversión, y
+    // ponerla en el tile sería contradecir el spec. Queda como costura
+    // conocida, documentada también en `docs/pantallas.md` (sección
+    // `/ventas`); si algún día el tile tiene que mostrar los pesos
+    // entregados, es una decisión de producto y su propio ciclo.
+    //
+    // Sí se tocó `componerPorMedio` en este ciclo, y por un bug propio:
+    // multiplicaba SIEMPRE por la cotización (`montoEnPesos`), así que un
+    // pago en pesos con cotización distinta de 1 —que ahora existe, porque un
+    // pago en pesos puede cubrir el total en dólares— entraba inflado.
+    // `pesosEntregados` mira la moneda antes de multiplicar. Ver
+    // `lib/ventas/totales.ts`.
     //
     // `groupBy` y no `$queryRaw` con un `SUM(monto * cotizacion)`, que sería la
     // consulta obvia: la extensión de lib/tenant/prisma.ts intercepta
@@ -799,6 +892,15 @@ export default async function Ventas({
     total: devueltas._sum.total ?? new Prisma.Decimal(0),
     recargo: devueltas._sum.recargo ?? new Prisma.Decimal(0),
   })
+  // La mitad en dólares del tile "Total del período" (Task 11): aparte, sin
+  // pasar por totalCobrado() ni por ninguna cotización — ver el docblock de
+  // totalDelPeriodo() para el porqué de no mezclarla con sumaCobrada.
+  const sumaUsdPeriodo = suma._sum.totalUsd ?? new Prisma.Decimal(0)
+  // Su espejo del lado de las anuladas, y sólo para el pie: el tile de
+  // anuladas muestra un CONTEO, no plata, así que esta cifra no tiene una
+  // segunda línea donde aparecer — se usa nada más que para saber si el pie
+  // en pesos estaría mintiendo.
+  const devueltoUsd = devueltas._sum.totalUsd ?? new Prisma.Decimal(0)
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA))
   const conPagina = (n: number) => {
     const u = new URLSearchParams({ desde: dDesde, hasta: dHasta })
@@ -915,6 +1017,10 @@ export default async function Ventas({
                   marca
                   rotulo="Total del período"
                   valor={formatearPrecio(sumaCobrada.toString())}
+                  // Sólo si el período movió algo en dólares — un local sin
+                  // ninguna venta en dólares ve el tile exactamente como hoy,
+                  // una sola línea (Task 11).
+                  valorUsd={sumaUsdPeriodo.isZero() ? undefined : formatearDolares(sumaUsdPeriodo.toString())}
                   pie="sin contar las anuladas"
                 />
                 {/* "Ventas cobradas" y "Anuladas": su propia fila en el
@@ -926,12 +1032,12 @@ export default async function Ventas({
                   <Tile
                     rotulo="Ventas cobradas"
                     valor={formatearCantidad(String(cobradas))}
-                    pie={pieDeCobradas(sumaCobrada.toString(), cobradas)}
+                    pie={pieDeCobradas(sumaCobrada.toString(), cobradas, !sumaUsdPeriodo.isZero())}
                   />
                   <Tile
                     rotulo="Anuladas"
                     valor={formatearCantidad(String(anuladas))}
-                    pie={pieDeAnuladas(devueltoCobrado.toString())}
+                    pie={pieDeAnuladas(devueltoCobrado.toString(), !devueltoUsd.isZero())}
                   />
                 </div>
               </div>
@@ -952,7 +1058,10 @@ export default async function Ventas({
                 // `total + recargo` (Task 8): lo que preguntan de esta
                 // columna es cuánto entró, no cuánto valía la mercadería —
                 // `totalCobrado()`, la misma cuenta que arma el tile de arriba.
-                totalFormateado: formatearPrecio(totalCobrado(v).toString()),
+                // Más "+ US$…" (Task 11) cuando la venta tiene algo en
+                // dólares — totalesFormateados() no convierte nada, sólo une
+                // los dos números con "+".
+                totalFormateado: totalesFormateados(v),
                 anulada: v.anuladaEn !== null,
               }))}
               total={total}

@@ -1,5 +1,5 @@
 import { Prisma } from '@/generated/prisma/client'
-import { montoEnPesos } from './totales'
+import { pesosEntregados } from './totales'
 import type { Barra, Composicion, Medio } from './medios'
 
 type Decimal = Prisma.Decimal
@@ -57,9 +57,12 @@ export type FilaDePagos = {
  * venta llevaba recargo. Ver el comentario del `groupBy` que arma `filas` en
  * `app/(app)/ventas/page.tsx` para el detalle completo de la decisión.
  *
- * La multiplicación pasa por `montoEnPesos`, y no se hace acá a mano, para que
- * este panel redondee en el mismo momento y de la misma forma que el total de
- * la venta: los dos números viven en la misma pantalla y se comparan a ojo.
+ * La multiplicación pasa por `pesosEntregados`, y no se hace acá a mano, para
+ * que este panel redondee en el mismo momento y de la misma forma que el
+ * total de la venta: los dos números viven en la misma pantalla y se
+ * comparan a ojo. Es `pesosEntregados` y no `montoEnPesos`: cada fila sale de
+ * un pago YA GUARDADO, y un pago en pesos vale su monto aunque su cotización
+ * no sea 1 — ver el docblock de `pesosEntregados` en `totales.ts`.
  */
 export function componerPorMedio(filas: FilaDePagos[]): Composicion {
   const acumulado = new Map<Medio, { ars: Decimal; usd: Decimal }>()
@@ -70,7 +73,7 @@ export function componerPorMedio(filas: FilaDePagos[]): Composicion {
 
     // Redondear PRIMERO y multiplicar por la cantidad después, no al revés: es
     // lo que reproduce exactamente la suma pago por pago de `totalDePagos`.
-    const enPesos = montoEnPesos(f.monto, f.cotizacion).mul(f._count)
+    const enPesos = pesosEntregados(f).mul(f._count)
     const actual =
       acumulado.get(f.medio) ?? { ars: new Prisma.Decimal(0), usd: new Prisma.Decimal(0) }
 

@@ -713,6 +713,62 @@ sección *Las pantallas*.
 
 ---
 
+## 23. La maqueta no dibuja nada del precio en dólares — en ninguna de las cinco pantallas
+
+- **Frames**: `App / Artículo nuevo`, `App / Artículo ficha` (y `Móvil /
+  Artículo ficha`), `App / Vender` (y `Móvil / Vender` + `Móvil / Vender ·
+  Cobro`), `App / Ventas`, `KEwHe` (`App / Venta detalle`).
+
+**Qué falta.** `design/arandano.pen` es anterior al ciclo del precio en dólares
+(2026-08-29) — que a su vez es posterior al de planes de pago, ya anotado en las
+entradas 19, 20, 21 y 22 —, así que ninguno de esos frames tiene:
+
+1. **El selector de moneda pegado al campo "Precio de venta"** (`$` / `US$`) del
+   alta y de la ficha, ni el aviso que aparece debajo al cambiarla ("el precio
+   no se convierte…"). El código lo derivó de `SelectorDeCategoria`, que vive en
+   la misma card y sí está dibujado: mismo alto de 40 px, mismo 13/500, mismo
+   `SelectTrigger` de shadcn. Lo único que no sale de ahí es que vaya **pegado**
+   al input (sin radio del lado interno y sin separación), que es el tratamiento
+   estándar de un input con prefijo y lo que hace legible que la moneda es del
+   número de al lado y no un campo aparte.
+2. **La banda del total de `/vender` con una línea por moneda.** El frame dibuja
+   una sola línea, que sigue siendo exactamente lo que se ve con un carrito en
+   pesos; la segunda línea repite el tratamiento de la primera. Lo mismo para el
+   subtítulo del Topbar del cobro móvil.
+3. **El selector `Cubre` de cada fila de pago**, con su rótulo visible — a
+   diferencia de Medio y Moneda, que en la maqueta van sin rótulo. Derivado del
+   selector de Medio de esa misma fila; el rótulo se sumó porque "total en
+   dólares" sin él no dice si es lo que se entrega o lo que se cubre.
+4. **El segundo chip de "Faltan / Sobran"** (uno por moneda) y el rótulo "Total
+   a cobrar **en pesos**" del pie del cobro cuando la venta tiene los dos
+   totales. Los dos son el mismo tratamiento del control que ya está dibujado,
+   repetido o rotulado.
+5. **La segunda línea del tile "Total del período" de `/ventas`**, el segundo
+   número de la columna Total de una fila, y **la banda "Total en dólares" del
+   pie de "Qué se vendió"** en `/ventas/[id]` — que puede convivir con la banda
+   de "Cobrado", o sea DOS bandas destacadas a la vez donde la maqueta dibuja
+   una. Es la deuda que el comentario del pie de esa pantalla nombra.
+
+**Lo que la maqueta NO tiene que cambiar**, y conviene decirlo para que nadie lo
+"arregle" al dibujarlo: **ninguno de estos números se convierte**. Los dos
+totales conviven sin sumarse y sin un equivalente en la otra moneda, en el
+carrito, en el tile, en la fila y en el pie del detalle. Es la regla del ciclo
+entero — fuera de una venta no hay ninguna cotización de la cual derivar el
+equivalente, y un número inventado envejece solo. Un frame que dibuje "US$ 300
+($ 445.500)" estaría pidiendo justo lo que el ciclo se cuidó de no hacer.
+
+Mismo precedente que las entradas 6, 18, 19, 20 y 21: la maqueta no
+**contradice** al código acá, le **faltan** los controles, así que se
+construyeron contra lo que el `.pen` ya fija para cada pantalla en vez de
+inventar un tratamiento. Si al dibujarlos la maqueta decide otra cosa, manda la
+maqueta y se corrige el código.
+
+Detectado al construir el ciclo del precio de artículo en dólares (2026-08-29).
+Ver `docs/superpowers/specs/2026-08-29-precio-en-usd-design.md`, sección *Las
+pantallas*.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

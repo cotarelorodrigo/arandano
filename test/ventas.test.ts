@@ -16,8 +16,11 @@ let crearVenta: typeof import('@/lib/ventas/crear').crearVenta
 let anularVenta: typeof import('@/lib/ventas/anular').anularVenta
 let ajustarStock: typeof import('@/lib/inventario/stock').ajustarStock
 let buscarArticulosVendibles: typeof import('@/lib/ventas/buscar').buscarArticulosVendibles
-let ultimaCotizacionUsd: typeof import('@/lib/ventas/buscar').ultimaCotizacionUsd
 let prismaParaTenant: typeof import('@/lib/tenant/prisma').prismaParaTenant
+// Sólo para el test de `buscarArticulosVendibles` que necesita un artículo en
+// dólares: el resto del archivo sigue dando de alta artículos con SQL crudo
+// contra `owner` (ver el `beforeAll`), y así se queda.
+let crearArticulo: typeof import('@/lib/inventario/articulos').crearArticulo
 let crearPlan: typeof import('@/lib/planes/administrar').crearPlan
 let desactivarPlan: typeof import('@/lib/planes/administrar').desactivarPlan
 // De app/(app)/ventas/page.tsx, no de lib/: es la regla de negocio que arma
@@ -54,8 +57,9 @@ beforeAll(async () => {
   ;({ crearVenta } = await import('@/lib/ventas/crear'))
   ;({ anularVenta } = await import('@/lib/ventas/anular'))
   ;({ ajustarStock } = await import('@/lib/inventario/stock'))
-  ;({ buscarArticulosVendibles, ultimaCotizacionUsd } = await import('@/lib/ventas/buscar'))
+  ;({ buscarArticulosVendibles } = await import('@/lib/ventas/buscar'))
   ;({ prismaParaTenant } = await import('@/lib/tenant/prisma'))
+  ;({ crearArticulo } = await import('@/lib/inventario/articulos'))
   ;({ crearPlan, desactivarPlan } = await import('@/lib/planes/administrar'))
   ;({ totalDelPeriodo } = await import('@/app/(app)/ventas/page'))
 
@@ -785,13 +789,21 @@ describe('cobrar con un plan de pago', () => {
     ).rejects.toMatchObject({ codigo: 'PLAN_NO_CORRESPONDE' })
   })
 
-  // La otra mitad del mismo guard, y la que NO se ve mirando la moneda: el
-  // invariante mide `base × cotizacion` y el recargo se calcula sobre `base` a
-  // secas, así que las dos mitades sólo hablan del mismo número con la
-  // cotización en 1. Un pago en pesos "a cotización 2" con plan sub-cobraría el
-  // recargo. La pantalla nunca lo manda —en ARS ni dibuja el campo—, un POST
-  // armado a mano sí.
-  it('rechaza un plan en un pago en pesos con cotización distinta de 1', async () => {
+  // La otra mitad del mismo guard, y la que NO se veía mirando la moneda —
+  // párrafo escrito en pasado a propósito, porque describe cómo era ANTES de
+  // Task 3 y hoy ya no es cierto: el invariante medía `base × cotizacion`
+  // mientras el recargo se calculaba sobre `base` a secas, así que las dos
+  // mitades sólo hablaban del mismo número con la cotización en 1, y un pago en
+  // pesos "a cotización 2" con plan sub-cobraba el recargo. La pantalla nunca
+  // lo mandaba —en ARS ni dibujaba el campo—, un POST armado a mano sí.
+  // Task 3 (2026-08-29) le sacó esa mitad a la guarda: antes rechazaba
+  // moneda ≠ ARS O cotización ≠ 1, ahora sólo la moneda (ver el comentario de
+  // `PLAN_EN_DOLARES` en crear.ts). Un pago ARS que cubre el total en ARS
+  // ignora la cotización —no hay ningún cruce de moneda que multiplicar—, así
+  // que una cotización rara ya no es un caso especial: el pago simplemente
+  // aporta su `base` tal cual, no cierra contra el total, y el invariante
+  // general (`PAGOS_NO_CIERRAN`) es quien lo frena.
+  it('un plan en un pago en pesos ignora la cotización: si no cierra, no cierra por el invariante general', async () => {
     const plan = await crearPlan({
       tenantId,
       nombre: 'Contado con cotización rara',
@@ -809,7 +821,7 @@ describe('cobrar con un plan de pago', () => {
           { medio: 'EFECTIVO', moneda: 'ARS', base: d('5000'), cotizacion: d('2'), planId: plan.id },
         ],
       }),
-    ).rejects.toMatchObject({ codigo: 'PLAN_EN_DOLARES' })
+    ).rejects.toMatchObject({ codigo: 'PAGOS_NO_CIERRAN' })
   })
 
   it('rechaza un plan en un pago en dólares', async () => {
@@ -872,6 +884,170 @@ describe('cobrar con un plan de pago', () => {
     expect(venta.pagos[0].plan).not.toBeNull()
     expect(venta.pagos[0].plan?.nombre).toBe('Crédito 18 cuotas')
     expect(venta.pagos[0].plan?.cuotas).toBe(18)
+  })
+})
+
+describe('venta con artículos en dólares', () => {
+  // Alta cruda como owner, igual que el `beforeAll` de arriba: `crearArticulo`
+  // de lib/inventario/articulos.ts recibe `moneda` recién en la Task 6, y
+  // usarla acá invertiría el orden de las tasks. `sku` se sortea para no
+  // chocar con los fixtures fijos del `beforeAll` ni entre sí.
+  let contador = 0
+  async function crearArticulo(e: {
+    nombre: string
+    precio: Prisma.Decimal
+    moneda: 'ARS' | 'USD'
+  }): Promise<{ id: string }> {
+    contador += 1
+    const r = await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, moneda, stock, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'PRODUCTO', $4, $5, 1000, now(), now())
+       RETURNING id`,
+      [tenantId, `USD-${Date.now()}-${contador}`, e.nombre, e.precio.toString(), e.moneda],
+    )
+    return { id: r.rows[0].id }
+  }
+
+  /** La venta con sus ítems y pagos, leída desde la transacción del tenant. */
+  async function leerVenta(id: string) {
+    return enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.venta.findUniqueOrThrow({ where: { id }, include: { items: true, pagos: true } }),
+    )
+  }
+
+  it('un carrito todo en dólares se cobra en dólares, sin ninguna cotización', async () => {
+    const iphone = await crearArticulo({ nombre: 'iPhone', precio: d('300'), moneda: 'USD' })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: iphone.id, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'USD', cubre: 'USD', base: d('300'), cotizacion: d('1') }],
+    })
+    const v = await leerVenta(id)
+    expect(v.total.toString()).toBe('0')
+    expect(v.totalUsd.toString()).toBe('300')
+    expect(v.items[0].moneda).toBe('USD')
+    expect(v.pagos[0].cubre).toBe('USD')
+    expect(v.pagos[0].monto.toString()).toBe('300')
+  })
+
+  it('un carrito mixto lleva los dos totales y cada pago cubre el suyo', async () => {
+    const iphone = await crearArticulo({ nombre: 'iPhone', precio: d('300'), moneda: 'USD' })
+    const funda = await crearArticulo({ nombre: 'Funda', precio: d('15000'), moneda: 'ARS' })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [
+        { articuloId: iphone.id, cantidad: d('1') },
+        { articuloId: funda.id, cantidad: d('1') },
+      ],
+      pagos: [
+        { medio: 'EFECTIVO', moneda: 'USD', cubre: 'USD', base: d('300'), cotizacion: d('1') },
+        { medio: 'TARJETA_DEBITO', moneda: 'ARS', cubre: 'ARS', base: d('15000'), cotizacion: d('1') },
+      ],
+    })
+    const v = await leerVenta(id)
+    expect(v.total.toString()).toBe('15000')
+    expect(v.totalUsd.toString()).toBe('300')
+  })
+
+  it('pagar el total en dólares CON PESOS: se tipea la cotización y se cobran los pesos', async () => {
+    const iphone = await crearArticulo({ nombre: 'iPhone', precio: d('300'), moneda: 'USD' })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: iphone.id, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', cubre: 'USD', base: d('300'), cotizacion: d('1485') }],
+    })
+    const v = await leerVenta(id)
+    expect(v.totalUsd.toString()).toBe('300')
+    expect(v.pagos[0].monto.toString()).toBe('445500')
+    expect(v.pagos[0].moneda).toBe('ARS')
+    expect(v.pagos[0].cubre).toBe('USD')
+  })
+
+  it('un plan de cuotas sobre el total en dólares cobra 623700 y aporta 300 exactos', async () => {
+    const iphone = await crearArticulo({ nombre: 'iPhone', precio: d('300'), moneda: 'USD' })
+    const plan = await crearPlan({
+      tenantId,
+      nombre: '12 cuotas',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('40'),
+    })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: iphone.id, cantidad: d('1') }],
+      pagos: [{
+        medio: 'TARJETA_CREDITO', moneda: 'ARS', cubre: 'USD',
+        base: d('300'), cotizacion: d('1485'), planId: plan.id,
+      }],
+    })
+    const v = await leerVenta(id)
+    expect(v.totalUsd.toString()).toBe('300')
+    expect(v.recargo.toString()).toBe('178200')
+    expect(v.pagos[0].monto.toString()).toBe('623700')
+    expect(v.pagos[0].recargo.toString()).toBe('178200')
+  })
+
+  it('rechaza la venta si cierra en pesos pero no en dólares', async () => {
+    const iphone = await crearArticulo({ nombre: 'iPhone', precio: d('300'), moneda: 'USD' })
+    const funda = await crearArticulo({ nombre: 'Funda', precio: d('15000'), moneda: 'ARS' })
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: [
+          { articuloId: iphone.id, cantidad: d('1') },
+          { articuloId: funda.id, cantidad: d('1') },
+        ],
+        pagos: [
+          { medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: d('15000'), cotizacion: d('1') },
+        ],
+      }),
+    ).rejects.toMatchObject({ codigo: 'PAGOS_NO_CIERRAN' })
+  })
+
+  it('sigue rechazando un plan sobre un pago ENTREGADO en dólares', async () => {
+    const iphone = await crearArticulo({ nombre: 'iPhone', precio: d('300'), moneda: 'USD' })
+    // Nombre distinto del plan del test anterior: la unicidad es
+    // `(tenantId, medio, nombre)` y los dos comparten medio y tenant.
+    const plan = await crearPlan({
+      tenantId,
+      nombre: '12 cuotas (pago en dólares)',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('40'),
+    })
+    await expect(
+      crearVenta({
+        tenantId,
+        usuarioId,
+        items: [{ articuloId: iphone.id, cantidad: d('1') }],
+        pagos: [{
+          medio: 'TARJETA_CREDITO', moneda: 'USD', cubre: 'USD',
+          base: d('300'), cotizacion: d('1'), planId: plan.id,
+        }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'PLAN_EN_DOLARES' })
+  })
+
+  it('una venta SIN nada en dólares produce exactamente lo de siempre', async () => {
+    const funda = await crearArticulo({ nombre: 'Funda', precio: d('15000'), moneda: 'ARS' })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: funda.id, cantidad: d('1') }],
+      // Sin `cubre`: el default del tipo tiene que valer ARS.
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('15000'), cotizacion: d('1') }],
+    })
+    const v = await leerVenta(id)
+    expect(v.total.toString()).toBe('15000')
+    expect(v.totalUsd.toString()).toBe('0')
+    expect(v.recargo.toString()).toBe('0')
+    expect(v.pagos[0].cubre).toBe('ARS')
+    expect(v.items[0].moneda).toBe('ARS')
   })
 })
 
@@ -1124,6 +1300,36 @@ describe('totalDelPeriodo (app/(app)/ventas/page.tsx)', () => {
     // 20 % de $500 = $100.
     expect(sumaDespues.minus(sumaAntes).toString()).toBe('100')
   })
+
+  // Task 11 (precio en dólares): el tile "Total del período" agrega una
+  // segunda línea con lo que el período movió en dólares, así que
+  // `totalDelPeriodo()` tiene que sumar `totalUsd` también — mismo criterio
+  // de antes/después que los dos tests de arriba.
+  it('también suma el totalUsd del período, para la segunda línea del tile', async () => {
+    const prisma = prismaParaTenant(tenantId)
+    const donde = { creadoEn: { gte: new Date('2000-01-01T00:00:00Z'), lt: new Date('2999-01-01T00:00:00Z') } }
+
+    const antes = await totalDelPeriodo(prisma, donde)
+    const sumaAntes = new Prisma.Decimal(antes._sum.totalUsd ?? 0)
+
+    const iphone = await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, moneda, stock, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, $2, 'iPhone de totalDelPeriodo', 'PRODUCTO', 300, 'USD', 10, now(), now())
+       RETURNING id`,
+      [tenantId, `USD-TDP-${Date.now()}`],
+    )
+    await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: iphone.rows[0].id, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'USD', cubre: 'USD', base: d('300'), cotizacion: d('1') }],
+    })
+
+    const despues = await totalDelPeriodo(prisma, donde)
+    const sumaDespues = new Prisma.Decimal(despues._sum.totalUsd ?? 0)
+
+    expect(sumaDespues.minus(sumaAntes).toString()).toBe('300')
+  })
 })
 
 describe('idempotencia del cobro', () => {
@@ -1251,30 +1457,12 @@ describe('buscarArticulosVendibles', () => {
     // Sin este guard, el primer foco en el buscador traería todo.
     expect(await buscarArticulosVendibles(tenantId, '   ')).toHaveLength(0)
   })
-})
 
-describe('ultimaCotizacionUsd', () => {
-  it('es null cuando el local nunca cobró en dólares', async () => {
-    const virgen = await crearTenant(owner, `sin-usd-${Date.now()}`)
-    expect(await ultimaCotizacionUsd(virgen)).toBeNull()
-  })
-
-  it('devuelve la del último pago en dólares y no la de otro tenant', async () => {
-    // `remera` cuesta 1000, así que una unidad son $1000 de total. US$ 0,80 a
-    // 1250 dan exactamente eso: los pagos TIENEN que cerrar contra el total o
-    // el motor rechaza la venta, y el test estaría probando otra cosa.
-    await crearVenta({
-      tenantId,
-      usuarioId,
-      items: [{ articuloId: remera, cantidad: d('1') }],
-      pagos: [{ medio: 'EFECTIVO', moneda: 'USD', base: d('0.8'), cotizacion: d('1250') }],
+  it('el resultado dice en qué moneda está el precio', async () => {
+    await crearArticulo({
+      tenantId, usuarioId, nombre: 'iPhone', tipo: 'PRODUCTO', precio: d('300'), moneda: 'USD',
     })
-    // Sin ceros de cola, no '1250.0000': el `Decimal` de Prisma normaliza al
-    // convertir a string, tal como ya lo prueba "congela el precio" más
-    // arriba con `precioUnitario` (Decimal(12,2), guarda 1000.00 y da '1000').
-    // La suposición original de este test —que el toString conserva la
-    // escala de la columna— no vale para el `Decimal` de Prisma.
-    expect(await ultimaCotizacionUsd(tenantId)).toBe('1250')
-    expect(await ultimaCotizacionUsd(otroTenantId)).toBeNull()
+    const [r] = await buscarArticulosVendibles(tenantId, 'iPhone')
+    expect(r.moneda).toBe('USD')
   })
 })

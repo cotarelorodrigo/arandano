@@ -11,15 +11,18 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { Encabezado } from '@/components/shell/encabezado'
 import {
   aCentavos, aMilesimas, cantidadEnMilesimas, cotizacionEnDiezMilesimas, deCentavos,
-  deMilesimas, dineroEnCentavos, pesosDePagoEnCentavos, porcentajeEnMilesimas,
-  recargoEnCentavos, subtotalEnCentavos, totalDePagosEnCentavos, totalEnCentavos,
+  deMilesimas, dineroEnCentavos, montoEntregadoEnCentavos, pesosDePagoEnCentavos,
+  porcentajeEnMilesimas, recargoEnCentavos, subtotalEnCentavos, totalesDePagosEnCentavos,
+  totalesEnCentavos, type TotalesEnCentavos,
 } from '@/lib/ventas/centavos'
 // De TIPO y no de valor: `lib/planes/consultar.ts` importa Prisma, y un import
 // de valor desde este archivo —que lleva 'use client'— arrastraría `pg` al
 // bundle del navegador. Mismo caso que `ArticuloVendible`, y lo que vigila
 // test/limite-cliente-servidor.test.ts.
 import type { PlanVisible } from '@/lib/planes/consultar'
-import { formatearPrecio, formatearCantidad, montoSinSigno } from '@/lib/formato/mostrar'
+import {
+  formatearPrecio, formatearCantidad, montoSinSigno, precioEnSuMoneda,
+} from '@/lib/formato/mostrar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -49,6 +52,11 @@ type Linea = {
   sku: string
   descripcion: string
   precio: string
+  // La moneda EN LA QUE ESTÁ el precio del artículo (Task 6), no en la que se
+  // cobra: dos líneas pueden convivir en el mismo carrito, una en pesos y otra
+  // en dólares, y cada una arrastra la suya para que `totalesEnCentavos` sepa
+  // a qué pila sumar su subtotal.
+  moneda: 'ARS' | 'USD'
   stock: string
   esProducto: boolean
   // Lo que la persona tipeó, tal cual: se parsea al calcular y se manda como
@@ -58,10 +66,21 @@ type Linea = {
 
 type Pago = {
   medio: 'EFECTIVO' | 'TRANSFERENCIA' | 'TARJETA_DEBITO' | 'TARJETA_CREDITO'
+  // La moneda en la que se ENTREGA la plata: los billetes que entran al cajón.
   moneda: 'ARS' | 'USD'
-  // Lo que este pago cubre de la venta, a precio de lista. Se rotula "Monto"
-  // en pantalla y es lo que viaja al servidor; el monto que entra a la caja lo
-  // calcula el motor sumándole el recargo del plan (`lib/ventas/crear.ts`).
+  // Cuál de los DOS totales de la venta cubre este pago, que es una dimensión
+  // APARTE de `moneda`: se entregan pesos contra el total en dólares
+  // (`moneda: 'ARS'`, `cubre: 'USD'`) cada vez que alguien paga en pesos un
+  // iPhone de lista en dólares, y al revés cada vez que alguien deja dólares
+  // contra una venta en pesos. Espeja a `PagoDeVenta.cubre` del motor, donde
+  // ausente vale `'ARS'` — que es lo que era toda venta antes de este ciclo.
+  cubre: 'ARS' | 'USD'
+  // Lo que este pago cubre de la venta, a precio de lista. **Va en dólares si
+  // el pago toca dólares de algún lado** (`moneda` o `cubre`, ver
+  // `baseEnDolaresCentavos` en lib/ventas/centavos.ts), y en pesos si no toca
+  // ninguno: es la regla que hace que nada divida en ninguna punta. Se rotula
+  // "Monto" cuando el pago no cruza monedas y "Cubre US$" cuando sí; el monto
+  // que entra a la caja lo calcula el motor (`lib/ventas/crear.ts`).
   base: string
   cotizacion: string
   // Sólo UI: con cuánto paga el cliente, para calcular el vuelto. NO se manda
@@ -252,8 +271,9 @@ export function resumenDelCarrito(articulos: number, unidadesMilesimas: number):
  * Las unidades totales del carrito, en milésimas: la suma de cantidades de
  * TODAS las líneas, no la cantidad de líneas (eso ya lo da `lineas.length`,
  * el otro término de `resumenDelCarrito`). Una línea inválida (NaN) suma 0
- * acá — no puede envenenar el conteo entero, a diferencia de `totalCentavos`,
- * que si es el precio de esa línea el que importa se vuelve "—" más abajo.
+ * acá — no puede envenenar el conteo entero, a diferencia de `totales`, donde
+ * si es el precio de esa línea el que importa esa moneda se vuelve "—" más
+ * abajo.
  *
  * Extraída como función pura por el mismo motivo que `resumenDelCarrito`
  * arriba: la review final de esta task encontró que forzar este resultado a
@@ -268,9 +288,175 @@ export function unidadesDelCarrito(enCentavos: { cantidadMilesimas: number }[]):
 }
 
 /**
- * Cuántos pesos entran por un pago en dólares, para el renglón "Entran $X"
- * que sólo se muestra bajo un pago en USD (design/arandano.pen, nodo
- * `OTlAa`).
+ * Las líneas de la banda de --marca: una por moneda con algo que mostrar, o
+ * la de pesos sola cuando no hay ninguna otra — el ancla no puede desaparecer
+ * con el carrito vacío (ver el comentario de la banda, más abajo).
+ *
+ * `totales.ars/usd !== 0` y no `> 0` decide si esa moneda "tiene algo que
+ * mostrar": un `NaN` (una línea a medio tipear en esa moneda) también es
+ * distinto de cero, así que la línea sigue ahí con "—" en vez de
+ * desaparecer — la misma regla que ya usaba la banda de un solo total antes
+ * de esta task. Con las DOS en cero (el carrito vacío, o el caso imposible en
+ * la práctica de artículos a precio $0) se cae al caso de arriba: una sola
+ * línea, en pesos.
+ *
+ * Con una sola moneda con algo que mostrar la banda queda con UNA línea,
+ * igual que antes de esta task; las dos aparecen sólo con un carrito mixto —
+ * es la lectura de `design/arandano.pen` que rige acá: la maqueta modela
+ * reposo, no cada combinación posible, y su silencio sobre el carrito mixto
+ * no es instrucción de no mostrar el total en dólares.
+ */
+export function lineasDeTotal(
+  totales: TotalesEnCentavos,
+): { moneda: 'ARS' | 'USD'; signo: string; monto: string }[] {
+  const linea = (moneda: 'ARS' | 'USD', centavos: number) => ({
+    moneda,
+    signo: moneda === 'USD' ? 'US$' : '$',
+    // `precioEnSuMoneda` adentro de `montoSinSigno` y no el ternario a mano:
+    // el helper es exactamente ese ternario, y el `montoSinSigno` de afuera no
+    // le estorba — la banda pinta su `$`/`US$` como SU PROPIO elemento (`signo`,
+    // acá al lado), así que lo que se quita es el símbolo duplicado, no la
+    // elección de moneda.
+    monto: Number.isNaN(centavos)
+      ? '—'
+      : montoSinSigno(precioEnSuMoneda(deCentavos(centavos), moneda)),
+  })
+  const hayArs = totales.ars !== 0
+  const hayUsd = totales.usd !== 0
+  if (!hayArs && !hayUsd) return [linea('ARS', totales.ars)]
+  return [...(hayArs ? [linea('ARS', totales.ars)] : []), ...(hayUsd ? [linea('USD', totales.usd)] : [])]
+}
+
+/**
+ * Qué cotización le corresponde a un pago que acaba de cambiar de `moneda` o
+ * de `cubre`.
+ *
+ * **VACÍA cuando el pago CRUZA monedas**, y ésa es la regla del ciclo: la
+ * cotización no se precarga nunca, ni con la del local ni con la del último
+ * pago. Un `'1'` heredado sobre un pago que pasó a cruzar no es un default
+ * inocente —es un dólar a un peso, y una venta que cierra por un número que
+ * nadie tipeó—.
+ *
+ * **Y `'1'` cuando NO cruza**, que es lo que el servidor necesita: con
+ * `moneda === cubre` la cotización no entra en ninguna cuenta (ver
+ * `aporteDePago`/`montoEntregado` en lib/ventas/totales.ts), pero `crearVenta`
+ * la exige mayor que cero igual y rechaza con COTIZACION_INVALIDA.
+ *
+ * Escribir el `'1'` acá es además lo que limpia una cotización MENTIROSA:
+ * tipear 1485 con `cubre: 'USD'` y después volver el selector a pesos dejaba
+ * ese 1485 pegado a un pago que ya no convierte nada, y como el servidor ni
+ * la mira en ese caso, terminaba guardado en `Pago.cotizacion` —histórico e
+ * inmutable— sin que ninguna cuenta de la pantalla lo notara.
+ */
+export function cotizacionParaElCruce(moneda: Pago['moneda'], cubre: Pago['cubre']): string {
+  return moneda === cubre ? '1' : ''
+}
+
+/**
+ * Qué total cubre un pago que se crea solo: el único que la venta tiene.
+ *
+ * Con las dos monedas presentes —y con el carrito vacío— manda ARS, que es el
+ * default de siempre y el que deja elegir al selector de `Cubre`. Con SÓLO el
+ * total en dólares distinto de cero manda USD: si no, el pago inicial de un
+ * carrito de un solo iPhone arrancaría cubriendo un total en pesos que vale
+ * cero, la venta no cerraría nunca, y el selector para corregirlo tampoco se
+ * dibuja —aparece únicamente cuando la venta tiene los DOS totales—.
+ */
+export function cubrePorDefecto(totales: TotalesEnCentavos): 'ARS' | 'USD' {
+  return totales.ars === 0 && totales.usd !== 0 ? 'USD' : 'ARS'
+}
+
+/**
+ * El ÚNICO pago de la venta, seguido al total que le corresponde cuando el
+ * carrito cambia.
+ *
+ * Mientras la venta tenga las DOS monedas manda lo que la persona eligió en el
+ * selector de `Cubre`, y esto sólo le actualiza la base. Cuando queda UNA
+ * sola, el pago se re-apunta a la que quedó: sacar la funda de un carrito
+ * mixto dejaba al único pago cubriendo un total en pesos que ya no existe, con
+ * el selector escondido —aparece sólo con los dos totales— y por lo tanto sin
+ * ninguna forma de arreglarlo desde la pantalla.
+ *
+ * **Re-apuntar arrastra las otras tres cosas del pago, y ninguna es opcional:**
+ *
+ * - La MONEDA que entrega, para que el pago no quede cruzando sin que nadie lo
+ *   haya pedido.
+ * - La COTIZACIÓN, que se rehace en vez de heredarse: la vieja sería
+ *   exactamente la cotización mentirosa que `cotizacionParaElCruce` existe
+ *   para evitar.
+ * - **El PLAN, que se limpia.** Es la misma regla que aplican los tres
+ *   selectores de la fila —un plan que sobrevive a un cambio que lo vuelve
+ *   inválido es un error del motor con la pantalla en verde— y acá el cambio
+ *   de moneda lo dispara el carrito, no un clic. Sin esto, el pago pasaba a
+ *   `moneda: 'USD'` con el plan puesto y las tres cosas malas juntas:
+ *   `planesOfrecidos` no dibuja el selector para un pago en dólares, así que
+ *   el plan quedaba sin ningún control que lo sacara; `cierra` daba verdadero,
+ *   así que "Cobrar" se habilitaba para que el motor rechazara con
+ *   PLAN_EN_DOLARES; y el pie calculaba el recargo sobre una base en dólares
+ *   tratada como pesos.
+ *
+ * Extraída como función pura y no escrita adentro del `setPagos` por el mismo
+ * motivo que `hayFaltanteDeVenta` o `cubrePorDefecto`: la review de esta task
+ * mutó la condición del re-apuntado a `true` —anulándolo entero— y la suite
+ * quedó en verde, porque nada lo probaba aislado y el harness no puede montar
+ * un carrito.
+ */
+export function reapuntarPagoUnico(pago: Pago, totales: TotalesEnCentavos): Pago {
+  const lasDos = totales.ars !== 0 && totales.usd !== 0
+  const cubre = lasDos ? pago.cubre : cubrePorDefecto(totales)
+  const seReapunto = cubre !== pago.cubre
+  const moneda = seReapunto ? cubre : pago.moneda
+  return {
+    ...pago,
+    cubre,
+    moneda,
+    cotizacion: seReapunto ? cotizacionParaElCruce(moneda, cubre) : pago.cotizacion,
+    planId: seReapunto ? null : pago.planId,
+    // El total DE LO QUE ESE PAGO CUBRE, y ya no el de su moneda: con
+    // `moneda !== cubre` los dos dejan de coincidir, y seguir el de la moneda
+    // haría que un pago en pesos contra el total en dólares persiguiera el
+    // total en pesos.
+    base: deCentavos(cubre === 'ARS' ? totales.ars : totales.usd),
+  }
+}
+
+/**
+ * Lo que una fila del panel de cobro tiene que decir de sí misma para que se
+ * pueda calcular cuánta plata entra por ella.
+ *
+ * Las dos monedas van juntas a propósito: desde este ciclo, con la base sola y
+ * la cotización sola ya no alcanza —la misma base `300` son 300 dólares o
+ * 445.500 pesos según qué entrega y qué cubre—.
+ */
+type FilaDePagoDeLaPantalla = {
+  moneda: Pago['moneda']
+  cubre: Pago['cubre']
+  base: string
+  cotizacion: string
+  planId: string | null
+}
+
+/**
+ * Los pesos que ESTA fila entrega, antes del recargo.
+ *
+ * `montoEntregadoEnCentavos` (lib/ventas/centavos.ts) y no la base pelada: es
+ * el espejo exacto de `montoEntregado` del motor, que es sobre lo que el
+ * servidor calcula el recargo del plan. Un pago en pesos que cubre el total en
+ * dólares tiene base 300 y entrega 445.500 pesos; aplicarle el porcentaje a
+ * 300 daría un recargo mil veces más chico que el que cobra el motor.
+ */
+function pesosDeLaFilaEnCentavos(pago: FilaDePagoDeLaPantalla): number {
+  return montoEntregadoEnCentavos({
+    moneda: pago.moneda,
+    cubre: pago.cubre,
+    baseCentavos: dineroEnCentavos(pago.base),
+    cotizacionDiezMilesimas: cotizacionEnDiezMilesimas(pago.cotizacion),
+  })
+}
+
+/**
+ * Cuántos pesos vale la otra punta de un pago que CRUZA monedas, para el
+ * renglón "Entran $X" (design/arandano.pen, nodo `OTlAa`).
  *
  * Reusa `pesosDePagoEnCentavos` (lib/ventas/centavos.ts) —el mismo cálculo
  * que ata el total de la venta contra la suma de los pagos— en vez de
@@ -278,6 +464,14 @@ export function unidadesDelCarrito(enCentavos: { cantidadMilesimas: number }[]):
  * motor ya suma para decidir si la venta cierra, y escribir la cuenta dos
  * veces es la forma en que este archivo se desincronizaría de esa cuenta sin
  * que ningún test lo note.
+ *
+ * **Sirve para los DOS cruces, y por eso el renglón se gatea por `cruza` y ya
+ * no por `moneda === 'USD'`**: `base × cotización` son los pesos que entran
+ * cuando se entregan pesos contra el total en dólares, y los pesos de
+ * mercadería que se cubren cuando se entregan dólares contra el total en
+ * pesos. En los dos casos es el número que no está escrito en ningún campo de
+ * la fila. Cuando el pago NO cruza no hay segunda punta que mostrar: el campo
+ * de arriba ya lo dice todo.
  */
 export function entranPesosCentavos(montoUsd: string, cotizacion: string): number {
   return pesosDePagoEnCentavos(dineroEnCentavos(montoUsd), cotizacionEnDiezMilesimas(cotizacion))
@@ -297,6 +491,13 @@ export function entranPesosCentavos(montoUsd: string, cotizacion: string): numbe
  * —o perder una de las dos mitades— sin que ningún caso de render lo note,
  * porque este harness sólo llega a montar el pago en efectivo y en pesos que
  * arranca solo.
+ *
+ * **No mira `cubre`, y no es un olvido**: el motor prohíbe el plan sobre un
+ * pago ENTREGADO en dólares (ahí el recargo saldría en dólares y volver a
+ * pesos exigiría dividir), no sobre uno que CUBRA el total en dólares — un
+ * pago en pesos contra el total en dólares lleva su plan sin problema, y es
+ * justamente el caso del iPhone financiado en doce cuotas. Filtrar también
+ * por `cubre` le sacaría al mostrador el caso más caro de la pantalla.
  */
 export function planesOfrecidos(
   pago: { medio: Pago['medio']; moneda: Pago['moneda'] },
@@ -343,8 +544,9 @@ function montoDelPie(centavos: number): string {
  */
 export function lineasDelPieDeCobro(
   mercaderiaCentavos: number,
-  pagos: { base: string; cotizacion: string; planId: string | null }[],
+  pagos: FilaDePagoDeLaPantalla[],
   planes: PlanVisible[],
+  hayTotalEnDolares: boolean,
 ): { rotulo: string; monto: string }[] {
   const conPlan = pagos.flatMap((p) => {
     const plan = planes.find((pl) => pl.id === p.planId)
@@ -390,7 +592,25 @@ export function lineasDelPieDeCobro(
       rotulo: nombres.length === 1 ? `${palabra} ${nombres[0]}` : palabra,
       monto: montoDelPie(Math.abs(recargoCentavos)),
     },
-    { rotulo: 'Total a cobrar', monto: montoDelPie(mercaderiaCentavos + recargoCentavos) },
+    {
+      // "Total a cobrar EN PESOS" en cuanto la venta tiene también un total en
+      // dólares, y ése es el hallazgo Important 2 de la review: este pie es un
+      // desglose en pesos de punta a punta (ver `mercaderiaEnPesosCentavos`),
+      // así que con una funda de $10.000 con descuento y un iPhone de US$ 300
+      // pagado EN dólares la línea decía "Total a cobrar $9.000" sin mencionar
+      // los dólares en ningún lado — y el chip de faltante en dólares tampoco
+      // los menciona, porque esa parte está cubierta y el chip en cero no se
+      // dibuja. Un cajero que confía en la línea rotulada "Total a cobrar"
+      // cobra de menos, y la venta cierra igual porque el motor la da por
+      // cerrada.
+      //
+      // El rótulo y no una segunda línea en dólares: la maqueta no dibuja este
+      // bloque (deuda ya anotada), y agregarle una línea es diseño nuevo sobre
+      // algo que nadie dibujó. Decir en qué moneda está el número que ya
+      // muestra es la corrección más chica que lo vuelve cierto.
+      rotulo: hayTotalEnDolares ? 'Total a cobrar en pesos' : 'Total a cobrar',
+      monto: montoDelPie(mercaderiaCentavos + recargoCentavos),
+    },
   ]
 }
 
@@ -400,19 +620,18 @@ export function lineasDelPieDeCobro(
  *
  * Con `recargoEnCentavos` y `porcentajeEnMilesimas` (`lib/ventas/centavos.ts`),
  * que son el espejo exacto de `recargoDePago` del servidor —`centavos.test.ts`
- * compara las dos aritméticas caso por caso—, y sobre la base YA convertida a
- * pesos, igual que el motor, que sólo acepta plan con cotización 1.
+ * compara las dos aritméticas caso por caso—, y sobre los PESOS QUE ENTREGA la
+ * fila (`pesosDeLaFilaEnCentavos`), igual que el motor. Recibe la fila entera y
+ * ya no la base y la cotización sueltas: desde este ciclo, saber cuántos pesos
+ * entran exige saber además qué moneda se entrega y qué total se cubre.
  */
 export function recargoDeLaFilaEnCentavos(
-  pago: { base: string; cotizacion: string; planId: string | null },
+  pago: FilaDePagoDeLaPantalla,
   planes: PlanVisible[],
 ): number {
   const plan = planes.find((p) => p.id === pago.planId)
   if (!plan) return 0
-  return recargoEnCentavos(
-    entranPesosCentavos(pago.base, pago.cotizacion),
-    porcentajeEnMilesimas(plan.porcentaje),
-  )
+  return recargoEnCentavos(pesosDeLaFilaEnCentavos(pago), porcentajeEnMilesimas(plan.porcentaje))
 }
 
 /**
@@ -433,10 +652,10 @@ export function recargoDeLaFilaEnCentavos(
  * puede probar nadie.
  */
 export function aCobrarDeLaFilaEnCentavos(
-  pago: { base: string; cotizacion: string; planId: string | null },
+  pago: FilaDePagoDeLaPantalla,
   planes: PlanVisible[],
 ): number {
-  return entranPesosCentavos(pago.base, pago.cotizacion) + recargoDeLaFilaEnCentavos(pago, planes)
+  return pesosDeLaFilaEnCentavos(pago) + recargoDeLaFilaEnCentavos(pago, planes)
 }
 
 /**
@@ -475,6 +694,85 @@ export function hayFaltanteDeVenta(faltanCentavos: number): boolean {
 }
 
 /**
+ * La mercadería EN PESOS que la venta pide, que es contra lo que el pie del
+ * cobro suma el recargo del plan.
+ *
+ * El total en pesos del carrito MÁS los pesos con los que los pagos cubren la
+ * parte en dólares. No es `totales.ars` a secas, y ése era el provisorio que
+ * la Task 9 dejó anotado: un carrito de un solo iPhone de lista US$ 300 pagado
+ * en pesos con un plan tiene `totales.ars` en cero, así que el pie decía
+ * "Mercadería $0 / Total a cobrar $178.200" mientras la fila de arriba decía
+ * "A cobrar $623.700" — dos números de la misma pantalla contradiciéndose.
+ *
+ * **La parte que se paga EN dólares no entra acá**, y por eso el pie sigue
+ * siendo un desglose en pesos de punta a punta: no hay pesos que sumarle, y el
+ * plan tampoco puede tocarla (el motor sólo acepta plan sobre un pago
+ * entregado en pesos, ver `planesOfrecidos`).
+ *
+ * Lo que eso deja afuera es real: en un carrito mixto pagado mitad en dólares,
+ * el pie habla sólo de la mitad en pesos. **Y el chip de faltante en dólares
+ * NO lo compensa** —eso decía la primera versión de este comentario y es
+ * falso—: si esa parte está cubierta, `faltan.usd` da cero y el chip no se
+ * dibuja. Lo que lo vuelve honesto es el rótulo: con un total en dólares
+ * presente, la última línea dice "Total a cobrar EN PESOS" (ver
+ * `lineasDelPieDeCobro`).
+ */
+export function mercaderiaEnPesosCentavos(
+  totales: TotalesEnCentavos,
+  pagos: FilaDePagoDeLaPantalla[],
+): number {
+  return pagos.reduce(
+    (acc, p) => (p.moneda === 'ARS' && p.cubre === 'USD' ? acc + pesosDeLaFilaEnCentavos(p) : acc),
+    totales.ars,
+  )
+}
+
+/**
+ * Un chip de faltante por cada moneda que la venta tenga, en el mismo orden
+ * que la banda del total (`lineasDeTotal`): pesos y después dólares.
+ *
+ * `totales.x !== 0` y no `> 0`, por lo mismo que `lineasDeTotal`: una línea a
+ * medio tipear deja esa moneda en NaN, que también es distinto de cero, y el
+ * chip se sigue reservando su lugar —lo pinta o no lo pinta `ChipDeFaltante`,
+ * que ya trata el NaN—. Con una sola moneda en la venta sale UN chip, igual
+ * que antes de este ciclo; con el carrito vacío y sin pagos no sale ninguno,
+ * que es lo mismo que hacía el chip único con `hayCarrito` en falso.
+ *
+ * **O `faltan.x !== 0`, aunque el total de esa moneda sea cero** (ola final
+ * del ciclo del precio en dólares). Ese `o` cubre el único camino que dejaba
+ * "Cobrar" apagado y MUDO, y hace falta describirlo entero porque la
+ * condición sola no lo sugiere:
+ *
+ *  1. Carrito mixto (un iPhone en dólares + una funda de $15.000) y DOS
+ *     pagos, uno apuntado a cada total.
+ *  2. Se saca la funda: `totales.ars` pasa a 0.
+ *  3. `reapuntarPagoUnico` no corre —sólo re-apunta cuando hay UN pago, ver
+ *     ahí—, así que el segundo pago se queda cubriendo pesos con base 15.000.
+ *  4. `faltan.ars = 0 − 15.000 = −15.000`, la venta no cierra y "Cobrar"
+ *     queda deshabilitado.
+ *  5. Con la condición vieja (`totales.ars !== 0`) el chip que lo explicaría
+ *     no se dibujaba, y el selector `Cubre` tampoco (`ofreceCubre` pide las
+ *     dos monedas presentes), así que no quedaba ni cartel ni control.
+ *
+ * Con el `o`, ese estado muestra `Sobran $ 15.000,00` — que es exactamente el
+ * cartel que faltaba. Es recuperable como siempre ("Quitar pago", Esc-Esc),
+ * pero ahora la pantalla dice qué pasó en vez de apagar el botón sin motivo
+ * visible. Es el reverso del defecto simétrico que ya se corrigió en este
+ * mismo ciclo, donde "Cobrar" quedaba habilitado y el motor rechazaba.
+ */
+export function chipsDeFaltante(
+  totales: TotalesEnCentavos,
+  faltan: TotalesEnCentavos,
+): { moneda: 'ARS' | 'USD'; faltanCentavos: number }[] {
+  return [
+    ...(totales.ars !== 0 || faltan.ars !== 0
+      ? [{ moneda: 'ARS' as const, faltanCentavos: faltan.ars }] : []),
+    ...(totales.usd !== 0 || faltan.usd !== 0
+      ? [{ moneda: 'USD' as const, faltanCentavos: faltan.usd }] : []),
+  ]
+}
+
+/**
  * Si hay algún overlay de Radix abierto ahora mismo: el listbox de un
  * `Select` desplegado, un dialog o un menu. Los tres primitivos comparten el
  * mismo defecto (ver el comentario largo de `puedeDispararCobroDesdeFoco` y
@@ -502,13 +800,15 @@ function hayOverlayDeRadixAbierto(): boolean {
 }
 
 export function PuntoDeVenta({
-  cotizacionInicial,
   planes,
   caja,
   cotizacionUsd,
   cotizacionUsdEn,
 }: {
-  cotizacionInicial: string | null
+  // `cotizacionInicial` se borró en este ciclo: era la última cotización con la
+  // que se había cobrado un pago (`Pago.cotizacion`, histórica) y precargaba el
+  // campo. La cotización arranca VACÍA siempre — ver `cotizacionParaElCruce`.
+
   // Los planes ACTIVOS del local, leídos en el servidor (`page.tsx`) por lo
   // mismo que la cotización: el cliente no consulta la base. Vacío es el caso
   // normal de un local que no cargó ninguno, y entonces la pantalla no dibuja
@@ -561,8 +861,10 @@ export function PuntoDeVenta({
   const [pagos, setPagos] = useState<Pago[]>([])
   // El último total que los pagos ya reflejaron, para el ajuste de más abajo:
   // sin esto, "seguir el total" se repetiría en cada render y pisaría un monto
-  // que la persona ya tocó a mano.
-  const [totalReflejado, setTotalReflejado] = useState<number | null>(null)
+  // que la persona ya tocó a mano. Los DOS totales (Task 9): un pago en pesos
+  // y uno en dólares siguen totales distintos, así que hace falta poder
+  // comparar los dos por separado.
+  const [totalReflejado, setTotalReflejado] = useState<TotalesEnCentavos | null>(null)
   const buscador = useRef<HTMLInputElement>(null)
   // La búsqueda vigente, para que la respuesta de una búsqueda vieja no pueda
   // pisar la de una más nueva: `clearTimeout` cancela el TIMER si `busqueda`
@@ -615,15 +917,23 @@ export function PuntoDeVenta({
   const enCentavos = lineas.map((l) => ({
     cantidadMilesimas: cantidadEnMilesimas(l.cantidad),
     precioCentavos: aCentavos(l.precio),
+    moneda: l.moneda,
   }))
-  const totalCentavos = totalEnCentavos(enCentavos)
+  // Los DOS totales del carrito, uno por moneda (Task 9): `totalesEnCentavos`
+  // ya los separa, así que un `NaN` en una línea en pesos no apaga el total en
+  // dólares del iPhone de al lado, y viceversa.
+  const totales = totalesEnCentavos(enCentavos)
   // NaN cubre las tres formas de estar mal, porque `cantidadEnMilesimas`
   // devuelve NaN para todas: no es un número, la gramática lo considera
   // ambiguo, o el campo quedó VACÍO. El vacío importa aparte: antes contaba
   // como cero, la línea pasaba por buena, Cobrar se encendía y el servidor
   // rechazaba la venta entera con "falta la cantidad".
   const hayLineaInvalida = enCentavos.some((l) => Number.isNaN(l.cantidadMilesimas))
-  const hayCarrito = lineas.length > 0 && totalCentavos > 0 && !hayLineaInvalida
+  const hayCarrito = lineas.length > 0 && (totales.ars > 0 || totales.usd > 0) && !hayLineaInvalida
+  // Las líneas que pinta la banda de --marca (más abajo) y el subtítulo del
+  // Encabezado en el cobro del teléfono: las DOS copias del mismo total leen
+  // de ACÁ, no cada una su propia cuenta.
+  const lineasTotal = lineasDeTotal(totales)
 
   // unidadesDelCarrito (arriba): la suma de cantidades, no la cantidad de
   // líneas (eso ya lo da `lineas.length`, el otro término de
@@ -642,41 +952,68 @@ export function PuntoDeVenta({
     setClave(lineas.length === 0 ? '' : crypto.randomUUID())
   }
 
-  // Cuando el carrito cambia y hay un solo pago en pesos, se le sigue el
-  // total: el caso del 90% es cobrar todo junto y no tener que retocar el
-  // monto cada vez que se agrega un artículo. Con dos pagos, o con uno en
-  // dólares, se deja de tocar — ahí la persona ya decidió cómo reparte.
+  // Cuando el carrito cambia y hay un solo pago, se le sigue el total DE SU
+  // MONEDA (Task 9 — antes sólo pesos, porque no existía un total en dólares
+  // del cual seguir a un pago en USD): el caso del 90% es cobrar todo junto
+  // y no tener que retocar el monto cada vez que se agrega un artículo, sea
+  // cual sea la moneda del único pago. Con dos pagos se deja de tocar — ahí
+  // la persona ya decidió cómo reparte.
   // Ajuste durante el render (no un efecto) por la misma razón que el bloque
   // de `ventaProcesada` de abajo: comparar contra `totalReflejado`, que este
   // mismo bloque actualiza, es lo que hace que el segundo render no vuelva a
   // dispararlo.
   //
-  // Una cantidad a medio tipear deja `totalCentavos` en NaN, y `NaN !==
-  // NaN` es siempre verdadero: sin este `!Number.isNaN`, la guarda nunca
-  // cerraría y `setPagos` seguiría devolviendo un array y un objeto nuevos en
-  // cada pasada —aunque `setTotalReflejado(NaN)` sí frene por el bail-out de
-  // React, `Object.is(NaN, NaN)` es `true`— hasta "Too many re-renders",
-  // perdiendo la venta en curso. Mientras la línea sea inválida los pagos se
-  // quedan con el último total bueno; el botón ya está apagado por
-  // `hayLineaInvalida`, así que no hace falta nada más.
-  if (!Number.isNaN(totalCentavos) && totalCentavos !== totalReflejado) {
-    setTotalReflejado(totalCentavos)
+  // Una cantidad a medio tipear deja NaN en LA MONEDA de esa línea (ver
+  // `totalesEnCentavos`), y `NaN !== NaN` es siempre verdadero: sin el
+  // `!Number.isNaN` de las dos mitades, la guarda nunca cerraría y `setPagos`
+  // seguiría devolviendo un array y un objeto nuevos en cada pasada hasta
+  // "Too many re-renders", perdiendo la venta en curso. Con CUALQUIERA de las
+  // dos monedas inválida los pagos se quedan con el último total bueno; el
+  // botón ya está apagado por `hayLineaInvalida`, así que no hace falta nada
+  // más.
+  //
+  // **La guarda es de las DOS monedas juntas a propósito, y es un límite
+  // aceptado, no algo diferido.** Partirla por moneda —dejar que el pago que
+  // cubre dólares siga su total mientras la línea en pesos está a medio
+  // tipear— es más fino y no está construido: obliga a decidir, pago por
+  // pago, a qué pila sigue cada uno, y a que `reapuntarPagoUnico` conviva con
+  // un total envenenado de un solo lado. Lo que se pierde mientras tanto es
+  // chico y transitorio: mientras una cantidad esté ilegible, los pagos se
+  // quedan quietos en el último total bueno, y en cuanto se termine de tipear
+  // vuelven a seguirlo. **El disparador para partirla**: que a alguien del
+  // mostrador le moleste de verdad tener que retocar el monto de un pago
+  // después de corregir una cantidad en la OTRA moneda.
+  const totalesValidos = !Number.isNaN(totales.ars) && !Number.isNaN(totales.usd)
+  const totalesCambiaron =
+    totalReflejado === null || totales.ars !== totalReflejado.ars || totales.usd !== totalReflejado.usd
+  if (totalesValidos && totalesCambiaron) {
+    setTotalReflejado(totales)
     setPagos((previos) => {
+      // El pago que nace solo se ENTREGA en la misma moneda del total que
+      // CUBRE (`moneda: cubre`), así no arranca cruzando y no pide una
+      // cotización que nadie tipeó todavía. Un carrito en pesos queda
+      // exactamente igual que antes de este ciclo: EFECTIVO, en pesos, contra
+      // el total en pesos.
       if (previos.length === 0) {
+        const cubre = cubrePorDefecto(totales)
         return [
           {
             medio: 'EFECTIVO',
-            moneda: 'ARS',
-            base: deCentavos(totalCentavos),
-            cotizacion: '1',
+            moneda: cubre,
+            cubre,
+            base: deCentavos(cubre === 'ARS' ? totales.ars : totales.usd),
+            // No cruza (moneda === cubre), así que 1 — ver `cotizacionParaElCruce`.
+            cotizacion: cotizacionParaElCruce(cubre, cubre),
             recibido: '',
             planId: null,
           },
         ]
       }
-      if (previos.length === 1 && previos[0].moneda === 'ARS') {
-        return [{ ...previos[0], base: deCentavos(totalCentavos) }]
-      }
+      // Con UN solo pago se le sigue el total que cubre, y se lo re-apunta si
+      // esa moneda desapareció del carrito — ver `reapuntarPagoUnico`, que es
+      // donde vive la regla entera. Con dos o más se deja de tocar: ahí la
+      // persona ya decidió cómo reparte.
+      if (previos.length === 1) return [reapuntarPagoUnico(previos[0], totales)]
       return previos
     })
   }
@@ -811,6 +1148,7 @@ export function PuntoDeVenta({
           sku: a.sku,
           descripcion: a.nombre,
           precio: a.precio,
+          moneda: a.moneda,
           stock: a.stock,
           esProducto: a.esProducto,
           cantidad: '1',
@@ -872,31 +1210,56 @@ export function PuntoDeVenta({
     setPagos((previos) => previos.map((p, j) => (j === i ? { ...p, ...cambio } : p)))
   }
 
-  // `totalDePagosEnCentavos` y NO `totalEnCentavos`: la cotización se guarda
-  // con CUATRO decimales, así que tiene su propia conversión. Convertirla con
-  // `aMilesimas` truncaría el cuarto —`1234,5678` a `1234,567`— y sobre un
-  // pago grande eso mueve el total lo suficiente como para que la pantalla
-  // diga que cierra y el motor rechace con PAGOS_NO_CIERRAN. La Task 3 dejó
-  // las dos funciones separadas justamente por esto.
-  const pagadoCentavos = totalDePagosEnCentavos(
+  // Lo que los pagos cubren, POR MONEDA y contra el total que cada uno
+  // declara: `totalesDePagosEnCentavos` es el espejo exacto de `totalesDePagos`
+  // del motor, redondeo por pago incluido. Y `cotizacionEnDiezMilesimas` y no
+  // `aMilesimas`: la cotización se guarda con CUATRO decimales, así que
+  // truncarla al tercero —`1234,5678` a `1234,567`— mueve el total de un pago
+  // grande lo suficiente como para que la pantalla diga que cierra y el motor
+  // rechace con PAGOS_NO_CIERRAN.
+  const pagadoTotales = totalesDePagosEnCentavos(
     pagos.map((p) => ({
-      montoCentavos: dineroEnCentavos(p.base),
+      moneda: p.moneda,
+      cubre: p.cubre,
+      baseCentavos: dineroEnCentavos(p.base),
       cotizacionDiezMilesimas: cotizacionEnDiezMilesimas(p.cotizacion),
     })),
   )
-  const faltanCentavos = totalCentavos - pagadoCentavos
-  const cierra = hayCarrito && faltanCentavos === 0
-  // hayFaltanteDeVenta (arriba): NaN (un monto a medio tipear en CUALQUIER
-  // pago) cuenta como "sí hay faltante" — "no se sabe si cierra" no es
-  // licencia para mostrarle vuelto a nadie, es exactamente el mismo criterio
-  // conservador que ya usa `hayLineaInvalida` más arriba.
-  const hayFaltante = hayFaltanteDeVenta(faltanCentavos)
+  // DOS faltantes, uno por moneda, y no uno solo contra los pesos: hasta la
+  // Task 9 el faltante no sabía nada de la moneda del pago, así que un pago en
+  // dólares que cubría exacto la parte en dólares dejaba "Faltan" prendido
+  // igual y el botón apagado.
+  const faltan: TotalesEnCentavos = {
+    ars: totales.ars - pagadoTotales.ars,
+    usd: totales.usd - pagadoTotales.usd,
+  }
+  // Las DOS en cero: una venta mixta no cierra por tener cubierta la mitad en
+  // pesos, que es exactamente el mismo criterio que aplica `crearVenta` con sus
+  // dos invariantes (lib/ventas/crear.ts).
+  const cierra = hayCarrito && faltan.ars === 0 && faltan.usd === 0
+  // hayFaltanteDeVenta (arriba), aplicada a CADA moneda: NaN (un monto a medio
+  // tipear en cualquier pago) cuenta como "sí hay faltante" — "no se sabe si
+  // cierra" no es licencia para mostrarle vuelto a nadie, es el mismo criterio
+  // conservador que ya usa `hayLineaInvalida` más arriba. Y alcanza con que
+  // falte UNA de las dos: el vuelto se apaga igual.
+  const hayFaltante = hayFaltanteDeVenta(faltan.ars) || hayFaltanteDeVenta(faltan.usd)
+  // Un chip por moneda que la venta tenga (ver `chipsDeFaltante`). Se calcula
+  // acá una sola vez y viaja a los DOS pies —el de la card y el del teléfono—,
+  // por la misma regla que la lista del pie: dos cuentas separadas es cómo una
+  // copia se queda atrás sin que nada avise.
+  const chipsDelFaltante = chipsDeFaltante(totales, faltan)
 
   // El pie del panel de cobro: vacío mientras no haya ningún plan elegido (ver
-  // `lineasDelPieDeCobro`). Se calcula sobre `totalCentavos` —el MISMO número
-  // que pinta la banda de --marca— para que las dos mitades de la pantalla no
-  // puedan decir mercaderías distintas.
-  const lineasDelPie = lineasDelPieDeCobro(totalCentavos, pagos, planes)
+  // `lineasDelPieDeCobro`). Sobre la mercadería EN PESOS —la del carrito más la
+  // que los pagos en pesos cubren del total en dólares, ver
+  // `mercaderiaEnPesosCentavos`— y ya no sobre `totales.ars` a secas, que era
+  // el provisorio que dejó la Task 9.
+  const lineasDelPie = lineasDelPieDeCobro(
+    mercaderiaEnPesosCentavos(totales, pagos),
+    pagos,
+    planes,
+    totales.usd !== 0,
+  )
 
   /**
    * Un paso del vaciado del carrito en dos golpes: el primero arma la
@@ -1028,8 +1391,13 @@ export function PuntoDeVenta({
       <Encabezado
         titulo={pasoVisible === 'cobro' ? 'Cobro' : 'Vender'}
         subtitulo={
-          pasoVisible === 'cobro' && !Number.isNaN(totalCentavos)
-            ? `Venta de ${formatearPrecio(deCentavos(totalCentavos))}`
+          // `lineasTotal` (arriba): la MISMA cuenta que la banda de --marca,
+          // y no una tercera hecha a mano — es la copia de ese dato para el
+          // Topbar del teléfono, que reemplaza a la banda mientras dura el
+          // paso de cobro (ver el comentario de la Card del carrito, más
+          // abajo: se esconde con `hidden lg:flex` en ese paso).
+          pasoVisible === 'cobro' && !lineasTotal.some((l) => l.monto === '—')
+            ? `Venta de ${lineasTotal.map((l) => `${l.signo} ${l.monto}`).join(' + ')}`
             : undefined
         }
         alVolver={pasoVisible === 'cobro' ? volverAlCarrito : undefined}
@@ -1120,7 +1488,13 @@ export function PuntoDeVenta({
                       {a.nombre} <span className="text-muted-foreground">· {a.sku}</span>
                     </span>
                     <span>
-                      <span className={estilos.importe}>{formatearPrecio(a.precio)}</span>
+                      {/* `precioEnSuMoneda` y no `formatearPrecio`: el precio
+                          del artículo está en SU moneda (`Articulo.moneda`), y
+                          un iPhone de lista US$ 300 mostrado como "$ 300,00"
+                          se lee tres órdenes de magnitud abajo. Es el primer
+                          número que ve quien busca el artículo, así que es
+                          donde más caro sale equivocarse. */}
+                      <span className={estilos.importe}>{precioEnSuMoneda(a.precio, a.moneda)}</span>
                       {/* El stock no es plata, así que no lleva estilos.importe —
                           pero sigue siendo una cifra que se compara de un
                           vistazo, así que conserva tabular-nums. Un servicio
@@ -1305,7 +1679,12 @@ export function PuntoDeVenta({
                                 pegado al SKU, con el mismo tratamiento de
                                 meta. En escritorio desaparece de esta línea,
                                 porque su columna vuelve. */}
-                            <span className="lg:hidden"> · {formatearPrecio(l.precio)} c/u</span>
+                            {/* En la moneda de la línea, igual que la columna
+                                "Precio" de escritorio: el carrito mixto tiene
+                                una línea en pesos y otra en dólares al mismo
+                                tiempo, así que el símbolo es lo único que las
+                                distingue. */}
+                            <span className="lg:hidden"> · {precioEnSuMoneda(l.precio, l.moneda)} c/u</span>
                           </span>
                           {/* Antes que el aviso de stock: una cantidad que no
                               se entiende ni siquiera se puede evaluar contra
@@ -1416,7 +1795,7 @@ export function PuntoDeVenta({
                         className={`hidden text-foreground-soft lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors ${estilos.importe}`}
                       >
                         <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
-                          {formatearPrecio(l.precio)}
+                          {precioEnSuMoneda(l.precio, l.moneda)}
                         </div>
                       </div>
                       {/* `ml-auto` empuja el subtotal a la derecha del
@@ -1431,10 +1810,15 @@ export function PuntoDeVenta({
                         className={`ml-auto text-[15px] font-semibold text-foreground lg:ml-0 lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors ${estilos.importe}`}
                       >
                         <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
+                          {/* El subtotal hereda la moneda de su línea: es
+                              cantidad × precio, así que no puede estar en otra
+                              — y es el número que la banda de total suma a la
+                              pila de esa misma moneda. */}
                           {invalida
                             ? '—'
-                            : formatearPrecio(
+                            : precioEnSuMoneda(
                                 deCentavos(subtotalEnCentavos(cantidadMilesimas, aCentavos(l.precio))),
+                                l.moneda,
                               )}
                         </div>
                       </div>
@@ -1514,9 +1898,16 @@ export function PuntoDeVenta({
 
                 Está siempre, incluso con el carrito vacío en $ 0,00 — un ancla
                 que aparece y desaparece no es un ancla. Con una cantidad a
-                medio tipear `totalCentavos` queda en NaN, y el monto muestra
-                "—", igual que ya hace la columna Subtotal de cada línea
-                inválida unas líneas más arriba. */}
+                medio tipear `totales` queda en NaN EN SU MONEDA, y esa línea
+                muestra "—", igual que ya hace la columna Subtotal de cada
+                línea inválida unas líneas más arriba.
+
+                UNA línea por moneda con algo que mostrar (Task 9,
+                `lineasTotal` = `lineasDeTotal(totales)`, arriba): con un solo
+                pago en pesos —el caso de siempre— es EXACTAMENTE el markup de
+                antes, un signo y un monto; las dos aparecen sólo con un
+                carrito mixto, que es la lectura de `design/arandano.pen` que
+                rige acá (ver el comentario de `lineasDeTotal`). */}
             <div
               className="flex items-center justify-between px-[22px] py-5"
               style={{ backgroundColor: 'var(--marca)' }}
@@ -1539,19 +1930,22 @@ export function PuntoDeVenta({
                   {resumenDelCarrito(lineas.length, unidadesMilesimas)}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className={estilos.signo} style={{ color: 'var(--marca-soft)' }}>
-                  $
-                </span>
-                <span className={estilos.total} style={{ color: 'var(--marca-foreground)' }}>
-                  {Number.isNaN(totalCentavos)
-                    ? '—'
-                    : // El "$ " que formatearPrecio() ya antepone se descarta con
-                      // montoSinSigno() (lib/formato/mostrar.ts): el signo es SU
-                      // PROPIO elemento (arriba), no parte de esta cadena — es
-                      // justo lo que separa esta banda del pie viejo.
-                      montoSinSigno(formatearPrecio(deCentavos(totalCentavos)))}
-                </span>
+              <div className="flex flex-col items-end gap-1">
+                {lineasTotal.map((l) => (
+                  <div key={l.moneda} className="flex items-center gap-2">
+                    <span className={estilos.signo} style={{ color: 'var(--marca-soft)' }}>
+                      {l.signo}
+                    </span>
+                    <span className={estilos.total} style={{ color: 'var(--marca-foreground)' }}>
+                      {/* El "$ "/"US$ " que formatearPrecio()/formatearDolares() ya
+                          anteponen se descartan con montoSinSigno()
+                          (lib/formato/mostrar.ts, dentro de `lineasDeTotal`): el
+                          signo es SU PROPIO elemento (arriba), no parte de esta
+                          cadena — es justo lo que separa esta banda del pie viejo. */}
+                      {l.monto}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           </Card>
@@ -1612,8 +2006,21 @@ export function PuntoDeVenta({
                   pagos.map((p) => ({
                     medio: p.medio,
                     moneda: p.moneda,
+                    // Qué total cubre este pago. Va SIEMPRE, incluido el 'ARS'
+                    // del caso común: el servidor lo trata como opcional
+                    // (`PagoDeVenta.cubre`, ausente vale 'ARS'), pero mandarlo
+                    // sólo a veces sería un campo que aparece y desaparece
+                    // según el carrito, y eso es más difícil de leer en un log
+                    // que un campo que siempre está.
+                    cubre: p.cubre,
                     base: p.base,
-                    cotizacion: p.cotizacion,
+                    // '1' cuando el pago NO cruza monedas, y nunca la cadena
+                    // vacía: ahí el servidor no usa la cotización para ninguna
+                    // cuenta pero la exige mayor que cero igual
+                    // (COTIZACION_INVALIDA). El estado ya guarda '1' en ese
+                    // caso (`cotizacionParaElCruce`); esto lo vuelve a decir
+                    // en el borde donde importa, que es el que ve el motor.
+                    cotizacion: p.moneda === p.cubre ? '1' : p.cotizacion,
                     // `undefined` y no `null` cuando no hay plan: JSON.stringify
                     // descarta la clave entera, así que un local sin planes manda
                     // exactamente el mismo JSON que antes de que este campo
@@ -1629,8 +2036,12 @@ export function PuntoDeVenta({
                     key={i}
                     pago={p}
                     indice={i}
-                    cotizacionInicial={cotizacionInicial}
                     planes={planes}
+                    // El selector de `Cubre` sólo tiene sentido con los DOS
+                    // totales sobre la mesa: con una sola moneda no hay nada
+                    // que elegir y la fila queda idéntica a la de antes de
+                    // este ciclo.
+                    ofreceCubre={totales.ars > 0 && totales.usd > 0}
                     hayFaltante={hayFaltante}
                     onCambiar={(cambio) => cambiarPago(i, cambio)}
                     onQuitar={() => setPagos((p2) => p2.filter((_, j) => j !== i))}
@@ -1647,26 +2058,39 @@ export function PuntoDeVenta({
                   variant="outline"
                   className="h-[38px] gap-[7px] rounded-[9px] border-input text-[13px] font-semibold text-foreground-soft"
                   onClick={() =>
-                    setPagos((p) => [
-                      ...p,
-                      {
-                        medio: 'EFECTIVO',
-                        moneda: 'ARS',
-                        // Vacío y no `deCentavos(NaN)` si una línea del carrito
-                        // está a medio tipear: `Math.max(0, NaN)` es NaN,
-                        // `deCentavos(NaN)` es el string literal "NaN.NaN", y el
-                        // campo Monto de la fila nueva arrancaba mostrando eso —
-                        // el mismo defecto preexistente que "Entran $X", acá del
-                        // otro lado del cálculo (el precargado, no el mostrado).
-                        base: Number.isNaN(faltanCentavos) ? '' : deCentavos(Math.max(0, faltanCentavos)),
-                        cotizacion: '1',
-                        recibido: '',
-                        // A precio de lista: el pago nuevo arranca en efectivo, y
-                        // heredar el plan del pago de al lado sería cobrar un
-                        // recargo que nadie eligió para esta parte.
-                        planId: null,
-                      },
-                    ])
+                    setPagos((p) => {
+                      // El pago nuevo va contra el total que TODAVÍA falta: con
+                      // los pesos ya cubiertos, el que queda es el de dólares.
+                      // Misma regla que el pago inicial, sobre el faltante en
+                      // vez de sobre el total.
+                      const cubre = cubrePorDefecto(faltan)
+                      const faltaEnEseTotal = cubre === 'ARS' ? faltan.ars : faltan.usd
+                      return [
+                        ...p,
+                        {
+                          medio: 'EFECTIVO',
+                          // Se entrega en la misma moneda que cubre, igual que
+                          // el pago inicial: así no arranca cruzando.
+                          moneda: cubre,
+                          cubre,
+                          // Vacío y no `deCentavos(NaN)` si una línea del carrito
+                          // está a medio tipear: `Math.max(0, NaN)` es NaN,
+                          // `deCentavos(NaN)` es el string literal "NaN.NaN", y el
+                          // campo Monto de la fila nueva arrancaba mostrando eso —
+                          // el mismo defecto preexistente que "Entran $X", acá del
+                          // otro lado del cálculo (el precargado, no el mostrado).
+                          base: Number.isNaN(faltaEnEseTotal)
+                            ? ''
+                            : deCentavos(Math.max(0, faltaEnEseTotal)),
+                          cotizacion: cotizacionParaElCruce(cubre, cubre),
+                          recibido: '',
+                          // A precio de lista: el pago nuevo arranca en efectivo, y
+                          // heredar el plan del pago de al lado sería cobrar un
+                          // recargo que nadie eligió para esta parte.
+                          planId: null,
+                        },
+                      ]
+                    })
                   }
                 >
                   <Plus className="size-[14px]" aria-hidden="true" />
@@ -1692,7 +2116,14 @@ export function PuntoDeVenta({
                     quedan pegadas al botón. */}
                 <PieDeTotales lineas={lineasDelPie} />
 
-                <ChipDeFaltante faltanCentavos={faltanCentavos} hayCarrito={hayCarrito} />
+                {chipsDelFaltante.map((c) => (
+                  <ChipDeFaltante
+                    key={c.moneda}
+                    moneda={c.moneda}
+                    faltanCentavos={c.faltanCentavos}
+                    hayCarrito={hayCarrito}
+                  />
+                ))}
 
                 {/* 54px de alto, ícono arrow-right, texto en Archivo
                     (design/arandano.pen, nodo `yJaPt`) — el orden texto-luego-
@@ -1750,7 +2181,7 @@ export function PuntoDeVenta({
         paso={paso}
         estado={estado}
         ventaProcesada={ventaProcesada}
-        faltanCentavos={faltanCentavos}
+        chipsDelFaltante={chipsDelFaltante}
         hayCarrito={hayCarrito}
         cierra={cierra}
         cobrando={cobrando}
@@ -1884,7 +2315,7 @@ function PieDeVenta({
   paso,
   estado,
   ventaProcesada,
-  faltanCentavos,
+  chipsDelFaltante,
   hayCarrito,
   cierra,
   cobrando,
@@ -1897,7 +2328,9 @@ function PieDeVenta({
   /** Las tres líneas del desglose por plan, ya resueltas a texto por
    *  `lineasDelPieDeCobro`. Vacío mientras no haya ningún plan elegido. */
   lineasDelPie: { rotulo: string; monto: string }[]
-  faltanCentavos: number
+  /** Un chip por moneda que la venta tenga, ya resueltos por
+   *  `chipsDeFaltante`. La MISMA lista que dibuja el pie de escritorio. */
+  chipsDelFaltante: { moneda: 'ARS' | 'USD'; faltanCentavos: number }[]
   hayCarrito: boolean
   cierra: boolean
   cobrando: boolean
@@ -1923,7 +2356,15 @@ function PieDeVenta({
           plan que quedó elegido de una venta anterior lo haga aparecer arriba
           del carrito de la siguiente. */}
       {paso === 'cobro' && <PieDeTotales lineas={lineasDelPie} />}
-      {paso === 'cobro' && <ChipDeFaltante faltanCentavos={faltanCentavos} hayCarrito={hayCarrito} />}
+      {paso === 'cobro' &&
+        chipsDelFaltante.map((c) => (
+          <ChipDeFaltante
+            key={c.moneda}
+            moneda={c.moneda}
+            faltanCentavos={c.faltanCentavos}
+            hayCarrito={hayCarrito}
+          />
+        ))}
       {paso === 'cobro' ? (
         <Button
           type="submit"
@@ -1969,9 +2410,13 @@ function PieDeVenta({
  * reclamara. `punto-de-venta.test.tsx` ahora lo fija.
  */
 function ChipDeFaltante({
+  moneda,
   faltanCentavos,
   hayCarrito,
 }: {
+  /** En qué moneda está este faltante: decide el símbolo del importe, no el
+   *  color ni el rótulo. Un carrito mixto dibuja dos de estos chips. */
+  moneda: 'ARS' | 'USD'
   faltanCentavos: number
   hayCarrito: boolean
 }) {
@@ -1997,7 +2442,10 @@ function ChipDeFaltante({
           faltanCentavos > 0 ? 'text-destructive' : 'text-ok'
         }`}
       >
-        {formatearPrecio(deCentavos(Math.abs(faltanCentavos)))}
+        {/* `precioEnSuMoneda` y no `formatearPrecio`: el chip de dólares tiene
+            que decir "US$ 300,00" y no "$ 300,00". Es el mismo helper que usa
+            la ficha del artículo, así que el símbolo sale de un solo lugar. */}
+        {precioEnSuMoneda(deCentavos(Math.abs(faltanCentavos)), moneda)}
       </span>
     </Badge>
   )
@@ -2058,8 +2506,8 @@ function CampoMonto({
 function FilaDePago({
   pago,
   indice,
-  cotizacionInicial,
   planes,
+  ofreceCubre,
   hayFaltante,
   onCambiar,
   onQuitar,
@@ -2067,11 +2515,14 @@ function FilaDePago({
 }: {
   pago: Pago
   indice: number
-  cotizacionInicial: string | null
   // TODOS los planes del local, sin filtrar: la fila filtra por su propio
   // medio y su moneda (`planesOfrecidos`), y ese filtro tiene que rehacerse en
   // cada cambio de medio.
   planes: PlanVisible[]
+  // Si la venta tiene los DOS totales, y entonces hay algo que elegir en el
+  // selector de `Cubre`. Viene calculado de arriba y no se deduce acá: es una
+  // propiedad de la VENTA (qué monedas tiene el carrito), no del pago.
+  ofreceCubre: boolean
   // Si la VENTA completa (todos los pagos, no sólo éste) sigue corta — ver
   // `puedeMostrarVuelto` para el porqué de este parámetro.
   hayFaltante: boolean
@@ -2085,6 +2536,16 @@ function FilaDePago({
   // no se calcula así de todos modos, así que el campo directamente no se
   // ofrece.
   const esEfectivoArs = pago.medio === 'EFECTIVO' && pago.moneda === 'ARS'
+  // El pago CRUZA monedas cuando lo que entrega no es lo que cubre: ahí —y
+  // sólo ahí— hay una conversión de por medio, así que hay una cotización que
+  // pedir y un segundo número que mostrar. Cuando no cruza, la fila se dibuja
+  // exactamente como antes de este ciclo.
+  const cruza = pago.moneda !== pago.cubre
+  // Cuando cruza, la base SIEMPRE está en dólares: `baseEnDolares` (el mismo
+  // predicado del motor, `lib/ventas/centavos.ts`) es verdadero en cuanto una
+  // de las dos puntas es USD, y si cruza al menos una lo es. Por eso el rótulo
+  // puede decir "US$" sin preguntar cuál de las dos, y por eso nada divide.
+  const etiquetaDelMonto = cruza ? 'Cubre US$' : 'Monto'
   // Calculado ACÁ, una sola vez, y no adentro del JSX de "Entran $X": monto o
   // cotización a medio tipear (el campo vacío incluido) dejan
   // `entranPesosCentavos` en NaN, y `formatearPrecio` de un NaN imprime
@@ -2094,10 +2555,21 @@ function FilaDePago({
   // el guard de renderizado y el guard de "Agregar pago" (más abajo, en el
   // componente padre) no puedan divergir en cómo detectan el NaN.
   const pesosDelPagoCentavos = entranPesosCentavos(pago.base, pago.cotizacion)
-  // Lo que hay que cobrar por ESTA fila: la base más el recargo de su plan.
-  // Contra esto se calcula el vuelto, no contra la base — ver
+  // Los pesos que esta fila ENTREGA, sin el recargo: es contra este número
+  // —y no contra la base— que se compara lo que hay que cobrar, porque desde
+  // este ciclo la base puede estar en dólares.
+  const entregadoCentavos = pesosDeLaFilaEnCentavos(pago)
+  // Lo que hay que cobrar por ESTA fila: lo que entrega más el recargo de su
+  // plan. Contra esto se calcula el vuelto, no contra la base — ver
   // `aCobrarDeLaFilaEnCentavos` para el porqué.
   const aCobrarCentavos = aCobrarDeLaFilaEnCentavos(pago, planes)
+  // Si el plan de esta fila mueve el número o no. Gobierna DOS renglones —el
+  // de "A cobrar", que sólo existe cuando difieren, y el rótulo del de
+  // arriba— para que no puedan contradecirse: si uno aparece, el otro cambia
+  // de nombre. Un plan al 0 % (o ningún plan) no mueve nada y deja la fila
+  // exactamente como estaba antes del ciclo de planes.
+  const elPlanMueveElNumero =
+    !Number.isNaN(aCobrarCentavos) && aCobrarCentavos !== entregadoCentavos
   // Los planes que ESTA fila puede ofrecer: los de su medio y sólo en pesos
   // (ver `planesOfrecidos`). Vacío significa que la fila no dibuja ningún
   // control de plan — un local sin planes no ve nada nuevo.
@@ -2142,14 +2614,17 @@ function FilaDePago({
             const moneda = valor as Pago['moneda']
             onCambiar({
               moneda,
-              // Un pago en pesos lleva cotización 1 SIEMPRE; uno en dólares
-              // arranca con la última que usó el local.
-              cotizacion: moneda === 'ARS' ? '1' : (cotizacionInicial ?? '1'),
+              // La cotización se rehace con el cruce nuevo: vacía si el pago
+              // pasa a cruzar (nunca precargada, ni con la del local ni con la
+              // del último pago) y 1 si deja de cruzar, que además es lo que
+              // borra una cotización mentirosa. Ver `cotizacionParaElCruce`.
+              cotizacion: cotizacionParaElCruce(moneda, pago.cubre),
               // Y limpia el plan, por lo mismo que el selector de medio de al
-              // lado: un plan sobre un pago en dólares es el PLAN_EN_DOLARES
-              // que el motor rechaza. Se limpia en las DOS direcciones —de
-              // vuelta a pesos también— porque un plan que reaparezca solo al
-              // volver de dólares es un recargo que nadie volvió a elegir.
+              // lado: un plan sobre un pago ENTREGADO en dólares es el
+              // PLAN_EN_DOLARES que el motor rechaza. Se limpia en las DOS
+              // direcciones —de vuelta a pesos también— porque un plan que
+              // reaparezca solo al volver de dólares es un recargo que nadie
+              // volvió a elegir.
               planId: null,
             })
           }}
@@ -2166,6 +2641,57 @@ function FilaDePago({
           </SelectContent>
         </Select>
       </div>
+
+      {/* El selector de `Cubre`: contra cuál de los dos totales va este pago.
+          SÓLO cuando la venta tiene los DOS —con una sola moneda no hay nada
+          que elegir, y la fila queda idéntica a la de antes de este ciclo—.
+
+          design/arandano.pen no dibuja este control (la maqueta es anterior a
+          los precios en dólares, deuda anotada en
+          docs/correcciones-pendientes-del-pen.md), así que el tratamiento se
+          copia del selector de plan de acá abajo, que es el otro control que
+          nació sin frame: fila propia, porque en un panel de 384 px un tercer
+          control apretaría al de Medio, que es el que más se toca.
+
+          Con rótulo VISIBLE y no sólo `aria-label`, a diferencia de los otros
+          tres selectores: los de Medio, Moneda y Plan se explican solos por su
+          valor ("Efectivo", "US$", "Crédito 3 cuotas"), y "total en dólares"
+          sin la palabra que lo introduce no dice qué relación tiene con el
+          pago. Juntos se leen como la oración que son. */}
+      {ofreceCubre && (
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold text-foreground-soft">Cubre</span>
+          <Select
+            value={pago.cubre}
+            onValueChange={(valor) => {
+              const cubre = valor as Pago['cubre']
+              onCambiar({
+                cubre,
+                // La cotización se rehace con el cruce nuevo, igual que en el
+                // selector de moneda de arriba — ver `cotizacionParaElCruce`.
+                cotizacion: cotizacionParaElCruce(pago.moneda, cubre),
+                // Y limpia el plan, por lo mismo que los otros dos selectores:
+                // el recargo se aplica sobre los pesos que la fila entrega, y
+                // cambiar de total cambia ese número. Un plan que sobreviva a
+                // un cambio que lo vuelve inválido —o que le cambia la base al
+                // recargo— es un error del motor con la pantalla en verde.
+                planId: null,
+              })
+            }}
+          >
+            <SelectTrigger
+              aria-label={`Cubre del pago ${indice + 1}`}
+              className="h-9! flex-1 justify-between rounded-[9px] border-input pr-[11px] pl-[11px] text-[13px] font-medium text-foreground"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ARS">total en pesos</SelectItem>
+              <SelectItem value="USD">total en dólares</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {/* El selector de plan, SÓLO si el medio elegido tiene planes cargados:
           un local que no cargó ninguno no ve un solo control nuevo, que es la
@@ -2202,14 +2728,17 @@ function FilaDePago({
         </Select>
       )}
 
-      {pago.moneda === 'USD' ? (
+      {cruza ? (
         // Monto y Cotización lado a lado (design/arandano.pen, frame
-        // "Montos" del Pago 2) — sólo en dólares, porque sólo ahí hay un
-        // segundo campo con el que compartir la fila.
+        // "Montos" del Pago 2) — sólo cuando el pago cruza monedas, porque
+        // sólo ahí hay una conversión, y por lo tanto un segundo campo con el
+        // que compartir la fila. Antes de este ciclo "cruzar" era exactamente
+        // `moneda === 'USD'`, así que para un local que no vende en dólares
+        // esto no cambia nada.
         <div className="flex gap-2">
           <CampoMonto
             id={`monto-${indice}`}
-            etiqueta="Monto"
+            etiqueta={etiquetaDelMonto}
             valor={pago.base}
             onChange={(v) => onCambiar({ base: v })}
           />
@@ -2223,21 +2752,39 @@ function FilaDePago({
       ) : (
         <CampoMonto
           id={`monto-${indice}`}
-          etiqueta="Monto"
+          etiqueta={etiquetaDelMonto}
           valor={pago.base}
           onChange={(v) => onCambiar({ base: v })}
         />
       )}
 
-      {pago.moneda === 'USD' && (
+      {cruza && (
         // "Entran $X": cuántos pesos representa este pago en dólares
         // (design/arandano.pen, nodo `OTlAa`). entranPesosCentavos reusa el
         // mismo cálculo que cierra la venta — ver su comentario. Guarda de
         // NaN igual que el resto de la plata de esta pantalla: borrar el
         // campo Monto o Cotización para retipearlo deja `pesosDelPagoCentavos`
         // en NaN, y "Entran $ NaN" es un cartel sin sentido.
+        //
+        // **El rótulo cambia a "Base en pesos" cuando la fila lleva un plan
+        // que mueve el número** (ola final del ciclo del precio en dólares).
+        // Con base US$ 300 a 1485 y un plan del 40 %, la fila decía
+        // `Entran $ 445.500,00` y dos renglones más abajo
+        // `A cobrar $ 623.700,00`: dos importes contradictorios pegados, en
+        // la única pantalla donde se cuentan billetes. Lo que entra al cajón
+        // son los 623.700; los 445.500 son la mercadería convertida, antes
+        // del recargo. No se esconde el renglón —el número es el que deja ver
+        // que la cotización aplicada es la que se tipeó, y es el puente entre
+        // "Cubre US$ 300" y "A cobrar"— sino que se lo llama por su nombre.
+        //
+        // Y el rótulo es CONDICIONAL y no fijo a propósito: sin plan (que es
+        // el estado que la maqueta dibuja, y el de todo local que no financia)
+        // "Entran" sigue siendo exacto y la fila queda byte a byte como el
+        // `.pen` la modela.
         <div className="flex items-center justify-between px-0.5">
-          <span className="text-xs text-muted-foreground">Entran</span>
+          <span className="text-xs text-muted-foreground">
+            {elPlanMueveElNumero ? 'Base en pesos' : 'Entran'}
+          </span>
           <span className={`${estilos.importe} text-[13px] font-semibold text-foreground-soft`}>
             {Number.isNaN(pesosDelPagoCentavos) ? '—' : formatearPrecio(deCentavos(pesosDelPagoCentavos))}
           </span>
@@ -2253,8 +2800,11 @@ function FilaDePago({
           partidos entre dos planes no alcanza. Sólo aparece cuando los dos
           números difieren: sin plan sería repetir el campo de arriba.
           Mismo tratamiento que "Entran", que es el otro renglón de esta fila
-          donde un rótulo y un importe derivado conviven en una línea. */}
-      {!Number.isNaN(aCobrarCentavos) && aCobrarCentavos !== pesosDelPagoCentavos && (
+          donde un rótulo y un importe derivado conviven en una línea — y la
+          MISMA condición, `elPlanMueveElNumero`, que le cambia el rótulo a
+          ése: los dos renglones tienen que hablar del mismo caso o vuelven a
+          contradecirse. */}
+      {elPlanMueveElNumero && (
         <div className="flex items-center justify-between px-0.5">
           <span className="text-xs text-muted-foreground">A cobrar</span>
           <span className={`${estilos.importe} text-[13px] font-semibold text-foreground-soft`}>

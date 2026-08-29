@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   formatearPrecio, formatearDolares, formatearCantidad, formatearFecha, formatearHora,
-  formatearFechaCorta, montoSinSigno, formatearPorcentaje,
+  formatearFechaCorta, montoSinSigno, formatearPorcentaje, precioEnSuMoneda,
 } from './mostrar'
 
 // Puro: sin Docker, sin base. `Intl` alcanza y corre en cualquier Node.
@@ -26,6 +26,20 @@ describe('formatearDolares', () => {
     expect(salida).toContain('0,80')
     expect(salida).toMatch(/US\$/)
     expect(salida).not.toMatch(/\$.*\$/)
+  })
+})
+
+describe('precioEnSuMoneda', () => {
+  // /inventario y la ficha del artículo (Task 8): cada precio en SU moneda,
+  // sin inventar una conversión — no hay cotización fuera de una venta.
+  it('un artículo en dólares se muestra con US$, no con $', () => {
+    const salida = precioEnSuMoneda('300', 'USD')
+    expect(salida).toMatch(/US\$/)
+    expect(salida).toContain('300,00')
+  })
+
+  it('un artículo en pesos se muestra igual que siempre', () => {
+    expect(precioEnSuMoneda('300', 'ARS')).toBe(formatearPrecio('300'))
   })
 })
 

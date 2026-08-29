@@ -310,6 +310,7 @@ describe('el rol de cada action de inventario', () => {
     datos.set('nombre', 'Cable USB-C')
     datos.set('tipo', 'PRODUCTO')
     datos.set('precio', '4.500,50')
+    datos.set('moneda', 'ARS')
     const r = await altaArticulo(INICIAL, datos)
     expect(r.error).toBeNull()
     expect(r.aviso).toMatch(/A-\d{4}/)
@@ -323,6 +324,7 @@ describe('el rol de cada action de inventario', () => {
     datos.set('nombre', 'Con coma')
     datos.set('tipo', 'PRODUCTO')
     datos.set('precio', '85.000,75')
+    datos.set('moneda', 'ARS')
     await altaArticulo(INICIAL, datos)
 
     const { rows } = await owner.query(
@@ -365,6 +367,7 @@ describe('el rol de cada action de inventario', () => {
     datos.set('nombre', 'Con categoría')
     datos.set('tipo', 'PRODUCTO')
     datos.set('precio', '5000')
+    datos.set('moneda', 'ARS')
     datos.set('categoriaId', rubro.rows[0].id)
     datos.set('marcaId', marca.rows[0].id)
     await altaArticulo(INICIAL, datos)
@@ -392,6 +395,7 @@ describe('el rol de cada action de inventario', () => {
     datos.set('nombre', 'Cable sin marca')
     datos.set('tipo', 'PRODUCTO')
     datos.set('precio', '900')
+    datos.set('moneda', 'ARS')
     datos.set('categoriaId', rubro.rows[0].id)
     datos.set('marcaId', '')
     await altaArticulo(INICIAL, datos)
@@ -412,6 +416,7 @@ describe('el rol de cada action de inventario', () => {
     datos.set('nombre', 'Sin categoría del todo')
     datos.set('tipo', 'PRODUCTO')
     datos.set('precio', '5000')
+    datos.set('moneda', 'ARS')
     const r = await altaArticulo(INICIAL, datos)
     expect(r.error).toBeNull()
 
@@ -434,6 +439,7 @@ describe('el rol de cada action de inventario', () => {
     datos.set('nombre', 'Después de editar')
     datos.set('sku', 'ACC-EDITADO')
     datos.set('precio', '2500')
+    datos.set('moneda', 'ARS')
     const r = await guardarArticulo(INICIAL, datos)
     expect(r.error).toBeNull()
 
@@ -446,6 +452,50 @@ describe('el rol de cada action de inventario', () => {
     expect(new Prisma.Decimal(rows[0].precio).toString()).toBe('2500')
   })
 
+  // `editarArticulo` pide `moneda` REQUERIDA (Task 6). Desde la Task 7 ya no
+  // hay bridge que la lea del artículo actual: el `<SelectorDeMoneda>` de la
+  // ficha la manda siempre, precargada con la moneda vigente. Este caso ya no
+  // prueba un bridge —no queda ninguno— sino que guardar en la MISMA moneda
+  // que ya tenía el artículo la deja intacta, y no la resetea a pesos por
+  // descuido de algún llamador.
+  it('guardar la ficha no resetea a pesos un artículo cargado en dólares', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('En dólares')
+    await owner.query(`UPDATE articulos SET moneda = 'USD' WHERE id = $1`, [id])
+
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('nombre', 'En dólares')
+    datos.set('sku', 'ACC-USD-1')
+    datos.set('precio', '300')
+    datos.set('moneda', 'USD')
+    const r = await guardarArticulo(INICIAL, datos)
+    expect(r.error).toBeNull()
+
+    const { rows } = await owner.query(`SELECT moneda FROM articulos WHERE id = $1`, [id])
+    expect(rows[0].moneda).toBe('USD')
+  })
+
+  // Desde la Task 7, `guardarArticulo` ya no hace su propio `findUnique` —el
+  // bridge de la Task 6 desapareció, y con él la ventana TOCTOU que dejaba
+  // anotada—, así que ya no necesita un guard de `esUuid` propio: un id sin
+  // forma de uuid llega crudo hasta `editarArticulo`, cuyo `updateMany` lo
+  // tira como P2023 y lo traduce el propio catch de esa función
+  // (`traducirErrorDeBase`) a ARTICULO_INEXISTENTE. Este caso verifica que la
+  // traducción sigue viva sin el guard de este archivo: el cartel rojo, no un
+  // 500.
+  it('un articuloId sin forma de uuid es artículo inexistente, no un 500', async () => {
+    estado.cookie = cookieDuenio
+    const datos = new FormData()
+    datos.set('articuloId', 'no-es-uuid')
+    datos.set('nombre', 'X')
+    datos.set('sku', 'X-1')
+    datos.set('precio', '100')
+    datos.set('moneda', 'ARS')
+    const r = await guardarArticulo(INICIAL, datos)
+    expect(r.error).toMatch(/no existe/)
+  })
+
   it('un DUEÑO mueve un artículo a la rama elegida, y se escriben las dos columnas', async () => {
     estado.cookie = cookieDuenio
     const id = await crearArticuloDePrueba('Para editar categoría')
@@ -455,6 +505,7 @@ describe('el rol de cada action de inventario', () => {
     datos.set('nombre', 'Para editar categoría')
     datos.set('sku', 'ACC-CAT-1')
     datos.set('precio', '2500')
+    datos.set('moneda', 'ARS')
     datos.set('categoriaId', rubro)
     const r = await guardarArticulo(INICIAL, datos)
     expect(r.error).toBeNull()
@@ -479,6 +530,7 @@ describe('el rol de cada action de inventario', () => {
     datos.set('nombre', 'Rubro y marca')
     datos.set('sku', 'ACC-CAT-2')
     datos.set('precio', '2500')
+    datos.set('moneda', 'ARS')
     datos.set('categoriaId', rubro)
     datos.set('marcaId', marca)
     const r = await guardarArticulo(INICIAL, datos)
@@ -507,6 +559,7 @@ describe('el rol de cada action de inventario', () => {
     datos.set('nombre', 'Se queda sin rama')
     datos.set('sku', 'ACC-CAT-3')
     datos.set('precio', '2500')
+    datos.set('moneda', 'ARS')
     datos.set('categoriaId', '')
     datos.set('marcaId', '')
     const r = await guardarArticulo(INICIAL, datos)
@@ -541,6 +594,7 @@ describe('el rol de cada action de inventario', () => {
     datos.set('nombre', 'Lo mueve un empleado')
     datos.set('sku', 'ACC-SIN-CAT-1')
     datos.set('precio', '2500')
+    datos.set('moneda', 'ARS')
     datos.set('categoriaId', rubro)
     const r = await guardarArticulo(INICIAL, datos)
     expect(r.error).toBeNull()
@@ -881,6 +935,7 @@ describe('el blindaje de COSTOS, por efecto y no por texto (I5 de la review fina
     datos.set('nombre', 'Alta con costo, empleado sin permiso')
     datos.set('tipo', 'PRODUCTO')
     datos.set('precio', '1000')
+    datos.set('moneda', 'ARS')
     datos.set('stockInicial', '3')
     datos.set('costoUnitario', '700')
     const r = await altaArticulo(INICIAL, datos)

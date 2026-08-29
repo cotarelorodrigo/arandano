@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import type { Moneda } from '@/generated/prisma/client'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { exigirPermiso, puede } from '@/lib/permisos/guarda'
 import type { Permiso } from '@/lib/permisos/catalogo'
@@ -77,6 +78,35 @@ function traducir(e: unknown): EstadoInventario {
 
 const texto = (datos: FormData, campo: string) => String(datos.get(campo) ?? '').trim()
 
+/**
+ * Valida `moneda` contra el enum antes de pasarla al motor.
+ *
+ * `Moneda` es un tipo de TypeScript, no algo que Prisma revise en tiempo de
+ * ejecución antes de tocar la base — a diferencia del `tipo` de artículo
+ * (`altaArticulo`, más abajo), que sí cae a un default seguro. Acá no: el
+ * `<SelectorDeMoneda>` (components/selector-de-moneda.tsx) sólo puede emitir
+ * "ARS" o "USD", así que llegar con otra cosa es un `FormData` armado a
+ * mano, no un descuido de quien carga el precio. No hay nada que esa persona
+ * pueda corregir tipeando distinto, así que no se traduce a
+ * `ErrorDeInventario`: cae en el error genérico de la acción, como cualquier
+ * otro bug real.
+ *
+ * **Y tampoco puede ser una pestaña vieja**, que es la otra sospecha
+ * razonable: el id de un server action se genera en el BUILD, y este proyecto
+ * no fija `deploymentId` ni `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`
+ * (`next.config.ts`), así que cada deploy los renueva y una pestaña anterior
+ * choca contra "Failed to find Server Action" antes de que Next decodifique
+ * el cuerpo. El handler no llega a correr. Es el mismo hecho que se explica
+ * al lado del default de `cubre` en `app/(app)/vender/acciones.ts`.
+ */
+function monedaDe(datos: FormData): Moneda {
+  const valor = texto(datos, 'moneda')
+  if (valor !== 'ARS' && valor !== 'USD') {
+    throw new Error(`moneda inválida: "${valor}"`)
+  }
+  return valor
+}
+
 export async function altaArticulo(
   _e: EstadoInventario,
   datos: FormData,
@@ -90,6 +120,7 @@ export async function altaArticulo(
         nombre: texto(datos, 'nombre'),
         tipo,
         precio: aDecimal(texto(datos, 'precio'), 'el precio'),
+        moneda: monedaDe(datos),
         sku: texto(datos, 'sku'),
         // La marca gana sobre el rubro cuando hay las dos: la rama más
         // específica es la que el artículo tiene que ocupar. Con el rubro
@@ -123,7 +154,14 @@ export async function guardarArticulo(
 ): Promise<EstadoInventario> {
   try {
     const articuloId = texto(datos, 'articuloId')
-    await comoPuede('ARTICULOS_EDITAR', async (tenantId) =>
+    // Sin guard de `esUuid` acá: a diferencia del bridge que este componente
+    // reemplaza (Task 6), `editarArticulo` ya no se llama después de un
+    // `findUnique` propio de este archivo —el que tiraba P2007 crudo ante un
+    // id sin forma de uuid—. `editarArticulo` resuelve con `updateMany` y
+    // traduce P2007/P2023 con `traducirErrorDeBase` en su propio catch, igual
+    // que ya hacen `bajaArticulo` y `reactivarArticuloAccion` más abajo en
+    // este archivo, sin guard previo.
+    await comoPuede('ARTICULOS_EDITAR', (tenantId) =>
       editarArticulo({
         tenantId,
         articuloId,
@@ -142,6 +180,13 @@ export async function guardarArticulo(
         // bypass que motivaba la guarda vieja era el texto libre creando
         // ramas al vuelo, y ese camino ya no existe.
         categoriaId: texto(datos, 'marcaId') || texto(datos, 'categoriaId') || null,
+        // Ya no se lee del artículo actual (el `findUnique` bridge de la
+        // Task 6): el `<SelectorDeMoneda>` de la ficha (Task 7) la manda
+        // siempre, precargada con la moneda vigente. Sacar el bridge cierra
+        // de paso la ventana TOCTOU que esa task había dejado anotada — leer
+        // la moneda actual y guardarla de vuelta unos milisegundos después,
+        // sin lock, podía pisar un cambio concurrente.
+        moneda: monedaDe(datos),
       }),
     )
     revalidatePath('/inventario')

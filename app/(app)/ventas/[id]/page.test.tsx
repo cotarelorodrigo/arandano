@@ -18,7 +18,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import {
   seOfreceAnular, cotizacionVisible, subtituloDeItem, metaDeItem, metaDePago, filasDeResumen,
   notaDeAnulacion, Detalle, type ItemVendido, type PagoRecibido,
-  lineasDeRecargo, rotuloDePlan,
+  lineasDeRecargo, rotuloDePlan, seMuestraCubre, ROTULO_CUBRE,
 } from './page'
 import { CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
@@ -47,6 +47,19 @@ describe('cotizacionVisible', () => {
   it('un pago en dólares muestra la cotización con la que se tomó', () => {
     const salida = cotizacionVisible({ moneda: 'USD', cotizacion: '1485' })
     expect(salida).toContain('1.485,00')
+  })
+
+  // Corrección de la review de la Task 3 (Task 11): un pago en PESOS que
+  // CRUZA a cubrir el total en DÓLARES sí se tomó a una cotización real —es
+  // el dato que explica de dónde salió el monto—, y la versión vieja lo
+  // escondía detrás de un "—" por mirar sólo `moneda`.
+  it('un pago en pesos que cruza a cubrir el total en dólares SÍ muestra su cotización', () => {
+    const salida = cotizacionVisible({ moneda: 'ARS', cubre: 'USD', cotizacion: '1485' })
+    expect(salida).toContain('1.485,00')
+  })
+
+  it('un pago en pesos que cubre pesos sigue sin cotización, aunque se pase cubre explícito', () => {
+    expect(cotizacionVisible({ moneda: 'ARS', cubre: 'ARS', cotizacion: '1' })).toBe('—')
   })
 })
 
@@ -84,6 +97,34 @@ describe('lineasDeRecargo', () => {
     expect(lineas![1].monto.toString()).toBe('1000')
     expect(lineas![2].monto.toString()).toBe('9000')
   })
+
+  // Task 11: con dólares y sin recargo, dos líneas destacadas — "Total" (el
+  // lado de los pesos, sin desglosar porque no hay recargo) y "Total en
+  // dólares" — sin ningún "Mercadería"/"Recargo" de por medio.
+  it('sin recargo pero con dólares, dos bandas: Total y Total en dólares', () => {
+    const lineas = lineasDeRecargo({ total: d('0'), recargo: d('0'), totalUsd: d('300') })
+    expect(lineas).not.toBeNull()
+    expect(lineas!.map((l) => l.rotulo)).toEqual(['Total', 'Total en dólares'])
+    expect(lineas!.every((l) => l.destacada)).toBe(true)
+    expect(lineas![0].moneda).toBe('ARS')
+    expect(lineas![1].moneda).toBe('USD')
+    expect(lineas![1].monto.toString()).toBe('300')
+  })
+
+  // El caso completo del ciclo (R8 del brief de esta task): el iPhone de
+  // US$300 cobrado en pesos con un plan del 40 %. El recargo SIGUE yendo del
+  // lado de los pesos (Cobrado), nunca en la banda de dólares.
+  it('con recargo Y dólares: el desglose de pesos de siempre, más Total en dólares al final', () => {
+    const lineas = lineasDeRecargo({ total: d('0'), recargo: d('178200'), totalUsd: d('300') })
+    expect(lineas!.map((l) => l.rotulo)).toEqual(['Mercadería', 'Recargo', 'Cobrado', 'Total en dólares'])
+    expect(lineas!.map((l) => l.destacada)).toEqual([false, false, true, true])
+    expect(lineas![2].monto.toString()).toBe('178200') // Cobrado = 0 + 178200
+    expect(lineas![3].monto.toString()).toBe('300')
+  })
+
+  it('sin recargo y sin dólares (totalUsd en 0 explícito), sigue sin nada que desglosar', () => {
+    expect(lineasDeRecargo({ total: d('10000'), recargo: d('0'), totalUsd: d('0') })).toBeNull()
+  })
 })
 
 describe('rotuloDePlan', () => {
@@ -118,6 +159,13 @@ describe('metaDeItem', () => {
     expect(meta).toBe(`Servicio · ${formatearCantidad('1')} × ${formatearPrecio('45000')}`)
     expect(meta).toContain('45.000,00')
   })
+
+  // Task 11: un ítem en dólares muestra su precio con "US$", sin convertirlo.
+  it('un ítem en dólares muestra su precio con US$, no convertido a pesos', () => {
+    const meta = metaDeItem({ subtitulo: 'SKU 000900', cantidad: '1', precioUnitario: '300', moneda: 'USD' })
+    expect(meta).toContain('US$')
+    expect(meta).toContain('300,00')
+  })
 })
 
 describe('metaDePago', () => {
@@ -129,6 +177,45 @@ describe('metaDePago', () => {
     const meta = metaDePago({ moneda: 'USD', cotizacion: '1485' })
     expect(meta).toBe(`Dólares · cotización ${formatearPrecio('1485')}`)
     expect(meta).toContain('1.485,00')
+  })
+
+  // Task 11: un pago en pesos que CRUZA a cubrir dólares también suma su
+  // cotización — mismo criterio que cotizacionVisible.
+  it('un pago en pesos que cruza a cubrir dólares también suma su cotización', () => {
+    const meta = metaDePago({ moneda: 'ARS', cubre: 'USD', cotizacion: '1485' })
+    expect(meta).toBe(`Pesos · cotización ${formatearPrecio('1485')}`)
+  })
+
+  it('cubreLabel se agrega al final, cuando corresponde', () => {
+    const meta = metaDePago({
+      moneda: 'ARS', cubre: 'USD', cotizacion: '1485', cubreLabel: ROTULO_CUBRE.USD,
+    })
+    expect(meta).toBe(`Pesos · cotización ${formatearPrecio('1485')} · ${ROTULO_CUBRE.USD}`)
+  })
+
+  it('sin cubreLabel, la línea queda exactamente como antes', () => {
+    expect(metaDePago({ moneda: 'ARS', cotizacion: '1', cubreLabel: null })).toBe('Pesos')
+  })
+})
+
+describe('seMuestraCubre', () => {
+  it('un pago que cubre dólares siempre lo dice, sin importar la venta', () => {
+    expect(seMuestraCubre('USD', { total: d('0'), totalUsd: d('300') })).toBe(true)
+    expect(seMuestraCubre('USD', { total: d('100'), totalUsd: d('0') })).toBe(true)
+  })
+
+  it('un pago que cubre pesos, en una venta sólo en pesos, no lo dice (caso común)', () => {
+    expect(seMuestraCubre('ARS', { total: d('100000'), totalUsd: d('0') })).toBe(false)
+  })
+
+  it('un pago que cubre pesos SÍ lo dice cuando la venta tiene los dos totales', () => {
+    expect(seMuestraCubre('ARS', { total: d('15000'), totalUsd: d('300') })).toBe(true)
+  })
+
+  it('una venta sólo en dólares tampoco lo necesita para un pago que cubre dólares... salvo que ya es true por cubre', () => {
+    // total=0 y totalUsd>0: no tiene "los dos totales", pero cubre='USD'
+    // ya alcanza por la primera mitad de la regla.
+    expect(seMuestraCubre('USD', { total: d('0'), totalUsd: d('300') })).toBe(true)
   })
 })
 
@@ -347,6 +434,22 @@ describe('Detalle: "Qué se vendió" — el patrón grid + display:contents', ()
     expect(html).toMatch(/class="flex items-center justify-between bg-\[var\(--marca\)\][^"]*lg:bg-muted[^"]*"/)
     expect(html).toContain('$ 94.000,00')
   })
+
+  // Task 11: con dólares, DOS bandas destacadas — no una banda seguida de
+  // filas planas, sino dos bandas iguales, una por moneda (docblock de
+  // `lineasDeRecargo`, en page.tsx).
+  it('con totalUsd, hay DOS bandas destacadas: una en pesos y otra en dólares', () => {
+    const html = renderDetalle({
+      lineasDeTotal: [
+        { rotulo: 'Total', montoFormateado: '$ 0,00', destacada: true },
+        { rotulo: 'Total en dólares', montoFormateado: 'US$ 300,00', destacada: true },
+      ],
+    })
+    const bandas = html.match(/class="flex items-center justify-between bg-\[var\(--marca\)\][^"]*lg:bg-muted[^"]*"/g) ?? []
+    expect(bandas).toHaveLength(2)
+    expect(html).toContain('US$ 300,00')
+    expect(html).toContain('>Total en dólares<')
+  })
 })
 
 describe('Detalle: "Cómo se pagó" — el patrón grid + display:contents', () => {
@@ -385,6 +488,24 @@ describe('Detalle: "Cómo se pagó" — el patrón grid + display:contents', () 
     const filaDePagos = filas.filter((f) => f.includes('gap-1'))
     expect(filaDePagos.length).toBeGreaterThan(0)
     for (const f of filaDePagos) expect(f).toContain('last:border-b-0')
+  })
+
+  // Task 11, Step 1 del brief: "el detalle dice qué total cubrió cada pago".
+  // Un pago en pesos que cubre el total en dólares — el escenario de R3/R8
+  // del brief — lleva `cubreLabel` ya resuelto por el llamador.
+  it('un pago que cruza monedas dice qué total cubrió', () => {
+    const pagoQueCruza: PagoRecibido = {
+      ...PAGO_ARS,
+      cubreLabel: ROTULO_CUBRE.USD,
+      meta: metaDePago({ moneda: 'ARS', cubre: 'USD', cotizacion: '1485', cubreLabel: ROTULO_CUBRE.USD }),
+    }
+    const html = renderDetalle({ pagos: [pagoQueCruza] })
+    expect(html).toContain('total en dólares')
+  })
+
+  it('el caso común —sin cubreLabel— no menciona qué total cubrió', () => {
+    const html = renderDetalle({ pagos: [PAGO_ARS] })
+    expect(html).not.toContain('Cubre el total')
   })
 })
 
@@ -503,5 +624,33 @@ describe('la pantalla pide y usa el recargo y el plan de cada pago', () => {
 
   it('cada fila de pago llama a rotuloDePlan con el plan de ESE pago', () => {
     expect(fuente).toContain('rotuloDePlan(p.plan)')
+  })
+})
+
+// Task 11 (precio en dólares): mismo criterio que el bloque de arriba — leer
+// el fuente porque la pantalla es un Server Component async.
+describe('la pantalla pide y usa totalUsd, la moneda del ítem y qué cubrió cada pago', () => {
+  const fuente = readFileSync('app/(app)/ventas/[id]/page.tsx', 'utf8')
+
+  it('el select de la venta pide totalUsd', () => {
+    expect(fuente).toContain('anuladaEn: true, totalUsd: true,')
+  })
+
+  it('el select de los ítems pide la moneda del ítem', () => {
+    const posItems = fuente.indexOf('items: {')
+    const posMoneda = fuente.indexOf('moneda: true,', posItems)
+    expect(posMoneda).toBeGreaterThan(posItems)
+  })
+
+  it('el select de los pagos pide cubre', () => {
+    expect(fuente).toContain('cubre: true,')
+  })
+
+  it('cada ítem se formatea con precioEnSuMoneda, no formatearPrecio a secas', () => {
+    expect(fuente).toContain('precioFormateado: precioEnSuMoneda(precioUnitario, i.moneda)')
+  })
+
+  it('cada pago calcula cubreLabel con seMuestraCubre y ROTULO_CUBRE', () => {
+    expect(fuente).toContain('seMuestraCubre(p.cubre, venta) ? ROTULO_CUBRE[p.cubre] : null')
   })
 })

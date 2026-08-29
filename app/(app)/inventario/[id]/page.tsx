@@ -7,7 +7,7 @@ import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { FichaDeArticulo, MoverStock, BotonExportarCsv } from '../formularios'
 import { calcularSaldos, filaDeMovimiento, HistorialDeMovimientos } from '../historial'
 import { GraficoDeRotacion, agregarVentasPorMes } from '../rotacion'
-import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
+import { formatearPrecio, formatearCantidad, precioEnSuMoneda } from '@/lib/formato/mostrar'
 import { esUuid } from '@/lib/uuid'
 import { planesDelTenant, type PlanVisible } from '@/lib/planes/consultar'
 import { arbolDeCategorias } from '@/lib/inventario/categorias'
@@ -63,12 +63,23 @@ const MARGEN = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 1, maximu
  * costo $7.400 da exactamente 38,3 %, y `(precio − costo) / costo` daría
  * 62,2 %, que no es el número que muestra la maqueta).
  *
- * `null` en dos casos, nunca un número inventado (CLAUDE.md: "si el artículo
- * no tiene ningún movimiento con costo, no inventes un número"): sin costo
- * cargado, o con un precio que no permite dividir (cero — `exigirPrecio` en
- * `lib/inventario/articulos.ts` prohíbe negativo pero no cero).
+ * `null` en tres casos, nunca un número inventado (CLAUDE.md: "si el
+ * artículo no tiene ningún movimiento con costo, no inventes un número"):
+ * sin costo cargado, con un precio que no permite dividir (cero —
+ * `exigirPrecio` en `lib/inventario/articulos.ts` prohíbe negativo pero no
+ * cero), o con el artículo cargado en dólares. Este tercer caso es la
+ * costura con la deuda del costo (CLAUDE.md, "Decisiones abiertas del
+ * modelo de datos"): `MovimientoStock.costoUnitario` se guarda siempre en
+ * PESOS, y este ciclo no lo cambia — comparar un costo en pesos contra un
+ * precio en dólares exigiría inventar una cotización, y eso es peor que no
+ * mostrar nada.
  */
-export function textoDeMargen(precio: Prisma.Decimal, costo: Prisma.Decimal | null): string | null {
+export function textoDeMargen(
+  precio: Prisma.Decimal,
+  costo: Prisma.Decimal | null,
+  moneda: 'ARS' | 'USD',
+): string | null {
+  if (moneda === 'USD') return null
   if (costo === null) return null
   if (precio.lessThanOrEqualTo(0)) return null
   const margen = precio.minus(costo).dividedBy(precio).times(100)
@@ -169,12 +180,21 @@ export function Tile({
  * misma ficha ya muestra en el tile de arriba, y quien cobra necesita poder
  * decirle a un cliente el precio en cuotas. `COSTOS` sigue tapando el costo y
  * el margen, que son otra cosa — no hay motivo para gatear esto detrás de él.
+ *
+ * **Task 8 (ciclo de USD): el precio derivado se muestra en la moneda del
+ * artículo.** El recargo es un porcentaje puro, así que aplicarlo sobre un
+ * precio en dólares da un resultado en dólares — US$ 300 al 40 % son
+ * US$ 420, el mismo equivalente que el mostrador cobraría en pesos. No hay
+ * conversión acá adentro, sólo el formateo: `precioConPlan` no sabe de
+ * monedas y no tiene por qué saberlo.
  */
 export function PanelPreciosPorFormaDePago({
   precio,
+  moneda,
   planes,
 }: {
   precio: Prisma.Decimal
+  moneda: 'ARS' | 'USD'
   planes: PlanVisible[]
 }) {
   if (planes.length === 0) return null
@@ -203,7 +223,10 @@ export function PanelPreciosPorFormaDePago({
             <span
               className={`${estilos.archivo} shrink-0 text-[13px] font-semibold tabular-nums text-foreground`}
             >
-              {formatearPrecio(precioConPlan(precio, new Prisma.Decimal(p.porcentaje)).toString())}
+              {precioEnSuMoneda(
+                precioConPlan(precio, new Prisma.Decimal(p.porcentaje)).toString(),
+                moneda,
+              )}
             </span>
           </div>
         ))}
@@ -329,7 +352,9 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   const columnaDerechaExtra =
     hayPanelPrecios || esProducto ? (
       <>
-        {hayPanelPrecios && <PanelPreciosPorFormaDePago precio={articulo.precio} planes={planes} />}
+        {hayPanelPrecios && (
+          <PanelPreciosPorFormaDePago precio={articulo.precio} moneda={articulo.moneda} planes={planes} />
+        )}
         {esProducto && <GraficoDeRotacion meses={meses} />}
       </>
     ) : undefined
@@ -366,7 +391,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
         <div className="flex gap-3 lg:contents">
           <Tile
             rotulo="PRECIO DE VENTA"
-            valor={formatearPrecio(articulo.precio.toString())}
+            valor={precioEnSuMoneda(articulo.precio.toString(), articulo.moneda)}
             pie={actualizadoHace(articulo.actualizadoEn)}
           />
           {/* Sin el permiso COSTOS, el tile no se renderea — no se pone en
@@ -381,10 +406,22 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
           {esProducto && puedeCostos && (
             <Tile
               rotulo="ÚLTIMO COSTO"
+              // El costo SIEMPRE en pesos, sea cual sea la moneda del
+              // artículo: `MovimientoStock.costoUnitario` no distingue
+              // moneda (deuda del costo, CLAUDE.md) — mostrarlo en dólares
+              // sería inventar una cotización que no existe.
               valor={ultimoCosto ? formatearPrecio(ultimoCosto.toString()) : '—'}
               pie={
                 ultimoCosto
-                  ? (textoDeMargen(articulo.precio, ultimoCosto) ?? 'el precio no permite calcular el margen')
+                  ? (textoDeMargen(articulo.precio, ultimoCosto, articulo.moneda) ??
+                      // Dos situaciones distintas detrás del mismo `??`: acá
+                      // SÍ hay costo y precio, pero el costo está en pesos y
+                      // el precio en dólares — no es que "no se pueda
+                      // calcular", es que no hay con qué comparar sin
+                      // cotización (ver el docblock de textoDeMargen).
+                      (articulo.moneda === 'USD'
+                        ? 'el costo está en pesos: sin margen para un artículo en dólares'
+                        : 'el precio no permite calcular el margen'))
                   : 'ningún ingreso cargó el costo todavía'
               }
             />
@@ -432,6 +469,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
       nombre={articulo.nombre}
       sku={articulo.sku}
       precio={articulo.precio.toString()}
+      moneda={articulo.moneda}
       arbol={arbol}
       categoriaId={articulo.categoriaId}
       columnaIzquierda={columnaIzquierda}
