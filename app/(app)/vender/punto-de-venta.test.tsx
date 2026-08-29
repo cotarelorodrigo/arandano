@@ -1016,6 +1016,7 @@ describe('el punto de venta', () => {
       1_000_000,
       [enPesos('10000', PLAN_CREDITO.id)],
       [PLAN_CREDITO],
+      false,
     )
     expect(lineas).toEqual([
       { rotulo: 'Mercadería', monto: formatearPrecio('10000') },
@@ -1042,6 +1043,7 @@ describe('el punto de venta', () => {
       1_000_000,
       [enPesos('10000', PLAN_CONTADO.id)],
       [PLAN_CONTADO],
+      false,
     )
     expect(lineas).toEqual([
       { rotulo: 'Mercadería', monto: formatearPrecio('10000') },
@@ -1056,6 +1058,7 @@ describe('el punto de venta', () => {
       1_000_000,
       [enPesos('10000', PLAN_CREDITO.id)],
       [PLAN_CREDITO],
+      false,
     )
     expect(conRecargo[1].rotulo).toBe('Recargo Crédito 3 cuotas')
   })
@@ -1075,6 +1078,7 @@ describe('el punto de venta', () => {
         enPesos('5000', PLAN_CONTADO.id),
       ],
       [PLAN_CREDITO, PLAN_CONTADO],
+      false,
     )
     expect(netoPositivo[1]).toEqual({ rotulo: 'Recargo', monto: formatearPrecio('1500') })
 
@@ -1086,6 +1090,7 @@ describe('el punto de venta', () => {
         enPesos('9000', PLAN_CONTADO.id),
       ],
       [PLAN_CREDITO, PLAN_CONTADO],
+      false,
     )
     expect(netoNegativo[1]).toEqual({ rotulo: 'Descuento', monto: formatearPrecio('500') })
     expect(netoNegativo[2]).toEqual({
@@ -1099,7 +1104,7 @@ describe('el punto de venta', () => {
   it('sin ningún plan elegido el pie no crece: una sola línea, como hoy', async () => {
     const { lineasDelPieDeCobro } = await import('./punto-de-venta')
     expect(
-      lineasDelPieDeCobro(1_000_000, [enPesos('10000', null)], [PLAN_CREDITO]),
+      lineasDelPieDeCobro(1_000_000, [enPesos('10000', null)], [PLAN_CREDITO], false),
     ).toEqual([])
     // Y en la pantalla de verdad, con planes cargados y ninguno elegido.
     expect(await render({ planes: [PLAN_CONTADO] })).not.toContain('Total a cobrar')
@@ -1116,6 +1121,7 @@ describe('el punto de venta', () => {
       1_000_000,
       [enPesos('', PLAN_CREDITO.id)],
       [PLAN_CREDITO],
+      false,
     )
     expect(conMontoRoto.map((l) => l.monto)).toEqual([formatearPrecio('10000'), '—', '—'])
 
@@ -1123,6 +1129,7 @@ describe('el punto de venta', () => {
       NaN,
       [enPesos('10000', PLAN_CREDITO.id)],
       [PLAN_CREDITO],
+      false,
     )
     expect(conCarritoRoto.map((l) => l.monto)).toEqual(['—', formatearPrecio('4000'), '—'])
   })
@@ -1145,7 +1152,7 @@ describe('el punto de venta', () => {
   it('el pie del cobro sale de lineasDelPieDeCobro sobre la mercadería en pesos', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
     expect(fuente).toMatch(
-      /const lineasDelPie = lineasDelPieDeCobro\(\s*mercaderiaEnPesosCentavos\(totales, pagos\),\s*pagos,\s*planes,?\s*\)/,
+      /const lineasDelPie = lineasDelPieDeCobro\(\s*mercaderiaEnPesosCentavos\(totales, pagos\),\s*pagos,\s*planes,/,
     )
     expect(
       fuente,
@@ -1464,6 +1471,139 @@ describe('el punto de venta', () => {
   it('cada pago le dice al servidor qué total cubre, y con qué cotización', () => {
     expect(FUENTE, 'el JSON escondido manda `cubre: p.cubre`').toMatch(/cubre: p\.cubre/)
     expect(FUENTE).toMatch(/cotizacion: p\.moneda === p\.cubre \? '1' : p\.cotizacion/)
+  })
+
+  // --- Ronda de arreglo 1: el re-apuntado del pago único y el rótulo del pie ---
+
+  /**
+   * Un pago del panel de cobro, para los casos del re-apuntado. Inline y no
+   * como `const` suelta: `reapuntarPagoUnico` pide los enums literales, y una
+   * variable intermedia los ensancharía a `string`.
+   */
+  function pagoDeMostrador(p: {
+    moneda: 'ARS' | 'USD'
+    cubre: 'ARS' | 'USD'
+    base: string
+    cotizacion: string
+    planId: string | null
+  }) {
+    return { medio: 'TARJETA_CREDITO' as const, recibido: '', ...p }
+  }
+
+  // El bug Important 1 de la review, con su camino de mostrador exacto: carrito
+  // mixto, UN pago en pesos contra el total en pesos con "Crédito 3 cuotas"
+  // elegido, y el cliente pide sacar la funda. El pago se re-apunta al total en
+  // dólares —hasta ahí, bien— pero el plan viajaba en el spread: el selector de
+  // plan no se dibuja para un pago en dólares, así que quedaba puesto y sin
+  // control que lo sacara, "Cobrar" se habilitaba, y el motor lo rechazaba con
+  // PLAN_EN_DOLARES.
+  it('re-apuntar el pago único al total que queda le limpia el plan', async () => {
+    const { reapuntarPagoUnico } = await import('./punto-de-venta')
+    const reapuntado = reapuntarPagoUnico(
+      pagoDeMostrador({
+        moneda: 'ARS',
+        cubre: 'ARS',
+        base: '10000',
+        cotizacion: '1',
+        planId: PLAN_CREDITO.id,
+      }),
+      // La funda salió del carrito: sólo queda el iPhone de US$ 300.
+      { ars: 0, usd: 30_000 },
+    )
+    expect(reapuntado.cubre, 'sigue al único total que queda').toBe('USD')
+    expect(reapuntado.moneda, 'y se entrega en esa moneda, sin cruzar').toBe('USD')
+    expect(reapuntado.cotizacion, 'no cruza, así que 1 y no la vieja').toBe('1')
+    expect(reapuntado.base).toBe('300.00')
+    expect(
+      reapuntado.planId,
+      'el plan NO puede sobrevivir: en un pago en dólares no hay selector que lo saque',
+    ).toBeNull()
+  })
+
+  it('re-apuntar en la otra dirección también limpia, y rehace la cotización', async () => {
+    const { reapuntarPagoUnico } = await import('./punto-de-venta')
+    // Un pago que CRUZA (pesos contra el total en dólares, con su cotización
+    // tipeada) y el iPhone sale del carrito: queda sólo la funda.
+    const reapuntado = reapuntarPagoUnico(
+      pagoDeMostrador({
+        moneda: 'ARS',
+        cubre: 'USD',
+        base: '300',
+        cotizacion: '1485',
+        planId: PLAN_CREDITO.id,
+      }),
+      { ars: 1_000_000, usd: 0 },
+    )
+    expect(reapuntado.cubre).toBe('ARS')
+    expect(reapuntado.moneda).toBe('ARS')
+    expect(reapuntado.cotizacion, 'la de 1485 era de un cruce que ya no existe').toBe('1')
+    expect(reapuntado.planId).toBeNull()
+    expect(reapuntado.base).toBe('10000.00')
+  })
+
+  // La otra mitad de la regla, y la que impide "arreglar" el bug de arriba
+  // limpiando siempre: mientras la venta tenga las DOS monedas manda lo que la
+  // persona eligió, y el plan y la cotización que tipeó tienen que quedarse.
+  it('con las dos monedas en la venta no se re-apunta nada: sólo sigue la base', async () => {
+    const { reapuntarPagoUnico } = await import('./punto-de-venta')
+    const sigueIgual = reapuntarPagoUnico(
+      pagoDeMostrador({
+        moneda: 'ARS',
+        cubre: 'USD',
+        base: '300',
+        cotizacion: '1485',
+        planId: PLAN_CREDITO.id,
+      }),
+      { ars: 1_000_000, usd: 42_000 },
+    )
+    expect(sigueIgual.cubre).toBe('USD')
+    expect(sigueIgual.moneda).toBe('ARS')
+    expect(sigueIgual.cotizacion, 'la cotización tipeada no se toca').toBe('1485')
+    expect(sigueIgual.planId, 'ni el plan elegido').toBe(PLAN_CREDITO.id)
+    expect(sigueIgual.base, 'lo único que cambia es la base, que sigue a su total').toBe('420.00')
+  })
+
+  // El cableado: el ajuste durante el render tiene que DELEGAR en esta función
+  // y no volver a escribir la regla adentro del `setPagos`, que es donde la
+  // review pudo mutar la condición entera sin que nada se pusiera en rojo.
+  it('el pago único se re-apunta desde el ajuste del carrito', () => {
+    expect(FUENTE).toMatch(
+      /if \(previos\.length === 1\) return \[reapuntarPagoUnico\(previos\[0\], totales\)\]/,
+    )
+  })
+
+  // El bug Important 2 de la review: el pie es un desglose EN PESOS de punta a
+  // punta, así que con una funda con descuento y un iPhone pagado EN dólares
+  // decía "Total a cobrar $9.000" sin nombrar los dólares en ningún lado — y el
+  // chip de faltante en dólares tampoco los nombra, porque esa parte está
+  // cubierta y un chip en cero no se dibuja. El rótulo es lo que lo vuelve
+  // cierto.
+  it('con un total en dólares, el pie dice que su total es EN PESOS', async () => {
+    const { lineasDelPieDeCobro } = await import('./punto-de-venta')
+    const conDolares = lineasDelPieDeCobro(
+      1_000_000,
+      [enPesos('10000', PLAN_CONTADO.id)],
+      [PLAN_CONTADO],
+      true,
+    )
+    expect(conDolares[2]).toEqual({
+      rotulo: 'Total a cobrar en pesos',
+      monto: formatearPrecio('9000'),
+    })
+    // Y sin dólares en la venta, el pie queda exactamente como estaba.
+    const sinDolares = lineasDelPieDeCobro(
+      1_000_000,
+      [enPesos('10000', PLAN_CONTADO.id)],
+      [PLAN_CONTADO],
+      false,
+    )
+    expect(sinDolares[2].rotulo).toBe('Total a cobrar')
+
+    // El cableado: la pantalla tiene que pasarle si la venta tiene un total en
+    // dólares, y no un `false` fijo.
+    expect(FUENTE).toMatch(
+      /lineasDelPieDeCobro\(\s*mercaderiaEnPesosCentavos\(totales, pagos\),\s*pagos,\s*planes,\s*totales\.usd !== 0,?\s*\)/,
+    )
   })
 })
 

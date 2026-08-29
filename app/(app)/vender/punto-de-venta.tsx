@@ -366,6 +366,60 @@ export function cubrePorDefecto(totales: TotalesEnCentavos): 'ARS' | 'USD' {
 }
 
 /**
+ * El ÚNICO pago de la venta, seguido al total que le corresponde cuando el
+ * carrito cambia.
+ *
+ * Mientras la venta tenga las DOS monedas manda lo que la persona eligió en el
+ * selector de `Cubre`, y esto sólo le actualiza la base. Cuando queda UNA
+ * sola, el pago se re-apunta a la que quedó: sacar la funda de un carrito
+ * mixto dejaba al único pago cubriendo un total en pesos que ya no existe, con
+ * el selector escondido —aparece sólo con los dos totales— y por lo tanto sin
+ * ninguna forma de arreglarlo desde la pantalla.
+ *
+ * **Re-apuntar arrastra las otras tres cosas del pago, y ninguna es opcional:**
+ *
+ * - La MONEDA que entrega, para que el pago no quede cruzando sin que nadie lo
+ *   haya pedido.
+ * - La COTIZACIÓN, que se rehace en vez de heredarse: la vieja sería
+ *   exactamente la cotización mentirosa que `cotizacionParaElCruce` existe
+ *   para evitar.
+ * - **El PLAN, que se limpia.** Es la misma regla que aplican los tres
+ *   selectores de la fila —un plan que sobrevive a un cambio que lo vuelve
+ *   inválido es un error del motor con la pantalla en verde— y acá el cambio
+ *   de moneda lo dispara el carrito, no un clic. Sin esto, el pago pasaba a
+ *   `moneda: 'USD'` con el plan puesto y las tres cosas malas juntas:
+ *   `planesOfrecidos` no dibuja el selector para un pago en dólares, así que
+ *   el plan quedaba sin ningún control que lo sacara; `cierra` daba verdadero,
+ *   así que "Cobrar" se habilitaba para que el motor rechazara con
+ *   PLAN_EN_DOLARES; y el pie calculaba el recargo sobre una base en dólares
+ *   tratada como pesos.
+ *
+ * Extraída como función pura y no escrita adentro del `setPagos` por el mismo
+ * motivo que `hayFaltanteDeVenta` o `cubrePorDefecto`: la review de esta task
+ * mutó la condición del re-apuntado a `true` —anulándolo entero— y la suite
+ * quedó en verde, porque nada lo probaba aislado y el harness no puede montar
+ * un carrito.
+ */
+export function reapuntarPagoUnico(pago: Pago, totales: TotalesEnCentavos): Pago {
+  const lasDos = totales.ars !== 0 && totales.usd !== 0
+  const cubre = lasDos ? pago.cubre : cubrePorDefecto(totales)
+  const seReapunto = cubre !== pago.cubre
+  const moneda = seReapunto ? cubre : pago.moneda
+  return {
+    ...pago,
+    cubre,
+    moneda,
+    cotizacion: seReapunto ? cotizacionParaElCruce(moneda, cubre) : pago.cotizacion,
+    planId: seReapunto ? null : pago.planId,
+    // El total DE LO QUE ESE PAGO CUBRE, y ya no el de su moneda: con
+    // `moneda !== cubre` los dos dejan de coincidir, y seguir el de la moneda
+    // haría que un pago en pesos contra el total en dólares persiguiera el
+    // total en pesos.
+    base: deCentavos(cubre === 'ARS' ? totales.ars : totales.usd),
+  }
+}
+
+/**
  * Lo que una fila del panel de cobro tiene que decir de sí misma para que se
  * pueda calcular cuánta plata entra por ella.
  *
@@ -491,6 +545,7 @@ export function lineasDelPieDeCobro(
   mercaderiaCentavos: number,
   pagos: FilaDePagoDeLaPantalla[],
   planes: PlanVisible[],
+  hayTotalEnDolares: boolean,
 ): { rotulo: string; monto: string }[] {
   const conPlan = pagos.flatMap((p) => {
     const plan = planes.find((pl) => pl.id === p.planId)
@@ -536,7 +591,25 @@ export function lineasDelPieDeCobro(
       rotulo: nombres.length === 1 ? `${palabra} ${nombres[0]}` : palabra,
       monto: montoDelPie(Math.abs(recargoCentavos)),
     },
-    { rotulo: 'Total a cobrar', monto: montoDelPie(mercaderiaCentavos + recargoCentavos) },
+    {
+      // "Total a cobrar EN PESOS" en cuanto la venta tiene también un total en
+      // dólares, y ése es el hallazgo Important 2 de la review: este pie es un
+      // desglose en pesos de punta a punta (ver `mercaderiaEnPesosCentavos`),
+      // así que con una funda de $10.000 con descuento y un iPhone de US$ 300
+      // pagado EN dólares la línea decía "Total a cobrar $9.000" sin mencionar
+      // los dólares en ningún lado — y el chip de faltante en dólares tampoco
+      // los menciona, porque esa parte está cubierta y el chip en cero no se
+      // dibuja. Un cajero que confía en la línea rotulada "Total a cobrar"
+      // cobra de menos, y la venta cierra igual porque el motor la da por
+      // cerrada.
+      //
+      // El rótulo y no una segunda línea en dólares: la maqueta no dibuja este
+      // bloque (deuda ya anotada), y agregarle una línea es diseño nuevo sobre
+      // algo que nadie dibujó. Decir en qué moneda está el número que ya
+      // muestra es la corrección más chica que lo vuelve cierto.
+      rotulo: hayTotalEnDolares ? 'Total a cobrar en pesos' : 'Total a cobrar',
+      monto: montoDelPie(mercaderiaCentavos + recargoCentavos),
+    },
   ]
 }
 
@@ -633,9 +706,15 @@ export function hayFaltanteDeVenta(faltanCentavos: number): boolean {
  * **La parte que se paga EN dólares no entra acá**, y por eso el pie sigue
  * siendo un desglose en pesos de punta a punta: no hay pesos que sumarle, y el
  * plan tampoco puede tocarla (el motor sólo acepta plan sobre un pago
- * entregado en pesos, ver `planesOfrecidos`). Lo que queda sin cubrir es que
- * en un carrito mixto pagado mitad en dólares el pie habla sólo de la mitad en
- * pesos; el chip de faltante en dólares es el que cuenta la otra.
+ * entregado en pesos, ver `planesOfrecidos`).
+ *
+ * Lo que eso deja afuera es real: en un carrito mixto pagado mitad en dólares,
+ * el pie habla sólo de la mitad en pesos. **Y el chip de faltante en dólares
+ * NO lo compensa** —eso decía la primera versión de este comentario y es
+ * falso—: si esa parte está cubierta, `faltan.usd` da cero y el chip no se
+ * dibuja. Lo que lo vuelve honesto es el rótulo: con un total en dólares
+ * presente, la última línea dice "Total a cobrar EN PESOS" (ver
+ * `lineasDelPieDeCobro`).
  */
 export function mercaderiaEnPesosCentavos(
   totales: TotalesEnCentavos,
@@ -894,36 +973,11 @@ export function PuntoDeVenta({
           },
         ]
       }
-      if (previos.length === 1) {
-        // Mientras la venta tenga las DOS monedas manda lo que la persona
-        // eligió en el selector de `Cubre`. Cuando queda UNA sola, el pago se
-        // re-apunta a la que quedó: sacar la funda de un carrito mixto dejaba
-        // al único pago cubriendo un total en pesos que ya no existe, con el
-        // selector escondido —aparece sólo con los dos totales— y por lo tanto
-        // sin ninguna forma de arreglarlo desde la pantalla.
-        const lasDos = totales.ars !== 0 && totales.usd !== 0
-        const cubre = lasDos ? previos[0].cubre : cubrePorDefecto(totales)
-        // Si el pago cambió de total, cambia con él la moneda que entrega y se
-        // rehace la cotización: heredar la vieja sería arrastrar la cotización
-        // mentirosa que `cotizacionParaElCruce` existe para evitar.
-        const seReapunto = cubre !== previos[0].cubre
-        const moneda = seReapunto ? cubre : previos[0].moneda
-        return [
-          {
-            ...previos[0],
-            cubre,
-            moneda,
-            cotizacion: seReapunto
-              ? cotizacionParaElCruce(moneda, cubre)
-              : previos[0].cotizacion,
-            // El total DE LO QUE ESE PAGO CUBRE, y ya no el de su moneda: con
-            // `moneda !== cubre` los dos dejan de coincidir, y seguir el de la
-            // moneda haría que un pago en pesos contra el total en dólares
-            // persiguiera el total en pesos.
-            base: deCentavos(cubre === 'ARS' ? totales.ars : totales.usd),
-          },
-        ]
-      }
+      // Con UN solo pago se le sigue el total que cubre, y se lo re-apunta si
+      // esa moneda desapareció del carrito — ver `reapuntarPagoUnico`, que es
+      // donde vive la regla entera. Con dos o más se deja de tocar: ahí la
+      // persona ya decidió cómo reparte.
+      if (previos.length === 1) return [reapuntarPagoUnico(previos[0], totales)]
       return previos
     })
   }
@@ -1168,6 +1222,7 @@ export function PuntoDeVenta({
     mercaderiaEnPesosCentavos(totales, pagos),
     pagos,
     planes,
+    totales.usd !== 0,
   )
 
   /**
