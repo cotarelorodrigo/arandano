@@ -217,7 +217,8 @@ campo de cotización, ver *Decisiones*.
   sigue siendo editable a mano, no sólo con los botones— y quitar ítems.
 - Cobrar con **pagos partidos**, en pesos y en dólares, cada uno con su medio
   (efectivo, transferencia, débito, crédito) y su cotización. Un pago en
-  dólares muestra cuántos pesos representa (`Entran $X`).
+  dólares muestra cuántos pesos representa (`Entran $X` — `Base en pesos $X`
+  cuando esa fila lleva un plan que mueve el número, ver *Decisiones*).
 - Vender un carrito **mixto** —algo en dólares y algo en pesos— y ver los **dos
   totales**, uno por moneda, sin que la pantalla obligue a elegir ninguna.
 - Elegir, en cada pago, **cuál de los dos totales cubre** (selector `Cubre`), y
@@ -373,6 +374,25 @@ campo de cotización, ver *Decisiones*.
   no entran en ninguna de sus líneas—, así que sin la aclaración un cajero que
   confiara en esa línea cobraba de menos y la venta cerraba igual. Con un solo
   total el rótulo es el de siempre, "Total a cobrar".
+- **El renglón `Entran $X` se llama `Base en pesos $X` cuando la fila lleva un
+  plan que mueve el número.** Con base US$ 300 a 1485 y un plan del 40 %, la
+  fila decía `Entran $ 445.500,00` y dos renglones más abajo
+  `A cobrar $ 623.700,00`: dos importes contradictorios pegados, en la única
+  pantalla donde se cuentan billetes. Lo que entra al cajón son los 623.700;
+  los 445.500 son la mercadería convertida, **antes** del recargo. El renglón
+  no se esconde —ese número es el que deja ver que la cotización aplicada es
+  la que se tipeó, y es el puente entre `Cubre US$ 300` y lo que se cobra—:
+  se lo llama por su nombre. El rótulo es condicional y no fijo porque sin
+  plan `Entran` sigue siendo exacto, y ése es el estado que la maqueta dibuja.
+  Los dos renglones salen de la **misma** condición (`elPlanMueveElNumero`):
+  separadas, podrían volver a contradecirse.
+- **El chip de faltante de una moneda se dibuja aunque su total sea cero, si
+  hay pagos apuntados a ella.** Con dos pagos —uno por total— sacar del
+  carrito la última línea en pesos dejaba `totales.ars` en 0 con un pago que
+  seguía cubriendo pesos: la venta no cerraba, "Cobrar" quedaba apagado, el
+  chip que lo explicaría no se dibujaba (pedía `totales.ars !== 0`) y el
+  selector `Cubre` tampoco (pide las dos monedas presentes). Botón muerto y
+  mudo. Ahora sale `Sobran $X`, que es el cartel que faltaba.
 - **`design/arandano.pen` no dibuja ni el selector de plan ni el pie de tres
   líneas**: la maqueta es anterior a los planes de pago. No es una
   contradicción con el `.pen` sino un hueco, y queda anotado en
@@ -477,15 +497,13 @@ Es la pantalla que más cambia del ciclo, y la única que se parte en dos frames
   que haya una caja abierta para cobrar — a propósito: eso rompería el cobro
   de cualquier tenant que no use la caja. El chip del header cubre abrir y
   cerrar; el arqueo es su propio ciclo futuro.
-- **El renglón "Entran $X" deja de ser lo que entra cuando el pago cruza y
-  además lleva plan**: dice la base convertida ($445.500) arriba de un "A
-  cobrar $623.700". No se pierde plata —el cajero actúa sobre "A cobrar", que
-  es el número correcto—, pero el rótulo es el equivocado y espera un ciclo que
-  lo renombre.
 - **El re-apuntado sólo cubre el pago único.** Con dos o más pagos, un total
   que desaparece del carrito deja un pago apuntando a una moneda que la venta
   ya no tiene: el mismo callejón que `reapuntarPagoUnico` vino a tapar, un pago
-  más adelante.
+  más adelante. **La pantalla ya no queda muda en ese estado** —el chip de esa
+  moneda se dibuja igual y dice `Sobran $X`, ver *Decisiones*—, pero corregirlo
+  sigue siendo a mano ("Quitar pago", o el selector `Cubre` si la otra moneda
+  todavía está en el carrito).
 - **Un plan sobre un pago ENTREGADO en dólares sigue prohibido**
   (`PLAN_EN_DOLARES`), por la división que el ciclo entero se cuidó de no
   hacer. Cubrir dólares **entregando pesos** sí lo admite: es el caso del
@@ -505,7 +523,8 @@ El historial por período.
   / Este mes**. El default es hoy.
 - Ver tres tiles: total del período (el ancla de `--marca` de esta pantalla,
   ver `docs/sistema-de-diseno.md`), ventas cobradas con su promedio, y
-  anuladas con lo devuelto.
+  anuladas con lo devuelto. **Los dos pies de plata desaparecen cuando su
+  cifra en pesos es cero y el período movió dólares** — ver *Decisiones*.
 - Ver el listado dentro de su propia card ("Últimas ventas"), con la columna
   "Cliente" (quién compró, no quién vendió — eso vive en el detalle), cuántos
   artículos, con qué medios se pagó, el **total cobrado** y su estado.
@@ -531,11 +550,14 @@ El historial por período.
   sumar los dos campos. La suma vive en una sola función,
   `totalCobrado()` (`lib/ventas/totales.ts`), para que ninguna de las cuatro
   pueda desacordar con las otras tres — o con la columna Total de
-  `/ventas/[id]`, que usa la misma función. **El panel "Cómo entró la plata"
-  no se tocó**: suma `Pago.monto`, que ya era `base + recargo` desde que el
-  motor cobra con plan (Task 4) — antes de este ciclo era éste, y no el tile,
-  el que decía la verdad; ver el comentario del `groupBy` en `page.tsx` para
-  el detalle.
+  `/ventas/[id]`, que usa la misma función. El panel "Cómo entró la plata"
+  suma `Pago.monto`, que ya era `base + recargo` desde que el motor cobra con
+  plan — antes de ese ciclo era éste, y no el tile, el que decía la verdad;
+  ver el comentario del `groupBy` en `page.tsx` para el detalle. **En el ciclo
+  del precio en dólares el panel sí se tocó**, por un bug propio: multiplicaba
+  siempre por la cotización, así que un pago en pesos con cotización distinta
+  de 1 —que ahora existe— entraba inflado. Ahora pasa por `pesosEntregados()`,
+  que mira la moneda antes de multiplicar.
 - **El total NO suma las anuladas**, y lo dice en pantalla para que nadie tenga
   que deducirlo. Lo devuelto de las anuladas es un agregado APARTE, no el
   mismo número con el filtro invertido.
@@ -556,6 +578,30 @@ El historial por período.
   del lado de la línea de dólares, no convertidos). No es un bug: ver el
   docblock de `totalCobrado()` en `lib/ventas/totales.ts` para el porqué
   completo.
+- **Costura conocida: el tile y "Cómo entró la plata" NO cierran entre sí, y
+  están a diez centímetros uno del otro.** Con la misma venta del párrafo de
+  arriba, el tile dice `$ 178.200,00` + `US$ 300,00` y el panel dice `Crédito
+  $ 623.700,00 · 100 % del total`. Los dos números son correctos y contestan
+  preguntas distintas: **sólo el panel convierte**. Multiplica cada pago por
+  su `Pago.cotizacion` porque una barra por medio que mezclara unidades no se
+  podría comparar contra la de al lado; el tile no convierte nada, porque el
+  spec del ciclo fija que `/ventas` no convierte. El puente es exacto
+  (445.500 pesos de base convertida + 178.200 de recargo = 623.700), pero
+  ponerlo en el tile sería justamente la conversión que el spec prohíbe. Si
+  algún día el tile tiene que mostrar los pesos entregados, es una decisión
+  de producto y su propio ciclo — no una corrección de éste.
+- **Los pies de "Ventas cobradas" y "Anuladas" se omiten cuando su cifra en
+  pesos es cero y el período movió dólares.** Los dos se calculan sobre
+  `total + recargo`, que es plata en pesos: para el local que carga todo su
+  catálogo en dólares —el que pidió esta feature— eso es cero en todas sus
+  ventas, y el resultado era `promedio $ 0,00` y `$ 0,00 devueltos` al lado
+  de un tile que decía `US$ 3.000,00`. **Un tile sin pie omite; un
+  `promedio $ 0,00` afirma**, y ahí afirma algo falso. Se eligió omitir y no
+  sumarles una segunda línea en dólares como al tile de marca: el promedio en
+  dólares sería `sumaUsd / cobradas`, y en un período mixto ese denominador
+  incluye ventas que no movieron un dólar — un cuarto número derivado, en
+  10 px, debajo de un conteo. Con cero en pesos y ningún dólar, el pie sigue
+  apareciendo: ahí el cero es cierto.
 - Los tiles cuelgan del **período**, no de la página: colgados de la página, un
   `?p=5` los hacía desaparecer.
 - **La columna "Medios" de un pago partido** lista los medios distintos

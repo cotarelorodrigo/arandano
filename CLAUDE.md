@@ -1745,21 +1745,40 @@ Y del producto:
   número diga otra cosa, y ninguna validación puede distinguir eso de un cambio
   deliberado, así que la decisión queda de quien carga el precio.
 
-  **La migración es genuinamente inerte, y por eso viaja en su propio deploy
-  antes que la UI.** Cuatro columnas aditivas con default (`Articulo.moneda`,
-  `VentaItem.moneda`, `Venta.totalUsd`, `Pago.cubre`), cero `DROP`, sobre un
-  enum `Moneda` que ya existía. Mientras ningún artículo esté marcado en
-  dólares, ninguna venta puede tener `totalUsd > 0`, así que la imagen anterior
-  no se puede encontrar con una fila que no sepa leer: **la feature no existe
-  hasta que alguien marca el primer artículo**, y para entonces el código que la
-  lee ya está en producción.
+  **La migración y la UI viajan en el MISMO deploy, y es seguro igual.** Vale
+  decirlo así de explícito porque contradice lo que se esperaría de la regla
+  general de expand/contract: la rama trae las cuatro columnas y las cinco
+  pantallas en el mismo conjunto de commits, y `deploy.sh` promueve **un**
+  artefacto por corrida — mergear y deployar es un solo deploy con las dos
+  cosas. No hay ningún proceso de dos deploys acá, y no vale la pena inventar
+  uno que nadie va a seguir.
+
+  Lo que hace que dé igual es que la migración es **genuinamente inerte**:
+  cuatro columnas aditivas con default (`Articulo.moneda`, `VentaItem.moneda`,
+  `Venta.totalUsd`, `Pago.cubre`), cero `DROP`, sobre un enum `Moneda` que ya
+  existía. Los cuatro defaults son exactamente lo que el código anterior
+  asumía, así que la imagen vieja lee cualquier fila que la migración pueda
+  producir sin enterarse de que las columnas existen. Y en la otra dirección
+  —el rollback, que es lo que expand/contract protege— tampoco hay nada que
+  revertir: **la feature no existe hasta que alguien marca el primer artículo
+  en dólares**, y hasta ese momento ninguna venta puede tener `totalUsd > 0`
+  ni ningún pago un `cubre` distinto de `'ARS'`.
+
+  La regla que esto deja, que es más útil que el caso: lo que expand/contract
+  exige no es "la migración en un deploy aparte", es que **el schema nuevo
+  soporte la versión anterior del código**. Una migración puramente aditiva
+  cuyos defaults reproducen el comportamiento viejo ya lo cumple, y partirla
+  en dos deploys no compra nada.
 
   **Queda para los ciclos siguientes**:
 
   - **El costo en dólares.** `MovimientoStock.costoUnitario` sigue siendo en
     pesos, así que el tile "Último costo" de un artículo en dólares muestra el
-    costo en pesos y el margen en `—`, con el porqué escrito en el pie. **No es
-    un agujero de este ciclo**: es la costura declarada con la deuda del costo,
+    costo en pesos y, **en lugar del margen, la oración** *"el costo está en
+    pesos: sin margen para un artículo en dólares"* — una raya no distingue
+    "no hay con qué compararlo" de "todavía nadie cargó un costo", que es el
+    otro pie posible del mismo tile, y son dos cosas distintas que un dueño
+    resuelve de manera distinta. **No es un agujero de este ciclo**: es la costura declarada con la deuda del costo,
     que ya tiene su investigación hecha unos ítems más arriba, y es ese ciclo el
     que le devuelve el margen a estos artículos.
   - **El plan sobre un pago entregado en dólares.** Sigue prohibido
