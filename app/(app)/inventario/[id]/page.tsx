@@ -432,6 +432,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
       nombre={articulo.nombre}
       sku={articulo.sku}
       precio={articulo.precio.toString()}
+      moneda={articulo.moneda}
       arbol={arbol}
       categoriaId={articulo.categoriaId}
       columnaIzquierda={columnaIzquierda}

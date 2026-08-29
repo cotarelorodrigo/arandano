@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import type { Moneda } from '@/generated/prisma/client'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { exigirPermiso, puede } from '@/lib/permisos/guarda'
 import type { Permiso } from '@/lib/permisos/catalogo'
@@ -77,6 +78,27 @@ function traducir(e: unknown): EstadoInventario {
 
 const texto = (datos: FormData, campo: string) => String(datos.get(campo) ?? '').trim()
 
+/**
+ * Valida `moneda` contra el enum antes de pasarla al motor.
+ *
+ * `Moneda` es un tipo de TypeScript, no algo que Prisma revise en tiempo de
+ * ejecución antes de tocar la base — a diferencia del `tipo` de artículo
+ * (`altaArticulo`, más abajo), que sí cae a un default seguro. Acá no: el
+ * `<SelectorDeMoneda>` (components/selector-de-moneda.tsx) sólo puede emitir
+ * "ARS" o "USD", así que llegar con otra cosa es un `FormData` armado a
+ * mano, no un descuido de quien carga el precio. No hay nada que esa persona
+ * pueda corregir tipeando distinto, así que no se traduce a
+ * `ErrorDeInventario`: cae en el error genérico de la acción, como cualquier
+ * otro bug real.
+ */
+function monedaDe(datos: FormData): Moneda {
+  const valor = texto(datos, 'moneda')
+  if (valor !== 'ARS' && valor !== 'USD') {
+    throw new Error(`moneda inválida: "${valor}"`)
+  }
+  return valor
+}
+
 export async function altaArticulo(
   _e: EstadoInventario,
   datos: FormData,
@@ -90,6 +112,7 @@ export async function altaArticulo(
         nombre: texto(datos, 'nombre'),
         tipo,
         precio: aDecimal(texto(datos, 'precio'), 'el precio'),
+        moneda: monedaDe(datos),
         sku: texto(datos, 'sku'),
         // La marca gana sobre el rubro cuando hay las dos: la rama más
         // específica es la que el artículo tiene que ocupar. Con el rubro
@@ -123,37 +146,15 @@ export async function guardarArticulo(
 ): Promise<EstadoInventario> {
   try {
     const articuloId = texto(datos, 'articuloId')
-    await comoPuede('ARTICULOS_EDITAR', async (tenantId) => {
-      // `editarArticulo` pide `moneda` REQUERIDA (Task 6), pero esta pantalla
-      // todavía no tiene el control para cambiarla — eso llega en la Task 7,
-      // que sí la va a leer del FormData. Hasta entonces se lee la moneda
-      // ACTUAL del artículo y se pasa sin tocar: guardar la ficha no puede
-      // resetearla a pesos en silencio sólo porque el campo no existe
-      // todavía en la pantalla.
-      //
-      // El guard de `esUuid` va ACÁ, antes del `findUnique` de acá abajo, y no
-      // sólo en `editarArticulo`: a diferencia de `updateMany`, `findUnique`
-      // tira P2007 directo ante un id sin forma de uuid, y ese código no lo
-      // traduce nadie en este archivo — sólo `traducirErrorDeBase`, del lado
-      // de `lib/inventario/`. Mismo motivo que el guard de
-      // `exportarHistorialCsv`, más abajo en este archivo.
-      if (!esUuid(articuloId)) {
-        throw new ErrorDeInventario(
-          'ARTICULO_INEXISTENTE',
-          `el artículo ${articuloId} no existe en este tenant`,
-        )
-      }
-      const actual = await prismaParaTenant(tenantId).articulo.findUnique({
-        where: { id: articuloId },
-        select: { moneda: true },
-      })
-      if (!actual) {
-        throw new ErrorDeInventario(
-          'ARTICULO_INEXISTENTE',
-          `el artículo ${articuloId} no existe en este tenant`,
-        )
-      }
-      return editarArticulo({
+    // Sin guard de `esUuid` acá: a diferencia del bridge que este componente
+    // reemplaza (Task 6), `editarArticulo` ya no se llama después de un
+    // `findUnique` propio de este archivo —el que tiraba P2007 crudo ante un
+    // id sin forma de uuid—. `editarArticulo` resuelve con `updateMany` y
+    // traduce P2007/P2023 con `traducirErrorDeBase` en su propio catch, igual
+    // que ya hacen `bajaArticulo` y `reactivarArticuloAccion` más abajo en
+    // este archivo, sin guard previo.
+    await comoPuede('ARTICULOS_EDITAR', (tenantId) =>
+      editarArticulo({
         tenantId,
         articuloId,
         nombre: texto(datos, 'nombre'),
@@ -171,9 +172,15 @@ export async function guardarArticulo(
         // bypass que motivaba la guarda vieja era el texto libre creando
         // ramas al vuelo, y ese camino ya no existe.
         categoriaId: texto(datos, 'marcaId') || texto(datos, 'categoriaId') || null,
-        moneda: actual.moneda,
-      })
-    })
+        // Ya no se lee del artículo actual (el `findUnique` bridge de la
+        // Task 6): el `<SelectorDeMoneda>` de la ficha (Task 7) la manda
+        // siempre, precargada con la moneda vigente. Sacar el bridge cierra
+        // de paso la ventana TOCTOU que esa task había dejado anotada — leer
+        // la moneda actual y guardarla de vuelta unos milisegundos después,
+        // sin lock, podía pisar un cambio concurrente.
+        moneda: monedaDe(datos),
+      }),
+    )
     revalidatePath('/inventario')
     revalidatePath(`/inventario/${articuloId}`)
     return { error: null, aviso: 'Cambios guardados.' }

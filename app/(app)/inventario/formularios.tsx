@@ -22,6 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import type { RamaConHijas } from '@/lib/inventario/categorias'
 import { SelectorDeCategoria } from './selector-categoria'
+import { SelectorDeMoneda } from '@/components/selector-de-moneda'
 import estilos from './tipografia.module.css'
 
 // Acá y no en acciones.ts: aquel archivo es 'use server' y sólo puede exportar
@@ -208,18 +209,27 @@ export function FormularioDeAlta({
               </div>
               <div className="flex w-60 flex-col gap-2">
                 <Label htmlFor="precio">Precio de venta</Label>
-                {/* type="text" con inputMode="decimal" y no type="number": el
-                    teclado numérico aparece igual en el celular, pero la coma
-                    llega sin que el navegador la descarte. El parseo lo hace
-                    lib/formato/numeros.ts. */}
-                <Input
-                  id="precio"
-                  name="precio"
-                  inputMode="decimal"
-                  placeholder="15000,50"
-                  required
-                  className="h-10 rounded-[9px]"
-                />
+                {/* El selector de moneda va pegado al input (sin radio a la
+                    derecha del selector ni a la izquierda del input): las dos
+                    pantallas instancian el MISMO componente
+                    (components/selector-de-moneda.tsx), que es lo que impide
+                    que alta y ficha vuelvan a divergir como pasó con la
+                    categoría. */}
+                <div className="flex">
+                  <SelectorDeMoneda id="moneda" name="moneda" valorInicial="ARS" />
+                  {/* type="text" con inputMode="decimal" y no type="number": el
+                      teclado numérico aparece igual en el celular, pero la coma
+                      llega sin que el navegador la descarte. El parseo lo hace
+                      lib/formato/numeros.ts. */}
+                  <Input
+                    id="precio"
+                    name="precio"
+                    inputMode="decimal"
+                    placeholder="15000,50"
+                    required
+                    className="h-10 flex-1 rounded-l-none"
+                  />
+                </div>
               </div>
             </div>
             {/* El número real, no un texto genérico: sale de
@@ -352,6 +362,7 @@ export function FichaDeArticulo({
   nombre,
   sku,
   precio,
+  moneda,
   arbol,
   categoriaId,
   columnaIzquierda,
@@ -366,6 +377,7 @@ export function FichaDeArticulo({
   nombre: string
   sku: string
   precio: string
+  moneda: 'ARS' | 'USD'
   arbol: RamaConHijas[]
   categoriaId: string | null
   columnaIzquierda: ReactNode
@@ -478,14 +490,19 @@ export function FichaDeArticulo({
                       </div>
                       <div className="flex flex-col gap-2">
                         <Label htmlFor="e-precio">Precio de venta</Label>
-                        <Input
-                          id="e-precio"
-                          name="precio"
-                          inputMode="decimal"
-                          defaultValue={precio}
-                          required
-                          className="h-10 rounded-[9px]"
-                        />
+                        {/* Mismo componente que el alta, no una segunda
+                            implementación: components/selector-de-moneda.tsx. */}
+                        <div className="flex">
+                          <SelectorDeMoneda id="e-moneda" name="moneda" valorInicial={moneda} />
+                          <Input
+                            id="e-precio"
+                            name="precio"
+                            inputMode="decimal"
+                            defaultValue={precio}
+                            required
+                            className="h-10 flex-1 rounded-l-none"
+                          />
+                        </div>
                       </div>
                       <div className="flex flex-col gap-2">
                         <Label htmlFor="e-sku">Código</Label>
