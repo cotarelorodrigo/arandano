@@ -227,7 +227,7 @@ export function FormularioDeAlta({
                     inputMode="decimal"
                     placeholder="15000,50"
                     required
-                    className="h-10 flex-1 rounded-l-none"
+                    className="h-10 flex-1 rounded-l-none rounded-r-[9px]"
                   />
                 </div>
               </div>
@@ -500,7 +500,7 @@ export function FichaDeArticulo({
                             inputMode="decimal"
                             defaultValue={precio}
                             required
-                            className="h-10 flex-1 rounded-l-none"
+                            className="h-10 flex-1 rounded-l-none rounded-r-[9px]"
                           />
                         </div>
                       </div>

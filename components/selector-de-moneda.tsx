@@ -51,7 +51,11 @@ export function SelectorDeMoneda({
             // usa el SelectTrigger de SelectorDeCategoria (mismo motivo:
             // design/arandano.pen mide los campos del alta a 40px, no al h-8
             // por default de shadcn — hallazgo M2 del barrido final).
-            className="h-10 w-[86px] rounded-r-none border-r-0 text-[13px] font-medium"
+            // El radio va explícito y no por el `rounded-lg` de shadcn (10 px
+            // con --radius: 0.625rem): la maqueta mide 9 en las esquinas
+            // externas del campo compuesto, igual que los inputs vecinos de
+            // estas dos pantallas, que ya lo escriben a mano.
+            className="h-10 w-[86px] rounded-l-[9px] rounded-r-none border-r-0 text-[13px] font-medium"
           >
             <SelectValue />
           </SelectTrigger>

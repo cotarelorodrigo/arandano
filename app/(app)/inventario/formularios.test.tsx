@@ -543,4 +543,20 @@ describe('SelectorDeMoneda', () => {
     expect(html).toContain('name="moneda"')
     expect(html).toContain('value="USD"')
   })
+
+  it('el campo compuesto mide 9 px en las esquinas externas', () => {
+    // design/arandano.pen, nodos `UI6JI` (alta) y `eKwLI` (ficha): [9,0,0,9]
+    // en el selector y [0,9,9,0] en el input. El default de shadcn
+    // (`rounded-lg`, 10 px con --radius: 0.625rem) dejaba a este campo como el
+    // único del formulario con un radio distinto del de sus vecinos, que ya
+    // escriben rounded-[9px] explícito.
+    const html = renderToStaticMarkup(<SelectorDeMoneda id="m" name="moneda" valorInicial="ARS" />)
+    expect(html).toContain('rounded-l-[9px]')
+
+    const fuente = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')
+    const derechos = fuente.match(/rounded-l-none rounded-r-\[9px\]/g) ?? []
+    // Las DOS copias, el alta y la ficha: la lección del ciclo del 2026-08-28
+    // es que este campo ya divergió una vez entre las dos pantallas.
+    expect(derechos).toHaveLength(2)
+  })
 })
