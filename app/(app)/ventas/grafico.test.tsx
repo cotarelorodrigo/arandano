@@ -17,17 +17,17 @@ import type { Composicion } from '@/lib/ventas/medios'
 
 const CUATRO_MEDIOS: Composicion = {
   barras: [
-    { medio: 'EFECTIVO', ars: '612400', usd: '0', total: '612400' },
-    { medio: 'TRANSFERENCIA', ars: '389700', usd: '0', total: '389700' },
-    { medio: 'TARJETA_DEBITO', ars: '182400', usd: '0', total: '182400' },
-    { medio: 'TARJETA_CREDITO', ars: '100000', usd: '0', total: '100000' },
+    { medio: 'EFECTIVO', ars: '612400', usd: '0', usdCrudo: '0', total: '612400' },
+    { medio: 'TRANSFERENCIA', ars: '389700', usd: '0', usdCrudo: '0', total: '389700' },
+    { medio: 'TARJETA_DEBITO', ars: '182400', usd: '0', usdCrudo: '0', total: '182400' },
+    { medio: 'TARJETA_CREDITO', ars: '100000', usd: '0', usdCrudo: '0', total: '100000' },
   ],
   total: '1284500',
   hayDolares: false,
 }
 
 const UN_MEDIO: Composicion = {
-  barras: [{ medio: 'EFECTIVO', ars: '90000', usd: '12000', total: '102000' }],
+  barras: [{ medio: 'EFECTIVO', ars: '90000', usd: '12000', usdCrudo: '0', total: '102000' }],
   total: '102000',
   hayDolares: true,
 }

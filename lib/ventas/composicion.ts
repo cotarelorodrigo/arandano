@@ -65,7 +65,7 @@ export type FilaDePagos = {
  * no sea 1 — ver el docblock de `pesosEntregados` en `totales.ts`.
  */
 export function componerPorMedio(filas: FilaDePagos[]): Composicion {
-  const acumulado = new Map<Medio, { ars: Decimal; usd: Decimal }>()
+  const acumulado = new Map<Medio, { ars: Decimal; usd: Decimal; usdCrudo: Decimal }>()
   let hayDolares = false
 
   for (const f of filas) {
@@ -75,11 +75,16 @@ export function componerPorMedio(filas: FilaDePagos[]): Composicion {
     // lo que reproduce exactamente la suma pago por pago de `totalDePagos`.
     const enPesos = pesosEntregados(f).mul(f._count)
     const actual =
-      acumulado.get(f.medio) ?? { ars: new Prisma.Decimal(0), usd: new Prisma.Decimal(0) }
+      acumulado.get(f.medio) ??
+      { ars: new Prisma.Decimal(0), usd: new Prisma.Decimal(0), usdCrudo: new Prisma.Decimal(0) }
 
     if (f.moneda === 'USD') {
       hayDolares = true
       actual.usd = actual.usd.add(enPesos)
+      // Sin `pesosEntregados` y sin cotización: son los dólares que entraron.
+      // Con el mismo `_count` que el resto, que es lo que mantiene el
+      // redondeo por pago (ver el docblock de FilaDePagos).
+      actual.usdCrudo = actual.usdCrudo.add(f.monto.mul(f._count))
     } else {
       actual.ars = actual.ars.add(enPesos)
     }
@@ -87,10 +92,11 @@ export function componerPorMedio(filas: FilaDePagos[]): Composicion {
   }
 
   const barras: Barra[] = [...acumulado.entries()]
-    .map(([medio, { ars, usd }]) => ({
+    .map(([medio, { ars, usd, usdCrudo }]) => ({
       medio,
       ars: ars.toString(),
       usd: usd.toString(),
+      usdCrudo: usdCrudo.toString(),
       total: ars.add(usd).toString(),
     }))
     // Por plata y de mayor a menor: la barra más larga arriba es lo que hace

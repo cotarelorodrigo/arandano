@@ -75,6 +75,20 @@ export type Barra = {
   ars: string
   /** Lo cobrado en dólares, convertido a pesos. */
   usd: string
+  /**
+   * Lo cobrado en dólares, SIN convertir: la segunda línea del rótulo de cada
+   * medio (design/arandano.pen, nodo `l4Inhd`).
+   *
+   * A diferencia de `ars` y `usd` —que están los dos en pesos y siguen sin
+   * consumidor de producción—, éste sí tiene uno: `GraficoDeMedios`. Y es
+   * justamente el número que `usd` no puede dar, porque `usd` ya pasó por la
+   * cotización de cada pago.
+   *
+   * Un pago en PESOS que cubre el total en dólares no entra acá: la línea
+   * dice qué moneda entró al cajón, y esos fueron pesos. Misma regla que
+   * `pesosEntregados` usa para decidir si multiplica.
+   */
+  usdCrudo: string
   total: string
 }
 

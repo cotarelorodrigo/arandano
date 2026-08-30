@@ -25,7 +25,7 @@ describe('componerPorMedio', () => {
       fila('EFECTIVO', 'USD', '100', '1200'),
       fila('EFECTIVO', 'USD', '50', '1300'),
     ])
-    expect(barras).toEqual([{ medio: 'EFECTIVO', ars: '0', usd: '185000', total: '185000' }])
+    expect(barras).toEqual([{ medio: 'EFECTIVO', ars: '0', usd: '185000', usdCrudo: '150', total: '185000' }])
   })
 
   it('separa pesos de dólares dentro del mismo medio', () => {
@@ -33,7 +33,7 @@ describe('componerPorMedio', () => {
       fila('EFECTIVO', 'ARS', '5000'),
       fila('EFECTIVO', 'USD', '10', '1200'),
     ])
-    expect(barras).toEqual([{ medio: 'EFECTIVO', ars: '5000', usd: '12000', total: '17000' }])
+    expect(barras).toEqual([{ medio: 'EFECTIVO', ars: '5000', usd: '12000', usdCrudo: '10', total: '17000' }])
     expect(hayDolares).toBe(true)
   })
 
@@ -97,5 +97,38 @@ describe('componerPorMedio', () => {
     ])
     expect(c.barras[0].total).toBe('623700')
     expect(c.hayDolares).toBe(false)
+  })
+
+  it('los dólares crudos NO pasan por ninguna cotización', () => {
+    // El mismo par de filas del caso de arriba: 150 dólares en total, tomados
+    // a dos cotizaciones distintas. `usd` los convierte y suma 185.000 pesos;
+    // `usdCrudo` dice 150, que es lo que la segunda línea del panel muestra.
+    const { barras } = componerPorMedio([
+      fila('EFECTIVO', 'USD', '100', '1200'),
+      fila('EFECTIVO', 'USD', '50', '1300'),
+    ])
+    expect(barras[0].usdCrudo).toBe('150')
+    expect(barras[0].usd).toBe('185000')
+  })
+
+  it('un pago en PESOS con cotización distinta de 1 no aporta a usdCrudo', () => {
+    // El pago que cubre el total en dólares entregando pesos (ciclo del
+    // 2026-08-29): lleva la cotización real, 1485, con el monto YA en pesos.
+    // Entró en pesos, así que la línea de dólares del panel no lo nombra —
+    // es la misma regla por la que `pesosEntregados` no lo multiplica.
+    const { barras } = componerPorMedio([fila('TARJETA_CREDITO', 'ARS', '623700', '1485')])
+    expect(barras[0]).toEqual({
+      medio: 'TARJETA_CREDITO',
+      ars: '623700',
+      usd: '0',
+      usdCrudo: '0',
+      total: '623700',
+    })
+  })
+
+  it('multiplica los dólares crudos por la cantidad de pagos del grupo', () => {
+    // El `_count` del groupBy: tres pagos idénticos de US$ 20 son US$ 60.
+    const { barras } = componerPorMedio([fila('EFECTIVO', 'USD', '20', '1485', 3)])
+    expect(barras[0].usdCrudo).toBe('60')
   })
 })
