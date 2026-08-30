@@ -5,7 +5,7 @@
 // simplificación que motiva el cambio, no un efecto secundario.
 import { Info } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
-import { formatearPrecio } from '@/lib/formato/mostrar'
+import { formatearPrecio, formatearDolares } from '@/lib/formato/mostrar'
 import { ROTULO_MEDIO, type Composicion } from '@/lib/ventas/medios'
 import estilos from './tipografia.module.css'
 
@@ -89,8 +89,26 @@ export function GraficoDeMedios({ composicion }: { composicion: Composicion }) {
               <span className="text-[13px] font-medium text-foreground">
                 {ROTULO_MEDIO[b.medio]}
               </span>
-              <span className={`${estilos.archivo} text-[13px] font-semibold text-foreground`}>
-                {formatearPrecio(b.total)}
+              {/* Los importes apilados y alineados a la derecha
+                  (design/arandano.pen, nodo `l4Inhd`): los pesos arriba, en
+                  13/600; los dólares abajo, en 12/600 y un tono más apagado.
+                  Que la línea de dólares sea MÁS CHICA es deliberado, y a
+                  propósito distinto del tile "Total del período" de la misma
+                  pantalla, donde las dos monedas van a 32 px y al mismo
+                  color: allá ninguna manda sobre la otra, acá el número que
+                  gobierna la barra es el de pesos y éste es el detalle de
+                  qué parte entró en billetes. */}
+              <span className="flex flex-col items-end gap-px">
+                <span className={`${estilos.archivo} text-[13px] font-semibold text-foreground`}>
+                  {formatearPrecio(b.ars)}
+                </span>
+                {/* Sólo los medios que tuvieron dólares: en el frame,
+                    Efectivo y Transferencia la tienen, Débito y Crédito no. */}
+                {Number(b.usdCrudo) !== 0 && (
+                  <span className={`${estilos.archivo} text-[12px] font-semibold text-foreground-soft`}>
+                    {formatearDolares(b.usdCrudo)}
+                  </span>
+                )}
               </span>
             </div>
             <Progress value={porcentajes[i]} className="h-[10px] bg-muted" />
@@ -102,7 +120,8 @@ export function GraficoDeMedios({ composicion }: { composicion: Composicion }) {
         <div className="flex gap-2 rounded-[10px] bg-background p-[11px]">
           <Info aria-hidden="true" className="size-[14px] shrink-0 text-muted-foreground" />
           <p className="text-[11px] leading-[1.4] text-muted-foreground">
-            Los pagos en dólares están convertidos a la cotización de cada pago.
+            Cada moneda dice su propio número. La barra compara todo en pesos, a
+            la cotización de cada pago.
           </p>
         </div>
       </div>

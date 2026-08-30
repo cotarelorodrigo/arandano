@@ -27,7 +27,7 @@ const CUATRO_MEDIOS: Composicion = {
 }
 
 const UN_MEDIO: Composicion = {
-  barras: [{ medio: 'EFECTIVO', ars: '90000', usd: '12000', usdCrudo: '0', total: '102000' }],
+  barras: [{ medio: 'EFECTIVO', ars: '90000', usd: '12000', usdCrudo: '10', total: '102000' }],
   total: '102000',
   hayDolares: true,
 }
@@ -161,8 +161,24 @@ describe('el panel de medios de pago', () => {
     expect(html).not.toContain('Transferencia')
   })
 
-  it('la nota de la cotización siempre está', () => {
+  it('muestra los dólares en su propia línea, sin convertir', () => {
     const html = renderToStaticMarkup(<GraficoDeMedios composicion={UN_MEDIO} />)
-    expect(html).toContain('Los pagos en dólares están convertidos a la cotización de cada pago.')
+    // Los pesos del medio y los dólares que entraron, cada uno con su
+    // formateador: US$ 10, no los $ 12.000 en los que se convirtieron.
+    expect(html).toContain('90.000,00')
+    expect(html).toContain('US$')
+    expect(html).toContain('10,00')
+    expect(html).not.toContain('12.000,00')
+  })
+
+  it('sin dólares, ningún medio muestra una segunda línea', () => {
+    const html = renderToStaticMarkup(<GraficoDeMedios composicion={CUATRO_MEDIOS} />)
+    expect(html).not.toContain('US$')
+  })
+
+  it('la nota explica que la barra compara en pesos', () => {
+    const html = renderToStaticMarkup(<GraficoDeMedios composicion={UN_MEDIO} />)
+    expect(html).toContain('Cada moneda dice su propio número.')
+    expect(html).toContain('La barra compara todo en pesos, a la cotización de cada pago.')
   })
 })
