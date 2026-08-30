@@ -498,6 +498,31 @@ describe('Listado: el patrón grid + display:contents', () => {
   })
 })
 
+describe('la consulta del panel de horarios', () => {
+  const fuente = readFileSync('app/(app)/ventas/page.tsx', 'utf8')
+
+  it('excluye las anuladas, como el panel de medios', () => {
+    // Una venta anulada no fue una venta a esa hora. Si esta consulta se
+    // escribiera con `donde` a secas, el panel contaría ventas que el tile de
+    // arriba ya descuenta.
+    //
+    // Se afirma con un regex tolerante al formato —`\s+` entre las dos
+    // propiedades— y no con el string literal: prettier decide dónde parte la
+    // línea, y un test que se rompa al reformatear el archivo es un test que
+    // se termina ignorando.
+    expect(fuente).toMatch(/where:\s*\{\s*\.\.\.donde,\s*anuladaEn:\s*null\s*\},\s*select:\s*\{\s*creadoEn:\s*true\s*\}/)
+  })
+
+  it('preserva la vista en los links de rango y de página', () => {
+    // Sin esto, tocar "7 días" o pasar de página devuelve a la vista Hora sin
+    // que nadie lo haya pedido. Dos apariciones, una por helper: `conPagina`
+    // y `hrefRango`. Se cuentan las DOS y no se afirma "al menos una" —
+    // gatear una sola y dejar la otra suelta es exactamente el modo de falla
+    // que este repo ya pagó con las dos copias de un botón.
+    expect(fuente.match(/vista !== 'hora'/g) ?? []).toHaveLength(2)
+  })
+})
+
 // El resto de los cambios del ciclo móvil viven directo en `Ventas` (un
 // Server Component async que no se puede montar fuera de un request real,
 // ver el comentario de arriba de todo), así que se verifican sobre el

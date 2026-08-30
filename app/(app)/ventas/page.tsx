@@ -13,8 +13,10 @@ import { formatearPrecio, formatearDolares, formatearHora, formatearCantidad } f
 import { componerPorMedio } from '@/lib/ventas/composicion'
 import { totalCobrado, redondearDinero } from '@/lib/ventas/totales'
 import { ROTULO_MEDIO, CONSUMIDOR_FINAL, type Medio } from '@/lib/ventas/medios'
+import { agregarPorTiempo, vistaValida, type Vista } from '@/lib/ventas/horarios'
 import { ChipEstado } from './chip-estado'
 import { GraficoDeMedios } from './grafico'
+import { GraficoDeHorarios } from './horarios'
 import estilos from './tipografia.module.css'
 
 export const dynamic = 'force-dynamic'
@@ -753,10 +755,10 @@ export function Listado({
 export default async function Ventas({
   searchParams,
 }: {
-  searchParams: Promise<{ desde?: string; hasta?: string; p?: string }>
+  searchParams: Promise<{ desde?: string; hasta?: string; p?: string; vista?: string }>
 }) {
   const sesion = await exigirSesion()
-  const { desde, hasta, p = '1' } = await searchParams
+  const { desde, hasta, p = '1', vista: vistaParam } = await searchParams
 
   const hoy = hoyEnArgentina()
   // Una fecha malformada cae en hoy en vez de romper el `new Date`, igual que
@@ -765,6 +767,7 @@ export default async function Ventas({
   const dDesde = fechaOhoy(desde, hoy)
   const dHasta = fechaOhoy(hasta, hoy)
   const pagina = Math.min(Math.max(1, Math.trunc(Number(p)) || 1), PAGINA_MAXIMA)
+  const vista = vistaValida(vistaParam)
 
   const donde = {
     creadoEn: {
@@ -775,7 +778,7 @@ export default async function Ventas({
   }
 
   const prisma = prismaParaTenant(sesion.tenant.id)
-  const [ventas, total, suma, anuladas, devueltas, pagos] = await Promise.all([
+  const [ventas, total, suma, anuladas, devueltas, pagos, ventasDelPeriodo] = await Promise.all([
     prisma.venta.findMany({
       where: donde,
       orderBy: { numero: 'desc' },
@@ -876,9 +879,26 @@ export default async function Ventas({
       where: { venta: { ...donde, anuladaEn: null } },
       _count: true,
     }),
+    // Las fechas de las ventas del período, para "Cuándo vende el local".
+    // Sólo `creadoEn`: una columna de timestamps, no filas completas. La
+    // agregación por hora y por día se hace en JS (lib/ventas/horarios.ts) —
+    // ni Prisma sabe agrupar por hora, ni un `$queryRaw` con `date_trunc`
+    // llevaría el `set_config('arandano.tenant_id')` que RLS necesita, y sin
+    // él devolvería cero filas EN SILENCIO (mismo motivo que el comentario
+    // del `groupBy` de pagos, arriba).
+    //
+    // Sin techo de filas, con el motivo escrito: son ~1.400 en un mes de un
+    // local activo, y el `count` de arriba ya recorre el mismo conjunto. Con
+    // un rango largo tipeado a mano (`?desde=2020-01-01`) serían decenas de
+    // miles — es lo primero a mirar si esta pantalla se pone lenta.
+    prisma.venta.findMany({
+      where: { ...donde, anuladaEn: null },
+      select: { creadoEn: true },
+    }),
   ])
 
   const composicion = componerPorMedio(pagos)
+  const horarios = agregarPorTiempo(ventasDelPeriodo.map((v) => v.creadoEn), vista)
   // Lo cobrado del período y lo devuelto de las anuladas: `total + recargo`
   // en los dos casos, con `totalCobrado()` y no una suma a mano — es la MISMA
   // función que arma la columna Total de cada fila, así que el tile de
@@ -905,11 +925,23 @@ export default async function Ventas({
   const conPagina = (n: number) => {
     const u = new URLSearchParams({ desde: dDesde, hasta: dHasta })
     if (n > 1) u.set('p', String(n))
+    if (vista !== 'hora') u.set('vista', vista)
     return `/ventas?${u.toString()}`
   }
   const hrefRango = (r: Rango) => {
     const { desde: d, hasta: h } = rangoDeChip(r, hoy)
-    return `/ventas?${new URLSearchParams({ desde: d, hasta: h }).toString()}`
+    const u = new URLSearchParams({ desde: d, hasta: h })
+    if (vista !== 'hora') u.set('vista', vista)
+    return `/ventas?${u.toString()}`
+  }
+  // Al cambiar de vista SÍ se pierde `?p` (a propósito): la vista no cambia el
+  // listado, pero cambiar de vista es un gesto de mirar el panel, y volver a
+  // la página 1 es lo que hace que el listado y el panel hablen de lo mismo
+  // al leerlos juntos.
+  const hrefDeVista = (v: Vista) => {
+    const u = new URLSearchParams({ desde: dDesde, hasta: dHasta })
+    if (v !== 'hora') u.set('vista', v)
+    return `/ventas?${u.toString()}`
   }
   const rangoVigente = chipActivo(dDesde, dHasta, hoy)
   const cobradas = total - anuladas
@@ -1079,6 +1111,13 @@ export default async function Ventas({
               se lee como que algo se rompió. */}
           {composicion.barras.length > 0 && <GraficoDeMedios composicion={composicion} />}
         </div>
+
+        {/* Cuándo vende el local (design/arandano.pen, nodo `t93if9`): a todo
+            el ancho, debajo de la fila. Colgado de `total > 0` como los
+            tiles y no de que haya ventas no anuladas: un período con todas
+            las ventas anuladas SÍ dibuja el panel, y su pie dice que no hubo
+            ninguna — que es información, no un panel roto. */}
+        {total > 0 && <GraficoDeHorarios horarios={horarios} vista={vista} href={hrefDeVista} />}
       </div>
     </>
   )

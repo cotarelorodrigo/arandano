@@ -540,6 +540,14 @@ El historial por período.
   cuenta como pesos — la línea dice qué moneda entró al cajón.
 - Entrar al detalle de cualquier venta.
 - Paginar de a 50, con números de página.
+- Ver **"Cuándo vende el local"**: una barra por hora del día o por día de la
+  semana, sobre el mismo período que filtra la pantalla, con el pico
+  destacado y nombrado en el pie. El segmentado Hora/Día viaja en `?vista`,
+  así que el panel funciona sin JavaScript y la vista se comparte en la URL.
+  **La franja horaria sale de los datos** —de la primera a la última hora con
+  ventas, y 9–20 cuando no hubo ninguna—, no de las doce barras fijas que
+  dibuja la maqueta: con la franja fija, una venta a las 22 no aparecería en
+  ningún lado. Las anuladas no cuentan.
 
 **Decisiones**
 
