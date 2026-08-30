@@ -70,6 +70,17 @@ describe('agregarPorTiempo · vista hora', () => {
     expect(barras.filter((b) => b.pico).map((b) => b.clave)).toEqual(['10'])
     expect(pie).toBe('El pico es a las 10 h, con 1 venta.')
   })
+
+  it('la medianoche se formatea como 0 y no como 24', () => {
+    // Si alguien cambia hourCycle: 'h23' a 'h24' (un typo plausible: ambos son
+    // valores válidos), la medianoche devuelve "24" en lugar de "00", y el panel
+    // dibuja una barra con clave '24' y un pie que dice "El pico es a las 24 h".
+    // Este test mata esa mutación.
+    const { barras } = agregarPorTiempo([utc('2026-08-21T03:00:00Z')], 'hora')
+    const conVentas = barras.filter((b) => b.ventas > 0)
+    expect(conVentas).toHaveLength(1)
+    expect(conVentas[0].clave).toBe('0')
+  })
 })
 
 describe('agregarPorTiempo · vista día', () => {

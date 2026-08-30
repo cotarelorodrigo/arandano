@@ -119,8 +119,22 @@ export function agregarPorTiempo(fechas: Date[], vista: Vista): Horarios {
   // lado y el gráfico diría menos ventas de las que hubo, sin avisarlo. Sin
   // ninguna venta cae a la franja del frame, que es lo que hace que el panel
   // vacío se vea como está dibujado. La vista Día siempre son los siete.
-  const desde = esHora ? (indices.length > 0 ? Math.min(...indices) : HORA_DESDE_VACIO) : 0
-  const hasta = esHora ? (indices.length > 0 ? Math.max(...indices) : HORA_HASTA_VACIO) : 6
+  let desde = HORA_DESDE_VACIO
+  let hasta = HORA_HASTA_VACIO
+  if (esHora && indices.length > 0) {
+    // Sin spread: Math.min/max con spread tienen límite de argumentos (~65k en
+    // V8), y aunque hoy 65k ventas en un período es poco probable, la consulta
+    // que alimenta esta función no tiene techo de filas en el schema.
+    desde = indices[0]
+    hasta = indices[0]
+    for (let i = 1; i < indices.length; i++) {
+      if (indices[i] < desde) desde = indices[i]
+      if (indices[i] > hasta) hasta = indices[i]
+    }
+  } else if (!esHora) {
+    desde = 0
+    hasta = 6
+  }
 
   const conteos = new Array(hasta - desde + 1).fill(0)
   for (const i of indices) conteos[i - desde] += 1
