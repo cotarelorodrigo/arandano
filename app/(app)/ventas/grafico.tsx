@@ -58,9 +58,16 @@ export function porcentajesQueSuman100(
  * sección "Cómo se verifica", el párrafo sobre esta reescritura — la entrada
  * `--chart-2` de `test/maqueta.test.ts` que citaba antes no existe más:
  * `--chart-1` y `--chart-2` se sacaron del repo entero en este mismo ciclo).
- * Los dólares siguen ahí, convertidos a pesos a la cotización de cada pago
- * —por eso la nota del pie—, simplemente no tienen su propio color:
- * `componerPorMedio` ya los suma en el mismo `barra.total` que los pesos.
+ *
+ * Cada medio que tuvo dólares muestra DOS líneas de importe, no una: los
+ * pesos arriba (`b.ars`) y los dólares SIN convertir debajo (`b.usdCrudo`,
+ * más chico y apagado) — ver el comentario junto a esas líneas, más abajo.
+ * La BARRA, en cambio, sigue midiendo una sola cosa: `b.total`, que es pesos
+ * más dólares ya convertidos a la cotización de cada pago. Una barra que
+ * mezclara unidades sin convertir no se podría comparar contra la de al
+ * lado, así que sigue habiendo un solo color y la nota del pie sigue
+ * explicando esa conversión — es la que corresponde a la barra, no a las
+ * líneas de arriba.
  *
  * Y sin tabla `sr-only` de respaldo: la versión con recharts la necesitaba
  * porque el SVG no existe hasta que el cliente hidrata. Acá el texto ES el
@@ -99,9 +106,22 @@ export function GraficoDeMedios({ composicion }: { composicion: Composicion }) {
                   gobierna la barra es el de pesos y éste es el detalle de
                   qué parte entró en billetes. */}
               <span className="flex flex-col items-end gap-px">
-                <span className={`${estilos.archivo} text-[13px] font-semibold text-foreground`}>
-                  {formatearPrecio(b.ars)}
-                </span>
+                {/* La línea de pesos se esconde cuando es CERO y el medio
+                    tuvo dólares — la regla simétrica a la de abajo, que ya
+                    esconde la línea de dólares cuando ésa es la que da cero.
+                    Sin esto, un medio que sólo cobró en dólares (un iPhone en
+                    efectivo en USD) mostraba "$ 0,00" como número PRINCIPAL,
+                    con la barra al 100 %: un cero al lado de una barra llena
+                    miente sobre lo que pasó, y se lee como un panel roto, no
+                    como "acá no entraron pesos". Si las dos líneas dieran
+                    cero el medio no tendría barra —`componerPorMedio` ya
+                    excluye los medios sin un solo pago—, así que no hay un
+                    tercer caso ("las dos en cero") que cubrir acá. */}
+                {!(Number(b.ars) === 0 && Number(b.usdCrudo) !== 0) && (
+                  <span className={`${estilos.archivo} text-[13px] font-semibold text-foreground`}>
+                    {formatearPrecio(b.ars)}
+                  </span>
+                )}
                 {/* Sólo los medios que tuvieron dólares: en el frame,
                     Efectivo y Transferencia la tienen, Débito y Crédito no. */}
                 {Number(b.usdCrudo) !== 0 && (
