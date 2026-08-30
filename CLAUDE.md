@@ -1834,16 +1834,34 @@ Y del producto:
   así que el test nunca tuvo la oportunidad de comparar nada nuevo contra nada
   viejo. Guardar el documento como `design/arandano.pen` y commitearlo es un
   paso que hace una persona —el MCP lee, no persiste, ver
-  `docs/correcciones-pendientes-del-pen.md`—, y quedó como el primer paso
-  obligatorio de este ciclo, no un detalle de trámite.
+  `docs/correcciones-pendientes-del-pen.md`—, y **quedó pendiente al cerrar
+  este ciclo**: era el primer paso obligatorio y nadie lo hizo. El `.pen`
+  versionado sigue siendo, mientras eso no se corrija, el mismo `87973d4` del
+  2026-08-21 — y por eso el archivo **contradice al código**: su nodo `hxacF`
+  todavía dice "Los pagos en dólares están convertidos a la cotización de cada
+  pago.", el texto exacto que `app/(app)/ventas/grafico.tsx` reemplazó citando
+  ese mismo nodo como fuente (Pieza 1 del spec de este ciclo). Dicho sin
+  vueltas: la regla de este proyecto —cuando el `.pen` contradice al código,
+  se modifica el código— aplicada contra el repo tal como queda hoy
+  **revertiría este ciclo**. Esto no se suaviza porque el valor del registro
+  es que sea cierto: falta que una persona guarde la maqueta viva desde
+  Pencil y la commitee; recién ahí el nodo `hxacF` vuelve a decir lo mismo que
+  el código.
 
-  Con la maqueta ya en la mano, las dos piezas de producto. **"Cómo entró la
-  plata" pasa a mostrar dos líneas por medio** cuando ese medio tuvo dólares
+  Sin esa maqueta guardada todavía, las dos piezas de producto —leídas del
+  documento vivo por MCP mientras estuvo abierto en Pencil, no de lo que hoy
+  hay en git— son éstas. **"Cómo entró la plata" pasa a mostrar dos líneas
+  por medio** cuando ese medio tuvo dólares
   —pesos en 13/600 arriba, dólares SIN convertir en 12/600 y más apagado
   debajo—, en vez de todo convertido a la cotización de cada pago. `Barra` gana
-  `usdCrudo` sin tocar los tres campos que ya tenía, así que ningún número que
-  hoy se ve en pantalla se mueve y un local sin dólares ve el panel exactamente
-  como antes. Y **"Cuándo vende el local" es un panel enteramente nuevo**, con
+  `usdCrudo` sin tocar los tres campos que ya tenía, pero eso **no** quiere
+  decir que ningún número se mueva: el importe de cada medio pasó de leer
+  `total` (pesos más dólares ya convertidos) a leer `ars`, y en un medio que
+  tuvo dólares esos dos números difieren — es justamente la plata que ahora
+  tiene su propia línea, restada a propósito del número de arriba. Un local
+  **sin** dólares no lo nota, porque ahí `ars` y `total` ya coincidían: ésa es
+  la parte que sigue viéndose exactamente igual. Y **"Cuándo vende el local"
+  es un panel enteramente nuevo**, con
   un segmentado Hora/Día que viaja en la URL (`?vista=hora|dia`, server-only y
   sin JavaScript, como los chips de rango que ya tiene la pantalla): la vista
   Hora agrupa por hora del día y la vista Día suma los siete días de la semana
