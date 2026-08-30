@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { Navegacion } from '@/components/navegacion'
+import { Navegacion, PESTANAS } from '@/components/navegacion'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { CLAVES_DE_PERMISO, type Permiso } from '@/lib/permisos/catalogo'
 
@@ -179,10 +179,12 @@ describe('Navegacion', () => {
   it('cada pestaña lleva anillo de foco propio', async () => {
     const html = await render('DUENO', '/vender')
     const anclas = html.match(/<a\b[^>]*>/g) ?? []
-    // Seis: las cuatro de cualquiera, más Formas de pago y Usuarios, que un
-    // dueño ve las dos.
-    expect(anclas).toHaveLength(6)
-    expect(anclas.filter((a) => a.includes('focus-visible:ring-2'))).toHaveLength(6)
+    // Derivado de PESTANAS y no un número a mano: un dueño ve TODAS, así que
+    // el conteo esperado es la longitud del array. Un número acá queda viejo el
+    // día que alguien agrega una pestaña, y el caso pasa a no verificar nada.
+    expect(anclas).toHaveLength(PESTANAS.length)
+    // Y TODAS llevan el anillo, no todas menos una.
+    expect(anclas.filter((a) => a.includes('focus-visible:ring-2'))).toHaveLength(PESTANAS.length)
   })
 
   // Los íconos los nombra design/arandano.pen. No son decoración: en un
@@ -206,6 +208,6 @@ describe('Navegacion', () => {
       </SidebarProvider>,
     )
     const svgs = html.match(/<svg[^>]*aria-hidden="true"[^>]*>/g) ?? []
-    expect(svgs).toHaveLength(6)
+    expect(svgs).toHaveLength(PESTANAS.length)
   })
 })

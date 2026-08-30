@@ -38,6 +38,11 @@ services:
       # WhatsApp de un desconocido. Completar antes del primer deploy con el
       # número real.
       WHATSAPP_CONTACTO: ""
+      # La base de la API de Kapso, que es la capa de WhatsApp del bot. No es
+      # secreta —la credencial es KAPSO_API_KEY y viaja por `env_file`—, así que
+      # va inline: tenerla acá permite además apuntarla a un mock sin tocar el
+      # `.env` del servidor.
+      KAPSO_API_BASE_URL: https://api.kapso.ai
       # PUERTO_PUBLICO NO va acá, a propósito: en producción el sitio se
       # sirve en 443, implícito en `https://`, así que Better Auth arma su
       # `baseURL` sin puerto (lib/auth/origen.ts). Ponerle un default —"443"

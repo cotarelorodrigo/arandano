@@ -50,6 +50,13 @@ enum Permiso {
   // pago. Aparte de ARTICULOS_EDITAR porque no es tocar un precio: es una
   // palanca de una fila que mueve el precio de TODO el catálogo.
   PLANES_PAGO
+  // Encender y apagar el bot de WhatsApp, y editar la información que
+  // responde. NO incluye conectar ni desconectar el número: eso implica
+  // firmar con Facebook y le saca (o le pone) el bot al WhatsApp que el local
+  // usa todos los días, así que es del dueño y no se delega —misma regla por
+  // la que /usuarios entero no es delegable: se reparte lo que opera el
+  // negocio, no lo que reparte poder.
+  BOT
 
   @@map("permiso")
 }
@@ -87,6 +94,37 @@ enum Moneda {
   USD
 
   @@map("moneda")
+}
+
+/// De qué lado salió un mensaje del bot. ENTRANTE lo escribió el cliente del
+/// local; SALIENTE lo escribió el bot. No hay un tercer valor para "lo escribió
+/// el dueño a mano desde su celular": esos mensajes no pasan por nosotros —el
+/// número está en coexistencia y la app de WhatsApp Business habla directo con
+/// Meta—, así que registrar un valor que nunca se va a escribir sería mentir
+/// sobre lo que esta tabla sabe.
+enum DireccionMensaje {
+  ENTRANTE
+  SALIENTE
+
+  @@map("direccion_mensaje")
+}
+
+/// Por qué un mensaje entrante no se contestó. NULL significa que sí se
+/// contestó (o que la respuesta está en camino).
+///
+/// Existe para que la pantalla pueda decir "te escribieron 40 veces mientras el
+/// bot estaba apagado", que es el dato con el que un dueño decide prenderlo o
+/// subir el tope. Sin esta columna, un entrante sin respuesta al lado es
+/// indistinguible de uno que falló, y el dueño no tiene forma de saber cuál de
+/// las dos cosas le está pasando.
+enum MotivoSinRespuesta {
+  BOT_APAGADO
+  TOPE_MENSUAL
+  TOPE_CONVERSACION
+  SIN_TEXTO
+  SIN_MODELO
+
+  @@map("motivo_sin_respuesta")
 }
 
 enum EstadoOrden {
@@ -160,6 +198,9 @@ model Tenant {
   categorias      Categoria[]
   usuarioPermisos UsuarioPermiso[]
   planesDePago    PlanDePago[]
+  bot             BotDeWhatsapp?
+  conversaciones  ConversacionBot[]
+  mensajesBot     MensajeBot[]
 
   @@map("tenants")
 }
@@ -753,6 +794,130 @@ model Verification {
 
   @@index([tenantId, identifier])
   @@map("verifications")
+}
+
+// El bot de WhatsApp del local: la conexión con Kapso y su configuración, en
+// UNA sola tabla y no en dos.
+//
+// Nacen juntas, son 1:1 con el tenant y ninguna sirve sin la otra: un bot
+// configurado sin número conectado no contesta, y un número conectado sin
+// configuración tampoco. Partirlas sería una FK para no ganar nada. El día que
+// entre Instagram —CLAUDE.md promete "WhatsApp/Instagram"— esta tabla se parte
+// en "la conexión de un canal" y "el bot", y ahí la FK va a significar algo.
+//
+// `phoneNumberId` es único GLOBAL y no por tenant: un número de WhatsApp no
+// puede estar conectado a dos locales a la vez, y esa es exactamente la
+// garantía que hace seguro el cruce del webhook (ver el docblock de la
+// verificación de firma). Que el insert falle por unicidad le confirma a quien
+// lo intente que el número ya está tomado, y es el precio correcto: la
+// alternativa —dos locales creyendo que atienden el mismo número— manda las
+// respuestas de uno a los clientes del otro.
+model BotDeWhatsapp {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @unique @map("tenant_id") @db.Uuid
+
+  // El customer de Kapso, con `external_customer_id` = nuestro tenant.id. Se
+  // crea al pedir el primer enlace de conexión y sobrevive a una desconexión:
+  // reconectar no tiene por qué crear un customer nuevo.
+  kapsoCustomerId String?   @map("kapso_customer_id")
+  // El identificador con el que Kapso y Meta nombran al número. Es la clave de
+  // todo: se usa para enviar y para cruzar contra el payload del webhook.
+  phoneNumberId   String?   @unique @map("phone_number_id")
+  // El número tal como se lee (+54 9 11 …). Sólo para mostrarlo en la pantalla:
+  // nada lo usa para decidir.
+  numeroVisible   String?   @map("numero_visible")
+  wabaId          String?   @map("waba_id")
+  webhookId       String?   @map("webhook_id")
+  // Con esto se verifica el HMAC de cada webhook entrante, así que se guarda EN
+  // CLARO y no hay alternativa: hay que recalcular la firma con él, y un hash no
+  // sirve para eso. Lo protegen la policy de RLS y el privilegio de
+  // arandano_app, igual que el resto de los datos del local. Derivarlo de
+  // BETTER_AUTH_SECRET + tenantId sería más lindo —no habría nada que guardar—
+  // pero lo genera Kapso al crear el webhook y no se puede fijar.
+  webhookSecreto  String?   @map("webhook_secreto")
+  conectadoEn     DateTime? @map("conectado_en") @db.Timestamptz(3)
+
+  // El switch. Arranca APAGADO: conectar el número y ponerlo a contestarles a
+  // los clientes son dos decisiones, y la segunda tiene que ser deliberada.
+  activo        Boolean @default(false)
+  // Lo que el dueño escribe para que el bot lo sepa: horarios, dirección,
+  // envíos. Texto libre y no un modelo de horarios, a propósito: ese modelo lo
+  // van a necesitar también el catálogo público y el módulo de turnos, y
+  // dibujarlo acá para un solo consumidor es elegir mal el momento.
+  instrucciones String  @default("")
+  // Cuántas respuestas puede dar el bot este mes. Es plata: cada una es una
+  // llamada al modelo. El default alcanza para un local con movimiento y deja
+  // el techo del gasto en un número que se puede mirar.
+  topeMensual   Int     @default(1000) @map("tope_mensual")
+
+  creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("bots_de_whatsapp")
+}
+
+// Un hilo con una persona. `waId` es su teléfono en formato internacional, tal
+// como lo entrega Kapso — NO se normaliza contra `Cliente.telefono`, que el
+// mostrador tipea a mano ("11 2233-4455") y que por lo tanto no matchea. Cruzar
+// las dos cosas es el ciclo de servicio técnico por WhatsApp, no éste.
+model ConversacionBot {
+  id                  String   @id @default(uuid(7)) @db.Uuid
+  tenantId            String   @map("tenant_id") @db.Uuid
+  waId                String   @map("wa_id")
+  kapsoConversacionId String?  @map("kapso_conversacion_id")
+  nombreContacto      String?  @map("nombre_contacto")
+  creadoEn            DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  ultimoMensajeEn     DateTime @default(now()) @map("ultimo_mensaje_en") @db.Timestamptz(3)
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  mensajes MensajeBot[]
+
+  @@unique([tenantId, waId])
+  @@index([tenantId, ultimoMensajeEn])
+  @@map("conversaciones_bot")
+}
+
+// Tabla-libro: lo que se dijo, append-only. Sostenida por REVOKE UPDATE, DELETE
+// en scripts/setup-db-roles.sh —eso NO se hereda del default privilege, cada
+// tabla-libro necesita su propia línea— igual que movimientos_stock y
+// eventos_orden.
+//
+// `@@unique([tenantId, wamid])` es la idempotencia, y es el mismo mecanismo que
+// Venta.claveIdempotencia por el mismo motivo: allá impide cobrar dos veces,
+// acá impide contestar dos veces cuando Kapso reintenta el webhook (lo hace a
+// los 10, 40 y 90 segundos si no recibe un 200). Que `wamid` sea nullable no lo
+// debilita: en Postgres NULL ≠ NULL, así que varios salientes sin wamid
+// conviven sin chocar, y el que importa —el entrante, que SIEMPRE trae wamid—
+// choca cuando tiene que chocar.
+model MensajeBot {
+  id             String              @id @default(uuid(7)) @db.Uuid
+  tenantId       String              @map("tenant_id") @db.Uuid
+  conversacionId String              @map("conversacion_id") @db.Uuid
+  direccion      DireccionMensaje
+  texto          String
+  wamid          String?
+  // Sólo en los ENTRANTES: por qué éste no se contestó.
+  motivo         MotivoSinRespuesta?
+  // Sólo en los SALIENTES: por qué no se pudo entregar. Que esté cargado es lo
+  // que hace que la fila NO cuente contra el tope mensual — una respuesta que
+  // nunca llegó al cliente no gastó nada que valga la pena cobrarle al local.
+  // Por eso el tope cuenta `direccion = SALIENTE AND error IS NULL` y no
+  // salientes a secas.
+  error          String?
+  creadoEn       DateTime            @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  tenant       Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversacion ConversacionBot @relation(fields: [conversacionId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, wamid])
+  // El índice del tope mensual: contar salientes del mes es la consulta que
+  // corre en CADA mensaje entrante, antes de gastar un peso en el modelo.
+  @@index([tenantId, direccion, creadoEn])
+  // El del historial que se le pasa al agente.
+  @@index([tenantId, conversacionId, creadoEn])
+  @@map("mensajes_bot")
 }
 
 // La única tabla del schema SIN tenant_id, y la excepción está declarada en

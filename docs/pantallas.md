@@ -1731,6 +1731,74 @@ Usuarios`).
   un mail que antes se podía leer entero scrolleando la tabla ahora elide con
   puntos suspensivos.
 
+## `/bot`
+
+El bot de WhatsApp del local: conectar el número, prender y apagar, y escribir
+lo que el bot cuenta del negocio. Sin bandeja de conversaciones — el local sigue
+teniendo la suya, que es la aplicación de WhatsApp Business en su celular.
+
+**Acciones**: `generarEnlaceDeConexion`, `confirmarNumeroDelLocal`,
+`desconectarNumero`, `prenderOApagar`, `guardarInformacionDelLocal`.
+
+**Qué se puede hacer**
+
+- Generar el enlace de onboarding y conectar el número que el local ya usa (sólo
+  el dueño).
+- Confirmar cuál de los números que Kapso reporta es el del local (sólo el dueño).
+- Prender y apagar el bot.
+- Escribir la información que el bot responde: horarios, dirección, envíos,
+  formas de pago.
+- Ver cuántas respuestas dio este mes contra el tope, y desconectar el número
+  (sólo el dueño).
+
+**Decisiones**
+
+- **Conectar es del dueño; configurar se delega.** Conectar o desconectar
+  implica firmar con Facebook y le pone (o le saca) el bot al WhatsApp que el
+  local usa todos los días: `exigirDuenio()`, como `/usuarios`. Prender, apagar
+  y editar la información son `exigirPermiso('BOT')`. Es la misma regla que
+  separó `PLANES_PAGO` de `ARTICULOS_EDITAR`: se delega lo que opera el negocio,
+  no lo que reparte poder. La pantalla entera exige `BOT`, así que un empleado
+  sin el permiso no la ve; uno con el permiso la ve completa pero sin los
+  botones de conexión.
+
+- **El redirect de Kapso no escribe nada.** Al volver del onboarding, la
+  pantalla ve que hay customer y no hay número, y le PREGUNTA A KAPSO cuáles
+  conectó ese customer. Los query params del redirect (`phone_number_id` y
+  compañía) se ignoran: son texto del navegador, y un valor falseado conectaría
+  el número de otro comercio. `confirmarNumero` vuelve a verificar contra Kapso
+  que el número elegido esté en la lista del local — el formulario es tan
+  falsificable como la query string, así que la selección se valida igual. De
+  paso, preguntar resuelve el caso de la pestaña cerrada a mitad del signup: el
+  dueño vuelve cuando quiera y el número lo está esperando.
+
+- **La pantalla llama a un tercero al renderizar, y por eso el try/catch no es
+  opcional.** `scripts/smoke.sh` barre esta ruta contra `arandano-stage`, que no
+  tiene `KAPSO_API_KEY` ni cuenta de Kapso. Si acá se tirara una excepción,
+  **todo deploy haría rollback**. Sin la variable la pantalla renderiza igual y
+  la card lo dice.
+
+- **El bot queda apagado al conectar.** Conectar el número y ponerlo a
+  contestarles a los clientes son dos decisiones. Un bot que arranca contestando
+  en el mismo segundo, con la información del local todavía vacía, le contesta
+  "no sé" a la primera pregunta que le hagan.
+
+- **Prenderlo sin información avisa y no impide.** Mismo criterio que el
+  selector de moneda del ciclo del precio en dólares: el bot igual sirve para
+  precios y disponibilidad, así que bloquear sería peor que avisar.
+
+- **El consumo se cuenta, no se acumula.** "X de Y respuestas" sale de un
+  `count` sobre `mensajes_bot`, sin contador que resetear. Es la misma
+  preferencia que `Articulo.stock` respecto de sus movimientos y que la columna
+  "Queda" del historial de inventario, y acá el argumento es más fuerte: los
+  mensajes se guardan igual, así que un contador sería un caché de algo ya
+  escrito cuyo único modo de falla —decir 1000 cuando hay 12 filas— nadie
+  descubre hasta que un local reclama que el bot dejó de contestar.
+
+- **La maqueta no dibuja esta pantalla**, en ningún ancho. El layout, las cards
+  y el título de card se derivan de `/formas-de-pago`, que es el mismo caso.
+  Anotado en `docs/correcciones-pendientes-del-pen.md`, entrada 24.
+
 <!-- pantallas:fin -->
 
 ## Lo que hereda toda pantalla de la aplicación

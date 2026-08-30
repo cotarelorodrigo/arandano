@@ -316,6 +316,49 @@ describe('setup-db-roles.sh', () => {
       }
     })
 
+    // El libro del bot: sin bandeja de conversaciones, es la ÚNICA forma de
+    // contestar "¿qué le dijo el bot a mi cliente?" cuando alguien reclama — y
+    // el que más motivo tendría para editarlo es justamente el que tiene que
+    // responder esa pregunta. Tercera tabla-libro, tercera línea propia en el
+    // script: el default privilege le da UPDATE y DELETE a toda tabla nueva.
+    it('mensajes_bot: la app no puede editar ni borrar, y sí leer', async () => {
+      const app = new Client({ connectionString: urlApp() })
+      await app.connect()
+      try {
+        await expect(app.query('UPDATE mensajes_bot SET texto = texto')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(app.query('DELETE FROM mensajes_bot')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        // Si el REVOKE se hubiera llevado el SELECT, el bot se quedaría sin
+        // historial —es su memoria— y la pantalla sin el conteo del mes.
+        await expect(app.query('SELECT 1 FROM mensajes_bot')).resolves.toBeDefined()
+      } finally {
+        await app.end()
+      }
+    })
+
+    // Y su puerta de atrás, la misma que la de eventos_orden:
+    // mensajes_bot.conversacion_id es ON DELETE CASCADE, así que borrar el hilo
+    // se llevaría el contenido entero sin tocar la tabla que el caso de arriba
+    // cierra. El UPDATE sobre conversaciones_bot SÍ se conserva: ahí se escriben
+    // ultimo_mensaje_en y nombre_contacto con cada mensaje.
+    it('conversaciones_bot: la app no puede borrar un hilo, pero sí actualizarlo', async () => {
+      const app = new Client({ connectionString: urlApp() })
+      await app.connect()
+      try {
+        await expect(app.query('DELETE FROM conversaciones_bot')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(
+          app.query('UPDATE conversaciones_bot SET nombre_contacto = nombre_contacto'),
+        ).resolves.toBeDefined()
+      } finally {
+        await app.end()
+      }
+    })
+
     // La puerta de atrás de la bitácora: eventos_orden.orden_id es ON DELETE
     // CASCADE, así que con DELETE sobre la orden se borra su historia entera sin
     // tocar nunca eventos_orden. Cerrar una y dejar la otra abierta no cierra
