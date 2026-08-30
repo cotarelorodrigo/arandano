@@ -60,14 +60,15 @@ export const CONSUMIDOR_FINAL = 'Consumidor final'
  * tipo como `string` es lo que impide que un consumidor futuro —cliente o
  * servidor— le pida más aritmética a un valor que ya terminó de sumarse.
  *
- * `ars` y `usd` **no tienen consumidor de producción hoy** —sólo los lee
- * `lib/ventas/composicion.test.ts`, para verificar que la separación por
- * moneda no se mezcle antes de sumarse en `total`—. Se quedan: sostienen esa
- * verificación con más granularidad que mirar sólo `total` (un bug que
- * cruzara pesos y dólares pero sumara igual no se vería ahí), y son el dato
- * que un panel futuro necesitaría para, por ejemplo, mostrar el desglose por
- * moneda en vez de convertir todo a pesos. Sacarlos es una decisión aparte,
- * no un descuido de este ciclo.
+ * `ars` tiene consumidor de producción: la línea de pesos del rótulo de cada
+ * medio en `GraficoDeMedios`. `usd` **no tiene consumidor de producción hoy**
+ * —sólo lo lee `lib/ventas/composicion.test.ts`, para verificar que la
+ * separación por moneda no se mezcle antes de sumarse en `total`—. Se quedan:
+ * sostienen esa verificación con más granularidad que mirar sólo `total` (un
+ * bug que cruzara pesos y dólares pero sumara igual no se vería ahí), y son
+ * el dato que un panel futuro necesitaría para, por ejemplo, mostrar el
+ * desglose por moneda en vez de convertir todo a pesos. Sacar `usd` es una
+ * decisión aparte, no un descuido de este ciclo.
  */
 export type Barra = {
   medio: Medio
@@ -79,8 +80,8 @@ export type Barra = {
    * Lo cobrado en dólares, SIN convertir: la segunda línea del rótulo de cada
    * medio (design/arandano.pen, nodo `l4Inhd`).
    *
-   * A diferencia de `ars` y `usd` —que están los dos en pesos y siguen sin
-   * consumidor de producción—, éste sí tiene uno: `GraficoDeMedios`. Y es
+   * A diferencia de `usd` —que está en pesos y sigue sin consumidor de
+   * producción—, éste sí tiene uno: `GraficoDeMedios`. Y es
    * justamente el número que `usd` no puede dar, porque `usd` ya pasó por la
    * cotización de cada pago.
    *
