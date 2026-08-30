@@ -713,7 +713,7 @@ sección *Las pantallas*.
 
 ---
 
-## 23. La maqueta no dibuja nada del precio en dólares — en ninguna de las cinco pantallas
+## 23. La maqueta no dibuja nada del precio en dólares — en ninguna de las cinco pantallas — RESUELTA A MEDIAS
 
 - **Frames**: `App / Artículo nuevo`, `App / Artículo ficha` (y `Móvil /
   Artículo ficha`), `App / Vender` (y `Móvil / Vender` + `Móvil / Vender ·
@@ -763,9 +763,53 @@ construyeron contra lo que el `.pen` ya fija para cada pantalla en vez de
 inventar un tratamiento. Si al dibujarlos la maqueta decide otra cosa, manda la
 maqueta y se corrige el código.
 
+**Los puntos 1 y 5 quedaron resueltos el 2026-08-30**, cuando `design/arandano.pen`
+se actualizó de nuevo — ver
+`docs/superpowers/specs/2026-08-30-ventas-por-moneda-y-horarios-design.md`, que
+además trae el panel nuevo "Cuándo vende el local" y las dos monedas de "Cómo
+entró la plata". **El punto 1**: la maqueta dibuja por primera vez el campo
+compuesto de "Precio de venta", con el mismo tratamiento pegado que el código ya
+había derivado de `SelectorDeCategoria`, y agrega la medida que faltaba —9 px en
+las esquinas externas del campo, contra los 10 px del `rounded-lg` de shadcn que
+el código tenía puesto—; ese único desvío lo cerró este mismo ciclo
+(`components/selector-de-moneda.tsx`, `app/(app)/inventario/formularios.tsx`).
+**El punto 5**: la maqueta dibuja ahora la segunda línea del tile "Total del
+período", que el código ya tenía desde el ciclo del precio en dólares
+(2026-08-29, Task 11) — acá fue la maqueta la que alcanzó al código, y no al
+revés.
+
+**Los puntos 2, 3 y 4 siguen abiertos.** La maqueta de `App / Vender` no se tocó
+en esta actualización, así que la banda del total con una línea por moneda, el
+selector `Cubre` de cada fila de pago y el segundo chip de "Faltan / Sobran"
+siguen sin frame de referencia.
+
 Detectado al construir el ciclo del precio de artículo en dólares (2026-08-29).
 Ver `docs/superpowers/specs/2026-08-29-precio-en-usd-design.md`, sección *Las
-pantallas*.
+pantallas*. Resolución parcial de los puntos 1 y 5 verificada contra la maqueta
+el 2026-08-30, en el cierre documental del ciclo de las dos monedas y los
+horarios.
+
+---
+
+## 24. El panel "Cuándo vende el local" del teléfono, derivado sin frame
+
+`design/arandano.pen` dibuja este panel sólo en `App / Ventas` (nodo
+`t93if9`). `Móvil / Ventas` (`nwW2V`) no lo tiene, y el ciclo lo construyó
+igual para el teléfono: es información, no un control cuyo destino haya que
+inventar —la distinción que dejó escrita el ciclo móvil—, y el dueño de un
+local mira el celular más que la computadora.
+
+Lo que se derivó sin referencia: el tratamiento a 390 px (se copió el de
+"Cómo se movió" de `Móvil / Artículo ficha`, que es el único gráfico de
+barras que la maqueta dibuja en ese ancho) y el segmentado Hora/Día, que en
+el teléfono comparte la fila del título de la card.
+
+Y una diferencia deliberada con el frame de escritorio, que no es una
+derivación sino una decisión: **la franja horaria sale de los datos**, así que
+el panel puede tener más o menos de las doce barras dibujadas.
+
+Detectado al construir el ciclo de las dos monedas y los horarios (2026-08-30).
+Ver `docs/superpowers/specs/2026-08-30-ventas-por-moneda-y-horarios-design.md`.
 
 ---
 

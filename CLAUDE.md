@@ -1807,6 +1807,89 @@ Y del producto:
   carrito mixto muestre los dos totales y los dos chips; que el campo de
   cotización arranque vacío; y que cubrir los US$ 300 con pesos y un plan de 12
   cuotas al 40 % cobre $623.700 y deje la venta cerrada.
+- ~~Mostrar cada moneda por separado en "Cómo entró la plata", y sumar un panel
+  de cuándo vende el local.~~ **Hecho** (2026-08-30). Sale de la maqueta y no de
+  un cliente: `design/arandano.pen` se actualizó después del ciclo del precio en
+  dólares y trajo tres cosas que el código no tenía —el panel de medios con un
+  importe por moneda en vez de todo convertido a pesos, un panel nuevo que no
+  existía en ninguna pantalla, y el campo de precio de venta dibujado por
+  primera vez, con una diferencia de 1 px contra lo construido—. Es la regla del
+  ciclo del shell en acción, sin que nadie del lado de un cliente la haya
+  pedido: cuando el `.pen` contradice al código, se corrige el código. Ver
+  `docs/superpowers/specs/2026-08-30-ventas-por-moneda-y-horarios-design.md`.
+
+  **El hallazgo que abrió el ciclo importa más que cualquiera de las tres
+  piezas: el MCP de Pencil no lee `design/arandano.pen`.** Su parámetro
+  `filePath` se **ignora** —verificado pasándole una ruta inexistente, que
+  devolvió el mismo documento igual—: siempre opera sobre lo que está abierto en
+  el editor de escritorio. El archivo versionado tenía un solo commit, del
+  2026-08-21, y coincidía byte a byte con HEAD; el documento vivo ya llevaba los
+  quince frames `Móvil / …`, `App / Formas de pago` y todo lo de USD, que los
+  specs de esos ciclos citan como si estuvieran en git sin estarlo nunca. **Y
+  estuvo nueve días atrás sin que nada avisara**, lo cual es más incómodo que el
+  hecho en sí, porque `test/maqueta.test.ts` seguía en verde — pero por un
+  motivo distinto del que se creía. El spec del ciclo móvil ya había anotado que
+  los frames nuevos reusaban las mismas variables `ar-*`, y lo había leído como
+  una virtud del diseño; en realidad el archivo simplemente no había cambiado,
+  así que el test nunca tuvo la oportunidad de comparar nada nuevo contra nada
+  viejo. Guardar el documento como `design/arandano.pen` y commitearlo es un
+  paso que hace una persona —el MCP lee, no persiste, ver
+  `docs/correcciones-pendientes-del-pen.md`—, y quedó como el primer paso
+  obligatorio de este ciclo, no un detalle de trámite.
+
+  Con la maqueta ya en la mano, las dos piezas de producto. **"Cómo entró la
+  plata" pasa a mostrar dos líneas por medio** cuando ese medio tuvo dólares
+  —pesos en 13/600 arriba, dólares SIN convertir en 12/600 y más apagado
+  debajo—, en vez de todo convertido a la cotización de cada pago. `Barra` gana
+  `usdCrudo` sin tocar los tres campos que ya tenía, así que ningún número que
+  hoy se ve en pantalla se mueve y un local sin dólares ve el panel exactamente
+  como antes. Y **"Cuándo vende el local" es un panel enteramente nuevo**, con
+  un segmentado Hora/Día que viaja en la URL (`?vista=hora|dia`, server-only y
+  sin JavaScript, como los chips de rango que ya tiene la pantalla): la vista
+  Hora agrupa por hora del día y la vista Día suma los siete días de la semana
+  —no una serie temporal por fecha, que con el filtro en su default (Hoy)
+  habría sido una sola barra—. La barra más alta se pinta distinta del resto
+  para que el pico se note a simple vista, y el panel entra también en el
+  teléfono aunque la maqueta no lo dibuje ahí: es información, no un control
+  cuyo destino haya que inventar, y el dueño de un local mira el celular más
+  que la computadora.
+
+  **La franja horaria sale de los datos, y es la única vez que el ciclo se
+  aparta del frame.** La maqueta dibuja de 9 a 20; seguirla al pie habría dejado
+  afuera del gráfico, sin decirlo, cualquier venta anterior a las 9 o posterior
+  a las 20 —exactamente la clase de dato que desaparece en silencio y que este
+  repo ya penalizó otras veces—. Sin ninguna venta en el período la franja cae
+  sola a 9–20 y el panel se ve como el frame, así que la desviación no cuesta
+  nada en el caso común y evita perder ventas reales en el caso raro.
+
+  **La consulta de horarios quedó sin techo de filas.** Trae un `creadoEn` por
+  venta del período —agregado en JavaScript y no con `$queryRaw`, por la misma
+  razón de siempre: la extensión de `lib/tenant/prisma.ts` intercepta
+  operaciones de modelo, no raw queries, y un raw sin el `set_config` de RLS
+  devuelve cero filas en vez de fallar—. Con un mes de un local activo son
+  ~1.400 filas, que no pesa nada; el problema aparece con un rango largo
+  tipeado a mano (`?desde=2020-01-01`), donde serían decenas de miles. No se le
+  puso techo en este ciclo —el `count` del listado ya recorre el mismo
+  conjunto, y esto es una columna de timestamps, no filas completas—, pero
+  queda anotado como lo primero que hay que mirar el día que `/ventas` se
+  ponga lenta.
+
+  **Lo que este ciclo no cierra**: la costura entre el tile "Total del período"
+  y "Cómo entró la plata" sigue abierta. Con dólares de por medio los dos
+  paneles no cuadran entre sí —el tile no convierte nada y el panel de medios
+  sí—, y seguir sin cerrarla es una decisión de producto con su propio ciclo,
+  no un olvido de éste: la línea nueva de dólares muestra el número sin
+  convertir al lado del que sí convierte, que es exactamente lo que anuncia la
+  nota nueva del pie, y agrandar o achicar esa diferencia no era parte del
+  encargo.
+
+  De paso, el campo de precio de venta pasó a medir 9 px en las esquinas
+  externas del campo compuesto, contra los 10 px del `rounded-lg` de shadcn que
+  tenía puesto: la maqueta lo dibujó por primera vez y coincidió en todo salvo
+  ese píxel. `docs/correcciones-pendientes-del-pen.md` registra el detalle: la
+  entrada 23 queda **resuelta a medias** (los puntos 1 y 5, no los tres que
+  hablan de `/vender`) y se suma la entrada 24, por el panel de horarios del
+  teléfono, derivado sin frame.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~
