@@ -366,8 +366,8 @@ pantalla, así que no encajaban en ninguno de los otros roles.
 **El rediseño de `/ventas` y `/ventas/[id]` sumó seis roles más**, los seis en
 `app/(app)/ventas/tipografia.module.css` y los seis SIN `font-stretch` propio
 (ver el porqué en *La cara de display: Archivo*): el título de card (los
-encabezados "Qué se vendió", "Cómo se pagó", "Resumen", "Últimas ventas" y
-"Cómo entró la plata" — 15 px, peso 600); el valor de los tiles del resumen
+encabezados "Qué se vendió", "Cómo se pagó", "Resumen", "Últimas ventas",
+"Cómo entró la plata" y "Cuándo vende el local" — 15 px, peso 600); el valor de los tiles del resumen
 del período (32 px el tile de marca, 26 px los otros dos, tracking -0.6 px);
 los montos de tabla del listado y del detalle (14 px, heredado de `text-sm`
 de `<Table>`, sin tamaño propio); la banda de Total del detalle de venta

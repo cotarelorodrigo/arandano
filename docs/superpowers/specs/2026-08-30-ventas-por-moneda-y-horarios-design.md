@@ -183,7 +183,11 @@ gap 6, alineadas abajo.
 radio 10, padding 3, gap 2. El ítem activo va en `ar-surface` con radio 8, sombra
 `0 1 2 #17122114` y texto 12/600 en `ar-ink`; el inactivo es transparente, texto
 12/500 en `ar-ink-3`. Son dos links (`?vista=hora` / `?vista=dia`) que preservan
-`desde`, `hasta` y `p`. **Un `?vista` que no sea ninguno de los dos cae en
+`desde` y `hasta`, y a propósito **no** `p`: cambiar de vista es un gesto de
+mirar el panel, y volver a la página 1 es lo que hace que el listado y el panel
+sigan hablando del mismo recorte de datos al leerlos juntos —lo contrario,
+seguir en una página profunda del listado con una vista distinta, es lo que se
+evita—. **Un `?vista` que no sea ninguno de los dos cae en
 `hora`**, sin romper nada: el mismo criterio con el que `fechaOhoy` trata una
 fecha malformada y el clamp de `?p` trata una página imposible — un query string
 escrito a mano no puede servir un 500.

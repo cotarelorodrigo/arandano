@@ -61,14 +61,17 @@ export const CONSUMIDOR_FINAL = 'Consumidor final'
  * servidor— le pida más aritmética a un valor que ya terminó de sumarse.
  *
  * `ars` tiene consumidor de producción: la línea de pesos del rótulo de cada
- * medio en `GraficoDeMedios`. `usd` **no tiene consumidor de producción hoy**
+ * medio en `GraficoDeMedios`. `usd` **sigue sin consumidor de producción**
  * —sólo lo lee `lib/ventas/composicion.test.ts`, para verificar que la
- * separación por moneda no se mezcle antes de sumarse en `total`—. Se quedan:
- * sostienen esa verificación con más granularidad que mirar sólo `total` (un
- * bug que cruzara pesos y dólares pero sumara igual no se vería ahí), y son
- * el dato que un panel futuro necesitaría para, por ejemplo, mostrar el
- * desglose por moneda en vez de convertir todo a pesos. Sacar `usd` es una
- * decisión aparte, no un descuido de este ciclo.
+ * separación por moneda no se mezcle antes de sumarse en `total`—. Se queda:
+ * sostiene esa verificación con más granularidad que mirar sólo `total` (un
+ * bug que cruzara pesos y dólares pero sumara igual no se vería ahí). El
+ * "panel futuro" que este campo anticipaba ya se construyó, y no lo usa: el
+ * desglose por moneda de `GraficoDeMedios` sale de `usdCrudo` —los dólares
+ * SIN convertir—, no de `usd` —que está en pesos—, porque una línea que dijera
+ * "esto es lo que entró en dólares" mostrando un número ya multiplicado por
+ * la cotización estaría mintiendo. Sacar `usd` sigue siendo una decisión
+ * aparte, no un descuido de este ciclo.
  */
 export type Barra = {
   medio: Medio
@@ -99,12 +102,12 @@ export type Composicion = {
   total: string
   /**
    * Si hubo algún pago en dólares en el período. **Tampoco tiene consumidor
-   * de producción hoy** —la nota "convertidos a la cotización de cada pago"
-   * de `grafico.tsx` se muestra siempre, no sólo cuando este campo es
-   * `true`—, mismo criterio que `ars`/`usd`: queda documentado y sin usar en
-   * vez de sacarse en silencio, porque es exactamente el dato que haría
-   * falta para condicionar esa nota — decisión de un ciclo aparte, no de
-   * éste.
+   * de producción hoy** —la nota del pie de `grafico.tsx` ("Cada moneda dice
+   * su propio número. La barra compara todo en pesos, a la cotización de
+   * cada pago.") se muestra siempre, no sólo cuando este campo es `true`—,
+   * mismo criterio que `ars`/`usd`: queda documentado y sin usar en vez de
+   * sacarse en silencio, porque es exactamente el dato que haría falta para
+   * condicionar esa nota — decisión de un ciclo aparte, no de éste.
    */
   hayDolares: boolean
 }
