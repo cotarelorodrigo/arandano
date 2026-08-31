@@ -92,7 +92,7 @@ export function SelectorDeCategoria({
               setMarcaId('')
             }}
           >
-            <SelectTrigger id="categoriaId" className="h-10 w-full rounded-[9px]">
+            <SelectTrigger id="categoriaId" className="h-10! w-full rounded-[9px]">
               <SelectValue placeholder="Sin categoría" />
             </SelectTrigger>
             <SelectContent>
@@ -114,7 +114,7 @@ export function SelectorDeCategoria({
             // para no mostrar nada invita a buscar algo que no está.
             disabled={marcasDelRubro.length === 0}
           >
-            <SelectTrigger id="marcaId" className="h-10 w-full rounded-[9px]">
+            <SelectTrigger id="marcaId" className="h-10! w-full rounded-[9px]">
               <SelectValue placeholder={rubroId === '' ? 'Elegí una categoría' : 'Sin marca'} />
             </SelectTrigger>
             <SelectContent>
