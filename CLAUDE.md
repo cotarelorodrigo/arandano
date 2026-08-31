@@ -1901,6 +1901,17 @@ Y del producto:
   nota nueva del pie, y agrandar o achicar esa diferencia no era parte del
   encargo.
 
+  **Esto no se sostuvo entero (cerrado a medias el 2026-08-31):** el ciclo del
+  cobrado por moneda cerró la mitad del párrafo de arriba — el tile pasó a
+  mostrar la plata que entró en cada moneda en vez de `total + recargo`, así
+  que dejó de necesitar convertir nada. Lo que sigue abierto es sólo la otra
+  mitad: "Cómo entró la plata" sigue convirtiendo los dólares a pesos, porque
+  sus barras necesitan una unidad común para poder compararse entre sí, y
+  cerrar eso significaría decidir si dejan de serlo — no es parte de ningún
+  ciclo todavía. Queda el párrafo de arriba como registro de lo que era
+  cierto el 2026-08-30, no como el estado vigente — para eso está la entrada
+  del 2026-08-31, más abajo.
+
   De paso, el campo de precio de venta pasó a medir 9 px en las esquinas
   externas del campo compuesto, contra los 10 px del `rounded-lg` de shadcn que
   tenía puesto: la maqueta lo dibujó por primera vez y coincidió en todo salvo
@@ -1908,6 +1919,104 @@ Y del producto:
   entrada 23 queda **resuelta a medias** (los puntos 1 y 5, no los tres que
   hablan de `/vender`) y se suma la entrada 24, por el panel de horarios del
   teléfono, derivado sin frame.
+- ~~Distinguir lo vendido de lo cobrado en las pantallas de ventas, cada moneda
+  por separado.~~ **Hecho** (2026-08-31). Sale del feedback textual de un
+  cliente sobre una venta real: *"si el producto cuesta trescientos dólares,
+  la venta puede ser con un pago de doscientos dólares y el resto un pago en
+  pesos usando la cotización. El problema es que cuando cargo esta venta, en
+  ventas aparece como una venta de trescientos dólares, y tendría que aparecer
+  como una venta de doscientos dólares más la parte en pesos."* Ver
+  `docs/superpowers/specs/2026-08-31-cobrado-por-moneda-design.md`.
+
+  **La venta ya se guardaba bien: el defecto era de lectura, no de captura.**
+  Con el caso del feedback la base ya tenía todo lo necesario —`Venta.totalUsd
+  = 300`, un pago de US$ 200 y un pago de $ 148.500 con `cubre = USD`—, pero la
+  columna del listado y el tile del período leían `Venta.total` /
+  `Venta.totalUsd`, que son la MERCADERÍA a precio de lista, no la plata que
+  entró. Se pague como se pague, la mercadería es US$ 300.
+
+  **Y la columna era híbrida sin decirlo.** Del lado de los pesos ya mostraba
+  `total + recargo` (lo COBRADO); del lado de los dólares mostraba `totalUsd`
+  (la MERCADERÍA). Dos criterios distintos en la misma celda, separados por un
+  `+`, y nadie lo había notado porque hasta el ciclo del precio en dólares las
+  dos cosas coincidían siempre. Este ciclo ordena eso: las tres pantallas
+  nombran las dos magnitudes con las mismas dos palabras, "Vendido" y
+  "Cobrado".
+
+  **Las cinco decisiones del ciclo, cada una con la alternativa que se
+  descartó:**
+
+  - **Se muestran las DOS magnitudes, no una.** La alternativa era
+    reemplazar —que la columna y el tile pasaran a mostrar sólo lo cobrado y
+    la mercadería quedara únicamente en el detalle. Se descartó porque las dos
+    preguntas son legítimas y un listado de ventas las contesta las dos
+    —cuánto se vendió y cuánta plata entró—, y con planes de pago de por medio
+    la diferencia entre ambas es justamente el dato que el dueño quiere ver.
+  - **Las dos líneas aparecen sólo cuando difieren.** La alternativa era
+    mostrarlas siempre, rotuladas, para que la fila tenga siempre la misma
+    forma. Se descartó por el principio que ya dejó escrito el ciclo del
+    precio en dólares: un local que no usa nada de esto no puede ver ninguna
+    diferencia. Una venta en pesos sin plan sigue siendo un solo número, sin
+    rótulo. **El costo aceptado**: un local CON planes de pago sí ve un
+    cambio —esas ventas hoy mostraban sólo lo cobrado y pasan a mostrar las
+    dos líneas—, y es correcto que lo vea, porque ahí las dos magnitudes
+    efectivamente son distintas y la pantalla mostraba una sola sin avisar
+    cuál.
+  - **El número sale de `Pago`, no de columnas cacheadas en `Venta`.** La
+    alternativa era `Venta.cobradoArs` / `cobradoUsd`, siguiendo el precedente
+    de `Venta.recargo`. Se descartó por dos razones: ese caché existe para
+    evitar el join de pagos, y acá el join ya está —el listado ya trae los
+    pagos de cada fila desde el ciclo de precios por forma de pago, para la
+    celda "Medios"—; y la migración no sería inerte, porque un `default 0`
+    dejaría a toda venta ya grabada afirmando que no cobró nada, exigiendo un
+    backfill masivo sobre datos de clientes con RLS de por medio, a cambio de
+    ahorrar una consulta en una pantalla que ya dispara siete en paralelo. Sin
+    columnas nuevas, este ciclo no lleva migración.
+  - **Nada se convierte.** Sigue rigiendo la regla del ciclo del precio en
+    dólares: cada moneda dice su propio número y ninguna se pasa por la
+    cotización de la otra. "Cobrado" no es un número, son dos.
+  - **`/vender` no se toca.** El cobro ya funciona: reparte los pagos entre
+    los dos totales, valida que cierren y guarda todo lo necesario. El defecto
+    era de lectura, no de captura.
+
+  **Sin migración, y por lo tanto sin nada de expand/contract que coordinar.**
+  Es la consecuencia directa de la tercera decisión: sin columnas nuevas, este
+  ciclo se revierte entero revirtiendo la imagen.
+
+  **`totalCobrado()` se podó, y no se conservó como ancla de test** —a
+  diferencia de `totalDeItems` y `totalDePagos`, que siguen ahí. La diferencia
+  es el motivo: esos dos anclan aritmética que sigue siendo cierta, y el
+  docblock de `totalCobrado` eran treinta líneas explicando por qué devuelve un
+  número que PARECE un bug con `totalUsd ≠ 0` —ese número es justamente el que
+  este ciclo deja de mostrar, así que la explicación se fue con él. La
+  advertencia queda archivada donde corresponde: acá.
+
+  **La lección que dejó el ciclo al escribir el plan, y que vale más que
+  cualquiera de las piezas: una regla que la base efímera tiene que poder
+  ejercitar no puede vivir en una consulta inline de un Server Component
+  `async`.** El primer diseño reusaba el `groupBy` de pagos que ya alimenta el
+  panel "Cómo entró la plata" —ahorraba una consulta y seleccionaba
+  exactamente las mismas filas—, pero esa consulta vive dentro del componente
+  de página, que abre sesión, así que ningún test la puede llamar: su
+  `anuladaEn: null` habría quedado tan desprotegido como el que el hallazgo I3
+  de la review del rediseño mostró que se podía borrar dejando 785 tests en
+  verde. Por eso existe `pagosDelPeriodo` (`app/(app)/ventas/page.tsx`),
+  exportada —es la misma lección del I3, aplicada ANTES de pagarla en vez de
+  después.
+
+  **Lo que sigue**: la costura con "Cómo entró la plata" se angosta y no
+  desaparece —el tile ya no convierte nada y el panel sigue convirtiendo,
+  porque sus barras necesitan una unidad común para poder compararse entre sí;
+  cerrarla del todo significaría decidir si dejan de serlo, y no es este
+  ciclo.
+
+  **Queda pendiente la verificación manual**, y a diferencia de los últimos
+  cuatro ciclos —que quedaron sin confirmar porque `arandano-dev` bind-montea
+  `/root/arandano` y no el worktree— acá sí se puede hacer: el entorno local
+  corre Next nativo en `:3001` contra el Postgres de Docker. Falta cargar a
+  mano la venta del feedback y mirar, a 1440 y a 390 px, que el tile con dos
+  líneas rotuladas no quede apretado en el teléfono —es el riesgo específico
+  de este ciclo y ningún test lo puede juzgar.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

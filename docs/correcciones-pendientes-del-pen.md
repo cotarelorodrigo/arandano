@@ -813,6 +813,29 @@ Ver `docs/superpowers/specs/2026-08-30-ventas-por-moneda-y-horarios-design.md`.
 
 ---
 
+## 26. La maqueta no dibuja el desglose Vendido/Cobrado, en ninguna de las tres pantallas
+
+`design/arandano.pen` es anterior a este ciclo, así que no tiene frame para
+(1) la columna Total del listado con dos líneas rotuladas, (2) el tile "Total
+del período" con rótulos de línea, ni (3) el pie de `/ventas/[id]` con
+`Vendido / Recargo / Cobrado`. Las tres formas se derivaron del código.
+
+Lo que se derivó: los rótulos reusan el rol tipográfico que el tile ya
+tenía —10 px, bold, uppercase, con tracking—, pintados con `--marca-dim` para
+no competir con el rótulo del propio tile. **No agregan ninguna fila nueva a
+la escala de `docs/sistema-de-diseno.md`**: es el mismo rol de siempre, en un
+lugar donde antes no había ningún rótulo.
+
+Y sigue pendiente, de antes de este ciclo y sin que éste lo mueva: que una
+persona guarde desde Pencil el `.pen` vivo y lo commitee. El archivo
+versionado sigue siendo el del 2026-08-21 (ver la entrada del 2026-08-30 de
+`CLAUDE.md`).
+
+Detectado al construir el ciclo del cobrado por moneda (2026-08-31). Ver
+`docs/superpowers/specs/2026-08-31-cobrado-por-moneda-design.md`.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el
