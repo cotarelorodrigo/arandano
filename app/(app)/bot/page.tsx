@@ -1,5 +1,7 @@
+import { notFound } from 'next/navigation'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirPermiso } from '@/lib/permisos/guarda'
+import { botHabilitadoEn } from '@/lib/bot/habilitado'
 import { botDelLocal, numerosDisponibles } from '@/lib/bot/administrar'
 import { kapsoConfigurado } from '@/lib/bot/kapso'
 import { modeloConfigurado } from '@/lib/bot/agente'
@@ -14,6 +16,18 @@ export default async function PantallaDelBot() {
   // sin BOT vería la información del local y el consumo aunque no pudiera
   // tocar nada. Un DUENO lo tiene sin necesitar fila en usuario_permisos.
   const sesion = await exigirPermiso('BOT')
+
+  // El gate del rollout, y no una segunda capa de permisos: `BOT_HABILITADO_EN`
+  // decide en qué LOCALES existe el bot todavía, mientras se prueba en
+  // producción con uno solo. Ocultar la pestaña no alcanza — un DUENO tiene el
+  // permiso BOT sin fila en `usuario_permisos`, así que tipear /bot lo dejaría
+  // entrar igual. Ver lib/bot/habilitado.ts, que también explica por qué la
+  // ausencia de la variable habilita a todos.
+  //
+  // notFound() y no forbidden(): para ese local esta pantalla no existe. Un 403
+  // anunciaría que hay algo a lo que vale la pena volver.
+  if (!botHabilitadoEn(sesion.subdominio)) notFound()
+
   const esDuenio = sesion.usuario.rol === 'DUENO'
 
   const bot = await botDelLocal(sesion.tenant.id)

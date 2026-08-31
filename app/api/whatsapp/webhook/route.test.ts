@@ -68,6 +68,7 @@ const BOT_CONECTADO = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  delete process.env.BOT_HABILITADO_EN
   process.env.ANTHROPIC_API_KEY = 'sk-test'
   tenantDelRequest.mockResolvedValue({
     tipo: 'tenant',
@@ -121,6 +122,29 @@ describe('el webhook de WhatsApp', () => {
   it('404 si el local no tiene número conectado', async () => {
     buscarBot.mockResolvedValue(null)
     expect((await POST(pedido())).status).toBe(404)
+  })
+
+  /**
+   * El gate del rollout, cerrando el círculo por la última puerta.
+   *
+   * Hoy es redundante —un local fuera de la lista nunca pudo conectar un número,
+   * así que Kapso no le manda nada— y va igual: es la misma línea que las otras
+   * cuatro puertas, y deja el bot apagado de punta a punta en vez de apoyado en
+   * que nadie haya conectado nada. Si mañana se saca un local de la lista sin
+   * desconectarlo, el bot deja de contestar en el acto.
+   */
+  it('404 y sin escribir si el local no tiene el bot habilitado', async () => {
+    process.env.BOT_HABILITADO_EN = 'wafflespro' // el Host del pedido es flor
+    const r = await POST(pedido())
+    expect(r.status).toBe(404)
+    expect(registrarEntrante, 'se guardó un mensaje de un local sin bot').not.toHaveBeenCalled()
+    expect(agendado).not.toHaveBeenCalled()
+  })
+
+  it('contesta normalmente en el local que sí está en la lista', async () => {
+    process.env.BOT_HABILITADO_EN = 'flor'
+    expect((await POST(pedido())).status).toBe(200)
+    expect(agendado).toHaveBeenCalledTimes(1)
   })
 
   /**

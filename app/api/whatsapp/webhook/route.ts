@@ -10,6 +10,7 @@ import {
   TOPE_POR_CONVERSACION_POR_HORA,
 } from '@/lib/bot/limites'
 import { modeloConfigurado } from '@/lib/bot/agente'
+import { botHabilitadoEn } from '@/lib/bot/habilitado'
 import { procesarMensaje } from '@/lib/bot/procesar'
 import type { MotivoSinRespuesta } from '@/generated/prisma/client'
 
@@ -56,6 +57,12 @@ export async function POST(request: Request): Promise<Response> {
   const resolucion = await tenantDelRequest()
   if (resolucion.tipo !== 'tenant') return nada()
   if (resolucion.tenant.estado === 'SUSPENDIDO') return nada()
+  // El gate del rollout, con el mismo 404 genérico que todo el resto de los
+  // rechazos. Hoy es redundante —un local fuera de la lista nunca pudo conectar
+  // un número, así que Kapso no le manda nada— y va igual: es la última de las
+  // cinco puertas del bot, y deja de depender de que nadie haya conectado nada.
+  // Ver lib/bot/habilitado.ts.
+  if (!botHabilitadoEn(resolucion.subdominio)) return nada()
 
   const tenantId = resolucion.tenant.id
   const bot = await prismaParaTenant(tenantId).botDeWhatsapp.findUnique({

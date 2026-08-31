@@ -6,6 +6,11 @@ vi.mock('@/lib/auth/sesion', () => ({ exigirDuenio: () => exigirDuenio() }))
 vi.mock('@/lib/permisos/guarda', () => ({ exigirPermiso: (p: string) => exigirPermiso(p) }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
+const notFound = vi.fn(() => {
+  throw new Error('NEXT_NOT_FOUND')
+})
+vi.mock('next/navigation', () => ({ notFound: () => notFound() }))
+
 const generarEnlace = vi.fn()
 const confirmarNumero = vi.fn()
 const desconectar = vi.fn()
@@ -29,6 +34,7 @@ const acciones = await import('./acciones')
 
 beforeEach(() => {
   vi.clearAllMocks()
+  delete process.env.BOT_HABILITADO_EN
   exigirDuenio.mockResolvedValue(SESION)
   exigirPermiso.mockResolvedValue(SESION)
   generarEnlace.mockResolvedValue('https://app.kapso.ai/whatsapp/setup/abc')
@@ -106,5 +112,45 @@ describe('lo que las acciones devuelven', () => {
 
     guardarInstrucciones.mockRejectedValueOnce(new TypeError('undefined is not a function'))
     await expect(acciones.guardarInformacionDelLocal('x')).rejects.toThrow(TypeError)
+  })
+})
+
+/**
+ * El gate del rollout —`BOT_HABILITADO_EN`— tiene que alcanzar a las CINCO
+ * acciones, no sólo a la pantalla.
+ *
+ * Es la misma lección que el merge del ciclo móvil dejó escrita para las dos
+ * copias de un botón: una guarda que cubre una sola de las puertas no es una
+ * guarda. Acá la puerta que se olvida es la de siempre — una server action es
+ * un endpoint y se invoca sin pasar por la pantalla que la esconde.
+ *
+ * El caso cuenta en las DOS direcciones (fuera de la lista no corre, adentro
+ * sí): un `rejects.toThrow()` solo pasaría igual si el gate rechazara SIEMPRE,
+ * y eso dejaría al local habilitado sin bot y con el gate en verde.
+ */
+describe('el gate del rollout alcanza a las cinco acciones', () => {
+  const TODAS: [string, () => Promise<unknown>, ReturnType<typeof vi.fn>][] = [
+    ['generarEnlaceDeConexion', () => acciones.generarEnlaceDeConexion(), generarEnlace],
+    ['confirmarNumeroDelLocal', () => acciones.confirmarNumeroDelLocal('pn_1'), confirmarNumero],
+    ['desconectarNumero', () => acciones.desconectarNumero(), desconectar],
+    ['prenderOApagar', () => acciones.prenderOApagar(true), alternarActivo],
+    [
+      'guardarInformacionDelLocal',
+      () => acciones.guardarInformacionDelLocal('Abrimos 9 a 18'),
+      guardarInstrucciones,
+    ],
+  ]
+
+  it.each(TODAS)('%s no hace nada en un local fuera de la lista', async (_n, correr, efecto) => {
+    process.env.BOT_HABILITADO_EN = 'wafflespro' // la sesión de arriba es 'flor'
+    await expect(correr()).rejects.toThrow('NEXT_NOT_FOUND')
+    expect(efecto, 'la acción corrió en un local sin el bot habilitado').not.toHaveBeenCalled()
+  })
+
+  it.each(TODAS)('%s sí corre en el local de la lista', async (_n, correr, efecto) => {
+    process.env.BOT_HABILITADO_EN = 'flor'
+    await correr()
+    expect(efecto).toHaveBeenCalled()
+    expect(notFound).not.toHaveBeenCalled()
   })
 })

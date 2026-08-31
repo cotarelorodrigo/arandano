@@ -1931,6 +1931,49 @@ Y del producto:
   falla de "se muestra una sola vez", y rotarlo es volver a llamar a la función.
   **Queda una sola incógnita**: la forma exacta del cuerpo de un lote con
   buffering, que sigue manejada aceptando las dos formas posibles.
+
+  **Y sale a producción detrás de un gate por local** (2026-08-31), que es la
+  primera excepción real a la decisión de *no feature flags* — vale registrar
+  por qué se hizo igual y por qué no la contradice del todo. El bot es la
+  primera integración con un tercero del producto: se le paga a Meta y a
+  Anthropic por mensaje, contesta sin que nadie lo lea, y su modo de falla es
+  decirle algo equivocado a un cliente de un local. Liberarlo a todos en el
+  mismo deploy que lo estrena es exactamente lo que este documento describe
+  como "el radio de daño del deploy", con la diferencia de que acá el daño le
+  habla a clientes de terceros.
+
+  **`BOT_HABILITADO_EN`** (`lib/bot/habilitado.ts`) nombra los subdominios donde
+  el bot existe. Arranca en `wafflespro`, el primer local real que lo va a
+  probar.
+
+  **No es el sistema de flags que este documento descartó**, y la diferencia es
+  lo que lo hace aceptable: no hay tabla, ni pantalla, ni ramas muertas en el
+  código, ni un flag por feature — es UNA línea en un archivo versionado, con
+  una fecha de defunción escrita y un solo consumidor. Lo que el descarte de
+  feature flags evitaba era el costo de mantenerlos; acá no hay nada que
+  mantener, y borrar la línea de `docker/compose.prod.yml` lo libera a todos.
+
+  **La ausencia de la variable habilita a todos**, o sea que falla ABIERTO, y no
+  por descuido: `scripts/smoke.sh` barre `/bot` contra el canario de
+  `arandano-stage` —que no la declara— exigiendo 200, así que un default de
+  "nadie" haría rollback en **todo** deploy. Es el mismo modo de falla que ya
+  había obligado al try/catch de Kapso en esa pantalla. Lo que hace tolerable el
+  fail-open es dónde vive: el `environment:` **versionado** del compose, no el
+  `.env` del servidor, así que no se pierde editando credenciales a mano.
+
+  **Está en las CINCO puertas del bot** —la pestaña del sidebar, la pantalla,
+  las cinco server actions y el webhook—, y no sólo en la primera. Un `DUENO`
+  tiene el permiso `BOT` sin fila en `usuario_permisos`, así que esconder la
+  pestaña lo dejaría entrar tipeando la URL; y una server action es un endpoint
+  que se invoca sin pasar por la pantalla. Es la misma lección de las dos copias
+  de un botón que dejó escrito el merge del ciclo móvil, con cinco copias en vez
+  de dos, y los casos cuentan en las **dos** direcciones: sin la lista corre,
+  con otra lista no. Un caso que sólo verificara el rechazo pasaría igual con el
+  bot apagado en todos lados.
+
+  **No reemplaza al permiso `BOT`**: son dos preguntas distintas —en qué locales
+  existe el bot, y a quién del local se le delega—, así que un empleado sin
+  `BOT` sigue sin verlo aunque su local esté en la lista.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

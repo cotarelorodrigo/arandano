@@ -1,8 +1,10 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { notFound } from 'next/navigation'
 import { exigirDuenio } from '@/lib/auth/sesion'
 import { exigirPermiso } from '@/lib/permisos/guarda'
+import { botHabilitadoEn } from '@/lib/bot/habilitado'
 import { ErrorDeBot } from '@/lib/bot/errores'
 import { ErrorDeKapso } from '@/lib/bot/kapso'
 import {
@@ -55,9 +57,28 @@ function traducir(e: unknown): EstadoBot {
   throw e
 }
 
+/**
+ * El gate del rollout, en las CINCO acciones y no sólo en la pantalla.
+ *
+ * `BOT_HABILITADO_EN` decide en qué locales existe el bot mientras se prueba en
+ * producción con uno solo (ver `lib/bot/habilitado.ts`). Esconder la pantalla no
+ * alcanza, por lo mismo que dice el docblock de arriba: una server action es un
+ * endpoint y se invoca sin pasar por ella.
+ *
+ * Va DESPUÉS del guard de sesión y no antes: el subdominio sale de la sesión ya
+ * resuelta, y quien no está autenticado tiene que rebotar por eso primero.
+ *
+ * `notFound()` cae en el `catch`, pero `traducir` relanza todo lo que no sea un
+ * error de negocio, así que llega igual — no queda disfrazado de cartel.
+ */
+function exigirBotHabilitado(subdominio: string): void {
+  if (!botHabilitadoEn(subdominio)) notFound()
+}
+
 export async function generarEnlaceDeConexion(): Promise<EstadoBot> {
   try {
     const sesion = await exigirDuenio()
+    exigirBotHabilitado(sesion.subdominio)
     const url = await generarEnlace({
       tenantId: sesion.tenant.id,
       nombreLocal: sesion.tenant.nombre,
@@ -77,6 +98,7 @@ export async function generarEnlaceDeConexion(): Promise<EstadoBot> {
 export async function confirmarNumeroDelLocal(phoneNumberId: string): Promise<EstadoBot> {
   try {
     const sesion = await exigirDuenio()
+    exigirBotHabilitado(sesion.subdominio)
     await confirmarNumero({
       tenantId: sesion.tenant.id,
       subdominio: sesion.subdominio,
@@ -96,6 +118,7 @@ export async function confirmarNumeroDelLocal(phoneNumberId: string): Promise<Es
 export async function desconectarNumero(): Promise<EstadoBot> {
   try {
     const sesion = await exigirDuenio()
+    exigirBotHabilitado(sesion.subdominio)
     await desconectar(sesion.tenant.id)
     revalidatePath('/bot')
     return { error: null, aviso: 'El número quedó desconectado.', enlace: null }
@@ -107,6 +130,7 @@ export async function desconectarNumero(): Promise<EstadoBot> {
 export async function prenderOApagar(activo: boolean): Promise<EstadoBot> {
   try {
     const sesion = await exigirPermiso('BOT')
+    exigirBotHabilitado(sesion.subdominio)
     await alternarActivo(sesion.tenant.id, activo)
     revalidatePath('/bot')
     return {
@@ -122,6 +146,7 @@ export async function prenderOApagar(activo: boolean): Promise<EstadoBot> {
 export async function guardarInformacionDelLocal(instrucciones: string): Promise<EstadoBot> {
   try {
     const sesion = await exigirPermiso('BOT')
+    exigirBotHabilitado(sesion.subdominio)
     await guardarInstrucciones(sesion.tenant.id, instrucciones)
     revalidatePath('/bot')
     return { error: null, aviso: 'Guardado.', enlace: null }

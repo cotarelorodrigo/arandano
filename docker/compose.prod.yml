@@ -43,6 +43,23 @@ services:
       # va inline: tenerla acá permite además apuntarla a un mock sin tocar el
       # `.env` del servidor.
       KAPSO_API_BASE_URL: https://api.kapso.ai
+      # EN QUÉ LOCALES EXISTE EL BOT, y es TEMPORAL: el bot se prueba en
+      # producción con un solo local real antes de que lo vea todo el mundo.
+      # Sin feature flags, éste es el único gate que hay, así que vale la
+      # aclaración de cómo se opera:
+      #
+      #   - Sumar un local: agregar su subdominio separado por coma
+      #     ("wafflespro,canario"). Requiere deploy — el archivo es versionado
+      #     a propósito, para que no se pueda perder editando el `.env` a mano.
+      #   - LIBERARLO A TODOS: borrar esta línea. La ausencia de la variable
+      #     habilita el bot en todos los locales, que es también por lo que los
+      #     otros tres stacks no la declaran y `scripts/smoke.sh` puede barrer
+      #     /bot contra el canario de stage exigiendo 200.
+      #
+      # No es secreta —no habilita nada por sí sola, y las credenciales del bot
+      # (KAPSO_API_KEY, ANTHROPIC_API_KEY) viajan por `env_file`—, así que va
+      # inline como KAPSO_API_BASE_URL de arriba. Ver lib/bot/habilitado.ts.
+      BOT_HABILITADO_EN: wafflespro
       # PUERTO_PUBLICO NO va acá, a propósito: en producción el sitio se
       # sirve en 443, implícito en `https://`, así que Better Auth arma su
       # `baseURL` sin puerto (lib/auth/origen.ts). Ponerle un default —"443"

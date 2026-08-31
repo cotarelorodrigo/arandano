@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { CLAVES_DE_PERMISO } from '@/lib/permisos/catalogo'
 import { permisosDe } from '@/lib/permisos/consultar'
+import { botHabilitadoEn } from '@/lib/bot/habilitado'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { SidebarArandano } from '@/components/shell/sidebar-arandano'
 import { salir } from './acciones'
@@ -29,6 +30,29 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
       ? CLAVES_DE_PERMISO
       : [...(await permisosDe(sesion.tenant.id, sesion.usuario.id))]
 
+  /**
+   * El gate del rollout del bot, aplicado sacándole BOT a la lista de arriba.
+   *
+   * `BOT_HABILITADO_EN` decide en qué LOCALES existe el bot mientras se prueba
+   * en producción con uno solo (ver `lib/bot/habilitado.ts`), y sacar el
+   * permiso es exactamente lo que significa: en este local todavía nadie tiene
+   * esa capacidad, ni el dueño. Filtrar acá y no adentro de `<Navegacion>` deja
+   * el gate en el componente de SERVIDOR, que es el único que puede leer
+   * `process.env`.
+   *
+   * **No reemplaza al permiso ni lo duplica**: son dos preguntas distintas —en
+   * qué locales existe el bot, y a quién del local se le delega—, así que un
+   * empleado sin BOT sigue sin ver la pestaña aunque su local esté en la lista.
+   * Y no alcanza por sí solo: la pantalla y las cinco acciones repiten el gate,
+   * porque una pestaña que no se dibuja no es una defensa.
+   *
+   * Se borra entero el día que el bot se libere a todos, junto con la línea de
+   * `docker/compose.prod.yml`.
+   */
+  const visibles = botHabilitadoEn(sesion.subdominio)
+    ? permisos
+    : permisos.filter((p) => p !== 'BOT')
+
   return (
     // 15.5rem = 248 px, que es lo que dibuja design/arandano.pen. El default de
     // shadcn es 16rem: ocho pixeles que arrastrarían las diez pantallas.
@@ -37,7 +61,7 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
         nombreLocal={sesion.tenant.nombre}
         nombreUsuario={sesion.usuario.nombre}
         rol={sesion.usuario.rol}
-        permisos={permisos}
+        permisos={visibles}
         alSalir={salir}
       />
       {/* El SidebarTrigger vivía suelto acá (m-2 md:hidden) sólo para que en

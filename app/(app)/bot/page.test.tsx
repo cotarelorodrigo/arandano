@@ -23,6 +23,11 @@ vi.mock('@/lib/bot/agente', () => ({ modeloConfigurado: () => modeloConfigurado(
 const respuestasDelMes = vi.fn()
 vi.mock('@/lib/bot/limites', () => ({ respuestasDelMes: () => respuestasDelMes() }))
 
+const notFound = vi.fn(() => {
+  throw new Error('NEXT_NOT_FOUND')
+})
+vi.mock('next/navigation', () => ({ notFound: () => notFound() }))
+
 // Ver el comentario homónimo de formas-de-pago/page.test.tsx: el provider se
 // importa DENTRO de la función porque el beforeEach resetea los módulos.
 async function render() {
@@ -54,6 +59,7 @@ const CONECTADO: BotDelLocal = {
 beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
+  delete process.env.BOT_HABILITADO_EN
   exigirPermiso.mockResolvedValue({
     tenant: { id: 'tenant-1', nombre: 'Celulares Flor' },
     subdominio: 'flor',
@@ -168,5 +174,37 @@ describe('/bot', () => {
     botDelLocal.mockResolvedValue(CONECTADO)
     respuestasDelMes.mockResolvedValue(1000)
     expect(await render()).toContain('Llegaste al tope del mes')
+  })
+
+  /**
+   * El gate del rollout, y por qué es 404 y no 403.
+   *
+   * `BOT_HABILITADO_EN` existe para probar el bot en producción con un solo
+   * local real. Que la pestaña no se dibuje no alcanza: un dueño tiene el
+   * permiso BOT sin fila en `usuario_permisos`, así que tipear /bot lo dejaría
+   * entrar igual.
+   *
+   * `notFound()` y no `forbidden()`: para ese local la pantalla no existe
+   * todavía: un 403 anunciaría que existe algo a lo que vale la pena volver.
+   */
+  it('en un local fuera de la lista, la pantalla no existe', async () => {
+    process.env.BOT_HABILITADO_EN = 'wafflespro'
+    await expect(render()).rejects.toThrow('NEXT_NOT_FOUND')
+    expect(notFound).toHaveBeenCalled()
+  })
+
+  it('en el local de la lista, la pantalla abre normalmente', async () => {
+    process.env.BOT_HABILITADO_EN = 'flor'
+    expect(await render()).toContain('Conectá el WhatsApp del local')
+    expect(notFound).not.toHaveBeenCalled()
+  })
+
+  /**
+   * El caso que protege el gate de deploy: `arandano-stage` no declara la
+   * variable, y `scripts/smoke.sh` barre esta ruta exigiendo 200.
+   */
+  it('sin la variable declarada, la pantalla abre en cualquier local', async () => {
+    expect(await render()).toContain('Conectá el WhatsApp del local')
+    expect(notFound).not.toHaveBeenCalled()
   })
 })

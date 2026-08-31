@@ -1799,6 +1799,43 @@ teniendo la suya, que es la aplicación de WhatsApp Business en su celular.
   y el título de card se derivan de `/formas-de-pago`, que es el mismo caso.
   Anotado en `docs/correcciones-pendientes-del-pen.md`, entrada 24.
 
+- **Un gate de rollout la esconde en los locales que no están en la lista, y es
+  TEMPORAL.** `BOT_HABILITADO_EN` (`lib/bot/habilitado.ts`) nombra los
+  subdominios donde el bot existe todavía; se declara en el `environment:`
+  versionado de `docker/compose.prod.yml` y en ningún otro stack. Existe porque
+  el bot es la primera integración con un tercero del producto y se prueba en
+  producción con un local real antes de que lo vea todo el mundo — sin feature
+  flags, es esto o que el primer deploy se lo muestre a todos a la vez.
+
+  **La ausencia de la variable habilita a todos**, y ese fail-open no es
+  descuido: `scripts/smoke.sh` barre esta ruta contra el canario de
+  `arandano-stage`, que no la declara, y exige 200. Con un default de "nadie"
+  el barrido daría 404 y **todo deploy haría rollback** — el mismo modo de falla
+  que ya obliga al try/catch de Kapso, dos ítems más arriba. Lo que hace
+  aceptable el fail-open es dónde vive la variable: un archivo versionado, no
+  el `.env` del servidor, así que no se pierde editando credenciales a mano.
+
+  **Está en las cinco puertas, no sólo en la pestaña**: el layout le saca `BOT`
+  a los permisos que le pasa al sidebar, la pantalla hace `notFound()`, las
+  cinco acciones lo repiten (`exigirBotHabilitado`) y el webhook devuelve su
+  404 genérico. Ocultar la pestaña no es una defensa —un `DUENO` tiene el
+  permiso `BOT` sin fila en `usuario_permisos`, así que tipear `/bot` lo dejaría
+  entrar—, y una server action es un endpoint que se invoca sin pasar por la
+  pantalla. Es la misma lección de las dos copias de un botón que dejó escrita
+  el merge del ciclo móvil, con cinco copias en vez de dos.
+
+  **`notFound()` y no `forbidden()`**: para ese local la pantalla no existe
+  todavía; un 403 anunciaría que hay algo a lo que vale la pena volver.
+
+  **No reemplaza al permiso `BOT` ni lo duplica**: son dos preguntas distintas
+  —en qué locales existe el bot, y a quién del local se le delega—, así que un
+  empleado sin `BOT` sigue sin ver la pantalla aunque su local esté en la lista.
+
+  **Cómo se libera a todos**: borrar la línea de `docker/compose.prod.yml`. El
+  código puede quedarse (sin variable no hace nada) o irse entero —
+  `lib/bot/habilitado.ts`, las cinco llamadas y sus casos— cuando ya no se
+  espere volver a usarlo.
+
 <!-- pantallas:fin -->
 
 ## Lo que hereda toda pantalla de la aplicación
