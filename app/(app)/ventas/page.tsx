@@ -12,6 +12,9 @@ import {
 import { formatearPrecio, formatearDolares, formatearHora, formatearCantidad } from '@/lib/formato/mostrar'
 import { componerPorMedio } from '@/lib/ventas/composicion'
 import { totalCobrado, redondearDinero } from '@/lib/ventas/totales'
+import {
+  lineasDeImporte, vendidoDeVenta, cobradoDePagos, type LineaDeImporte,
+} from '@/lib/ventas/cobrado'
 import { ROTULO_MEDIO, CONSUMIDOR_FINAL, type Medio } from '@/lib/ventas/medios'
 import { agregarPorTiempo, vistaValida, type Vista } from '@/lib/ventas/horarios'
 import { ChipEstado } from './chip-estado'
@@ -269,20 +272,6 @@ export function rotuloDeMedios(pagos: { medio: Medio; moneda: 'ARS' | 'USD' }[])
 }
 
 /**
- * La columna Total de una fila: lo cobrado en pesos y, sólo si la venta tiene
- * algo en dólares, la mercadería en dólares aparte — unidas por " + " y SIN
- * convertir nada (mismo criterio que `rotuloDeMedios`, arriba, y que
- * `lineasDeTotal` del pie de cobro de /vender, punto-de-venta.tsx: cada
- * moneda dice su propio número, ninguna se pasa por la cotización de la
- * otra). Con `totalUsd = 0` —toda venta grabada antes de este ciclo, y la
- * inmensa mayoría después— es EXACTAMENTE el string único de siempre.
- */
-export function totalesFormateados(v: { total: Prisma.Decimal; recargo: Prisma.Decimal; totalUsd: Prisma.Decimal }): string {
-  const ars = formatearPrecio(totalCobrado(v).toString())
-  return v.totalUsd.isZero() ? ars : `${ars} + ${formatearDolares(v.totalUsd.toString())}`
-}
-
-/**
  * Hasta 5 números de página centrados en `actual`, recortados a `[1, total]`.
  *
  * Sin "…": la maqueta (design/arandano.pen, nodo `KRTvR`) dibuja tres botones
@@ -450,7 +439,10 @@ export type FilaDeVenta = {
   clienteNombre: string
   itemsLabel: string
   mediosLabel: string
-  totalFormateado: string
+  /** Un renglón, o los dos del desglose Vendido/Cobrado — ya resueltos a
+   *  texto por `lineasDeImporte()` en el llamador, para que `Listado` no
+   *  reciba ningún `Decimal` de Prisma. */
+  totalLineas: LineaDeImporte[]
   anulada: boolean
 }
 
@@ -697,8 +689,20 @@ export function Listado({
                     role="cell"
                     className={`${estilos.archivo} text-[15px] font-semibold text-foreground tabular-nums lg:border-b lg:p-[11px] lg:px-[7px] lg:text-sm lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}
                   >
-                    <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
-                      {f.totalFormateado}
+                    <div className="flex flex-col items-end lg:h-full lg:justify-center">
+                      {f.totalLineas.map((l) => (
+                        <div key={l.rotulo ?? '—'} className="flex flex-col items-end">
+                          {/* El rótulo NO hereda el 15px semibold tabular de
+                              la celda: se lo pisa explícito. 9px es el escalón
+                              más chico que este listado ya usa para meta. */}
+                          {l.rotulo && (
+                            <span className="text-[9px] font-normal tracking-[0.6px] text-muted-foreground uppercase">
+                              {l.rotulo}
+                            </span>
+                          )}
+                          <span>{l.valor}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                   {/* Las anuladas se MUESTRAN: el historial tiene que poder
@@ -811,7 +815,7 @@ export default async function Ventas({
         // se cobraron", y sin esto Postgres no promete ningún orden — el
         // resultado podía coincidir con la inserción por accidente, no por
         // contrato.
-        pagos: { select: { medio: true, moneda: true }, orderBy: { creadoEn: 'asc' } },
+        pagos: { select: { medio: true, moneda: true, monto: true }, orderBy: { creadoEn: 'asc' } },
         _count: { select: { items: true } },
       },
     }),
@@ -1101,13 +1105,12 @@ export default async function Ventas({
                 clienteNombre: v.cliente?.nombre ?? CONSUMIDOR_FINAL,
                 itemsLabel: v._count.items === 1 ? '1 artículo' : `${v._count.items} artículos`,
                 mediosLabel: rotuloDeMedios(v.pagos),
-                // `total + recargo` (Task 8): lo que preguntan de esta
-                // columna es cuánto entró, no cuánto valía la mercadería —
-                // `totalCobrado()`, la misma cuenta que arma el tile de arriba.
-                // Más "+ US$…" (Task 11) cuando la venta tiene algo en
-                // dólares — totalesFormateados() no convierte nada, sólo une
-                // los dos números con "+".
-                totalFormateado: totalesFormateados(v),
+                // Las dos magnitudes de la venta: la mercadería a precio de
+                // lista (`vendidoDeVenta`) y la plata que entró, apilada por
+                // la moneda en que se entregó (`cobradoDePagos`). Un renglón
+                // cuando coinciden —toda venta en pesos sin plan—, dos
+                // rotulados cuando no. Nada se convierte.
+                totalLineas: lineasDeImporte(vendidoDeVenta(v), cobradoDePagos(v.pagos), v.recargo),
                 anulada: v.anuladaEn !== null,
               }))}
               total={total}

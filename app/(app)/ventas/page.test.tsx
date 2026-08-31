@@ -20,7 +20,6 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { Prisma } from '@/generated/prisma/client'
 import {
   rangoDeChip, chipActivo, pieDeCobradas, pieDeAnuladas, rotuloDeMedios, ventanaDePaginas, Listado, Tile,
-  totalesFormateados,
 } from './page'
 
 const HOY = '2026-08-21'
@@ -203,9 +202,22 @@ describe('la columna Total y el tile del período muestran lo cobrado', () => {
     )
   })
 
-  it('la celda Total usa totalCobrado(v), no v.total a secas', () => {
-    expect(fuente).toContain('formatearPrecio(totalCobrado(v).toString())')
-    expect(fuente).not.toContain('formatearPrecio(v.total.toString())')
+  // El ciclo del cobrado por moneda: la celda deja de leer `total + recargo`
+  // (que ignora lo que entró en dólares) y pasa a comparar las dos magnitudes.
+  // Positivo + negativo, para que no alcance con que la cadena nueva aparezca
+  // en cualquier lado del archivo.
+  it('la celda Total compara lo vendido contra lo cobrado de los pagos', () => {
+    expect(fuente).toContain(
+      'totalLineas: lineasDeImporte(vendidoDeVenta(v), cobradoDePagos(v.pagos), v.recargo),',
+    )
+    expect(fuente).not.toContain('formatearPrecio(totalCobrado(v).toString())')
+  })
+
+  // Sin `monto` en el select, `cobradoDePagos` recibiría filas sin el número
+  // que suma: TypeScript lo atajaría, pero el caso deja escrito POR QUÉ esa
+  // columna está en un select que existía para la celda "Medios".
+  it('el select del listado pide el monto de cada pago', () => {
+    expect(fuente).toContain('pagos: { select: { medio: true, moneda: true, monto: true }')
   })
 
   it('el tile "Total del período" muestra sumaCobrada', () => {
@@ -246,7 +258,9 @@ describe('la columna Total y el tile del período muestran lo cobrado', () => {
 // Task 11 (precio en dólares): el tile "Total del período" y la columna
 // Total muestran los dos números sin convertir. Mismo criterio de fuente que
 // el bloque de arriba — el resto lo cubren los tests de componente/función
-// de más abajo (Tile, totalesFormateados).
+// de más abajo (Tile, y el desglose Vendido/Cobrado de `describe('Listado: el
+// patrón grid + display:contents', ...)`, que reemplazó a `totalesFormateados`
+// en el ciclo del cobrado por moneda, Task 2).
 describe('el tile "Total del período" y la columna Total muestran dólares sin convertir', () => {
   const fuente = readFileSync('app/(app)/ventas/page.tsx', 'utf8')
 
@@ -264,8 +278,11 @@ describe('el tile "Total del período" y la columna Total muestran dólares sin 
     )
   })
 
-  it('la columna Total usa totalesFormateados(v), que no convierte nada', () => {
-    expect(fuente).toContain('totalFormateado: totalesFormateados(v),')
+  it('la columna Total no convierte nada: ninguna cotización en el armado de la fila', () => {
+    const posMap = fuente.indexOf('filas={ventas.map((v) => ({')
+    const posCierre = fuente.indexOf('anulada: v.anuladaEn !== null,', posMap)
+    expect(posMap).toBeGreaterThan(-1)
+    expect(fuente.slice(posMap, posCierre)).not.toContain('cotizacion')
   })
 })
 
@@ -294,25 +311,6 @@ describe('Tile: valorUsd — la segunda línea del tile de marca', () => {
   })
 })
 
-describe('totalesFormateados', () => {
-  it('una venta sólo en pesos: un solo número, igual que siempre', () => {
-    const texto = totalesFormateados({ total: d('100000'), recargo: d('3900'), totalUsd: d('0') })
-    expect(texto).not.toContain('US$')
-    expect(texto).not.toContain('+')
-    expect(texto).toContain('103.900,00')
-  })
-
-  // El escenario de R8 del brief: el iPhone de US$300 cobrado en pesos con
-  // un plan del 40 % — total=0, recargo=178.200, totalUsd=300.
-  it('una venta mixta muestra las dos monedas unidas por "+", sin convertir', () => {
-    const texto = totalesFormateados({ total: d('0'), recargo: d('178200'), totalUsd: d('300') })
-    expect(texto).toContain('178.200,00')
-    expect(texto).toContain('+')
-    expect(texto).toContain('US$')
-    expect(texto).toContain('300,00')
-  })
-})
-
 /** Una fila mínima, ya resuelta a texto — la forma que `Listado` recibe de
  *  verdad, sin ningún `Decimal` de Prisma cruzando a un fixture de test. */
 const FILA: Parameters<typeof Listado>[0]['filas'][number] = {
@@ -322,7 +320,7 @@ const FILA: Parameters<typeof Listado>[0]['filas'][number] = {
   clienteNombre: 'Consumidor final',
   itemsLabel: '3 artículos',
   mediosLabel: 'Efectivo',
-  totalFormateado: '$ 103.900,00',
+  totalLineas: [{ valor: '$ 103.900,00' }],
   anulada: false,
 }
 
@@ -486,15 +484,46 @@ describe('Listado: el patrón grid + display:contents', () => {
   // ARRIBA de esa caja. Se centra con un envoltorio interno
   // (`lg:flex lg:h-full lg:items-center`), no achicando la celda
   // (`self-center` desalinearía su borde del resto de la fila — Importante
-  // 1, arriba). Las 5 celdas más cortas que "Cliente" (que siempre muestra
-  // dos líneas) llevan el envoltorio; "Cliente" no lo necesita.
+  // 1, arriba). Las 4 celdas más cortas que "Cliente" (que siempre muestra
+  // dos líneas) llevan el envoltorio; "Cliente" no lo necesita. "Total" ya
+  // no cuenta acá desde el ciclo del cobrado por moneda (Task 2): con dos
+  // renglones posibles (Vendido/Cobrado) pasa a `flex flex-col items-end
+  // lg:h-full lg:justify-center` — sigue centrando con un envoltorio interno
+  // y sin achicar la celda, pero ya no calza con este patrón horizontal.
   it('las celdas más cortas que "Cliente" centran su contenido con un envoltorio interno, no achicando la celda', () => {
     const html = renderListado()
     const envoltorios = [...html.matchAll(/class="lg:flex lg:h-full lg:items-center[^"]*"/g)]
-    expect(envoltorios, 'Número, Hora, Medios, Total y Estado: 5 celdas más cortas que Cliente').toHaveLength(5)
+    expect(envoltorios, 'Número, Hora, Medios y Estado: 4 celdas más cortas que Cliente').toHaveLength(4)
     // Ninguna celda se achica para centrarse — `self-center` desalinearía
     // el borde inferior del resto de la fila (Importante 1).
     expect(html).not.toContain('self-center')
+  })
+
+  // El ciclo del cobrado por moneda (Task 2): con un solo renglón —toda
+  // venta en pesos sin plan, la inmensa mayoría— la celda Total se ve
+  // EXACTAMENTE como antes de este ciclo, sin ningún rótulo de por medio.
+  it('con una sola línea, la celda Total no dibuja ningún rótulo', () => {
+    const html = renderListado()
+    expect(html).toContain('$ 103.900,00')
+    expect(html).not.toContain('Vendido')
+    expect(html).not.toContain('Cobrado')
+  })
+
+  it('con dos líneas, dibuja los rótulos y Vendido va ARRIBA de Cobrado', () => {
+    const html = renderListado({
+      filas: [{
+        ...FILA,
+        totalLineas: [
+          { rotulo: 'Vendido', valor: 'US$ 300,00' },
+          { rotulo: 'Cobrado', valor: '$ 148.500,00 + US$ 200,00' },
+        ],
+      }],
+    })
+    const posVendido = html.indexOf('Vendido')
+    const posCobrado = html.indexOf('Cobrado')
+    expect(posVendido).toBeGreaterThan(-1)
+    expect(posCobrado).toBeGreaterThan(posVendido)
+    expect(html).toContain('$ 148.500,00 + US$ 200,00')
   })
 })
 
