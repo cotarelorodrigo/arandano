@@ -17,18 +17,29 @@ import type { Composicion } from '@/lib/ventas/medios'
 
 const CUATRO_MEDIOS: Composicion = {
   barras: [
-    { medio: 'EFECTIVO', ars: '612400', usd: '0', total: '612400' },
-    { medio: 'TRANSFERENCIA', ars: '389700', usd: '0', total: '389700' },
-    { medio: 'TARJETA_DEBITO', ars: '182400', usd: '0', total: '182400' },
-    { medio: 'TARJETA_CREDITO', ars: '100000', usd: '0', total: '100000' },
+    { medio: 'EFECTIVO', ars: '612400', usd: '0', usdCrudo: '0', total: '612400' },
+    { medio: 'TRANSFERENCIA', ars: '389700', usd: '0', usdCrudo: '0', total: '389700' },
+    { medio: 'TARJETA_DEBITO', ars: '182400', usd: '0', usdCrudo: '0', total: '182400' },
+    { medio: 'TARJETA_CREDITO', ars: '100000', usd: '0', usdCrudo: '0', total: '100000' },
   ],
   total: '1284500',
   hayDolares: false,
 }
 
 const UN_MEDIO: Composicion = {
-  barras: [{ medio: 'EFECTIVO', ars: '90000', usd: '12000', total: '102000' }],
+  barras: [{ medio: 'EFECTIVO', ars: '90000', usd: '12000', usdCrudo: '10', total: '102000' }],
   total: '102000',
+  hayDolares: true,
+}
+
+// Hallazgo 3 de la review final: un iPhone cobrado en efectivo TODO en
+// dólares deja `ars` en cero. Antes de este fix, la línea de pesos se
+// mostraba igual ("$ 0,00") arriba de "US$ 300,00" con la barra al 100 % —
+// un cero al lado de una barra llena se lee como panel roto, no como "acá
+// no entró un peso". Ningún test cubría este caso.
+const SOLO_USD: Composicion = {
+  barras: [{ medio: 'EFECTIVO', ars: '0', usd: '445500', usdCrudo: '300', total: '445500' }],
+  total: '445500',
   hayDolares: true,
 }
 
@@ -161,8 +172,43 @@ describe('el panel de medios de pago', () => {
     expect(html).not.toContain('Transferencia')
   })
 
-  it('la nota de la cotización siempre está', () => {
+  it('muestra los dólares en su propia línea, sin convertir', () => {
     const html = renderToStaticMarkup(<GraficoDeMedios composicion={UN_MEDIO} />)
-    expect(html).toContain('Los pagos en dólares están convertidos a la cotización de cada pago.')
+    // Los pesos del medio y los dólares que entraron, cada uno con su
+    // formateador: US$ 10, no los $ 12.000 en los que se convirtieron.
+    expect(html).toContain('90.000,00')
+    // `toMatch` sobre los dos juntos, no dos `toContain` sueltos (Hallazgo 8
+    // de la review final): `toContain('US$')` y `toContain('10,00')` por
+    // separado no prueban que estén en el MISMO número — el `\s` de en medio
+    // tolera el espacio duro (NBSP, U+00A0) que `Intl` mete entre el símbolo
+    // y la cifra, que es justo lo que aflojaba la aserción anterior.
+    expect(html).toMatch(/US\$\s*10,00/)
+    expect(html).not.toContain('12.000,00')
+  })
+
+  it('sin dólares, ningún medio muestra una segunda línea', () => {
+    const html = renderToStaticMarkup(<GraficoDeMedios composicion={CUATRO_MEDIOS} />)
+    expect(html).not.toContain('US$')
+  })
+
+  // Hallazgo 3 de la review final: la línea de pesos se esconde cuando es
+  // CERO y el medio tuvo dólares (la regla simétrica a la que ya esconde la
+  // línea de dólares en cero, dos casos más arriba). Sin esto, un medio
+  // pagado enteramente en dólares mostraba "$ 0,00" como número principal,
+  // con la barra al 100 % — se leía como que el panel estaba roto.
+  it('un medio que sólo cobró en dólares no muestra "$ 0,00" como si algo hubiera entrado en pesos', () => {
+    const html = renderToStaticMarkup(<GraficoDeMedios composicion={SOLO_USD} />)
+    expect(html).not.toContain('$ 0,00')
+    expect(html).toMatch(/US\$\s*300,00/)
+    // La barra sigue existiendo y al 100 % — esconder la línea de pesos no
+    // esconde el medio ni cambia lo que mide la barra.
+    expect(html).toContain('Efectivo')
+    expect(html).toContain('100% del total')
+  })
+
+  it('la nota explica que la barra compara en pesos', () => {
+    const html = renderToStaticMarkup(<GraficoDeMedios composicion={UN_MEDIO} />)
+    expect(html).toContain('Cada moneda dice su propio número.')
+    expect(html).toContain('La barra compara todo en pesos, a la cotización de cada pago.')
   })
 })

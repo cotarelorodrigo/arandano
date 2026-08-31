@@ -17,14 +17,11 @@
 import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { Prisma } from '@/generated/prisma/client'
 import {
   rangoDeChip, chipActivo, pieDeCobradas, pieDeAnuladas, rotuloDeMedios, ventanaDePaginas, Listado, Tile,
-  totalesFormateados,
 } from './page'
 
 const HOY = '2026-08-21'
-const d = (v: string) => new Prisma.Decimal(v)
 
 describe('rangoDeChip', () => {
   it('"hoy" es un solo día', () => {
@@ -203,50 +200,68 @@ describe('la columna Total y el tile del período muestran lo cobrado', () => {
     )
   })
 
-  it('la celda Total usa totalCobrado(v), no v.total a secas', () => {
-    expect(fuente).toContain('formatearPrecio(totalCobrado(v).toString())')
-    expect(fuente).not.toContain('formatearPrecio(v.total.toString())')
-  })
-
-  it('el tile "Total del período" muestra sumaCobrada', () => {
-    const posTile = fuente.indexOf('rotulo="Total del período"')
-    const posValor = fuente.indexOf('valor={formatearPrecio(sumaCobrada.toString())}', posTile)
-    expect(posValor).toBeGreaterThan(posTile)
-  })
-
-  // Los dos call sites que van MÁS ALLÁ de lo que pedía el brief (el brief
-  // sólo nombraba la columna Total y el tile de arriba): sin este par, revertir
-  // cualquiera de los dos a la expresión vieja (`suma._sum.total` /
-  // `devueltas._sum.total` a secas) deja el resto de la suite en verde — nada
-  // más lo notaría. Mismo criterio que la celda Total: positivo + negativo,
-  // para que no alcance con que la cadena nueva aparezca en CUALQUIER lado del
-  // archivo.
-  it('el pie de "Ventas cobradas" recibe sumaCobrada, no suma._sum.total a secas', () => {
+  // El ciclo del cobrado por moneda: la celda deja de leer `total + recargo`
+  // (que ignora lo que entró en dólares) y pasa a comparar las dos magnitudes.
+  // Positivo + negativo, para que no alcance con que la cadena nueva aparezca
+  // en cualquier lado del archivo.
+  it('la celda Total compara lo vendido contra lo cobrado de los pagos', () => {
     expect(fuente).toContain(
-      'pieDeCobradas(sumaCobrada.toString(), cobradas, !sumaUsdPeriodo.isZero())',
+      'totalLineas: lineasDeImporte(vendidoDeVenta(v), cobradoDePagos(v.pagos), v.recargo),',
     )
-    expect(fuente).not.toContain("pieDeCobradas((suma._sum.total ?? '0').toString(), cobradas)")
+    expect(fuente).not.toContain('formatearPrecio(totalCobrado(v).toString())')
   })
 
-  it('el pie de "Anuladas" recibe devueltoCobrado, no devueltas._sum.total a secas', () => {
-    expect(fuente).toContain('pieDeAnuladas(devueltoCobrado.toString(), !devueltoUsd.isZero())')
-    expect(fuente).not.toContain("pieDeAnuladas((devueltas._sum.total ?? '0').toString())")
+  // Sin `monto` en el select, `cobradoDePagos` recibiría filas sin el número
+  // que suma: TypeScript lo atajaría, pero el caso deja escrito POR QUÉ esa
+  // columna está en un select que existía para la celda "Medios".
+  it('el select del listado pide el monto de cada pago', () => {
+    expect(fuente).toContain('pagos: { select: { medio: true, moneda: true, monto: true }')
   })
 
-  // La guarda de los dos pies necesita saber si el período movió dólares, y
-  // el lado de las anuladas no lo sabía: su `_sum` no pedía `totalUsd`. Sin
-  // esta columna en el agregado, `devueltoUsd` sería siempre 0 y la guarda
-  // de `pieDeAnuladas` no se dispararía nunca — verde y muda.
-  it('el agregado de anuladas pide totalUsd, que es lo que alimenta la guarda del pie', () => {
-    expect(fuente).toContain('_sum: { total: true, recargo: true, totalUsd: true }')
-    expect(fuente).toContain('const devueltoUsd = devueltas._sum.totalUsd ?? new Prisma.Decimal(0)')
+  it('el tile "Total del período" recibe las dos magnitudes del período', () => {
+    const posTile = fuente.indexOf('rotulo="Total del período"')
+    const posLineas = fuente.indexOf(
+      'lineas={lineasDeImporte(vendidoPeriodo, cobradoPeriodo, recargoPeriodo)}',
+      posTile,
+    )
+    expect(posTile).toBeGreaterThan(-1)
+    expect(posLineas).toBeGreaterThan(posTile)
+  })
+
+  // Los dos pies pasan a hablar de lo COBRADO en pesos, no de `total +
+  // recargo`: sin esto, un período que cobró $148.500 cubriendo una venta en
+  // dólares seguiría diciendo "promedio $ 0,00" o, peor, omitiendo el pie.
+  it('el pie de "Ventas cobradas" recibe el cobrado en pesos del período', () => {
+    expect(fuente).toContain(
+      'pieDeCobradas(cobradoPeriodo.ars.toString(), cobradas, !cobradoPeriodo.usd.isZero())',
+    )
+    expect(fuente).not.toContain('pieDeCobradas(sumaCobrada.toString()')
+  })
+
+  it('el pie de "Anuladas" recibe lo devuelto en pesos, de los pagos de las anuladas', () => {
+    expect(fuente).toContain(
+      'pieDeAnuladas(devueltoPeriodo.ars.toString(), !devueltoPeriodo.usd.isZero())',
+    )
+    expect(fuente).not.toContain('pieDeAnuladas(devueltoCobrado.toString()')
+  })
+
+  // La regla "una venta anulada no es plata que entró" vive ahora en DOS
+  // agregados. `pagosDelPeriodo` es la mitad nueva, y está exportada
+  // justamente para que test/ventas.test.ts la pueda correr contra la base:
+  // el `groupBy` inline del panel de medios no se puede llamar desde ningún
+  // test, que es lo que el hallazgo I3 dejó como lección.
+  it('las dos mitades del cobrado del período salen de pagosDelPeriodo', () => {
+    expect(fuente).toContain('pagosDelPeriodo(prisma, donde, false)')
+    expect(fuente).toContain('pagosDelPeriodo(prisma, donde, true)')
   })
 })
 
 // Task 11 (precio en dólares): el tile "Total del período" y la columna
 // Total muestran los dos números sin convertir. Mismo criterio de fuente que
 // el bloque de arriba — el resto lo cubren los tests de componente/función
-// de más abajo (Tile, totalesFormateados).
+// de más abajo (Tile, y el desglose Vendido/Cobrado de `describe('Listado: el
+// patrón grid + display:contents', ...)`, que reemplazó a `totalesFormateados`
+// en el ciclo del cobrado por moneda, Task 2).
 describe('el tile "Total del período" y la columna Total muestran dólares sin convertir', () => {
   const fuente = readFileSync('app/(app)/ventas/page.tsx', 'utf8')
 
@@ -258,58 +273,56 @@ describe('el tile "Total del período" y la columna Total muestran dólares sin 
     expect(fuente).toContain('anuladaEn: true, totalUsd: true,')
   })
 
-  it('el tile pasa valorUsd sólo cuando el período tiene algo en dólares', () => {
-    expect(fuente).toContain(
-      'valorUsd={sumaUsdPeriodo.isZero() ? undefined : formatearDolares(sumaUsdPeriodo.toString())}',
-    )
+  it('el tile no arma sus líneas a mano: se las pide a lineasDeImporte', () => {
+    expect(fuente).toContain('lineas={lineasDeImporte(vendidoPeriodo, cobradoPeriodo, recargoPeriodo)}')
+    expect(fuente).not.toContain('valorUsd=')
   })
 
-  it('la columna Total usa totalesFormateados(v), que no convierte nada', () => {
-    expect(fuente).toContain('totalFormateado: totalesFormateados(v),')
+  it('la columna Total no convierte nada: ninguna cotización en el armado de la fila', () => {
+    const posMap = fuente.indexOf('filas={ventas.map((v) => ({')
+    const posCierre = fuente.indexOf('anulada: v.anuladaEn !== null,', posMap)
+    expect(posMap).toBeGreaterThan(-1)
+    expect(fuente.slice(posMap, posCierre)).not.toContain('cotizacion')
   })
 })
 
-// El tile de marca ("Total del período"): sin valorUsd se ve exactamente
-// como antes (un local sin ninguna venta en dólares no puede notar este
-// ciclo), y con valorUsd aparecen las dos líneas, la de dólares debajo.
-describe('Tile: valorUsd — la segunda línea del tile de marca', () => {
-  it('sin valorUsd, el tile de marca es una sola línea de plata, sin "US$"', () => {
+// El tile de marca ("Total del período"): con una sola línea se ve
+// exactamente como antes de este ciclo —un local que no usa planes ni dólares
+// no puede notarlo—, y con dos aparecen los rótulos, Vendido arriba.
+describe('Tile: una línea o el desglose Vendido/Cobrado', () => {
+  it('con una sola línea sin rótulo, el tile de marca no dibuja ningún rótulo de línea', () => {
     const html = renderToStaticMarkup(
-      <Tile marca rotulo="Total del período" valor="$ 1.284.500,00" pie="sin contar las anuladas" />,
+      <Tile marca rotulo="Total del período" lineas={[{ valor: '$ 1.284.500,00' }]} pie="sin contar las anuladas" />,
     )
-    expect(html).not.toContain('US$')
+    expect(html).toContain('$ 1.284.500,00')
+    expect(html).not.toContain('Vendido')
+    expect(html).not.toContain('Cobrado')
   })
 
-  it('con valorUsd, aparecen las dos líneas, la de dólares DEBAJO de la de pesos', () => {
+  it('con dos líneas, Vendido va ARRIBA de Cobrado', () => {
     const html = renderToStaticMarkup(
       <Tile
-        marca rotulo="Total del período" valor="$ 178.200,00" valorUsd="US$ 300,00"
+        marca
+        rotulo="Total del período"
+        lineas={[
+          { rotulo: 'Vendido', valor: 'US$ 300,00' },
+          { rotulo: 'Cobrado', valor: '$ 148.500,00 + US$ 200,00' },
+        ]}
         pie="sin contar las anuladas"
       />,
     )
-    const posArs = html.indexOf('$ 178.200,00')
-    const posUsd = html.indexOf('US$ 300,00')
-    expect(posArs).toBeGreaterThan(-1)
-    expect(posUsd).toBeGreaterThan(posArs)
-  })
-})
-
-describe('totalesFormateados', () => {
-  it('una venta sólo en pesos: un solo número, igual que siempre', () => {
-    const texto = totalesFormateados({ total: d('100000'), recargo: d('3900'), totalUsd: d('0') })
-    expect(texto).not.toContain('US$')
-    expect(texto).not.toContain('+')
-    expect(texto).toContain('103.900,00')
+    const posVendido = html.indexOf('Vendido')
+    const posCobrado = html.indexOf('Cobrado')
+    expect(posVendido).toBeGreaterThan(-1)
+    expect(posCobrado).toBeGreaterThan(posVendido)
   })
 
-  // El escenario de R8 del brief: el iPhone de US$300 cobrado en pesos con
-  // un plan del 40 % — total=0, recargo=178.200, totalUsd=300.
-  it('una venta mixta muestra las dos monedas unidas por "+", sin convertir', () => {
-    const texto = totalesFormateados({ total: d('0'), recargo: d('178200'), totalUsd: d('300') })
-    expect(texto).toContain('178.200,00')
-    expect(texto).toContain('+')
-    expect(texto).toContain('US$')
-    expect(texto).toContain('300,00')
+  it('los tiles chicos (un conteo, sin rótulo de línea) se dibujan igual que siempre', () => {
+    const html = renderToStaticMarkup(
+      <Tile rotulo="Ventas cobradas" lineas={[{ valor: '12' }]} pie="promedio $ 1.000,00" />,
+    )
+    expect(html).toContain('12')
+    expect(html).toContain('promedio $ 1.000,00')
   })
 })
 
@@ -322,7 +335,7 @@ const FILA: Parameters<typeof Listado>[0]['filas'][number] = {
   clienteNombre: 'Consumidor final',
   itemsLabel: '3 artículos',
   mediosLabel: 'Efectivo',
-  totalFormateado: '$ 103.900,00',
+  totalLineas: [{ valor: '$ 103.900,00' }],
   anulada: false,
 }
 
@@ -347,7 +360,7 @@ function renderListado(props: Partial<Parameters<typeof Listado>[0]> = {}) {
 // escritorio (`nINsZ`/`W3w2l`, sin cambios).
 describe('Tile: el pie mobile-first de los tiles chicos', () => {
   it('el pie es 10px/1.3 en el teléfono y 11px/normal en escritorio', () => {
-    const html = renderToStaticMarkup(<Tile rotulo="Ventas cobradas" valor="44" pie="promedio $ 29.193,18" />)
+    const html = renderToStaticMarkup(<Tile rotulo="Ventas cobradas" lineas={[{ valor: '44' }]} pie="promedio $ 29.193,18" />)
     const pie = html.match(/<div class="([^"]*)">promedio \$ 29\.193,18<\/div>/)
     expect(pie, `no se encontró el <div> del pie en: ${html}`).not.toBeNull()
     const clases = pie![1]
@@ -357,7 +370,7 @@ describe('Tile: el pie mobile-first de los tiles chicos', () => {
   })
 
   it('el tile de marca ("Total del período") no cambia: su pie sigue en 11px en los dos anchos', () => {
-    const html = renderToStaticMarkup(<Tile marca rotulo="Total del período" valor="$ 1.284.500,00" pie="sin contar las anuladas" />)
+    const html = renderToStaticMarkup(<Tile marca rotulo="Total del período" lineas={[{ valor: '$ 1.284.500,00' }]} pie="sin contar las anuladas" />)
     expect(html).toMatch(/class="text-\[11px\]"[^>]*>sin contar las anuladas/)
   })
 })
@@ -370,7 +383,7 @@ describe('Listado: el patrón grid + display:contents', () => {
   it('el contenedor es la tabla ARIA: 1 columna en el teléfono, 6 en escritorio', () => {
     const html = renderListado()
     expect(html).toContain('role="table"')
-    expect(html).toMatch(/class="[^"]*\bgrid-cols-1\b[^"]*\blg:grid-cols-\[84px_110px_1fr_168px_140px_104px\]/)
+    expect(html).toMatch(/class="[^"]*\bgrid-cols-1\b[^"]*\blg:grid-cols-\[84px_110px_1fr_168px_280px_104px\]/)
   })
 
   it('el encabezado está oculto en el teléfono y se disuelve en escritorio', () => {
@@ -486,15 +499,109 @@ describe('Listado: el patrón grid + display:contents', () => {
   // ARRIBA de esa caja. Se centra con un envoltorio interno
   // (`lg:flex lg:h-full lg:items-center`), no achicando la celda
   // (`self-center` desalinearía su borde del resto de la fila — Importante
-  // 1, arriba). Las 5 celdas más cortas que "Cliente" (que siempre muestra
-  // dos líneas) llevan el envoltorio; "Cliente" no lo necesita.
+  // 1, arriba). Las 4 celdas más cortas que "Cliente" (que siempre muestra
+  // dos líneas) llevan el envoltorio; "Cliente" no lo necesita. "Total" ya
+  // no cuenta acá desde el ciclo del cobrado por moneda (Task 2): con dos
+  // renglones posibles (Vendido/Cobrado) pasa a `flex flex-col items-end
+  // lg:h-full lg:justify-center` — sigue centrando con un envoltorio interno
+  // y sin achicar la celda, pero ya no calza con este patrón horizontal.
   it('las celdas más cortas que "Cliente" centran su contenido con un envoltorio interno, no achicando la celda', () => {
     const html = renderListado()
     const envoltorios = [...html.matchAll(/class="lg:flex lg:h-full lg:items-center[^"]*"/g)]
-    expect(envoltorios, 'Número, Hora, Medios, Total y Estado: 5 celdas más cortas que Cliente').toHaveLength(5)
+    expect(envoltorios, 'Número, Hora, Medios y Estado: 4 celdas más cortas que Cliente').toHaveLength(4)
     // Ninguna celda se achica para centrarse — `self-center` desalinearía
     // el borde inferior del resto de la fila (Importante 1).
     expect(html).not.toContain('self-center')
+  })
+
+  // El ciclo del cobrado por moneda (Task 2): con un solo renglón —toda
+  // venta en pesos sin plan, la inmensa mayoría— la celda Total se ve
+  // EXACTAMENTE como antes de este ciclo, sin ningún rótulo de por medio.
+  it('con una sola línea, la celda Total no dibuja ningún rótulo', () => {
+    const html = renderListado()
+    expect(html).toContain('$ 103.900,00')
+    expect(html).not.toContain('Vendido')
+    expect(html).not.toContain('Cobrado')
+  })
+
+  // La columna Total medía 140px y el desglose no entraba: "$ 155.000,00 +
+  // US$ 200,00" se partía en dos renglones, y con el rótulo ENCIMA de cada
+  // importe la fila terminaba midiendo el doble que las demás. `Cliente` es
+  // `1fr` y se quedaba con ~1.150px vacíos al lado, así que el ancho estaba
+  // ahí para tomarlo.
+  it('en escritorio el rótulo va en LÍNEA con su importe, no encima', () => {
+    const html = renderListado({
+      filas: [{
+        ...FILA,
+        totalLineas: [
+          { rotulo: 'Vendido', valor: 'US$ 300,00' },
+          { rotulo: 'Cobrado', valor: '$ 155.000,00 + US$ 200,00' },
+        ],
+      }],
+    })
+    // `lg:flex-row` es lo que los pone en la misma línea, y `lg:ml-auto` en el
+    // importe es lo que lo empuja al borde derecho — con `justify-between` no
+    // alcanzaría: una línea SIN rótulo tiene un solo hijo y quedaría a la
+    // izquierda, que es justo el caso común de esta columna.
+    expect(html).toContain('lg:flex-row')
+    expect(html).toContain('lg:ml-auto')
+  })
+
+  it('en el teléfono el rótulo sigue APILADO sobre su importe', () => {
+    const html = renderListado({
+      filas: [{ ...FILA, totalLineas: [{ rotulo: 'Cobrado', valor: '$ 1,00' }] }],
+    })
+    // Mobile-first: el valor sin prefijo es el del teléfono. `flex-col` +
+    // `items-end` sin `lg:` es la pila alineada a la derecha de 390px, que es
+    // lo único que entra a ese ancho.
+    const celda = html.match(/class="flex flex-col items-end[^"]*"/g) ?? []
+    expect(celda.length).toBeGreaterThan(0)
+    for (const c of celda) expect(c).not.toMatch(/(^|\s)flex-row/)
+  })
+
+  it('con dos líneas, dibuja los rótulos y Vendido va ARRIBA de Cobrado', () => {
+    const html = renderListado({
+      filas: [{
+        ...FILA,
+        totalLineas: [
+          { rotulo: 'Vendido', valor: 'US$ 300,00' },
+          { rotulo: 'Cobrado', valor: '$ 148.500,00 + US$ 200,00' },
+        ],
+      }],
+    })
+    const posVendido = html.indexOf('Vendido')
+    const posCobrado = html.indexOf('Cobrado')
+    expect(posVendido).toBeGreaterThan(-1)
+    expect(posCobrado).toBeGreaterThan(posVendido)
+    expect(html).toContain('$ 148.500,00 + US$ 200,00')
+  })
+})
+
+describe('la consulta del panel de horarios', () => {
+  const fuente = readFileSync('app/(app)/ventas/page.tsx', 'utf8')
+
+  it('excluye las anuladas, como el panel de medios', () => {
+    // Una venta anulada no fue una venta a esa hora. Si esta consulta se
+    // escribiera con `donde` a secas, el panel contaría ventas que el tile de
+    // arriba ya descuenta.
+    //
+    // Se afirma con un regex tolerante al formato —`\s+` entre las dos
+    // propiedades— y no con el string literal: prettier decide dónde parte la
+    // línea, y un test que se rompa al reformatear el archivo es un test que
+    // se termina ignorando.
+    expect(fuente).toMatch(/where:\s*\{\s*\.\.\.donde,\s*anuladaEn:\s*null\s*\},\s*select:\s*\{\s*creadoEn:\s*true\s*\}/)
+  })
+
+  it('preserva la vista en los links de rango, de página y en el filtro de fechas', () => {
+    // Sin esto, tocar "7 días", pasar de página o filtrar por fecha devuelve
+    // a la vista Hora sin que nadie lo haya pedido. Tres apariciones, una por
+    // sitio: `conPagina`, `hrefRango` y el campo oculto de
+    // `FormularioDeFechas` (Hallazgo 4 de la review final — el filtro de
+    // fechas era el único de los tres caminos que todavía perdía la vista).
+    // Se cuentan las TRES y no se afirma "al menos una" — gatear una sola y
+    // dejar las otras sueltas es exactamente el modo de falla que este repo
+    // ya pagó con las dos copias de un botón.
+    expect(fuente.match(/vista !== 'hora'/g) ?? []).toHaveLength(3)
   })
 })
 

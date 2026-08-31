@@ -149,7 +149,7 @@ export function CamposDePlan({ plan, pendiente }: { plan?: FilaDePlan; pendiente
               <button>, así que esto NO funciona sin JavaScript — el diálogo
               que lo rodea tampoco, ver DialogoDePlan. */}
           <Select name="medio" defaultValue="TARJETA_CREDITO" disabled={pendiente}>
-            <SelectTrigger id="medio" className="h-10 w-full rounded-[9px]">
+            <SelectTrigger id="medio" className="h-10! w-full rounded-[9px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

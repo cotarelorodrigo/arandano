@@ -28,6 +28,7 @@ let desactivarPlan: typeof import('@/lib/planes/administrar').desactivarPlan
 // el arnés de base efímera que la puede ejercitar de verdad — page.test.tsx
 // (colocado con la pantalla) sólo prueba funciones que no tocan la base.
 let totalDelPeriodo: typeof import('@/app/(app)/ventas/page').totalDelPeriodo
+let pagosDelPeriodo: typeof import('@/app/(app)/ventas/page').pagosDelPeriodo
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -61,7 +62,7 @@ beforeAll(async () => {
   ;({ prismaParaTenant } = await import('@/lib/tenant/prisma'))
   ;({ crearArticulo } = await import('@/lib/inventario/articulos'))
   ;({ crearPlan, desactivarPlan } = await import('@/lib/planes/administrar'))
-  ;({ totalDelPeriodo } = await import('@/app/(app)/ventas/page'))
+  ;({ totalDelPeriodo, pagosDelPeriodo } = await import('@/app/(app)/ventas/page'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -1332,6 +1333,52 @@ describe('totalDelPeriodo (app/(app)/ventas/page.tsx)', () => {
   })
 })
 
+// El ciclo del cobrado por moneda: el tile "Total del período" muestra, además
+// de la mercadería, la plata que entró en cada moneda. Sale de `Pago`, no de
+// `Venta`, así que la regla "una venta anulada no es plata que entró" vuelve a
+// necesitar su propio test contra la base — es exactamente el hallazgo I3, que
+// mostró que borrar ese filtro dejaba 785 tests en verde.
+//
+// Mismo patrón de antes/después que los tres casos de arriba: el tenant es
+// compartido por todo el archivo, así que lo único estable es el DELTA.
+describe('pagosDelPeriodo (app/(app)/ventas/page.tsx)', () => {
+  const donde = { creadoEn: { gte: new Date('2000-01-01T00:00:00Z'), lt: new Date('2999-01-01T00:00:00Z') } }
+
+  const cobradoArs = (filas: { moneda: string; monto: Prisma.Decimal; _count: number }[]) =>
+    filas
+      .filter((f) => f.moneda === 'ARS')
+      .reduce((acc, f) => acc.add(f.monto.mul(f._count)), new Prisma.Decimal(0))
+
+  it('reparte los pagos a los dos lados de la anulación', async () => {
+    const prisma = prismaParaTenant(tenantId)
+
+    const cobradoAntes = cobradoArs(await pagosDelPeriodo(prisma, donde, false))
+    const devueltoAntes = cobradoArs(await pagosDelPeriodo(prisma, donde, true))
+
+    await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: servicio, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500'), cotizacion: d('1') }],
+    })
+    const { id: idAAnular } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: servicio, cantidad: d('1.4') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('700'), cotizacion: d('1') }],
+    })
+    await anularVenta({ tenantId, ventaId: idAAnular, usuarioId })
+
+    const cobradoDespues = cobradoArs(await pagosDelPeriodo(prisma, donde, false))
+    const devueltoDespues = cobradoArs(await pagosDelPeriodo(prisma, donde, true))
+
+    // El $500 quedó del lado de lo cobrado; el $700 del lado de lo devuelto.
+    // Si el filtro de anulación se cayera, el primero valdría 1200.
+    expect(cobradoDespues.minus(cobradoAntes).toString()).toBe('500')
+    expect(devueltoDespues.minus(devueltoAntes).toString()).toBe('700')
+  })
+})
+
 describe('idempotencia del cobro', () => {
   it('la misma clave dos veces crea UNA venta y descuenta el stock UNA vez', async () => {
     const antes = new Prisma.Decimal(await stockDe(remera))
@@ -1464,5 +1511,64 @@ describe('buscarArticulosVendibles', () => {
     })
     const [r] = await buscarArticulosVendibles(tenantId, 'iPhone')
     expect(r.moneda).toBe('USD')
+  })
+})
+
+// El caso literal del feedback que abrió este ciclo, de punta a punta: un
+// iPhone de lista US$ 300 cobrado con US$ 200 en billetes y el resto en pesos
+// a 1485. Antes de este ciclo /ventas lo mostraba como "una venta de US$ 300";
+// lo que tiene que decir es que se vendió US$ 300 y que entraron US$ 200 más
+// $ 148.500.
+//
+// Va contra la base y no en cobrado.test.ts a propósito: lo que se prueba acá
+// no es la aritmética —eso ya está— sino que `crearVenta` GUARDE los pagos de
+// forma que las dos magnitudes salgan bien al leerlos.
+describe('el caso del feedback: US$ 300 cobrados en dos monedas', () => {
+  it('la venta se guarda con la mercadería en dólares y los pagos en su moneda', async () => {
+    const { vendidoDeVenta, cobradoDePagos } = await import('@/lib/ventas/cobrado')
+
+    const iphone = await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, moneda, stock, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, $2, 'iPhone del feedback', 'PRODUCTO', 300, 'USD', 10, now(), now())
+       RETURNING id`,
+      [tenantId, `USD-FB-${Date.now()}`],
+    )
+
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: iphone.rows[0].id, cantidad: d('1') }],
+      pagos: [
+        // US$ 200 en billetes: la base va en dólares y cubre el total en dólares.
+        { medio: 'EFECTIVO', moneda: 'USD', cubre: 'USD', base: d('200'), cotizacion: d('1485') },
+        // Los US$ 100 restantes, pagados en PESOS a 1485: `base` sigue yendo en
+        // dólares (es lo que cubre) y el motor calcula los $ 148.500.
+        { medio: 'EFECTIVO', moneda: 'ARS', cubre: 'USD', base: d('100'), cotizacion: d('1485') },
+      ],
+    })
+
+    const venta = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.venta.findUniqueOrThrow({
+        where: { id },
+        select: {
+          total: true, totalUsd: true, recargo: true,
+          pagos: { select: { moneda: true, monto: true }, orderBy: { creadoEn: 'asc' } },
+        },
+      }),
+    )
+
+    // La mercadería no cambia: el iPhone es US$ 300 se pague como se pague.
+    const vendido = vendidoDeVenta(venta)
+    expect(vendido.ars.toString()).toBe('0')
+    expect(vendido.usd.toString()).toBe('300')
+
+    // Lo que entró al cajón, apilado por la moneda ENTREGADA.
+    const cobrado = cobradoDePagos(venta.pagos)
+    expect(cobrado.usd.toString()).toBe('200')
+    expect(cobrado.ars.toString()).toBe('148500')
+
+    // Y el defecto que este ciclo arregla, dicho como aserción: las dos
+    // magnitudes NO son la misma, así que la pantalla tiene que mostrar las dos.
+    expect(cobrado.usd.equals(vendido.usd)).toBe(false)
   })
 })

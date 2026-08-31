@@ -22,10 +22,10 @@
  * siguen como utilidades de Tailwind (`text-[14px]`, `font-semibold`,
  * `tabular-nums`), igual que ya estaban, porque varían de un uso a otro y
  * duplicarlos acá sería una segunda fuente de verdad. `.tituloDeCard` es la
- * única excepción: los cinco encabezados de card ("Qué se vendió", "Cómo se
- * pagó", "Resumen", "Últimas ventas", "Cómo entró la plata") comparten
- * tamaño y peso exactos, así que van compuestos en una sola clase — mismo
- * criterio que `.titulo` de encabezado.module.css.
+ * única excepción: los seis encabezados de card ("Qué se vendió", "Cómo se
+ * pagó", "Resumen", "Últimas ventas", "Cómo entró la plata", "Cuándo vende
+ * el local") comparten tamaño y peso exactos, así que van compuestos en una
+ * sola clase — mismo criterio que `.titulo` de encabezado.module.css.
  */
 .archivo {
   font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, TriangleAlert } from 'lucide-react'
 import { Prisma } from '@/generated/prisma/client'
+import type { Moneda } from '@/generated/prisma/client'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { puedeConSesion } from '@/lib/permisos/guarda'
@@ -12,7 +13,10 @@ import {
   formatearFecha, precioEnSuMoneda,
 } from '@/lib/formato/mostrar'
 import { ROTULO_MEDIO, CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
-import { subtotalItem, pesosEntregados, totalCobrado, baseEnDolares } from '@/lib/ventas/totales'
+import { subtotalItem, pesosEntregados, baseEnDolares } from '@/lib/ventas/totales'
+import {
+  vendidoDeVenta, cobradoDePagos, hayQueDesglosar, formatearTotales,
+} from '@/lib/ventas/cobrado'
 import { ChipEstado } from '../chip-estado'
 import { AnularVenta } from '../formularios'
 import { esUuid } from '@/lib/uuid'
@@ -66,69 +70,62 @@ export function subtituloDeItem(articulo: { sku: string; tipo: 'PRODUCTO' | 'SER
   return articulo.tipo === 'SERVICIO' ? 'Servicio' : `SKU ${articulo.sku}`
 }
 
-/** Una línea del pie de "Qué se vendió": rótulo, importe, en qué moneda se
- *  formatea (nunca se convierte de una a otra) y si es una de las que pinta
- *  la banda destacada (--marca) — antes sólo podía haber UNA (siempre la
- *  última), pero con dólares en juego puede haber DOS, una por moneda (ver
- *  `lineasDeRecargo`, abajo). */
-export type LineaDeTotal = { rotulo: string; monto: Decimal; moneda: 'ARS' | 'USD'; destacada: boolean }
+/** Una línea del pie de "Qué se vendió": el importe YA formateado —puede
+ *  llevar las dos monedas unidas por " + ", así que ya no hay una `moneda`
+ *  única que lo describa— y si es la banda destacada (--marca). */
+export type LineaDeTotal = { rotulo: string; valor: string; destacada: boolean }
 
 /**
- * Las líneas del pie de "Qué se vendió", según si la venta llevó recargo y/o
- * tiene algo en dólares.
+ * Las líneas del pie de "Qué se vendió": el desglose Vendido / Recargo /
+ * Cobrado, o `null` cuando no hay nada que desglosar y el llamador cae al
+ * renglón único "Total".
  *
- * `null` sólo cuando NO hay recargo NI dólares — toda venta grabada antes de
- * este ciclo, y la inmensa mayoría después: no hay nada que desglosar, y el
- * llamador cae al viejo renglón único "Total". `totalUsd` es opcional
- * (default cero) para no romper un llamador que sólo tenga `total`/`recargo`
- * a mano.
+ * `null` es el caso común —toda venta en pesos sin plan— y también, desde este
+ * ciclo, toda venta en dólares pagada en dólares: antes ésa mostraba dos
+ * renglones ("Total $ 0,00" más "Total en dólares US$ 300,00") y ahora muestra
+ * uno.
  *
- * **El lado de los pesos** (Mercadería/Recargo/Cobrado, o "Total" solo sin
- * recargo) no cambia con este ciclo: el recargo SIEMPRE se suma del lado de
- * los pesos (Task 3, `Pago.recargo`/`Venta.recargo` son en pesos por
- * diseño), incluso cuando el pago que lo generó cubría el total en
- * dólares — así que nunca hay un "Recargo" que desglosar en dólares.
+ * **"Vendido" y no "Mercadería"**: es la misma palabra que usan la columna
+ * Total del listado y el tile "Total del período", y una sola palabra para una
+ * sola magnitud. **"Cobrado" es lo que entró de verdad**, apilado por la moneda
+ * de cada pago (`cobradoDePagos`), no `total + recargo` — desde que un pago en
+ * pesos puede cubrir el total en dólares esas dos cosas dejaron de ser lo
+ * mismo, y ahí vivía el defecto que este ciclo arregla.
  *
- * **El lado de los dólares** es una línea más, "Total en dólares" —siempre
- * destacada, nunca desglosada en Mercadería/Recargo porque no lleva
- * recargo—, agregada DESPUÉS del lado de los pesos cuando `totalUsd !== 0`.
- * Nada se convierte entre las dos: son dos bandas independientes, mismo
- * criterio que `lineasDeTotal` en el pie de cobro de /vender
- * (punto-de-venta.tsx).
+ * **Una sola banda destacada, no dos.** Antes podía haber una por moneda,
+ * porque el lado de los dólares era un renglón aparte; ahora el renglón
+ * "Cobrado" lleva las dos monedas cuando hace falta.
  *
- * **El rótulo de la línea del recargo sigue la misma gramática que ya fijó
- * `/vender`** (Task 6, `lineasDelPieDeCobro` en punto-de-venta.tsx): la
- * palabra sale del SIGNO —"Recargo" si suma, "Descuento" si resta— y bajo
- * "Descuento" el importe va SIN el signo, porque la palabra ya dice de qué
- * lado está y un "−" al lado sería una doble negación. Esa regla no es del
- * mostrador: es de cómo se lee cualquier ticket (mercadería, lo que se le
- * suma o resta, el resultado), así que vale igual en una pantalla que se LEE
- * en vez de operarse — no hay razón para escribir una segunda gramática acá.
- * A diferencia de `/vender`, esta línea no nombra el plan (eso lo hace la
- * columna "Plan" de la tabla de pagos, de a un pago por vez): con pagos
- * partidos entre dos planes distintos, nombrar uno solo en el resumen le
- * atribuiría el recargo entero a uno de los dos.
+ * El recargo va SIEMPRE en pesos —`Pago.recargo` y `Venta.recargo` lo son por
+ * diseño, incluso cuando el pago que lo generó cubría el total en dólares—,
+ * así que nunca hay un "Recargo" que desglosar en dólares. La gramática no
+ * cambia: la palabra sale del SIGNO —"Recargo" si suma, "Descuento" si resta—
+ * y bajo "Descuento" el importe va SIN el signo, porque la palabra ya dice de
+ * qué lado está. Y no nombra el plan: con pagos partidos entre dos planes,
+ * nombrar uno le atribuiría el recargo entero a uno de los dos (eso lo dice la
+ * columna "Plan" de la tabla de pagos, de a un pago por vez).
  */
-export function lineasDeRecargo(
-  v: { total: Decimal; recargo: Decimal; totalUsd?: Decimal },
-): LineaDeTotal[] | null {
-  const totalUsd = v.totalUsd ?? new Prisma.Decimal(0)
-  const hayRecargo = !v.recargo.isZero()
-  const hayUsd = !totalUsd.isZero()
-  if (!hayRecargo && !hayUsd) return null
+export function lineasDeRecargo(v: {
+  total: Decimal
+  recargo: Decimal
+  totalUsd?: Decimal
+  pagos: { moneda: Moneda; monto: Decimal }[]
+}): LineaDeTotal[] | null {
+  const vendido = vendidoDeVenta({ total: v.total, totalUsd: v.totalUsd ?? new Prisma.Decimal(0) })
+  const cobrado = cobradoDePagos(v.pagos)
+  if (!hayQueDesglosar(vendido, cobrado, v.recargo)) return null
 
-  const lineas: LineaDeTotal[] = []
-  if (hayRecargo) {
-    const palabra = v.recargo.isNegative() ? 'Descuento' : 'Recargo'
-    lineas.push({ rotulo: 'Mercadería', monto: v.total, moneda: 'ARS', destacada: false })
-    lineas.push({ rotulo: palabra, monto: v.recargo.abs(), moneda: 'ARS', destacada: false })
-    lineas.push({ rotulo: 'Cobrado', monto: totalCobrado(v), moneda: 'ARS', destacada: true })
-  } else {
-    lineas.push({ rotulo: 'Total', monto: v.total, moneda: 'ARS', destacada: true })
+  const lineas: LineaDeTotal[] = [
+    { rotulo: 'Vendido', valor: formatearTotales(vendido), destacada: false },
+  ]
+  if (!v.recargo.isZero()) {
+    lineas.push({
+      rotulo: v.recargo.isNegative() ? 'Descuento' : 'Recargo',
+      valor: formatearTotales({ ars: v.recargo.abs(), usd: new Prisma.Decimal(0) }),
+      destacada: false,
+    })
   }
-  if (hayUsd) {
-    lineas.push({ rotulo: 'Total en dólares', monto: totalUsd, moneda: 'USD', destacada: true })
-  }
+  lineas.push({ rotulo: 'Cobrado', valor: formatearTotales(cobrado), destacada: true })
   return lineas
 }
 
@@ -381,18 +378,20 @@ export function Detalle({
   anulada: boolean
   notaDeAnulacionTexto: string | null
   items: ItemVendido[]
-  /** El renglón único de siempre. Sigue siendo la fuente del importe cuando
-   *  `lineasDeTotal` es `null`, que es toda venta sin recargo — o sea toda
-   *  venta grabada antes del ciclo de precios por forma de pago, y la
-   *  mayoría después. */
+  /** El renglón único de siempre: `formatearTotales(cobradoDePagos(venta.pagos))`
+   *  —la plata que entró, no la mercadería vendida, aunque en este caso den el
+   *  mismo número—, ya con las dos monedas si la venta las tiene. Sigue siendo
+   *  la fuente del importe cuando `lineasDeTotal` es `null` — el caso común,
+   *  que `lineasDeRecargo()` decide (ver su docblock). */
   totalFormateado: string
-  /** El desglose de líneas cuando la venta llevó recargo y/o tiene algo en
-   *  dólares (Task 8 y Task 11), ya resuelto a texto por `lineasDeRecargo()`
-   *  en el llamador. `null` —el default— deja el renglón único de
-   *  `totalFormateado`. `destacada` reemplaza el viejo criterio posicional
-   *  ("la última línea es la banda"): con dólares puede haber DOS bandas,
-   *  una por moneda, así que la última posición ya no alcanza para decidir
-   *  cuál pinta con --marca. */
+  /** El desglose Vendido / Recargo / Cobrado cuando hay algo que desglosar,
+   *  ya resuelto a texto por `lineasDeRecargo()` en el llamador. `null` —el
+   *  default— deja el renglón único de `totalFormateado`. `destacada` es por
+   *  línea y no por posición: desde el ciclo del cobrado por moneda
+   *  `lineasDeRecargo()` nunca produce más de una banda destacada —el
+   *  renglón "Cobrado" ya lleva las dos monedas cuando hace falta, así que no
+   *  hace falta una segunda banda por moneda—, pero `Detalle` sigue
+   *  aceptando varias por si hiciera falta. */
   lineasDeTotal?: { rotulo: string; montoFormateado: string; destacada: boolean }[] | null
   pagos: PagoRecibido[]
   /** Si se dibuja el botón de anular: el permiso `VENTAS_ANULAR` Y que la
@@ -523,23 +522,21 @@ export function Detalle({
               ))}
             </div>
 
-            {/* Un renglón ("Total") sin recargo ni dólares — toda venta
-                grabada antes de este ciclo, y la mayoría después —, o más
-                con `lineasDeRecargo()` (Task 8 y Task 11): Mercadería,
-                Recargo/Descuento y Cobrado del lado de los pesos, más "Total
-                en dólares" cuando corresponde. Cada línea trae su propio
-                `destacada` en vez de que la ÚLTIMA posición decida —con
-                dólares en juego puede haber DOS bandas, una por moneda, así
-                que la posición ya no alcanza (ver el docblock de
-                `lineasDeRecargo`)—: `--marca` en el teléfono
-                (design/arandano.pen, nodo `Cv4xd`), `bg-muted` de siempre en
-                escritorio — ver el docblock de `Detalle`, arriba.
-                `design/arandano.pen` no dibuja ningún desglose —es anterior
-                a los planes de pago y al precio en dólares—, y la deuda
-                queda anotada en docs/correcciones-pendientes-del-pen.md:
-                el desglose de recargo en la entrada 21, y la banda de
-                dólares (más el resto de lo que este ciclo construyó sin
-                frame) en la 23. */}
+            {/* Un renglón ("Total") sin nada que desglosar — toda venta
+                grabada antes de este ciclo, y la mayoría después —, o el
+                desglose Vendido / Recargo (o Descuento) / Cobrado que arma
+                `lineasDeRecargo()` (Task 8, y ciclo del cobrado por moneda):
+                "Vendido" es la mercadería a precio de lista y "Cobrado" es la
+                plata que entró de verdad, cada uno con las dos monedas juntas
+                cuando hace falta — ya no hay una banda "Total en dólares"
+                aparte. Cada línea trae su propio `destacada`, pero desde este
+                ciclo hay UNA sola banda destacada ("Cobrado", o "Total" en el
+                renglón único): `--marca` en el teléfono (design/arandano.pen,
+                nodo `Cv4xd`), `bg-muted` de siempre en escritorio — ver el
+                docblock de `Detalle`, arriba. `design/arandano.pen` no dibuja
+                ningún desglose —es anterior a los planes de pago y al precio
+                en dólares—, y la deuda queda anotada en
+                docs/correcciones-pendientes-del-pen.md, entradas 21 y 23. */}
             <div className="flex flex-col">
               {(lineasDeTotal ?? [{ rotulo: 'Total', montoFormateado: totalFormateado, destacada: true }]).map(
                 ({ rotulo, montoFormateado, destacada }) =>
@@ -770,9 +767,11 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
     where: { id },
     select: {
       // `recargo` para el pie de "Qué se vendió" (Task 8): `lineasDeRecargo`
-      // decide con este número si desglosa en tres líneas o deja el único
-      // "Total" de siempre. `totalUsd` (Task 11) entra por lo mismo, para la
-      // línea "Total en dólares" del mismo pie.
+      // decide con este número, junto con `total`/`totalUsd` y los pagos, si
+      // desglosa Vendido/Recargo/Cobrado o deja el único "Total" de siempre.
+      // `totalUsd` entra por lo mismo: `vendidoDeVenta()` lo necesita para esa
+      // comparación, aunque el renglón único ya no lo use — lo arma
+      // `cobradoDePagos(venta.pagos)`.
       id: true, numero: true, total: true, recargo: true, creadoEn: true, anuladaEn: true, totalUsd: true,
       usuario: { select: { nombre: true } },
       // Quién anuló, no sólo que esté anulada: `Venta.anuladaPorId` existe en
@@ -817,7 +816,10 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
   const resumen = filasDeResumen(venta)
   const anulada = venta.anuladaEn !== null
   const puedeAnularVenta = await puedeConSesion(sesion, 'VENTAS_ANULAR')
-  // null cuando la venta no llevó recargo: el pie de "Qué se vendió" cae al
+  // `null` cuando no hace falta desglosar —la regla exacta la fija
+  // `hayQueDesglosar` (lib/ventas/cobrado.ts), no "sin recargo": una venta en
+  // dólares pagada en dólares también cae en `null`, y una sin recargo pero
+  // que cruza monedas SÍ desglosa—. Ahí el pie de "Qué se vendió" cae al
   // renglón único "Total" de siempre, más abajo.
   const lineasDeTotal = lineasDeRecargo(venta)
 
@@ -871,15 +873,13 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
         anulada={anulada}
         notaDeAnulacionTexto={venta.anuladaEn ? notaDeAnulacion({ anuladaEn: venta.anuladaEn, anuladaPor: venta.anuladaPor }) : null}
         items={items}
-        totalFormateado={formatearPrecio(venta.total.toString())}
+        // `cobrado` y no `vendido`, aunque den el mismo número en este
+        // renglón único: es la plata que entró, convención de
+        // `lineasDeImporte` (lib/ventas/cobrado.ts).
+        totalFormateado={formatearTotales(cobradoDePagos(venta.pagos))}
         lineasDeTotal={
-          lineasDeTotal?.map(({ rotulo, monto, moneda, destacada }) => ({
-            rotulo,
-            // `precioEnSuMoneda` y no `formatearPrecio` a secas: la línea
-            // "Total en dólares" (Task 11) tiene que verse en dólares, no
-            // convertida a pesos.
-            montoFormateado: precioEnSuMoneda(monto.toString(), moneda),
-            destacada,
+          lineasDeTotal?.map(({ rotulo, valor, destacada }) => ({
+            rotulo, montoFormateado: valor, destacada,
           })) ?? null
         }
         pagos={pagos}

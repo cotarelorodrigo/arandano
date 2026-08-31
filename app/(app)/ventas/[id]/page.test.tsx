@@ -73,57 +73,71 @@ describe('subtituloDeItem', () => {
   })
 })
 
+const pagoArs = (monto: string) => ({ moneda: 'ARS' as const, monto: d(monto) })
+const pagoUsd = (monto: string) => ({ moneda: 'USD' as const, monto: d(monto) })
+
 describe('lineasDeRecargo', () => {
-  it('sin recargo, no hay nada que desglosar', () => {
-    // Toda venta grabada antes de este ciclo, y la mayoría después.
-    expect(lineasDeRecargo({ total: d('10000'), recargo: d('0') })).toBeNull()
+  it('null cuando no hay nada que desglosar: el renglón único "Total" de siempre', () => {
+    expect(
+      lineasDeRecargo({ total: d('50000'), recargo: d('0'), totalUsd: d('0'), pagos: [pagoArs('50000')] }),
+    ).toBeNull()
   })
 
-  it('con recargo positivo, desglosa mercadería, recargo y cobrado', () => {
-    const lineas = lineasDeRecargo({ total: d('10000'), recargo: d('2500') })
-    expect(lineas).not.toBeNull()
-    expect(lineas!.map((l) => l.rotulo)).toEqual(['Mercadería', 'Recargo', 'Cobrado'])
-    expect(lineas![0].monto.toString()).toBe('10000')
-    expect(lineas![1].monto.toString()).toBe('2500')
-    expect(lineas![2].monto.toString()).toBe('12500')
+  // Una venta en dólares pagada en dólares pasa de DOS renglones ("Total
+  // $ 0,00" + "Total en dólares US$ 300,00") a uno solo.
+  it('null también con una venta en dólares pagada en dólares', () => {
+    expect(
+      lineasDeRecargo({ total: d('0'), recargo: d('0'), totalUsd: d('300'), pagos: [pagoUsd('300')] }),
+    ).toBeNull()
   })
 
-  it('con recargo negativo, la palabra es "Descuento" y el importe va sin signo', () => {
-    // Misma gramática que ya fijó /vender (Task 6, lineasDelPieDeCobro): la
-    // palabra sale del signo, y bajo "Descuento" no se repite el "−" — la
-    // palabra ya dice de qué lado está.
-    const lineas = lineasDeRecargo({ total: d('10000'), recargo: d('-1000') })
-    expect(lineas!.map((l) => l.rotulo)).toEqual(['Mercadería', 'Descuento', 'Cobrado'])
-    expect(lineas![1].monto.toString()).toBe('1000')
-    expect(lineas![2].monto.toString()).toBe('9000')
+  it('en pesos con recargo: Vendido / Recargo / Cobrado, y la banda es Cobrado', () => {
+    const lineas = lineasDeRecargo({
+      total: d('50000'), recargo: d('20000'), totalUsd: d('0'), pagos: [pagoArs('70000')],
+    })
+    expect(lineas?.map((l) => l.rotulo)).toEqual(['Vendido', 'Recargo', 'Cobrado'])
+    expect(lineas?.map((l) => l.destacada)).toEqual([false, false, true])
+    expect(lineas?.[2].valor).toContain('70.000,00')
   })
 
-  // Task 11: con dólares y sin recargo, dos líneas destacadas — "Total" (el
-  // lado de los pesos, sin desglosar porque no hay recargo) y "Total en
-  // dólares" — sin ningún "Mercadería"/"Recargo" de por medio.
-  it('sin recargo pero con dólares, dos bandas: Total y Total en dólares', () => {
-    const lineas = lineasDeRecargo({ total: d('0'), recargo: d('0'), totalUsd: d('300') })
-    expect(lineas).not.toBeNull()
-    expect(lineas!.map((l) => l.rotulo)).toEqual(['Total', 'Total en dólares'])
-    expect(lineas!.every((l) => l.destacada)).toBe(true)
-    expect(lineas![0].moneda).toBe('ARS')
-    expect(lineas![1].moneda).toBe('USD')
-    expect(lineas![1].monto.toString()).toBe('300')
+  it('con recargo negativo la palabra es Descuento y el importe va sin signo', () => {
+    const lineas = lineasDeRecargo({
+      total: d('50000'), recargo: d('-5000'), totalUsd: d('0'), pagos: [pagoArs('45000')],
+    })
+    expect(lineas?.[1].rotulo).toBe('Descuento')
+    expect(lineas?.[1].valor).not.toContain('-')
+    expect(lineas?.[1].valor).toContain('5.000,00')
   })
 
-  // El caso completo del ciclo (R8 del brief de esta task): el iPhone de
-  // US$300 cobrado en pesos con un plan del 40 %. El recargo SIGUE yendo del
-  // lado de los pesos (Cobrado), nunca en la banda de dólares.
-  it('con recargo Y dólares: el desglose de pesos de siempre, más Total en dólares al final', () => {
-    const lineas = lineasDeRecargo({ total: d('0'), recargo: d('178200'), totalUsd: d('300') })
-    expect(lineas!.map((l) => l.rotulo)).toEqual(['Mercadería', 'Recargo', 'Cobrado', 'Total en dólares'])
-    expect(lineas!.map((l) => l.destacada)).toEqual([false, false, true, true])
-    expect(lineas![2].monto.toString()).toBe('178200') // Cobrado = 0 + 178200
-    expect(lineas![3].monto.toString()).toBe('300')
+  // El caso canónico del proyecto: el iPhone de lista US$ 300 cobrado en pesos
+  // a 1485 con un plan de 12 cuotas al 40 %. Antes de este ciclo el pie decía
+  // "Mercadería $ 0,00 / Recargo $ 178.200 / Cobrado $ 178.200 / Total en
+  // dólares US$ 300" — cuatro renglones donde el "Cobrado" no era lo cobrado.
+  it('el caso canónico: Vendido en dólares, Recargo y Cobrado en pesos', () => {
+    const lineas = lineasDeRecargo({
+      total: d('0'), recargo: d('178200'), totalUsd: d('300'), pagos: [pagoArs('623700')],
+    })
+    expect(lineas?.map((l) => l.rotulo)).toEqual(['Vendido', 'Recargo', 'Cobrado'])
+    expect(lineas?.[0].valor).toContain('US$')
+    expect(lineas?.[0].valor).toContain('300,00')
+    expect(lineas?.[1].valor).toContain('178.200,00')
+    expect(lineas?.[2].valor).toContain('623.700,00')
+    // Una sola banda, no dos: el renglón "Cobrado" ya lleva las dos monedas
+    // cuando hace falta, así que no hay una segunda banda por moneda.
+    expect(lineas?.filter((l) => l.destacada)).toHaveLength(1)
   })
 
-  it('sin recargo y sin dólares (totalUsd en 0 explícito), sigue sin nada que desglosar', () => {
-    expect(lineasDeRecargo({ total: d('10000'), recargo: d('0'), totalUsd: d('0') })).toBeNull()
+  // El caso del feedback: US$ 300 cobrados US$ 200 en billetes + el resto en
+  // pesos. Sin recargo, pero las dos magnitudes difieren.
+  it('el caso del feedback: sin recargo, pero Vendido y Cobrado difieren', () => {
+    const lineas = lineasDeRecargo({
+      total: d('0'), recargo: d('0'), totalUsd: d('300'),
+      pagos: [pagoUsd('200'), pagoArs('148500')],
+    })
+    expect(lineas?.map((l) => l.rotulo)).toEqual(['Vendido', 'Cobrado'])
+    expect(lineas?.[0].valor).toContain('300,00')
+    expect(lineas?.[1].valor).toContain('148.500,00')
+    expect(lineas?.[1].valor).toContain('US$')
   })
 })
 
@@ -435,20 +449,21 @@ describe('Detalle: "Qué se vendió" — el patrón grid + display:contents', ()
     expect(html).toContain('$ 94.000,00')
   })
 
-  // Task 11: con dólares, DOS bandas destacadas — no una banda seguida de
-  // filas planas, sino dos bandas iguales, una por moneda (docblock de
-  // `lineasDeRecargo`, en page.tsx).
-  it('con totalUsd, hay DOS bandas destacadas: una en pesos y otra en dólares', () => {
+  // El renglón "Cobrado" lleva las dos monedas cuando hace falta, así que
+  // desde el ciclo del cobrado por moneda hay UNA sola banda destacada y no
+  // una por moneda. `Detalle` sigue soportando varias —el `destacada` es por
+  // línea— pero `lineasDeRecargo` ya no genera dos.
+  it('con las dos monedas, UNA sola banda destacada y las dos en el mismo renglón', () => {
     const html = renderDetalle({
       lineasDeTotal: [
-        { rotulo: 'Total', montoFormateado: '$ 0,00', destacada: true },
-        { rotulo: 'Total en dólares', montoFormateado: 'US$ 300,00', destacada: true },
+        { rotulo: 'Vendido', montoFormateado: 'US$ 300,00', destacada: false },
+        { rotulo: 'Cobrado', montoFormateado: '$ 148.500,00 + US$ 200,00', destacada: true },
       ],
     })
     const bandas = html.match(/class="flex items-center justify-between bg-\[var\(--marca\)\][^"]*lg:bg-muted[^"]*"/g) ?? []
-    expect(bandas).toHaveLength(2)
-    expect(html).toContain('US$ 300,00')
-    expect(html).toContain('>Total en dólares<')
+    expect(bandas).toHaveLength(1)
+    expect(html).toContain('$ 148.500,00 + US$ 200,00')
+    expect(html).toContain('>Vendido<')
   })
 })
 
@@ -614,6 +629,12 @@ describe('la pantalla pide y usa el recargo y el plan de cada pago', () => {
 
   it('el pie de "Qué se vendió" usa lineasDeRecargo(), no venta.total a secas', () => {
     expect(fuente).toContain('const lineasDeTotal = lineasDeRecargo(venta)')
+  })
+
+  it('el renglón único usa cobradoDePagos, no vendidoDeVenta: es la plata que entró', () => {
+    expect(fuente).toContain('totalFormateado={formatearTotales(cobradoDePagos(venta.pagos))}')
+    expect(fuente).not.toContain('totalFormateado={formatearPrecio(venta.total.toString())}')
+    expect(fuente).not.toContain('totalFormateado={formatearTotales(vendidoDeVenta(venta))}')
   })
 
   it('la tabla "Cómo se pagó" tiene una columna Plan', () => {
