@@ -71,6 +71,26 @@ describe('agregarPorTiempo · vista hora', () => {
     expect(pie).toBe('El pico es a las 10 h, con 1 venta.')
   })
 
+  // Hallazgo 10 de la review final: el spec pide, literal, que la franja NO
+  // envuelva la medianoche — un local que vende a las 23 y a la 1 de la
+  // madrugada siguiente tiene que ver 23 barras (de 1 a 23), no una
+  // "envolvente" de a lo sumo 3 (23, 0, 1) que trataría esas dos horas como
+  // cercanas. No se arregla nada acá: se FIJA por escrito el comportamiento
+  // ya implementado (el mín/máx de índices es lineal, no circular), para que
+  // un refactor futuro no lo cambie en silencio creyendo que "envolver"
+  // sería una mejora.
+  it('una venta a las 23 y otra a la 1 no envuelven la medianoche: la franja va de 1 a 23, no de 23 a 1 pasando por 0', () => {
+    const { barras } = agregarPorTiempo(
+      [utc('2026-08-22T02:00:00Z'), utc('2026-08-22T04:00:00Z')], // 23 h y 1 h en Buenos Aires
+      'hora',
+    )
+    expect(barras).toHaveLength(23)
+    expect(barras[0].clave).toBe('1')
+    expect(barras[barras.length - 1].clave).toBe('23')
+    const conVentas = barras.filter((b) => b.ventas > 0).map((b) => b.clave)
+    expect(conVentas).toEqual(['1', '23'])
+  })
+
   it('la medianoche se formatea como 0 y no como 24', () => {
     // Si alguien cambia hourCycle: 'h23' a 'h24' (un typo plausible: ambos son
     // valores válidos), la medianoche devuelve "24" en lugar de "00", y el panel

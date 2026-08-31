@@ -88,4 +88,22 @@ describe('GraficoDeHorarios', () => {
     // Horas 16 y 17 tienen altura cero, así que debe haber al menos 2
     expect(coincidencias).toBeGreaterThanOrEqual(2)
   })
+
+  // Hallazgo 10 de la review final: `maximo > 0 ? … : 0` (la guarda contra
+  // dividir por cero cuando NINGUNA barra tuvo ventas) no la ejercitaba
+  // ningún test a nivel de COMPONENTE — sólo el caso vacío de
+  // `lib/ventas/horarios.test.ts`, que prueba `agregarPorTiempo` sola y
+  // nunca llega a renderizar `GraficoDeHorarios` con ese resultado.
+  it('un período sin ventas no divide por cero: 12 barras en cero, sin pico', () => {
+    const vacio = agregarPorTiempo([], 'hora')
+    const html = renderToStaticMarkup(
+      <GraficoDeHorarios horarios={vacio} vista="hora" href={href} />,
+    )
+    expect(html).toContain('Todavía no hubo ventas en este período.')
+    const barras = barrasDe(html)
+    // 9 a 20: la franja que dibuja la maqueta cuando el período no tuvo una
+    // sola venta (agregarPorTiempo, HORA_DESDE_VACIO/HORA_HASTA_VACIO).
+    expect(barras).toHaveLength(12)
+    expect(barras.every((b) => b.alto === 0 && b.clase === 'bg-accent')).toBe(true)
+  })
 })

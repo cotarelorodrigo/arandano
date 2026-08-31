@@ -63,8 +63,22 @@ export function GraficoDeHorarios({
       <div className="flex flex-col gap-3 p-[14px] lg:gap-[14px] lg:p-[18px]">
         {/* items-end y no h-full en cada columna: la fila mide alto fijo y
             cada columna ocupa el alto natural de su barra más su rótulo,
-            alineada al piso, así todas comparten la misma línea de base. */}
-        <div className="flex items-end gap-[6px]" style={{ height: ALTURA_FILA }}>
+            alineada al piso, así todas comparten la misma línea de base.
+            `overflow-x-auto` (Hallazgo 5 de la review final): un ítem
+            `flex-1` no baja de su `min-width: auto`, o sea el ancho de su
+            rótulo (~11 px para "23"), así que el ancho que N columnas
+            necesitan de verdad es `17N − 6` (11 px de rótulo por columna más
+            6 px de gap entre cada par, N−1 veces). A 390 px de viewport
+            quedan ~334 px útiles adentro de esta card, así que entran hasta
+            ~20 barras sin problema; con 21 o más —un local nocturno que
+            vende a las 23 y a la 1 produce 23 barras (ver
+            lib/ventas/horarios.test.ts)— la fila excedía el ancho de la card
+            y el `overflow-hidden` del `<section>` recortaba las últimas
+            horas SIN scroll y SIN aviso. Puesto acá, en la fila, y no en la
+            card entera, deja que el teléfono la scrollee en vez de perder
+            datos; en escritorio la card ocupa todo el ancho de la pantalla y
+            este caso no aparece, así que no hay scrollbar que mostrar. */}
+        <div className="flex items-end gap-[6px] overflow-x-auto" style={{ height: ALTURA_FILA }}>
           {horarios.barras.map((b) => (
             <div key={b.clave} className="flex flex-1 flex-col items-center gap-2">
               <div
