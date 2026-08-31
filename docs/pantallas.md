@@ -523,14 +523,17 @@ El historial por período.
 - Filtrar por rango de fechas a mano, o con los accesos rápidos **Hoy / 7 días
   / Este mes**. El default es hoy.
 - Ver tres tiles: total del período (el ancla de `--marca` de esta pantalla,
-  ver `docs/sistema-de-diseno.md`), ventas cobradas con su promedio, y
-  anuladas con lo devuelto. **Los dos pies de plata desaparecen cuando su
-  cifra en pesos es cero y el período movió dólares** — ver *Decisiones*.
+  ver `docs/sistema-de-diseno.md`) —que muestra **Vendido y Cobrado cuando
+  difieren, y un número solo cuando coinciden**—, ventas cobradas con su
+  promedio, y anuladas con lo devuelto. **Los dos pies de plata hablan de lo
+  cobrado EN PESOS, y desaparecen cuando esa cifra es cero y el período
+  movió dólares** — ver *Decisiones*.
 - Ver el listado dentro de su propia card ("Últimas ventas"), con la columna
   "Cliente" (quién compró, no quién vendió — eso vive en el detalle), cuántos
-  artículos, con qué medios se pagó, el **total cobrado** y su estado.
-  **Con algo en dólares, la columna Total suma un segundo número** ("$
-  178.200,00 + US$ 300,00"), sin convertir nada.
+  artículos, con qué medios se pagó, el **total** y su estado. **La columna
+  Total muestra el mismo par que el tile de arriba**: Vendido y Cobrado
+  cuando difieren ("Vendido US$ 300,00 / Cobrado $ 148.500,00 + US$
+  200,00"), un número solo cuando coinciden — sin convertir nada.
 - Ver **"Cómo entró la plata"**: una barra por medio de pago, de un solo color,
   con **un importe por moneda** en el rótulo — los pesos arriba y, sólo si ese
   medio recibió dólares, los dólares abajo, sin convertir. La barra y el
@@ -551,24 +554,32 @@ El historial por período.
 
 **Decisiones**
 
-- **La columna Total, el tile "Total del período", el promedio de "Ventas
-  cobradas" y lo devuelto de "Anuladas" muestran lo COBRADO (`total +
-  recargo`), no la mercadería** (ciclo de precios por forma de pago, Task 8).
-  `Venta.total` no cambió de significado —sigue siendo el precio de lista— y
-  `Venta.recargo` es un CACHÉ aparte (la suma de los recargos de sus pagos,
-  mismo criterio que `Articulo.stock` contra sus movimientos): esta pantalla
-  contesta "cuánta plata entró", así que las cuatro cifras de plata tienen que
-  sumar los dos campos. La suma vive en una sola función,
-  `totalCobrado()` (`lib/ventas/totales.ts`), para que ninguna de las cuatro
-  pueda desacordar con las otras tres — o con la columna Total de
-  `/ventas/[id]`, que usa la misma función. El panel "Cómo entró la plata"
-  suma `Pago.monto`, que ya era `base + recargo` desde que el motor cobra con
-  plan — antes de ese ciclo era éste, y no el tile, el que decía la verdad;
-  ver el comentario del `groupBy` en `page.tsx` para el detalle. **En el ciclo
-  del precio en dólares el panel sí se tocó**, por un bug propio: multiplicaba
-  siempre por la cotización, así que un pago en pesos con cotización distinta
-  de 1 —que ahora existe— entraba inflado. Ahora pasa por `pesosEntregados()`,
-  que mira la moneda antes de multiplicar.
+- **La columna Total, el tile "Total del período" y los dos pies de plata
+  distinguen VENDIDO de COBRADO, y ninguno de los dos se convierte al otro**
+  (ciclo del cobrado por moneda). **Vendido** es `Venta.total` +
+  `Venta.totalUsd` — la mercadería a precio de lista, en sus dos monedas, sin
+  recargo. **Cobrado** es `Σ Pago.monto`, apilado por **`Pago.moneda` y
+  NUNCA por `Pago.cubre`**: un pago en pesos que cubre el total en dólares es
+  plata que entró EN PESOS, y apilar por `cubre` reproduciría el defecto que
+  este ciclo corrige — una venta de US$ 300 cobrada US$ 200 + pesos volvería
+  a decir "US$ 300" cobrados. Las dos magnitudes se combinan con
+  `lineasDeImporte()` (`lib/ventas/cobrado.ts`), la única fuente de las dos
+  líneas en las tres pantallas (columna, tile y `/ventas/[id]`), y **se
+  muestran dos líneas —"Vendido" arriba, "Cobrado" abajo— sólo cuando
+  difieren; un número solo cuando coinciden**. Sin dólares ni planes de pago
+  coinciden POR CONSTRUCCIÓN (`Σ Pago.monto = total + recargo`), así que un
+  local que no usa ninguna de las dos cosas no ve ninguna diferencia respecto
+  de antes de este ciclo. Y **la costura con "Cómo entró la plata" se
+  angosta pero no desaparece**: el tile no convierte nada y el panel sí
+  —multiplica cada pago por su `Pago.cotizacion`, porque una barra por medio
+  que mezclara unidades no se podría comparar contra la de al lado—, así que
+  los dos pueden seguir mostrando números distintos ante un pago realmente en
+  dólares (no uno que sólo cubre un total en dólares con pesos). Antes de
+  este ciclo, las cuatro cifras sumaban `total + recargo` con `totalCobrado()`
+  (`lib/ventas/totales.ts`) y el tile llevaba `totalUsd` a una segunda línea
+  aparte; esta pantalla dejó de llamar a esa función porque dejó de describir
+  lo que muestra — sigue viva, todavía, en el pie de `/ventas/[id]` (su
+  propio ciclo).
 - **El total NO suma las anuladas**, y lo dice en pantalla para que nadie tenga
   que deducirlo. Lo devuelto de las anuladas es un agregado APARTE, no el
   mismo número con el filtro invertido.
@@ -576,43 +587,19 @@ El historial por período.
   y esconderlas sería tapar la respuesta. Van con un chip (`ChipEstado`,
   compartido con el panel Resumen del detalle), no con texto suelto: quien no
   distingue el rojo igual ve que la fila está marcada.
-- **El tile "Total del período" muestra una segunda línea, en dólares, sólo si
-  el período movió algo en dólares** (Task 11): un local sin ninguna venta en
-  dólares ve el tile exactamente igual que antes de este ciclo. Las dos líneas
-  NO se suman entre sí — son dos totales independientes, uno por moneda, sin
-  ninguna conversión. Sale de `totalDelPeriodo()` sumando `totalUsd` aparte de
-  `total`/`recargo`.
-  **El número de la línea de pesos puede sorprender**: con `totalUsd ≠ 0`,
-  `totalCobrado()` deja de ser "todo lo que entró" — un iPhone de US$300
-  cobrado en pesos con un plan del 40 % muestra $178.200 en esa línea, aunque
-  al cajón hayan entrado $623.700 (los pesos que cubrieron los dólares están
-  del lado de la línea de dólares, no convertidos). No es un bug: ver el
-  docblock de `totalCobrado()` en `lib/ventas/totales.ts` para el porqué
-  completo.
-- **Costura conocida: el tile y "Cómo entró la plata" NO cierran entre sí, y
-  están a diez centímetros uno del otro.** Con la misma venta del párrafo de
-  arriba, el tile dice `$ 178.200,00` + `US$ 300,00` y el panel dice `Crédito
-  $ 623.700,00 · 100 % del total`. Los dos números son correctos y contestan
-  preguntas distintas: **sólo el panel convierte**. Multiplica cada pago por
-  su `Pago.cotizacion` porque una barra por medio que mezclara unidades no se
-  podría comparar contra la de al lado; el tile no convierte nada, porque el
-  spec del ciclo fija que `/ventas` no convierte. El puente es exacto
-  (445.500 pesos de base convertida + 178.200 de recargo = 623.700), pero
-  ponerlo en el tile sería justamente la conversión que el spec prohíbe. Si
-  algún día el tile tiene que mostrar los pesos entregados, es una decisión
-  de producto y su propio ciclo — no una corrección de éste.
-- **Los pies de "Ventas cobradas" y "Anuladas" se omiten cuando su cifra en
-  pesos es cero y el período movió dólares.** Los dos se calculan sobre
-  `total + recargo`, que es plata en pesos: para el local que carga todo su
-  catálogo en dólares —el que pidió esta feature— eso es cero en todas sus
-  ventas, y el resultado era `promedio $ 0,00` y `$ 0,00 devueltos` al lado
-  de un tile que decía `US$ 3.000,00`. **Un tile sin pie omite; un
-  `promedio $ 0,00` afirma**, y ahí afirma algo falso. Se eligió omitir y no
-  sumarles una segunda línea en dólares como al tile de marca: el promedio en
-  dólares sería `sumaUsd / cobradas`, y en un período mixto ese denominador
-  incluye ventas que no movieron un dólar — un cuarto número derivado, en
-  10 px, debajo de un conteo. Con cero en pesos y ningún dólar, el pie sigue
-  apareciendo: ahí el cero es cierto.
+- **Los pies de "Ventas cobradas" y "Anuladas" se omiten cuando lo cobrado (o
+  lo devuelto) en pesos es cero y el período movió dólares.** Los dos se
+  calculan sobre `Σ Pago.monto` de los pagos en pesos —vía `pagosDelPeriodo()`,
+  no sobre `total + recargo`—: para el local que carga todo su catálogo en
+  dólares y cobra en dólares —el que pidió esta feature—, eso es cero, y el
+  resultado era `promedio $ 0,00` y `$ 0,00 devueltos` al lado de un tile que
+  decía `US$ 3.000,00`. **Un tile sin pie omite; un `promedio $ 0,00`
+  afirma**, y ahí afirma algo falso. Se eligió omitir y no sumarles una
+  segunda línea en dólares como al tile de marca: el promedio en dólares sería
+  `sumaUsd / cobradas`, y en un período mixto ese denominador incluye ventas
+  que no movieron un dólar — un cuarto número derivado, en 10 px, debajo de un
+  conteo. Con cero en pesos y ningún dólar, el pie sigue apareciendo: ahí el
+  cero es cierto.
 - Los tiles cuelgan del **período**, no de la página: colgados de la página, un
   `?p=5` los hacía desaparecer.
 - **La columna "Medios" de un pago partido** lista los medios distintos

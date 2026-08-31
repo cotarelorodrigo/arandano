@@ -28,6 +28,7 @@ let desactivarPlan: typeof import('@/lib/planes/administrar').desactivarPlan
 // el arnés de base efímera que la puede ejercitar de verdad — page.test.tsx
 // (colocado con la pantalla) sólo prueba funciones que no tocan la base.
 let totalDelPeriodo: typeof import('@/app/(app)/ventas/page').totalDelPeriodo
+let pagosDelPeriodo: typeof import('@/app/(app)/ventas/page').pagosDelPeriodo
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -61,7 +62,7 @@ beforeAll(async () => {
   ;({ prismaParaTenant } = await import('@/lib/tenant/prisma'))
   ;({ crearArticulo } = await import('@/lib/inventario/articulos'))
   ;({ crearPlan, desactivarPlan } = await import('@/lib/planes/administrar'))
-  ;({ totalDelPeriodo } = await import('@/app/(app)/ventas/page'))
+  ;({ totalDelPeriodo, pagosDelPeriodo } = await import('@/app/(app)/ventas/page'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -1329,6 +1330,52 @@ describe('totalDelPeriodo (app/(app)/ventas/page.tsx)', () => {
     const sumaDespues = new Prisma.Decimal(despues._sum.totalUsd ?? 0)
 
     expect(sumaDespues.minus(sumaAntes).toString()).toBe('300')
+  })
+})
+
+// El ciclo del cobrado por moneda: el tile "Total del período" muestra, además
+// de la mercadería, la plata que entró en cada moneda. Sale de `Pago`, no de
+// `Venta`, así que la regla "una venta anulada no es plata que entró" vuelve a
+// necesitar su propio test contra la base — es exactamente el hallazgo I3, que
+// mostró que borrar ese filtro dejaba 785 tests en verde.
+//
+// Mismo patrón de antes/después que los tres casos de arriba: el tenant es
+// compartido por todo el archivo, así que lo único estable es el DELTA.
+describe('pagosDelPeriodo (app/(app)/ventas/page.tsx)', () => {
+  const donde = { creadoEn: { gte: new Date('2000-01-01T00:00:00Z'), lt: new Date('2999-01-01T00:00:00Z') } }
+
+  const cobradoArs = (filas: { moneda: string; monto: Prisma.Decimal; _count: number }[]) =>
+    filas
+      .filter((f) => f.moneda === 'ARS')
+      .reduce((acc, f) => acc.add(f.monto.mul(f._count)), new Prisma.Decimal(0))
+
+  it('reparte los pagos a los dos lados de la anulación', async () => {
+    const prisma = prismaParaTenant(tenantId)
+
+    const cobradoAntes = cobradoArs(await pagosDelPeriodo(prisma, donde, false))
+    const devueltoAntes = cobradoArs(await pagosDelPeriodo(prisma, donde, true))
+
+    await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: servicio, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500'), cotizacion: d('1') }],
+    })
+    const { id: idAAnular } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: servicio, cantidad: d('1.4') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('700'), cotizacion: d('1') }],
+    })
+    await anularVenta({ tenantId, ventaId: idAAnular, usuarioId })
+
+    const cobradoDespues = cobradoArs(await pagosDelPeriodo(prisma, donde, false))
+    const devueltoDespues = cobradoArs(await pagosDelPeriodo(prisma, donde, true))
+
+    // El $500 quedó del lado de lo cobrado; el $700 del lado de lo devuelto.
+    // Si el filtro de anulación se cayera, el primero valdría 1200.
+    expect(cobradoDespues.minus(cobradoAntes).toString()).toBe('500')
+    expect(devueltoDespues.minus(devueltoAntes).toString()).toBe('700')
   })
 })
 

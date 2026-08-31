@@ -17,13 +17,11 @@
 import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { Prisma } from '@/generated/prisma/client'
 import {
   rangoDeChip, chipActivo, pieDeCobradas, pieDeAnuladas, rotuloDeMedios, ventanaDePaginas, Listado, Tile,
 } from './page'
 
 const HOY = '2026-08-21'
-const d = (v: string) => new Prisma.Decimal(v)
 
 describe('rangoDeChip', () => {
   it('"hoy" es un solo día', () => {
@@ -220,38 +218,41 @@ describe('la columna Total y el tile del período muestran lo cobrado', () => {
     expect(fuente).toContain('pagos: { select: { medio: true, moneda: true, monto: true }')
   })
 
-  it('el tile "Total del período" muestra sumaCobrada', () => {
+  it('el tile "Total del período" recibe las dos magnitudes del período', () => {
     const posTile = fuente.indexOf('rotulo="Total del período"')
-    const posValor = fuente.indexOf('valor={formatearPrecio(sumaCobrada.toString())}', posTile)
-    expect(posValor).toBeGreaterThan(posTile)
-  })
-
-  // Los dos call sites que van MÁS ALLÁ de lo que pedía el brief (el brief
-  // sólo nombraba la columna Total y el tile de arriba): sin este par, revertir
-  // cualquiera de los dos a la expresión vieja (`suma._sum.total` /
-  // `devueltas._sum.total` a secas) deja el resto de la suite en verde — nada
-  // más lo notaría. Mismo criterio que la celda Total: positivo + negativo,
-  // para que no alcance con que la cadena nueva aparezca en CUALQUIER lado del
-  // archivo.
-  it('el pie de "Ventas cobradas" recibe sumaCobrada, no suma._sum.total a secas', () => {
-    expect(fuente).toContain(
-      'pieDeCobradas(sumaCobrada.toString(), cobradas, !sumaUsdPeriodo.isZero())',
+    const posLineas = fuente.indexOf(
+      'lineas={lineasDeImporte(vendidoPeriodo, cobradoPeriodo, recargoPeriodo)}',
+      posTile,
     )
-    expect(fuente).not.toContain("pieDeCobradas((suma._sum.total ?? '0').toString(), cobradas)")
+    expect(posTile).toBeGreaterThan(-1)
+    expect(posLineas).toBeGreaterThan(posTile)
   })
 
-  it('el pie de "Anuladas" recibe devueltoCobrado, no devueltas._sum.total a secas', () => {
-    expect(fuente).toContain('pieDeAnuladas(devueltoCobrado.toString(), !devueltoUsd.isZero())')
-    expect(fuente).not.toContain("pieDeAnuladas((devueltas._sum.total ?? '0').toString())")
+  // Los dos pies pasan a hablar de lo COBRADO en pesos, no de `total +
+  // recargo`: sin esto, un período que cobró $148.500 cubriendo una venta en
+  // dólares seguiría diciendo "promedio $ 0,00" o, peor, omitiendo el pie.
+  it('el pie de "Ventas cobradas" recibe el cobrado en pesos del período', () => {
+    expect(fuente).toContain(
+      'pieDeCobradas(cobradoPeriodo.ars.toString(), cobradas, !cobradoPeriodo.usd.isZero())',
+    )
+    expect(fuente).not.toContain('pieDeCobradas(sumaCobrada.toString()')
   })
 
-  // La guarda de los dos pies necesita saber si el período movió dólares, y
-  // el lado de las anuladas no lo sabía: su `_sum` no pedía `totalUsd`. Sin
-  // esta columna en el agregado, `devueltoUsd` sería siempre 0 y la guarda
-  // de `pieDeAnuladas` no se dispararía nunca — verde y muda.
-  it('el agregado de anuladas pide totalUsd, que es lo que alimenta la guarda del pie', () => {
-    expect(fuente).toContain('_sum: { total: true, recargo: true, totalUsd: true }')
-    expect(fuente).toContain('const devueltoUsd = devueltas._sum.totalUsd ?? new Prisma.Decimal(0)')
+  it('el pie de "Anuladas" recibe lo devuelto en pesos, de los pagos de las anuladas', () => {
+    expect(fuente).toContain(
+      'pieDeAnuladas(devueltoPeriodo.ars.toString(), !devueltoPeriodo.usd.isZero())',
+    )
+    expect(fuente).not.toContain('pieDeAnuladas(devueltoCobrado.toString()')
+  })
+
+  // La regla "una venta anulada no es plata que entró" vive ahora en DOS
+  // agregados. `pagosDelPeriodo` es la mitad nueva, y está exportada
+  // justamente para que test/ventas.test.ts la pueda correr contra la base:
+  // el `groupBy` inline del panel de medios no se puede llamar desde ningún
+  // test, que es lo que el hallazgo I3 dejó como lección.
+  it('las dos mitades del cobrado del período salen de pagosDelPeriodo', () => {
+    expect(fuente).toContain('pagosDelPeriodo(prisma, donde, false)')
+    expect(fuente).toContain('pagosDelPeriodo(prisma, donde, true)')
   })
 })
 
@@ -272,10 +273,9 @@ describe('el tile "Total del período" y la columna Total muestran dólares sin 
     expect(fuente).toContain('anuladaEn: true, totalUsd: true,')
   })
 
-  it('el tile pasa valorUsd sólo cuando el período tiene algo en dólares', () => {
-    expect(fuente).toContain(
-      'valorUsd={sumaUsdPeriodo.isZero() ? undefined : formatearDolares(sumaUsdPeriodo.toString())}',
-    )
+  it('el tile no arma sus líneas a mano: se las pide a lineasDeImporte', () => {
+    expect(fuente).toContain('lineas={lineasDeImporte(vendidoPeriodo, cobradoPeriodo, recargoPeriodo)}')
+    expect(fuente).not.toContain('valorUsd=')
   })
 
   it('la columna Total no convierte nada: ninguna cotización en el armado de la fila', () => {
@@ -286,28 +286,43 @@ describe('el tile "Total del período" y la columna Total muestran dólares sin 
   })
 })
 
-// El tile de marca ("Total del período"): sin valorUsd se ve exactamente
-// como antes (un local sin ninguna venta en dólares no puede notar este
-// ciclo), y con valorUsd aparecen las dos líneas, la de dólares debajo.
-describe('Tile: valorUsd — la segunda línea del tile de marca', () => {
-  it('sin valorUsd, el tile de marca es una sola línea de plata, sin "US$"', () => {
+// El tile de marca ("Total del período"): con una sola línea se ve
+// exactamente como antes de este ciclo —un local que no usa planes ni dólares
+// no puede notarlo—, y con dos aparecen los rótulos, Vendido arriba.
+describe('Tile: una línea o el desglose Vendido/Cobrado', () => {
+  it('con una sola línea sin rótulo, el tile de marca no dibuja ningún rótulo de línea', () => {
     const html = renderToStaticMarkup(
-      <Tile marca rotulo="Total del período" valor="$ 1.284.500,00" pie="sin contar las anuladas" />,
+      <Tile marca rotulo="Total del período" lineas={[{ valor: '$ 1.284.500,00' }]} pie="sin contar las anuladas" />,
     )
-    expect(html).not.toContain('US$')
+    expect(html).toContain('$ 1.284.500,00')
+    expect(html).not.toContain('Vendido')
+    expect(html).not.toContain('Cobrado')
   })
 
-  it('con valorUsd, aparecen las dos líneas, la de dólares DEBAJO de la de pesos', () => {
+  it('con dos líneas, Vendido va ARRIBA de Cobrado', () => {
     const html = renderToStaticMarkup(
       <Tile
-        marca rotulo="Total del período" valor="$ 178.200,00" valorUsd="US$ 300,00"
+        marca
+        rotulo="Total del período"
+        lineas={[
+          { rotulo: 'Vendido', valor: 'US$ 300,00' },
+          { rotulo: 'Cobrado', valor: '$ 148.500,00 + US$ 200,00' },
+        ]}
         pie="sin contar las anuladas"
       />,
     )
-    const posArs = html.indexOf('$ 178.200,00')
-    const posUsd = html.indexOf('US$ 300,00')
-    expect(posArs).toBeGreaterThan(-1)
-    expect(posUsd).toBeGreaterThan(posArs)
+    const posVendido = html.indexOf('Vendido')
+    const posCobrado = html.indexOf('Cobrado')
+    expect(posVendido).toBeGreaterThan(-1)
+    expect(posCobrado).toBeGreaterThan(posVendido)
+  })
+
+  it('los tiles chicos (un conteo, sin rótulo de línea) se dibujan igual que siempre', () => {
+    const html = renderToStaticMarkup(
+      <Tile rotulo="Ventas cobradas" lineas={[{ valor: '12' }]} pie="promedio $ 1.000,00" />,
+    )
+    expect(html).toContain('12')
+    expect(html).toContain('promedio $ 1.000,00')
   })
 })
 
@@ -345,7 +360,7 @@ function renderListado(props: Partial<Parameters<typeof Listado>[0]> = {}) {
 // escritorio (`nINsZ`/`W3w2l`, sin cambios).
 describe('Tile: el pie mobile-first de los tiles chicos', () => {
   it('el pie es 10px/1.3 en el teléfono y 11px/normal en escritorio', () => {
-    const html = renderToStaticMarkup(<Tile rotulo="Ventas cobradas" valor="44" pie="promedio $ 29.193,18" />)
+    const html = renderToStaticMarkup(<Tile rotulo="Ventas cobradas" lineas={[{ valor: '44' }]} pie="promedio $ 29.193,18" />)
     const pie = html.match(/<div class="([^"]*)">promedio \$ 29\.193,18<\/div>/)
     expect(pie, `no se encontró el <div> del pie en: ${html}`).not.toBeNull()
     const clases = pie![1]
@@ -355,7 +370,7 @@ describe('Tile: el pie mobile-first de los tiles chicos', () => {
   })
 
   it('el tile de marca ("Total del período") no cambia: su pie sigue en 11px en los dos anchos', () => {
-    const html = renderToStaticMarkup(<Tile marca rotulo="Total del período" valor="$ 1.284.500,00" pie="sin contar las anuladas" />)
+    const html = renderToStaticMarkup(<Tile marca rotulo="Total del período" lineas={[{ valor: '$ 1.284.500,00' }]} pie="sin contar las anuladas" />)
     expect(html).toMatch(/class="text-\[11px\]"[^>]*>sin contar las anuladas/)
   })
 })
