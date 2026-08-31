@@ -754,10 +754,16 @@ export function Listado({
                       {f.totalLineas.map((l) => (
                         <div key={l.rotulo ?? '—'} className="flex flex-col items-end">
                           {/* El rótulo NO hereda el 15px semibold tabular de
-                              la celda: se lo pisa explícito. 9px es el escalón
-                              más chico que este listado ya usa para meta. */}
+                              la celda: se lo pisa explícito. 10px y no 9px:
+                              es el mismo rol de rótulo que ya paga el tile
+                              chico de arriba, uno que
+                              docs/sistema-de-diseno.md ya documenta — un 9px
+                              sería un escalón nuevo de la pila que ningún
+                              test puede sostener (test/tipografia.test.ts
+                              sólo ata los roles con font-stretch, o sea las
+                              caras Archivo). */}
                           {l.rotulo && (
-                            <span className="text-[9px] font-normal tracking-[0.6px] text-muted-foreground uppercase">
+                            <span className="text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
                               {l.rotulo}
                             </span>
                           )}
@@ -953,10 +959,15 @@ export default async function Ventas({
     // él devolvería cero filas EN SILENCIO (mismo motivo que el comentario
     // del `groupBy` de pagos, arriba).
     //
-    // Sin techo de filas, con el motivo escrito: son ~1.400 en un mes de un
-    // local activo, y el `count` de arriba ya recorre el mismo conjunto. Con
-    // un rango largo tipeado a mano (`?desde=2020-01-01`) serían decenas de
-    // miles — es lo primero a mirar si esta pantalla se pone lenta.
+    // Sin techo de filas, con el motivo escrito — y esta anotación cubre a
+    // las TRES consultas de este Promise.all que no lo tienen, para no
+    // repetirla en cada una: el `groupBy` de pagos de arriba (el panel de
+    // medios), ésta, y las dos `pagosDelPeriodo` de más abajo. Son ~1.400
+    // filas en un mes de un local activo, y el `count` de arriba ya recorre
+    // el mismo conjunto que el listado. Con un rango largo tipeado a mano
+    // (`?desde=2020-01-01`) las tres devolverían tantas filas como pagos o
+    // ventas haya en el período —decenas de miles—: son lo primero a mirar
+    // si esta pantalla se pone lenta.
     prisma.venta.findMany({
       where: { ...donde, anuladaEn: null },
       select: { creadoEn: true },
@@ -1151,6 +1162,13 @@ export default async function Ventas({
                 // la moneda en que se entregó (`cobradoDePagos`). Un renglón
                 // cuando coinciden —toda venta en pesos sin plan—, dos
                 // rotulados cuando no. Nada se convierte.
+                //
+                // Una venta ANULADA con plan sigue desglosando acá —"Vendido
+                // $ 50.000 / Cobrado $ 70.000" al lado del chip "Anulada"—, y
+                // se deja así a propósito, no es un efecto colateral: el chip
+                // ya desambigua, y ese número es lo que se cobró ANTES de
+                // anular, que es justo lo que este historial tiene que poder
+                // responder ("Las anuladas se MUESTRAN", más abajo).
                 totalLineas: lineasDeImporte(vendidoDeVenta(v), cobradoDePagos(v.pagos), v.recargo),
                 anulada: v.anuladaEn !== null,
               }))}

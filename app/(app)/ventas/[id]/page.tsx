@@ -378,10 +378,11 @@ export function Detalle({
   anulada: boolean
   notaDeAnulacionTexto: string | null
   items: ItemVendido[]
-  /** El renglón único de siempre: `formatearTotales(vendidoDeVenta(venta))`,
-   *  ya con las dos monedas si la venta las tiene. Sigue siendo la fuente del
-   *  importe cuando `lineasDeTotal` es `null` — el caso común, que
-   *  `lineasDeRecargo()` decide (ver su docblock). */
+  /** El renglón único de siempre: `formatearTotales(cobradoDePagos(venta.pagos))`
+   *  —la plata que entró, no la mercadería vendida, aunque en este caso den el
+   *  mismo número—, ya con las dos monedas si la venta las tiene. Sigue siendo
+   *  la fuente del importe cuando `lineasDeTotal` es `null` — el caso común,
+   *  que `lineasDeRecargo()` decide (ver su docblock). */
   totalFormateado: string
   /** El desglose Vendido / Recargo / Cobrado cuando hay algo que desglosar,
    *  ya resuelto a texto por `lineasDeRecargo()` en el llamador. `null` —el
@@ -768,8 +769,9 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
       // `recargo` para el pie de "Qué se vendió" (Task 8): `lineasDeRecargo`
       // decide con este número, junto con `total`/`totalUsd` y los pagos, si
       // desglosa Vendido/Recargo/Cobrado o deja el único "Total" de siempre.
-      // `totalUsd` entra por lo mismo, y también para `vendidoDeVenta()`, que
-      // arma el renglón único cuando no hay nada que desglosar.
+      // `totalUsd` entra por lo mismo: `vendidoDeVenta()` lo necesita para esa
+      // comparación, aunque el renglón único ya no lo use — lo arma
+      // `cobradoDePagos(venta.pagos)`.
       id: true, numero: true, total: true, recargo: true, creadoEn: true, anuladaEn: true, totalUsd: true,
       usuario: { select: { nombre: true } },
       // Quién anuló, no sólo que esté anulada: `Venta.anuladaPorId` existe en
@@ -814,7 +816,10 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
   const resumen = filasDeResumen(venta)
   const anulada = venta.anuladaEn !== null
   const puedeAnularVenta = await puedeConSesion(sesion, 'VENTAS_ANULAR')
-  // null cuando la venta no llevó recargo: el pie de "Qué se vendió" cae al
+  // `null` cuando no hace falta desglosar —la regla exacta la fija
+  // `hayQueDesglosar` (lib/ventas/cobrado.ts), no "sin recargo": una venta en
+  // dólares pagada en dólares también cae en `null`, y una sin recargo pero
+  // que cruza monedas SÍ desglosa—. Ahí el pie de "Qué se vendió" cae al
   // renglón único "Total" de siempre, más abajo.
   const lineasDeTotal = lineasDeRecargo(venta)
 
@@ -868,7 +873,10 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
         anulada={anulada}
         notaDeAnulacionTexto={venta.anuladaEn ? notaDeAnulacion({ anuladaEn: venta.anuladaEn, anuladaPor: venta.anuladaPor }) : null}
         items={items}
-        totalFormateado={formatearTotales(vendidoDeVenta(venta))}
+        // `cobrado` y no `vendido`, aunque den el mismo número en este
+        // renglón único: es la plata que entró, convención de
+        // `lineasDeImporte` (lib/ventas/cobrado.ts).
+        totalFormateado={formatearTotales(cobradoDePagos(venta.pagos))}
         lineasDeTotal={
           lineasDeTotal?.map(({ rotulo, valor, destacada }) => ({
             rotulo, montoFormateado: valor, destacada,

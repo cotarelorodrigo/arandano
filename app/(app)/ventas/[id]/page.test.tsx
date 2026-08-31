@@ -631,9 +631,10 @@ describe('la pantalla pide y usa el recargo y el plan de cada pago', () => {
     expect(fuente).toContain('const lineasDeTotal = lineasDeRecargo(venta)')
   })
 
-  it('el renglón único puede mostrar dólares: usa formatearTotales, no formatearPrecio', () => {
-    expect(fuente).toContain('totalFormateado={formatearTotales(vendidoDeVenta(venta))}')
+  it('el renglón único usa cobradoDePagos, no vendidoDeVenta: es la plata que entró', () => {
+    expect(fuente).toContain('totalFormateado={formatearTotales(cobradoDePagos(venta.pagos))}')
     expect(fuente).not.toContain('totalFormateado={formatearPrecio(venta.total.toString())}')
+    expect(fuente).not.toContain('totalFormateado={formatearTotales(vendidoDeVenta(venta))}')
   })
 
   it('la tabla "Cómo se pagó" tiene una columna Plan', () => {

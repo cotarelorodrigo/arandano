@@ -46,6 +46,14 @@ describe('cobradoDeGrupos', () => {
   // Las filas del groupBy traen `_count`: el mismo monto repetido N veces.
   // Se redondea PRIMERO y se multiplica después, igual que componerPorMedio,
   // que es lo que mantiene el redondeo por pago.
+  //
+  // Montos enteros (1000, 50) y no con decimales, a propósito: `Pago.monto`
+  // es `Decimal(12,2)`, así que `redondearDinero` es un no-op sobre cualquier
+  // valor que la consulta pueda devolver — un caso con tres decimales estaría
+  // asertando una fila que la base no puede producir. Con montos enteros,
+  // este caso no distingue redondear-antes-de-multiplicar de multiplicar-y-
+  // redondear-después: no es una red contra invertir ese orden, sólo contra
+  // no multiplicar por `_count` en absoluto.
   it('multiplica cada grupo por su cantidad', () => {
     const c = cobradoDeGrupos([
       { moneda: 'ARS', monto: d('1000'), _count: 3 },
@@ -55,7 +63,9 @@ describe('cobradoDeGrupos', () => {
     expect(c.usd.toString()).toBe('100')
   })
 
-  it('ignora un grupo con cantidad cero o negativa', () => {
+  // Sólo `_count: 0`: Prisma no puede devolver un `_count` negativo, así que
+  // la guarda `<= 0` es defensiva y no hay un caso negativo que agregar.
+  it('ignora un grupo con cantidad cero', () => {
     const c = cobradoDeGrupos([{ moneda: 'ARS', monto: d('1000'), _count: 0 }])
     expect(c.ars.toString()).toBe('0')
   })

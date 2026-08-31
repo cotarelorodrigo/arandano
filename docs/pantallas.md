@@ -581,9 +581,10 @@ El historial por período.
   este ciclo, las cuatro cifras sumaban `total + recargo` con `totalCobrado()`
   (`lib/ventas/totales.ts`) y el tile llevaba `totalUsd` a una segunda línea
   aparte; esta pantalla dejó de llamar a esa función porque dejó de describir
-  lo que muestra, y el pie de `/ventas/[id]` la dejó de llamar en su propio
-  ciclo poco después — `totalCobrado()` queda sin ningún llamador de
-  producción, y su borrado es de otro ciclo.
+  lo que muestra, y el pie de `/ventas/[id]` la dejó de llamar en este mismo
+  ciclo, poco después — sin ningún llamador de producción que le quedara,
+  `totalCobrado()` se borró de `lib/ventas/totales.ts` en este ciclo, y ya no
+  existe.
 - **El total NO suma las anuladas**, y lo dice en pantalla para que nadie tenga
   que deducirlo. Lo devuelto de las anuladas es un agregado APARTE, no el
   mismo número con el filtro invertido.
