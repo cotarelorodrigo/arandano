@@ -186,19 +186,41 @@ Las dos al **mismo tamaño**, apoyándose en la regla que ese componente ya tien
 escrita para las monedas —*"ninguna pesa más que la otra en esta pantalla, así
 que ninguna se dibuja más chica"*—: tampoco pesa más lo vendido que lo cobrado.
 
-**De dónde sale el número.** El cobrado de las no anuladas se deriva de la
-**misma `groupBy` de pagos que ya alimenta "Cómo entró la plata"**: esas filas
-son, exactamente, los pagos del período de las ventas no anuladas, y
-`cobradoDeGrupos` es una función pura sobre un array que ya está en memoria.
-Conserva el redondeo por pago, que es la razón por la que ese `groupBy` lleva
-`monto` en la clave y `_count` en vez de un `_sum` (con `_sum` el panel y el tile
-se separaban por centavos).
+**De dónde sale el número.** De una función exportada y parametrizada, hermana
+de `totalDelPeriodo`:
 
-**La única consulta nueva de todo el ciclo** es su espejo sobre las anuladas
-—`groupBy` por `moneda`/`monto` con `where: { venta: { ...donde, anuladaEn: { not: null } } }`—,
-que hoy no existe y la necesita el pie de "devuelto". La asimetría es deliberada:
-del lado de las no anuladas ya hay una fuente y agregar una segunda sería crear
-dos que puedan desacordar.
+```ts
+export function pagosDelPeriodo(
+  prisma: ReturnType<typeof prismaParaTenant>,
+  donde: FiltroDePeriodo,
+  anuladas: boolean,
+)  // groupBy por ['moneda', 'monto'] con _count
+```
+
+Llamada dos veces —una por cada lado de la anulación—, son **las dos únicas
+consultas nuevas del ciclo**.
+
+**La alternativa era reusar la `groupBy` que ya alimenta "Cómo entró la plata"**,
+que selecciona exactamente las mismas filas del lado de las no anuladas y
+ahorraba una consulta. Se descartó por una razón concreta y no por simetría: esa
+`groupBy` está **inline en el componente de página**, que es un Server Component
+`async` que abre sesión, así que ningún test la puede llamar — y su
+`anuladaEn: null` quedaría tan desprotegido como el que el hallazgo I3 de la
+review del rediseño mostró que se podía borrar dejando 785 tests en verde. La
+regla "una venta anulada no es plata que entró" tiene que vivir en una función
+que la base efímera pueda ejercitar; es exactamente el motivo por el que
+`totalDelPeriodo` se extrajo en su momento.
+
+**Las dos consultas no pueden desacordar con el panel** aunque agreguen las
+mismas filas: la suma de `monto` por moneda es idéntica se agrupe por
+`['moneda','monto']` o por `['medio','moneda','cotizacion','monto']` —agrupar por
+más columnas refina los grupos, no cambia la suma— y las dos cláusulas `where`
+son la misma. El `groupBy` del panel **no se toca**.
+
+**`monto` va en la clave del agrupamiento con `_count`, y no en un `_sum`**, por
+la misma razón que ya documenta `FilaDePagos` en `lib/ventas/composicion.ts`: es
+lo que mantiene el redondeo POR PAGO. Con `_sum` el tile y el panel se separaban
+por centavos en la misma pantalla.
 
 **Los dos pies chicos** pasan a calcular sobre **cobrado en pesos** en vez de
 `total + recargo`:
@@ -290,10 +312,11 @@ respecto de hoy salvo por la palabra "Vendido".
 **`test/ventas.test.ts`**, contra la base efímera — dos casos que no se pueden
 probar sin base:
 
-1. Que el cobrado del período **no cuente las anuladas**. Es exactamente la regla
-   que este repo ya descubrió que se podía romper sin que 785 tests se enteraran
-   (hallazgo I3 de la review del rediseño), y ahora vive en dos agregados en vez
-   de uno.
+1. Que `pagosDelPeriodo` reparta bien a los dos lados de la anulación. Es
+   exactamente la regla que este repo ya descubrió que se podía romper sin que
+   785 tests se enteraran (hallazgo I3 de la review del rediseño), y ahora vive
+   en dos agregados en vez de uno. Mismo patrón de antes/después contra el
+   tenant compartido que ya usan los tres casos de `totalDelPeriodo`.
 2. **El caso del feedback, de punta a punta**: crear la venta de US$ 300 con los
    dos pagos y afirmar `Vendido {0, 300}` / `Cobrado {148.500, 200}`. Es lo que
    ata el ciclo al pedido real y no a su interpretación.
