@@ -429,7 +429,7 @@ export function lineasDeImporte(
 npx vitest run lib/ventas/cobrado.test.ts
 ```
 
-Esperado: PASS, 17 casos.
+Esperado: PASS, 19 casos.
 
 - [ ] **Step 5: Verificar tipos y lint**
 
