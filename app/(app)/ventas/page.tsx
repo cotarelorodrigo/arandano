@@ -335,6 +335,11 @@ export function ventanaDePaginas(actual: number, total: number): number[] {
 /**
  * Un tile del resumen del período.
  *
+ * `marca` sólo lo pide el tile de "Total del período": es el ancla de
+ * `--marca` que docs/sistema-de-diseno.md ya lista para esta pantalla ("Lo
+ * que entró en el período"), así que ANTES de este ciclo el código
+ * contradecía su propio sistema de diseño escrito — no sólo la maqueta.
+ *
  * `lineas` es una sola —el número solo de siempre, y así se ven los dos tiles
  * de conteo— o las dos del desglose "Vendido"/"Cobrado" (ver `lineasDeImporte`
  * en lib/ventas/cobrado.ts). Las dos se dibujan al MISMO tamaño, apoyándose en
