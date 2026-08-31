@@ -26,15 +26,27 @@ export function SelectorDeMoneda({
   id,
   name,
   valorInicial,
+  children,
 }: {
   id: string
   name: string
   valorInicial: 'ARS' | 'USD'
+  /** El input del precio, que va pegado al selector adentro de la MISMA fila. */
+  children: React.ReactNode
 }) {
   const [moneda, setMoneda] = useState(valorInicial)
 
+  // Un Fragment y no un contenedor propio, con el aviso HERMANO de la fila —
+  // el mismo patrón que SelectorDeCategoria usa para su nota del panel de
+  // inventario, y por el mismo motivo. La versión anterior devolvía una
+  // COLUMNA (selector arriba, aviso debajo) que las pantallas metían en una
+  // fila junto al input: mientras el aviso no se veía todo cerraba, pero
+  // apenas aparecía su texto le daba a esa columna un ancho intrínseco mucho
+  // mayor que los 86 px del selector, y el input —`flex-1`, que se deja
+  // comprimir— quedaba arrinconado contra el borde derecho. El campo se
+  // partía al medio justo en el momento en que el aviso tenía algo que decir.
   return (
-    <div className="flex flex-col gap-1">
+    <>
       {/* Label visualmente oculta y no `aria-label` en el trigger: el nombre
           accesible sale de un <label> real asociado por `htmlFor`, que es lo
           que ya usa SelectorDeCategoria. `aria-label` funcionaría igual para
@@ -65,6 +77,7 @@ export function SelectorDeMoneda({
           </SelectContent>
         </Select>
         <input type="hidden" name={name} value={moneda} />
+        {children}
       </div>
       {moneda !== valorInicial && (
         <p className="text-xs text-muted-foreground">
@@ -75,6 +88,6 @@ export function SelectorDeMoneda({
           .
         </p>
       )}
-    </div>
+    </>
   )
 }

@@ -538,8 +538,45 @@ describe('el selector de moneda está en las DOS pantallas', () => {
 })
 
 describe('SelectorDeMoneda', () => {
+  it('el input de precio va DENTRO de la fila del selector, no al lado del componente', () => {
+    // El bug que este caso fija (reportado a ojo, 2026-08-31): el componente
+    // devolvía una COLUMNA —el selector arriba, el aviso de cambio de moneda
+    // debajo— y las pantallas la ponían en una fila junto al input. Mientras
+    // el aviso no se veía todo cerraba; apenas aparecía, su texto le daba a
+    // esa columna un ancho intrínseco muy mayor que los 86 px del selector, y
+    // el input (`flex-1`) se dejaba comprimir contra el borde derecho: el
+    // campo se partía al medio.
+    //
+    // Ahora el componente ES el campo compuesto: la fila con el selector y su
+    // `children` adentro, y el aviso HERMANO de esa fila — el mismo patrón
+    // que ya usaba SelectorDeCategoria con su nota del panel de inventario.
+    //
+    // Se afirma sobre la fila y no sobre el aviso porque el aviso sólo existe
+    // después de un cambio de estado, que un render estático no produce: lo
+    // que se puede fijar sin un DOM es que el input quede adentro de la misma
+    // caja que el selector, que es la condición que hace inofensivo al aviso.
+    const html = renderToStaticMarkup(
+      <SelectorDeMoneda id="m" name="moneda" valorInicial="ARS">
+        <input id="hijo-de-la-fila" />
+      </SelectorDeMoneda>,
+    )
+    const fila = html.slice(0, html.indexOf('id="hijo-de-la-fila"'))
+    // Balance de divs desde el arranque hasta el input: si la fila se hubiera
+    // cerrado antes, habría tantos `</div>` como `<div`.
+    const abiertos = (fila.match(/<div/g) ?? []).length
+    const cerrados = (fila.match(/<\/div>/g) ?? []).length
+    expect(abiertos).toBeGreaterThan(cerrados)
+    // Y el componente no puede volver a introducir una columna propia: es lo
+    // que lo hacía incompatible con la fila de la pantalla.
+    expect(html.startsWith('<div class="flex flex-col')).toBe(false)
+  })
+
   it('avisa al pasar de pesos a dólares, porque el número no se reinterpreta solo', () => {
-    const html = renderToStaticMarkup(<SelectorDeMoneda id="m" name="moneda" valorInicial="USD" />)
+    const html = renderToStaticMarkup(
+      <SelectorDeMoneda id="m" name="moneda" valorInicial="USD">
+        <input name="precio" />
+      </SelectorDeMoneda>,
+    )
     expect(html).toContain('name="moneda"')
     expect(html).toContain('value="USD"')
   })
@@ -550,7 +587,11 @@ describe('SelectorDeMoneda', () => {
     // (`rounded-lg`, 10 px con --radius: 0.625rem) dejaba a este campo como el
     // único del formulario con un radio distinto del de sus vecinos, que ya
     // escriben rounded-[9px] explícito.
-    const html = renderToStaticMarkup(<SelectorDeMoneda id="m" name="moneda" valorInicial="ARS" />)
+    const html = renderToStaticMarkup(
+      <SelectorDeMoneda id="m" name="moneda" valorInicial="ARS">
+        <input name="precio" />
+      </SelectorDeMoneda>,
+    )
     expect(html).toContain('rounded-l-[9px]')
 
     const fuente = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')

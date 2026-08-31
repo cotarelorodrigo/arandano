@@ -209,14 +209,11 @@ export function FormularioDeAlta({
               </div>
               <div className="flex w-60 flex-col gap-2">
                 <Label htmlFor="precio">Precio de venta</Label>
-                {/* El selector de moneda va pegado al input (sin radio a la
-                    derecha del selector ni a la izquierda del input): las dos
-                    pantallas instancian el MISMO componente
-                    (components/selector-de-moneda.tsx), que es lo que impide
-                    que alta y ficha vuelvan a divergir como pasó con la
-                    categoría. */}
-                <div className="flex">
-                  <SelectorDeMoneda id="moneda" name="moneda" valorInicial="ARS" />
+                {/* El input va COMO HIJO del selector, no al lado: el
+                    componente es el campo compuesto entero (fila + aviso), y
+                    ponerlos como hermanos es lo que partía el campo al medio
+                    en cuanto el aviso aparecía. */}
+                <SelectorDeMoneda id="moneda" name="moneda" valorInicial="ARS">
                   {/* type="text" con inputMode="decimal" y no type="number": el
                       teclado numérico aparece igual en el celular, pero la coma
                       llega sin que el navegador la descarte. El parseo lo hace
@@ -229,7 +226,7 @@ export function FormularioDeAlta({
                     required
                     className="h-10 flex-1 rounded-l-none rounded-r-[9px]"
                   />
-                </div>
+                </SelectorDeMoneda>
               </div>
             </div>
             {/* El número real, no un texto genérico: sale de
@@ -492,8 +489,7 @@ export function FichaDeArticulo({
                         <Label htmlFor="e-precio">Precio de venta</Label>
                         {/* Mismo componente que el alta, no una segunda
                             implementación: components/selector-de-moneda.tsx. */}
-                        <div className="flex">
-                          <SelectorDeMoneda id="e-moneda" name="moneda" valorInicial={moneda} />
+                        <SelectorDeMoneda id="e-moneda" name="moneda" valorInicial={moneda}>
                           <Input
                             id="e-precio"
                             name="precio"
@@ -502,7 +498,7 @@ export function FichaDeArticulo({
                             required
                             className="h-10 flex-1 rounded-l-none rounded-r-[9px]"
                           />
-                        </div>
+                        </SelectorDeMoneda>
                       </div>
                       <div className="flex flex-col gap-2">
                         <Label htmlFor="e-sku">Código</Label>
