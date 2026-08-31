@@ -1,9 +1,10 @@
 /**
- * Los siete permisos, con lo que la pantalla muestra al lado de cada switch.
+ * Los permisos del producto, con lo que la pantalla muestra al lado de cada
+ * switch.
  *
  * **Es la única fuente**: el servidor valida contra esta lista y `/usuarios` la
- * renderea, en vez de repetir los siete a mano en el JSX. Agregar un permiso es
- * tocar este archivo, el enum del schema y el lugar que lo exige — nada más.
+ * renderea, en vez de repetirlos a mano en el JSX. Agregar un permiso es tocar
+ * este archivo, el enum del schema y el lugar que lo exige — nada más.
  *
  * **La unión se escribe acá y no se importa de Prisma**, que es lo que ya hace
  * este repo con `RolUsuario` (ver `lib/usuarios/resumen.ts:1`): una sola copia
@@ -70,9 +71,9 @@ export type Permiso = (typeof PERMISOS)[number]['clave']
 
 export const CLAVES_DE_PERMISO: readonly Permiso[] = PERMISOS.map((p) => p.clave)
 
-/** Si el texto es uno de los siete, lo devuelve tipado; si no, null. Es la
- *  validación de entrada de la acción que otorga y revoca: un `permiso` que
- *  llega por FormData es texto de afuera hasta que pasa por acá. */
+/** Si el texto es una de las claves de la lista, lo devuelve tipado; si no,
+ *  null. Es la validación de entrada de la acción que otorga y revoca: un
+ *  `permiso` que llega por FormData es texto de afuera hasta que pasa por acá. */
 export function comoPermiso(texto: string): Permiso | null {
   return (CLAVES_DE_PERMISO as readonly string[]).includes(texto) ? (texto as Permiso) : null
 }

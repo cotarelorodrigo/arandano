@@ -20,7 +20,7 @@
  *
  * **No es el sistema de permisos y no lo reemplaza.** El permiso `BOT` decide
  * a QUIÉN del local se le delega el bot; esto decide en qué locales existe
- * todavía. Un dueño tiene los siete permisos sin fila en `usuario_permisos`,
+ * todavía. Un dueño tiene todos los permisos sin fila en `usuario_permisos`,
  * así que sin este gate la pantalla la vería el dueño de cualquier tenant.
  */
 export function botHabilitadoEn(subdominio: string): boolean {
