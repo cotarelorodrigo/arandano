@@ -393,15 +393,29 @@ export function Tile({
  * `Sheet`, sin `forceMount`, sólo monta su contenido cuando se abre, así que
  * en la práctica eso dura apenas el instante en que el teléfono lo tiene
  * abierto.
+ *
+ * Lleva `vista` como campo oculto (Hallazgo 4 de la review final): sin esto,
+ * filtrar por fecha estando en la vista Día del panel de horarios volvía a
+ * Hora en silencio, exactamente el argumento que ya vale para los links de
+ * rango y de página (ver "preserva la vista" en la consulta de más abajo) —
+ * tocar el filtro de fechas no puede devolver el panel a su default sin que
+ * nadie lo pida, y éste es justo el camino principal para elegir un rango
+ * propio. Un solo `<input type="hidden">` en el componente compartido cubre
+ * sus dos ubicaciones de una.
  */
 function FormularioDeFechas({
-  dDesde, dHasta, apilado = false,
-}: { dDesde: string; dHasta: string; apilado?: boolean }) {
+  dDesde, dHasta, vista, apilado = false,
+}: { dDesde: string; dHasta: string; vista: Vista; apilado?: boolean }) {
   return (
     <form
       method="get"
       className={apilado ? 'flex flex-col gap-3' : 'hidden items-end gap-[10px] lg:flex'}
     >
+      {/* Sólo cuando no es la default: un formulario que siempre mandara
+          `vista=hora` no cambiaría nada en la práctica, pero ensuciaría la
+          URL de cualquiera que ya esté en Hora. Mismo criterio que
+          `conPagina`/`hrefRango`/`hrefDeVista`, más abajo. */}
+      {vista !== 'hora' && <input type="hidden" name="vista" value={vista} />}
       <label className={`flex flex-col gap-[5px] ${apilado ? '' : 'w-[168px]'}`}>
         <span className="text-[11px] font-semibold text-foreground-soft">Desde</span>
         <Input
@@ -984,7 +998,7 @@ export default async function Ventas({
             (`e00ToC`)—, así que se mudan a un `Sheet`; `FormularioDeFechas`
             es el mismo componente en las dos ubicaciones (ver su comentario). */}
         <div className="flex items-center gap-2 lg:items-end lg:gap-[10px]">
-          <FormularioDeFechas dDesde={dDesde} dHasta={dHasta} />
+          <FormularioDeFechas dDesde={dDesde} dHasta={dHasta} vista={vista} />
           {/* El espaciador que empuja los Rangos a la derecha en escritorio
               (como hoy); en el teléfono no existe, ahí los Rangos ya son
               `flex-1` y ocupan todo el ancho que dejan libre el resto de la
@@ -1026,7 +1040,7 @@ export default async function Ventas({
                 <SheetDescription>Elegí el rango de fechas para filtrar las ventas.</SheetDescription>
               </SheetHeader>
               <div className="p-4">
-                <FormularioDeFechas dDesde={dDesde} dHasta={dHasta} apilado />
+                <FormularioDeFechas dDesde={dDesde} dHasta={dHasta} vista={vista} apilado />
               </div>
             </SheetContent>
           </Sheet>

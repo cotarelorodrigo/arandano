@@ -513,13 +513,16 @@ describe('la consulta del panel de horarios', () => {
     expect(fuente).toMatch(/where:\s*\{\s*\.\.\.donde,\s*anuladaEn:\s*null\s*\},\s*select:\s*\{\s*creadoEn:\s*true\s*\}/)
   })
 
-  it('preserva la vista en los links de rango y de página', () => {
-    // Sin esto, tocar "7 días" o pasar de página devuelve a la vista Hora sin
-    // que nadie lo haya pedido. Dos apariciones, una por helper: `conPagina`
-    // y `hrefRango`. Se cuentan las DOS y no se afirma "al menos una" —
-    // gatear una sola y dejar la otra suelta es exactamente el modo de falla
-    // que este repo ya pagó con las dos copias de un botón.
-    expect(fuente.match(/vista !== 'hora'/g) ?? []).toHaveLength(2)
+  it('preserva la vista en los links de rango, de página y en el filtro de fechas', () => {
+    // Sin esto, tocar "7 días", pasar de página o filtrar por fecha devuelve
+    // a la vista Hora sin que nadie lo haya pedido. Tres apariciones, una por
+    // sitio: `conPagina`, `hrefRango` y el campo oculto de
+    // `FormularioDeFechas` (Hallazgo 4 de la review final — el filtro de
+    // fechas era el único de los tres caminos que todavía perdía la vista).
+    // Se cuentan las TRES y no se afirma "al menos una" — gatear una sola y
+    // dejar las otras sueltas es exactamente el modo de falla que este repo
+    // ya pagó con las dos copias de un botón.
+    expect(fuente.match(/vista !== 'hora'/g) ?? []).toHaveLength(3)
   })
 })
 
