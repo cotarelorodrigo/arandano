@@ -215,25 +215,31 @@ export function pagosDelPeriodo(
 /**
  * El pie del tile "Ventas cobradas": el promedio por venta cobrada.
  *
- * Sobre lo COBRADO (`total + recargo`) y no sólo la mercadería, por la misma
- * razón que el tile "Total del período" de al lado ya lo hace desde Task 8:
+ * `cobradoArs` es lo COBRADO EN PESOS —`Σ Pago.monto` de los pagos en pesos,
+ * el mismo número que arma `cobradoPeriodo.ars` para el tile de al lado
+ * (`pagosDelPeriodo`, más arriba)— y no la mercadería ni `total + recargo`:
  * las dos plata de la misma pantalla tienen que contestar la misma pregunta
- * ("cuánto entró"), y "promedio de mercadería vendida" sería una tercera
- * métrica que nadie pidió.
+ * ("cuánta plata entró"), y desde que un pago en pesos puede cubrir el total
+ * en dólares, `total + recargo` dejó de ser esa respuesta.
  *
  * `undefined` y no `NaN` cuando no hubo ninguna cobrada — un período puede
  * anularse entero, y "promedio $ NaN" es peor que no mostrar ningún pie: ver
  * el mismo criterio en `hayFaltanteDeVenta` de punto-de-venta.tsx.
  *
- * **Y `undefined` también cuando lo cobrado en pesos es CERO y el período
- * movió dólares** (ola final del ciclo del precio en dólares). El local que
- * pidió esta feature carga todo su catálogo en dólares, así que todas sus
- * ventas tienen `total = 0` y `recargo = 0`: el pie decía `promedio $ 0,00`
+ * **Y `undefined` también cuando lo cobrado EN PESOS es CERO y el período
+ * COBRÓ algo en dólares** (`hayDolaresCobrados`): el local que pidió esta
+ * feature carga todo su catálogo en dólares y cobra en dólares, así que
+ * `cobradoArs` es cero en todas sus ventas — el pie decía `promedio $ 0,00`
  * al lado de un tile que decía `US$ 3.000,00`, o sea afirmaba lo contrario de
  * lo que el tile de al lado mostraba. Un tile sin pie OMITE; un
  * `promedio $ 0,00` AFIRMA, y afirma algo falso — es el mismo modo de falla
  * que ya se corrigió una vez en este ciclo (una línea rotulada con un número
- * que no es el que dice ser).
+ * que no es el que dice ser). La guarda pregunta "¿se COBRÓ algo en
+ * dólares?" y no "¿se VENDIÓ algo en dólares?": lo que el pie podría estar
+ * afirmando en falso es sobre plata que entró, no sobre mercadería. Efecto
+ * de paso: el período del feedback (una venta en dólares cobrada en pesos)
+ * pasa de omitir el pie a decir un promedio real, porque ahí sí entró algo
+ * en pesos.
  *
  * Se omite y no se agrega una segunda línea en dólares, que era la otra
  * salida: el promedio en dólares sería `sumaUsd / cobradas`, y en un período
@@ -242,16 +248,8 @@ export function pagosDelPeriodo(
  * ciclo es que fuera de una venta no hay conversión ni número inventado, y
  * acá el número honesto es ninguno.
  *
- * `cobradoArs` en cero SIN dólares en el período sigue mostrando el pie:
- * ahí `promedio $ 0,00` es cierto.
- *
- * **Sobre lo COBRADO EN PESOS** (`Σ Pago.monto` de los pagos en pesos), no
- * sobre `total + recargo`: desde que un pago en pesos puede cubrir el total en
- * dólares, esas dos cosas dejaron de ser la misma. La guarda de omisión
- * también cambió de pregunta —ahora es "¿se COBRÓ algo en dólares?" y no "¿se
- * vendió?"—, que es la correcta: lo que el pie podría estar afirmando en falso
- * es sobre plata que entró. Efecto de paso: el período del feedback (una venta
- * en dólares cobrada en pesos) pasa de omitir el pie a decir un promedio real.
+ * `cobradoArs` en cero SIN dólares cobrados en el período sigue mostrando el
+ * pie: ahí `promedio $ 0,00` es cierto.
  */
 export function pieDeCobradas(
   cobradoArs: string, cobradas: number, hayDolaresCobrados: boolean,
@@ -264,26 +262,26 @@ export function pieDeCobradas(
 
 /**
  * El pie del tile "Anuladas": lo DEVUELTO, no el total del período de al
- * lado — son dos agregados distintos (`SUM(total) WHERE anuladaEn IS NOT
- * NULL` acá, `WHERE anuladaEn IS NULL` en el tile de al lado) y mezclarlos
- * sería el mismo bug que ya evita `crearVenta` al no reutilizar sumas.
+ * lado — dos números independientes, cada uno su propia llamada a
+ * `pagosDelPeriodo` (más arriba) con `anuladas` en `false`/`true`: el tile de
+ * al lado suma los pagos de las ventas NO anuladas, éste los de las SÍ
+ * anuladas. Mezclarlos sería el mismo bug que ya evita `crearVenta` al no
+ * reutilizar sumas.
  *
- * Con `total + recargo`, no sólo la mercadería: lo que se anuló es la plata
- * COBRADA, recargo incluido —una venta en 3 cuotas que se anula da de baja
- * también el recargo de esa financiación, no sólo el precio de lista—, así
- * que "devuelto" tiene que decir lo mismo que decía "cobrado" antes de
- * anularse.
+ * `devueltoArs` es `Σ Pago.monto` EN PESOS de esos pagos, no `total +
+ * recargo`: `Pago.monto` ya incluye el recargo (`lib/ventas/crear.ts`), así
+ * que lo que se anuló —una venta en 3 cuotas que se anula da de baja también
+ * el recargo de esa financiación, no sólo el precio de lista— ya viene sumado
+ * en el número que entrega `pagosDelPeriodo`, sin que este pie tenga que
+ * sumarlo aparte.
  *
- * `undefined` cuando lo devuelto en pesos es cero y las anuladas movieron
- * dólares — mismo criterio y misma razón que `pieDeCobradas`: `$ 0,00
- * devueltos` sobre una venta anulada de US$ 300 no es una omisión, es una
- * afirmación falsa.
- *
- * **Sobre lo DEVUELTO EN PESOS** (`Σ Pago.monto` de los pagos de las ventas
- * anuladas, en pesos), no sobre `total + recargo`: desde que un pago en pesos
- * puede cubrir el total en dólares, esas dos cosas dejaron de ser la misma.
- * Efecto de paso: una venta en dólares cobrada en pesos que se anula pasa de
- * omitir el pie a decir un monto devuelto real.
+ * `undefined` cuando lo devuelto en pesos es cero y las anuladas DEVOLVIERON
+ * dólares (`hayDolaresDevueltos`) — mismo criterio y misma razón que
+ * `pieDeCobradas`: `$ 0,00 devueltos` sobre una venta anulada de US$ 300 no
+ * es una omisión, es una afirmación falsa. La guarda pregunta "¿se devolvió
+ * algo en dólares?" y no "¿se vendió algo en dólares?", por el mismo motivo
+ * que en `pieDeCobradas`. Efecto de paso: una venta en dólares cobrada en
+ * pesos que se anula pasa de omitir el pie a decir un monto devuelto real.
  */
 export function pieDeAnuladas(devueltoArs: string, hayDolaresDevueltos: boolean): string | undefined {
   if (hayDolaresDevueltos && new Prisma.Decimal(devueltoArs).isZero()) return undefined

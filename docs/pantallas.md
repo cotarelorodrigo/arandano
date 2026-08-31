@@ -564,7 +564,8 @@ El historial por período.
   este ciclo corrige — una venta de US$ 300 cobrada US$ 200 + pesos volvería
   a decir "US$ 300" cobrados. Las dos magnitudes se combinan con
   `lineasDeImporte()` (`lib/ventas/cobrado.ts`), la única fuente de las dos
-  líneas en las tres pantallas (columna, tile y `/ventas/[id]`), y **se
+  líneas en la columna y en el tile — `/ventas/[id]` sigue con su propio pie
+  contra `totalCobrado()` hasta que corra su ciclo—, y **se
   muestran dos líneas —"Vendido" arriba, "Cobrado" abajo— sólo cuando
   difieren; un número solo cuando coinciden**. Sin dólares ni planes de pago
   coinciden POR CONSTRUCCIÓN (`Σ Pago.monto = total + recargo`), así que un
