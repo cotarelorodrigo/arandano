@@ -564,9 +564,11 @@ El historial por período.
   este ciclo corrige — una venta de US$ 300 cobrada US$ 200 + pesos volvería
   a decir "US$ 300" cobrados. Las dos magnitudes se combinan con
   `lineasDeImporte()` (`lib/ventas/cobrado.ts`), la única fuente de las dos
-  líneas en la columna y en el tile — `/ventas/[id]` sigue con su propio pie
-  contra `totalCobrado()` hasta que corra su ciclo—, y **se
-  muestran dos líneas —"Vendido" arriba, "Cobrado" abajo— sólo cuando
+  líneas en la columna y en el tile, y con las funciones sueltas del mismo
+  archivo (`vendidoDeVenta`, `cobradoDePagos`, `hayQueDesglosar`,
+  `formatearTotales`) en el pie de "Qué se vendió" de `/ventas/[id]`, que
+  desde su propio ciclo dejó de armar el desglose contra `totalCobrado()` —, y
+  **se muestran dos líneas —"Vendido" arriba, "Cobrado" abajo— sólo cuando
   difieren; un número solo cuando coinciden**. Sin dólares ni planes de pago
   coinciden POR CONSTRUCCIÓN (`Σ Pago.monto = total + recargo`), así que un
   local que no usa ninguna de las dos cosas no ve ninguna diferencia respecto
@@ -579,8 +581,9 @@ El historial por período.
   este ciclo, las cuatro cifras sumaban `total + recargo` con `totalCobrado()`
   (`lib/ventas/totales.ts`) y el tile llevaba `totalUsd` a una segunda línea
   aparte; esta pantalla dejó de llamar a esa función porque dejó de describir
-  lo que muestra — sigue viva, todavía, en el pie de `/ventas/[id]` (su
-  propio ciclo).
+  lo que muestra, y el pie de `/ventas/[id]` la dejó de llamar en su propio
+  ciclo poco después — `totalCobrado()` queda sin ningún llamador de
+  producción, y su borrado es de otro ciclo.
 - **El total NO suma las anuladas**, y lo dice en pantalla para que nadie tenga
   que deducirlo. Lo devuelto de las anuladas es un agregado APARTE, no el
   mismo número con el filtro invertido.
@@ -671,12 +674,14 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 - Ver los ítems con su SKU (o "Servicio" si no lleva stock), cantidad, precio
   unitario y subtotal — **cada uno en su propia moneda** (Task 11): un ítem en
   dólares muestra "US$", sin convertirlo a pesos.
-- Ver el pie de "Qué se vendió" **desglosado en Mercadería / Recargo (o
-  Descuento) / Cobrado si la venta llevó recargo**, o el renglón único "Total"
-  de siempre si no. **Con algo en dólares, se agrega una banda más, "Total en
-  dólares"** (Task 11) — puede haber DOS bandas destacadas a la vez, una por
-  moneda, en vez de una sola; el recargo sigue yendo siempre del lado de los
-  pesos (nunca hay un "Recargo" en dólares que desglosar).
+- Ver el pie de "Qué se vendió" **desglosado en Vendido / Recargo (o
+  Descuento) / Cobrado cuando hay algo que desglosar**, o el renglón único
+  "Total" de siempre si no — que desde el ciclo del cobrado por moneda incluye
+  también toda venta en dólares pagada en dólares (antes mostraba dos
+  renglones, "Total" y "Total en dólares"; ahora uno solo). **Una sola banda
+  destacada**, no una por moneda: "Cobrado" ya lleva las dos monedas juntas
+  cuando hace falta, y el recargo sigue yendo siempre del lado de los pesos
+  (nunca hay un "Recargo" en dólares que desglosar).
 - Ver los pagos con su medio, **el plan con el que se cobró cada uno** (o "—"
   sin plan), moneda, cotización (en los pagos que tocan dólares de algún
   lado — el que se paga en dólares o el que cruza a cubrir el total en
@@ -691,15 +696,27 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 
 **Decisiones**
 
-- **El pie de "Qué se vendió" desglosa sólo si `Venta.recargo` no es cero**
-  (ciclo de precios por forma de pago, Task 8): una venta sin recargo —toda
-  venta grabada antes de este ciclo, y la mayoría después— no tiene nada que
-  desglosar, y tres líneas repitiendo el mismo número serían ruido. Con
-  recargo, el rótulo de la segunda línea sigue la misma gramática que ya fijó
-  `/vender` (Task 6): "Recargo" o "Descuento" según el signo, y bajo
-  "Descuento" el importe va sin el signo porque la palabra ya dice de qué lado
-  está — la misma regla vale en una pantalla que se LEE y no sólo en una que se
-  opera.
+- **El pie de "Qué se vendió" desglosa cuando hay algo que desglosar, no sólo
+  cuando `Venta.recargo` no es cero** (ciclo del cobrado por moneda,
+  `hayQueDesglosar()` en `lib/ventas/cobrado.ts`, la misma función que ya usan
+  la columna Total y el tile "Total del período" de `/ventas`). Además del
+  recargo, también desglosa cuando lo **Vendido** (`Venta.total` +
+  `Venta.totalUsd`, la mercadería a precio de lista) y lo **Cobrado**
+  (`Σ Pago.monto`, apilado por `Pago.moneda` — nunca por `Pago.cubre`) no
+  coinciden: el caso de un pago partido entre pesos y dólares sin ningún
+  recargo de por medio (R8 del ciclo). Sin nada de eso —toda venta grabada
+  antes de este ciclo, y la mayoría después— no hay nada que desglosar, y
+  repetir el mismo número sería ruido. Con recargo, el rótulo de la segunda
+  línea sigue la misma gramática que ya fijó `/vender` (Task 6): "Recargo" o
+  "Descuento" según el signo, y bajo "Descuento" el importe va sin el signo
+  porque la palabra ya dice de qué lado está — la misma regla vale en una
+  pantalla que se LEE y no sólo en una que se opera. **Antes de este ciclo el
+  pie sumaba `total + recargo` con `totalCobrado()` y agregaba una banda
+  aparte, "Total en dólares", cuando `totalUsd !== 0`** — esta pantalla era la
+  última que hacía esa cuenta; ahora usa las mismas `vendidoDeVenta` /
+  `cobradoDePagos` / `formatearTotales` (`lib/ventas/cobrado.ts`) que el resto
+  de las pantallas de venta, y "Cobrado" lleva las dos monedas en el mismo
+  renglón en vez de una banda aparte por moneda.
 - **La columna "Plan" de "Cómo se pagó" no filtra planes dados de baja.** La
   FK `Pago.planDePagoId` es `Restrict` y la baja es lógica (Task 1), así que
   la fila sigue estando: una venta de marzo tiene que seguir diciendo con qué
@@ -709,10 +726,10 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
   pago**, delante de la moneda. Es el mismo mecanismo que ya usan Moneda y
   Cotización en esa tabla ("el dato no desaparece, se funde en la meta"), y va
   primero porque es lo que distingue un pago de otro del mismo medio. El
-  desglose de tres líneas del pie, en cambio, **sí** se muestra en los dos
-  anchos: la última línea es siempre la banda destacada —`--marca` en el
-  teléfono, `bg-muted` en escritorio—, lleve el rótulo "Total" o "Cobrado", así
-  que el ancla visual de la pantalla no cambia con el desglose.
+  desglose del pie, en cambio, **sí** se muestra en los dos anchos: la última
+  línea es siempre la única banda destacada —`--marca` en el teléfono,
+  `bg-muted` en escritorio—, lleve el rótulo "Total" o "Cobrado", así que el
+  ancla visual de la pantalla no cambia con el desglose.
 - **"Cómo se pagó" no le atribuye el recargo a un solo plan en el resumen.**
   Con un pago partido entre dos planes distintos, el pie de arriba muestra un
   único número de recargo (la suma); cuál plan cobró cuánto vive en la columna
