@@ -826,6 +826,17 @@ no competir con el rótulo del propio tile. **No agregan ninguna fila nueva a
 la escala de `docs/sistema-de-diseno.md`**: es el mismo rol de siempre, en un
 lugar donde antes no había ningún rótulo.
 
+**Y la columna Total del listado cambió de ancho, que sí es una medida que la
+maqueta fija: de 140 px a 280 px.** Con el desglose, `$ 155.000,00 +
+US$ 200,00` no entraba en 140 px y se partía en dos renglones; con el rótulo
+encima de cada importe, esa fila terminaba midiendo el doble de alto que sus
+vecinas. El ancho salió de `Cliente`, que es `1fr` y venía quedándose con
+~1.150 px vacíos al lado. En escritorio el rótulo pasó además a ir **en línea**
+con su importe —rótulo a la izquierda, número a la derecha—, así la fila
+desglosada mide dos renglones y no cuatro; en el teléfono sigue apilado, que es
+lo único que entra a 390 px. Lo pidió el dueño del producto mirando la pantalla
+construida.
+
 Y sigue pendiente, de antes de este ciclo y sin que éste lo mueva: que una
 persona guarde desde Pencil el `.pen` vivo y lo commitee. El archivo
 versionado sigue siendo el del 2026-08-21 (ver la entrada del 2026-08-30 de

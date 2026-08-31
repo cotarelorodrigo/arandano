@@ -383,7 +383,7 @@ describe('Listado: el patrón grid + display:contents', () => {
   it('el contenedor es la tabla ARIA: 1 columna en el teléfono, 6 en escritorio', () => {
     const html = renderListado()
     expect(html).toContain('role="table"')
-    expect(html).toMatch(/class="[^"]*\bgrid-cols-1\b[^"]*\blg:grid-cols-\[84px_110px_1fr_168px_140px_104px\]/)
+    expect(html).toMatch(/class="[^"]*\bgrid-cols-1\b[^"]*\blg:grid-cols-\[84px_110px_1fr_168px_280px_104px\]/)
   })
 
   it('el encabezado está oculto en el teléfono y se disuelve en escritorio', () => {
@@ -522,6 +522,41 @@ describe('Listado: el patrón grid + display:contents', () => {
     expect(html).toContain('$ 103.900,00')
     expect(html).not.toContain('Vendido')
     expect(html).not.toContain('Cobrado')
+  })
+
+  // La columna Total medía 140px y el desglose no entraba: "$ 155.000,00 +
+  // US$ 200,00" se partía en dos renglones, y con el rótulo ENCIMA de cada
+  // importe la fila terminaba midiendo el doble que las demás. `Cliente` es
+  // `1fr` y se quedaba con ~1.150px vacíos al lado, así que el ancho estaba
+  // ahí para tomarlo.
+  it('en escritorio el rótulo va en LÍNEA con su importe, no encima', () => {
+    const html = renderListado({
+      filas: [{
+        ...FILA,
+        totalLineas: [
+          { rotulo: 'Vendido', valor: 'US$ 300,00' },
+          { rotulo: 'Cobrado', valor: '$ 155.000,00 + US$ 200,00' },
+        ],
+      }],
+    })
+    // `lg:flex-row` es lo que los pone en la misma línea, y `lg:ml-auto` en el
+    // importe es lo que lo empuja al borde derecho — con `justify-between` no
+    // alcanzaría: una línea SIN rótulo tiene un solo hijo y quedaría a la
+    // izquierda, que es justo el caso común de esta columna.
+    expect(html).toContain('lg:flex-row')
+    expect(html).toContain('lg:ml-auto')
+  })
+
+  it('en el teléfono el rótulo sigue APILADO sobre su importe', () => {
+    const html = renderListado({
+      filas: [{ ...FILA, totalLineas: [{ rotulo: 'Cobrado', valor: '$ 1,00' }] }],
+    })
+    // Mobile-first: el valor sin prefijo es el del teléfono. `flex-col` +
+    // `items-end` sin `lg:` es la pila alineada a la derecha de 390px, que es
+    // lo único que entra a ese ancho.
+    const celda = html.match(/class="flex flex-col items-end[^"]*"/g) ?? []
+    expect(celda.length).toBeGreaterThan(0)
+    for (const c of celda) expect(c).not.toMatch(/(^|\s)flex-row/)
   })
 
   it('con dos líneas, dibuja los rótulos y Vendido va ARRIBA de Cobrado', () => {

@@ -533,7 +533,9 @@ El historial por período.
   artículos, con qué medios se pagó, el **total** y su estado. **La columna
   Total muestra el mismo par que el tile de arriba**: Vendido y Cobrado
   cuando difieren ("Vendido US$ 300,00 / Cobrado $ 148.500,00 + US$
-  200,00"), un número solo cuando coinciden — sin convertir nada.
+  200,00"), un número solo cuando coinciden — sin convertir nada. En
+  escritorio el rótulo va **en línea** con su importe, a la izquierda; en el
+  teléfono va apilado encima. Ver *Decisiones*.
 - Ver **"Cómo entró la plata"**: una barra por medio de pago, de un solo color,
   con **un importe por moneda** en el rótulo — los pesos arriba y, sólo si ese
   medio recibió dólares, los dólares abajo, sin convertir. La barra y el
@@ -663,6 +665,18 @@ El historial por período.
   que hereda toda pantalla* para el patrón.
 - **"Cómo entró la plata" ya era fluido** desde que se reescribió sin
   `recharts`, así que no necesitó nada.
+- **La columna Total mide 280 px, no los 140 px que fijaba la maqueta**, y en
+  escritorio el rótulo va en línea con su importe en vez de encima. Los dos
+  cambios salen del mismo defecto, visto sobre la pantalla ya construida: con
+  el desglose, `$ 155.000,00 + US$ 200,00` no entraba en 140 px y se partía en
+  dos renglones, y con el rótulo encima esa fila terminaba midiendo el doble
+  de alto que sus vecinas. El ancho salió de `Cliente`, que es `1fr` y venía
+  quedándose con ~1.150 px vacíos al lado, así que no se le quitó espacio a
+  nada. El importe se empuja con `ml-auto` y **no** con `justify-between` en
+  el contenedor: una línea sin rótulo tiene un solo hijo y `justify-between`
+  la dejaría a la izquierda, que es justo el caso común de esta columna. En el
+  teléfono no cambia nada — sigue apilado, que es lo único que entra a 390 px.
+  Anotado en `docs/correcciones-pendientes-del-pen.md`, entrada 25.
 
 ## `/ventas/[id]`
 

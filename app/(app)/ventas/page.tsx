@@ -515,7 +515,7 @@ export type FilaDeVenta = {
  * resuelve con grid + `display: contents`:
  *
  * ```
- * contenedor  grid grid-cols-1 lg:grid-cols-[84px_110px_1fr_168px_140px_104px]
+ * contenedor  grid grid-cols-1 lg:grid-cols-[84px_110px_1fr_168px_280px_104px]
  * encabezado  hidden lg:contents          (cada <div> es un columnheader)
  * fila        flex ... lg:contents        role="row"
  * agrupador   flex ... lg:contents        (el que junta "#1042 · 14:32")
@@ -613,7 +613,7 @@ export function Listado({
         </p>
       ) : (
         <>
-          <div role="table" className="grid grid-cols-1 lg:grid-cols-[84px_110px_1fr_168px_140px_104px]">
+          <div role="table" className="grid grid-cols-1 lg:grid-cols-[84px_110px_1fr_168px_280px_104px]">
             {/* El encabezado sólo existe en escritorio: `hidden` lo saca del
                 todo en el teléfono, `lg:contents` lo disuelve ahí para que
                 sus 6 `columnheader` pasen a ser las celdas de la primera fila
@@ -743,16 +743,31 @@ export function Listado({
 
                 {/* "Importe": la mitad derecha en el teléfono (monto + chip,
                     alineados a la derecha); disuelta en escritorio, donde sus
-                    hijos vuelven a ser las celdas Total (140px) y Estado
-                    (104px). */}
+                    hijos vuelven a ser las celdas Total (280px) y Estado
+                    (104px). Total pasó de 140px a 280px: con el desglose
+                    Vendido/Cobrado, "$ 155.000,00 + US$ 200,00" no entraba y
+                    se partía en dos renglones. El ancho salió de `Cliente`,
+                    que es `1fr` y venía quedándose con ~1.150px vacíos. */}
                 <div className="flex flex-col items-end gap-1.5 lg:contents">
                   <div
                     role="cell"
                     className={`${estilos.archivo} text-[15px] font-semibold text-foreground tabular-nums lg:border-b lg:p-[11px] lg:px-[7px] lg:text-sm lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}
                   >
-                    <div className="flex flex-col items-end lg:h-full lg:justify-center">
+                    {/* `lg:items-stretch` para que cada línea ocupe el ancho
+                        de la celda y el importe pueda irse al borde derecho.
+                        Sin él los hijos encogen a su contenido y `ml-auto` no
+                        tendría contra qué empujar. */}
+                    <div className="flex flex-col items-end lg:h-full lg:items-stretch lg:justify-center">
                       {f.totalLineas.map((l) => (
-                        <div key={l.rotulo ?? '—'} className="flex flex-col items-end">
+                        <div
+                          key={l.rotulo ?? '—'}
+                          /* Apilado en el teléfono —es lo único que entra a
+                             390px— y en línea en escritorio: el rótulo a la
+                             izquierda, el importe a la derecha. Con eso una
+                             fila desglosada mide dos renglones y no cuatro,
+                             y deja de medir el doble que sus vecinas. */
+                          className="flex flex-col items-end lg:flex-row lg:items-baseline lg:gap-3"
+                        >
                           {/* El rótulo NO hereda el 15px semibold tabular de
                               la celda: se lo pisa explícito. 10px y no 9px:
                               es el mismo rol de rótulo que ya paga el tile
@@ -767,7 +782,11 @@ export function Listado({
                               {l.rotulo}
                             </span>
                           )}
-                          <span>{l.valor}</span>
+                          {/* `ml-auto` y no `justify-between` en el padre:
+                              una línea SIN rótulo tiene un solo hijo, y
+                              `justify-between` la dejaría a la IZQUIERDA —
+                              que es justo el caso común de esta columna. */}
+                          <span className="lg:ml-auto">{l.valor}</span>
                         </div>
                       ))}
                     </div>
