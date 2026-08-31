@@ -347,7 +347,7 @@ export function ventanaDePaginas(actual: number, total: number): number[] {
  *
  * `design/arandano.pen` no dibuja ningún tile con rótulos de línea: es
  * anterior a este ciclo. Anotado en docs/correcciones-pendientes-del-pen.md,
- * entrada 26.
+ * entrada 25.
  */
 export function Tile({
   rotulo, lineas, pie, marca = false,

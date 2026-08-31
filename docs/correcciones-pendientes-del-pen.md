@@ -813,7 +813,7 @@ Ver `docs/superpowers/specs/2026-08-30-ventas-por-moneda-y-horarios-design.md`.
 
 ---
 
-## 26. La maqueta no dibuja el desglose Vendido/Cobrado, en ninguna de las tres pantallas
+## 25. La maqueta no dibuja el desglose Vendido/Cobrado, en ninguna de las tres pantallas
 
 `design/arandano.pen` es anterior a este ciclo, así que no tiene frame para
 (1) la columna Total del listado con dos líneas rotuladas, (2) el tile "Total

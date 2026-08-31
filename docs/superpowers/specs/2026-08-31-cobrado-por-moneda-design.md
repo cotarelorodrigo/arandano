@@ -356,6 +356,6 @@ bailan.
   las barras dejan de ser comparables entre sí. No es este ciclo.
 - **La maqueta no dibuja nada de esto** —ni la columna de dos líneas ni el tile
   con rótulos—, así que las dos formas se derivan sin frame. Queda anotado en
-  `docs/correcciones-pendientes-del-pen.md` como entrada 26. Y sigue pendiente,
+  `docs/correcciones-pendientes-del-pen.md` como entrada 25. Y sigue pendiente,
   de antes de este ciclo, que una persona guarde desde Pencil el `design/arandano.pen`
   vivo y lo commitee: el archivo versionado sigue siendo el del 2026-08-21.
