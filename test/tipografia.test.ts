@@ -77,12 +77,16 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   // dibujada, ver docs/correcciones-pendientes-del-pen.md— sino de reusar
   // este mismo rol, por lo mismo que las cuatro anteriores: es el MISMO rol
   // (15 px, peso 600), no uno nuevo por pantalla.
+  // La séptima (ciclo del bot de WhatsApp): /bot. Mismo caso exacto que
+  // /formas-de-pago — el `.pen` tampoco la dibuja (entrada 26 de ese mismo
+  // documento), así que el título vuelve a salir de reusar este rol.
   'Título de card': [
     'app/(app)/ventas/tipografia.module.css',
     'app/(app)/inventario/tipografia.module.css',
     'app/(app)/servicio-tecnico/tipografia.module.css',
     'app/(app)/usuarios/tipografia.module.css',
     'app/(app)/formas-de-pago/tipografia.module.css',
+    'app/(app)/bot/tipografia.module.css',
   ],
   'Valor de tile': ['app/(app)/ventas/tipografia.module.css'],
   'Monto de tabla': ['app/(app)/ventas/tipografia.module.css'],

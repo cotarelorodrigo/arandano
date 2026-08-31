@@ -195,3 +195,49 @@ describe('/formas-de-pago: "Plan nuevo" existe dos veces y la pantalla entera la
     expect(sinComentarios).not.toMatch(/PLANES_PAGO/)
   })
 })
+
+describe('/bot: el disparador de conexión existe dos veces y las dos son sólo del dueño', () => {
+  const PAGINA = readFileSync('app/(app)/bot/page.tsx', 'utf8')
+  const FORMULARIOS = readFileSync('app/(app)/bot/formularios.tsx', 'utf8')
+
+  // Las DOS copias: `acciones` (escritorio, que `<Encabezado>` envuelve en
+  // `hidden lg:flex`) y `controlMovil` (la ranura derecha del Topbar del
+  // teléfono). Sin la segunda, conectar el WhatsApp del local sería imposible
+  // desde un celular — que es justamente el aparato donde el dueño tiene la
+  // cuenta de Facebook del negocio con la que hay que firmar.
+  it('el disparador se coloca en el Topbar de escritorio Y en la ranura del teléfono', () => {
+    expect([...PAGINA.matchAll(/<BotonDeConexion /g)]).toHaveLength(2)
+    expect(PAGINA).toContain('controlMovil={')
+    expect(PAGINA).toMatch(/<BotonDeConexion[^>]*movil/)
+  })
+
+  /**
+   * Y las dos reciben las MISMAS props de guarda, contado en las dos
+   * direcciones. Un `not.toContain` no alcanzaría: pasaría igual si una copia
+   * quedó gateada y la otra no, que es exactamente el bug que el merge del
+   * ciclo del teléfono produjo con "Anular orden".
+   */
+  it('las dos copias llevan el mismo esDuenio y el mismo kapsoListo', () => {
+    expect([...PAGINA.matchAll(/esDuenio=\{esDuenio\}/g)]).toHaveLength(2)
+    expect([...PAGINA.matchAll(/kapsoListo=\{vista\.kapsoListo\}/g)]).toHaveLength(2)
+  })
+
+  // Y la guarda vive en UN solo componente, así que no hay forma de que una
+  // copia se salte el chequeo: las dos son la misma función con `movil` distinto.
+  it('la guarda vive adentro del componente compartido, no en cada llamador', () => {
+    expect(FORMULARIOS).toMatch(/if \(!esDuenio \|\| !kapsoListo\) return null/)
+  })
+
+  // La pantalla entera exige BOT, igual que /formas-de-pago con PLANES_PAGO: el
+  // permiso corta antes de renderizar, así que ningún botón lo evalúa por su
+  // cuenta. Este caso fija esa asimetría con `esDuenio`, que SÍ se evalúa
+  // adentro porque la pantalla es de todos los que tienen BOT y sólo la
+  // conexión es del dueño.
+  it('el permiso corta antes del render; lo único que se evalúa adentro es el rol', () => {
+    expect(PAGINA).toContain("exigirPermiso('BOT')")
+    const sinComentarios = FORMULARIOS.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    expect(sinComentarios, "formularios.tsx no debe evaluar 'BOT' por su cuenta").not.toMatch(
+      /'BOT'/,
+    )
+  })
+})

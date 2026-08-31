@@ -38,6 +38,7 @@ async function render() {
 describe('layout de la aplicación', () => {
   beforeEach(() => {
     vi.resetModules()
+    delete process.env.BOT_HABILITADO_EN
     exigirSesion.mockReset()
     permisosDe.mockReset()
     permisosDe.mockResolvedValue(new Set())
@@ -135,6 +136,53 @@ describe('layout de la aplicación', () => {
     permisosDe.mockResolvedValue(new Set(['PLANES_PAGO']))
     expect(await render()).toContain('href="/formas-de-pago"')
     expect(permisosDe).toHaveBeenCalledWith('un-id', 'otro-id')
+  })
+
+  /**
+   * El gate del rollout apaga la PESTAÑA sacando BOT de los permisos que el
+   * layout le pasa al sidebar.
+   *
+   * Se cuenta en las dos direcciones a propósito, y no por simetría: un
+   * `not.toContain` solo pasaría igual si la pestaña desapareciera SIEMPRE —o
+   * sea con el bot apagado en todos lados y el gate en verde—, que es
+   * exactamente el modo de falla que este par descarta.
+   *
+   * Ojo con el dueño, que es el caso que hace falta el gate: tiene los ocho
+   * permisos sin fila en `usuario_permisos`, así que sin esto la vería
+   * cualquiera.
+   */
+  it('un dueño de un local fuera de la lista no ve la pestaña del bot', async () => {
+    process.env.BOT_HABILITADO_EN = 'wafflespro' // la sesión de arriba es 'prueba'
+    expect(await render()).not.toContain('href="/bot"')
+  })
+
+  it('un dueño del local de la lista sí la ve', async () => {
+    process.env.BOT_HABILITADO_EN = 'prueba'
+    expect(await render()).toContain('href="/bot"')
+  })
+
+  it('sin la variable declarada, la pestaña está', async () => {
+    expect(await render()).toContain('href="/bot"')
+  })
+
+  /**
+   * El gate se aplica DESPUÉS de resolver los permisos, no en lugar de ellos:
+   * un empleado sin BOT sigue sin ver la pestaña aunque su local esté en la
+   * lista. Son dos preguntas distintas —en qué locales existe el bot, y a quién
+   * del local se le delega— y ninguna reemplaza a la otra.
+   */
+  it('en un local habilitado, un empleado sin BOT sigue sin ver la pestaña', async () => {
+    process.env.BOT_HABILITADO_EN = 'prueba'
+    exigirSesion.mockResolvedValue({
+      tenant: { id: 'un-id', nombre: 'Local de prueba', estado: 'ACTIVO' },
+      usuario: { id: 'otro-id', nombre: 'Quien sea', rol: 'EMPLEADO' },
+      subdominio: 'prueba',
+    })
+    permisosDe.mockResolvedValue(new Set<string>())
+    expect(await render()).not.toContain('href="/bot"')
+
+    permisosDe.mockResolvedValue(new Set(['BOT']))
+    expect(await render()).toContain('href="/bot"')
   })
 
   it('renderiza el contenido de adentro', async () => {

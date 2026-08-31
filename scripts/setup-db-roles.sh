@@ -194,6 +194,37 @@ BEGIN
 END
 $$;
 
+-- mensajes_bot: lo que el bot y el cliente se dijeron. La tercera tabla-libro,
+-- y necesita su propia línea por lo mismo que las otras dos: el default
+-- privilege le da UPDATE y DELETE a toda tabla nueva, y eso no se hereda al
+-- revés.
+--
+-- Que sea append-only no es prolijidad. Es lo único que hace que la tabla sirva
+-- para lo que existe: sin bandeja, este libro es la ÚNICA forma de contestar
+-- "¿qué le dijo el bot a mi cliente?" cuando alguien reclama. Un libro editable
+-- no contesta esa pregunta, y el que más motivo tendría para editarlo es
+-- justamente el que tiene que responderla.
+--
+-- Y el DELETE sobre conversaciones_bot en el mismo bloque, por el mismo agujero
+-- que ya tenía eventos_orden: mensajes_bot.conversacion_id es ON DELETE CASCADE,
+-- así que borrar un hilo se lleva su contenido entero sin tocar nunca la tabla
+-- que acabamos de cerrar. Ningún código borra conversaciones, así que revocarlo
+-- no le saca nada a nadie. El UPDATE sobre conversaciones_bot SÍ se conserva:
+-- ahí se escriben ultimo_mensaje_en y nombre_contacto en cada mensaje.
+--
+-- Mismo guard to_regclass que los otros: este script corre también antes de la
+-- primera migración, cuando las tablas todavía no existen.
+DO $$
+BEGIN
+  IF to_regclass('public.mensajes_bot') IS NOT NULL THEN
+    EXECUTE 'REVOKE UPDATE, DELETE ON public.mensajes_bot FROM arandano_app';
+  END IF;
+  IF to_regclass('public.conversaciones_bot') IS NOT NULL THEN
+    EXECUTE 'REVOKE DELETE ON public.conversaciones_bot FROM arandano_app';
+  END IF;
+END
+$$;
+
 -- leads: append-only para la aplicación, y por un motivo distinto al de
 -- movimientos_stock. Aquella es un libro y no se corrige; ésta no tiene
 -- tenant_id, así que no hay policy que la proteja — sin este REVOKE, cualquier

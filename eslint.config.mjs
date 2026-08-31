@@ -21,6 +21,14 @@ const eslintConfig = defineConfig([
     // aparte. Los ensayos nunca lo vieron: corren desde adentro del worktree,
     // donde este directorio no existe.
     ".claude/**",
+    // Mismo caso que la línea de arriba, con otro origen: las skills de
+    // herramientas se instalan en .agents/skills/<skill>/ y traen sus propios
+    // scripts .js, que no son código de este repo y no siguen su configuración
+    // (CommonJS, `require`, sin tipos). Sin esto, `eslint` sin argumentos los
+    // levanta y `npm run lint` —el paso 5 del gate— falla con ~95 errores que
+    // nadie escribió. Se descubrió al instalar las skills de Kapso y LangChain
+    // para el ciclo del bot de WhatsApp.
+    ".agents/**",
   ]),
 ]);
 

@@ -74,6 +74,11 @@ services:
       # Ver compose.prod.yml: el healthcheck comprueba contra qué base está
       # hablando la app, no sólo que alguna responda.
       ARANDANO_DB_ESPERADA: arandano_stage
+      # La base de la API de Kapso (la capa de WhatsApp del bot). No es secreta;
+      # la credencial es KAPSO_API_KEY y este stack NO la tiene: la pantalla
+      # /bot degrada avisando y devuelve 200, que es lo que el barrido de
+      # scripts/smoke.sh necesita para no voltear el deploy.
+      KAPSO_API_BASE_URL: https://api.kapso.ai
       DOMINIO_BASE: stage.arandano.app
       # El puerto con el que se llega a este stack (ver el mapeo de `ports`
       # más abajo): Better Auth lo necesita para armar su `baseURL`

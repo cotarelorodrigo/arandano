@@ -55,6 +55,11 @@ export const PERMISOS = [
     ayuda: 'Anular una venta ya cobrada y devolver su stock al inventario.',
   },
   {
+    clave: 'BOT',
+    nombre: 'Configurar el bot de WhatsApp',
+    ayuda: 'Prender y apagar el bot, y editar la información del local que responde.',
+  },
+  {
     clave: 'ORDENES_ANULAR',
     nombre: 'Anular órdenes de trabajo',
     ayuda: 'Anular una orden de servicio técnico ya abierta.',

@@ -604,4 +604,174 @@ describe('aislamiento por RLS', () => {
       expect(rows, 'el plan de B desapareció').toHaveLength(1)
     })
   })
+
+  describe('el bot de WhatsApp', () => {
+    let botB: string
+    let conversacionB: string
+    let mensajeB: string
+
+    beforeAll(async () => {
+      const b = await owner.query(
+        `INSERT INTO bots_de_whatsapp
+           (id, tenant_id, kapso_customer_id, phone_number_id, webhook_secreto,
+            activo, instrucciones, tope_mensual, creado_en, actualizado_en)
+         VALUES (gen_random_uuid(), $1, 'cus-de-b', 'pn-de-b', 'secreto-de-b',
+                 true, 'Abrimos de 9 a 18', 1000, now(), now())
+         RETURNING id`,
+        [tenantB],
+      )
+      botB = b.rows[0].id
+
+      const c = await owner.query(
+        `INSERT INTO conversaciones_bot
+           (id, tenant_id, wa_id, creado_en, ultimo_mensaje_en)
+         VALUES (gen_random_uuid(), $1, '+5491100000000', now(), now())
+         RETURNING id`,
+        [tenantB],
+      )
+      conversacionB = c.rows[0].id
+
+      const m = await owner.query(
+        `INSERT INTO mensajes_bot
+           (id, tenant_id, conversacion_id, direccion, texto, wamid, creado_en)
+         VALUES (gen_random_uuid(), $1, $2, 'ENTRANTE', 'hola', 'wamid.de-b', now())
+         RETURNING id`,
+        [tenantB, conversacionB],
+      )
+      mensajeB = m.rows[0].id
+    })
+
+    it('bots_de_whatsapp: el otro tenant no ve la fila, y su dueño sí', async () => {
+      const { rows: deA } = await comoTenant(tenantA, 'SELECT 1 FROM bots_de_whatsapp')
+      expect(deA, 'bots_de_whatsapp filtró filas de otro tenant').toHaveLength(0)
+
+      const { rows: deB } = await comoTenant(tenantB, 'SELECT 1 FROM bots_de_whatsapp')
+      expect(deB, 'bots_de_whatsapp no es legible por su propio tenant').toHaveLength(1)
+    })
+
+    /**
+     * El caso que de verdad importa de esta tabla, y por eso va aparte del
+     * genérico de arriba: con `webhook_secreto` cualquiera puede FIRMAR un
+     * webhook que se haga pasar por Kapso y meterle mensajes al bot de otro
+     * local. Es la única columna del schema cuya fuga convierte a un tenant en
+     * el otro, así que se afirma por nombre en vez de confiar en que el
+     * `SELECT 1` de arriba cubra todas las columnas.
+     */
+    it('bots_de_whatsapp: el secreto del webhook de B no se lee desde A', async () => {
+      const { rows } = await comoTenant(
+        tenantA,
+        'SELECT webhook_secreto FROM bots_de_whatsapp WHERE id = $1',
+        [botB],
+      )
+      expect(rows, 'A leyó el secreto con el que se firman los webhooks de B').toHaveLength(0)
+    })
+
+    it('bots_de_whatsapp: rechaza insertar con el tenant_id de otro', async () => {
+      await expect(
+        comoTenant(
+          tenantA,
+          `INSERT INTO bots_de_whatsapp (id, tenant_id, creado_en, actualizado_en)
+           VALUES (gen_random_uuid(), $1, now(), now())`,
+          [tenantB],
+        ),
+      ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+    })
+
+    it('bots_de_whatsapp: A no puede apagarle el bot (UPDATE) a B', async () => {
+      const { rowCount } = await comoTenant(
+        tenantA,
+        'UPDATE bots_de_whatsapp SET activo = false WHERE id = $1',
+        [botB],
+      )
+      expect(rowCount, 'el UPDATE de A afectó una fila que no es suya').toBe(0)
+
+      const { rows } = await owner.query('SELECT activo FROM bots_de_whatsapp WHERE id = $1', [botB])
+      expect(rows[0].activo).toBe(true)
+    })
+
+    it('bots_de_whatsapp: A no puede desconectarle el número (DELETE) a B', async () => {
+      const { rowCount } = await comoTenant(
+        tenantA,
+        'DELETE FROM bots_de_whatsapp WHERE id = $1',
+        [botB],
+      )
+      expect(rowCount, 'el DELETE de A afectó una fila que no es suya').toBe(0)
+
+      const { rows } = await owner.query('SELECT 1 FROM bots_de_whatsapp WHERE id = $1', [botB])
+      expect(rows, 'el bot de B desapareció').toHaveLength(1)
+    })
+
+    it('conversaciones_bot: el otro tenant no ve el hilo, y su dueño sí', async () => {
+      const { rows: deA } = await comoTenant(tenantA, 'SELECT 1 FROM conversaciones_bot')
+      expect(deA, 'conversaciones_bot filtró filas de otro tenant').toHaveLength(0)
+
+      const { rows: deB } = await comoTenant(tenantB, 'SELECT 1 FROM conversaciones_bot')
+      expect(deB, 'conversaciones_bot no es legible por su propio tenant').toHaveLength(1)
+    })
+
+    it('conversaciones_bot: rechaza insertar con el tenant_id de otro', async () => {
+      await expect(
+        comoTenant(
+          tenantA,
+          `INSERT INTO conversaciones_bot (id, tenant_id, wa_id, creado_en, ultimo_mensaje_en)
+           VALUES (gen_random_uuid(), $1, '+5491199999999', now(), now())`,
+          [tenantB],
+        ),
+      ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+    })
+
+    it('mensajes_bot: el otro tenant no lee lo que el bot de B le dijo a su cliente', async () => {
+      const { rows: deA } = await comoTenant(
+        tenantA,
+        'SELECT texto FROM mensajes_bot WHERE id = $1',
+        [mensajeB],
+      )
+      expect(deA, 'A leyó la conversación de un cliente de B').toHaveLength(0)
+
+      const { rows: deB } = await comoTenant(tenantB, 'SELECT 1 FROM mensajes_bot')
+      expect(deB, 'mensajes_bot no es legible por su propio tenant').toHaveLength(1)
+    })
+
+    it('mensajes_bot: rechaza insertar con el tenant_id de otro', async () => {
+      await expect(
+        comoTenant(
+          tenantA,
+          `INSERT INTO mensajes_bot
+             (id, tenant_id, conversacion_id, direccion, texto, creado_en)
+           VALUES (gen_random_uuid(), $1, $2, 'SALIENTE', 'metido', now())`,
+          [tenantB, conversacionB],
+        ),
+      ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+    })
+
+    /**
+     * Estos dos no los sostiene RLS sino el privilegio (scripts/setup-db-roles.sh):
+     * mensajes_bot es tabla-libro, así que arandano_app no tiene UPDATE ni
+     * DELETE sobre ella NI SIQUIERA PARA SUS PROPIAS FILAS. Por eso se afirman
+     * como B —su dueño— y no como A: contra otro tenant la policy ya alcanzaría,
+     * y el caso quedaría verde aunque el REVOKE se hubiera perdido.
+     */
+    it('mensajes_bot: es append-only incluso para su propio tenant (UPDATE)', async () => {
+      await expect(
+        comoTenant(tenantB, `UPDATE mensajes_bot SET texto = 'otra cosa' WHERE id = $1`, [mensajeB]),
+      ).rejects.toThrow(/permission denied|permiso denegado/i)
+    })
+
+    it('mensajes_bot: es append-only incluso para su propio tenant (DELETE)', async () => {
+      await expect(
+        comoTenant(tenantB, 'DELETE FROM mensajes_bot WHERE id = $1', [mensajeB]),
+      ).rejects.toThrow(/permission denied|permiso denegado/i)
+    })
+
+    /**
+     * La puerta de atrás del libro: conversaciones_bot ← mensajes_bot es ON
+     * DELETE CASCADE, así que borrar el hilo se llevaría los mensajes sin tocar
+     * nunca la tabla que el caso de arriba cierra.
+     */
+    it('conversaciones_bot: no se puede borrar un hilo, ni el propio', async () => {
+      await expect(
+        comoTenant(tenantB, 'DELETE FROM conversaciones_bot WHERE id = $1', [conversacionB]),
+      ).rejects.toThrow(/permission denied|permiso denegado/i)
+    })
+  })
 })

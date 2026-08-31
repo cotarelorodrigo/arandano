@@ -1807,6 +1807,173 @@ Y del producto:
   carrito mixto muestre los dos totales y los dos chips; que el campo de
   cotización arranque vacío; y que cubrir los US$ 300 con pesos y un plan de 12
   cuotas al 40 % cobre $623.700 y deje la venta cerrada.
+- ~~Construir el bot de WhatsApp.~~ **Hecho** (2026-08-29). Cada local conecta
+  **su** número desde `/bot` y el bot atiende a sus clientes: precios y
+  disponibilidad del catálogo, más la información del local que el dueño
+  escribe. Kapso es la capa de WhatsApp —Tech Provider de Meta, con un
+  *customer* por cliente nuestro, que mapea 1:1 contra el tenant— y LangChain
+  `createAgent` con Claude Haiku 4.5 es el agente. Ver
+  `docs/superpowers/specs/2026-08-29-bot-whatsapp-design.md`.
+
+  **Es la primera integración HTTP saliente del repo** y el primer endpoint que
+  recibe tráfico de un tercero. Las decisiones que valen para releer:
+
+  - **Coexistencia y no número dedicado.** El dueño sigue atendiendo desde la
+    app de WhatsApp Business en su celular y el bot contesta por API sobre el
+    MISMO número. Es lo único realista para un local que ya tiene su número con
+    clientes cargados, y es lo que hace que "sin bandeja" no sea una carencia:
+    el local ya tiene su bandeja, es su teléfono.
+  - **El tenant del webhook se resuelve por SUBDOMINIO.** La URL se registra en
+    Kapso como `https://<sub>.arandano.app/api/whatsapp/webhook`, así que
+    `tenantDelRequest()` la resuelve con la maquinaria que ya existe. La
+    alternativa —URL única en el ápex más una segunda función `SECURITY
+    DEFINER`— se descartó por **dónde termina viviendo el secreto**: para
+    verificar la firma hay que saber cuál usar, y para eso hay que saber de qué
+    tenant es el request; por el ápex esa cadena termina en una función
+    privilegiada cuyo argumento es atacante-controlado y enumerable. Y el
+    ahorro no existía: los eventos de mensaje son webhooks **de número**, así
+    que hay un objeto remoto por tenant en las dos rutas. **Lo que se rompe**:
+    renombrar un subdominio dejaría el webhook apuntando a la nada, en
+    silencio. Hoy no existe el renombre.
+  - **La defensa contra prompt injection es qué tools existen, no el prompt.**
+    El agente tiene UNA herramienta, que devuelve `{ nombre, precio,
+    disponibilidad }` y nada más. Los costos, las ventas, los clientes y la
+    `claveDesbloqueo` de una orden no están "prohibidos": **no hay ningún
+    camino de código que los alcance**. Por eso el prompt tampoco los nombra —
+    nombrar un secreto le enseña a quien lo extraiga que existe—. La otra
+    mitad, que conviene no confundir: esto acota lo que el bot puede LEER, no
+    lo que puede DECIR.
+  - **El stock se informa cualitativo**: "hay", "quedan pocas", "no hay". El
+    número exacto es información comercial que hoy no se le da a nadie, y
+    "quedan 2" invita a una discusión cada vez que el sistema y el estante no
+    coinciden.
+  - **El redirect del onboarding NO escribe nada.** Al volver, la pantalla le
+    PREGUNTA A KAPSO qué números conectó ese customer; los query params se
+    ignoran. Y `confirmarNumero` vuelve a verificar contra Kapso que el número
+    elegido sea del local: **un formulario es tan falsificable como una query
+    string**. De paso, preguntar resuelve el caso de la pestaña cerrada a mitad
+    del signup.
+  - **El tope mensual se cuenta, no se acumula.** Misma preferencia que
+    `Articulo.stock` respecto de sus movimientos, y acá más fuerte: los
+    mensajes se guardan igual, así que un contador sería un caché de algo ya
+    escrito cuyo modo de falla —"dice 1000 y hay 12 filas"— nadie descubre
+    hasta que un local reclama. Una respuesta que **falló al enviarse no
+    consume cupo**: no se le cobra al local algo que su cliente nunca vio.
+  - **Los cortes se evalúan ANTES de insertar, y eso no es una optimización.**
+    El motivo se escribe en la misma fila que crea el mensaje, y `mensajes_bot`
+    es tabla-libro sin `UPDATE`. Una versión anterior los evaluaba después y
+    anotaba el motivo con un `updateMany`: **habría fallado siempre, en
+    silencio, sobre el único corte que defiende del bucle de coexistencia.**
+  - **`after()` de Next y no pg-boss**, con su costo escrito: si el proceso
+    muere entre el 200 y el final del trabajo, ese mensaje se pierde sin
+    reintento. Contestar dentro del webhook no era opción —Kapso da diez
+    segundos y reintenta a los 10, 40 y 90, así que el cliente recibiría la
+    respuesta tres veces—. No se mitiga con una columna "pendiente" y un
+    barredor: eso ES una cola, mal hecha. pg-boss sigue siendo su propio ciclo.
+  - **LangChain sobre el SDK de Anthropic**, decisión del dueño del producto y
+    con su costo anotado: cuatro dependencias sobre un bucle que
+    `client.beta.messages.tool_runner` hace con una. Compra portabilidad a otro
+    proveedor y el camino a LangGraph cuando el flujo tenga ramas reales.
+  - **El permiso `BOT` es el octavo del catálogo.** Cubre prender, apagar y
+    editar lo que el bot responde. Conectar y desconectar el número NO se
+    delegan (`exigirDuenio()`): mueven la identidad de WhatsApp del local y una
+    relación con un tercero. Es la misma regla que separó `PLANES_PAGO` de
+    `ARTICULOS_EDITAR`. La fuente sigue siendo `lib/permisos/catalogo.ts`, no
+    este párrafo.
+
+  **Lo que encontró la primera corrida real contra el catálogo, y que el gate
+  no podía ver.** Los tests del agente no llaman al modelo —no pueden: el gate
+  no puede depender de una API externa ni gastar plata en cada corrida—, así que
+  hay una clase entera de defectos que sólo aparece corriéndolo. Aparecieron
+  tres, todos en la búsqueda: el `contains` de la frase entera no sirve para
+  lenguaje natural ("tenés fundas para iphone 13?" no encontraba la funda de
+  iPhone 13); `mode: 'insensitive'` ignora mayúsculas pero **no tildes**, y por
+  WhatsApp nadie las escribe; y un `AND` de palabras se rompe con cualquier verbo
+  que nadie previó ("hacen"). La búsqueda del bot es ahora por palabras, con
+  variantes acentuadas y dos pasos —todas primero, cualquiera después—. Más uno
+  del prompt: el bot no sabía que los SERVICIOS viven en el mismo catálogo que
+  los productos. **`npm run bot:probar` existe para esto**, y correrlo con
+  preguntas escritas como las escribe un cliente es parte de dar el trabajo por
+  terminado. El detalle está en el spec.
+
+  **Y un hallazgo de infraestructura que este ciclo destapó**: las skills de
+  herramientas se instalan en `.agents/skills/` **adentro del repo**, y sus
+  scripts `.js` hacían fallar `npm run lint` —el paso 5 del gate— con ~95
+  errores que nadie escribió. `eslint.config.mjs` ignora ese directorio, con el
+  mismo razonamiento y al lado de la línea de `.claude/**`, que existe por el
+  caso gemelo de los worktrees.
+
+  **Queda para los ciclos siguientes**: pg-boss y el webhook durable; el estado
+  de una orden de servicio técnico —que **requiere resolver antes la
+  identificación por teléfono**: `Cliente.telefono` se tipea a mano ("11
+  2233-4455") y WhatsApp entrega "5491122334455", así que hoy **no matchean**, y
+  hace falta normalizar en las dos puntas más un índice que no existe—; la
+  bandeja y el handoff a humano; horarios y dirección como modelo en vez de
+  texto libre, cuando también los necesiten el catálogo público y turnos; e
+  Instagram por el mismo agente.
+
+  **Y queda pendiente la verificación manual**, por lo mismo que en los cuatro
+  ciclos anteriores: `arandano-dev` bind-montea `/root/arandano` y no el
+  worktree. Después del merge hay que conectar un número de prueba de Meta,
+  escribir desde otro teléfono y ver que contesta con un precio real del
+  catálogo sembrado; que apagar el switch lo calla; que un empleado sin `BOT` no
+  ve la pestaña; y que uno con `BOT` ve la pantalla pero no puede desconectar.
+  **El circuito completo ya se probó contra la API real de Kapso** (2026-08-29),
+  con su número *sandbox* y un túnel: firma verificada, mensaje guardado, agente
+  contestando con el precio real del catálogo, envío intentado, reintento del
+  mismo `wamid` sin contestar dos veces, y firma alterada rechazada con 404.
+
+  Eso resolvió la primera de las dos incógnitas que el ciclo había dejado
+  abiertas, y en la dirección más simple: **Kapso NO genera el secreto del
+  webhook** —crear uno sin `secret_key` devuelve `422 "Secret key can't be
+  blank"`—, así que **lo generamos nosotros** con `randomBytes(32)` y se lo
+  mandamos. Es mejor que recibirlo: se conoce con certeza, no existe el modo de
+  falla de "se muestra una sola vez", y rotarlo es volver a llamar a la función.
+  **Queda una sola incógnita**: la forma exacta del cuerpo de un lote con
+  buffering, que sigue manejada aceptando las dos formas posibles.
+
+  **Y sale a producción detrás de un gate por local** (2026-08-31), que es la
+  primera excepción real a la decisión de *no feature flags* — vale registrar
+  por qué se hizo igual y por qué no la contradice del todo. El bot es la
+  primera integración con un tercero del producto: se le paga a Meta y a
+  Anthropic por mensaje, contesta sin que nadie lo lea, y su modo de falla es
+  decirle algo equivocado a un cliente de un local. Liberarlo a todos en el
+  mismo deploy que lo estrena es exactamente lo que este documento describe
+  como "el radio de daño del deploy", con la diferencia de que acá el daño le
+  habla a clientes de terceros.
+
+  **`BOT_HABILITADO_EN`** (`lib/bot/habilitado.ts`) nombra los subdominios donde
+  el bot existe. Arranca en `wafflespro`, el primer local real que lo va a
+  probar.
+
+  **No es el sistema de flags que este documento descartó**, y la diferencia es
+  lo que lo hace aceptable: no hay tabla, ni pantalla, ni ramas muertas en el
+  código, ni un flag por feature — es UNA línea en un archivo versionado, con
+  una fecha de defunción escrita y un solo consumidor. Lo que el descarte de
+  feature flags evitaba era el costo de mantenerlos; acá no hay nada que
+  mantener, y borrar la línea de `docker/compose.prod.yml` lo libera a todos.
+
+  **La ausencia de la variable habilita a todos**, o sea que falla ABIERTO, y no
+  por descuido: `scripts/smoke.sh` barre `/bot` contra el canario de
+  `arandano-stage` —que no la declara— exigiendo 200, así que un default de
+  "nadie" haría rollback en **todo** deploy. Es el mismo modo de falla que ya
+  había obligado al try/catch de Kapso en esa pantalla. Lo que hace tolerable el
+  fail-open es dónde vive: el `environment:` **versionado** del compose, no el
+  `.env` del servidor, así que no se pierde editando credenciales a mano.
+
+  **Está en las CINCO puertas del bot** —la pestaña del sidebar, la pantalla,
+  las cinco server actions y el webhook—, y no sólo en la primera. Un `DUENO`
+  tiene el permiso `BOT` sin fila en `usuario_permisos`, así que esconder la
+  pestaña lo dejaría entrar tipeando la URL; y una server action es un endpoint
+  que se invoca sin pasar por la pantalla. Es la misma lección de las dos copias
+  de un botón que dejó escrito el merge del ciclo móvil, con cinco copias en vez
+  de dos, y los casos cuentan en las **dos** direcciones: sin la lista corre,
+  con otra lista no. Un caso que sólo verificara el rechazo pasaría igual con el
+  bot apagado en todos lados.
+
+  **No reemplaza al permiso `BOT`**: son dos preguntas distintas —en qué locales
+  existe el bot, y a quién del local se le delega—, así que un empleado sin
+  `BOT` sigue sin verlo aunque su local esté en la lista.
 - ~~Mostrar cada moneda por separado en "Cómo entró la plata", y sumar un panel
   de cuándo vende el local.~~ **Hecho** (2026-08-30). Sale de la maqueta y no de
   un cliente: `design/arandano.pen` se actualizó después del ciclo del precio en

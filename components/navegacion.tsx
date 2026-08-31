@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { CreditCard, Package, ReceiptText, ShoppingCart, Users, Wrench } from 'lucide-react'
+import { Bot, CreditCard, Package, ReceiptText, ShoppingCart, Users, Wrench } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import type { RolUsuario } from '@/lib/auth/sesion'
@@ -25,7 +25,13 @@ type Pestana = {
   permiso?: Permiso
 }
 
-const PESTANAS: Pestana[] = [
+/**
+ * Exportado sólo para que `navegacion.test.tsx` derive sus conteos de acá en
+ * vez de llevar un número a mano. Este repo ya pagó tres veces el peaje de un
+ * conteo escrito en un test ("2 de 6 permisos", el número de pantallas de la
+ * maqueta): queda viejo en el ciclo siguiente y nadie se entera.
+ */
+export const PESTANAS: Pestana[] = [
   { href: '/vender', texto: 'Vender', icono: ShoppingCart },
   { href: '/ventas', texto: 'Ventas', icono: ReceiptText },
   { href: '/inventario', texto: 'Inventario', icono: Package },
@@ -35,6 +41,10 @@ const PESTANAS: Pestana[] = [
   // disparador es el primer tenant de un rubro sin servicio técnico.
   { href: '/servicio-tecnico', texto: 'Servicio Técnico', icono: Wrench },
   { href: '/formas-de-pago', texto: 'Formas de pago', icono: CreditCard, permiso: 'PLANES_PAGO' },
+  // `/bot` y no `/whatsapp`: CLAUDE.md promete el bot en "WhatsApp/Instagram",
+  // así que el día que entre el segundo canal la ruta no se renombra. El rótulo
+  // sí nombra WhatsApp, que es lo que hoy hace.
+  { href: '/bot', texto: 'Bot de WhatsApp', icono: Bot, permiso: 'BOT' },
   { href: '/usuarios', texto: 'Usuarios', icono: Users, soloDueno: true },
 ]
 

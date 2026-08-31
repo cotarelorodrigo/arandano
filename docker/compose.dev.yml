@@ -53,6 +53,19 @@ services:
       # WhatsApp de un desconocido. Completar antes del primer deploy con el
       # número real.
       WHATSAPP_CONTACTO: ""
+      # La base de la API de Kapso, que es la capa de WhatsApp del bot. No es
+      # secreta —la credencial es KAPSO_API_KEY y viaja por `env_file`—, así que
+      # va inline: tenerla acá permite además apuntarla a un mock sin tocar el
+      # `.env` del servidor.
+      KAPSO_API_BASE_URL: https://api.kapso.ai
+      # Con qué origen se registra el webhook del bot en Kapso.
+      #
+      # Kapso llama desde internet y este stack escucha SÓLO en la IP de
+      # Tailscale, así que sin un túnel público no hay forma de recibir un
+      # mensaje en dev. Vacío = se deriva del subdominio real (lo correcto en
+      # prod); con valor, `{sub}` se reemplaza por el subdominio del tenant.
+      # Ejemplo con un túnel: https://{sub}.mi-tunel.ngrok.app
+      BOT_WEBHOOK_BASE_URL: ""
       # El puerto con el que el navegador llega a este stack — dev publica la
       # app en :3000 (ver el mapeo de `ports` más abajo). Better Auth lo
       # necesita para armar su `baseURL` (lib/auth/origen.ts): en producción

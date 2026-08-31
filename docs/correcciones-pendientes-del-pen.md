@@ -847,6 +847,44 @@ Detectado al construir el ciclo del cobrado por moneda (2026-08-31). Ver
 
 ---
 
+## 26. La maqueta no dibuja `/bot`, la pantalla entera
+
+- **Frame**: ninguno. `design/arandano.pen` es anterior al bot de WhatsApp
+  (2026-08-29) y no tiene ni el frame de escritorio ni el `Móvil / …`.
+
+**Qué falta.** La pantalla completa: la card de conexión con sus tres estados
+—sin conectar, con números esperando confirmación, y conectado—, el switch de
+prendido, el textarea de la información del local con su contador, la card de
+consumo del mes con su barra, la card que explica qué contesta el bot, y el
+disparador "Conectar mi WhatsApp" del Topbar en sus dos anchos.
+
+**Qué hizo el código, y por qué.** No inventó tratamiento nuevo: es exactamente
+el mismo caso que la entrada 22 (`/formas-de-pago`), y la respuesta es la misma
+—el layout de dos columnas, la card, el título de card y los textos de ayuda
+salen de los roles que las otras pantallas ya comparten. Una card
+estructuralmente igual a "Los planes del local" con otra tipografía se leería
+como un accidente.
+
+Lo que sí quedó derivado sin ninguna referencia, y por eso esta entrada sigue
+abierta:
+
+- **Los tres estados de la card de conexión.** La maqueta no dibuja ningún flujo
+  de onboarding contra un tercero, así que la progresión "generar enlace →
+  confirmar número → conectado" no tiene ni un frame del que copiarse.
+- **La card de consumo**, que usa `<Progress>` — un componente que hasta ahora
+  sólo aparecía en el panel "Cómo entró la plata" de `/ventas`, y ahí midiendo
+  proporciones de un total, no un avance contra un tope.
+- **El switch como control principal de una card.** `<Switch>` existe en el
+  producto sólo en el diálogo de permisos de `/usuarios`, dentro de una lista.
+  Acá es el control único de su card, y la maqueta no tiene un caso así.
+
+**Y a diferencia de la 22, esta pantalla SÍ nace mobile-first.** El ciclo de
+`/formas-de-pago` dejó anotado que su tabla no seguía el patrón `lg:contents` y
+que su fila de cards colapsaba abajo de ~424 px; acá las dos columnas se apilan
+sin prefijo y el ancho fijo del lateral lleva `lg:`. No es rediseño de teléfono
+—no hay tabla que convertir en tarjetas— pero tampoco es deuda: la pantalla es
+operable en los dos anchos desde el primer commit.
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el
