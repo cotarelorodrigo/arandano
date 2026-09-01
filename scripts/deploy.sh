@@ -344,7 +344,7 @@ fi
 # Corriendo local, el paso se queda exactamente donde la tabla de pasos del
 # spec lo puso — adentro del preflight, antes de gastar nada — y no hace
 # falta moverlo ni construir nada para probarlo.
-log "paso 3/18: schema.prisma, migraciones, diagrama y Caddyfile sincronizados"
+log "paso 3/18: schema.prisma, migraciones, diagrama, Caddyfile y compose sincronizados"
 
 # El Caddyfile va ACÁ, en el mismo paso y no en uno nuevo, por el mismo motivo
 # que el diagrama unas líneas más abajo: es la misma pregunta —¿lo que va a
@@ -382,6 +382,35 @@ if [[ "$OBJETIVO" == prod ]]; then
   fi
   log "  el Caddyfile de $DIR coincide con el repo"
 fi
+
+# El compose del objetivo, por la MISMA razón y con el mismo mecanismo — y para
+# los dos objetivos, no sólo prod: el compose sí existe en ensayo (el Caddyfile
+# no), y si el de ensayo drifta, `--objetivo=ensayo` ensaya contra una
+# configuración que no es la que prod va a correr, que es justo lo que ese modo
+# existe para descartar.
+#
+# POR QUÉ EXISTE: el Caddyfile no era el único archivo de configuración que se
+# copia a mano a /srv/arandano/<objetivo>/. El compose es el otro, y lo único que
+# lo miraba era `verify-infra.sh env`, que nada ejecuta solo — el mismo agujero,
+# con la misma forma, que este script ya había tapado para el Caddyfile. El 2026-09-01 se encontró que prod corría 112 líneas contra las 140
+# del repo: el `BOT_HABILITADO_EN: wafflespro` del ciclo del bot nunca se había
+# copiado, y como esa variable falla ABIERTO (ver lib/bot/habilitado.ts) el bot
+# quedó habilitado en TODOS los locales en vez de en uno — con el deploy
+# reportando 18/18 en verde. El `WHATSAPP_CONTACTO` de un ciclo anterior tampoco
+# había llegado, así que la deriva llevaba semanas.
+#
+# A diferencia del Caddyfile, acá copiar SÍ alcanza: el compose no se recarga,
+# lo lee el `docker compose up` del paso 15. Por eso el mensaje de arreglo es un
+# `cp` pelado, sin reload.
+COMPOSE_REPO="$(compose_del_repo "$OBJETIVO")"
+if ! diff -q "$COMPOSE_REPO" "$DIR/docker-compose.yml" >/dev/null 2>&1; then
+  error "el docker-compose.yml de $DIR difiere del repo (o no se puede leer)"
+  diff -u "$COMPOSE_REPO" "$DIR/docker-compose.yml" >&2 || true
+  error "el bloque environment: versionado es config de producción, y ésta es la única comparación que lo ve"
+  error "para dejarlos iguales: cp $COMPOSE_REPO $DIR/docker-compose.yml"
+  exit 1
+fi
+log "  el docker-compose.yml de $DIR coincide con el repo"
 
 docker rm -f "$SOMBRA" >/dev/null 2>&1 || true
 # -p 127.0.0.1::5432 y no un puerto fijo: Docker elige uno libre y sólo en

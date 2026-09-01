@@ -421,6 +421,35 @@ mensaje_de_tag() {
   printf 'imagen: arandano-app:%s\nmigraciones: %s\n' "$sha" "$migraciones"
 }
 
+# Qué compose del repo le corresponde a cada objetivo.
+#
+# Existe para que el paso 3 pueda comparar el compose que el objetivo CORRE
+# (`/srv/arandano/<objetivo>/docker-compose.yml`, copiado a mano) contra el que
+# el repo DECLARA. Hasta el 2026-09-01 el gate sólo comparaba el Caddyfile, y
+# el compose era la otra mitad de la configuración de producción que se copia a
+# mano. No estaba del todo a ciegas: `verify-infra.sh env` ya lo comparaba — pero
+# ese script no lo ejecuta nada solo, que es la misma nota que CLAUDE.md ya tenía
+# escrita para el Caddyfile. Un detector que hay que acordarse de correr no es un
+# gate.
+#
+# LO QUE COSTÓ ESE AGUJERO, para que nadie lo saque por parecer redundante: el
+# ciclo del bot de WhatsApp declaró `BOT_HABILITADO_EN: wafflespro` en el
+# `environment:` versionado de docker/compose.prod.yml, y el archivo nunca se
+# copió — producción corría 112 líneas contra las 140 del repo. Como esa
+# variable falla ABIERTO a propósito (ver lib/bot/habilitado.ts), el efecto no
+# fue que el bot desapareciera sino lo contrario: quedó habilitado en TODOS los
+# locales, que es exactamente lo que el gate de rollout existía para impedir. El
+# deploy reportó 18/18 en verde. Y el `WHATSAPP_CONTACTO` de un ciclo anterior
+# tampoco había llegado, así que la deriva no era de un día.
+compose_del_repo() {
+  local objetivo="${1:-}"
+  case "$objetivo" in
+    prod)   printf 'docker/compose.prod.yml\n' ;;
+    ensayo) printf 'docker/compose.ensayo.yml\n' ;;
+    *)      error "compose_del_repo: objetivo desconocido: '${objetivo}'"; return 1 ;;
+  esac
+}
+
 # La inversa de mensaje_de_tag: de dónde saca rollback.sh a qué imagen volver.
 imagen_de_tag() {
   local mensaje="${1:-}" sha

@@ -248,9 +248,10 @@ que deployó algo que nunca deployó.
 
 Los 18 pasos, en orden: working tree limpio → migraciones nuevas sin SQL
 destructivo → `schema.prisma` sincronizado con las migraciones (shadow
-database local, mismo patrón que `verify-backup.sh`), el diagrama al día y —
+database local, mismo patrón que `verify-backup.sh`), el diagrama al día, —
 sólo con `--objetivo=prod`— el `Caddyfile` de `/srv/arandano/prod` idéntico al
-del repo → `npm test` →
+del repo, y el `docker-compose.yml` del objetivo idéntico a su
+`docker/compose.<objetivo>.yml` (los dos objetivos, no sólo prod) → `npm test` →
 typecheck y lint → frenar `arandano-dev` → build de `arandano-app` y
 `arandano-migrate` tageados con el SHA → levantar `arandano-stage` y ensayar
 la migración, dar de alta al canario de stage y —al final del paso 8, después
@@ -289,6 +290,31 @@ toca nada) y el paso 16 comprueba el **comportamiento** (el `308`), porque un
 `cp` sin `caddy reload` deja el archivo bien y el proxy mal. Van adentro de esos
 pasos y no como pasos nuevos para no renumerar dieciocho pasos y sus referencias
 cruzadas — mismo criterio que ya tenía el diagrama dentro del paso 3.
+
+**El compose del objetivo se compara por la misma razón, y desde el
+2026-09-01.** El `Caddyfile` no era el único archivo de configuración que se
+entrega a mano a `/srv/arandano/<objetivo>/`: el `docker-compose.yml` es el
+otro. Lo comparaba `verify-infra.sh env` —así que el detector existía— pero ese
+script no lo corre nada solo, que es exactamente la nota que este runbook ya
+tenía para el `Caddyfile`. Lo encontró el ciclo del bot de WhatsApp: prod corría
+**112 líneas contra las 140 del repo**, así que el `BOT_HABILITADO_EN:
+wafflespro` declarado en el `environment:` versionado nunca llegó — y como esa
+variable falla **abierto** a propósito (`lib/bot/habilitado.ts`), el efecto no
+fue que el bot desapareciera sino lo contrario: quedó habilitado en **todos**
+los locales, que es justo lo que ese gate de rollout existía para impedir, con
+el deploy reportando 18/18 en verde. El `WHATSAPP_CONTACTO` de un ciclo
+anterior tampoco había llegado, así que la deriva llevaba semanas. El de
+`ensayo` también había driftado, con lo que `--objetivo=ensayo` venía
+ensayando contra una configuración distinta de la que prod iba a correr — por
+eso la comparación corre para los **dos** objetivos y no sólo para prod.
+
+A diferencia del `Caddyfile`, acá **copiar alcanza**: el compose no se
+recarga, lo lee el `docker compose up` del paso 15. No hay una segunda mitad
+que se pueda olvidar.
+
+```bash
+cp docker/compose.prod.yml /srv/arandano/prod/docker-compose.yml
+```
 
 **Cambiar `docker/Caddyfile` obliga a copiarlo a `/srv/arandano/prod`**, en la
 misma sesión y no "después": desde que existe el paso 3, un `Caddyfile` del repo

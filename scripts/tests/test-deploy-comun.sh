@@ -631,5 +631,23 @@ check_false "con la variable vacía" secreto_auth_presente "$DIR_SECRETO_VACIO"
 # script, y el resultado es el mismo que "sin la variable".
 check_false "sin .env en absoluto" secreto_auth_presente "$DIR_SIN_ENV"
 
+printf '\n\033[1mcompose_del_repo\033[0m\n'
+# El compose de cada objetivo se copia a mano a /srv/arandano/<objetivo>/ y,
+# hasta el 2026-09-01, el gate no lo miraba — sólo miraba el Caddyfile. Ese
+# agujero dejó a producción corriendo 112 líneas contra las 140 del repo: el
+# `BOT_HABILITADO_EN: wafflespro` del ciclo del bot nunca llegó, y como esa
+# variable falla ABIERTO, el bot quedó habilitado en TODOS los locales en vez
+# de en uno. El de ensayo también había driftado, con lo que
+# `--objetivo=ensayo` venía ensayando contra una configuración que no era la
+# que prod iba a correr.
+check_eq "prod"   "docker/compose.prod.yml"   "$(compose_del_repo prod)"
+check_eq "ensayo" "docker/compose.ensayo.yml" "$(compose_del_repo ensayo)"
+check_false "un objetivo inventado es error" compose_del_repo cualquiera
+check_false "sin objetivo es error"          compose_del_repo ''
+# Atado al repo y no sólo a la cadena: si alguien renombra o mueve un compose,
+# el mapeo tiene que romperse acá y no en el medio de un deploy.
+check_true "el compose de prod existe"   test -f "$(compose_del_repo prod)"
+check_true "el compose de ensayo existe" test -f "$(compose_del_repo ensayo)"
+
 printf '\n%d ok, %d fallan\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]
