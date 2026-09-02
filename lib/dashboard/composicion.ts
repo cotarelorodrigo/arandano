@@ -106,6 +106,18 @@ export const MAX_GAJOS = 5
 /** La cola de ramas chicas, agrupada. */
 export const ROTULO_OTROS = 'Otros'
 /**
+ * El rótulo del agregado cuando una rama REAL del árbol ya se llama
+ * `ROTULO_OTROS` (Ruling N de la review de la Task 9). Un local puede tener
+ * un rubro literalmente nombrado "Otros" —o "Otros accesorios", abreviado—, y
+ * sin esta salida de emergencia dos gajos terminan indistinguibles para quien
+ * mira el anillo: si la rama real entra en el top, hay DOS gajos "Otros" con
+ * importes distintos; si cae en la cola, se funde con las demás bajo el mismo
+ * nombre y el lector no puede saber que ahí adentro hay algo que el local
+ * nombró así. `repartirEnGajos` lo elige apenas detecta la colisión, sin
+ * importar en cuál de los dos casos está.
+ */
+export const ROTULO_OTROS_AGRUPADO = 'Otras categorías'
+/**
  * Un artículo sin `categoriaId`. **Distinto de `ROTULO_OTROS`** a propósito:
  * uno es una rama que el local nunca asignó, el otro es la cola de ramas
  * chicas — dos cosas que un dueño resuelve de manera distinta, y por eso
@@ -114,12 +126,19 @@ export const ROTULO_OTROS = 'Otros'
 export const SIN_CATEGORIA = 'Sin categoría'
 
 /**
- * Recorta a `MAX_GAJOS`, sumando la cola en un gajo "Otros" cuando hay más de
- * cinco ramas.
+ * Recorta a `MAX_GAJOS`, sumando la cola en un gajo agregado cuando hay más
+ * de cinco ramas.
  *
  * Asume `porCategoria` ya ordenado de mayor a menor —lo arma el llamador a
  * partir de `agruparPorArticulo`, que ya ordena— así que la cola son
  * exactamente las ramas más chicas.
+ *
+ * El agregado se llama `ROTULO_OTROS` salvo que ESE nombre ya lo use una rama
+ * real de la entrada —en cualquier posición, no sólo en la cola—, en cuyo
+ * caso toma `ROTULO_OTROS_AGRUPADO`. Agrupar una rama chica real llamada
+ * "Otros" dentro de la cola sigue siendo correcto —es exactamente lo que la
+ * cola es, "todo lo demás"—; lo que no puede pasar es que el agregado y esa
+ * rama se vuelvan indistinguibles para quien lee el anillo.
  */
 export function repartirEnGajos(
   porCategoria: { rotulo: string; importe: Decimal }[],
@@ -129,7 +148,9 @@ export function repartirEnGajos(
   const primeros = porCategoria.slice(0, MAX_GAJOS - 1)
   const cola = porCategoria.slice(MAX_GAJOS - 1)
   const otros = cola.reduce((acc, c) => acc.add(c.importe), new Prisma.Decimal(0))
-  return [...primeros, { rotulo: ROTULO_OTROS, importe: otros }]
+  const hayRamaOtros = porCategoria.some((c) => c.rotulo === ROTULO_OTROS)
+  const rotuloDelAgregado = hayRamaOtros ? ROTULO_OTROS_AGRUPADO : ROTULO_OTROS
+  return [...primeros, { rotulo: rotuloDelAgregado, importe: otros }]
 }
 
 /** Cuántas filas dibuja el top de artículos. */

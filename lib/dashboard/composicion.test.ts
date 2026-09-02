@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { Prisma } from '@/generated/prisma/client'
 import {
   agruparPorArticulo, repartirEnGajos, topDeArticulos, MAX_GAJOS, TOP_DE_ARTICULOS,
+  ROTULO_OTROS, ROTULO_OTROS_AGRUPADO,
 } from './composicion'
 
 const d = (v: string) => new Prisma.Decimal(v)
@@ -57,8 +58,10 @@ describe('el anillo agrupa la cola en Otros', () => {
     expect(g.map((x) => x.rotulo)).toEqual(['Celulares', 'Cables'])
   })
 
-  // "Otros" existente y "Otros" agrupado son dos cosas distintas, y sumarlas
-  // en un solo gajo sería mentir sobre una rama que el local nombró así.
+  // Caso de borde, no de colisión: con exactamente seis ramas (una más que el
+  // máximo) alcanza para disparar la agrupación, y la cola es sólo la última.
+  // Las fixtures 'a'..'f' no tocan la colisión con una rama real "Otros" —esa
+  // vive en las dos `it` de más abajo, con su propio comentario.
   it('exactamente seis ramas dejan una sola en Otros', () => {
     const g = repartirEnGajos([
       cat('a', '6'), cat('b', '5'), cat('c', '4'), cat('d', '3'), cat('e', '2'), cat('f', '1'),
@@ -68,6 +71,38 @@ describe('el anillo agrupa la cola en Otros', () => {
 
   it('sin nada vendido no hay gajos', () => {
     expect(repartirEnGajos([])).toEqual([])
+  })
+
+  // "Otros" existente y "Otros" agrupado son dos cosas distintas, y sumarlas
+  // en un solo gajo —o dejar que se muestren dos con el mismo nombre— sería
+  // mentir sobre una rama que el local nombró así (Ruling N de la review de
+  // la Task 9). Colisionan de dos formas: la rama real puede quedar DENTRO
+  // del top, o puede caer en la cola — las dos están cubiertas.
+  it('una rama real llamada "Otros" en el top no se confunde con el agregado', () => {
+    const g = repartirEnGajos([
+      cat('Otros', '5000'), cat('Celulares', '4400'), cat('Fundas', '1400'),
+      cat('Cables', '1200'), cat('Vidrios', '700'), cat('Cargadores', '400'),
+    ])
+    expect(g).toHaveLength(MAX_GAJOS)
+    // La rama real, intacta, en su lugar del top.
+    expect(g[0]).toEqual({ rotulo: 'Otros', importe: d('5000') })
+    // El agregado toma un rótulo DISTINTO: dos gajos "Otros" con importes
+    // distintos serían indistinguibles para quien mira el anillo.
+    expect(g[4]).toEqual({ rotulo: ROTULO_OTROS_AGRUPADO, importe: d('1100') })
+  })
+
+  it('una rama real llamada "Otros" en la cola no se funde en silencio con el agregado', () => {
+    const g = repartirEnGajos([
+      cat('Celulares', '4400'), cat('Servicio técnico', '1900'), cat('Fundas', '1400'),
+      cat('Cables', '1200'), cat('Otros', '700'), cat('Cargadores', '400'),
+    ])
+    expect(g).toHaveLength(MAX_GAJOS)
+    // La rama real cayó en la cola —correcto, es "todo lo demás"—, pero el
+    // agregado no puede llamarse igual que ella: si lo hiciera, quien lee el
+    // anillo no tendría forma de saber que ahí adentro hay una rama que el
+    // local nombró "Otros".
+    expect(g[4]).toEqual({ rotulo: ROTULO_OTROS_AGRUPADO, importe: d('1100') })
+    expect(g.map((x) => x.rotulo)).not.toContain(ROTULO_OTROS)
   })
 })
 
