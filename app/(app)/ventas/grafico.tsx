@@ -6,77 +6,56 @@
 import { Info } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
 import { formatearPrecio, formatearDolares } from '@/lib/formato/mostrar'
-import { ROTULO_MEDIO, type Composicion } from '@/lib/ventas/medios'
+import { porcentajesQueSuman100 } from '@/lib/ventas/porcentajes'
+import { ROTULO_MEDIO, type Composicion, type MonedaElegida } from '@/lib/ventas/medios'
 import estilos from './tipografia.module.css'
 
 /**
- * Cada monto como porcentaje ENTERO del total, garantizando que la suma dé
- * exactamente 100 (o todos 0 si no hay total).
- *
- * Redondear cada fracción por separado ("naive rounding") puede dejar la
- * columna en 99 o en 101 por el acarreo de cada barra por separado — con
- * cuatro medios de pago no es un caso de borde raro, es lo esperable. El
- * método del resto mayor (largest remainder) reparte los enteros que sobran
- * —o faltan— entre las barras cuyo resto fue más grande, que es la forma
- * estándar de redondear una distribución de porcentajes sin que la suma se
- * mueva del 100% que el panel promete.
- */
-export function porcentajesQueSuman100(
-  valores: number[],
-  // El total viene por parámetro y no siempre re-sumado acá — `total` default
-  // preserva el comportamiento de antes para quien no lo pasa (y para los
-  // tests de este archivo). El llamador real (GraficoDeMedios) SÍ lo pasa:
-  // `composicion.total` ya es exacto —sale de sumar `Decimal`s, no floats—, así
-  // que anclar el reparto a ESE número evita sumar de nuevo en float un valor
-  // que ya se sumó bien una vez.
-  total: number = valores.reduce((acc, v) => acc + v, 0),
-): number[] {
-  if (total <= 0) return valores.map(() => 0)
-
-  const brutos = valores.map((v) => (v / total) * 100)
-  const pisos = brutos.map(Math.floor)
-  const faltan = 100 - pisos.reduce((acc, v) => acc + v, 0)
-
-  // De mayor a menor resto: a esas barras les toca el punto entero que el
-  // piso les recortó.
-  const ordenPorResto = brutos
-    .map((v, i) => ({ i, resto: v - Math.floor(v) }))
-    .sort((a, b) => b.resto - a.resto)
-
-  const resultado = [...pisos]
-  for (let k = 0; k < faltan; k++) resultado[ordenPorResto[k].i] += 1
-  return resultado
-}
-
-/**
  * Cómo entró la plata del período, por medio de pago (design/arandano.pen,
- * nodo `eyqV3`).
+ * nodo `eyqV3`), UNA MONEDA POR VEZ.
  *
- * Un solo color por barra —`--primary`, vía el `Progress` de shadcn— y no dos
- * series apiladas: la maqueta nunca pidió una segunda serie para dólares, eso
- * se decidió escribiendo el código anterior (ver `docs/sistema-de-diseno.md`,
- * sección "Cómo se verifica", el párrafo sobre esta reescritura — la entrada
- * `--chart-2` de `test/maqueta.test.ts` que citaba antes no existe más:
- * `--chart-1` y `--chart-2` se sacaron del repo entero en este mismo ciclo).
+ * **Esto ARREGLA un defecto que estuvo en producción, no es una feature.** La
+ * versión anterior mezclaba pesos y dólares en una sola barra, convirtiendo
+ * cada pago con `Pago.cotizacion` — que vale 1 cuando el pago no cruza
+ * monedas (`cotizacionParaElCruce`, app/(app)/vender/punto-de-venta.tsx), así
+ * que un pago de US$ 300 en efectivo aportaba 300 al largo de la barra en vez
+ * de los ~445.500 que representa. Para un local que cobra en dólares en
+ * efectivo, todas las barras quedaban cerca de cero y el "N % del total" no
+ * decía nada real. `componerPorMedio` (lib/ventas/composicion.ts) ya no
+ * convierte: separa en dos pilas por `Pago.moneda`, y este componente dibuja
+ * UNA de las dos a la vez.
  *
- * Cada medio que tuvo dólares muestra DOS líneas de importe, no una: los
- * pesos arriba (`b.ars`) y los dólares SIN convertir debajo (`b.usdCrudo`,
- * más chico y apagado) — ver el comentario junto a esas líneas, más abajo.
- * La BARRA, en cambio, sigue midiendo una sola cosa: `b.total`, que es pesos
- * más dólares ya convertidos a la cotización de cada pago. Una barra que
- * mezclara unidades sin convertir no se podría comparar contra la de al
- * lado, así que sigue habiendo un solo color y la nota del pie sigue
- * explicando esa conversión — es la que corresponde a la barra, no a las
- * líneas de arriba.
+ * Un solo color por barra —`--primary`, vía el `Progress` de shadcn—, igual
+ * que antes: la maqueta nunca pidió una segunda serie (ver
+ * `docs/sistema-de-diseno.md`, sección "Cómo se verifica").
+ *
+ * El selector `$ / US$` sólo se dibuja **si hubo pagos en dólares en el
+ * período** (`hayDolares`): un local que nunca cobró en dólares no puede ver
+ * un control que elige entre dos pilas cuando una de las dos siempre está
+ * vacía — mismo principio que ya rige el resto de esta pantalla ("un local
+ * que no usa dólares no ve ninguna diferencia", CLAUDE.md). Son dos LINKS y
+ * no un control de cliente: el estado vive en `?moneda`, como el resto de los
+ * filtros de esta pantalla (`?rango`, `?vista`), así que el panel funciona sin
+ * JavaScript.
  *
  * Y sin tabla `sr-only` de respaldo: la versión con recharts la necesitaba
  * porque el SVG no existe hasta que el cliente hidrata. Acá el texto ES el
  * contenido — no hay nada que un lector de pantalla o un navegador sin
  * JavaScript se pierdan.
  */
-export function GraficoDeMedios({ composicion }: { composicion: Composicion }) {
+export function GraficoDeMedios({
+  composicion, hayDolares, moneda, hrefDeMoneda,
+}: {
+  composicion: Composicion
+  hayDolares: boolean
+  moneda: MonedaElegida
+  /** El link de cada opción del selector, armado por la pantalla: este
+   *  componente no conoce el resto del query string. */
+  hrefDeMoneda: (m: MonedaElegida) => string
+}) {
   const { barras, total } = composicion
-  const porcentajes = porcentajesQueSuman100(barras.map((b) => Number(b.total)), Number(total))
+  const formatear = moneda === 'ars' ? formatearPrecio : formatearDolares
+  const porcentajes = porcentajesQueSuman100(barras.map((b) => Number(b.monto)), Number(total))
 
   return (
     // Ancho completo en el teléfono —el `.pen` no dibuja un panel angosto ahí,
@@ -86,8 +65,26 @@ export function GraficoDeMedios({ composicion }: { composicion: Composicion }) {
     // (`lg:w-[324px] lg:shrink-0`): sin esto, un vecino ancho en el mismo row
     // flex podía angostar este panel por debajo de sus 344px de diseño.
     <section className="flex w-full flex-col overflow-hidden rounded-2xl border bg-card lg:w-[344px] lg:shrink-0">
-      <div className="flex items-center justify-between border-b px-[18px] py-[13px]">
+      <div className="flex items-center justify-between gap-2 border-b px-[18px] py-[13px]">
         <h2 className={`${estilos.tituloDeCard} text-foreground`}>Cómo entró la plata</h2>
+        {hayDolares && (
+          <div className="flex gap-0.5 rounded-[9px] bg-muted p-[3px]">
+            {(['ars', 'usd'] as const).map((m) => (
+              <a
+                key={m}
+                href={hrefDeMoneda(m)}
+                aria-current={m === moneda ? 'page' : undefined}
+                className={
+                  m === moneda
+                    ? 'rounded-[8px] bg-card px-[10px] py-1 text-[11px] font-semibold text-foreground shadow-sm'
+                    : 'rounded-[8px] px-[10px] py-1 text-[11px] font-semibold text-muted-foreground'
+                }
+              >
+                {m === 'ars' ? '$' : 'US$'}
+              </a>
+            ))}
+          </div>
+        )}
       </div>
       <div className="flex flex-col gap-[18px] p-[18px]">
         {barras.map((b, i) => (
@@ -96,39 +93,8 @@ export function GraficoDeMedios({ composicion }: { composicion: Composicion }) {
               <span className="text-[13px] font-medium text-foreground">
                 {ROTULO_MEDIO[b.medio]}
               </span>
-              {/* Los importes apilados y alineados a la derecha
-                  (design/arandano.pen, nodo `l4Inhd`): los pesos arriba, en
-                  13/600; los dólares abajo, en 12/600 y un tono más apagado.
-                  Que la línea de dólares sea MÁS CHICA es deliberado, y a
-                  propósito distinto del tile "Total del período" de la misma
-                  pantalla, donde las dos monedas van a 32 px y al mismo
-                  color: allá ninguna manda sobre la otra, acá el número que
-                  gobierna la barra es el de pesos y éste es el detalle de
-                  qué parte entró en billetes. */}
-              <span className="flex flex-col items-end gap-px">
-                {/* La línea de pesos se esconde cuando es CERO y el medio
-                    tuvo dólares — la regla simétrica a la de abajo, que ya
-                    esconde la línea de dólares cuando ésa es la que da cero.
-                    Sin esto, un medio que sólo cobró en dólares (un iPhone en
-                    efectivo en USD) mostraba "$ 0,00" como número PRINCIPAL,
-                    con la barra al 100 %: un cero al lado de una barra llena
-                    miente sobre lo que pasó, y se lee como un panel roto, no
-                    como "acá no entraron pesos". Si las dos líneas dieran
-                    cero el medio no tendría barra —`componerPorMedio` ya
-                    excluye los medios sin un solo pago—, así que no hay un
-                    tercer caso ("las dos en cero") que cubrir acá. */}
-                {!(Number(b.ars) === 0 && Number(b.usdCrudo) !== 0) && (
-                  <span className={`${estilos.archivo} text-[13px] font-semibold text-foreground`}>
-                    {formatearPrecio(b.ars)}
-                  </span>
-                )}
-                {/* Sólo los medios que tuvieron dólares: en el frame,
-                    Efectivo y Transferencia la tienen, Débito y Crédito no. */}
-                {Number(b.usdCrudo) !== 0 && (
-                  <span className={`${estilos.archivo} text-[12px] font-semibold text-foreground-soft`}>
-                    {formatearDolares(b.usdCrudo)}
-                  </span>
-                )}
+              <span className={`${estilos.archivo} text-[13px] font-semibold text-foreground`}>
+                {formatear(b.monto)}
               </span>
             </div>
             <Progress value={porcentajes[i]} className="h-[10px] bg-muted" />
@@ -140,8 +106,8 @@ export function GraficoDeMedios({ composicion }: { composicion: Composicion }) {
         <div className="flex gap-2 rounded-[10px] bg-background p-[11px]">
           <Info aria-hidden="true" className="size-[14px] shrink-0 text-muted-foreground" />
           <p className="text-[11px] leading-[1.4] text-muted-foreground">
-            Cada moneda dice su propio número. La barra compara todo en pesos, a
-            la cotización de cada pago.
+            Cada moneda dice su propio número. Nada se convierte: no hay tipo
+            de cambio guardado en una venta cobrada en dólares.
           </p>
         </div>
       </div>

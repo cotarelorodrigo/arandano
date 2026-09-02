@@ -537,12 +537,12 @@ El historial por período.
   escritorio el rótulo va **en línea** con su importe, a la izquierda; en el
   teléfono va apilado encima. Ver *Decisiones*.
 - Ver **"Cómo entró la plata"**: una barra por medio de pago, de un solo color,
-  con **un importe por moneda** en el rótulo — los pesos arriba y, sólo si ese
-  medio recibió dólares, los dólares abajo, sin convertir. La barra y el
-  porcentaje siguen comparando todo en pesos, a la cotización de cada pago, que
-  es lo que dice la nota del pie: una barra que mezclara unidades no se podría
-  comparar contra la de al lado. Un pago en pesos que cubre el total en dólares
-  cuenta como pesos — la línea dice qué moneda entró al cajón.
+  **en UNA SOLA MONEDA a la vez** — pesos por default. Un selector `$ / US$`,
+  a la derecha del título, sólo se dibuja si el período tuvo algún pago en
+  dólares; son dos links (`?moneda`), no un control de cliente, así que
+  funciona sin JavaScript. **Nada se convierte**: la pila la elige
+  `Pago.moneda` y el importe es `Pago.monto` tal cual, sin pasar por ninguna
+  cotización — ver *Decisiones*.
 - Entrar al detalle de cualquier venta.
 - Paginar de a 50, con números de página.
 - Ver **"Cuándo vende el local"**: una barra por hora del día o por día de la
@@ -574,12 +574,16 @@ El historial por período.
   difieren; un número solo cuando coinciden**. Sin dólares ni planes de pago
   coinciden POR CONSTRUCCIÓN (`Σ Pago.monto = total + recargo`), así que un
   local que no usa ninguna de las dos cosas no ve ninguna diferencia respecto
-  de antes de este ciclo. Y **la costura con "Cómo entró la plata" se
-  angosta pero no desaparece**: el tile no convierte nada y el panel sí
-  —multiplica cada pago por su `Pago.cotizacion`, porque una barra por medio
-  que mezclara unidades no se podría comparar contra la de al lado—, así que
-  los dos pueden seguir mostrando números distintos ante un pago realmente en
-  dólares (no uno que sólo cubre un total en dólares con pesos). Antes de
+  de antes de este ciclo. Y **la costura con "Cómo entró la plata" ya cerró
+  del todo** (arreglo posterior de un defecto de producción, Task 3 del ciclo
+  del dashboard): el panel convertía cada pago a pesos con `Pago.cotizacion`,
+  que vale 1 cuando el pago no cruza monedas —a propósito—, así que un pago de
+  US$ 300 en efectivo sobre un total en dólares aportaba **300** al largo de
+  la barra en vez de los ~445.500 que representa; para un local que cobra en
+  dólares en efectivo, todas las barras quedaban cerca de cero. `componerPorMedio`
+  ya no convierte: arma dos pilas por `Pago.moneda` (`ComposicionPorMoneda`,
+  `lib/ventas/composicion.ts`), sin que ninguna cotización entre en la cuenta,
+  y la pantalla dibuja una a la vez con el selector `?moneda`. Antes de
   este ciclo, las cuatro cifras sumaban `total + recargo` con `totalCobrado()`
   (`lib/ventas/totales.ts`) y el tile llevaba `totalUsd` a una segunda línea
   aparte; esta pantalla dejó de llamar a esa función porque dejó de describir

@@ -15,7 +15,9 @@ import { redondearDinero } from '@/lib/ventas/totales'
 import {
   lineasDeImporte, vendidoDeVenta, cobradoDePagos, cobradoDeGrupos, type LineaDeImporte,
 } from '@/lib/ventas/cobrado'
-import { ROTULO_MEDIO, CONSUMIDOR_FINAL, type Medio } from '@/lib/ventas/medios'
+import {
+  ROTULO_MEDIO, CONSUMIDOR_FINAL, monedaValida, type Medio, type MonedaElegida,
+} from '@/lib/ventas/medios'
 import { agregarPorTiempo, vistaValida, type Vista } from '@/lib/ventas/horarios'
 import {
   hoyEnArgentina, inicioDelDia, fechaOhoy, fechaLarga, sumarDias, primerDiaDelMes,
@@ -385,10 +387,15 @@ export function Tile({
  * nadie lo pida, y éste es justo el camino principal para elegir un rango
  * propio. Un solo `<input type="hidden">` en el componente compartido cubre
  * sus dos ubicaciones de una.
+ *
+ * Y por el mismo motivo, `moneda` (Task 3 del ciclo del dashboard): un local
+ * mirando el panel de medios en US$ que filtra por fecha no puede volver a
+ * pesos sin que nadie lo haya pedido — el filtro de fechas es un cambio de
+ * PERÍODO, no de moneda.
  */
 function FormularioDeFechas({
-  dDesde, dHasta, vista, apilado = false,
-}: { dDesde: string; dHasta: string; vista: Vista; apilado?: boolean }) {
+  dDesde, dHasta, vista, moneda, apilado = false,
+}: { dDesde: string; dHasta: string; vista: Vista; moneda: MonedaElegida; apilado?: boolean }) {
   return (
     <form
       method="get"
@@ -399,6 +406,7 @@ function FormularioDeFechas({
           URL de cualquiera que ya esté en Hora. Mismo criterio que
           `conPagina`/`hrefRango`/`hrefDeVista`, más abajo. */}
       {vista !== 'hora' && <input type="hidden" name="vista" value={vista} />}
+      {moneda !== 'ars' && <input type="hidden" name="moneda" value={moneda} />}
       <label className={`flex flex-col gap-[5px] ${apilado ? '' : 'w-[168px]'}`}>
         <span className="text-[11px] font-semibold text-foreground-soft">Desde</span>
         <Input
@@ -792,10 +800,10 @@ export function Listado({
 export default async function Ventas({
   searchParams,
 }: {
-  searchParams: Promise<{ desde?: string; hasta?: string; p?: string; vista?: string }>
+  searchParams: Promise<{ desde?: string; hasta?: string; p?: string; vista?: string; moneda?: string }>
 }) {
   const sesion = await exigirSesion()
-  const { desde, hasta, p = '1', vista: vistaParam } = await searchParams
+  const { desde, hasta, p = '1', vista: vistaParam, moneda: monedaParam } = await searchParams
 
   const hoy = hoyEnArgentina()
   // Una fecha malformada cae en hoy en vez de romper el `new Date`, igual que
@@ -805,6 +813,7 @@ export default async function Ventas({
   const dHasta = fechaOhoy(hasta, hoy)
   const pagina = Math.min(Math.max(1, Math.trunc(Number(p)) || 1), PAGINA_MAXIMA)
   const vista = vistaValida(vistaParam)
+  const moneda = monedaValida(monedaParam)
 
   const donde = {
     creadoEn: {
@@ -860,41 +869,32 @@ export default async function Ventas({
     // sólo mercadería. Este panel suma `monto`, así que "Cómo entró la plata"
     // muestra la plata REAL que entró por cada medio, recargo incluido.
     //
-    // **La costura con este panel se angosta en este ciclo, pero no
-    // desaparece.** Antes, el tile armaba su "Cobrado" con `total + recargo`
-    // y este panel convertía cada pago a pesos: en el caso canónico —un
-    // iPhone de lista US$ 300 pagado en pesos con un plan de 12 cuotas al
-    // 40 %— el tile decía "$ 178.200,00" contra los "$ 623.700,00" de acá,
-    // dos números correctos que contestaban preguntas distintas. Desde el
-    // ciclo del cobrado por moneda, el tile ya no usa `totalCobrado()`: arma
-    // "Cobrado" con `Σ Pago.monto` apilado por `Pago.moneda`, igual que este
-    // panel, así que ese mismo caso ahora coincide en las dos superficies:
+    // **La costura con el tile "Total del período" ya cerró del todo (Task 3
+    // del ciclo del dashboard).** Hasta acá, el tile armaba "Cobrado" con
+    // `Σ Pago.monto` apilado por `Pago.moneda` —sin convertir— mientras este
+    // panel SÍ convertía cada pago a pesos con `Pago.cotizacion`, para poder
+    // comparar una barra contra la de al lado. Esa conversión no era sólo una
+    // diferencia de criterio con el tile: era un defecto propio. `Pago.cotizacion`
+    // vale 1 cuando el pago no cruza monedas (`cotizacionParaElCruce`,
+    // app/(app)/vender/punto-de-venta.tsx), así que un iPhone de US$ 300 pagado
+    // con 300 dólares en efectivo aportaba **300** al largo de la barra en vez
+    // de los ~445.500 que representa — para un local que cobra en dólares en
+    // efectivo, todas las barras quedaban cerca de cero y el "N % del total" no
+    // decía nada real.
+    //
+    // `componerPorMedio` (lib/ventas/composicion.ts) ya no convierte: separa
+    // en DOS pilas por `Pago.moneda` y ninguna cotización entra en la cuenta,
+    // así que ahora coincide con el tile en las dos superficies:
     //
     //   tile  "Total del período"  → Vendido US$ 300,00 / Cobrado $ 623.700,00
-    //   panel "Cómo entró la plata" → Crédito $ 623.700,00 · 100 %
+    //   panel "Cómo entró la plata" (US$) → Crédito US$ 300,00 · 100 %
     //
-    // Lo que sigue sin cerrar es más angosto: el tile NUNCA convierte —cada
-    // línea muestra la moneda tal cual `Pago.moneda` la registró—, mientras
-    // que este panel multiplica cada pago por `Pago.cotizacion` para poder
-    // comparar una barra contra la de al lado. Con un pago realmente en
-    // dólares (no uno en pesos que sólo cubre un total en dólares), el tile
-    // sigue mostrando ese importe sin convertir y el panel sigue
-    // convirtiéndolo a pesos. Documentado también en `docs/pantallas.md`
-    // (sección `/ventas`).
-    //
-    // Sí se tocó `componerPorMedio` en este ciclo, y por un bug propio:
-    // multiplicaba SIEMPRE por la cotización (`montoEnPesos`), así que un
-    // pago en pesos con cotización distinta de 1 —que ahora existe, porque un
-    // pago en pesos puede cubrir el total en dólares— entraba inflado.
-    // `pesosEntregados` mira la moneda antes de multiplicar. Ver
-    // `lib/ventas/totales.ts`.
-    //
-    // `groupBy` y no `$queryRaw` con un `SUM(monto * cotizacion)`, que sería la
+    // `groupBy` y no `$queryRaw` con un `SUM(monto)` agrupado, que sería la
     // consulta obvia: la extensión de lib/tenant/prisma.ts intercepta
     // operaciones de MODELO, no raw queries, así que un raw no lleva el
     // `set_config('arandano.tenant_id')` y RLS lo devuelve VACÍO. No falla:
     // devuelve cero filas, que en un panel de plata se lee como "no vendiste
-    // nada". La multiplicación se hace en JS sobre estas pocas filas.
+    // nada". La suma por pila se hace en JS sobre estas pocas filas.
     // `monto` va en la clave y se cuenta en vez de sumarse: es lo que mantiene
     // el redondeo POR PAGO, igual que `totalDePagos`. Con `_sum` el panel y el
     // tile "Total del período" se separaban por centavos. Ver composicion.ts.
@@ -969,8 +969,23 @@ export default async function Ventas({
     if (v !== 'hora') u.set('vista', v)
     return `/ventas?${u.toString()}`
   }
+  // El selector $ / US$ de "Cómo entró la plata": preserva el resto del
+  // filtro —desde/hasta, página y vista— igual que conPagina/hrefRango, y no
+  // escribe `moneda` cuando es la default ('ars'), mismo criterio que el
+  // resto de estos helpers con SU propio parámetro.
+  const hrefDeMoneda = (m: MonedaElegida) => {
+    const u = new URLSearchParams({ desde: dDesde, hasta: dHasta })
+    if (pagina > 1) u.set('p', String(pagina))
+    if (vista !== 'hora') u.set('vista', vista)
+    if (m !== 'ars') u.set('moneda', m)
+    return `/ventas?${u.toString()}`
+  }
   const rangoVigente = chipActivo(dDesde, dHasta, hoy)
   const cobradas = total - anuladas
+  // La pila que el panel dibuja: nada se convierte entre las dos, así que la
+  // pantalla no tiene un "total" único que ofrecer — sólo la mitad que
+  // `?moneda` eligió.
+  const composicionElegida = moneda === 'usd' ? composicion.usd : composicion.ars
 
   return (
     <>
@@ -1010,7 +1025,7 @@ export default async function Ventas({
             (`e00ToC`)—, así que se mudan a un `Sheet`; `FormularioDeFechas`
             es el mismo componente en las dos ubicaciones (ver su comentario). */}
         <div className="flex items-center gap-2 lg:items-end lg:gap-[10px]">
-          <FormularioDeFechas dDesde={dDesde} dHasta={dHasta} vista={vista} />
+          <FormularioDeFechas dDesde={dDesde} dHasta={dHasta} vista={vista} moneda={moneda} />
           {/* El espaciador que empuja los Rangos a la derecha en escritorio
               (como hoy); en el teléfono no existe, ahí los Rangos ya son
               `flex-1` y ocupan todo el ancho que dejan libre el resto de la
@@ -1052,7 +1067,7 @@ export default async function Ventas({
                 <SheetDescription>Elegí el rango de fechas para filtrar las ventas.</SheetDescription>
               </SheetHeader>
               <div className="p-4">
-                <FormularioDeFechas dDesde={dDesde} dHasta={dHasta} vista={vista} apilado />
+                <FormularioDeFechas dDesde={dDesde} dHasta={dHasta} vista={vista} moneda={moneda} apilado />
               </div>
             </SheetContent>
           </Sheet>
@@ -1132,12 +1147,19 @@ export default async function Ventas({
             />
           </div>
 
-          {/* Colgado de que HAYA barras y no de `total > 0`, que es lo que
-              gobierna los tiles: un período puede tener ventas y ningún pago
-              —todas anuladas— y ahí este panel no tiene nada que decir.
-              Dibujarlo vacío sería peor que no dibujarlo: un panel en blanco
-              se lee como que algo se rompió. */}
-          {composicion.barras.length > 0 && <GraficoDeMedios composicion={composicion} />}
+          {/* Colgado de que HAYA barras en ALGUNA de las dos pilas y no de
+              `total > 0`, que es lo que gobierna los tiles: un período puede
+              tener ventas y ningún pago —todas anuladas— y ahí este panel no
+              tiene nada que decir. Dibujarlo vacío sería peor que no
+              dibujarlo: un panel en blanco se lee como que algo se rompió. */}
+          {(composicion.ars.barras.length > 0 || composicion.usd.barras.length > 0) && (
+            <GraficoDeMedios
+              composicion={composicionElegida}
+              hayDolares={composicion.hayDolares}
+              moneda={moneda}
+              hrefDeMoneda={hrefDeMoneda}
+            />
+          )}
         </div>
 
         {/* Cuándo vende el local (design/arandano.pen, nodo `t93if9`): a todo

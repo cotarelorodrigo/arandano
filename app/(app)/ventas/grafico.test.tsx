@@ -12,79 +12,100 @@
 import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { GraficoDeMedios, porcentajesQueSuman100 } from './grafico'
-import type { Composicion } from '@/lib/ventas/medios'
+import { GraficoDeMedios } from './grafico'
+import type { Composicion, MonedaElegida } from '@/lib/ventas/medios'
+
+// El link de cada opción del selector: en la pantalla real lo arma `page.tsx`
+// preservando el resto del query string — acá basta con que sea distinto por
+// moneda para poder afirmar sobre el `href`.
+const href = (m: MonedaElegida) => `/ventas?moneda=${m}`
 
 const CUATRO_MEDIOS: Composicion = {
   barras: [
-    { medio: 'EFECTIVO', ars: '612400', usd: '0', usdCrudo: '0', total: '612400' },
-    { medio: 'TRANSFERENCIA', ars: '389700', usd: '0', usdCrudo: '0', total: '389700' },
-    { medio: 'TARJETA_DEBITO', ars: '182400', usd: '0', usdCrudo: '0', total: '182400' },
-    { medio: 'TARJETA_CREDITO', ars: '100000', usd: '0', usdCrudo: '0', total: '100000' },
+    { medio: 'EFECTIVO', monto: '612400' },
+    { medio: 'TRANSFERENCIA', monto: '389700' },
+    { medio: 'TARJETA_DEBITO', monto: '182400' },
+    { medio: 'TARJETA_CREDITO', monto: '100000' },
   ],
   total: '1284500',
-  hayDolares: false,
 }
 
-const UN_MEDIO: Composicion = {
-  barras: [{ medio: 'EFECTIVO', ars: '90000', usd: '12000', usdCrudo: '10', total: '102000' }],
-  total: '102000',
-  hayDolares: true,
-}
+const UN_MEDIO_ARS: Composicion = { barras: [{ medio: 'EFECTIVO', monto: '90000' }], total: '90000' }
+const UN_MEDIO_USD: Composicion = { barras: [{ medio: 'EFECTIVO', monto: '10' }], total: '10' }
 
-// Hallazgo 3 de la review final: un iPhone cobrado en efectivo TODO en
-// dólares deja `ars` en cero. Antes de este fix, la línea de pesos se
-// mostraba igual ("$ 0,00") arriba de "US$ 300,00" con la barra al 100 % —
-// un cero al lado de una barra llena se lee como panel roto, no como "acá
-// no entró un peso". Ningún test cubría este caso.
-const SOLO_USD: Composicion = {
-  barras: [{ medio: 'EFECTIVO', ars: '0', usd: '445500', usdCrudo: '300', total: '445500' }],
-  total: '445500',
-  hayDolares: true,
-}
-
-describe('porcentajesQueSuman100', () => {
-  it('reparte enteros que suman exactamente 100', () => {
-    // Los mismos montos que la maqueta (design/arandano.pen, nodo `eyqV3`):
-    // 48/30/14/8, que además ya suman 100 con el redondeo ingenuo — el caso
-    // de abajo es el que de verdad prueba el método del resto mayor.
-    const pcts = porcentajesQueSuman100([612400, 389700, 182400, 100000])
-    expect(pcts).toEqual([48, 30, 14, 8])
-    expect(pcts.reduce((a, b) => a + b, 0)).toBe(100)
+describe('GraficoDeMedios: un solo importe, en la moneda de la pila que recibe', () => {
+  it('con moneda "ars" formatea en pesos', () => {
+    // Sin dólares en el período (hayDolares={false}): sin esto el propio
+    // selector dibuja el rótulo "US$", y el `not.toContain` de abajo
+    // confundiría ESO con la barra formateando mal.
+    const html = renderToStaticMarkup(
+      <GraficoDeMedios composicion={UN_MEDIO_ARS} hayDolares={false} moneda="ars" hrefDeMoneda={href} />,
+    )
+    expect(html).toContain('90.000,00')
+    expect(html).not.toContain('US$')
   })
 
-  it('también suma 100 cuando el redondeo ingenuo NO daría 100', () => {
-    // 1/3 de cada uno: redondeando cada tercio por separado da 33+33+33 = 99,
-    // no 100. El resto mayor reparte el punto que falta a una de las tres
-    // barras — la prueba de que el método hace algo distinto de
-    // Math.round(x) en cada elemento.
-    const pcts = porcentajesQueSuman100([1, 1, 1])
-    expect(pcts.reduce((a, b) => a + b, 0)).toBe(100)
-    // Las tres partes son iguales, así que el punto de más cae en cualquiera
-    // — lo que importa es que ninguna quede en 0 ni en 34+.
-    expect(pcts.every((p) => p === 33 || p === 34)).toBe(true)
+  // El caso del arreglo, visto desde el componente: la pila de dólares ya
+  // viene sin convertir desde `componerPorMedio` —acá sólo se verifica que el
+  // componente la formatea con `formatearDolares` y no con `formatearPrecio`.
+  it('con moneda "usd" formatea en dólares, sin convertir', () => {
+    const html = renderToStaticMarkup(
+      <GraficoDeMedios composicion={UN_MEDIO_USD} hayDolares moneda="usd" hrefDeMoneda={href} />,
+    )
+    // `toMatch` sobre los dos juntos, no dos `toContain` sueltos (Hallazgo 8
+    // de la review final del ciclo anterior): el `\s` de en medio tolera el
+    // espacio duro (NBSP) que `Intl` mete entre el símbolo y la cifra.
+    expect(html).toMatch(/US\$\s*10,00/)
   })
 
-  it('sin total no divide por cero', () => {
-    expect(porcentajesQueSuman100([0, 0])).toEqual([0, 0])
-    expect(porcentajesQueSuman100([])).toEqual([])
+  it('un medio sin pagos no aparece: sólo se dibujan las barras de la composición', () => {
+    const html = renderToStaticMarkup(
+      <GraficoDeMedios composicion={UN_MEDIO_ARS} hayDolares={false} moneda="ars" hrefDeMoneda={href} />,
+    )
+    expect(html).not.toContain('Débito')
+    expect(html).not.toContain('Crédito')
+    expect(html).not.toContain('Transferencia')
   })
 
-  it('un total explícito igual a la suma da el mismo resultado que omitirlo', () => {
-    // El caso real (GraficoDeMedios le pasa `Number(composicion.total)`, que
-    // en la práctica coincide con la suma de las barras) no puede darse contra
-    // valores que no sumen ~el total: el propio método del resto mayor asume
-    // que `faltan` (100 menos la suma de los pisos) entra en `valores.length`,
-    // así que un total muy distinto de la suma no es un caso que este método
-    // sostenga — no es el defecto que este parámetro corrige.
-    const valores = [612400, 389700, 182400, 100000]
-    const suma = valores.reduce((a, b) => a + b, 0)
-    expect(porcentajesQueSuman100(valores, suma)).toEqual(porcentajesQueSuman100(valores))
+  // Antes de este ciclo, un medio pagado enteramente en dólares mostraba
+  // "$ 0,00" como línea principal de la barra de pesos, con la barra al
+  // 100 % — un cero al lado de una barra llena se leía como panel roto. Hoy
+  // no hay forma de que eso pase: `componerPorMedio` ya excluye al medio de
+  // la pila de pesos si no tuvo NINGÚN pago en pesos (ver
+  // lib/ventas/composicion.test.ts, "un medio sin un solo pago en esa moneda
+  // no aparece en esa pila"), así que este componente nunca recibe una barra
+  // en cero para ese medio: directamente no está en la lista.
+  it('un medio que sólo cobró en dólares no aparece en la pila de pesos', () => {
+    const html = renderToStaticMarkup(
+      <GraficoDeMedios composicion={{ barras: [], total: '0' }} hayDolares moneda="ars" hrefDeMoneda={href} />,
+    )
+    expect(html).not.toContain('Efectivo')
+    expect(html).not.toContain('$ 0,00')
+  })
+})
+
+describe('GraficoDeMedios: el selector $ / US$', () => {
+  it('no aparece si no hubo dólares en el período', () => {
+    const html = renderToStaticMarkup(
+      <GraficoDeMedios composicion={CUATRO_MEDIOS} hayDolares={false} moneda="ars" hrefDeMoneda={href} />,
+    )
+    expect(html).not.toContain('US$')
   })
 
-  it('sin el segundo argumento, sigue sumando los valores (compatibilidad)', () => {
-    const pcts = porcentajesQueSuman100([1, 1, 2])
-    expect(pcts).toEqual([25, 25, 50])
+  it('aparece si hubo dólares, con la moneda activa marcada', () => {
+    const html = renderToStaticMarkup(
+      <GraficoDeMedios composicion={CUATRO_MEDIOS} hayDolares moneda="ars" hrefDeMoneda={href} />,
+    )
+    expect(html).toContain('US$')
+    expect(html).toContain('aria-current="page"')
+    expect(html).toContain('/ventas?moneda=usd')
+  })
+
+  it('son dos links, no un control de cliente: funciona sin JavaScript', () => {
+    const html = renderToStaticMarkup(
+      <GraficoDeMedios composicion={CUATRO_MEDIOS} hayDolares moneda="usd" hrefDeMoneda={href} />,
+    )
+    expect(html.match(/<a /g)).toHaveLength(2)
   })
 })
 
@@ -92,13 +113,13 @@ describe('porcentajesQueSuman100', () => {
 // tiene que llamarlo con `Number(total)`, el de `composicion` — no con nada
 // recalculado a mano. Leer el fuente porque el propio método (resto mayor)
 // no puede ejercitarse con un total que difiera de la suma de sus valores
-// (ver el test de arriba), así que no hay forma de afirmar esto vía input/
-// output sin salirse de lo que el método soporta.
+// (ver lib/ventas/porcentajes.test.ts), así que no hay forma de afirmar esto
+// vía input/output sin salirse de lo que el método soporta.
 describe('GraficoDeMedios no re-suma el total en float', () => {
   it('llama a porcentajesQueSuman100 con el total ya exacto de la composición', () => {
     const fuente = readFileSync('app/(app)/ventas/grafico.tsx', 'utf8')
     expect(fuente).toContain(
-      'porcentajesQueSuman100(barras.map((b) => Number(b.total)), Number(total))',
+      'porcentajesQueSuman100(barras.map((b) => Number(b.monto)), Number(total))',
     )
   })
 })
@@ -120,12 +141,14 @@ function bloquesDeBarra(html: string): string[] {
 
 describe('el panel de medios de pago', () => {
   it('cada barra queda con SU rótulo, SU monto, SU ancho y SU porcentaje juntos', () => {
-    const html = renderToStaticMarkup(<GraficoDeMedios composicion={CUATRO_MEDIOS} />)
+    const html = renderToStaticMarkup(
+      <GraficoDeMedios composicion={CUATRO_MEDIOS} hayDolares={false} moneda="ars" hrefDeMoneda={href} />,
+    )
     const bloques = bloquesDeBarra(html)
     expect(bloques).toHaveLength(4)
 
     // El mismo orden que declara CUATRO_MEDIOS (48/30/14/8, ver
-    // porcentajesQueSuman100 arriba). Si `barras[barras.length - 1 - i]`
+    // lib/ventas/porcentajes.test.ts). Si `barras[barras.length - 1 - i]`
     // volviera a colarse en el monto o en el porcentaje, el monto de
     // Efectivo aparecería en el bloque de Crédito y este `forEach` lo
     // atraparía ahí, no en "algún lugar del HTML".
@@ -157,58 +180,19 @@ describe('el panel de medios de pago', () => {
   })
 
   it('rotula los medios en castellano y no con el nombre del enum', () => {
-    const html = renderToStaticMarkup(<GraficoDeMedios composicion={UN_MEDIO} />)
+    const html = renderToStaticMarkup(
+      <GraficoDeMedios composicion={UN_MEDIO_ARS} hayDolares={false} moneda="ars" hrefDeMoneda={href} />,
+    )
     expect(html).not.toContain('EFECTIVO')
   })
 
-  it('un medio sin pagos no aparece: sólo se dibujan las barras de la composición', () => {
-    // componerPorMedio (lib/ventas/composicion.ts) ya excluye los medios sin
-    // un solo pago del período — este caso confirma que el componente no
-    // agrega de más: con una sola barra en la composición, "Débito" y
-    // "Crédito" no tienen ningún texto en el resultado.
-    const html = renderToStaticMarkup(<GraficoDeMedios composicion={UN_MEDIO} />)
-    expect(html).not.toContain('Débito')
-    expect(html).not.toContain('Crédito')
-    expect(html).not.toContain('Transferencia')
-  })
-
-  it('muestra los dólares en su propia línea, sin convertir', () => {
-    const html = renderToStaticMarkup(<GraficoDeMedios composicion={UN_MEDIO} />)
-    // Los pesos del medio y los dólares que entraron, cada uno con su
-    // formateador: US$ 10, no los $ 12.000 en los que se convirtieron.
-    expect(html).toContain('90.000,00')
-    // `toMatch` sobre los dos juntos, no dos `toContain` sueltos (Hallazgo 8
-    // de la review final): `toContain('US$')` y `toContain('10,00')` por
-    // separado no prueban que estén en el MISMO número — el `\s` de en medio
-    // tolera el espacio duro (NBSP, U+00A0) que `Intl` mete entre el símbolo
-    // y la cifra, que es justo lo que aflojaba la aserción anterior.
-    expect(html).toMatch(/US\$\s*10,00/)
-    expect(html).not.toContain('12.000,00')
-  })
-
-  it('sin dólares, ningún medio muestra una segunda línea', () => {
-    const html = renderToStaticMarkup(<GraficoDeMedios composicion={CUATRO_MEDIOS} />)
-    expect(html).not.toContain('US$')
-  })
-
-  // Hallazgo 3 de la review final: la línea de pesos se esconde cuando es
-  // CERO y el medio tuvo dólares (la regla simétrica a la que ya esconde la
-  // línea de dólares en cero, dos casos más arriba). Sin esto, un medio
-  // pagado enteramente en dólares mostraba "$ 0,00" como número principal,
-  // con la barra al 100 % — se leía como que el panel estaba roto.
-  it('un medio que sólo cobró en dólares no muestra "$ 0,00" como si algo hubiera entrado en pesos', () => {
-    const html = renderToStaticMarkup(<GraficoDeMedios composicion={SOLO_USD} />)
-    expect(html).not.toContain('$ 0,00')
-    expect(html).toMatch(/US\$\s*300,00/)
-    // La barra sigue existiendo y al 100 % — esconder la línea de pesos no
-    // esconde el medio ni cambia lo que mide la barra.
-    expect(html).toContain('Efectivo')
-    expect(html).toContain('100% del total')
-  })
-
-  it('la nota explica que la barra compara en pesos', () => {
-    const html = renderToStaticMarkup(<GraficoDeMedios composicion={UN_MEDIO} />)
+  it('la nota dice que nada se convierte entre monedas', () => {
+    const html = renderToStaticMarkup(
+      <GraficoDeMedios composicion={UN_MEDIO_ARS} hayDolares={false} moneda="ars" hrefDeMoneda={href} />,
+    )
     expect(html).toContain('Cada moneda dice su propio número.')
-    expect(html).toContain('La barra compara todo en pesos, a la cotización de cada pago.')
+    expect(html).toContain(
+      'Nada se convierte: no hay tipo de cambio guardado en una venta cobrada en dólares.',
+    )
   })
 })

@@ -1,12 +1,12 @@
 import { Prisma } from '@/generated/prisma/client'
-import { pesosEntregados } from './totales'
-import type { Barra, Composicion, Medio } from './medios'
+import { redondearDinero } from './totales'
+import type { Barra, Composicion, ComposicionPorMoneda, Medio, MonedaElegida } from './medios'
 
 type Decimal = Prisma.Decimal
 
 // Los rótulos y los tipos viven en ./medios porque los consume un componente
 // CLIENTE y este archivo importa Prisma — ver el encabezado de ese archivo.
-export type { Barra, Composicion, Medio }
+export type { Barra, Composicion, ComposicionPorMoneda, Medio }
 export { MEDIOS, ROTULO_MEDIO } from './medios'
 
 /**
@@ -41,69 +41,53 @@ export type FilaDePagos = {
 }
 
 /**
- * Cómo entró la plata del período, por medio de pago.
+ * Cómo entró la plata del período, por medio de pago y POR MONEDA.
  *
- * Todo se expresa en pesos —los dólares a la cotización a la que se tomó cada
- * pago, que es justamente para esto que `Pago.cotizacion` se guarda— porque una
- * barra que mezclara unidades no se podría comparar contra la de al lado.
+ * La pila la elige `Pago.moneda` y el importe es `Pago.monto` tal cual:
+ * ninguna cotización entra en la cuenta, en ninguna de las cuatro
+ * combinaciones de `(moneda, cubre)`. Es la definición correcta de lo que el
+ * panel promete —qué se entregó físicamente— y lo que se entregó no necesita
+ * ninguna conversión para nombrarse.
  *
- * Suma `Pago.monto`, y **no** se lo toca en Task 8 (precios por forma de
- * pago) aunque esa task sí cambie qué suma el resto de `/ventas`. La razón:
- * `monto` YA es `base + recargo` desde que el motor cobra con plan (Task 4,
- * `lib/ventas/crear.ts`) — nunca fue sólo mercadería —, así que esta función
- * siempre sumó lo cobrado de verdad. Lo que sí se ajustó fue el tile "Total
- * del período" de `/ventas`, que hasta Task 8 sumaba sólo `Venta.total` (la
- * mercadería) y por eso dejaba de cerrar contra este panel apenas alguna
- * venta llevaba recargo. Ver el comentario del `groupBy` que arma `filas` en
- * `app/(app)/ventas/page.tsx` para el detalle completo de la decisión.
+ * **Esto ARREGLA un defecto que estuvo en producción.** La versión anterior
+ * valuaba los pagos en dólares con `pesosEntregados`, o sea con
+ * `Pago.cotizacion`, que vale 1 cuando el pago no cruza monedas: un pago de
+ * US$ 300 en efectivo sobre un total en dólares aportaba 300 al largo de la
+ * barra en vez de los ~445.500 que representa. Los importes que el panel
+ * mostraba estaban bien —salían de `ars` y `usdCrudo`, los dos crudos—; lo que
+ * mentía era la barra y el "N % del total", y para un local que cobra en
+ * dólares en efectivo todas las barras quedaban cerca de cero.
  *
- * La multiplicación pasa por `pesosEntregados`, y no se hace acá a mano, para
- * que este panel redondee en el mismo momento y de la misma forma que el
- * total de la venta: los dos números viven en la misma pantalla y se
- * comparan a ojo. Es `pesosEntregados` y no `montoEnPesos`: cada fila sale de
- * un pago YA GUARDADO, y un pago en pesos vale su monto aunque su cotización
- * no sea 1 — ver el docblock de `pesosEntregados` en `totales.ts`.
+ * Con esto queda cerrada la costura que CLAUDE.md dejó abierta el 2026-08-30:
+ * "Cómo entró la plata sigue convirtiendo los dólares a pesos, porque sus
+ * barras necesitan una unidad común". Ya no la necesitan: cada moneda es su
+ * propio panel.
+ *
+ * `_count` y el redondeo por pago se mantienen intactos (ver `FilaDePagos`).
  */
-export function componerPorMedio(filas: FilaDePagos[]): Composicion {
-  const acumulado = new Map<Medio, { ars: Decimal; usd: Decimal; usdCrudo: Decimal }>()
+export function componerPorMedio(filas: FilaDePagos[]): ComposicionPorMoneda {
+  const pilas: Record<MonedaElegida, Map<Medio, Decimal>> = { ars: new Map(), usd: new Map() }
   let hayDolares = false
 
   for (const f of filas) {
     if (f._count <= 0) continue
-
+    const pila = f.moneda === 'USD' ? pilas.usd : pilas.ars
+    if (f.moneda === 'USD') hayDolares = true
     // Redondear PRIMERO y multiplicar por la cantidad después, no al revés: es
     // lo que reproduce exactamente la suma pago por pago de `totalDePagos`.
-    const enPesos = pesosEntregados(f).mul(f._count)
-    const actual =
-      acumulado.get(f.medio) ??
-      { ars: new Prisma.Decimal(0), usd: new Prisma.Decimal(0), usdCrudo: new Prisma.Decimal(0) }
-
-    if (f.moneda === 'USD') {
-      hayDolares = true
-      actual.usd = actual.usd.add(enPesos)
-      // Sin `pesosEntregados` y sin cotización: son los dólares que entraron.
-      // Con el mismo `_count` que el resto, que es lo que mantiene el
-      // redondeo por pago (ver el docblock de FilaDePagos).
-      actual.usdCrudo = actual.usdCrudo.add(f.monto.mul(f._count))
-    } else {
-      actual.ars = actual.ars.add(enPesos)
-    }
-    acumulado.set(f.medio, actual)
+    const suma = redondearDinero(f.monto).mul(f._count)
+    pila.set(f.medio, (pila.get(f.medio) ?? new Prisma.Decimal(0)).add(suma))
   }
 
-  const barras: Barra[] = [...acumulado.entries()]
-    .map(([medio, { ars, usd, usdCrudo }]) => ({
-      medio,
-      ars: ars.toString(),
-      usd: usd.toString(),
-      usdCrudo: usdCrudo.toString(),
-      total: ars.add(usd).toString(),
-    }))
+  return { ars: aComposicion(pilas.ars), usd: aComposicion(pilas.usd), hayDolares }
+}
+
+function aComposicion(pila: Map<Medio, Decimal>): Composicion {
+  const barras: Barra[] = [...pila.entries()]
+    .map(([medio, monto]) => ({ medio, monto: monto.toString() }))
     // Por plata y de mayor a menor: la barra más larga arriba es lo que hace
     // que el orden de lectura y el largo de las barras digan lo mismo.
-    .sort((a, b) => Number(b.total) - Number(a.total))
-
-  const total = barras.reduce((acc, b) => acc.add(b.total), new Prisma.Decimal(0))
-
-  return { barras, total: total.toString(), hayDolares }
+    .sort((a, b) => Number(b.monto) - Number(a.monto))
+  const total = barras.reduce((acc, b) => acc.add(b.monto), new Prisma.Decimal(0))
+  return { barras, total: total.toString() }
 }

@@ -50,64 +50,39 @@ export const ROTULO_MEDIO: Record<Medio, string> = {
 export const CONSUMIDOR_FINAL = 'Consumidor final'
 
 /**
- * Una barra del panel: un medio de pago, ya en pesos.
+ * Una barra del panel: un medio de pago y lo que entró por él, EN UNA SOLA
+ * MONEDA.
  *
- * Los montos son `string` y no `Decimal` — ya no porque el destinatario sea un
- * componente cliente (`grafico.tsx` dejó de serlo este ciclo, ver el
- * comentario de arriba), sino porque siguen siendo la salida FINAL de una
- * suma: lo único que un consumidor hace con ellos es mostrarlos, con
- * `formatearPrecio`, que recibe el `toString()` de la columna. Guardar el
- * tipo como `string` es lo que impide que un consumidor futuro —cliente o
- * servidor— le pida más aritmética a un valor que ya terminó de sumarse.
+ * Antes eran cuatro campos (`ars`, `usd`, `usdCrudo`, `total`) porque el panel
+ * mezclaba las dos monedas en una barra, convirtiendo los dólares con
+ * `Pago.cotizacion`. Eso resultó imposible de sostener: `cotizacion` vale 1
+ * cuando el pago no cruza monedas —a propósito, ver `cotizacionParaElCruce` en
+ * app/(app)/vender/punto-de-venta.tsx—, así que un pago de US$ 300 en efectivo
+ * aportaba 300 a una barra de pesos. Hoy hay una composición por moneda y
+ * ninguna cotización entra en la cuenta.
  *
- * `ars` tiene consumidor de producción: la línea de pesos del rótulo de cada
- * medio en `GraficoDeMedios`. `usd` **sigue sin consumidor de producción**
- * —sólo lo lee `lib/ventas/composicion.test.ts`, para verificar que la
- * separación por moneda no se mezcle antes de sumarse en `total`—. Se queda:
- * sostiene esa verificación con más granularidad que mirar sólo `total` (un
- * bug que cruzara pesos y dólares pero sumara igual no se vería ahí). El
- * "panel futuro" que este campo anticipaba ya se construyó, y no lo usa: el
- * desglose por moneda de `GraficoDeMedios` sale de `usdCrudo` —los dólares
- * SIN convertir—, no de `usd` —que está en pesos—, porque una línea que dijera
- * "esto es lo que entró en dólares" mostrando un número ya multiplicado por
- * la cotización estaría mintiendo. Sacar `usd` sigue siendo una decisión
- * aparte, no un descuido de este ciclo.
+ * `monto` es `string` y no `Decimal` por lo mismo de siempre: es la salida
+ * FINAL de una suma, y lo único que un consumidor hace con ella es mostrarla.
  */
-export type Barra = {
-  medio: Medio
-  /** Lo cobrado en pesos. */
-  ars: string
-  /** Lo cobrado en dólares, convertido a pesos. */
-  usd: string
-  /**
-   * Lo cobrado en dólares, SIN convertir: la segunda línea del rótulo de cada
-   * medio (design/arandano.pen, nodo `l4Inhd`).
-   *
-   * A diferencia de `usd` —que está en pesos y sigue sin consumidor de
-   * producción—, éste sí tiene uno: `GraficoDeMedios`. Y es
-   * justamente el número que `usd` no puede dar, porque `usd` ya pasó por la
-   * cotización de cada pago.
-   *
-   * Un pago en PESOS que cubre el total en dólares no entra acá: la línea
-   * dice qué moneda entró al cajón, y esos fueron pesos. Misma regla que
-   * `pesosEntregados` usa para decidir si multiplica.
-   */
-  usdCrudo: string
+export type Barra = { medio: Medio; monto: string }
+
+export type Composicion = {
+  /** De mayor a menor. Los medios sin un solo pago en esta moneda no aparecen. */
+  barras: Barra[]
   total: string
 }
 
-export type Composicion = {
-  /** De mayor a menor. Los medios sin un solo pago no aparecen. */
-  barras: Barra[]
-  total: string
-  /**
-   * Si hubo algún pago en dólares en el período. **Tampoco tiene consumidor
-   * de producción hoy** —la nota del pie de `grafico.tsx` ("Cada moneda dice
-   * su propio número. La barra compara todo en pesos, a la cotización de
-   * cada pago.") se muestra siempre, no sólo cuando este campo es `true`—,
-   * mismo criterio que `ars`/`usd`: queda documentado y sin usar en vez de
-   * sacarse en silencio, porque es exactamente el dato que haría falta para
-   * condicionar esa nota — decisión de un ciclo aparte, no de éste.
-   */
+/** Las dos pilas del período, sin ninguna conversión entre ellas. */
+export type ComposicionPorMoneda = {
+  ars: Composicion
+  usd: Composicion
+  /** Si hubo algún pago en dólares. Es lo que decide si el selector se dibuja. */
   hayDolares: boolean
+}
+
+/** Qué pila mira la pantalla. Viaja en la URL como `?moneda`. */
+export type MonedaElegida = 'ars' | 'usd'
+
+export function monedaValida(v: string | undefined): MonedaElegida {
+  return v === 'usd' ? 'usd' : 'ars'
 }
