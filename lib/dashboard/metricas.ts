@@ -1,5 +1,11 @@
 import { Prisma } from '@/generated/prisma/client'
-import { prismaParaTenant } from '@/lib/tenant/prisma'
+// `import type`, no de valor: mismo motivo que lib/ventas/cobrado.ts (Ruling
+// de la review de esta task) — acá `prismaParaTenant` sólo aparece dentro de
+// un `ReturnType<typeof ...>`. `delta` y `margenDe` son funciones puras que
+// un componente cliente del dashboard va a querer importar directo; con un
+// import de valor, ese import alcanzaría `lib/tenant/prisma.ts` para
+// test/limite-cliente-servidor.test.ts y se llevaría el bundle de cliente.
+import type { prismaParaTenant } from '@/lib/tenant/prisma'
 import { cobradoDeGrupos, pagosDelPeriodo, type Totales } from '@/lib/ventas/cobrado'
 import { redondearDinero } from '@/lib/ventas/totales'
 import { filtroDe, type Periodo } from './rango'
@@ -24,7 +30,13 @@ export function delta(actual: Decimal, previo: Decimal): Delta {
   if (previo.isZero()) return null
   const pct = actual.minus(previo).div(previo).mul(100)
   const redondeado = Number(pct.toDecimalPlaces(1, Prisma.Decimal.ROUND_HALF_UP))
-  return { porcentaje: redondeado, sube: redondeado >= 0 }
+  // El signo sale de comparar actual/previo SIN redondear, no del redondeado:
+  // una baja mínima (p. ej. $1.000.000 contra $1.000.300) redondea a "-0", y
+  // en JS `-0 >= 0` da `true` — el chip se dibujaba subiendo, en verde, al
+  // lado de un número que en realidad bajó. `actual.gte(previo)` no tiene ese
+  // problema: decide por la comparación real, y sigue dando `true` en el
+  // empate (mismo caso que el test "sin movimiento el delta es cero").
+  return { porcentaje: redondeado, sube: actual.gte(previo) }
 }
 
 export type Margen = { monto: Decimal; porcentaje: Decimal } | null
@@ -47,26 +59,11 @@ export function margenDe(vendidoConCosto: Decimal, costo: Decimal): Margen {
   return { monto, porcentaje: monto.div(vendidoConCosto).mul(100) }
 }
 
-/**
- * El `skip`/`take` que traen la o las filas del medio de `n` ventas ordenadas.
- *
- * Existe para no traer el período entero: Postgres ordena igual, pero cruzan
- * una o dos filas en vez de decenas de miles. Es la respuesta a la
- * preocupación que CLAUDE.md ya dejó anotada para el panel de horarios.
- */
-export function indicesDeMediana(n: number): { skip: number; take: number } | null {
-  if (n <= 0) return null
-  return n % 2 === 1
-    ? { skip: (n - 1) / 2, take: 1 }
-    : { skip: n / 2 - 1, take: 2 }
-}
-
 export type Metricas = {
   cobrado: Totales
   cobradas: number
   /** El ticket promedio EN PESOS. `null` cuando afirmarlo sería falso. */
   ticket: Decimal | null
-  mediana: Decimal | null
   margen: Margen
 }
 
@@ -77,8 +74,11 @@ export type Metricas = {
  * componente `async` que abre sesión no lo puede llamar ningún test, y la
  * regla "una venta anulada no es plata que entró" quedaría tan desprotegida
  * como la que el hallazgo I3 de la review del rediseño mostró que se podía
- * borrar dejando 785 tests en verde. Ese `anuladaEn: null` aparece cuatro
- * veces acá abajo, y las cuatro tienen que decir lo mismo.
+ * borrar dejando 785 tests en verde. `anuladaEn: null` aparece UNA sola vez
+ * acá abajo —en `donde`— y es a propósito: `donde` es la MISMA referencia que
+ * usan `venta.count` y `venta.aggregate`, así que ninguna de las dos puede
+ * perder el filtro por separado. La otra mitad de la regla, para "Cobrado",
+ * vive en `pagosDelPeriodo` (`@/lib/ventas/cobrado`), con su propio test.
  */
 export async function metricasDelPeriodo(
   prisma: PrismaDeTenant,
@@ -102,9 +102,6 @@ export async function metricasDelPeriodo(
     cobrado,
     cobradas,
     ticket: ticketPromedio(cobrado, cobradas),
-    // Va DESPUÉS del count y no en el Promise.all: `indicesDeMediana` necesita
-    // el total para saber qué fila pedir.
-    mediana: await medianaDeVentas(prisma, donde, cobradas),
     margen: margenDe(sumas._sum.vendidoConCosto ?? cero, sumas._sum.costoArs ?? cero),
   }
 }
@@ -125,29 +122,29 @@ function ticketPromedio(cobrado: Totales, cobradas: number): Decimal | null {
   return redondearDinero(cobrado.ars.div(cobradas))
 }
 
-/**
- * La mediana de `Venta.total` del período, sin traer el período entero.
- *
- * Postgres ordena igual, pero cruzan una o dos filas en vez de decenas de
- * miles: es lo que hace que "Este año" no sea un problema de volumen. Es la
- * respuesta a la preocupación que CLAUDE.md ya dejó anotada para el panel de
- * horarios de /ventas.
- */
-async function medianaDeVentas(
-  prisma: PrismaDeTenant,
-  donde: object,
-  n: number,
-): Promise<Decimal | null> {
-  const indices = indicesDeMediana(n)
-  if (!indices) return null
-  const filas = await prisma.venta.findMany({
-    where: donde,
-    orderBy: { total: 'asc' },
-    select: { total: true },
-    ...indices,
-  })
-  if (filas.length === 0) return null
-  // Con n par la mediana es el promedio de las dos del medio.
-  const suma = filas.reduce((acc, f) => acc.add(f.total), new Prisma.Decimal(0))
-  return redondearDinero(suma.div(filas.length))
-}
+// SIN mediana, a propósito (Ruling M de la review de esta task — defecto del
+// plan, no de lo implementado). La versión original ordenaba por
+// `Venta.total`, pero esa columna es sólo la mitad en PESOS de la mercadería
+// A PRECIO DE LISTA, mientras "Ticket promedio" —el tile de al lado— es
+// `Σ Pago.monto`: lo COBRADO, recargo incluido, con los pesos que cubrieron un
+// total en dólares. Son dos magnitudes distintas bajo un mismo tile. Una
+// venta de un iPhone US$ 300 cobrada en dólares tiene `total = 0` en pesos, así
+// que entraba a la mediana como CERO — con varias ventas en dólares en el
+// período el tile mostraba "mediana $ 0,00" en la misma situación en la que
+// `ticketPromedio` de arriba devuelve `null` con el argumento explícito de que
+// "$ 0,00" ahí sería una afirmación falsa. Y con planes de pago sesga al
+// revés: una venta de $10.000 en 12 cuotas al 40 % cobra $14.000, así que el
+// promedio ($14.000) y la mediana ($10.000) de la MISMA venta se separaban por
+// el recargo, no por ninguna diferencia real entre las ventas del período.
+//
+// No es una corrección barata: la mediana de lo COBRADO por venta exige
+// ordenar por un agregado de `Pago` (`Σ monto` por `ventaId`), que Prisma no
+// puede hacer sin `$queryRaw` —prohibido: la extensión del tenant intercepta
+// operaciones de MODELO, no raw— o sin traer el período entero, que es
+// justamente lo que este archivo existe para evitar. Cachear `cobradoArs` en
+// `Venta` ya se evaluó y se descartó en un ciclo anterior, con el motivo
+// escrito (ver CLAUDE.md, ciclo "Distinguir lo vendido de lo cobrado").
+//
+// El disparador para traerla de vuelta: que exista una magnitud de "lo
+// cobrado por venta" que se pueda ORDENAR en la base sin traer el período
+// entero — no una fecha.

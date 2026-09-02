@@ -1389,13 +1389,13 @@ describe('pagosDelPeriodo (lib/ventas/cobrado.ts)', () => {
 // Task 7 del ciclo del dashboard: las cuatro métricas de metricasDelPeriodo()
 // tienen que excluir la venta anulada — es el mismo hallazgo I3 de siempre,
 // aplicado a un módulo nuevo. Un tenant PROPIO y no el compartido del resto de
-// este archivo: la mediana es un estadístico de orden, no una suma, así que un
-// antes/después por delta (el patrón del resto de este archivo) no alcanza
-// para probarla contra un tenant que otros tests ya poblaron con ventas de
-// montos arbitrarios — el valor exacto de la mediana depende de TODA la lista,
-// no sólo de lo que este test agrega. Con un tenant chico y controlado, las
-// cinco cifras (cobrado, cobradas, ticket, mediana, margen) tienen un valor
-// esperado exacto.
+// este archivo: así las cuatro cifras (cobrado, cobradas, ticket, margen)
+// tienen un valor esperado EXACTO, sin tener que restar un antes/después
+// contra ventas de monto arbitrario que otros tests de este archivo ya crearon.
+//
+// SIN mediana, a propósito: se borró de metricasDelPeriodo (Ruling M de la
+// review de esta task) — ver el comentario donde vivía en
+// lib/dashboard/metricas.ts para el motivo.
 describe('metricasDelPeriodo (lib/dashboard/metricas.ts)', () => {
   it('no cuenta la venta anulada en NINGUNA de las cuatro métricas', async () => {
     const propioId = await crearTenant(owner, `dashboard-${Date.now()}`)
@@ -1430,8 +1430,8 @@ describe('metricasDelPeriodo (lib/dashboard/metricas.ts)', () => {
     })
     // La que se anula: 3 unidades = $3000, costo $1800 — bien distinta de la
     // que sobrevive, para que una fuga en CUALQUIERA de las cuatro métricas
-    // (cobrado, cantidad, ticket/mediana, margen) mueva el número de forma
-    // notoria y no se pierda en el redondeo.
+    // (cobrado, cantidad, ticket, margen) mueva el número de forma notoria y
+    // no se pierda en el redondeo.
     const { id: idAAnular } = await crearVenta({
       tenantId: propioId,
       usuarioId: propioUsuarioId,
@@ -1446,7 +1446,6 @@ describe('metricasDelPeriodo (lib/dashboard/metricas.ts)', () => {
     expect(m.cobrado.ars.toString()).toBe('1000')
     expect(m.cobrado.usd.toString()).toBe('0')
     expect(m.ticket?.toString()).toBe('1000')
-    expect(m.mediana?.toString()).toBe('1000')
     expect(m.margen?.monto.toString()).toBe('400')
     expect(m.margen?.porcentaje.toFixed(1)).toBe('40.0')
   })

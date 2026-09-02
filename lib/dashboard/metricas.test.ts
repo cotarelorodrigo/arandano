@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Prisma } from '@/generated/prisma/client'
-import { delta, margenDe, indicesDeMediana } from './metricas'
+import { delta, margenDe } from './metricas'
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -22,6 +22,15 @@ describe('el delta contra el período anterior', () => {
 
   it('sin movimiento el delta es cero y se dibuja igual', () => {
     expect(delta(d('286'), d('286'))).toEqual({ porcentaje: 0, sube: true })
+  })
+
+  // Minor 2 de la review de esta task: una baja MÍNIMA redondea a "-0", y en
+  // JS `-0 >= 0` da `true` — el chip se dibujaba subiendo, en verde, al lado
+  // de un número que en realidad bajó. El signo tiene que salir de comparar
+  // actual/previo SIN redondear, no del redondeado.
+  it('una baja mínima que redondea a "-0" sigue siendo una baja', () => {
+    const r = delta(d('1000000'), d('1000300'))
+    expect(r?.sube).toBe(false)
   })
 })
 
@@ -46,20 +55,6 @@ describe('el margen divide contra la mercadería CON costo, no contra el total',
   })
 })
 
-describe('la mediana no trae el período entero', () => {
-  // Con n impar cruza UNA fila; con n par, dos. Es lo que evita que "Este año"
-  // traiga decenas de miles de Decimal para calcular un solo número.
-  it('con n impar pide una sola fila, la del medio', () => {
-    expect(indicesDeMediana(7)).toEqual({ skip: 3, take: 1 })
-    expect(indicesDeMediana(1)).toEqual({ skip: 0, take: 1 })
-  })
-
-  it('con n par pide las dos del medio', () => {
-    expect(indicesDeMediana(8)).toEqual({ skip: 3, take: 2 })
-    expect(indicesDeMediana(2)).toEqual({ skip: 0, take: 2 })
-  })
-
-  it('sin ventas no pide nada', () => {
-    expect(indicesDeMediana(0)).toBeNull()
-  })
-})
+// SIN describe de mediana, a propósito: `indicesDeMediana` y `medianaDeVentas`
+// se borraron (Ruling M de la review de esta task — ver el comentario donde
+// vivía en metricas.ts para el motivo y el disparador para traerla de vuelta).

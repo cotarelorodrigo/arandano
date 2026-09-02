@@ -1,7 +1,15 @@
 import { Prisma } from '@/generated/prisma/client'
 import type { Moneda } from '@/generated/prisma/client'
 import { formatearPrecio, formatearDolares } from '@/lib/formato/mostrar'
-import { prismaParaTenant } from '@/lib/tenant/prisma'
+// `import type`, no un import de valor: acá `prismaParaTenant` sólo se usa
+// dentro de un `ReturnType<typeof ...>`, en posición de TIPO. Con un import de
+// valor, este módulo —lleno de justo los helpers que un componente cliente
+// buscaría (`lineasDeImporte`, `hayQueDesglosar`)— quedaría alcanzando
+// `lib/tenant/prisma.ts` (uno de los tres módulos "sensibles" de
+// test/limite-cliente-servidor.test.ts, que toca Postgres a nivel de módulo)
+// para ese test: el primer `'use client'` que importe algo de acá se llevaría
+// el bundle entero, el mismo Critical que ya pasó una vez con `pg`/`dns`.
+import type { prismaParaTenant } from '@/lib/tenant/prisma'
 import { redondearDinero, type Totales } from './totales'
 
 // Re-exportado: lib/dashboard/metricas.ts (Task 7) importa `Totales` desde
