@@ -225,10 +225,21 @@ async function crearArticuloDePrueba(nombre: string, stock = '0'): Promise<strin
 }
 
 /** Corre `fn` con la sesión de un EMPLEADO sin ningún permiso otorgado — el
- *  caso base para los tests que prueban el rechazo (Task 8). */
+ *  caso base para los tests que prueban el rechazo (Task 8).
+ *
+ *  `try/finally` y no una asignación pelada: sin restaurar `estado.cookie` al
+ *  salir, un caso que se ejecute después de éste heredaría en silencio la
+ *  cookie del empleado sin permisos — la misma clase de dependencia de orden
+ *  que ya obligó a darle un fixture propio al caso de `apagarSerieAccion con
+ *  unidades libres` más abajo. */
 async function comoEmpleadoSinPermisos<T>(fn: () => Promise<T>): Promise<T> {
+  const cookieAnterior = estado.cookie
   estado.cookie = cookieEmpleado
-  return fn()
+  try {
+    return await fn()
+  } finally {
+    estado.cookie = cookieAnterior
+  }
 }
 
 /** El artículo recién creado por `altaArticulo`, leído directo con `owner`

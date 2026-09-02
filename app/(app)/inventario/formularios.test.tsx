@@ -372,7 +372,13 @@ describe('MoverStock', () => {
     // `disabled=""`, y es eso lo que hay que buscar.
     function botonDeshabilitado(html: string, texto: string): boolean {
       const inicioBoton = html.indexOf(`${texto}</button>`)
+      // Sin esto, un `texto` que dejara de existir (una etiqueta que cambia)
+      // haría que `indexOf` diera -1, `lastIndexOf` diera -1 también, el
+      // slice quedara vacío, y el caso NEGATIVO ("no está deshabilitado")
+      // pasara de pura casualidad en vez de por haber mirado el botón real.
+      expect(inicioBoton, `no se encontró el botón "${texto}"`).toBeGreaterThan(-1)
       const inicio = html.lastIndexOf('<button', inicioBoton)
+      expect(inicio, `no se encontró la apertura de "<button" para "${texto}"`).toBeGreaterThan(-1)
       return /\sdisabled=""/.test(html.slice(inicio, inicioBoton))
     }
 

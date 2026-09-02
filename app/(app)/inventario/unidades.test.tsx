@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { formatearFechaCorta } from '@/lib/formato/mostrar'
 
 // Mismo criterio que formularios.test.tsx: acciones.ts es 'use server' y su
 // contrato ya lo prueba acciones.test.ts contra una base real. Acá sólo
@@ -26,10 +28,13 @@ async function renderCard(unidades: Unidad[]) {
 
 describe('CardDeUnidades', () => {
   it('la card lista los IMEI libres con su fecha de ingreso', async () => {
-    const html = await renderCard([
-      { id: 'u1', imei: '355000000000001', ingresadaEn: new Date('2026-09-01T12:00:00Z') },
-    ])
+    const fecha = new Date('2026-09-01T12:00:00Z')
+    const html = await renderCard([{ id: 'u1', imei: '355000000000001', ingresadaEn: fecha }])
     expect(html).toContain('355000000000001')
+    // Con la MISMA función que usa el componente, no una fecha escrita a
+    // mano: así el caso no puede pasar de casualidad si `formatearFechaCorta`
+    // se borrara del componente sin que nadie lo note.
+    expect(html).toContain(formatearFechaCorta(fecha))
   })
 
   it('cada unidad ofrece darla de baja', async () => {
@@ -44,12 +49,17 @@ describe('CardDeUnidades', () => {
     expect(html).toContain('Todavía no cargaste ninguna unidad')
   })
 
-  // La regla del merge del ciclo móvil, contada en las dos direcciones: acá
-  // no hay permiso de por medio, pero sí dos ejes de layout (escritorio y
-  // teléfono) que necesitan su propia copia del botón.
-  it('las DOS copias del botón de baja: escritorio y teléfono', async () => {
+  // Finding 1 de la review de Task 8: la primera versión duplicaba el IMEI y
+  // la fecha en dos `<div>` (uno `lg:hidden`, otro `hidden lg:flex`) para
+  // conseguir el apilado en el teléfono, y eso manufacturaba dos copias del
+  // botón que después había que probar que estuvieran gateadas igual —
+  // exactamente el patrón que CLAUDE.md registra como descartado a propósito
+  // ("Un solo árbol, no dos presentaciones"). La fila es UN solo árbol ahora
+  // (un `<div>` interno `flex-col lg:flex-row` para el par IMEI/fecha), así
+  // que el botón aparece UNA sola vez.
+  it('el botón de baja aparece UNA sola vez: un solo árbol, no dos copias', async () => {
     const html = await renderCard([{ id: 'u1', imei: 'A', ingresadaEn: new Date() }])
-    expect(html.split('Dar de baja').length - 1).toBe(2)
+    expect(html.split('Dar de baja').length - 1).toBe(1)
   })
 
   it('con más de 8 unidades libres aparece el filtro por IMEI', async () => {
@@ -115,5 +125,49 @@ describe('SwitchDeSerie', () => {
     expect(inicio).toBeGreaterThan(-1)
     const cierre = html.indexOf('>', inicio)
     expect(html.slice(inicio, cierre)).not.toMatch(/\sdisabled=""/)
+  })
+})
+
+/**
+ * Finding 2 de la review de Task 8: la confirmación en dos pasos de "Dar de
+ * baja" no tenía NINGUNA cobertura — ni `if (armado) return` +
+ * `preventDefault()`, ni el rótulo cambiando a "Confirmar baja", ni el
+ * desarme a los 3 segundos, ni la limpieza del timer al desmontar. Borrar
+ * `if (armado) return` convierte el primer toque en una baja inmediata e
+ * irreversible, y ningún test anterior lo notaba.
+ *
+ * `renderToStaticMarkup` no puede ejercitar un click ni el paso del tiempo
+ * (no hay DOM, y este repo no suma jsdom sólo para esto) — mismo "cableado,
+ * no ejercitable sin DOM" que ya usa `lista-de-imeis.test.tsx`.
+ */
+describe('FilaDeUnidad: la baja en dos pasos (cableado, no ejercitable sin DOM)', () => {
+  const FUENTE = readFileSync('app/(app)/inventario/unidades.tsx', 'utf8')
+
+  it('el primer toque JAMÁS envía: corta con preventDefault antes de armar', () => {
+    expect(FUENTE).toMatch(/if \(armado\) return\s*\n\s*e\.preventDefault\(\)\s*\n\s*armarConfirmacion\(\)/)
+  })
+
+  it('armar cambia el rótulo a "Confirmar baja"', () => {
+    expect(FUENTE).toContain("armado ? 'Confirmar baja' : 'Dar de baja'")
+  })
+
+  it('el botón cambia de variant al armarse, para que se note de verdad', () => {
+    expect(FUENTE).toContain("variant={armado ? 'destructive' : 'ghost'}")
+  })
+
+  it('se desarma solo a los 3000ms', () => {
+    expect(FUENTE).toMatch(/desarmar\.current = setTimeout\(\(\) => setArmado\(false\), 3000\)/)
+  })
+
+  it('armar cancela cualquier desarme pendiente antes de programar el nuevo', () => {
+    expect(FUENTE).toMatch(
+      /function armarConfirmacion\(\) \{\s*\n\s*setArmado\(true\)\s*\n\s*if \(desarmar\.current\) clearTimeout\(desarmar\.current\)/,
+    )
+  })
+
+  it('el timer se limpia al desmontar la fila', () => {
+    expect(FUENTE).toMatch(
+      /useEffect\(\(\) => \(\) => \{\s*\n\s*if \(desarmar\.current\) clearTimeout\(desarmar\.current\)\s*\n\s*\}, \[\]\)/,
+    )
   })
 })

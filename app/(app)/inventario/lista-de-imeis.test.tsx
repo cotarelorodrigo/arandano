@@ -64,8 +64,19 @@ describe('ListaDeImeis: comportamiento (cableado, no ejercitable sin DOM)', () =
     expect(FUENTE).toMatch(/if \(e\.key !== 'Enter'\) return\s*\n\s*e\.preventDefault\(\)/)
   })
 
-  it('con filasFijas, Enter no agrega ninguna fila', () => {
-    expect(FUENTE).toMatch(/e\.preventDefault\(\)\s*\n\s*if \(filasFijas !== undefined\) return/)
+  it('con filasFijas, Enter no agrega ninguna fila: avanza el foco en cambio', () => {
+    expect(FUENTE).toMatch(/if \(filasFijas !== undefined\) \{\s*\n\s*avanzarFoco\(i\)\s*\n\s*return\s*\n\s*\}/)
+  })
+
+  // Finding 3 de la review de Task 8: con `filasFijas` (el diálogo de prender
+  // el switch), el ref `ultimo` sólo apunta a la ÚLTIMA fila — sin esto, Enter
+  // no movía el foco a la fila siguiente, y escanear N equipos dejaba todo
+  // apilado en el primer campo.
+  it('avanzarFoco enfoca el input de la fila siguiente, por índice', () => {
+    expect(FUENTE).toMatch(
+      /contenedor\.current\?\.querySelectorAll\('input'\)\[i \+ 1\]/,
+    )
+    expect(FUENTE).toContain('siguiente?.focus()')
   })
 
   it('Enter en la última fila agrega una fila nueva', () => {

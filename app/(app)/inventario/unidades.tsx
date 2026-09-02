@@ -27,16 +27,21 @@ const UMBRAL_FILTRO = 8
  * Una fila de la lista de unidades, con la baja en dos pasos sobre el MISMO
  * botón (mismo mecanismo que `AnularVenta` y el doble `Esc` del carrito de
  * /vender: "irreversible pero frecuente"). El primer toque arma la
- * confirmación y cambia el rótulo a "Confirmar baja"; se desarma solo a los 3
- * segundos, o al terminar el envío.
+ * confirmación —cambia el rótulo a "Confirmar baja" y programa el desarme a
+ * los 3 segundos—; el segundo confirma de verdad.
  *
- * **Dos copias del botón, escritorio y teléfono** (`hidden lg:flex` /
- * `lg:hidden`), la regla de este repo para todo control duplicado — acá no
- * por permisos (esto no lleva ninguno) sino por el layout: la fila entera
- * cambia de eje entre los dos anchos, y cada eje necesita su propio botón en
- * el lugar que le corresponde. Las dos comparten el MISMO `<form>` —vía el
- * atributo `form=`, no anidamiento— y el MISMO estado de armado, así que
- * tocar cualquiera de las dos arma o confirma las dos a la vez.
+ * **UN SOLO árbol, no dos presentaciones.** La primera versión duplicaba el
+ * IMEI y la fecha en dos `<div>` —uno `lg:hidden`, otro `hidden lg:flex`— para
+ * conseguir el apilado en el teléfono, y eso manufacturaba dos copias del
+ * botón que después había que probar que estuvieran gateadas igual. Es
+ * exactamente el patrón que CLAUDE.md registra como descartado a propósito
+ * ("Un solo árbol, no dos presentaciones: el patrón `lg:contents`" — "La
+ * alternativa: renderizar dos veces y ocultar una con CSS, deja el mismo dato
+ * dos veces en el DOM, y el dueño del producto eligió explícitamente lo
+ * contrario"). Acá alcanza con un `<div>` interno `flex-col lg:flex-row` para
+ * el par IMEI/fecha: el mismo `flex-col`/`lg:flex-row` que ya gobierna el
+ * contenedor de afuera, sin duplicar nada. El botón y la nota viven una sola
+ * vez cada uno.
  */
 function FilaDeUnidad({
   articuloId,
@@ -60,61 +65,35 @@ function FilaDeUnidad({
     desarmar.current = setTimeout(() => setArmado(false), 3000)
   }
 
+  // El primer toque JAMÁS envía: arma la confirmación y corta el submit real.
+  // Sin este `if (armado) return` seguido de `preventDefault()`, cualquier
+  // toque —el primero incluido— daría de baja la unidad de una: es la línea
+  // que sostiene todo el mecanismo de "irreversible pero frecuente".
   function alApretar(e: React.MouseEvent<HTMLButtonElement>) {
     if (armado) return
     e.preventDefault()
     armarConfirmacion()
   }
 
-  const boton = (claseExtra: string) => (
-    <Button
-      type="submit"
-      form={formId}
-      variant={armado ? 'destructive' : 'ghost'}
-      size="sm"
-      disabled={enviando}
-      onClick={alApretar}
-      className={claseExtra}
-    >
-      {enviando ? 'Dando de baja…' : armado ? 'Confirmar baja' : 'Dar de baja'}
-    </Button>
-  )
-
   return (
-    <div className="flex flex-col gap-2 border-b py-2 last:border-b-0 lg:flex-row lg:items-center lg:justify-between lg:gap-3 lg:py-[9px]">
-      {/* Sin campos visibles propios, salvo la nota (`form=`, más abajo): sólo
-          dispara la acción con `articuloId`/`unidadId` ya conocidos. */}
+    <div className="flex flex-col gap-2 border-b py-2 last:border-b-0 lg:flex-row lg:items-center lg:gap-3 lg:py-[9px]">
+      {/* Sin campos visibles propios, salvo la nota y el botón (`form=`, más
+          abajo): sólo dispara la acción con `articuloId`/`unidadId` ya
+          conocidos. */}
       <form id={formId} action={accion} className="hidden" aria-hidden="true">
         <input type="hidden" name="articuloId" value={articuloId} />
         <input type="hidden" name="unidadId" value={unidad.id} />
       </form>
 
-      {/* Teléfono: la fila se apila, con el botón a la derecha del par
-          IMEI/fecha. */}
-      <div className="flex items-center justify-between gap-2 lg:hidden">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[13px] font-medium text-foreground">{unidad.imei}</span>
-          <span className="text-[11px] text-muted-foreground">
-            Ingresó el {formatearFechaCorta(unidad.ingresadaEn)}
-          </span>
-        </div>
-        {boton('shrink-0')}
-      </div>
-
-      {/* Escritorio: una fila más parecida a una tabla, IMEI y fecha en
-          columnas propias. */}
-      <div className="hidden lg:flex lg:flex-1 lg:items-center lg:justify-between lg:gap-3">
+      {/* IMEI y fecha: columna en el teléfono, fila en escritorio — el MISMO
+          `<span>` de cada uno, nunca dos. */}
+      <div className="flex flex-col gap-0.5 lg:flex-1 lg:flex-row lg:items-center lg:gap-3">
         <span className="text-[13px] font-medium text-foreground">{unidad.imei}</span>
         <span className="text-[11px] text-muted-foreground">
           Ingresó el {formatearFechaCorta(unidad.ingresadaEn)}
         </span>
-        {boton('shrink-0')}
       </div>
 
-      {/* La nota es UNA sola, referenciada por las dos copias del formulario
-          vía `form=` — duplicarla junto con el botón dejaría dos <input>
-          con el mismo `name` en el DOM, y sólo uno de los dos recibiría lo
-          que la persona tipeó según el ancho en que está mirando. */}
       <Input
         form={formId}
         name="nota"
@@ -122,6 +101,18 @@ function FilaDeUnidad({
         className="h-9 rounded-[9px] lg:w-[220px]"
         aria-label={`Motivo de la baja de ${unidad.imei}`}
       />
+
+      <Button
+        type="submit"
+        form={formId}
+        variant={armado ? 'destructive' : 'ghost'}
+        size="sm"
+        disabled={enviando}
+        onClick={alApretar}
+        className="shrink-0"
+      >
+        {enviando ? 'Dando de baja…' : armado ? 'Confirmar baja' : 'Dar de baja'}
+      </Button>
 
       {estado.error && (
         <p className="text-[11px] text-destructive">{estado.error}</p>

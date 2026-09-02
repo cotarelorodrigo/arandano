@@ -23,22 +23,46 @@ export function ListaDeImeis({
     filasFijas === undefined ? [''] : Array.from({ length: filasFijas }, () => ''),
   )
   const ultimo = useRef<HTMLInputElement>(null)
+  // Sólo hace falta con `filasFijas`: es de ahí que `avanzarFoco` (más abajo)
+  // saca el input de la fila siguiente por índice, sin depender de un ref por
+  // fila.
+  const contenedor = useRef<HTMLDivElement>(null)
 
-  // El lector de código de barras emite Enter al final de cada código, así que
-  // Enter agrega una fila y la enfoca: eso es lo que hace que cargar diez
-  // equipos sean diez escaneos y ningún click. `preventDefault` ANTES de
-  // cualquier await —después ya no tiene efecto—, igual que el buscador de
-  // /vender. Con `filasFijas` no agrega nada: la cantidad la fija el stock.
+  /**
+   * Con `filasFijas`, no hay fila que agregar: el lector de código de barras
+   * sigue escaneando, así que Enter tiene que avanzar el foco a la PRÓXIMA
+   * fila — si se queda en la misma, la segunda lectura pisa a la primera, y
+   * escanear N equipos en N campos fijos (el diálogo de prender el switch, el
+   * caso que este control existe para servir) deja todo apilado en el primer
+   * campo. En la última fila no hay a dónde avanzar: se queda donde está, que
+   * es la respuesta razonable —no hay una acción mejor que inventar—.
+   */
+  function avanzarFoco(i: number) {
+    const siguiente = contenedor.current?.querySelectorAll('input')[i + 1] as
+      | HTMLInputElement
+      | undefined
+    siguiente?.focus()
+  }
+
+  // El lector de código de barras emite Enter al final de cada código.
+  // `preventDefault` ANTES de cualquier otra cosa —después ya no tiene
+  // efecto—, igual que el buscador de /vender.
   function alTeclear(e: React.KeyboardEvent<HTMLInputElement>, i: number) {
     if (e.key !== 'Enter') return
     e.preventDefault()
-    if (filasFijas !== undefined) return
+    if (filasFijas !== undefined) {
+      avanzarFoco(i)
+      return
+    }
+    // Sin filas fijas (el alta, el ingreso de mercadería): Enter agrega una
+    // fila y la enfoca, que es lo que hace que cargar diez equipos sean diez
+    // escaneos y ningún click.
     if (i === valores.length - 1) setValores((v) => [...v, ''])
     queueMicrotask(() => ultimo.current?.focus())
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div ref={contenedor} className="flex flex-col gap-2">
       {valores.map((v, i) => (
         <div key={i} className="flex items-center gap-2">
           <Input
