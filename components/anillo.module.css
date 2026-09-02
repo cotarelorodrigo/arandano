@@ -1,0 +1,32 @@
+/*
+ * El valor central del anillo: el número que va en el hueco del donut
+ * (`Anillo`, components/anillo.tsx), compartido por los paneles de
+ * /dashboard que lo usan.
+ *
+ * POR QUÉ UN MÓDULO CSS Y NO `style={{ fontFamily: ... }}` A MANO. El primer
+ * borrador de este componente lo escribía inline
+ * (`font-[family-name:var(--font-archivo)]`), y eso es exactamente el error
+ * que app/(app)/ventas/tipografia.module.css ya dejó documentado: inline, si
+ * --font-archivo no resolviera por lo que sea, el navegador cae al default de
+ * la plataforma en vez de a `ui-sans-serif, system-ui, sans-serif`, sin que
+ * nadie lo note; y al vivir en `style` y no en un `.module.css`, evade la
+ * vigilancia de test/tipografia.test.ts, que sólo inspecciona archivos
+ * `.module.css`. Ver components/importe.module.css para el precedente.
+ *
+ * SIN font-stretch, a propósito: igual que Cobro y Título de card, este rol
+ * no le pide un ancho propio al eje `wdth` de Archivo — se queda en el 100%
+ * por default.
+ *
+ * Tamaño, peso y tracking van compuestos acá y no como utilidades de
+ * Tailwind, porque el valor central es siempre el mismo rol —no cambia de
+ * tamaño según la pantalla que use el anillo—, a diferencia de `.archivo` en
+ * ventas/tipografia.module.css, que sí varía de un uso a otro. El color no:
+ * queda como utilidad (`text-foreground`) en el propio componente, igual que
+ * en components/importe.module.css.
+ */
+.valor {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 1.1875rem; /* 19px */
+  letter-spacing: -0.4px;
+}

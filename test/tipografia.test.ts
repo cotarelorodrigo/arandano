@@ -127,6 +127,11 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   'Título de la card Núcleo': ['app/sitio/tipografia.module.css'],
   'Título de card de módulo': ['app/sitio/tipografia.module.css'],
   'Monto del plan': ['app/sitio/tipografia.module.css'],
+  // El valor central de `Anillo` (Task 6 del ciclo de /dashboard), compartido
+  // por los paneles que lo instancian. Sin font-stretch propio, mismo motivo
+  // que Cobro/Título de card más arriba — sólo hace falta acá para que el
+  // chequeo de "consumidor fantasma" no marque este módulo.
+  'Valor del anillo': ['components/anillo.module.css'],
 }
 
 /**
