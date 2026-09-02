@@ -416,12 +416,14 @@ export async function crearVenta(
             // unidad no es de este artículo (o no existe), ya se vendió, o se
             // dio de baja (rota, robada, a garantía). La consulta que las
             // separa va acá y no antes: sólo corre en el camino excepcional.
-            // Trae `ventaId`/`bajaEn` a propósito — sin ellos, un equipo dado
-            // de baja diría "se acaba de vender" en el cartel del mostrador,
-            // que es simplemente falso: nadie lo vendió.
+            // Trae `bajaEn` a propósito — sin él, un equipo dado de baja
+            // diría "se acaba de vender" en el cartel del mostrador, que es
+            // simplemente falso: nadie lo vendió. No hace falta `ventaId`
+            // para la otra rama: si no está de baja y de todos modos no
+            // matcheó el UPDATE de arriba, sólo queda que esté vendida.
             const existe = await tx.unidadDeArticulo.findFirst({
               where: { id: l.unidadId, articuloId: l.articuloId },
-              select: { imei: true, ventaId: true, bajaEn: true },
+              select: { imei: true, bajaEn: true },
             })
             if (!existe) {
               throw new ErrorDeVenta(

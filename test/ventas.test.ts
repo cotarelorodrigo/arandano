@@ -1067,17 +1067,19 @@ describe('crearVenta con unidades identificadas (IMEI)', () => {
     expect((await leerArticulo(a.id)).stock.toString()).toBe('0')
   })
 
-  it('crearVenta contra darDeBajaUnidad sobre la misma unidad: gana una sola', async () => {
-    // ÉSTE es el caso que el UPDATE condicional defiende de verdad. A
-    // diferencia del par de arriba, `darDeBajaUnidad` no llama a
-    // `proximoNumero` ni toca la fila del tenant: no comparte ningún lock con
-    // `crearVenta`, así que las dos transacciones SÍ pueden llegar al
-    // `updateMany` de la unidad sin que ninguna haya comiteado todavía. Con un
-    // `findFirst` + `update` sin condición en el WHERE, este test sería
-    // flaky en el mejor caso y fallaría en el peor: la segunda transacción no
-    // tendría con qué rechazarse, y las dos operaciones completarían —una
-    // venta fantasma sobre un equipo dado de baja, o una baja que pisa una
-    // venta ya cobrada.
+  it('crearVenta contra darDeBajaUnidad sobre la misma unidad: gana una sola (smoke, no discrimina el mecanismo)', async () => {
+    // NO discrimina entre el UPDATE condicional y un `findFirst` + `update`
+    // sin condición: en la práctica `darDeBajaUnidad` —dos idas y vueltas
+    // hasta su propio `updateMany`— termina y comitea mucho antes de que
+    // `crearVenta` —seis o siete idas y vueltas antes de llegar a la unidad:
+    // validaciones, `findMany` de artículos, el UPDATE de `proximoNumero`,
+    // `venta.create`, ítems, pagos— toque la fila. Las dos escrituras no
+    // llegan a solaparse nunca, así que un `findFirst` acá vería el estado ya
+    // comiteado de la baja e igual se rechazaría, sin necesitar el WHERE
+    // condicional en la escritura. Sirve como smoke test de que los dos
+    // caminos de baja de una unidad coexisten sin romperse mutuamente, pero
+    // el test que fuerza el solape real —y que si se reemplaza el UPDATE
+    // condicional por `findFirst` + `update` falla de verdad— es el de abajo.
     const a = await crearArticuloConSerie('iPhone 13 mini', ['Y1'], '500000')
     const [y1] = await unidadesLibres(tenantId, a.id)
     const items = [{ articuloId: a.id, cantidad: d('1'), unidadId: y1.id }]
@@ -1107,6 +1109,90 @@ describe('crearVenta con unidades identificadas (IMEI)', () => {
       expect(unidad.bajaEn).not.toBeNull()
     }
   })
+
+  it(
+    'crearVenta bloqueada por una baja ya comiteada de la misma unidad: se rechaza sin escribir nada',
+    async () => {
+      // ÉSTE es el que fuerza el solape que el test de arriba no logra. Un
+      // tercer actor —el OWNER, dueño de la tabla y por lo tanto sin
+      // FORCE ROW LEVEL SECURITY de por medio— deja EXACTAMENTE lo que
+      // `darDeBajaUnidad` deja, pero sin comitear: eso toma el lock de la
+      // fila de la unidad y lo retiene. Mientras el lock está tomado,
+      // arrancamos `crearVenta` sin esperarla: corre sus validaciones, toma
+      // el lock del tenant vía `proximoNumero`, crea la venta, y recién ahí
+      // se topa con la fila de la unidad — BLOQUEADA detrás del lock del
+      // owner. Sólo cuando el owner comitea, `crearVenta` puede continuar, y
+      // lo hace viendo el `baja_en` ya escrito.
+      //
+      // Es la única forma determinística de garantizar el solape: sin este
+      // tercer actor, `darDeBajaUnidad` (dos idas y vueltas) siempre termina
+      // antes de que `crearVenta` (seis o siete) llegue a la unidad, y un
+      // `findFirst` + `update` roto pasaría iguales — es lo que probó el
+      // test de arriba, y por lo que su comentario dice que no discrimina.
+      // Acá si el UPDATE fuera un `findFirst` + `update` sin condición: el
+      // `findFirst` correría ANTES del commit del owner, vería la unidad
+      // libre, y al reanudar (ya con la baja comiteada) escribiría la venta
+      // IGUAL — la unidad quedaría vendida Y dada de baja a la vez, y el
+      // stock bajaría dos veces por la misma unidad física. Lo comprobé
+      // haciendo ese cambio a mano, ver el reporte.
+      const a = await crearArticuloConSerie('iPhone 13 Pro Max', ['Z1'], '500000')
+      const [z1] = await unidadesLibres(tenantId, a.id)
+      const items = [{ articuloId: a.id, cantidad: d('1'), unidadId: z1.id }]
+      const pagos = [
+        { medio: 'EFECTIVO' as const, moneda: 'ARS' as const, base: d('500000'), cotizacion: d('1') },
+      ]
+
+      const owner2 = new Client({ connectionString: urlOwner() })
+      await owner2.connect()
+      let venta: Promise<{ id: string; numero: number }>
+      try {
+        await owner2.query('BEGIN')
+        // Lo mismo que escribe `darDeBajaUnidad`, sin pasar por la función:
+        // lo que importa acá es el LOCK de fila que deja la transacción
+        // abierta, no el camino de código.
+        await owner2.query(
+          `UPDATE unidades_articulo SET baja_en = now(), baja_por_id = $1 WHERE id = $2`,
+          [usuarioId, z1.id],
+        )
+
+        venta = crearVenta({ tenantId, usuarioId, items, pagos })
+
+        // Tiempo de sobra para que crearVenta corra TODO lo que corre antes
+        // de tocar la unidad (validaciones, findMany de artículos,
+        // proximoNumero, venta.create, ítems, pagos) y quede bloqueada en el
+        // UPDATE de la unidad, detrás del lock de owner2.
+        await new Promise((resolve) => setTimeout(resolve, 300))
+
+        await owner2.query('COMMIT')
+
+        await expect(venta).rejects.toThrow(
+          expect.objectContaining({ codigo: 'UNIDAD_NO_DISPONIBLE' }),
+        )
+      } finally {
+        // SIEMPRE, pase lo que pase arriba: si algo entre el BEGIN y el
+        // COMMIT tira, `venta` queda esperando esta transacción para
+        // siempre, y sin este `finally` cuelga la corrida entera en vez de
+        // fallar el test. `COMMIT` fuera de una transacción no es un error
+        // en Postgres —a lo sumo una advertencia—, así que llamarlo de nuevo
+        // acá cuando ya se llamó arriba no rompe nada.
+        await owner2.query('COMMIT').catch(() => {})
+        await owner2.end()
+      }
+
+      // Nada quedó a medias: la unidad sigue dada de baja y NO vendida.
+      const unidad = await leerUnidad(z1.id)
+      expect(unidad.bajaEn).not.toBeNull()
+      expect(unidad.ventaId).toBeNull()
+      // El stock queda en el `1` inicial: este test sólo imita el LOCK de
+      // fila que deja una baja real —el `UPDATE` de arriba, a mano—, no las
+      // otras dos escrituras que hace `darDeBajaUnidad` (el movimiento y el
+      // decremento de stock), que ya cubre sin contención el smoke test de
+      // arriba. Lo que importa acá es que la venta rechazada no tocó nada: ni
+      // la unidad, ni el stock.
+      expect((await leerArticulo(a.id)).stock.toString()).toBe('1')
+    },
+    10_000,
+  )
 })
 
 describe('venta con artículos en dólares', () => {
