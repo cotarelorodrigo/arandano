@@ -12,6 +12,7 @@ let normalizarImei: typeof import('@/lib/inventario/unidades').normalizarImei
 let unidadesLibres: typeof import('@/lib/inventario/unidades').unidadesLibres
 let prenderSerie: typeof import('@/lib/inventario/unidades').prenderSerie
 let apagarSerie: typeof import('@/lib/inventario/unidades').apagarSerie
+let crearUnidadesEnTx: typeof import('@/lib/inventario/unidades').crearUnidadesEnTx
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -26,9 +27,8 @@ let siguienteNumero = 1
 beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
-  ;({ normalizarImei, unidadesLibres, prenderSerie, apagarSerie } = await import(
-    '@/lib/inventario/unidades'
-  ))
+  ;({ normalizarImei, unidadesLibres, prenderSerie, apagarSerie, crearUnidadesEnTx } =
+    await import('@/lib/inventario/unidades'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -235,9 +235,28 @@ describe('unidadesLibres', () => {
     expect((await unidadesLibres(tenantId, a.id)).map((u) => u.imei)).toEqual(['G3'])
   })
 
-  it('las devuelve más vieja primero: el mostrador vende lo que entró antes', async () => {
-    const a = await crearArticulo('iPhone XR', '2')
-    await prenderSerie({ tenantId, articuloId: a.id, imeis: ['H1', 'H2'], usuarioId })
-    expect((await unidadesLibres(tenantId, a.id)).map((u) => u.imei)).toEqual(['H1', 'H2'])
+  it('dentro de UNA tanda, con timestamp idéntico, desempata por id (uuid v7)', async () => {
+    // `ingresadaEn` sale de CURRENT_TIMESTAMP, que en Postgres es la hora de
+    // INICIO de la transacción: las tres unidades de este único
+    // `prenderSerie` comparten el mismo valor exacto, así que si el resultado
+    // sale ['H1', 'H2', 'H3'] es porque el `id` (uuid v7, time-ordered) las
+    // desempató en el orden real de inserción — no porque el orden por
+    // timestamp ya las distinguiera.
+    const a = await crearArticulo('iPhone XR', '3')
+    await prenderSerie({ tenantId, articuloId: a.id, imeis: ['H1', 'H2', 'H3'], usuarioId })
+    expect((await unidadesLibres(tenantId, a.id)).map((u) => u.imei)).toEqual(['H1', 'H2', 'H3'])
+  })
+
+  it('entre DOS tandas, la primera sigue antes de la segunda', async () => {
+    // Simula el caso real de un artículo ya prendido que recibe una entrada
+    // de mercadería posterior (`ingresarStock`, Task 3): dos transacciones
+    // separadas, cada una con su propia hora de inicio, así que acá el
+    // criterio que ordena es `ingresadaEn` y no el desempate por `id`.
+    const a = await crearArticulo('iPhone 12 mini', '1')
+    await prenderSerie({ tenantId, articuloId: a.id, imeis: ['I1'], usuarioId })
+    await enTransaccionDeTenant(tenantId, (tx) =>
+      crearUnidadesEnTx(tx, { tenantId, articuloId: a.id, imeis: ['I2'], usuarioId }),
+    )
+    expect((await unidadesLibres(tenantId, a.id)).map((u) => u.imei)).toEqual(['I1', 'I2'])
   })
 })

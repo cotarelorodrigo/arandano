@@ -1,4 +1,3 @@
-import { Prisma } from '@/generated/prisma/client'
 import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import { exigirUsuario } from '@/lib/ventas/pertenencia'
 import { ErrorDeInventario, traducirErrorDeBase } from './errores'
@@ -67,9 +66,17 @@ export async function unidadesLibres(
   return enTransaccionDeTenant(tenantId, async (tx) => {
     const filas = await tx.unidadDeArticulo.findMany({
       where: { articuloId, ventaId: null, bajaEn: null },
-      // Más vieja primero: en un mostrador se vende lo que entró antes, y un
-      // orden estable es además lo que hace testeable la lista.
-      orderBy: { ingresadaEn: 'asc' },
+      // Más vieja primero: en un mostrador se vende lo que entró antes. Pero
+      // `ingresadaEn` sale de `CURRENT_TIMESTAMP`, que en Postgres es la hora
+      // de INICIO de la transacción — así que toda la tanda que crea
+      // `crearUnidadesEnTx` (todas las unidades de un mismo `prenderSerie` o
+      // `ingresarStock`) comparte el mismo valor exacto, y sin desempate el
+      // orden entre ellas queda librado a lo que el heap scan devuelva. `id`
+      // como segundo criterio lo resuelve de verdad: es `uuid(7)`, que
+      // incorpora un timestamp en milisegundos más un contador monótono, así
+      // que ordena por `id` dentro del empate es ordenar por el momento real
+      // de inserción de cada fila, no por azar.
+      orderBy: [{ ingresadaEn: 'asc' }, { id: 'asc' }],
       select: { id: true, imei: true, ingresadaEn: true },
     })
     return filas
