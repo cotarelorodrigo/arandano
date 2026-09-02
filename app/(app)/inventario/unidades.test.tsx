@@ -171,3 +171,54 @@ describe('FilaDeUnidad: la baja en dos pasos (cableado, no ejercitable sin DOM)'
     )
   })
 })
+
+/**
+ * Hallazgo I4 de la review de rama. `confirmarDialogo` seteaba el error y
+ * dejaba el diálogo abierto, pero el único `<p>` que lo pintaba vivía en la
+ * FILA — o sea detrás del velo de pantalla completa de `DialogContent`, con el
+ * foco atrapado adentro. Los tres errores más probables de este camino
+ * (`SERIE_CONTEO_NO_COINCIDE`, `IMEI_REPETIDO`, `SERIE_STOCK_NO_ENTERO`) no le
+ * mostraban NADA a quien apretaba "Prender": el rótulo volvía y el switch
+ * quedaba apagado sin explicación, en la única pantalla que un local tiene que
+ * atravesar para adoptar la feature.
+ *
+ * Y `enCurso` se liberaba sólo en el camino de retorno, así que una acción que
+ * TIRA dejaba el botón congelado en "Prendiendo…" y el switch deshabilitado
+ * hasta recargar.
+ *
+ * Por fuente, igual que la baja en dos pasos de arriba: sin DOM no se puede
+ * abrir el diálogo ni hacer fallar una acción.
+ */
+describe('SwitchDeSerie: el error visible y el enCurso liberado (cableado)', () => {
+  const FUENTE = readFileSync('app/(app)/inventario/unidades.tsx', 'utf8')
+
+  it('el error se pinta DENTRO del DialogContent, antes del footer', () => {
+    const cuerpo = FUENTE.slice(FUENTE.indexOf('<DialogContent>'))
+    const alerta = cuerpo.indexOf('role="alert"')
+    const footer = cuerpo.indexOf('<DialogFooter>')
+    expect(alerta).toBeGreaterThan(-1)
+    expect(alerta).toBeLessThan(footer)
+    expect(cuerpo.slice(alerta, footer)).toContain('{error}')
+  })
+
+  it('y el de la fila NO se pinta con el diálogo abierto: quedaría detrás del velo', () => {
+    expect(FUENTE).toContain('{error && !dialogoAbierto && <p')
+  })
+
+  it('cerrar el diálogo limpia su error en vez de mudarlo a la fila', () => {
+    expect(FUENTE).toMatch(
+      /function cambiarDialogo\(abierto: boolean\) \{\s*\n\s*setDialogoAbierto\(abierto\)\s*\n\s*if \(!abierto\) setError\(null\)/,
+    )
+    expect(FUENTE).toContain('onOpenChange={cambiarDialogo}')
+  })
+
+  // Las TRES: apagar, prender sin diálogo y confirmar el diálogo. Contadas,
+  // porque una sola que quede afuera es un switch congelado hasta recargar.
+  it('las TRES llamadas liberan enCurso en un finally', () => {
+    const enFinally = FUENTE.match(/\} finally \{\s*\n\s*setEnCurso\(false\)\s*\n\s*\}/g) ?? []
+    expect(enFinally).toHaveLength(3)
+    // Y ninguna suelta: una cuarta aparición fuera de un `finally` sería
+    // justamente el camino que se olvida de liberarlo cuando la acción tira.
+    expect(FUENTE.split('setEnCurso(false)').length - 1).toBe(3)
+  })
+})

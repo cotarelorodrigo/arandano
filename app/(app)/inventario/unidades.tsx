@@ -221,17 +221,31 @@ export function SwitchDeSerie({
 
   const stockNum = Number(stock)
 
+  // `try/finally` en las tres, y el `finally` es lo que importa: si la acción
+  // TIRA en vez de devolver `{ error }` —y desde que `crearUnidadesEnTx`
+  // traduce el choque de IMEI eso es menos probable, pero cualquier error no
+  // de dominio sigue relanzándose por `traducir()`—, sin él `enCurso` quedaba
+  // en `true` para siempre: el botón congelado en "Prendiendo…" y el switch
+  // deshabilitado hasta recargar la pantalla. El `catch` devuelve el switch
+  // optimista a donde estaba y relanza: tragar el error lo dejaría fuera del
+  // log y de Sentry, que es justo lo que `traducir()` evita del otro lado.
   async function apagar() {
     setActivo(false)
     setError(null)
     setEnCurso(true)
     const datos = new FormData()
     datos.set('articuloId', articuloId)
-    const r = await apagarSerieAccion(INICIAL, datos)
-    setEnCurso(false)
-    if (r.error) {
+    try {
+      const r = await apagarSerieAccion(INICIAL, datos)
+      if (r.error) {
+        setActivo(true)
+        setError(r.error)
+      }
+    } catch (e) {
       setActivo(true)
-      setError(r.error)
+      throw e
+    } finally {
+      setEnCurso(false)
     }
   }
 
@@ -241,11 +255,17 @@ export function SwitchDeSerie({
     setEnCurso(true)
     const datos = new FormData()
     datos.set('articuloId', articuloId)
-    const r = await prenderSerieAccion(INICIAL, datos)
-    setEnCurso(false)
-    if (r.error) {
+    try {
+      const r = await prenderSerieAccion(INICIAL, datos)
+      if (r.error) {
+        setActivo(false)
+        setError(r.error)
+      }
+    } catch (e) {
       setActivo(false)
-      setError(r.error)
+      throw e
+    } finally {
+      setEnCurso(false)
     }
   }
 
@@ -255,24 +275,34 @@ export function SwitchDeSerie({
       return
     }
     if (stockNum > 0) {
-      setDialogoAbierto(true)
+      cambiarDialogo(true)
       return
     }
     void prenderSinDialogo()
+  }
+
+  /** El error del diálogo muere con el diálogo: dejarlo vivo lo haría
+   *  reaparecer en la fila, ya desconectado del formulario que lo produjo. */
+  function cambiarDialogo(abierto: boolean) {
+    setDialogoAbierto(abierto)
+    if (!abierto) setError(null)
   }
 
   async function confirmarDialogo(datos: FormData) {
     datos.set('articuloId', articuloId)
     setError(null)
     setEnCurso(true)
-    const r = await prenderSerieAccion(INICIAL, datos)
-    setEnCurso(false)
-    if (r.error) {
-      setError(r.error)
-      return
+    try {
+      const r = await prenderSerieAccion(INICIAL, datos)
+      if (r.error) {
+        setError(r.error)
+        return
+      }
+      setActivo(true)
+      setDialogoAbierto(false)
+    } finally {
+      setEnCurso(false)
     }
-    setActivo(true)
-    setDialogoAbierto(false)
   }
 
   return (
@@ -282,7 +312,16 @@ export function SwitchDeSerie({
         <p className="text-[11px] text-muted-foreground">
           Cada unidad se identifica y se vende por separado
         </p>
-        {error && <p className="text-[11px] text-destructive">{error}</p>}
+        {/* El error de los dos caminos SIN diálogo (apagar, y prender con
+            stock en cero). Con el diálogo abierto no se pinta acá: la fila
+            queda DETRÁS del velo de pantalla completa de `DialogContent`, con
+            el foco atrapado adentro, así que un cartel en este `<div>` no lo
+            ve nadie — que es exactamente cómo se perdían
+            `SERIE_CONTEO_NO_COINCIDE`, `IMEI_REPETIDO` y
+            `SERIE_STOCK_NO_ENTERO`, los tres errores más probables de esta
+            pantalla, que es LA que hay que atravesar para adoptar la
+            feature. */}
+        {error && !dialogoAbierto && <p className="text-[11px] text-destructive">{error}</p>}
       </div>
       <Switch
         id="lleva-serie"
@@ -291,7 +330,7 @@ export function SwitchDeSerie({
         onCheckedChange={alCambiar}
       />
 
-      <Dialog open={dialogoAbierto} onOpenChange={setDialogoAbierto}>
+      <Dialog open={dialogoAbierto} onOpenChange={cambiarDialogo}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Cargá el IMEI de cada unidad</DialogTitle>
@@ -307,8 +346,15 @@ export function SwitchDeSerie({
           >
             <ListaDeImeis filasFijas={stockNum} />
           </form>
+          {/* DENTRO del `DialogContent`, que es lo único que el usuario está
+              mirando mientras el diálogo está abierto. */}
+          {error && (
+            <p role="alert" className="text-[12px] leading-[1.5] text-destructive">
+              {error}
+            </p>
+          )}
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setDialogoAbierto(false)}>
+            <Button type="button" variant="ghost" onClick={() => cambiarDialogo(false)}>
               Cancelar
             </Button>
             <Button type="submit" form="form-prender-serie" disabled={enCurso}>
