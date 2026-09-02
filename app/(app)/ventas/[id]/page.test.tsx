@@ -18,7 +18,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import {
   seOfreceAnular, cotizacionVisible, subtituloDeItem, metaDeItem, metaDePago, filasDeResumen,
   notaDeAnulacion, Detalle, type ItemVendido, type PagoRecibido,
-  lineasDeRecargo, rotuloDePlan, seMuestraCubre, ROTULO_CUBRE,
+  lineasDeRecargo, rotuloDePlan, seMuestraCubre, ROTULO_CUBRE, imeisPorItem,
 } from './page'
 import { CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
@@ -343,6 +343,9 @@ const ITEM: ItemVendido = {
   cantidadFormateada: '1',
   precioFormateado: '$ 12.000,00',
   subtotalFormateado: '$ 12.000,00',
+  // El caso común, y el que tiene que verse EXACTAMENTE como antes de la
+  // Task 10: sin ninguna unidad identificada.
+  imei: null,
 }
 
 /** Un pago mínimo en pesos: `esUsd: false`, sin la línea "entraron $X". */
@@ -443,6 +446,30 @@ describe('Detalle: "Qué se vendió" — el patrón grid + display:contents', ()
     expect(html).toMatch(/class="hidden text-\[11px\] text-muted-foreground lg:block">SKU 000412</)
   })
 
+  // Task 10: el IMEI de la unidad que se llevó la línea, cuando la hay.
+  describe('el IMEI de la unidad (Task 10)', () => {
+    it('con unidad identificada, muestra el IMEI', () => {
+      const html = renderDetalle({ items: [{ ...ITEM, imei: '355000000000001' }] })
+      expect(html).toContain('IMEI 355000000000001')
+    })
+
+    // El principio del ciclo entero: un local que no usa esto no ve ninguna
+    // diferencia. `ITEM` ya lleva `imei: null` por default.
+    it('sin unidad identificada, no dibuja nada — ni el rótulo "IMEI"', () => {
+      const html = renderDetalle()
+      expect(html).not.toContain('IMEI')
+    })
+
+    // A diferencia del subtítulo (SKU), que está `hidden` en el teléfono, el
+    // IMEI se dibuja UNA sola vez para los dos anchos: un solo árbol, no dos
+    // presentaciones (mismo criterio que dejó escrito el merge del ciclo
+    // móvil para evitar las dos copias de un mismo dato).
+    it('el IMEI no lleva "hidden": se ve en los dos anchos con el mismo nodo', () => {
+      const html = renderDetalle({ items: [{ ...ITEM, imei: '355000000000001' }] })
+      expect(html).toMatch(/<span class="text-\[11px\] text-muted-foreground">IMEI 355000000000001<\/span>/)
+    })
+  })
+
   it('la banda TOTAL pinta con --marca en el teléfono y con bg-muted en escritorio', () => {
     const html = renderDetalle({ totalFormateado: '$ 94.000,00' })
     expect(html).toMatch(/class="flex items-center justify-between bg-\[var\(--marca\)\][^"]*lg:bg-muted[^"]*"/)
@@ -464,6 +491,42 @@ describe('Detalle: "Qué se vendió" — el patrón grid + display:contents', ()
     expect(bandas).toHaveLength(1)
     expect(html).toContain('$ 148.500,00 + US$ 200,00')
     expect(html).toContain('>Vendido<')
+  })
+})
+
+describe('imeisPorItem', () => {
+  it('sin unidades, ningún ítem tiene IMEI', () => {
+    const resultado = imeisPorItem([{ id: 'i1', articuloId: 'a1' }], [])
+    expect(resultado.size).toBe(0)
+  })
+
+  it('un artículo con una unidad se la asigna a su única línea', () => {
+    const resultado = imeisPorItem(
+      [{ id: 'i1', articuloId: 'a1' }],
+      [{ articuloId: 'a1', imei: '355000000000001' }],
+    )
+    expect(resultado.get('i1')).toBe('355000000000001')
+  })
+
+  // Dos iPhones del mismo modelo son dos líneas (CANTIDAD_CON_SERIE en
+  // crearVenta), y a cuál de las dos le toca cuál IMEI es irrelevante —dicen
+  // exactamente lo mismo—, pero las dos tienen que aparecer, cada una con la
+  // suya, sin repetir ni perder ninguna.
+  it('dos líneas del mismo artículo se reparten un IMEI cada una', () => {
+    const resultado = imeisPorItem(
+      [{ id: 'i1', articuloId: 'a1' }, { id: 'i2', articuloId: 'a1' }],
+      [{ articuloId: 'a1', imei: 'A1' }, { articuloId: 'a1', imei: 'A2' }],
+    )
+    expect(new Set(resultado.values())).toEqual(new Set(['A1', 'A2']))
+    expect(resultado.size).toBe(2)
+  })
+
+  it('un artículo sin unidades en esta venta no aparece en el resultado', () => {
+    const resultado = imeisPorItem(
+      [{ id: 'i1', articuloId: 'sin-serie' }],
+      [{ articuloId: 'otro-articulo', imei: 'X1' }],
+    )
+    expect(resultado.has('i1')).toBe(false)
   })
 })
 
@@ -602,7 +665,10 @@ describe('Detalle: Zona de riesgo', () => {
    */
   it('la pantalla combina el permiso con anuladaEn antes de pasarlo a Detalle', () => {
     const fuente = readFileSync('app/(app)/ventas/[id]/page.tsx', 'utf8')
-    expect(fuente).toContain('ofreceAnular={seOfreceAnular(puedeAnularVenta, venta.anuladaEn)}')
+    // Task 10: `anuladaEn` viaja en `datos` —lo que devuelve `datosDelDetalle`—
+    // desde que la consulta se extrajo del Server Component, ya no en
+    // `venta.anuladaEn` a secas.
+    expect(fuente).toContain('ofreceAnular={seOfreceAnular(puedeAnularVenta, datos.anuladaEn)}')
     // Y al revés: el permiso pelado nunca llega solo al componente.
     expect(fuente).not.toContain('ofreceAnular={puedeAnularVenta}')
   })
@@ -632,9 +698,12 @@ describe('la pantalla pide y usa el recargo y el plan de cada pago', () => {
   })
 
   it('el renglón único usa cobradoDePagos, no vendidoDeVenta: es la plata que entró', () => {
-    expect(fuente).toContain('totalFormateado={formatearTotales(cobradoDePagos(venta.pagos))}')
-    expect(fuente).not.toContain('totalFormateado={formatearPrecio(venta.total.toString())}')
-    expect(fuente).not.toContain('totalFormateado={formatearTotales(vendidoDeVenta(venta))}')
+    // Task 10: se arma dentro de `datosDelDetalle` (objeto), no como prop
+    // JSX de `Detalle` a secas — la extracción de esa función movió esta
+    // línea sin cambiar qué calcula.
+    expect(fuente).toContain('totalFormateado: formatearTotales(cobradoDePagos(venta.pagos)),')
+    expect(fuente).not.toContain('totalFormateado: formatearPrecio(venta.total.toString())')
+    expect(fuente).not.toContain('totalFormateado: formatearTotales(vendidoDeVenta(venta))')
   })
 
   it('la tabla "Cómo se pagó" tiene una columna Plan', () => {

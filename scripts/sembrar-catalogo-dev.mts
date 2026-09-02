@@ -17,10 +17,11 @@
  * recetas de `sembrar-ventas-dev.mts`. Los dos archivos están acoplados por ese
  * literal, y está bien que lo estén: sembrar el catálogo con otros códigos
  * dejaría el sembrador de ventas roto de una forma que sólo se ve al correrlo.
- * `A-0008` y `A-0009` son las excepciones y por eso van últimos: existen para
- * el árbol de categorías y para el precio en dólares, ninguna venta los nombra,
- * y agregarlos no le toca nada al otro sembrador — pero un `A-0010` que SÍ
- * quiera venderse hay que darlo de alta en los dos lados.
+ * `A-0008`, `A-0009` y `A-0010` son las excepciones y por eso van últimos:
+ * existen para el árbol de categorías, el precio en dólares y las unidades por
+ * IMEI respectivamente, ninguna venta los nombra, y agregarlos no le toca nada
+ * al otro sembrador — pero un `A-0011` que SÍ quiera venderse hay que darlo de
+ * alta en los dos lados.
  *
  * Importes de distinta cantidad de dígitos a propósito —de $ 990 a $ 899.999—
  * porque con montos parejos no se puede ver si las columnas de números bailan.
@@ -62,6 +63,15 @@
  * dólares" del tile, que es la costura declarada con la deuda del costo. Con el
  * costo vacío el tile cae en "ningún ingreso cargó el costo todavía" y esa rama
  * no se mira nunca.
+ *
+ * **Y uno CON SERIE** (`A-0010`, ciclo de unidades por IMEI, 2026-09-02): tres
+ * unidades ya cargadas, con IMEI de quince dígitos —el largo real— distintos
+ * entre sí. Es el mismo criterio que ya justificó a `A-0009`: sin un artículo
+ * con `llevaSerie` la card "Unidades" de `/inventario/[id]`, el escaneo exacto
+ * de `/vender` y la línea del carrito sin stepper quedan invisibles en dev.
+ * `stockInicial` va `null` a propósito —`crearArticulo` RECHAZA un stock
+ * suelto junto con el switch prendido (`SERIE_REQUIERE_IMEIS`): el stock nace
+ * del largo de la lista de IMEI, no de un número aparte.
  */
 import { Prisma } from '@/generated/prisma/client'
 import { crearArticulo } from '@/lib/inventario/articulos'
@@ -96,6 +106,14 @@ type Receta = {
    *  `null` a propósito en una de las recetas: "sin categoría" es una rama más
    *  del árbol y va a existir siempre. */
   categoria: string | null
+  /** Task 10 (unidades por IMEI): si este artículo se maneja por unidad.
+   *  Ausente vale `false`, igual que en `crearArticulo` — es una sola receta
+   *  de nueve la que lo necesita. */
+  llevaSerie?: boolean
+  /** Los IMEI de las unidades, sólo junto con `llevaSerie: true`. Reemplaza a
+   *  `stockInicial`, que queda en `null`: el stock nace del largo de esta
+   *  lista, no de un número aparte. */
+  imeis?: string[]
 }
 
 const RECETAS: Receta[] = [
@@ -210,6 +228,29 @@ const RECETAS: Receta[] = [
     // Es lo que deja ver el "sin margen para un artículo en dólares" del tile.
     costoUnitario: '385000',
   },
+  {
+    // El décimo, y el único CON SERIE. Es el artículo del feedback de este
+    // ciclo ("cada unidad con su IMEI, podríamos seleccionar cuál estamos
+    // vendiendo"), y el que le da a la verificación manual contra qué mirar:
+    // sin él, la card "Unidades", el escaneo exacto de /vender y la línea del
+    // carrito sin stepper son invisibles en dev.
+    sku: 'A-0010',
+    // Bajo el mismo rubro que A-0009: dos marcas hermanas ya existentes
+    // (Apple, Samsung), sin abrir una rama nueva sólo para este artículo.
+    categoria: 'Celulares · Apple',
+    nombre: 'iPhone 14 Pro 256 GB',
+    tipo: 'PRODUCTO',
+    precio: '950000',
+    llevaSerie: true,
+    // Quince dígitos cada uno —el largo real de un IMEI— y distintos entre
+    // sí: el índice único parcial (tenant_id, imei) WHERE libre rechazaría
+    // un duplicado, y acá no hay ninguno a propósito.
+    imeis: ['350123456789011', '350123456789012', '350123456789013'],
+    // `null` y no un número: `crearArticulo` RECHAZA un stock suelto junto
+    // con `llevaSerie` (`SERIE_REQUIERE_IMEIS`) — el stock nace de `imeis`.
+    stockInicial: null,
+    costoUnitario: '700000',
+  },
 ]
 
 for (const receta of RECETAS) {
@@ -226,6 +267,10 @@ for (const receta of RECETAS) {
     categoria: receta.categoria,
     stockInicial: receta.stockInicial === null ? null : d(receta.stockInicial),
     costoUnitario: receta.costoUnitario === null ? null : d(receta.costoUnitario),
+    // Sin `?? false`/`?? []`, mismo motivo que `moneda`: `crearArticulo` ya
+    // toma esos defaults para las ocho recetas que no llevan serie.
+    llevaSerie: receta.llevaSerie,
+    imeis: receta.imeis,
   })
 
   if (receta.vendidoDeMas) {

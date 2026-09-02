@@ -885,6 +885,55 @@ sin prefijo y el ancho fijo del lateral lleva `lg:`. No es rediseño de teléfon
 —no hay tabla que convertir en tarjetas— pero tampoco es deuda: la pantalla es
 operable en los dos anchos desde el primer commit.
 
+---
+
+## 27. La maqueta no dibuja nada de las unidades por IMEI — ningún ancho, ninguna de las tres pantallas
+
+- **Frames**: ninguno. `design/arandano.pen` es anterior al ciclo de unidades
+  por IMEI (2026-09-02) — que a su vez es posterior al del precio en dólares,
+  entrada 23 — y no tiene ni un frame de escritorio ni un `Móvil / …` que
+  dibuje algo de esto.
+
+**Qué falta.** Cuatro controles nuevos, en tres pantallas, en ningún ancho:
+
+1. **El switch "Lleva IMEI o número de serie"** de `/inventario/nuevo` y de
+   `/inventario/[id]`, con su diálogo que pide los N IMEI cuando el artículo
+   ya tiene stock. El código lo derivó del mismo tratamiento de card que ya
+   usan `SwitchDeSerie` y sus vecinos —borde, fondo `bg-card`, `Label` más
+   texto de ayuda a la izquierda, control a la derecha—, mismo patrón que la
+   entrada 26 (`/bot`) ya usó para su propio switch cuando tampoco tenía
+   frame.
+2. **La card "Unidades"** de `/inventario/[id]`: la lista de IMEI libres, la
+   fecha de ingreso de cada uno, el filtro que aparece recién con más de 8, y
+   "Dar de baja" con su nota. Se construyó con la misma `CardDelFormulario`
+   que arman el resto de las cards de esa pantalla —mismo título, mismo
+   borde, mismo padding—, y la fila de cada unidad copia el tratamiento
+   `flex-col lg:flex-row` que ya usan las filas de otras listas de este
+   producto (mismo criterio de "un solo árbol, no dos presentaciones" que
+   dejó escrito el ciclo móvil).
+3. **El selector de unidad del carrito**, en `/vender`: el `Dialog` que se
+   abre al agregar por nombre un artículo con serie, con la lista de IMEI
+   libres para tocar. Es el mismo `Dialog` de shadcn que ya usa el diálogo de
+   prender el switch (punto 1) y el de permisos de `/usuarios` — ningún
+   tratamiento nuevo, sólo su contenido.
+4. **La línea del carrito sin stepper**, también en `/vender`: el recuadro
+   con el IMEI que reemplaza a `[−] [valor] [+]` en la línea de un artículo
+   con serie. Mide lo mismo que el stepper que reemplaza (`h-9 w-[104px]`,
+   mismo borde `border-input`, mismo radio `rounded-[9px]`) para que la fila
+   no salte de alto ni de ancho según lleve serie o no — es el mismo
+   principio que ya aplicó el chip `Cubre` de la entrada 23: un control nuevo
+   ocupa el lugar del que reemplaza, no inventa uno propio.
+
+**Qué NO hizo el código: inventar un tratamiento nuevo.** Los cuatro controles
+salen de patrones que esta pantalla, o una vecina, ya tenía dibujados —la
+card, el `Dialog`, el switch de card, la fila `flex-col lg:flex-row`—, mismo
+precedente que las entradas 19 a 22 y 26: la maqueta no **contradice** al
+código acá, sencillamente todavía no llegó a ver la feature.
+
+Detectado al construir el ciclo de unidades por IMEI (2026-09-02). Ver
+`docs/superpowers/specs/2026-09-02-unidades-por-imei-design.md`, sección *Lo
+que la maqueta no dibuja*.
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { Client } from 'pg'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { Prisma } from '@/generated/prisma/client'
 import { urlOwner, urlApp } from './postgres-efimero'
 import { crearTenant } from './datos'
@@ -43,6 +45,16 @@ let desactivarPlan: typeof import('@/lib/planes/administrar').desactivarPlan
 // (colocado con la pantalla) sólo prueba funciones que no tocan la base.
 let totalDelPeriodo: typeof import('@/app/(app)/ventas/page').totalDelPeriodo
 let pagosDelPeriodo: typeof import('@/app/(app)/ventas/page').pagosDelPeriodo
+// De app/(app)/ventas/[id]/page.tsx (Task 10): `datosDelDetalle` es la
+// consulta + el armado de props del detalle, separada del Server Component
+// por el mismo motivo que `totalDelPeriodo`/`pagosDelPeriodo` de arriba —
+// page.test.tsx (colocado) sólo prueba funciones puras, y ésta abre Prisma.
+// `Detalle` no toca la base (recibe todo ya resuelto a texto) pero viaja
+// DINÁMICO igual: page.tsx la exporta desde el MISMO módulo que
+// `datosDelDetalle`, y ese módulo arrastra `lib/db.ts` — importarla estática
+// construiría el Pool antes de que este archivo setee `DATABASE_URL`.
+let datosDelDetalle: typeof import('@/app/(app)/ventas/[id]/page').datosDelDetalle
+let Detalle: typeof import('@/app/(app)/ventas/[id]/page').Detalle
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -129,6 +141,7 @@ beforeAll(async () => {
   ;({ unidadesLibres, prenderSerie } = await import('@/lib/inventario/unidades'))
   ;({ crearPlan, desactivarPlan } = await import('@/lib/planes/administrar'))
   ;({ totalDelPeriodo, pagosDelPeriodo } = await import('@/app/(app)/ventas/page'))
+  ;({ datosDelDetalle, Detalle } = await import('@/app/(app)/ventas/[id]/page'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -1330,6 +1343,97 @@ describe('crearVenta con unidades identificadas (IMEI)', () => {
     await expect(
       anularVenta({ tenantId, ventaId: venta.id, usuarioId }),
     ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_NO_DISPONIBLE' }))
+  })
+})
+
+// Task 10: el detalle de venta (app/(app)/ventas/[id]/page.tsx) muestra los
+// IMEI que se llevó la venta. Es el único ida y vuelta real contra la base de
+// este ciclo para esa pantalla —el resto de page.test.tsx son funciones
+// puras—, porque lo que hay que probar es la CONSULTA (el `select` trae
+// `unidades`) más el reparto de esos IMEI entre los ítems, no sólo cómo se ve
+// un `<span>` con un string ya armado a mano.
+describe('el detalle de venta muestra los IMEI (Task 10)', () => {
+  // Firma propia, igual que `crearArticulo` de los describes de arriba
+  // (dólares, IMEI): no hace falta pasar por `lib/inventario/articulos.ts`
+  // para armar un artículo de una línea.
+  async function crearArticuloConSerie(nombre: string, imeis: string[], precio: string) {
+    const articulo = await enTransaccionDeTenant(tenantId, (tx) =>
+      tx.articulo.create({
+        data: {
+          tenantId,
+          sku: `SKU-${crypto.randomUUID()}`,
+          nombre,
+          tipo: 'PRODUCTO',
+          precio: d(precio),
+          stock: d(imeis.length.toString()),
+        },
+      }),
+    )
+    await prenderSerie({ tenantId, articuloId: articulo.id, imeis, usuarioId })
+    return articulo
+  }
+
+  /** Arma una venta con un ítem de un artículo con serie y devuelve su id —
+   *  el `construirVentaId` que espera `renderDetalle`. */
+  async function ventaConUnidades(): Promise<string> {
+    const a = await crearArticuloConSerie('iPhone Detalle', ['355000000000001'], '500000')
+    const [u1] = await unidadesLibres(tenantId, a.id)
+    const venta = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: u1.id }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+    })
+    return venta.id
+  }
+
+  /** Una venta común, sin ninguna unidad identificada — el caso de todos los
+   *  locales que no usan esta feature, y el que tiene que verse EXACTAMENTE
+   *  igual que antes de este ciclo. `remera` es el artículo sin serie del
+   *  `beforeAll` de este archivo. */
+  async function ventaComun(): Promise<string> {
+    const venta = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+    })
+    return venta.id
+  }
+
+  /** Arma la venta (contra la base efímera, con o sin unidades) y renderiza
+   *  el cuerpo real de la pantalla —`datosDelDetalle` es la MISMA consulta
+   *  que corre `DetalleDeVenta`, y `Detalle` el mismo componente— con
+   *  `renderToStaticMarkup`, igual que hace page.test.tsx para sus propios
+   *  fixtures a mano. */
+  async function renderDetalle(construirVentaId: () => Promise<string>): Promise<string> {
+    const ventaId = await construirVentaId()
+    const datos = await datosDelDetalle(tenantId, ventaId)
+    if (!datos) throw new Error('la venta recién creada no se encontró')
+    return renderToStaticMarkup(
+      createElement(Detalle, {
+        resumen: datos.resumen,
+        anulada: datos.anulada,
+        notaDeAnulacionTexto: datos.notaDeAnulacionTexto,
+        items: datos.items,
+        totalFormateado: datos.totalFormateado,
+        lineasDeTotal: datos.lineasDeTotal,
+        pagos: datos.pagos,
+        ofreceAnular: false,
+        ventaId,
+      }),
+    )
+  }
+
+  it('el detalle muestra los IMEI que se llevó la venta', async () => {
+    const html = await renderDetalle(ventaConUnidades)
+    expect(html).toContain('355000000000001')
+  })
+
+  it('una venta sin unidades identificadas se ve exactamente como antes', async () => {
+    // El principio del ciclo: un local que no usa esto no ve ninguna diferencia.
+    const html = await renderDetalle(ventaComun)
+    expect(html).not.toContain('IMEI')
   })
 })
 
