@@ -10,9 +10,19 @@ import { formatearPrecio, formatearDolares, formatearCantidad } from '@/lib/form
 import { hoyEnArgentina } from '@/lib/formato/fechas'
 import {
   RANGOS, ROTULO_RANGO, rangoValido, periodoDeRango, periodoAnterior, rotuloDeComparacion,
-  textoDelPeriodo, type Rango,
+  textoDelPeriodo, filtroDe, type Rango,
 } from '@/lib/dashboard/rango'
 import { metricasDelPeriodo, delta, soloEnDolares, type Delta } from '@/lib/dashboard/metricas'
+import { agregarPorDia, pieDeTendencia, ventasDeLaTendencia } from '@/lib/dashboard/tendencia'
+import {
+  itemsDelPeriodo, ramaPorArticulo, agruparPorArticulo, repartirEnGajos, topDeArticulos,
+  TOP_DE_ARTICULOS, SIN_CATEGORIA,
+} from '@/lib/dashboard/composicion'
+import { componerPorMedio } from '@/lib/ventas/composicion'
+import { monedaValida, type MonedaElegida } from '@/lib/ventas/medios'
+import {
+  VentasPorDia, AnilloDeMedios, VentasPorCategoria, TopDeArticulos, SelectorDeMoneda,
+} from './paneles'
 import estilos from './tipografia.module.css'
 
 export const dynamic = 'force-dynamic'
@@ -186,21 +196,91 @@ export function SegmentadoDeRango({
 export default async function Dashboard({
   searchParams,
 }: {
-  searchParams: Promise<{ rango?: string }>
+  searchParams: Promise<{ rango?: string; moneda?: string }>
 }) {
   const sesion = await exigirSesion()
-  const { rango: rangoParam } = await searchParams
+  const { rango: rangoParam, moneda: monedaParam } = await searchParams
   const rango = rangoValido(rangoParam)
+  const moneda = monedaValida(monedaParam)
   const hoy = hoyEnArgentina()
   const periodo = periodoDeRango(rango, hoy)
   const periodoPrevio = periodoAnterior(rango, hoy)
 
   const prisma = prismaParaTenant(sesion.tenant.id)
-  const [metricas, metricasPrevias, puedeCostos] = await Promise.all([
+  const [
+    metricas, metricasPrevias, puedeCostos, ventasTendenciaCrudo, itemsPeriodo, pagosPorMedio,
+  ] = await Promise.all([
     metricasDelPeriodo(prisma, periodo),
     metricasDelPeriodo(prisma, periodoPrevio),
     puedeConSesion(sesion, 'COSTOS'),
+    ventasDeLaTendencia(prisma, hoy),
+    itemsDelPeriodo(prisma, periodo),
+    // El desglose por MEDIO de "Cómo entró la plata": pagosDelPeriodo (arriba,
+    // dentro de metricasDelPeriodo) agrupa sólo por moneda, lo que alcanza
+    // para el tile pero no para separar Efectivo de Transferencia. Mismo
+    // groupBy que ya arma este mismo panel en /ventas/page.tsx.
+    prisma.pago.groupBy({
+      by: ['medio', 'moneda', 'cotizacion', 'monto'],
+      where: { venta: { ...filtroDe(periodo), anuladaEn: null } },
+      _count: true,
+    }),
   ])
+
+  // agregarPorDia() pide `total`/`totalUsd` como STRING —lo documenta su
+  // firma en lib/dashboard/tendencia.ts—, y Prisma los devuelve como
+  // `Decimal`: la conversión pasa acá, en el borde entre la consulta y la
+  // función pura, la misma convención que ya usa `aComposicion` en
+  // lib/ventas/composicion.ts.
+  const ventasTendencia = ventasTendenciaCrudo.map((v) => ({
+    creadoEn: v.creadoEn, total: v.total.toString(), totalUsd: v.totalUsd.toString(),
+  }))
+  const barrasTendencia = agregarPorDia(ventasTendencia, hoy, moneda)
+  const pieTendencia = pieDeTendencia(barrasTendencia, moneda)
+
+  const composicionMedios = componerPorMedio(pagosPorMedio)
+  const composicionElegida = moneda === 'usd' ? composicionMedios.usd : composicionMedios.ars
+
+  // Lo vendido del período, YA en la moneda elegida: alimenta tanto "Ventas
+  // por categoría" como "Lo que más se vendió", ordenado de mayor a menor
+  // importe (agruparPorArticulo ya lo deja así).
+  const vendidoElegido = agruparPorArticulo(itemsPeriodo, moneda)
+  const idsVendidos = vendidoElegido.map((v) => v.articuloId)
+  const idsTop = vendidoElegido.slice(0, TOP_DE_ARTICULOS).map((v) => v.articuloId)
+
+  // Dependen de los IDs que recién salieron de itemsPeriodo, así que no
+  // pueden ir en el Promise.all de arriba — es una segunda ronda porque hay
+  // una dependencia real entre las dos, no una que se pueda evitar.
+  const [ramas, articulosTop] = await Promise.all([
+    ramaPorArticulo(prisma, idsVendidos),
+    prisma.articulo.findMany({ where: { id: { in: idsTop } }, select: { id: true, nombre: true } }),
+  ])
+
+  const nombres = new Map(articulosTop.map((a) => [a.id, a.nombre]))
+  const filasTop = topDeArticulos(vendidoElegido, nombres)
+
+  // Importe por rama, de mayor a menor: repartirEnGajos asume esa entrada ya
+  // ordenada. La suma es en Decimal —no en la vista de string que consumen
+  // los paneles— porque repartirEnGajos necesita sumar la cola de verdad.
+  const sumaPorRama = new Map<string, Prisma.Decimal>()
+  for (const v of vendidoElegido) {
+    const rama = ramas.get(v.articuloId) ?? SIN_CATEGORIA
+    sumaPorRama.set(rama, (sumaPorRama.get(rama) ?? new Prisma.Decimal(0)).add(v.importe))
+  }
+  const porCategoriaOrdenado = [...sumaPorRama.entries()]
+    .map(([rotulo, importe]) => ({ rotulo, importe }))
+    .sort((a, b) => b.importe.comparedTo(a.importe))
+  const porCategoria = repartirEnGajos(porCategoriaOrdenado).map((c) => ({
+    rotulo: c.rotulo, importe: c.importe.toString(),
+  }))
+
+  // El selector `$ / US$` gobierna los CUATRO paneles: se dibuja si CUALQUIERA
+  // de las dos magnitudes que muestran —lo cobrado (pagos) o lo vendido
+  // (ítems)— tuvo algo en dólares. Un local puede cobrar un total en dólares
+  // enteramente en pesos (un plan de pago cubriendo USD, ver CLAUDE.md), y
+  // ahí `composicionMedios.hayDolares` da `false` aunque sí haya mercadería
+  // en dólares para mostrar en "Ventas por categoría" o "Lo que más se
+  // vendió" — por eso el OR y no sólo la mitad de pagos.
+  const hayDolares = composicionMedios.hayDolares || itemsPeriodo.some((f) => f.moneda === 'USD')
 
   // El tile de marca invierte cuando no entró ni un peso pero sí entraron
   // dólares: sin esto, un local que carga y cobra TODO su catálogo en dólares
@@ -238,10 +318,23 @@ export default async function Dashboard({
   // Sólo se escribe `?rango` cuando no es el default —mismo criterio que
   // `hrefRango` en /ventas—: un link que siempre mandara `rango=estemes` no
   // cambiaría nada en la práctica pero ensuciaría la URL de cualquiera que ya
-  // esté mirando el default.
+  // esté mirando el default. `moneda` viaja también acá —no sólo en su propio
+  // helper— por lo mismo que en /ventas: un local mirando los paneles en US$
+  // no puede volver a pesos por tocar un chip de rango sin pedirlo.
   const hrefRango = (r: Rango) => {
     const u = new URLSearchParams()
     if (r !== 'estemes') u.set('rango', r)
+    if (moneda !== 'ars') u.set('moneda', moneda)
+    const qs = u.toString()
+    return qs ? `/dashboard?${qs}` : '/dashboard'
+  }
+  // El selector `$ / US$` de los cuatro paneles: preserva `?rango` igual que
+  // hrefRango preserva `?moneda`, y no escribe `moneda=ars` cuando es el
+  // default — mismo criterio en las dos direcciones.
+  const hrefDeMoneda = (m: MonedaElegida) => {
+    const u = new URLSearchParams()
+    if (rango !== 'estemes') u.set('rango', rango)
+    if (m !== 'ars') u.set('moneda', m)
     const qs = u.toString()
     return qs ? `/dashboard?${qs}` : '/dashboard'
   }
@@ -353,6 +446,27 @@ export default async function Dashboard({
                 }
               />
             )}
+          </div>
+        </div>
+
+        {/* Los cuatro paneles: el selector $/US$ los gobierna a los cuatro a
+            la vez, así que vive una sola vez acá arriba y no dentro de cada
+            card — a diferencia de /ventas, donde un solo panel lo necesita.
+            "Ventas por día" ocupa su propia fila —el gráfico de catorce
+            barras pide ancho completo—; los otros tres comparten la
+            segunda fila, apilados en el teléfono y en una sola fila desde
+            `lg:`. */}
+        <div className="flex flex-col gap-3 lg:gap-4">
+          {hayDolares && (
+            <div className="flex justify-end">
+              <SelectorDeMoneda hayDolares={hayDolares} moneda={moneda} href={hrefDeMoneda} />
+            </div>
+          )}
+          <VentasPorDia barras={barrasTendencia} pie={pieTendencia} moneda={moneda} />
+          <div className="flex flex-col gap-3 lg:flex-row lg:gap-4">
+            <AnilloDeMedios composicion={composicionElegida} moneda={moneda} />
+            <VentasPorCategoria porCategoria={porCategoria} moneda={moneda} />
+            <TopDeArticulos filas={filasTop} moneda={moneda} />
           </div>
         </div>
       </div>
