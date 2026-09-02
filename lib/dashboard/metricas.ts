@@ -107,6 +107,24 @@ export async function metricasDelPeriodo(
 }
 
 /**
+ * Si lo cobrado en el período fue TODO en dólares: cero pesos, y algo de
+ * dólares.
+ *
+ * Exportada, y no un `if` inline en cada lugar que lo necesita (Important 1
+ * de la review de la Task 10 del dashboard): `ticketPromedio`, acá abajo, y
+ * el tile de marca de `app/(app)/dashboard/page.tsx` —que invierte a dólares
+ * cuando esto da `true`— tenían la MISMA regla escrita dos veces, una de
+ * ellas dentro de un Server Component `async` que ningún test podía llamar.
+ * Dos copias es la forma en que alguien relaja una sola —un umbral "casi
+ * cero" en vez de cero exacto— y deja al tile de marca mostrando "US$ 4.120"
+ * mientras "Ticket promedio" sigue calculando como si hubieran entrado
+ * pesos, o al revés.
+ */
+export function soloEnDolares(cobrado: Totales): boolean {
+  return cobrado.ars.isZero() && !cobrado.usd.isZero()
+}
+
+/**
  * El ticket promedio en pesos, o `null`.
  *
  * Misma guarda —y misma razón— que `pieDeCobradas` en app/(app)/ventas/page.tsx:
@@ -118,7 +136,7 @@ export async function metricasDelPeriodo(
  */
 function ticketPromedio(cobrado: Totales, cobradas: number): Decimal | null {
   if (cobradas <= 0) return null
-  if (cobrado.ars.isZero() && !cobrado.usd.isZero()) return null
+  if (soloEnDolares(cobrado)) return null
   return redondearDinero(cobrado.ars.div(cobradas))
 }
 

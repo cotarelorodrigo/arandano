@@ -1,7 +1,5 @@
 import Link from 'next/link'
-import {
-  Download, GitCompareArrows, ShoppingCart, TrendingDown, TrendingUp,
-} from 'lucide-react'
+import { GitCompareArrows, ShoppingCart, TrendingDown, TrendingUp } from 'lucide-react'
 import { Prisma } from '@/generated/prisma/client'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
@@ -9,12 +7,12 @@ import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { puedeConSesion } from '@/lib/permisos/guarda'
 import { Button } from '@/components/ui/button'
 import { formatearPrecio, formatearDolares, formatearCantidad } from '@/lib/formato/mostrar'
-import { hoyEnArgentina, inicioDelDia } from '@/lib/formato/fechas'
+import { hoyEnArgentina } from '@/lib/formato/fechas'
 import {
   RANGOS, ROTULO_RANGO, rangoValido, periodoDeRango, periodoAnterior, rotuloDeComparacion,
   textoDelPeriodo, type Rango,
 } from '@/lib/dashboard/rango'
-import { metricasDelPeriodo, delta, type Delta } from '@/lib/dashboard/metricas'
+import { metricasDelPeriodo, delta, soloEnDolares, type Delta } from '@/lib/dashboard/metricas'
 import estilos from './tipografia.module.css'
 
 export const dynamic = 'force-dynamic'
@@ -22,20 +20,6 @@ export const dynamic = 'force-dynamic'
 const PORCENTAJE_MARGEN = new Intl.NumberFormat('es-AR', {
   minimumFractionDigits: 1, maximumFractionDigits: 1,
 })
-
-/**
- * "Agosto 2026": el mes y el año del período — que siempre es el de `hoy`,
- * porque `periodoDeRango` fija `hasta` en `hoy` para los cuatro rangos (ver
- * lib/dashboard/rango.ts), así que derivarlo de uno u otro da lo mismo.
- * Capitalizado a mano: Intl en es-AR da "agosto de 2026" en minúscula y con
- * el "de" que acá no hace falta.
- */
-function mesYAnio(hoy: string): string {
-  const mes = new Intl.DateTimeFormat('es-AR', {
-    month: 'long', timeZone: 'America/Argentina/Buenos_Aires',
-  }).format(inicioDelDia(hoy))
-  return `${mes.charAt(0).toUpperCase()}${mes.slice(1)} ${hoy.slice(0, 4)}`
-}
 
 /**
  * El pie que reemplaza al chip de delta cuando el período anterior fue CERO
@@ -222,8 +206,11 @@ export default async function Dashboard({
   // dólares: sin esto, un local que carga y cobra TODO su catálogo en dólares
   // abriría el dashboard con "$ 0,00" de titular. El delta compara la MISMA
   // magnitud que se muestra —pesos contra pesos, o dólares contra dólares—,
-  // nunca una cruzada con la otra.
-  const invertido = metricas.cobrado.ars.isZero() && !metricas.cobrado.usd.isZero()
+  // nunca una cruzada con la otra. `soloEnDolares` (lib/dashboard/metricas.ts)
+  // y no un `if` propio acá: es la MISMA regla que ya usa `ticketPromedio`
+  // para decidir su `null`, y las dos copias no pueden desincronizarse
+  // (Important 1 de la review de esta task).
+  const invertido = soloEnDolares(metricas.cobrado)
   const valorMarca = invertido
     ? formatearDolares(metricas.cobrado.usd.toString())
     : formatearPrecio(metricas.cobrado.ars.toString())
@@ -263,7 +250,13 @@ export default async function Dashboard({
     <>
       <Encabezado
         titulo="Dashboard"
-        subtitulo={`${mesYAnio(hoy)} · ${
+        // `textoDelPeriodo(periodo)` y no un mes suelto: con `esteanio` o con
+        // `7dias` cruzando un corte de mes, "Agosto 2026" mentiría sobre el
+        // rango real que el subtítulo dice contar (Important 3 de la review
+        // de esta task). Es también el ÚNICO texto de período que ve el
+        // teléfono: la fila de abajo lo repite, pero sólo en escritorio
+        // (`hidden lg:block`).
+        subtitulo={`${textoDelPeriodo(periodo)} · ${
           metricas.cobradas === 1
             ? '1 venta cobrada'
             : `${formatearCantidad(String(metricas.cobradas))} ventas cobradas`
@@ -271,9 +264,9 @@ export default async function Dashboard({
         acciones={
           <>
             {/* Sin funcionalidad todavía: la baja real llega en la Task 12
-                del ciclo ("Exportar CSV"), que reemplaza este botón y su
-                ranura móvil por `BotonDeExportar` en las DOS copias. Éste
-                sólo deja el lugar y el estilo que la maqueta pide. */}
+                del ciclo ("Exportar CSV"), que reemplaza este botón por
+                `BotonDeExportar`. Éste sólo deja el lugar y el estilo que la
+                maqueta pide. */}
             <Button variant="outline" size="sm">
               Exportar CSV
             </Button>
@@ -285,7 +278,15 @@ export default async function Dashboard({
             </Button>
           </>
         }
-        accionMovil={{ icono: Download, etiqueta: 'Exportar CSV', href: '#', tono: 'suave' }}
+        /* SIN accionMovil (Important 2 de la review de esta task):
+           `Encabezado` documenta esa ranura como SIEMPRE una navegación real
+           a un href, nunca un control que no navega — un `href="#"` sin
+           destino de verdad consumía la única entrada de historial del
+           Topbar del teléfono sin bajar ningún archivo, dejando el próximo
+           Atrás sin efecto visible. Vuelve en la Task 12, con
+           `BotonDeExportar` en `controlMovil` (que sí puede ser un control
+           sin navegación) en vez de acá. Hasta entonces el teléfono no
+           pierde nada que esta pantalla ya ofreciera. */
       />
       <div className="flex flex-col gap-3 p-[14px] lg:gap-4 lg:p-6">
         {/* Fila de rango: en el teléfono, sólo el segmentado a ancho

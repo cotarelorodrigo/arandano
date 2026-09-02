@@ -1909,16 +1909,8 @@ julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
   compara la MISMA magnitud que muestra —pesos contra pesos, o dólares contra
   dólares cuando está invertido—, nunca una cruzada con la otra.
 - **"Ticket promedio" no lleva pie, y antes iba a llevar la mediana.** Se sacó
-  en la review de esta task: la mediana se calculaba ordenando por
-  `Venta.total`, que es sólo la mitad en PESOS de la mercadería a precio de
-  lista, mientras el promedio de al lado es `Σ Pago.monto` —lo COBRADO, con
-  recargo, en las dos monedas—. Dos magnitudes distintas bajo el mismo tile: una
-  venta en dólares cobrada en dólares entra a la mediana como `Venta.total =
-  0`, exactamente el caso en el que `ticketPromedio()` ya decide que afirmar
-  "$ 0,00" sería una mentira. **El disparador para traerla de vuelta**: que
-  exista una magnitud de "lo cobrado por venta" que se pueda ORDENAR en la
-  base sin traer el período entero — no una fecha. Ver
-  `docs/correcciones-pendientes-del-pen.md`.
+  en la review de esta task, con el motivo completo y el disparador para
+  traerla de vuelta en `docs/correcciones-pendientes-del-pen.md`, entrada 27.
 - **El margen va detrás de `COSTOS` y el tile no se renderea sin el
   permiso** — no se pone en "—": ese guión afirmaría que ninguna venta cargó
   costo, que es una afirmación distinta y falsa cuando lo que pasa es que a

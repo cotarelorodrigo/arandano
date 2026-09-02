@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Prisma } from '@/generated/prisma/client'
-import { delta, margenDe } from './metricas'
+import { delta, margenDe, soloEnDolares } from './metricas'
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -52,6 +52,23 @@ describe('el margen divide contra la mercadería CON costo, no contra el total',
     const m = margenDe(d('1000'), d('1200'))
     expect(m?.monto.toString()).toBe('-200')
     expect(m?.porcentaje.toFixed(1)).toBe('-20.0')
+  })
+})
+
+// La decisión que comparten `ticketPromedio` (arriba, sin describe propio: es
+// privada) y el tile de marca de /dashboard, que la consulta directo en vez
+// de llevar su propia copia (Important 1 de la review de la Task 10).
+describe('soloEnDolares', () => {
+  it('cero pesos y algo de dólares: sólo en dólares', () => {
+    expect(soloEnDolares({ ars: d('0'), usd: d('300') })).toBe(true)
+  })
+
+  it('con pesos, aunque también haya dólares, no es "sólo en dólares"', () => {
+    expect(soloEnDolares({ ars: d('1000'), usd: d('300') })).toBe(false)
+  })
+
+  it('todo en cero tampoco es "sólo en dólares": no hay nada que invertir', () => {
+    expect(soloEnDolares({ ars: d('0'), usd: d('0') })).toBe(false)
   })
 })
 

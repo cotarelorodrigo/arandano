@@ -887,7 +887,7 @@ operable en los dos anchos desde el primer commit.
 
 ---
 
-## 27. `/dashboard`: el `.pen` versionado todavía no tiene los dos frames, y cuatro piezas se derivaron sin poder mirarlos en git
+## 27. `/dashboard`: el `.pen` versionado todavía no tiene los dos frames, y cinco piezas se derivaron sin poder mirarlos en git
 
 **Frames**: `App / Dashboard` (nodo raíz `A2Hffo`) y `Móvil / Dashboard`
 (`OWGzI`). Existen y se consultaron por MCP mientras el documento estaba
@@ -901,7 +901,7 @@ guardarlo y commitearlo lo hace una persona. Mientras eso no pase, "el `.pen`
 dibuja esta pantalla" es cierto sólo para quien la abrió en el editor, no para
 quien mira el repo.
 
-Cuatro piezas concretas de este ciclo se derivaron con la maqueta abierta pero
+Cinco piezas concretas de este ciclo se derivaron con la maqueta abierta pero
 sin poder dejar la comparación escrita en ningún lado que sobreviva al cierre
 de Pencil:
 
@@ -930,6 +930,22 @@ de Pencil:
   `ZDHsA` — el resto de la explicación de por qué es fija y no responde al
   segmentado de rango (una sola barra con el rango en Hoy no es una
   tendencia) es una decisión de este ciclo, no algo que el `.pen` argumente.
+- **"Ticket promedio" no lleva mediana, aunque el pie de ese tile en la
+  maqueta sí la dibuja** ("mediana $ 19.400", frame de escritorio). Se sacó en
+  la review de esta task porque mezclaba una magnitud distinta bajo el mismo
+  tile: la mediana se calculaba ordenando por `Venta.total`, que es sólo la
+  mitad EN PESOS de la mercadería a precio de lista, mientras el promedio de
+  al lado (`ticketPromedio()`, `lib/dashboard/metricas.ts`) es
+  `Σ Pago.monto` —lo COBRADO, con recargo, en las dos monedas—. Una venta en
+  dólares cobrada en dólares entra a la mediana como `Venta.total = 0`,
+  exactamente el caso en el que `ticketPromedio()` ya decide que afirmar
+  "$ 0,00" sería una mentira; y con planes de pago sesga al revés: una venta
+  de $10.000 en 12 cuotas al 40 % cobra $14.000, así que el promedio
+  ($14.000) y la mediana ($10.000) de la MISMA venta se separarían por el
+  recargo, no por ninguna diferencia real entre las ventas del período.
+  **El disparador para traerla de vuelta**: que exista una magnitud de "lo
+  cobrado por venta" que se pueda ORDENAR en la base sin traer el período
+  entero — no una fecha.
 
 ---
 
