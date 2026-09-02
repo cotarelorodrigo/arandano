@@ -19,6 +19,11 @@ let ajustarStock: typeof import('@/lib/inventario/stock').ajustarStock
 // pasar por `proximoNumero` y por lo tanto sin el lock de tenant que serializa
 // dos `crearVenta` entre sí.
 let darDeBajaUnidad: typeof import('@/lib/inventario/stock').darDeBajaUnidad
+// Para recargar un IMEI ya vendido en un artículo que YA lleva serie: es lo
+// que produce el choque contra el índice parcial que `anularVenta` traduce.
+// `prenderSerie` no sirve para esto — rechaza con `SERIE_YA_PRENDIDA` un
+// artículo que ya se maneja por IMEI.
+let ingresarStock: typeof import('@/lib/inventario/stock').ingresarStock
 let buscarArticulosVendibles: typeof import('@/lib/ventas/buscar').buscarArticulosVendibles
 let prismaParaTenant: typeof import('@/lib/tenant/prisma').prismaParaTenant
 // Sólo para el test de `buscarArticulosVendibles` que necesita un artículo en
@@ -66,7 +71,7 @@ beforeAll(async () => {
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
   ;({ crearVenta } = await import('@/lib/ventas/crear'))
   ;({ anularVenta } = await import('@/lib/ventas/anular'))
-  ;({ ajustarStock, darDeBajaUnidad } = await import('@/lib/inventario/stock'))
+  ;({ ajustarStock, darDeBajaUnidad, ingresarStock } = await import('@/lib/inventario/stock'))
   ;({ buscarArticulosVendibles } = await import('@/lib/ventas/buscar'))
   ;({ prismaParaTenant } = await import('@/lib/tenant/prisma'))
   ;({ crearArticulo } = await import('@/lib/inventario/articulos'))
@@ -941,6 +946,12 @@ describe('crearVenta con unidades identificadas (IMEI)', () => {
     )
   }
 
+  async function movimientosDe(articuloId: string) {
+    return enTransaccionDeTenant(tenantId, (tx) =>
+      tx.movimientoStock.findMany({ where: { articuloId }, orderBy: { creadoEn: 'asc' } }),
+    )
+  }
+
   it('vender un artículo con serie descuenta el stock y marca la unidad', async () => {
     const a = await crearArticuloConSerie('iPhone 13', ['P1', 'P2'], '500000')
     const [p1] = await unidadesLibres(tenantId, a.id)
@@ -1193,6 +1204,81 @@ describe('crearVenta con unidades identificadas (IMEI)', () => {
     },
     10_000,
   )
+
+  it('anular devuelve la unidad a la vitrina', async () => {
+    const a = await crearArticuloConSerie('iPhone 13 mini', ['Y1'], '500000')
+    const [y1] = await unidadesLibres(tenantId, a.id)
+    const venta = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: y1.id }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+    })
+
+    await anularVenta({ tenantId, ventaId: venta.id, usuarioId })
+
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('1')
+    expect((await unidadesLibres(tenantId, a.id)).map((u) => u.imei)).toEqual(['Y1'])
+    expect((await leerUnidad(y1.id)).ventaId).toBeNull()
+  })
+
+  it('el movimiento de anulación anota la unidad', async () => {
+    const a = await crearArticuloConSerie('iPhone 14 Plus', ['Z1'], '500000')
+    const [z1] = await unidadesLibres(tenantId, a.id)
+    const venta = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: z1.id }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+    })
+    await anularVenta({ tenantId, ventaId: venta.id, usuarioId })
+
+    const movimientos = await movimientosDe(a.id)
+    const anulacion = movimientos.find((m) => m.motivo === 'ANULACION_VENTA')
+    expect(anulacion?.unidadId).toBe(z1.id)
+  })
+
+  it('anular dos veces no devuelve la unidad dos veces', async () => {
+    const a = await crearArticuloConSerie('iPhone 15 Pro', ['AA1'], '500000')
+    const [aa1] = await unidadesLibres(tenantId, a.id)
+    const venta = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: aa1.id }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+    })
+    await anularVenta({ tenantId, ventaId: venta.id, usuarioId })
+    await anularVenta({ tenantId, ventaId: venta.id, usuarioId })
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('1')
+    expect(await unidadesLibres(tenantId, a.id)).toHaveLength(1)
+  })
+
+  // El caso de borde real que motiva la traducción de P2002 en `anularVenta`:
+  // mientras la venta estuvo viva, el local recompró el MISMO equipo y lo
+  // cargó de nuevo (el índice parcial lo permite: el IMEI vendido ya no cuenta
+  // como "libre"). Liberar la unidad vendida al anular dejaría DOS unidades
+  // libres con el mismo IMEI, que es justo lo que ese índice impide. Sin la
+  // traducción, esto sale como un P2002 crudo de Prisma —un 500 sin `codigo`—
+  // en vez de un `ErrorDeVenta` que le dice al mostrador qué pasó.
+  it('anular se rechaza si el mismo IMEI se recargó mientras la venta estaba viva', async () => {
+    const a = await crearArticuloConSerie('iPhone 16', ['BB1'], '500000')
+    const [bb1] = await unidadesLibres(tenantId, a.id)
+    const venta = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: bb1.id }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+    })
+
+    // El mismo IMEI, recargado como un ingreso de mercadería más: el índice
+    // parcial sólo mira unidades LIBRES, y `bb1` ya está vendida, así que esta
+    // alta no choca contra nada.
+    await ingresarStock({ tenantId, articuloId: a.id, imeis: ['BB1'], usuarioId })
+
+    await expect(
+      anularVenta({ tenantId, ventaId: venta.id, usuarioId }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_NO_DISPONIBLE' }))
+  })
 })
 
 describe('venta con artículos en dólares', () => {
