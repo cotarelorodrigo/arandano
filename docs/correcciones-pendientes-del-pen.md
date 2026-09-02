@@ -885,6 +885,54 @@ sin prefijo y el ancho fijo del lateral lleva `lg:`. No es rediseño de teléfon
 —no hay tabla que convertir en tarjetas— pero tampoco es deuda: la pantalla es
 operable en los dos anchos desde el primer commit.
 
+---
+
+## 27. `/dashboard`: el `.pen` versionado todavía no tiene los dos frames, y cuatro piezas se derivaron sin poder mirarlos en git
+
+**Frames**: `App / Dashboard` (nodo raíz `A2Hffo`) y `Móvil / Dashboard`
+(`OWGzI`). Existen y se consultaron por MCP mientras el documento estaba
+abierto en Pencil —de ahí salen los nodos que citan los specs y el código de
+este ciclo (`AP9E6`, `unJCa`, `toCZo`, `ZDHsA`, `TZqEL`, `Y1sSh`, `Db1MT`,
+entre otros)—, pero el archivo **versionado** en `design/arandano.pen` sigue
+siendo el commit `87973d4` del 2026-08-21, anterior a los dos. Es el mismo
+caso que ya dejó anotado el ciclo del cobrado por moneda (CLAUDE.md,
+2026-08-30): el MCP de Pencil lee el documento vivo pero no lo persiste, y
+guardarlo y commitearlo lo hace una persona. Mientras eso no pase, "el `.pen`
+dibuja esta pantalla" es cierto sólo para quien la abrió en el editor, no para
+quien mira el repo.
+
+Cuatro piezas concretas de este ciclo se derivaron con la maqueta abierta pero
+sin poder dejar la comparación escrita en ningún lado que sobreviva al cierre
+de Pencil:
+
+- **El selector de moneda de los cuatro paneles** (`SelectorDeMoneda`, Task 11
+  de este ciclo): la maqueta lo dibuja, pero como el `.pen` del repo no lo
+  tiene, no hay forma de que `test/maqueta.test.ts` —que sólo ata colores, y
+  sólo contra lo que SÍ está commiteado— lo alcance a verificar. Mismo
+  mecanismo, mismo punto ciego, que ya corre para el resto de la pantalla.
+- **El chip de delta a la baja sobre el paño de marca** (`ChipDeDelta` con
+  `marca`, en `app/(app)/dashboard/page.tsx`): la maqueta sólo dibuja el
+  tile de marca con la variación SUBIENDO. Sin un frame del estado a la baja,
+  no hay `--marca-danger` que copiar —y no se inventó uno—: el chip a la baja
+  pinta con `var(--marca-foreground)`, el mismo blanco del texto, en vez de
+  un rojo que nadie diseñó. Ver el comentario de `ChipDeDelta` en ese mismo
+  archivo.
+- **El pie del panel de tendencia deja de decir "del mes"** (`pieDeTendencia`,
+  `lib/dashboard/tendencia.ts`, Task 9 de este ciclo): la maqueta de
+  escritorio sí lo dice, la de teléfono no —los dos frames se contradicen
+  entre sí sobre la misma ventana de datos—, y la ventana real son CATORCE
+  DÍAS, no un mes. Afirmar "del mes" sobre catorce días sería falso la mitad
+  de las veces (cualquier rango que cruce el corte de mes), así que el pie
+  quedó sin esa palabra en las dos variantes, aunque una de las dos coincida
+  con lo que el `.pen` dibuja.
+- **La ventana fija de catorce días misma** no tiene ningún texto en la
+  maqueta que la explique más allá de la nota "últimos 14 días" del nodo
+  `ZDHsA` — el resto de la explicación de por qué es fija y no responde al
+  segmentado de rango (una sola barra con el rango en Hoy no es una
+  tendencia) es una decisión de este ciclo, no algo que el `.pen` argumente.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

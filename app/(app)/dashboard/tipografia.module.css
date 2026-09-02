@@ -1,0 +1,34 @@
+/*
+ * El módulo CSS de tipografía de /dashboard: el PROPIO, no el de /ventas
+ * reusado (Ruling O de la review de esta task). Las seis pantallas que ya
+ * pagan Archivo (ventas, inventario, servicio-tecnico, usuarios,
+ * formas-de-pago, bot) tienen cada una el suyo; éste es el séptimo.
+ *
+ * POR QUÉ UN MÓDULO CSS Y NO `style={{ fontFamily: 'var(--font-archivo)' }}`
+ * A MANO (Ruling L). Inline, si --font-archivo no resolviera por lo que sea,
+ * el navegador cae al default de la plataforma en vez de a
+ * `ui-sans-serif, system-ui, sans-serif`, sin que nadie lo note; y al vivir
+ * en `style` y no en un `.module.css`, evade la vigilancia de
+ * test/tipografia.test.ts, que sólo inspecciona archivos `.module.css`.
+ *
+ * `.archivo` es la base —familia y fallback, nada de tamaño ni peso—, igual
+ * que en app/(app)/ventas/tipografia.module.css: esta task sólo la usa para
+ * el valor de los cuatro tiles ("Valor de tile"), combinada con utilidades de
+ * Tailwind en el propio componente. `.tituloDeCard` ya viene declarada acá,
+ * aunque esta task no dibuja ninguna card con título: es el mismo rol que las
+ * otras seis pantallas ya comparten, y la próxima task (los cuatro paneles)
+ * lo va a necesitar sobre este mismo módulo en vez de abrir un octavo.
+ *
+ * SIN font-stretch en las dos clases, a propósito: ninguna le pide un ancho
+ * propio al eje `wdth` de Archivo — se quedan en el 100% por default, igual
+ * que Cobro y que los seis roles de /ventas.
+ */
+.archivo {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+}
+
+.tituloDeCard {
+  composes: archivo;
+  font-weight: 600;
+  font-size: 0.9375rem; /* 15px */
+}

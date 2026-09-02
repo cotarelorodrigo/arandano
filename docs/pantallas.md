@@ -1870,6 +1870,87 @@ teniendo la suya, que es la aplicación de WhatsApp Business en su celular.
   `lib/bot/habilitado.ts`, las cinco llamadas y sus casos— cuando ya no se
   espere volver a usarlo.
 
+## `/dashboard`
+
+El panorama del local, sin filtrar por fecha a mano: un segmentado de cuatro
+rangos rápidos (Hoy / 7 días / Este mes / Este año, default **Este mes**) y
+cuatro tiles con lo que pasó en ese período, cada uno comparado contra el
+**tramo homólogo** del período anterior — no la ventana previa del mismo
+largo, sino el mismo tramo calendario (a mitad de agosto, "comparado con
+julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
+`periodoAnterior` en `lib/dashboard/rango.ts`.
+
+**Qué se puede hacer**
+
+- Elegir el rango con el segmentado (`?rango`, sin JavaScript) y ver, en
+  escritorio, el texto del período vigente y un chip "Comparado con `<mes o
+  período anterior>`" al lado.
+- Ver **"Total del período"** (el tile de marca, `--marca` como ancla): lo
+  cobrado en el período, con un chip de variación contra el tramo homólogo.
+  **Este tile invierte**: si no entró ni un peso pero sí entraron dólares, el
+  número grande pasa a ser el dólar y se omite el pie —sin esto, un local que
+  carga y cobra TODO su catálogo en dólares abriría el dashboard con "$ 0,00"
+  de titular—. Cuando no está invertido y sí hubo dólares, el pie dice
+  "US$ X aparte" en vez de convertir nada.
+- Ver **"Ventas cobradas"**, con el mismo chip de variación.
+- Ver **"Ticket promedio"**: sólo el valor, **sin pie** (ver *Decisiones*).
+- Ver **"Margen"**, sólo si la sesión tiene el permiso `COSTOS` — el mismo que
+  ya protege el costo y el margen en `/inventario/[id]`.
+- Entrar a `/vender` desde el botón del Topbar (o la ranura del teléfono).
+
+**Decisiones**
+
+- **El chip de variación no se dibuja sin período anterior.** `delta()`
+  devuelve `null` cuando el tramo homólogo no vendió nada —dividir por cero no
+  tiene porcentaje—, y ahí el pie del tile lo dice con todas las letras ("sin
+  ventas en julio") en vez de dejar un hueco. Es el mismo criterio que ya usa
+  `pieDeCobradas` en `/ventas` para "sin dato" contra "dato en cero".
+- **Ningún tile convierte una moneda a la otra.** El delta del tile de marca
+  compara la MISMA magnitud que muestra —pesos contra pesos, o dólares contra
+  dólares cuando está invertido—, nunca una cruzada con la otra.
+- **"Ticket promedio" no lleva pie, y antes iba a llevar la mediana.** Se sacó
+  en la review de esta task: la mediana se calculaba ordenando por
+  `Venta.total`, que es sólo la mitad en PESOS de la mercadería a precio de
+  lista, mientras el promedio de al lado es `Σ Pago.monto` —lo COBRADO, con
+  recargo, en las dos monedas—. Dos magnitudes distintas bajo el mismo tile: una
+  venta en dólares cobrada en dólares entra a la mediana como `Venta.total =
+  0`, exactamente el caso en el que `ticketPromedio()` ya decide que afirmar
+  "$ 0,00" sería una mentira. **El disparador para traerla de vuelta**: que
+  exista una magnitud de "lo cobrado por venta" que se pueda ORDENAR en la
+  base sin traer el período entero — no una fecha. Ver
+  `docs/correcciones-pendientes-del-pen.md`.
+- **El margen va detrás de `COSTOS` y el tile no se renderea sin el
+  permiso** — no se pone en "—": ese guión afirmaría que ninguna venta cargó
+  costo, que es una afirmación distinta y falsa cuando lo que pasa es que a
+  esta persona no se le muestra. Es la misma pieza de dato que ya protege
+  `/inventario/[id]`, así que esconderla acá y mostrarla allá sería no
+  protegerla en absoluto.
+- **Todo el estado vive en la URL, server-only.** El rango y (en la próxima
+  task) la moneda de los paneles son `?rango`/`?moneda`, escritos sólo cuando
+  no son el default — mismo criterio que ya usan `/ventas` y
+  `/formas-de-pago`.
+- **Sin `permiso` ni `soloDueno` en la pestaña**: la ve cualquier sesión,
+  igual que `/ventas`. Un dueño y un empleado sin ningún permiso ven el mismo
+  dashboard, salvo el tile de margen.
+- **`design/arandano.pen` dibuja esta pantalla** (frames `App / Dashboard` y
+  `Móvil / Dashboard`), pero el `.pen` versionado del repo todavía no los
+  tiene — es el mismo caso que ya dejó anotado el ciclo del cobrado por
+  moneda: el archivo vivo sólo se ve por MCP mientras está abierto en Pencil,
+  y guardarlo y commitearlo lo hace una persona. Ver
+  `docs/correcciones-pendientes-del-pen.md`, entrada 27.
+- **Queda para la próxima task de este ciclo (los cuatro paneles)**: "Cuánto
+  se vendió por día" con su ventana FIJA de catorce días —no responde al
+  segmentado de arriba, porque con el rango en Hoy sería una sola barra—,
+  "Cómo entró la plata" con su anillo, "Qué se vendió por categoría" y "Lo que
+  más se vendió". El selector de moneda (`?moneda`, sólo se dibuja si el
+  período tuvo pagos en las dos monedas) es de esos paneles, no de esta
+  pantalla: los cuatro tiles de acá no necesitan elegir moneda porque el tile
+  de marca ya resuelve la suya solo (ver "Este tile invierte", arriba).
+- **"Exportar CSV" está en el Topbar y en la ranura del teléfono, sin
+  funcionalidad todavía.** Es la Task 12 del ciclo, que reemplaza este botón
+  (y su ranura) por `BotonDeExportar` en las dos copias, con la acción
+  `exportarVentas` detrás.
+
 <!-- pantallas:fin -->
 
 ## Lo que hereda toda pantalla de la aplicación

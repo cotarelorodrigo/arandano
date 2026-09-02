@@ -120,12 +120,12 @@ describe('Navegacion', () => {
     expect(html).not.toContain('href="/usuarios"')
   })
 
-  it('están las cuatro pestañas que ve cualquiera', async () => {
+  it('están las cinco pestañas que ve cualquiera', async () => {
     // Sin ningún permiso otorgado: son las que no dependen de ninguno.
     const html = await render('EMPLEADO', '/vender', [])
-    // Vender, Ventas, Inventario y Servicio Técnico. Usuarios no: es del dueño.
-    // Formas de pago tampoco: pide PLANES_PAGO.
-    for (const href of ['/vender', '/ventas', '/inventario', '/servicio-tecnico']) {
+    // Vender, Ventas, Dashboard, Inventario y Servicio Técnico. Usuarios no:
+    // es del dueño. Formas de pago tampoco: pide PLANES_PAGO.
+    for (const href of ['/vender', '/ventas', '/dashboard', '/inventario', '/servicio-tecnico']) {
       expect(html).toContain(`href="${href}"`)
     }
   })

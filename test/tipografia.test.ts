@@ -80,6 +80,11 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   // La séptima (ciclo del bot de WhatsApp): /bot. Mismo caso exacto que
   // /formas-de-pago — el `.pen` tampoco la dibuja (entrada 26 de ese mismo
   // documento), así que el título vuelve a salir de reusar este rol.
+  // La octava (ciclo del dashboard, Task 10): /dashboard. Ruling O de la
+  // review de esa task exige un módulo propio (no reusar el de /ventas, que
+  // era lo que sugería el brief) — `.tituloDeCard` va declarada ahí desde
+  // ahora aunque esa task no dibuje ninguna card con título: la próxima
+  // (los cuatro paneles) lo va a necesitar sobre este mismo módulo.
   'Título de card': [
     'app/(app)/ventas/tipografia.module.css',
     'app/(app)/inventario/tipografia.module.css',
@@ -87,8 +92,12 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
     'app/(app)/usuarios/tipografia.module.css',
     'app/(app)/formas-de-pago/tipografia.module.css',
     'app/(app)/bot/tipografia.module.css',
+    'app/(app)/dashboard/tipografia.module.css',
   ],
-  'Valor de tile': ['app/(app)/ventas/tipografia.module.css'],
+  // El valor de los cuatro tiles de /dashboard paga el mismo rol que el valor
+  // de tile de /ventas (24/26 px, peso 600) — Ruling O, mismo motivo que la
+  // fila de arriba.
+  'Valor de tile': ['app/(app)/ventas/tipografia.module.css', 'app/(app)/dashboard/tipografia.module.css'],
   'Monto de tabla': ['app/(app)/ventas/tipografia.module.css'],
   'Banda de Total': ['app/(app)/ventas/tipografia.module.css'],
   // Mismo rótulo en negrita que la fila de /ventas (el texto entre `**` no

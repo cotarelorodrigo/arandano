@@ -1,7 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { Bot, CreditCard, Package, ReceiptText, ShoppingCart, Users, Wrench } from 'lucide-react'
+import {
+  Bot, CreditCard, LayoutDashboard, Package, ReceiptText, ShoppingCart, Users, Wrench,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import type { RolUsuario } from '@/lib/auth/sesion'
@@ -34,6 +36,11 @@ type Pestana = {
 export const PESTANAS: Pestana[] = [
   { href: '/vender', texto: 'Vender', icono: ShoppingCart },
   { href: '/ventas', texto: 'Ventas', icono: ReceiptText },
+  // Tercera, entre Ventas e Inventario: es donde la pone el frame
+  // Shell/Sidebar. El ítem de /bot NO se mueve ni se saca aunque la maqueta no
+  // lo dibuje — ese frame es anterior al ciclo del bot, y el silencio de un
+  // frame no es una instrucción de borrar.
+  { href: '/dashboard', texto: 'Dashboard', icono: LayoutDashboard },
   { href: '/inventario', texto: 'Inventario', icono: Package },
   // Fija y visible en TODO tenant, incluido el que no hace servicio técnico.
   // Es deuda consciente y está escrita en el spec con su vencimiento: cuando
