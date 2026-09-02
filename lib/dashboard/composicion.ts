@@ -153,6 +153,28 @@ export function repartirEnGajos(
   return [...primeros, { rotulo: rotuloDelAgregado, importe: otros }]
 }
 
+/**
+ * El gajo más grande de una lista YA recortada por `repartirEnGajos` — NO
+ * necesariamente el primero de la lista.
+ *
+ * `repartirEnGajos` agrega la cola en un único gajo "Otros" al FINAL del
+ * array, sin ordenarlo de nuevo contra los que quedaron primeros: con
+ * muchas ramas chicas, esa cola agregada puede pesar más que la rama que
+ * encabeza la lista. Asumir `gajos[0]` ahí muestra en el centro del anillo
+ * una categoría que no es la que más vendió — Minor 3 de la review de esta
+ * task, que también pidió el caso que lo prueba (ver el test de este
+ * archivo).
+ *
+ * Compara con `Decimal.greaterThan`, no con `Number(...)`: es la misma regla
+ * de siempre (Minor 1 de la review) — la comparación exacta está disponible
+ * antes de convertir a `string` para la vista, así que usarla acá no cuesta
+ * nada.
+ */
+export function gajoMasGrande<T extends { importe: Decimal }>(gajos: T[]): T | null {
+  if (gajos.length === 0) return null
+  return gajos.reduce((max, g) => (g.importe.greaterThan(max.importe) ? g : max))
+}
+
 /** Cuántas filas dibuja el top de artículos. */
 export const TOP_DE_ARTICULOS = 5
 

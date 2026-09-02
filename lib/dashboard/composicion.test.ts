@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Prisma } from '@/generated/prisma/client'
 import {
-  agruparPorArticulo, repartirEnGajos, topDeArticulos, MAX_GAJOS, TOP_DE_ARTICULOS,
+  agruparPorArticulo, repartirEnGajos, topDeArticulos, gajoMasGrande, MAX_GAJOS, TOP_DE_ARTICULOS,
   ROTULO_OTROS, ROTULO_OTROS_AGRUPADO,
 } from './composicion'
 
@@ -134,5 +134,28 @@ describe('el top de artículos', () => {
 
   it('un artículo sin nombre conocido no rompe la fila', () => {
     expect(topDeArticulos(vendido, new Map())[0].nombre).toBe('—')
+  })
+})
+
+describe('el gajo más grande', () => {
+  // Minor 3 de la review de Task 11: el gajo "Otros" que agrega
+  // repartirEnGajos va al FINAL del array, no reordenado — con muchas ramas
+  // chicas puede pesar más que la que quedó primera. Asumir gajos[0] falla
+  // exactamente acá.
+  it('no es necesariamente el primero de la lista', () => {
+    const gajos = [
+      { rotulo: 'Celulares', importe: d('1000') },
+      { rotulo: ROTULO_OTROS_AGRUPADO, importe: d('4000') },
+    ]
+    expect(gajoMasGrande(gajos)?.rotulo).toBe(ROTULO_OTROS_AGRUPADO)
+  })
+
+  it('con una sola rama, es esa rama', () => {
+    const gajos = [{ rotulo: 'Celulares', importe: d('1000') }]
+    expect(gajoMasGrande(gajos)?.rotulo).toBe('Celulares')
+  })
+
+  it('con la lista vacía no hay gajo más grande', () => {
+    expect(gajoMasGrande([])).toBeNull()
   })
 })

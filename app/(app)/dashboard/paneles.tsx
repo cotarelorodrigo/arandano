@@ -248,19 +248,31 @@ export function AnilloDeMedios({
  * pesando más que la rama que quedó primera, si hay muchas ramas chicas.
  */
 export function VentasPorCategoria({
-  porCategoria, moneda,
-}: { porCategoria: { rotulo: string; importe: string }[]; moneda: MonedaElegida }) {
+  porCategoria, total, mayor, moneda,
+}: {
+  porCategoria: { rotulo: string; importe: string }[]
+  /** La suma EXACTA de `porCategoria` (`Decimal`, ya en `string`) — se recibe
+   *  hecha en vez de re-sumarse acá en float. `page.tsx` ya la tiene: es la
+   *  misma suma que arma `sumaPorRama` antes de convertir a `string`, y
+   *  volver a sumarla acá con `Number()` es exactamente lo que el docblock de
+   *  `porcentajesQueSuman100` pide no hacer (Minor 1 de la review de esta
+   *  task). `AnilloDeMedios`, al lado, ya seguía esta regla con
+   *  `composicion.total`. */
+  total: string
+  /** El gajo más grande DE VERDAD, resuelto en `page.tsx` con
+   *  `gajoMasGrande` sobre los `Decimal` originales —no acá, comparando
+   *  `Number(...)` sobre strings ya redondeados (Minor 1)—. `null` sin
+   *  ventas. */
+  mayor: { rotulo: string; importe: string } | null
+  moneda: MonedaElegida
+}) {
   const formatear = formateadorDe(moneda)
-  const total = porCategoria.reduce((acc, c) => acc + Number(c.importe), 0)
-  const porcentajes = porcentajesQueSuman100(porCategoria.map((c) => Number(c.importe)), total)
+  const porcentajes = porcentajesQueSuman100(porCategoria.map((c) => Number(c.importe)), Number(total))
   const gajos: Gajo[] = porCategoria.map((c, i) => ({
     rotulo: c.rotulo,
     monto: formatear(c.importe),
     porcentaje: porcentajes[i],
   }))
-  const mayor = porCategoria.length > 0
-    ? porCategoria.reduce((max, c) => (Number(c.importe) > Number(max.importe) ? c : max))
-    : null
 
   return (
     <section className="flex flex-col overflow-hidden rounded-2xl border bg-card lg:w-[400px] lg:shrink-0">

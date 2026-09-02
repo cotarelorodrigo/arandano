@@ -15,8 +15,8 @@ import {
 import { metricasDelPeriodo, delta, soloEnDolares, type Delta } from '@/lib/dashboard/metricas'
 import { agregarPorDia, pieDeTendencia, ventasDeLaTendencia } from '@/lib/dashboard/tendencia'
 import {
-  itemsDelPeriodo, ramaPorArticulo, agruparPorArticulo, repartirEnGajos, topDeArticulos,
-  TOP_DE_ARTICULOS, SIN_CATEGORIA,
+  itemsDelPeriodo, ramaPorArticulo, agruparPorArticulo, repartirEnGajos, gajoMasGrande,
+  topDeArticulos, TOP_DE_ARTICULOS, SIN_CATEGORIA,
 } from '@/lib/dashboard/composicion'
 import { componerPorMedio } from '@/lib/ventas/composicion'
 import { monedaValida, type MonedaElegida } from '@/lib/ventas/medios'
@@ -193,6 +193,52 @@ export function SegmentadoDeRango({
   )
 }
 
+/**
+ * La moneda que los tres paneles de composición —"Cómo entró la plata",
+ * "Ventas por categoría" y "Lo que más se vendió"— TERMINAN mostrando, con
+ * fallback a la que sí tuvo actividad en el período cuando la pedida está
+ * vacía.
+ *
+ * **Ruling H de /ventas (Task 3 de este ciclo), portado acá — Critical de la
+ * review de Task 11.** Sin este fallback había DOS formas de quedarse
+ * varado, alcanzables sin escribir una URL a mano:
+ *
+ * 1. `hrefRango` arrastra `?moneda`: desde `/dashboard?moneda=usd` en un mes
+ *    con dólares, un click en el chip "Hoy" —un día sin ninguno— deja
+ *    `hayDolares` en `false` para ESE período. El selector, gateado por
+ *    `hayDolares`, no se dibuja: nada en la pantalla ofrece volver a pesos,
+ *    mientras los tiles de arriba siguen mostrando pesos reales y los tres
+ *    paneles de abajo leen "sin datos" en una moneda que no tiene nada.
+ * 2. Un local que sólo cobró en dólares HOY abre el `/dashboard` pelado —el
+ *    default es `'ars'`— y ve la misma contradicción de entrada: el tile de
+ *    marca ya invierte a US$ (`soloEnDolares`) pero los tres paneles de abajo
+ *    arrancan vacíos, aunque acá sí hay selector para corregirlo a mano.
+ *
+ * Cubre pagos e ÍTEMS juntos —`huboEnPesos`/`huboEnDolares` los combina el
+ * llamador—, no cada uno por separado: alcanza con que CUALQUIERA de los dos
+ * haya tenido algo en la moneda pedida para respetarla.
+ *
+ * **NO cubre "Ventas por día".** Esa ventana es fija a 14 días —independiente
+ * del período elegido, ver lib/dashboard/tendencia.ts— y puede tener
+ * actividad en una moneda que el período elegido no tiene, o al revés. Este
+ * dashboard igual le aplica la misma `monedaMostrada` que a los otros tres
+ * paneles, por simplicidad: es un gap conocido y no uno nuevo (Minor 2 de la
+ * review de Task 11), sin el modo de falla del Critical de arriba — nadie
+ * queda varado, en el peor caso una barra de esos 14 días queda mostrando 0
+ * en vez de un monto que sólo existe en la otra moneda.
+ *
+ * `?moneda` (la pedida) sigue intacta para el resto de la navegación —los
+ * `href` la preservan, no la efectiva—: este fallback es sólo para ESTE
+ * render, no una corrección de la preferencia.
+ */
+export function monedaEfectiva(
+  moneda: MonedaElegida, huboEnPesos: boolean, huboEnDolares: boolean,
+): MonedaElegida {
+  const huboEnPedida = moneda === 'usd' ? huboEnDolares : huboEnPesos
+  if (huboEnPedida) return moneda
+  return moneda === 'usd' ? 'ars' : 'usd'
+}
+
 export default async function Dashboard({
   searchParams,
 }: {
@@ -226,6 +272,36 @@ export default async function Dashboard({
     }),
   ])
 
+  const composicionMedios = componerPorMedio(pagosPorMedio)
+
+  // El selector `$ / US$` (visibilidad): se dibuja si CUALQUIERA de las dos
+  // magnitudes que muestran los paneles —lo cobrado (pagos) o lo vendido
+  // (ítems)— tuvo algo en dólares. Un local puede cobrar un total en dólares
+  // enteramente en pesos (un plan de pago cubriendo USD, ver CLAUDE.md), y
+  // ahí `composicionMedios.hayDolares` da `false` aunque sí haya mercadería
+  // en dólares para mostrar en "Ventas por categoría" o "Lo que más se
+  // vendió" — por eso el OR y no sólo la mitad de pagos.
+  //
+  // NO cubre "Ventas por día" (Minor 2 de la review de Task 11): esa ventana
+  // es fija a 14 días —independiente del período elegido, ver
+  // lib/dashboard/tendencia.ts— y puede tener dólares que el período elegido
+  // no tiene, o al revés. Un shop cuya única venta en dólares fue hace seis
+  // días, mirando `rango=hoy`, no ve selector (hoy no tuvo nada en ninguna
+  // moneda) aunque el gráfico de 14 días sí tenga una barra en US$ que nadie
+  // puede pedir ver — inofensivo hoy (esa barra simplemente se muestra en
+  // pesos, en $0 si `monedaMostrada` cae en 'ars'), pero un lector futuro no
+  // debería asumir que esta bandera cubre los cuatro paneles.
+  const hayDolares = composicionMedios.hayDolares || itemsPeriodo.some((f) => f.moneda === 'USD')
+  const huboEnPesos = composicionMedios.ars.barras.length > 0
+    || itemsPeriodo.some((f) => f.moneda === 'ARS')
+  // La moneda que ESTE render termina mostrando en los tres paneles de
+  // composición (y, por simplicidad, también en "Ventas por día" — ver el
+  // comentario de `hayDolares` de arriba): con fallback a la que sí tuvo
+  // actividad, para no quedar varado en una pila vacía. Ver el docblock de
+  // `monedaEfectiva`. `?moneda` (la pedida, `moneda`) sigue intacta para los
+  // `href` — sólo `monedaMostrada` gobierna qué se calcula y se dibuja.
+  const monedaMostrada = monedaEfectiva(moneda, huboEnPesos, hayDolares)
+
   // agregarPorDia() pide `total`/`totalUsd` como STRING —lo documenta su
   // firma en lib/dashboard/tendencia.ts—, y Prisma los devuelve como
   // `Decimal`: la conversión pasa acá, en el borde entre la consulta y la
@@ -234,16 +310,15 @@ export default async function Dashboard({
   const ventasTendencia = ventasTendenciaCrudo.map((v) => ({
     creadoEn: v.creadoEn, total: v.total.toString(), totalUsd: v.totalUsd.toString(),
   }))
-  const barrasTendencia = agregarPorDia(ventasTendencia, hoy, moneda)
-  const pieTendencia = pieDeTendencia(barrasTendencia, moneda)
+  const barrasTendencia = agregarPorDia(ventasTendencia, hoy, monedaMostrada)
+  const pieTendencia = pieDeTendencia(barrasTendencia, monedaMostrada)
 
-  const composicionMedios = componerPorMedio(pagosPorMedio)
-  const composicionElegida = moneda === 'usd' ? composicionMedios.usd : composicionMedios.ars
+  const composicionElegida = monedaMostrada === 'usd' ? composicionMedios.usd : composicionMedios.ars
 
   // Lo vendido del período, YA en la moneda elegida: alimenta tanto "Ventas
   // por categoría" como "Lo que más se vendió", ordenado de mayor a menor
   // importe (agruparPorArticulo ya lo deja así).
-  const vendidoElegido = agruparPorArticulo(itemsPeriodo, moneda)
+  const vendidoElegido = agruparPorArticulo(itemsPeriodo, monedaMostrada)
   const idsVendidos = vendidoElegido.map((v) => v.articuloId)
   const idsTop = vendidoElegido.slice(0, TOP_DE_ARTICULOS).map((v) => v.articuloId)
 
@@ -260,7 +335,11 @@ export default async function Dashboard({
 
   // Importe por rama, de mayor a menor: repartirEnGajos asume esa entrada ya
   // ordenada. La suma es en Decimal —no en la vista de string que consumen
-  // los paneles— porque repartirEnGajos necesita sumar la cola de verdad.
+  // los paneles— porque repartirEnGajos necesita sumar la cola de verdad, y
+  // porque el total y el gajo más grande se resuelven ACÁ, con `Decimal`
+  // exacto, y no en `paneles.tsx` re-sumando o comparando en float (Minor 1
+  // de la review de Task 11 — `AnilloDeMedios` ya seguía esta regla con
+  // `composicion.total`, ahora `VentasPorCategoria` también).
   const sumaPorRama = new Map<string, Prisma.Decimal>()
   for (const v of vendidoElegido) {
     const rama = ramas.get(v.articuloId) ?? SIN_CATEGORIA
@@ -269,18 +348,16 @@ export default async function Dashboard({
   const porCategoriaOrdenado = [...sumaPorRama.entries()]
     .map(([rotulo, importe]) => ({ rotulo, importe }))
     .sort((a, b) => b.importe.comparedTo(a.importe))
-  const porCategoria = repartirEnGajos(porCategoriaOrdenado).map((c) => ({
-    rotulo: c.rotulo, importe: c.importe.toString(),
-  }))
-
-  // El selector `$ / US$` gobierna los CUATRO paneles: se dibuja si CUALQUIERA
-  // de las dos magnitudes que muestran —lo cobrado (pagos) o lo vendido
-  // (ítems)— tuvo algo en dólares. Un local puede cobrar un total en dólares
-  // enteramente en pesos (un plan de pago cubriendo USD, ver CLAUDE.md), y
-  // ahí `composicionMedios.hayDolares` da `false` aunque sí haya mercadería
-  // en dólares para mostrar en "Ventas por categoría" o "Lo que más se
-  // vendió" — por eso el OR y no sólo la mitad de pagos.
-  const hayDolares = composicionMedios.hayDolares || itemsPeriodo.some((f) => f.moneda === 'USD')
+  const gajosDeCategoria = repartirEnGajos(porCategoriaOrdenado)
+  // El gajo más grande DE VERDAD —no `gajosDeCategoria[0]`—: repartirEnGajos
+  // agrega la cola "Otros" al FINAL sin reordenar, así que esa cola puede
+  // pesar más que la rama que quedó primera. Ver el docblock de
+  // `gajoMasGrande` (Minor 3 de la review de Task 11).
+  const mayorCategoria = gajoMasGrande(gajosDeCategoria)
+  const totalPorCategoria = gajosDeCategoria.reduce(
+    (acc, c) => acc.add(c.importe), new Prisma.Decimal(0),
+  )
+  const porCategoria = gajosDeCategoria.map((c) => ({ rotulo: c.rotulo, importe: c.importe.toString() }))
 
   // El tile de marca invierte cuando no entró ni un peso pero sí entraron
   // dólares: sin esto, un local que carga y cobra TODO su catálogo en dólares
@@ -459,14 +536,23 @@ export default async function Dashboard({
         <div className="flex flex-col gap-3 lg:gap-4">
           {hayDolares && (
             <div className="flex justify-end">
-              <SelectorDeMoneda hayDolares={hayDolares} moneda={moneda} href={hrefDeMoneda} />
+              {/* `monedaMostrada`, no `moneda`: si la pedida cayó vacía y el
+                  fallback la corrigió, el selector tiene que resaltar la
+                  opción que REALMENTE está en pantalla — resaltar la pedida
+                  mentiría sobre qué se está mirando. */}
+              <SelectorDeMoneda hayDolares={hayDolares} moneda={monedaMostrada} href={hrefDeMoneda} />
             </div>
           )}
-          <VentasPorDia barras={barrasTendencia} pie={pieTendencia} moneda={moneda} />
+          <VentasPorDia barras={barrasTendencia} pie={pieTendencia} moneda={monedaMostrada} />
           <div className="flex flex-col gap-3 lg:flex-row lg:gap-4">
-            <AnilloDeMedios composicion={composicionElegida} moneda={moneda} />
-            <VentasPorCategoria porCategoria={porCategoria} moneda={moneda} />
-            <TopDeArticulos filas={filasTop} moneda={moneda} />
+            <AnilloDeMedios composicion={composicionElegida} moneda={monedaMostrada} />
+            <VentasPorCategoria
+              porCategoria={porCategoria}
+              total={totalPorCategoria.toString()}
+              mayor={mayorCategoria ? { rotulo: mayorCategoria.rotulo, importe: mayorCategoria.importe.toString() } : null}
+              moneda={monedaMostrada}
+            />
+            <TopDeArticulos filas={filasTop} moneda={monedaMostrada} />
           </div>
         </div>
       </div>
