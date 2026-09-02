@@ -46,6 +46,57 @@ let pagosDelPeriodo: typeof import('@/app/(app)/ventas/page').pagosDelPeriodo
 
 const d = (v: string) => new Prisma.Decimal(v)
 
+/**
+ * Espera a que ALGÚN backend, distinto de `cliente`, quede bloqueado
+ * esperando un lock — o falla si eso no pasa dentro de `timeoutMs`.
+ * `descripcion` sólo identifica el escenario en el mensaje de error; no filtra
+ * nada (ver el comentario de más abajo sobre por qué no se puede filtrar por
+ * la consulta ni por el tipo de lock).
+ *
+ * Reemplaza un `setTimeout` fijo entre el `UPDATE` que toma el lock y el
+ * arranque de la operación que se supone queda esperándolo: con un tiempo
+ * fijo, si la operación tarda más de lo previsto en LLEGAR al lock —una
+ * corrida lenta de CI, por ejemplo—, el test sigue de largo sin haber forzado
+ * ningún solape real. Eso no falla ruidoso: degenera en silencio a un caso
+ * que pasaría igual con la protección rota, que es exactamente el modo de
+ * falla que este archivo ya documentó dos veces para esta misma carrera. Con
+ * el poll, o se observa el bloqueo de verdad, o el test falla diciendo que
+ * nunca lo vio — nunca pasa por casualidad.
+ */
+async function esperarBloqueoEn(
+  cliente: Client,
+  descripcion: string,
+  { timeoutMs = 5_000, intervaloMs = 20 } = {},
+): Promise<void> {
+  // `pg_stat_activity` no sirve para esto: `arandano_owner` no es superusuario
+  // ni miembro de `pg_read_all_stats`, y Postgres le devuelve NULL en `state`,
+  // `wait_event_type` y `query` para las sesiones de OTROS roles —confirmado a
+  // mano contra la conexión de `crearVenta`, que corre como `arandano_app`—,
+  // así que un filtro por esa vista habría dado falso negativo SIEMPRE, sin
+  // importar si el bloqueo ocurrió de verdad. `pg_locks` no tiene esa
+  // restricción de rol: expone el estado del lock manager entero a cualquiera.
+  // Y ahí, esperar un lock de FILA no aparece como `locktype = 'tuple'`, sino
+  // como `transactionid`/`granted = false` — Postgres resuelve la espera de un
+  // `UPDATE` sobre una fila ya bloqueada esperando el XID de quien la tiene
+  // tomada, no la fila en sí. Confirmado empíricamente contra este mismo test.
+  const limite = Date.now() + timeoutMs
+  while (Date.now() < limite) {
+    const { rows } = await cliente.query(
+      `SELECT 1
+         FROM pg_locks
+        WHERE granted = false
+          AND pid <> pg_backend_pid()
+        LIMIT 1`,
+    )
+    if (rows.length > 0) return
+    await new Promise((resolve) => setTimeout(resolve, intervaloMs))
+  }
+  throw new Error(
+    `nadie quedó esperando un lock (${descripcion}) dentro de ${timeoutMs}ms: ` +
+      'la carrera que este test fuerza no llegó a solapar',
+  )
+}
+
 let owner: Client
 let tenantId: string
 let usuarioId: string
@@ -1168,11 +1219,12 @@ describe('crearVenta con unidades identificadas (IMEI)', () => {
 
         venta = crearVenta({ tenantId, usuarioId, items, pagos })
 
-        // Tiempo de sobra para que crearVenta corra TODO lo que corre antes
-        // de tocar la unidad (validaciones, findMany de artículos,
-        // proximoNumero, venta.create, ítems, pagos) y quede bloqueada en el
-        // UPDATE de la unidad, detrás del lock de owner2.
-        await new Promise((resolve) => setTimeout(resolve, 300))
+        // Se espera a que `crearVenta` haya corrido TODO lo que corre antes de
+        // tocar la unidad (validaciones, findMany de artículos, proximoNumero,
+        // venta.create, ítems, pagos) y haya quedado bloqueada de verdad en el
+        // UPDATE de la unidad, detrás del lock de owner2 — no un tiempo fijo
+        // que se supone alcanza.
+        await esperarBloqueoEn(owner2, 'unidades_articulo')
 
         await owner2.query('COMMIT')
 
