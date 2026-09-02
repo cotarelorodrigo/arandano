@@ -1,3 +1,4 @@
+import { Prisma } from '@/generated/prisma/client'
 import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import { exigirUsuario } from '@/lib/ventas/pertenencia'
 import { ErrorDeInventario, traducirErrorDeBase } from './errores'
@@ -83,21 +84,82 @@ export async function unidadesLibres(
   })
 }
 
-/** Crea las unidades dentro de una transacción ya abierta. La usa
- *  `ingresarStock`, que tiene que escribir el movimiento y las unidades juntos
- *  o no escribir nada. */
+/**
+ * Crea las unidades dentro de una transacción ya abierta. La usan los tres
+ * escritores: `ingresarStock`, `crearArticulo` y `prenderSerie` acá abajo —
+ * todos tienen que escribir el movimiento, el stock y las unidades juntos o no
+ * escribir nada.
+ *
+ * **El choque contra el índice parcial `unidades_articulo_imei_libre` se
+ * traduce ACÁ, y no en `traducirErrorDeBase`.** Es el único lugar del motor que
+ * sabe que el `P2002` habla de un IMEI: `traducirErrorDeBase` lo recibe sin
+ * ningún contexto —bajo `arandano_app` Postgres retiene el `DETAIL` del error,
+ * así que no hay `fields` que mirar (ver `esSkuRepetido` en articulos.ts)— y no
+ * podría distinguirlo del choque del SKU. Esa ambigüedad no es teórica: es
+ * exactamente la que hacía que un IMEI repetido en el alta saliera como "el
+ * código A-0007 ya está usado".
+ *
+ * Sin esta traducción, escanear un equipo que ya está en la vitrina devolvía
+ * un `PrismaClientKnownRequestError` crudo, que `traducir()`
+ * (app/(app)/inventario/acciones.ts) relanza por no ser un `ErrorDeInventario`:
+ * el mostrador veía el error boundary de Next en vez de un cartel.
+ *
+ * El IMEI concreto se averigua ANTES del insert y no después, y no es una
+ * preferencia: una violación de unicidad ABORTA la transacción en Postgres, así
+ * que en el `catch` ya no se puede consultar nada —el mismo hallazgo que
+ * documenta `lib/ventas/crear.ts`—. El `catch` sólo relanza. La consulta previa
+ * es el camino rápido del caso común (el equipo YA estaba cargado cuando se
+ * escaneó) y el índice sigue siendo la defensa real de la carrera exacta (dos
+ * cajas cargando el mismo IMEI a la vez), igual que con la idempotencia del
+ * cobro.
+ */
 export async function crearUnidadesEnTx(
   tx: ClienteTx,
   datos: { tenantId: string; articuloId: string; imeis: string[]; usuarioId: string },
 ): Promise<void> {
-  await tx.unidadDeArticulo.createMany({
-    data: datos.imeis.map((imei) => ({
-      tenantId: datos.tenantId,
-      articuloId: datos.articuloId,
-      imei,
-      ingresadaPorId: datos.usuarioId,
-    })),
+  // SIN filtrar por `articuloId`, a propósito: el índice parcial es por
+  // `(tenant_id, imei)`, así que el mismo IMEI libre colgado de OTRO artículo
+  // choca igual — y ése es justo el caso que más confunde si el mensaje no lo
+  // nombra.
+  const yaLibres = await tx.unidadDeArticulo.findMany({
+    where: { imei: { in: datos.imeis }, ventaId: null, bajaEn: null },
+    select: { imei: true },
   })
+  if (yaLibres.length > 0) {
+    const repetidos = yaLibres.map((u) => u.imei)
+    throw new ErrorDeInventario(
+      'IMEI_REPETIDO',
+      repetidos.length === 1
+        ? `el IMEI ${repetidos[0]} ya está en el stock: si es otro equipo revisá el número, y ` +
+          'si es el mismo ya lo tenés cargado'
+        : `estos IMEI ya están en el stock: ${repetidos.join(', ')}. Sacalos de la lista o ` +
+          'revisá los números',
+    )
+  }
+
+  try {
+    await tx.unidadDeArticulo.createMany({
+      data: datos.imeis.map((imei) => ({
+        tenantId: datos.tenantId,
+        articuloId: datos.articuloId,
+        imei,
+        ingresadaPorId: datos.usuarioId,
+      })),
+    })
+  } catch (e) {
+    // Acá sólo puede llegar la carrera: el chequeo de arriba no lo vio porque
+    // la otra caja todavía no había comiteado. No se puede decir CUÁL IMEI es
+    // —la transacción está abortada y no admite una consulta más—, así que el
+    // mensaje dice lo que sí es cierto y qué hacer.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      throw new ErrorDeInventario(
+        'IMEI_REPETIDO',
+        'alguno de esos IMEI se acaba de cargar desde otra pantalla: recargá y revisá cuáles ' +
+          'faltan',
+      )
+    }
+    throw e
+  }
 }
 
 export async function prenderSerie(entrada: {

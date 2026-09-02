@@ -181,14 +181,27 @@ async function proximoSku(tx: ClienteTx, tenantId: string): Promise<string> {
  * `arandano_app` no trae ningún `DETAIL` ni con `VERBOSITY verbose`; como
  * superusuario con `BYPASSRLS` sí lo trae.
  *
- * Así que lo que sostiene esta función, hoy, es sólo el argumento de la
- * unicidad única: `articulos` tiene UNA sola (`@@unique([tenantId, sku])`) y
- * `movimientos_stock` ninguna, así que adentro de esta transacción un P2002
- * no puede ser otra cosa que el SKU. El chequeo de `campos` queda como red
- * LATENTE, no activa: para el día que aparezca una segunda unicidad en
- * `Articulo`, o que esto corra bajo un rol no sujeto a RLS —una migración,
- * un script de mantenimiento—, donde `fields` sí puede llegar poblado y
- * discriminar de verdad.
+ * Así que lo que sostiene esta función, hoy, es el argumento de qué otras
+ * unicidades pueden chocar adentro de esta transacción. `articulos` tiene UNA
+ * sola (`@@unique([tenantId, sku])`) y `movimientos_stock` ninguna — pero
+ * `unidades_articulo` SÍ tiene la suya, el índice parcial
+ * `unidades_articulo_imei_libre`, y desde que el alta carga unidades
+ * (`crearUnidadesEnTx`) esa tabla se escribe en esta misma transacción. Lo que
+ * mantiene la premisa en pie no es que no haya una segunda unicidad: es que
+ * **`crearUnidadesEnTx` traduce su propio P2002 a `IMEI_REPETIDO` antes de
+ * relanzarlo**, así que el choque del IMEI nunca llega hasta acá como P2002.
+ *
+ * Esa dependencia es real y conviene tenerla escrita, porque es la que se
+ * rompe sola: si alguna vez esa traducción se saca, un IMEI repetido vuelve a
+ * llegar como P2002 con `fields` ausente, esta función devuelve `true` y el
+ * alta reporta un choque de SKU que no ocurrió —con SKU autogenerado, además,
+ * quemando los cinco intentos y sus números—. Es el defecto que tuvo esta rama
+ * (hallazgo I2 de la review) y por el que la traducción vive donde vive.
+ *
+ * El chequeo de `campos` queda como red LATENTE, no activa: para el día que
+ * aparezca una segunda unicidad en `Articulo`, o que esto corra bajo un rol no
+ * sujeto a RLS —una migración, un script de mantenimiento—, donde `fields` sí
+ * puede llegar poblado y discriminar de verdad.
  */
 function esSkuRepetido(e: unknown): boolean {
   if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== 'P2002') return false
