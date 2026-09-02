@@ -331,9 +331,11 @@ describe('FichaDeArticulo', () => {
 })
 
 describe('MoverStock', () => {
-  async function renderMoverStock(puedeCostos = true) {
+  async function renderMoverStock(puedeCostos = true, llevaSerie = false) {
     const { MoverStock } = await import('./formularios')
-    return renderToStaticMarkup(<MoverStock articuloId="a1" puedeCostos={puedeCostos} />)
+    return renderToStaticMarkup(
+      <MoverStock articuloId="a1" puedeCostos={puedeCostos} llevaSerie={llevaSerie} />,
+    )
   }
 
   // Mismo hallazgo M2: "Ingresar mercadería" y "Corregir por conteo" son las
@@ -349,6 +351,46 @@ describe('MoverStock', () => {
       expect(inicio, `no se encontró el campo ${campo}`).toBeGreaterThan(-1)
       expect(html.slice(inicio, cierre), `${campo} no mide h-10`).toContain('h-10')
     }
+  })
+
+  // Task 8 del ciclo de unidades por IMEI.
+  describe('con llevaSerie', () => {
+    it('reemplaza "Cantidad que entra" por la lista de IMEI', async () => {
+      const html = await renderMoverStock(true, true)
+      expect(html).not.toContain('Cantidad que entra')
+      expect(html).toContain('IMEI o número de serie')
+    })
+
+    it('sin llevaSerie sigue pidiendo la cantidad, como siempre', async () => {
+      const html = await renderMoverStock(true, false)
+      expect(html).toContain('Cantidad que entra')
+    })
+
+    // El atributo REAL, no la clase utilitaria `disabled:pointer-events-none`
+    // que shadcn ya trae en cualquier <Button> —esa substring está SIEMPRE,
+    // esté o no deshabilitado—: React renderiza el booleano como
+    // `disabled=""`, y es eso lo que hay que buscar.
+    function botonDeshabilitado(html: string, texto: string): boolean {
+      const inicioBoton = html.indexOf(`${texto}</button>`)
+      const inicio = html.lastIndexOf('<button', inicioBoton)
+      return /\sdisabled=""/.test(html.slice(inicio, inicioBoton))
+    }
+
+    it('"Corregir por conteo" queda deshabilitada y explicada, no escondida', async () => {
+      const html = await renderMoverStock(true, true)
+      expect(html).toContain('Corregir por conteo')
+      expect(html).toContain(
+        'Este artículo se maneja por IMEI: para sacar una unidad, dala de baja desde',
+      )
+      expect(html).toContain('href="#unidades"')
+      expect(botonDeshabilitado(html, 'Corregir')).toBe(true)
+    })
+
+    it('sin llevaSerie, "Corregir por conteo" sigue habilitada y sin la explicación', async () => {
+      const html = await renderMoverStock(true, false)
+      expect(html).not.toContain('se maneja por IMEI')
+      expect(botonDeshabilitado(html, 'Corregir')).toBe(false)
+    })
   })
 })
 

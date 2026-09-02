@@ -41,6 +41,10 @@ let reactivarArticuloAccion: typeof import('./acciones').reactivarArticuloAccion
 let ingresarMercaderia: typeof import('./acciones').ingresarMercaderia
 let corregirPorConteo: typeof import('./acciones').corregirPorConteo
 let exportarHistorialCsv: typeof import('./acciones').exportarHistorialCsv
+// Task 8 del ciclo de unidades por IMEI: las tres acciones nuevas.
+let prenderSerieAccion: typeof import('./acciones').prenderSerieAccion
+let apagarSerieAccion: typeof import('./acciones').apagarSerieAccion
+let darDeBajaUnidadAccion: typeof import('./acciones').darDeBajaUnidadAccion
 let authParaTenant: typeof import('@/lib/auth/para-tenant').authParaTenant
 let origenDelRequest: typeof import('@/lib/auth/origen').origenDelRequest
 // Dinámico y no estático, como el resto de este archivo: `lib/inventario/
@@ -49,6 +53,7 @@ let origenDelRequest: typeof import('@/lib/auth/origen').origenDelRequest
 // módulo correría ANTES de que `beforeAll` fije esa variable, y el Pool
 // quedaría apuntando a la base equivocada (o a ninguna).
 let unidadesLibres: typeof import('@/lib/inventario/unidades').unidadesLibres
+let prenderSerie: typeof import('@/lib/inventario/unidades').prenderSerie
 
 // Propio del test y no importado de acciones.ts: ese archivo es 'use server' y
 // sólo puede exportar funciones async.
@@ -85,11 +90,11 @@ beforeAll(async () => {
   ;({
     altaArticulo, guardarArticulo, bajaArticulo,
     reactivarArticuloAccion, ingresarMercaderia, corregirPorConteo,
-    exportarHistorialCsv,
+    exportarHistorialCsv, prenderSerieAccion, apagarSerieAccion, darDeBajaUnidadAccion,
   } = await import('./acciones'))
   ;({ authParaTenant } = await import('@/lib/auth/para-tenant'))
   ;({ origenDelRequest } = await import('@/lib/auth/origen'))
-  ;({ unidadesLibres } = await import('@/lib/inventario/unidades'))
+  ;({ unidadesLibres, prenderSerie } = await import('@/lib/inventario/unidades'))
   const administrar = await import('@/lib/usuarios/administrar')
   const { otorgar } = await import('@/lib/permisos/administrar')
 
@@ -217,6 +222,13 @@ async function crearArticuloDePrueba(nombre: string, stock = '0'): Promise<strin
     [estado.tenantId, `ACC-TEST-${contadorSku}`, nombre, stock],
   )
   return rows[0].id
+}
+
+/** Corre `fn` con la sesión de un EMPLEADO sin ningún permiso otorgado — el
+ *  caso base para los tests que prueban el rechazo (Task 8). */
+async function comoEmpleadoSinPermisos<T>(fn: () => Promise<T>): Promise<T> {
+  estado.cookie = cookieEmpleado
+  return fn()
 }
 
 /** El artículo recién creado por `altaArticulo`, leído directo con `owner`
@@ -1065,6 +1077,9 @@ describe('altaArticulo con unidades por IMEI', () => {
 
     const estadoAlta = await altaArticulo(INICIAL, datos)
     expect(estadoAlta.error).toContain('servicio')
+    // Consistente con su hermano de más abajo (IMEI repetido): los dos
+    // rechazan el alta entera, así que los dos aseveran lo mismo.
+    await expect(buscarPorNombre('Cambio de módulo')).resolves.toBeNull()
   })
 
   it('dos IMEI iguales en el alta se rechazan y no crean el artículo', async () => {
@@ -1081,5 +1096,141 @@ describe('altaArticulo con unidades por IMEI', () => {
     const estadoAlta = await altaArticulo(INICIAL, datos)
     expect(estadoAlta.error).not.toBeNull()
     await expect(buscarPorNombre('iPhone 15 repetido')).resolves.toBeNull()
+  })
+})
+
+// Task 8 del ciclo de unidades por IMEI: la ficha administra las unidades. Las
+// tres acciones nuevas — prender el switch, apagarlo, dar de baja una unidad.
+describe('las acciones de unidades por IMEI', () => {
+  let articuloConStock: { id: string }
+  let articuloConStock3: { id: string }
+  let conSerie: { id: string }
+  let unidadLibre: { id: string; imei: string }
+
+  beforeAll(async () => {
+    articuloConStock = {
+      id: await crearArticuloDePrueba('Con stock, para probar el permiso del switch', '5'),
+    }
+    articuloConStock3 = {
+      id: await crearArticuloDePrueba('Con stock 3, para el conteo de IMEI', '3'),
+    }
+
+    const idConSerie = await crearArticuloDePrueba('Ya con serie, para dar de baja', '1')
+    // Se prende con el motor DIRECTO, no con la acción: lo que este describe
+    // prueba es la acción de BAJA, no el alta de la serie, y pasar por
+    // `prenderSerieAccion` exigiría además una sesión con permiso sólo para
+    // preparar el fixture.
+    await prenderSerie({
+      tenantId: estado.tenantId, articuloId: idConSerie, imeis: ['355900000000001'],
+      usuarioId: empleadoId,
+    })
+    conSerie = { id: idConSerie }
+    const libres = await unidadesLibres(estado.tenantId, idConSerie)
+    unidadLibre = libres[0]
+  })
+
+  it('prenderSerieAccion exige ARTICULOS_EDITAR', async () => {
+    // Se delega por lo que la acción mueve: el switch mueve UN artículo, igual
+    // que su precio y su moneda. Mismo permiso, ninguno nuevo.
+    await comoEmpleadoSinPermisos(async () => {
+      const datos = new FormData()
+      datos.set('articuloId', articuloConStock.id)
+      await expect(prenderSerieAccion(INICIAL, datos)).rejects.toThrow()
+    })
+  })
+
+  it('apagarSerieAccion exige ARTICULOS_EDITAR', async () => {
+    await comoEmpleadoSinPermisos(async () => {
+      const datos = new FormData()
+      datos.set('articuloId', conSerie.id)
+      await expect(apagarSerieAccion(INICIAL, datos)).rejects.toThrow()
+    })
+  })
+
+  it('darDeBajaUnidadAccion la puede hacer cualquiera con sesión', async () => {
+    // Mismo lugar que ingresarMercaderia y corregirPorConteo: es operación del
+    // día, la hace quien está atendiendo, y queda firmada con su usuarioId.
+    await comoEmpleadoSinPermisos(async () => {
+      const datos = new FormData()
+      datos.set('articuloId', conSerie.id)
+      datos.set('unidadId', unidadLibre.id)
+      datos.set('nota', 'se rompió')
+      const estadoResultado = await darDeBajaUnidadAccion(INICIAL, datos)
+      expect(estadoResultado.error).toBeNull()
+
+      const { rows } = await owner.query(
+        `SELECT baja_en, baja_nota, baja_por_id FROM unidades_articulo WHERE id = $1`,
+        [unidadLibre.id],
+      )
+      expect(rows[0].baja_en).not.toBeNull()
+      expect(rows[0].baja_nota).toBe('se rompió')
+      expect(rows[0].baja_por_id).toBe(empleadoId)
+    })
+  })
+
+  it('prenderSerieAccion con menos IMEI que stock devuelve el error, no un 500', async () => {
+    estado.cookie = cookieDuenio
+    const datos = new FormData()
+    datos.set('articuloId', articuloConStock3.id)
+    datos.append('imeis', 'AB1')
+    const estadoResultado = await prenderSerieAccion(INICIAL, datos)
+    expect(estadoResultado.error).toContain('tienen que ser los mismos')
+  })
+
+  it('prenderSerieAccion con el conteo exacto prende el switch y crea las unidades', async () => {
+    estado.cookie = cookieDuenio
+    const idParaPrender = await crearArticuloDePrueba('Para prender bien', '2')
+    const datos = new FormData()
+    datos.set('articuloId', idParaPrender)
+    datos.append('imeis', '355800000000001')
+    datos.append('imeis', '355800000000002')
+    const estadoResultado = await prenderSerieAccion(INICIAL, datos)
+    expect(estadoResultado.error).toBeNull()
+
+    const { rows } = await owner.query(
+      `SELECT lleva_serie AS "llevaSerie" FROM articulos WHERE id = $1`,
+      [idParaPrender],
+    )
+    expect(rows[0].llevaSerie).toBe(true)
+  })
+
+  it('apagarSerieAccion con unidades libres devuelve el error, no un 500', async () => {
+    // Con un artículo PROPIO, y no `conSerie`: ese ya se quedó sin unidades
+    // libres en el caso de la baja, más arriba en este mismo describe —
+    // reusarlo dejaría este caso dependiendo del orden de ejecución.
+    estado.cookie = cookieDuenio
+    const idConLibres = await crearArticuloDePrueba('Con serie y unidades libres, para apagar', '1')
+    await prenderSerie({
+      tenantId: estado.tenantId, articuloId: idConLibres, imeis: ['355600000000001'],
+      usuarioId: empleadoId,
+    })
+    const datos = new FormData()
+    datos.set('articuloId', idConLibres)
+    const estadoResultado = await apagarSerieAccion(INICIAL, datos)
+    expect(estadoResultado.error).not.toBeNull()
+  })
+
+  // ingresarMercaderia aprende a leer `imeis` (el hueco asignado a esta
+  // task): el motor ya los acepta (Task 3), pero nada en el medio se los
+  // pasaba hasta ahora.
+  it('ingresarMercaderia con imeis carga las unidades en vez de una cantidad suelta', async () => {
+    estado.cookie = cookieDuenio
+    const idConSerie2 = await crearArticuloDePrueba('Con serie, para ingresar mercadería', '0')
+    await prenderSerie({
+      tenantId: estado.tenantId, articuloId: idConSerie2, imeis: [], usuarioId: empleadoId,
+    })
+
+    const datos = new FormData()
+    datos.set('articuloId', idConSerie2)
+    datos.append('imeis', '355700000000001')
+    datos.append('imeis', '355700000000002')
+    const estadoResultado = await ingresarMercaderia(INICIAL, datos)
+    expect(estadoResultado.error).toBeNull()
+
+    const libres = await unidadesLibres(estado.tenantId, idConSerie2)
+    expect(libres.map((u) => u.imei)).toEqual(['355700000000001', '355700000000002'])
+
+    const { rows } = await owner.query(`SELECT stock FROM articulos WHERE id = $1`, [idConSerie2])
+    expect(new Prisma.Decimal(rows[0].stock).toString()).toBe('2')
   })
 })

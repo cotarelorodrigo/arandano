@@ -56,9 +56,20 @@ function Resultado({ estado }: { estado: EstadoInventario }) {
  * de este archivo, porque acá el encabezado necesita su propio borde
  * inferior y la cara de display, y son tres cards idénticas en estructura.
  */
-function CardDelFormulario({ titulo, children }: { titulo: string; children: ReactNode }) {
+// Exportada (Task 8 del ciclo de unidades por IMEI): `unidades.tsx` es un
+// archivo propio y no una segunda card parecida — usa la MISMA, para que las
+// dos no se desincronicen como ya pasó una vez con `ListaDeImeis` (Task 7).
+export function CardDelFormulario({
+  id,
+  titulo,
+  children,
+}: {
+  id?: string
+  titulo: string
+  children: ReactNode
+}) {
   return (
-    <div className="flex flex-col overflow-hidden rounded-2xl border bg-card">
+    <div id={id} className="flex flex-col overflow-hidden rounded-2xl border bg-card">
       {/* Mobile-first (Task 7 del ciclo móvil, design/arandano.pen: los
           Encabezado de card de `m34Naf`/`T5gME` miden padding [12,14], contra
           los [13,18] de escritorio, sin cambios) — mismo patrón que ya usan
@@ -639,13 +650,24 @@ export function FichaDeArticulo({
  * adentro de la transacción, contra el stock de ese momento. Pedirlo acá
  * obligaría a restar en el navegador contra un número que puede tener un
  * minuto y una venta de antigüedad.
+ *
+ * **Task 8 del ciclo de unidades por IMEI: `llevaSerie` cambia las dos
+ * cards.** En "Ingresar mercadería" el campo "Cantidad que entra" se
+ * reemplaza por la lista de IMEI —la cantidad sale de cuántos hay ahí, no se
+ * tipea (mismo componente que el alta, `ListaDeImeis`)—. "Corregir por
+ * conteo" queda DESHABILITADA y EXPLICADA, no escondida: sus dos campos y su
+ * botón se deshabilitan, y aparece el texto que dice por qué y manda a la
+ * card "Unidades" (`#unidades`, en `[id]/page.tsx`) — desaparecer un control
+ * sin decir nada es lo que este repo trata como defecto.
  */
 export function MoverStock({
   articuloId,
   puedeCostos,
+  llevaSerie,
 }: {
   articuloId: string
   puedeCostos: boolean
+  llevaSerie: boolean
 }) {
   const [ingreso, accionIngreso, ingresando] = useActionState(ingresarMercaderia, INICIAL)
   const [conteo, accionConteo, contando] = useActionState(corregirPorConteo, INICIAL)
@@ -664,10 +686,21 @@ export function MoverStock({
         <CardContent>
           <form action={accionIngreso} className="flex flex-col gap-4">
             <input type="hidden" name="articuloId" value={articuloId} />
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="i-cantidad">Cantidad que entra</Label>
-              <Input id="i-cantidad" name="cantidad" inputMode="decimal" required className="h-10 rounded-[9px]" />
-            </div>
+            {/* `ingresarMercaderia` (acciones.ts) decide por la PRESENCIA del
+                campo `imeis` en el FormData, no por su longitud: una lista
+                vacía sigue siendo "mandó imeis". Por eso acá el campo
+                `cantidad` directamente no se dibuja cuando llevaSerie. */}
+            {llevaSerie ? (
+              <div className="flex flex-col gap-2">
+                <Label>IMEI o número de serie</Label>
+                <ListaDeImeis />
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="i-cantidad">Cantidad que entra</Label>
+                <Input id="i-cantidad" name="cantidad" inputMode="decimal" required className="h-10 rounded-[9px]" />
+              </div>
+            )}
             {/* Sin el permiso COSTOS, el campo no se dibuja. El blindaje
                 real está en el servidor (ingresarMercaderia, acciones.ts):
                 esconderlo acá es sólo la UI. */}
@@ -698,14 +731,39 @@ export function MoverStock({
             <input type="hidden" name="articuloId" value={articuloId} />
             <div className="flex flex-col gap-2">
               <Label htmlFor="c-contado">Cuánto hay realmente</Label>
-              <Input id="c-contado" name="stockContado" inputMode="decimal" required className="h-10 rounded-[9px]" />
+              <Input
+                id="c-contado"
+                name="stockContado"
+                inputMode="decimal"
+                required={!llevaSerie}
+                disabled={llevaSerie}
+                className="h-10 rounded-[9px]"
+              />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="c-nota">Nota (opcional)</Label>
-              <Input id="c-nota" name="nota" placeholder="Conteo del lunes…" className="h-10 rounded-[9px]" />
+              <Input
+                id="c-nota"
+                name="nota"
+                placeholder="Conteo del lunes…"
+                disabled={llevaSerie}
+                className="h-10 rounded-[9px]"
+              />
             </div>
+            {llevaSerie && (
+              <div className="flex items-start gap-[9px] rounded-[10px] bg-background p-3">
+                <Info aria-hidden="true" className="mt-0.5 size-[15px] shrink-0 text-muted-foreground" />
+                <p className="text-[11px] leading-[1.45] text-muted-foreground">
+                  Este artículo se maneja por IMEI: para sacar una unidad, dala de baja desde{' '}
+                  <a href="#unidades" className="font-medium text-foreground underline">
+                    Unidades
+                  </a>
+                  .
+                </p>
+              </div>
+            )}
             <Resultado estado={conteo} />
-            <Button type="submit" variant="secondary" disabled={contando}>
+            <Button type="submit" variant="secondary" disabled={contando || llevaSerie}>
               {contando ? 'Corrigiendo…' : 'Corregir'}
             </Button>
           </form>
