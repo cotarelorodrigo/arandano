@@ -70,16 +70,36 @@ export async function anularVenta(entrada: {
       //
       // El `orderBy` no es cosmético: el `update` de abajo toma el lock de la
       // fila del artículo (y, con serie, el `update` de la unidad toma el de
-      // esa fila), y sin un orden fijo dos escritores que comparten artículos
-      // o unidades los toman en orden distinto y se deadlockean (`40P01`), que
-      // sale como error crudo de Prisma. Es el mismo orden —por `articuloId`
-      // y, en el empate, por `unidadId`— que usa `crearVenta` en `paraStock`, y
-      // tiene que seguir siéndolo: un orden total sirve si es el MISMO en todo
-      // el motor. El empate hace falta por lo mismo que allá: con serie una
-      // venta puede traer VARIAS líneas del MISMO artículo (una por unidad), y
-      // `anularVenta` —a diferencia de `crearVenta`— no toma ningún lock de
-      // tenant antes de llegar acá, así que es el escritor que de verdad puede
-      // interleavearse con otro.
+      // esa fila), y sin un orden fijo dos anulaciones que compartan artículos
+      // los toman en orden distinto y se deadlockean (`40P01`), que sale como
+      // error crudo de Prisma. El empate por `unidadId` hace falta porque con
+      // serie una venta puede traer VARIAS líneas del MISMO artículo (una por
+      // unidad), y `anularVenta` —a diferencia de `crearVenta`— no toma ningún
+      // lock de tenant antes de llegar acá, así que es el escritor que de
+      // verdad puede interleavearse con otro.
+      //
+      // Es el mismo orden de ITERACIÓN que usa `crearVenta` en `paraStock`
+      // (`articuloId`, y en el empate `unidadId`), y NO el mismo orden de
+      // RECURSOS: acá el bucle hace movimiento → artículo → unidad, o sea que
+      // toma el lock del artículo ANTES que el de la unidad, y `crearVenta`
+      // los toma al revés —todas las unidades primero, todos los artículos
+      // después—. Decir que "es el mismo orden" a secas sería falso, y lo que
+      // impide el ciclo es otra cosa: los CONJUNTOS son disjuntos. Esta
+      // función sólo toca unidades VENDIDAS (las de la venta que se anula),
+      // mientras `crearVenta` y `darDeBajaUnidad` sólo tocan unidades LIBRES
+      // —sus dos `updateMany` llevan `ventaId: null, bajaEn: null` en el
+      // WHERE—, así que nunca hay una fila de `unidades_articulo` que dos de
+      // estos escritores se disputen en direcciones opuestas. Si algún día
+      // esta función pasara a tocar una unidad libre, o alguno de los otros
+      // dos a tocar una vendida, esa disjunción se cae y hay que igualar el
+      // orden de recursos de verdad.
+      //
+      // (El `orderBy` de acá lo resuelve Postgres, donde un `unidad_id` NULL
+      // ordena ÚLTIMO en un ASC, mientras el `sort` de `crearVenta` usa `?? ''`
+      // y lo pone primero. Esa diferencia no importa por lo mismo de arriba:
+      // el orden entre líneas del mismo artículo sólo decide el orden de los
+      // locks de unidad —y ésos no se disputan entre estos dos escritores—,
+      // porque el lock del artículo es la MISMA fila para todas ellas.)
       const movimientos = await tx.movimientoStock.findMany({
         where: { ventaId, motivo: 'VENTA' },
         orderBy: [{ articuloId: 'asc' }, { unidadId: 'asc' }],

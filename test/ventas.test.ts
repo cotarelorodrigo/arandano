@@ -1031,6 +1031,35 @@ describe('crearVenta con unidades identificadas (IMEI)', () => {
     expect((await leerUnidad(p1.id)).ventaId).toBe(venta.id)
   })
 
+  // Dos equipos del MISMO modelo en una sola venta, que es el carrito que
+  // `CANTIDAD_CON_SERIE` vuelve obligatorio (dos teléfonos son dos líneas) y
+  // el que produce la secuencia de locks `u1, A, u2, A` que el hallazgo I3
+  // desarmó. Después del arreglo son dos bucles —todas las unidades primero,
+  // todos los artículos después— y el resultado no cambia: las dos unidades
+  // salen, el stock baja dos, y quedan dos movimientos, uno por unidad.
+  it('dos unidades del mismo artículo en una venta: las dos salen y el stock baja dos', async () => {
+    const a = await crearArticuloConSerie('iPhone 13 x2', ['P3', 'P4'], '500000')
+    const [p3, p4] = await unidadesLibres(tenantId, a.id)
+
+    const venta = await crearVenta({
+      tenantId, usuarioId,
+      items: [
+        { articuloId: a.id, cantidad: d('1'), unidadId: p3.id },
+        { articuloId: a.id, cantidad: d('1'), unidadId: p4.id },
+      ],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000000'), cotizacion: d('1') }],
+    })
+
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('0')
+    expect(await unidadesLibres(tenantId, a.id)).toHaveLength(0)
+    expect((await leerUnidad(p3.id)).ventaId).toBe(venta.id)
+    expect((await leerUnidad(p4.id)).ventaId).toBe(venta.id)
+
+    const movs = (await movimientosDe(a.id)).filter((m) => m.motivo === 'VENTA')
+    expect(movs).toHaveLength(2)
+    expect(movs.map((m) => m.unidadId).sort()).toEqual([p3.id, p4.id].sort())
+  })
+
   it('un artículo con serie sin unidadId se rechaza', async () => {
     const a = await crearArticuloConSerie('iPhone 14', ['Q1'], '500000')
     await expect(
