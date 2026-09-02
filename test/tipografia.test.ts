@@ -397,3 +397,58 @@ describe('el CSS module de tipografía de /ventas declara de verdad lo que el TS
     expect(readFileSync(ruta, 'utf8')).toMatch(/from '\.\.?\/tipografia\.module\.css'/)
   })
 })
+
+describe('el CSS module del anillo declara de verdad lo que el TSX referencia', () => {
+  // Mismo agujero que los tres bloques de arriba, con una vuelta de tuerca
+  // propia: usaArchivo() (más arriba en este archivo) es un substring crudo
+  // sobre el TEXTO ENTERO del módulo, comentarios incluidos, y el docblock de
+  // anillo.module.css cita a propósito la forma inline que Ruling L rechazó
+  // (`font-[family-name:var(--font-archivo)]`) — esa cita SOLA ya contiene el
+  // substring `var(--font-archivo)`. Si alguien borrara la declaración real de
+  // `.valor { font-family: … }` mañana, usaArchivo() seguiría devolviendo
+  // `true` por el comentario, el módulo seguiría en `mapeados`, y ninguno de
+  // los tests de "la escala tipográfica y los módulos declaran lo mismo"
+  // notaría nada — exactamente el modo de falla "nadie se entera" que Ruling L
+  // existe para evitar, reproducido un nivel más arriba.
+  //
+  // Por eso el segundo caso de abajo NO mira el archivo entero como
+  // usaArchivo(): extrae sólo el CONTENIDO del bloque `.valor { … }` con una
+  // regex y recién ahí busca `font-family: var(--font-archivo)`. El docblock
+  // vive afuera de ese bloque, así que una declaración borrada de adentro no
+  // tiene dónde esconderse detrás del comentario que la explica.
+  const RUTA_CSS = 'components/anillo.module.css'
+  const RUTA_TSX = 'components/anillo.tsx'
+
+  it('declara el selector .valor', () => {
+    const css = readFileSync(RUTA_CSS, 'utf8')
+    expect(
+      css.includes('.valor {'),
+      `${RUTA_CSS} no declara .valor. ${RUTA_TSX} referencia estilos.valor — ` +
+        `pero vitest corre con css: false, así que un CSS module fabrica un ` +
+        `className para CUALQUIER propiedad, exista la clase o no. En el build ` +
+        `real esa clase sería undefined y el valor central del anillo se ` +
+        `quedaría sin Archivo, sin que ningún test lo note.`,
+    ).toBe(true)
+  })
+
+  it('el bloque .valor declara font-family con --font-archivo, no sólo lo nombra un comentario', () => {
+    const css = readFileSync(RUTA_CSS, 'utf8')
+    const bloque = css.match(/\.valor\s*\{([^}]*)\}/)?.[1] ?? ''
+    expect(
+      /font-family:\s*var\(--font-archivo\)/.test(bloque),
+      `${RUTA_CSS} no declara font-family: var(--font-archivo) DENTRO del ` +
+        `bloque .valor. El docblock de este módulo cita a propósito la forma ` +
+        `inline que Ruling L rechazó (font-[family-name:var(--font-archivo)]), ` +
+        `y esa cita sola ya contiene el substring var(--font-archivo) — así que ` +
+        `usaArchivo() (un substring crudo sobre el archivo entero, comentarios ` +
+        `incluidos) seguiría viendo este módulo como consumidor de Archivo aunque ` +
+        `la declaración real dentro de .valor desapareciera, sin que ningún otro ` +
+        `test lo note. Este caso lee sólo el contenido del bloque .valor y no se ` +
+        `deja engañar por el comentario.`,
+    ).toBe(true)
+  })
+
+  it(`${RUTA_TSX} referencia estilos.valor`, () => {
+    expect(readFileSync(RUTA_TSX, 'utf8')).toContain('estilos.valor')
+  })
+})
