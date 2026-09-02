@@ -1658,4 +1658,29 @@ describe('el costo se congela al cobrar', () => {
     expect(g.vendidoConCosto.toString()).toBe('1000')
     expect(g.total.toString()).toBe('1500')
   })
+
+  // Distingue "el ÚLTIMO ingreso con costo" de "cualquier ingreso con costo":
+  // acá hay DOS filas que califican (las dos tienen costo), con valores
+  // distintos, así que el resultado depende de verdad del `orderBy`. Los
+  // otros tres casos de este describe no lo hacen — en el primero sólo una
+  // fila califica, y en el cuarto las dos que califican valen lo mismo—, así
+  // que ninguno de ellos se daría cuenta si el desempate por `creadoEn`
+  // estuviera invertido o ausente.
+  it('con dos ingresos con costo, toma el del ingreso más reciente', async () => {
+    await ingresarStock({ tenantId, articuloId: remera, cantidad: d('10'),
+      usuarioId, costoUnitario: d('600') })
+    await ingresarStock({ tenantId, articuloId: remera, cantidad: d('10'),
+      usuarioId, costoUnitario: d('900') })
+
+    const venta = await crearVenta({
+      tenantId, usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS',
+        base: d('1000'), cotizacion: d('1') }],
+    })
+
+    const prisma = prismaParaTenant(tenantId)
+    const items = await prisma.ventaItem.findMany({ where: { ventaId: venta.id } })
+    expect(items[0].costoUnitario?.toString()).toBe('900')
+  })
 })

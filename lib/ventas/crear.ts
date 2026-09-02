@@ -211,17 +211,28 @@ export async function crearVenta(
       //
       // `distinct` sobre `articuloId` con `orderBy` descendente devuelve la fila más
       // reciente de cada artículo en UNA consulta, sin un query por ítem.
+      // `{ articuloId: 'asc' }` va primero porque `distinct` compila a
+      // `DISTINCT ON`, que exige que la clave líder del orden sea la misma que
+      // la del distinct.
+      //
+      // Desempate por `id` (`uuid(7)`, ordenable por tiempo): dos ingresos de
+      // la misma transacción —o de la misma corrida de un seed/import— pueden
+      // compartir `creadoEn` hasta el milisegundo, y sin el tercer campo
+      // `DISTINCT ON` elige entre ellos de forma arbitraria. Mismo desempate
+      // que la consulta del tile "Último costo" de
+      // app/(app)/inventario/[id]/page.tsx — el filtro acá es más estricto,
+      // porque además exige `motivo: 'INGRESO'`; hoy da lo mismo porque nada
+      // más escribe `costoUnitario`, pero no es la misma consulta.
       //
       // El filtro es `costoUnitario: { not: null }` y no "el ingreso más reciente":
-      // un ingreso cargado sin costo no borra lo que se sabía del anterior. Mismo
-      // criterio que el tile "Último costo" de app/(app)/inventario/[id]/page.tsx.
+      // un ingreso cargado sin costo no borra lo que se sabía del anterior.
       const ultimosCostos = await tx.movimientoStock.findMany({
         where: {
           articuloId: { in: items.map((i) => i.articuloId) },
           motivo: 'INGRESO',
           costoUnitario: { not: null },
         },
-        orderBy: [{ articuloId: 'asc' }, { creadoEn: 'desc' }],
+        orderBy: [{ articuloId: 'asc' }, { creadoEn: 'desc' }, { id: 'desc' }],
         distinct: ['articuloId'],
         select: { articuloId: true, costoUnitario: true },
       })
