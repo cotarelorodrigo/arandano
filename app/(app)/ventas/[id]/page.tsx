@@ -663,11 +663,14 @@ export function Detalle({
 
                   {/* En pesos — su propia celda, sólo escritorio (el
                       teléfono la muestra abajo, sólo si es un pago en
-                      dólares). `pesosEntregados()` de lib/ventas/totales.ts,
-                      la MISMA función con la que `componerPorMedio` arma
-                      "Cómo entró la plata" en /ventas — y no `montoEnPesos`,
-                      que multiplicaría dos veces un pago en pesos que cubre
-                      el total en dólares. */}
+                      dólares). `pesosEntregados()` de lib/ventas/totales.ts
+                      — y no `montoEnPesos`, que multiplicaría dos veces un
+                      pago en pesos que cubre el total en dólares. Desde el
+                      arreglo de "Cómo entró la plata" (Task 3 del ciclo del
+                      dashboard), `componerPorMedio` ya NO usa esta función
+                      —lee `Pago.monto` tal cual, sin cotización de por
+                      medio—, así que esta celda es hoy su único lector de
+                      producción. */}
                   <div role="cell" className={`${estilos.archivo} hidden text-right text-sm font-semibold text-foreground tabular-nums lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors`}>
                     <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{p.enPesosFormateado}</div>
                   </div>

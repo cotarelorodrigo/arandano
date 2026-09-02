@@ -16,7 +16,8 @@ import {
   lineasDeImporte, vendidoDeVenta, cobradoDePagos, cobradoDeGrupos, type LineaDeImporte,
 } from '@/lib/ventas/cobrado'
 import {
-  ROTULO_MEDIO, CONSUMIDOR_FINAL, monedaValida, type Medio, type MonedaElegida,
+  ROTULO_MEDIO, CONSUMIDOR_FINAL, monedaValida,
+  type Medio, type MonedaElegida, type ComposicionPorMoneda,
 } from '@/lib/ventas/medios'
 import { agregarPorTiempo, vistaValida, type Vista } from '@/lib/ventas/horarios'
 import {
@@ -244,6 +245,41 @@ export function rotuloDeMedios(pagos: { medio: Medio; moneda: 'ARS' | 'USD' }[])
   return [...conDolares.entries()]
     .map(([medio, usd]) => ROTULO_MEDIO[medio] + (usd ? ' · US$' : ''))
     .join(' + ')
+}
+
+/**
+ * La moneda que el panel "Cómo entró la plata" TERMINA mostrando — con
+ * fallback a la pila que sí tiene barras cuando la pedida está vacía EN ESTE
+ * PERÍODO.
+ *
+ * **Arreglo de Ruling H (review de Task 3).** Sin este fallback, un local
+ * que sólo cobró en dólares un día en que `?moneda` sigue en su default
+ * 'ars' —o un local que eligió US$ y navegó (Ruling G) a un período sin un
+ * solo pago en dólares— veía el panel entero: título, selector, nota al pie,
+ * y CERO barras. El gate que decide SI se dibuja el panel
+ * (`ars.barras.length > 0 || usd.barras.length > 0`, en el componente de
+ * página) sólo contesta esa pregunta; no dice CUÁL de las dos pilas mostrar,
+ * y las dos pueden contestarse distinto.
+ *
+ * Devuelve la MONEDA, no la pila, porque el llamador necesita las dos cosas
+ * por separado: la pila para `composicion` y la moneda —la efectiva, no la
+ * pedida— para la prop `moneda` de `GraficoDeMedios`, que es lo que decide
+ * qué opción del selector queda resaltada como activa y con qué formateador
+ * se leen los montos. Pasarle la pedida en vez de la efectiva dejaría el
+ * selector marcando una moneda con las barras mostrando la otra.
+ *
+ * **No es la que viaja en la URL.** `?moneda` (la pedida) sigue intacta para
+ * el resto de la navegación (Ruling G): este fallback es sólo para ESTE
+ * render, no una corrección de la preferencia — un local que eligió US$ y
+ * navega a un período sin dólares vuelve a ver US$ apenas entra a un período
+ * que sí los tenga.
+ */
+export function monedaEfectiva(
+  composicion: ComposicionPorMoneda, moneda: MonedaElegida,
+): MonedaElegida {
+  const pilaPedida = moneda === 'usd' ? composicion.usd : composicion.ars
+  if (pilaPedida.barras.length > 0) return moneda
+  return moneda === 'usd' ? 'ars' : 'usd'
 }
 
 /**
@@ -994,8 +1030,11 @@ export default async function Ventas({
   const cobradas = total - anuladas
   // La pila que el panel dibuja: nada se convierte entre las dos, así que la
   // pantalla no tiene un "total" único que ofrecer — sólo la mitad que
-  // `?moneda` eligió.
-  const composicionElegida = moneda === 'usd' ? composicion.usd : composicion.ars
+  // `?moneda` eligió, CON el fallback de `monedaEfectiva()` (ver su
+  // docblock, Ruling H de la review de Task 3) cuando esa mitad está vacía
+  // en este período.
+  const monedaMostrada = monedaEfectiva(composicion, moneda)
+  const composicionElegida = monedaMostrada === 'usd' ? composicion.usd : composicion.ars
 
   return (
     <>
@@ -1166,7 +1205,7 @@ export default async function Ventas({
             <GraficoDeMedios
               composicion={composicionElegida}
               hayDolares={composicion.hayDolares}
-              moneda={moneda}
+              moneda={monedaMostrada}
               hrefDeMoneda={hrefDeMoneda}
             />
           )}

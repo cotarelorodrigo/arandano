@@ -18,8 +18,11 @@ import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
-  rangoDeChip, chipActivo, pieDeCobradas, pieDeAnuladas, rotuloDeMedios, ventanaDePaginas, Listado, Tile,
+  rangoDeChip, chipActivo, pieDeCobradas, pieDeAnuladas, rotuloDeMedios, ventanaDePaginas, monedaEfectiva,
+  Listado, Tile,
 } from './page'
+import { GraficoDeMedios } from './grafico'
+import type { ComposicionPorMoneda } from '@/lib/ventas/medios'
 
 const HOY = '2026-08-21'
 
@@ -640,6 +643,84 @@ describe('la consulta del panel de horarios', () => {
     const sueltas = fuente.match(/u\.set\('moneda', moneda\)/g) ?? []
     expect(conGuarda).toHaveLength(3)
     expect(sueltas).toHaveLength(3)
+  })
+})
+
+// Ruling H de la review de Task 3: el gate que decide SI se dibuja el panel
+// (más abajo, "colgado de que HAYA barras en ALGUNA de las dos pilas") no
+// dice CUÁL de las dos pilas mostrar — y antes de este arreglo, un período
+// donde TODO entró en dólares con `?moneda` en su default 'ars' (o, al
+// revés, un `?moneda=usd` que Ruling G ahora preserva navegando a un
+// período sin dólares) le entregaba al componente la pila VACÍA: título,
+// selector, nota al pie, CERO barras. `monedaEfectiva()` es el fallback: cae
+// a la pila que sí tiene barras, sin tocar `?moneda` (la pedida, la que
+// preserva el resto de la navegación).
+describe('monedaEfectiva: el panel nunca se queda con la pila vacía', () => {
+  const href = (m: 'ars' | 'usd') => `/ventas?moneda=${m}`
+
+  const SOLO_USD: ComposicionPorMoneda = {
+    ars: { barras: [], total: '0' },
+    usd: { barras: [{ medio: 'EFECTIVO', monto: '445500' }], total: '445500' },
+    hayDolares: true,
+  }
+
+  const SOLO_ARS: ComposicionPorMoneda = {
+    ars: { barras: [{ medio: 'EFECTIVO', monto: '1000' }], total: '1000' },
+    usd: { barras: [], total: '0' },
+    hayDolares: false,
+  }
+
+  it('un período que sólo cobró en dólares cae a "usd" aunque `?moneda` siga en su default', () => {
+    expect(monedaEfectiva(SOLO_USD, 'ars')).toBe('usd')
+  })
+
+  it('un `?moneda=usd` preservado por Ruling G cae a "ars" en un período sin dólares', () => {
+    expect(monedaEfectiva(SOLO_ARS, 'usd')).toBe('ars')
+  })
+
+  it('si la pila pedida YA tiene barras, no cambia nada', () => {
+    expect(monedaEfectiva(SOLO_USD, 'usd')).toBe('usd')
+    expect(monedaEfectiva(SOLO_ARS, 'ars')).toBe('ars')
+  })
+
+  // Las dos aserciones que pidió la review — no sólo que el panel no esté
+  // vacío, sino QUÉ dibuja: las barras correctas Y la opción del selector
+  // marcada como activa. El caso que la review señaló como el hueco
+  // (grafico.test.tsx, "un medio que sólo cobró en dólares no aparece en la
+  // pila de pesos") sólo afirmaba ausencias; éstos afirman lo que tiene que
+  // estar presente — el mismo cableado que arma `page.tsx` (`monedaEfectiva`
+  // + `GraficoDeMedios`), no un fixture aparte.
+  it('con dólares solamente, el panel resuelto dibuja la barra en US$ y marca "US$" como activo', () => {
+    const moneda = monedaEfectiva(SOLO_USD, 'ars')
+    const composicion = moneda === 'usd' ? SOLO_USD.usd : SOLO_USD.ars
+    const html = renderToStaticMarkup(
+      <GraficoDeMedios
+        composicion={composicion} hayDolares={SOLO_USD.hayDolares} moneda={moneda} hrefDeMoneda={href}
+      />,
+    )
+    expect(html).toContain('Efectivo')
+    expect(html).toMatch(/US\$\s*445\.500,00/)
+    const links = html.match(/<a [^>]*>[^<]*<\/a>/g) ?? []
+    const linkUsd = links.find((l) => l.endsWith('>US$</a>'))
+    const linkArs = links.find((l) => l.endsWith('>$</a>'))
+    expect(linkUsd, `no se encontró el link de US$ en: ${html}`).toContain('aria-current="page"')
+    expect(linkArs, `no se encontró el link de $ en: ${html}`).not.toContain('aria-current')
+  })
+
+  it('con un `?moneda=usd` que este período no tiene, el panel resuelto dibuja la barra en pesos', () => {
+    const moneda = monedaEfectiva(SOLO_ARS, 'usd')
+    const composicion = moneda === 'usd' ? SOLO_ARS.usd : SOLO_ARS.ars
+    const html = renderToStaticMarkup(
+      <GraficoDeMedios
+        composicion={composicion} hayDolares={SOLO_ARS.hayDolares} moneda={moneda} hrefDeMoneda={href}
+      />,
+    )
+    expect(html).toContain('Efectivo')
+    expect(html).toContain('1.000,00')
+    // Sin dólares en el período, el selector no se dibuja: no hay opción que
+    // pueda quedar "marcada", ni falsamente en US$ ni en ningún otro lado —
+    // es el mismo criterio que ya prueba grafico.test.tsx para `hayDolares`.
+    expect(html).not.toContain('aria-current')
   })
 })
 
