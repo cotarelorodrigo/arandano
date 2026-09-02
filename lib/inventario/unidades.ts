@@ -134,10 +134,43 @@ export async function prenderSerie(entrada: {
             'tiene que ser un número entero de unidades, y no negativo',
         )
       }
-      if (!stock.equals(imeis.length)) {
+      // Las unidades libres que YA existen se CUENTAN y se REUSAN tal cual:
+      // el conteo que se exige es `stock === libres + imeis.length`, no
+      // `stock === imeis.length`.
+      //
+      // Cómo puede existir una unidad libre en un artículo cuyo switch está
+      // APAGADO, que es lo que suena imposible y es el agujero que esto
+      // tapa: `apagarSerie` sólo mira las LIBRES, y una unidad atada a una
+      // venta viva no lo es. Vendidas todas —libres 0, stock 0—, el switch se
+      // apaga sin protestar; si después el cliente devuelve el equipo y se
+      // anula la venta, `anularVenta` la devuelve a la vitrina (`ventaId =
+      // null`) y sube el stock. El artículo queda sin serie y con una unidad
+      // libre. Sin contarla acá, prender de nuevo con 1 IMEI tipeado pasaba
+      // el `stock (1) === imeis.length (1)` y CREABA una segunda fila: stock
+      // 1 con 2 unidades libres, la card de Unidades listando más filas que
+      // el tile "En stock", y el stock en −1 al vender las dos. Nada lo
+      // detectaba y no había forma de arreglarlo sin SQL.
+      //
+      // Se arregla ACÁ y no en `apagarSerie` —prohibiendo apagar mientras
+      // alguna unidad esté atada a una venta viva, que es lo más cercano al
+      // razonamiento del spec— porque una unidad vendida queda atada a su
+      // venta PARA SIEMPRE: esa regla dejaría el switch irreversible para
+      // todo local que haya vendido un solo teléfono, que es peor producto
+      // que el bug.
+      //
+      // Y se reusan en vez de pedir sus IMEI de nuevo: el sistema ya los
+      // tiene, así que volver a pedirlos sería inventarle trabajo al dueño
+      // para terminar con dos filas del mismo equipo.
+      const libresExistentes = await tx.unidadDeArticulo.count({
+        where: { articuloId, ventaId: null, bajaEn: null },
+      })
+      if (!stock.equals(libresExistentes + imeis.length)) {
         throw new ErrorDeInventario(
           'SERIE_CONTEO_NO_COINCIDE',
-          `hay ${stock} en stock y llegaron ${imeis.length} IMEI: tienen que ser los mismos`,
+          libresExistentes > 0
+            ? `hay ${stock} en stock y ${libresExistentes} equipos ya cargados de antes, así ` +
+              `que faltan ${stock.minus(libresExistentes)} IMEI y llegaron ${imeis.length}`
+            : `hay ${stock} en stock y llegaron ${imeis.length} IMEI: tienen que ser los mismos`,
         )
       }
 

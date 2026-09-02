@@ -14,6 +14,12 @@ let prenderSerie: typeof import('@/lib/inventario/unidades').prenderSerie
 let apagarSerie: typeof import('@/lib/inventario/unidades').apagarSerie
 let crearUnidadesEnTx: typeof import('@/lib/inventario/unidades').crearUnidadesEnTx
 let darDeBajaUnidad: typeof import('@/lib/inventario/stock').darDeBajaUnidad
+// El motor de ventas, para la secuencia del hallazgo C1 (vender → apagar →
+// anular → prender). Con nombre distinto del helper local `crearVenta` de más
+// abajo, que arma una fila de venta pelada a la que apuntar y no ejercita
+// ninguna regla.
+let crearVentaDelMotor: typeof import('@/lib/ventas/crear').crearVenta
+let anularVenta: typeof import('@/lib/ventas/anular').anularVenta
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -23,7 +29,11 @@ let usuarioId: string
 // Correlativo local para `numero`, que en la base real lo asigna
 // `proximoNumero` — acá se inserta directo por Prisma, así que hace falta un
 // valor único por venta a mano. Mismo patrón que test/schema-usd.test.ts.
-let siguienteNumero = 1
+// Arranca ALTO a propósito: desde que este archivo también crea ventas con el
+// motor real (la secuencia del hallazgo C1), `proximoNumero` reparte los
+// números desde 1 sobre el mismo tenant, y un correlativo local que arrancara
+// ahí chocaría contra `@@unique([tenantId, numero])`.
+let siguienteNumero = 1_000_000
 
 beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
@@ -31,6 +41,8 @@ beforeAll(async () => {
   ;({ normalizarImei, unidadesLibres, prenderSerie, apagarSerie, crearUnidadesEnTx } =
     await import('@/lib/inventario/unidades'))
   ;({ darDeBajaUnidad } = await import('@/lib/inventario/stock'))
+  ;({ crearVenta: crearVentaDelMotor } = await import('@/lib/ventas/crear'))
+  ;({ anularVenta } = await import('@/lib/ventas/anular'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -224,6 +236,69 @@ describe('prenderSerie', () => {
     await expect(
       prenderSerie({ tenantId, articuloId: s.id, imeis: [], usuarioId }),
     ).rejects.toThrow(expect.objectContaining({ codigo: 'SERVICIO_SIN_STOCK' }))
+  })
+
+  // Hallazgo C1 de la review de rama. La secuencia entera, con el motor real y
+  // no simulada, porque lo que la hace posible es cómo interactúan tres
+  // funciones distintas: `apagarSerie` sólo mira las unidades LIBRES, y una
+  // atada a una venta viva no lo es — así que vendido todo el stock el switch
+  // se puede apagar; después `anularVenta` devuelve esa unidad a la vitrina, y
+  // el artículo queda SIN serie y CON una unidad libre.
+  //
+  // Antes del arreglo, `prenderSerie` validaba `stock === imeis.length` sin
+  // contar lo que ya existía: tipear 1 IMEI pasaba el chequeo y creaba una
+  // SEGUNDA fila. Stock 1 con 2 unidades libres, la card listando dos filas
+  // contra un tile que dice una, y −1 de stock al venderlas.
+  async function vendidoApagadoYAnulado(nombre: string, imei: string) {
+    const a = await crearArticuloConSerie(nombre, [imei])
+    const [unidad] = await unidadesLibres(tenantId, a.id)
+    const venta = await crearVentaDelMotor({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: unidad.id }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+    })
+    // Con todo vendido no quedan libres, así que el switch se apaga.
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('0')
+    await apagarSerie({ tenantId, articuloId: a.id })
+
+    // El cliente devuelve el equipo: la unidad vuelve a la vitrina de un
+    // artículo que ya no lleva serie.
+    await anularVenta({ tenantId, ventaId: venta.id, usuarioId })
+    expect((await leerArticulo(a.id)).llevaSerie).toBe(false)
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('1')
+    expect(await unidadesLibres(tenantId, a.id)).toHaveLength(1)
+    return a
+  }
+
+  it('vender, apagar, anular y volver a prender REUSA la unidad en vez de duplicarla', async () => {
+    const a = await vendidoApagadoYAnulado('iPhone 13 devuelto', 'DEV1')
+
+    // La unidad libre que quedó se cuenta y se reusa: no hay ningún IMEI que
+    // volver a tipear, y prender no crea nada.
+    await prenderSerie({ tenantId, articuloId: a.id, imeis: [], usuarioId })
+
+    const libres = await unidadesLibres(tenantId, a.id)
+    expect(libres.map((u) => u.imei)).toEqual(['DEV1'])
+    expect((await leerArticulo(a.id)).llevaSerie).toBe(true)
+    // EL invariante del ciclo, dicho en un solo renglón.
+    expect((await leerArticulo(a.id)).stock.toString()).toBe(String(libres.length))
+  })
+
+  it('y si en ese estado se manda un IMEI de más, se rechaza sin crear nada', async () => {
+    const a = await vendidoApagadoYAnulado('iPhone 13 devuelto otro', 'DEV2')
+
+    // Un IMEI DISTINTO, a propósito: con el mismo lo atajaría el índice
+    // parcial y el test pasaría aunque el conteo estuviera mal. Éste sólo lo
+    // atrapa la cuenta de unidades libres.
+    await expect(
+      prenderSerie({ tenantId, articuloId: a.id, imeis: ['DEV2-BIS'], usuarioId }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'SERIE_CONTEO_NO_COINCIDE' }))
+
+    const libres = await unidadesLibres(tenantId, a.id)
+    expect(libres.map((u) => u.imei)).toEqual(['DEV2'])
+    expect((await leerArticulo(a.id)).stock.toString()).toBe(String(libres.length))
+    expect((await leerArticulo(a.id)).llevaSerie).toBe(false)
   })
 })
 
