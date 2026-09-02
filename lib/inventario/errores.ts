@@ -49,6 +49,20 @@ export type CodigoErrorDeInventario =
   // validarlo sería exactamente la carrera que el UPDATE relativo existe para
   // evitar.
   | 'FUERA_DE_RANGO'
+  // Los de unidades identificadas. Separados y no un `SERIE_INVALIDA` único
+  // porque cada uno se resuelve distinto: uno se arregla tipeando, otro
+  // yendo a la card de Unidades, otro es un artículo que no lleva serie.
+  | 'IMEI_VACIO'
+  | 'IMEI_REPETIDO'
+  | 'SERIE_REQUIERE_IMEIS'
+  | 'IMEIS_SIN_SERIE'
+  | 'SERIE_SIN_CONTEO'
+  | 'SERIE_YA_PRENDIDA'
+  | 'SERIE_CONTEO_NO_COINCIDE'
+  | 'SERIE_STOCK_NO_ENTERO'
+  | 'SERIE_CON_UNIDADES_LIBRES'
+  | 'UNIDAD_INEXISTENTE'
+  | 'UNIDAD_NO_DISPONIBLE'
 
 /**
  * Con código y no sólo con mensaje: la pantalla tiene que poder distinguir
