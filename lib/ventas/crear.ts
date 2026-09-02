@@ -92,7 +92,12 @@ export async function crearVenta(
   // Dos líneas nombrando la misma unidad es malformado sin necesidad de
   // consultar nada: no hace falta la base para saber que el mismo equipo no
   // puede salir dos veces en el mismo carrito.
-  const unidadesPedidas = items.flatMap((i) => (i.unidadId ? [i.unidadId] : []))
+  //
+  // `!== undefined` y no truthy: es la misma lectura que hace el guard de
+  // `a.llevaSerie` más abajo, y las dos tienen que leer el campo IGUAL — con
+  // truthy acá, un `unidadId: ''` se escapa de este chequeo y sin embargo
+  // cuenta como "presente" para esa otra validación.
+  const unidadesPedidas = items.flatMap((i) => (i.unidadId !== undefined ? [i.unidadId] : []))
   if (new Set(unidadesPedidas).size !== unidadesPedidas.length) {
     throw new ErrorDeVenta(
       'UNIDAD_REPETIDA',
@@ -359,20 +364,43 @@ export async function crearVenta(
       // la venta NO se reordenan: el ticket conserva el orden en que se
       // cargaron, y los `INSERT` de `venta_items` sólo toman locks compartidos
       // (`FOR KEY SHARE`), que no se bloquean entre sí.
+      // Ordenado por articuloId y, en el empate, por unidadId: con serie un
+      // carrito puede traer VARIAS líneas del MISMO artículo —CANTIDAD_CON_SERIE
+      // lo fuerza: dos equipos son dos líneas—, así que el empate en articuloId
+      // por sí solo dejaría el orden entre esas líneas librado al orden del
+      // carrito. El desempate por unidadId es lo que hace que el orden sea
+      // total de verdad y no dependa de en qué renglón se cargó cada equipo.
       const paraStock = lineas
         .filter((l) => l.esProducto)
-        .sort((a, b) => (a.articuloId < b.articuloId ? -1 : a.articuloId > b.articuloId ? 1 : 0))
+        .sort((a, b) => {
+          if (a.articuloId !== b.articuloId) return a.articuloId < b.articuloId ? -1 : 1
+          const ua = a.unidadId ?? ''
+          const ub = b.unidadId ?? ''
+          return ua < ub ? -1 : ua > ub ? 1 : 0
+        })
 
       for (const l of paraStock) {
         // La unidad se TOMA con un UPDATE condicional, no se lee y después se
-        // escribe. Dos cajas pueden leer "libre" a la vez —ninguna comiteó
-        // todavía—, así que un chequeo previo no cierra nada: lo que lo cierra
-        // es que el WHERE se evalúe en el momento de escribir. La segunda caja
-        // se lleva cero filas y su venta se rechaza entera.
+        // escribe — pero OJO con contra quién: dos `crearVenta` del MISMO
+        // tenant no son la amenaza. `proximoNumero`, más arriba, ya tomó el
+        // lock exclusivo de la fila del tenant y lo retiene hasta el commit,
+        // así que dos ventas de este negocio están serializadas ANTES de
+        // llegar acá — la segunda, bajo READ COMMITTED, ve el estado ya
+        // comiteado de la primera en cuanto reanuda.
         //
-        // `paraStock` ya viene ordenado por articuloId, y con serie hay una
-        // línea por unidad, así que los locks de unidad se toman en un orden
-        // derivado del mismo orden total que usa todo el motor.
+        // Lo que el UPDATE condicional defiende de verdad es un escritor que
+        // NO pasa por `proximoNumero` y por lo tanto no toma ese lock:
+        // `darDeBajaUnidad` (lib/inventario/stock.ts) hoy, y `anularVenta`
+        // liberando unidades en la próxima task. Frente a ésos sí puede pasar
+        // que las dos transacciones lean la misma unidad como libre sin que
+        // ninguna haya comiteado todavía, y ahí sólo cierra que el WHERE se
+        // evalúe en el momento de ESCRIBIR: la que pierde se lleva cero filas
+        // y su operación entera se rechaza.
+        //
+        // `paraStock` ya viene ordenado por articuloId con unidadId de
+        // desempate (arriba), y con serie hay una línea por unidad, así que
+        // los locks de unidad se toman en un orden derivado del mismo orden
+        // total que usa todo el motor.
         if (l.unidadId !== undefined) {
           const tomada = await tx.unidadDeArticulo.updateMany({
             where: {
@@ -385,17 +413,26 @@ export async function crearVenta(
           })
           if (tomada.count !== 1) {
             // Cero filas tiene dos causas que el mostrador vive distinto: la
-            // unidad no es de este artículo (o no existe), o ya salió. La
-            // consulta que las separa va acá y no antes: sólo corre en el
-            // camino excepcional.
+            // unidad no es de este artículo (o no existe), ya se vendió, o se
+            // dio de baja (rota, robada, a garantía). La consulta que las
+            // separa va acá y no antes: sólo corre en el camino excepcional.
+            // Trae `ventaId`/`bajaEn` a propósito — sin ellos, un equipo dado
+            // de baja diría "se acaba de vender" en el cartel del mostrador,
+            // que es simplemente falso: nadie lo vendió.
             const existe = await tx.unidadDeArticulo.findFirst({
               where: { id: l.unidadId, articuloId: l.articuloId },
-              select: { imei: true },
+              select: { imei: true, ventaId: true, bajaEn: true },
             })
             if (!existe) {
               throw new ErrorDeVenta(
                 'UNIDAD_INEXISTENTE',
                 'ese equipo no es de este artículo. Recargá la pantalla y elegí de nuevo.',
+              )
+            }
+            if (existe.bajaEn) {
+              throw new ErrorDeVenta(
+                'UNIDAD_NO_DISPONIBLE',
+                `El equipo ${existe.imei} se dio de baja y ya no está en stock. Elegí otro.`,
               )
             }
             throw new ErrorDeVenta(

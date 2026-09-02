@@ -15,6 +15,10 @@ let enTransaccionDeTenant: typeof import('@/lib/tenant/transaccion').enTransacci
 let crearVenta: typeof import('@/lib/ventas/crear').crearVenta
 let anularVenta: typeof import('@/lib/ventas/anular').anularVenta
 let ajustarStock: typeof import('@/lib/inventario/stock').ajustarStock
+// Para la carrera real de la Task 4: el otro escritor que toma una unidad sin
+// pasar por `proximoNumero` y por lo tanto sin el lock de tenant que serializa
+// dos `crearVenta` entre sí.
+let darDeBajaUnidad: typeof import('@/lib/inventario/stock').darDeBajaUnidad
 let buscarArticulosVendibles: typeof import('@/lib/ventas/buscar').buscarArticulosVendibles
 let prismaParaTenant: typeof import('@/lib/tenant/prisma').prismaParaTenant
 // Sólo para el test de `buscarArticulosVendibles` que necesita un artículo en
@@ -62,7 +66,7 @@ beforeAll(async () => {
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
   ;({ crearVenta } = await import('@/lib/ventas/crear'))
   ;({ anularVenta } = await import('@/lib/ventas/anular'))
-  ;({ ajustarStock } = await import('@/lib/inventario/stock'))
+  ;({ ajustarStock, darDeBajaUnidad } = await import('@/lib/inventario/stock'))
   ;({ buscarArticulosVendibles } = await import('@/lib/ventas/buscar'))
   ;({ prismaParaTenant } = await import('@/lib/tenant/prisma'))
   ;({ crearArticulo } = await import('@/lib/inventario/articulos'))
@@ -1016,20 +1020,37 @@ describe('crearVenta con unidades identificadas (IMEI)', () => {
     ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_REPETIDA' }))
   })
 
-  it('una unidad ya vendida se rechaza', async () => {
+  it('una unidad ya vendida se rechaza, y no deja nada a medias', async () => {
     const a = await crearArticuloConSerie('iPhone SE', ['W1'], '500000')
     const [w1] = await unidadesLibres(tenantId, a.id)
     const pagos = [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, base: d('500000'), cotizacion: d('1') }]
-    await crearVenta({ tenantId, usuarioId, items: [{ articuloId: a.id, cantidad: d('1'), unidadId: w1.id }], pagos })
+    const primera = await crearVenta({
+      tenantId, usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: w1.id }],
+      pagos,
+    })
     await expect(
       crearVenta({ tenantId, usuarioId, items: [{ articuloId: a.id, cantidad: d('1'), unidadId: w1.id }], pagos }),
     ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_NO_DISPONIBLE' }))
+
+    // El intento rechazado no tocó nada: la unidad sigue de la PRIMERA venta,
+    // no de la segunda, y el stock no volvió a bajar.
+    expect((await leerUnidad(w1.id)).ventaId).toBe(primera.id)
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('0')
   })
 
   it('DOS CAJAS vendiendo la misma unidad al mismo tiempo: una sola cobra', async () => {
-    // Es el caso que justifica el diseño del motor. Un `findFirst` previo lo
-    // dejaría en verde estando roto: las dos transacciones leen "libre" antes de
-    // que ninguna comitee. Lo que lo cierra es el UPDATE condicional.
+    // Este par NO ejercita el UPDATE condicional de la unidad: las dos
+    // `crearVenta` son del MISMO tenant, y `proximoNumero` —adentro de
+    // `crearVenta`, antes de tocar cualquier unidad— toma el lock exclusivo de
+    // la fila del tenant hasta el commit. La segunda transacción se queda
+    // esperando ahí, y cuando reanuda ve, bajo READ COMMITTED, el estado ya
+    // comiteado de la primera: aunque el `updateMany` de la unidad fuera un
+    // `findFirst` + `update` sin condición, este test seguiría en verde. Lo
+    // que sí verifica, y vale la pena verificar, es el RESULTADO: una sola
+    // venta gana, el stock baja una sola vez. El test que ejercita el
+    // mecanismo de verdad es el de abajo, contra `darDeBajaUnidad`, que no
+    // comparte ningún lock con `crearVenta`.
     const a = await crearArticuloConSerie('iPhone 13 Pro', ['X1'], '500000')
     const [x1] = await unidadesLibres(tenantId, a.id)
     const items = [{ articuloId: a.id, cantidad: d('1'), unidadId: x1.id }]
@@ -1044,6 +1065,47 @@ describe('crearVenta con unidades identificadas (IMEI)', () => {
     expect(resultados.filter((r) => r.status === 'rejected')).toHaveLength(1)
     // Y el stock bajó UNA sola vez.
     expect((await leerArticulo(a.id)).stock.toString()).toBe('0')
+  })
+
+  it('crearVenta contra darDeBajaUnidad sobre la misma unidad: gana una sola', async () => {
+    // ÉSTE es el caso que el UPDATE condicional defiende de verdad. A
+    // diferencia del par de arriba, `darDeBajaUnidad` no llama a
+    // `proximoNumero` ni toca la fila del tenant: no comparte ningún lock con
+    // `crearVenta`, así que las dos transacciones SÍ pueden llegar al
+    // `updateMany` de la unidad sin que ninguna haya comiteado todavía. Con un
+    // `findFirst` + `update` sin condición en el WHERE, este test sería
+    // flaky en el mejor caso y fallaría en el peor: la segunda transacción no
+    // tendría con qué rechazarse, y las dos operaciones completarían —una
+    // venta fantasma sobre un equipo dado de baja, o una baja que pisa una
+    // venta ya cobrada.
+    const a = await crearArticuloConSerie('iPhone 13 mini', ['Y1'], '500000')
+    const [y1] = await unidadesLibres(tenantId, a.id)
+    const items = [{ articuloId: a.id, cantidad: d('1'), unidadId: y1.id }]
+    const pagos = [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, base: d('500000'), cotizacion: d('1') }]
+
+    const [venta, baja] = await Promise.allSettled([
+      crearVenta({ tenantId, usuarioId, items, pagos }),
+      darDeBajaUnidad({ tenantId, unidadId: y1.id, usuarioId, nota: 'pantalla rota' }),
+    ])
+
+    // Gana uno solo, cualquiera de los dos.
+    const ganadores = [venta, baja].filter((r) => r.status === 'fulfilled')
+    expect(ganadores).toHaveLength(1)
+
+    const unidad = await leerUnidad(y1.id)
+    // El stock baja en los dos caminos (VENTA o AJUSTE por baja), así que
+    // termina en 0 gane quien gane — es lo que hace que el assert de abajo no
+    // tenga que ramificar sobre cuál ganó para juzgar el número.
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('0')
+    if (venta.status === 'fulfilled') {
+      expect(baja.status).toBe('rejected')
+      expect(unidad.ventaId).toBe(venta.value.id)
+      expect(unidad.bajaEn).toBeNull()
+    } else {
+      expect(baja.status).toBe('fulfilled')
+      expect(unidad.ventaId).toBeNull()
+      expect(unidad.bajaEn).not.toBeNull()
+    }
   })
 })
 
