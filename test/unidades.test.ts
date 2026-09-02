@@ -13,6 +13,7 @@ let unidadesLibres: typeof import('@/lib/inventario/unidades').unidadesLibres
 let prenderSerie: typeof import('@/lib/inventario/unidades').prenderSerie
 let apagarSerie: typeof import('@/lib/inventario/unidades').apagarSerie
 let crearUnidadesEnTx: typeof import('@/lib/inventario/unidades').crearUnidadesEnTx
+let darDeBajaUnidad: typeof import('@/lib/inventario/stock').darDeBajaUnidad
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -29,6 +30,7 @@ beforeAll(async () => {
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
   ;({ normalizarImei, unidadesLibres, prenderSerie, apagarSerie, crearUnidadesEnTx } =
     await import('@/lib/inventario/unidades'))
+  ;({ darDeBajaUnidad } = await import('@/lib/inventario/stock'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -56,6 +58,16 @@ async function crearArticulo(nombre: string, stock: string) {
   )
 }
 
+/** Un artículo que YA lleva serie, con una unidad libre por cada IMEI de la
+ *  lista. Pasa por el camino real (`prenderSerie`) en vez de armar las filas a
+ *  mano, así que además de servir de fixture ejercita que ese camino deja el
+ *  artículo en el estado que estos tests dan por sentado. */
+async function crearArticuloConSerie(nombre: string, imeis: string[]) {
+  const a = await crearArticulo(nombre, imeis.length.toString())
+  await prenderSerie({ tenantId, articuloId: a.id, imeis, usuarioId })
+  return a
+}
+
 /** Inserta un artículo SERVICIO, que no lleva stock ni unidades. */
 async function crearServicio(nombre: string) {
   return enTransaccionDeTenant(tenantId, (tx) =>
@@ -80,6 +92,13 @@ async function leerArticulo(articuloId: string) {
 async function contarMovimientos(articuloId: string) {
   return enTransaccionDeTenant(tenantId, (tx) =>
     tx.movimientoStock.count({ where: { articuloId } }),
+  )
+}
+
+/** Los movimientos de un artículo, tal como quedaron. */
+async function movimientosDe(articuloId: string) {
+  return enTransaccionDeTenant(tenantId, (tx) =>
+    tx.movimientoStock.findMany({ where: { articuloId } }),
   )
 }
 
@@ -258,5 +277,40 @@ describe('unidadesLibres', () => {
       crearUnidadesEnTx(tx, { tenantId, articuloId: a.id, imeis: ['I2'], usuarioId }),
     )
     expect((await unidadesLibres(tenantId, a.id)).map((u) => u.imei)).toEqual(['I1', 'I2'])
+  })
+})
+
+describe('darDeBajaUnidad', () => {
+  it('baja la unidad, descuenta el stock y deja su movimiento con la nota', async () => {
+    const a = await crearArticuloConSerie('iPhone 11', ['M1', 'M2'])
+    const [m1] = await unidadesLibres(tenantId, a.id)
+    await darDeBajaUnidad({ tenantId, unidadId: m1.id, usuarioId, nota: 'se rompió en el mostrador' })
+
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('1')
+    expect((await unidadesLibres(tenantId, a.id)).map((u) => u.imei)).toEqual(['M2'])
+
+    const movimientos = await movimientosDe(a.id)
+    const baja = movimientos.find((m) => m.unidadId === m1.id)
+    expect(baja?.motivo).toBe('AJUSTE')
+    expect(baja?.delta.toString()).toBe('-1')
+    expect(baja?.nota).toBe('se rompió en el mostrador')
+  })
+
+  it('dar de baja dos veces la misma unidad no descuenta dos veces', async () => {
+    // El doble click es más probable que la mala intención, y la condición
+    // viaja DENTRO del UPDATE: la segunda pasada no encuentra fila que mover.
+    const a = await crearArticuloConSerie('iPhone SE', ['N1'])
+    const [n1] = await unidadesLibres(tenantId, a.id)
+    await darDeBajaUnidad({ tenantId, unidadId: n1.id, usuarioId })
+    await expect(
+      darDeBajaUnidad({ tenantId, unidadId: n1.id, usuarioId }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_NO_DISPONIBLE' }))
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('0')
+  })
+
+  it('una unidad inexistente da UNIDAD_INEXISTENTE y no un 500', async () => {
+    await expect(
+      darDeBajaUnidad({ tenantId, unidadId: crypto.randomUUID(), usuarioId }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_INEXISTENTE' }))
   })
 })
