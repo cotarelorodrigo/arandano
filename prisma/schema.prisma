@@ -201,6 +201,7 @@ model Tenant {
   bot             BotDeWhatsapp?
   conversaciones  ConversacionBot[]
   mensajesBot     MensajeBot[]
+  unidades        UnidadDeArticulo[]
 
   @@map("tenants")
 }
@@ -245,17 +246,19 @@ model User {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  ventasHechas     Venta[]           @relation("VentasHechas")
-  ventasAnuladas   Venta[]           @relation("VentasAnuladas")
-  movimientos      MovimientoStock[]
-  sesiones         Session[]
-  cuentas          Account[]
-  ordenesRecibidas OrdenDeTrabajo[]  @relation("OrdenesRecibidas")
-  ordenesAnuladas  OrdenDeTrabajo[]  @relation("OrdenesAnuladas")
-  eventosOrden     EventoOrden[]
-  cajasAbiertas    Caja[]            @relation("CajasAbiertas")
-  cajasCerradas    Caja[]            @relation("CajasCerradas")
-  permisos         UsuarioPermiso[]
+  ventasHechas        Venta[]            @relation("VentasHechas")
+  ventasAnuladas      Venta[]            @relation("VentasAnuladas")
+  movimientos         MovimientoStock[]
+  sesiones            Session[]
+  cuentas             Account[]
+  ordenesRecibidas    OrdenDeTrabajo[]   @relation("OrdenesRecibidas")
+  ordenesAnuladas     OrdenDeTrabajo[]   @relation("OrdenesAnuladas")
+  eventosOrden        EventoOrden[]
+  cajasAbiertas       Caja[]             @relation("CajasAbiertas")
+  cajasCerradas       Caja[]             @relation("CajasCerradas")
+  permisos            UsuarioPermiso[]
+  unidadesIngresadas  UnidadDeArticulo[] @relation("UnidadesIngresadas")
+  unidadesDadasDeBaja UnidadDeArticulo[] @relation("UnidadesDadasDeBaja")
 
   // Por tenant y no global: la misma persona puede trabajar en dos negocios.
   @@unique([tenantId, email])
@@ -334,6 +337,15 @@ model Articulo {
   // se tipea en ese momento. El default cubre todo lo cargado antes de este
   // ciclo, que era pesos por no haber otra opción.
   moneda        Moneda       @default(ARS)
+  // Si este artículo se maneja por unidad física identificada (IMEI en
+  // celulares, número de serie en cualquier otro producto caro). Con `true`,
+  // el stock ES la cantidad de unidades libres y vender exige elegir una.
+  //
+  // El switch es del ARTÍCULO y no hay excepciones por unidad: un artículo con
+  // serie donde algunas unidades no tienen IMEI dejaría el stock con dos
+  // verdades ("dice 5 y hay 3 cargados") sin ninguna respuesta buena a qué
+  // significa el número.
+  llevaSerie    Boolean      @default(false) @map("lleva_serie")
   // Decimal(12,3) y no entero, aunque un local de celulares venda unidades:
   // CLAUDE.md ya tiene previsto gastronomía descontando insumos por receta, y
   // medio kilo de harina no es un entero. Cambiar el tipo después toca todas
@@ -359,10 +371,58 @@ model Articulo {
 
   movimientos MovimientoStock[]
   ventaItems  VentaItem[]
+  unidades    UnidadDeArticulo[]
 
   @@unique([tenantId, sku])
   @@index([tenantId, categoriaId])
   @@map("articulos")
+}
+
+/// Una unidad física del catálogo, con identidad propia.
+///
+/// Un nivel abajo del artículo: `Articulo` modela el MODELO ("iPhone 13 128
+/// GB") y esta tabla la unidad concreta que está en la vitrina. `imei` se llama
+/// así porque es el nombre del caso que la trajo; en cualquier otro rubro caro
+/// es el número de serie, y el modelo es el mismo.
+///
+/// **"Libre" es `ventaId IS NULL AND bajaEn IS NULL`.** Una unidad no se borra
+/// nunca: sale por una de las dos puertas y queda como historia — mismo
+/// criterio que `Articulo.desactivadoEn` y `Venta.anuladaEn`. Borrar la fila se
+/// llevaría la respuesta a "¿este equipo salió de acá?", que es justo la
+/// pregunta que llega con un reclamo de garantía meses después.
+model UnidadDeArticulo {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  articuloId     String    @map("articulo_id") @db.Uuid
+  imei           String
+  ingresadaEn    DateTime  @default(now()) @map("ingresada_en") @db.Timestamptz(3)
+  ingresadaPorId String    @map("ingresada_por_id") @db.Uuid
+  /// La venta que se la llevó. NULL mientras esté en la vitrina.
+  ventaId        String?   @map("venta_id") @db.Uuid
+  /// La otra puerta de salida: se robó, se rompió, fue a garantía, estaba mal
+  /// cargada. Con su nota, que es lo único que después explica el faltante.
+  bajaEn         DateTime? @map("baja_en") @db.Timestamptz(3)
+  bajaNota       String?   @map("baja_nota")
+  bajaPorId      String?   @map("baja_por_id") @db.Uuid
+  creadoEn       DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // Restrict, como movimientos_stock y venta_items: borrar un artículo no puede
+  // borrar la historia de sus unidades.
+  articulo     Articulo @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+  ingresadaPor User     @relation("UnidadesIngresadas", fields: [ingresadaPorId], references: [id], onDelete: Restrict)
+  bajaPor      User?    @relation("UnidadesDadasDeBaja", fields: [bajaPorId], references: [id], onDelete: Restrict)
+  venta        Venta?   @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+
+  movimientos MovimientoStock[]
+
+  // La unicidad REAL del IMEI no está acá: es un índice único PARCIAL —sólo
+  // entre las libres— que Prisma no sabe expresar y que vive en el SQL de la
+  // migración. Éstos son los de lectura: por artículo (la ficha lista sus
+  // unidades libres) y por imei (el escaneo del mostrador).
+  @@index([tenantId, articuloId])
+  @@index([tenantId, imei])
+  @@map("unidades_articulo")
 }
 
 // El árbol de categorías del local: dos niveles, el rubro arriba ("Celulares",
@@ -463,16 +523,25 @@ model MovimientoStock {
   motivo        MotivoMovimiento
   // Null en AJUSTE e INGRESO, que no vienen de una venta.
   ventaId       String?          @map("venta_id") @db.Uuid
+  // Cuál unidad movió este movimiento, cuando el artículo lleva serie. Es lo
+  // que deja que el historial diga qué IMEI entró y cuál salió, en vez de un
+  // `+1` anónimo.
+  //
+  // NO es la decisión abierta que CLAUDE.md tiene anotada sobre esta tabla:
+  // aquélla es sobre el ORIGEN del movimiento (venta / orden / comanda), ésta
+  // sobre su SUJETO. Ejes distintos.
+  unidadId      String?          @map("unidad_id") @db.Uuid
   usuarioId     String           @map("usuario_id") @db.Uuid
   nota          String?
   creadoEn      DateTime         @default(now()) @map("creado_en") @db.Timestamptz(3)
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   // Restrict y no Cascade: borrar un artículo no puede borrar la historia de lo
   // que se vendió. Si tiene movimientos, no se borra.
-  articulo Articulo @relation(fields: [articuloId], references: [id], onDelete: Restrict)
-  venta    Venta?   @relation(fields: [ventaId], references: [id], onDelete: Restrict)
-  usuario  User     @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  articulo Articulo          @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+  venta    Venta?            @relation(fields: [ventaId], references: [id], onDelete: Restrict)
+  unidad   UnidadDeArticulo? @relation(fields: [unidadId], references: [id], onDelete: Restrict)
+  usuario  User              @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, articuloId])
   @@index([tenantId, ventaId])
@@ -524,6 +593,7 @@ model Venta {
   items       VentaItem[]
   pagos       Pago[]
   movimientos MovimientoStock[]
+  unidades    UnidadDeArticulo[]
 
   @@unique([tenantId, numero])
   @@unique([tenantId, claveIdempotencia])
