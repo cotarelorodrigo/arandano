@@ -18,6 +18,13 @@ export type ArticuloVendible = {
   moneda: 'ARS' | 'USD'
   stock: string
   esProducto: boolean
+  // Presente sólo cuando la búsqueda entró por un IMEI exacto: es la unidad
+  // que el escaneo identificó, y es lo que le permite al carrito agregar la
+  // línea con la unidad ya elegida.
+  unidad?: { id: string; imei: string }
+  // Para que el carrito sepa que tiene que pedir una unidad cuando el
+  // artículo se agregó por nombre y no por escaneo.
+  llevaSerie: boolean
 }
 
 // Suficientes para elegir de un vistazo y pocas para que la lista no tape la
@@ -161,7 +168,34 @@ export async function buscarArticulosVendibles(
   const take = opciones.limite ?? RESULTADOS
   const SELECT = {
     id: true, sku: true, nombre: true, precio: true, moneda: true, stock: true, tipo: true,
+    llevaSerie: true,
   } as const
+
+  /** La conversión de una fila de `articulo` (con el `SELECT` de arriba) a lo
+   *  que necesita el punto de venta. Una sola función para las dos salidas
+   *  —el escaneo por IMEI y la búsqueda por texto— así que no hay dos
+   *  conversiones que puedan divergir. */
+  function aVendible(a: {
+    id: string
+    sku: string
+    nombre: string
+    precio: Prisma.Decimal
+    moneda: 'ARS' | 'USD'
+    stock: Prisma.Decimal
+    tipo: string
+    llevaSerie: boolean
+  }): ArticuloVendible {
+    return {
+      id: a.id,
+      sku: a.sku,
+      nombre: a.nombre,
+      precio: a.precio.toString(),
+      moneda: a.moneda,
+      stock: a.stock.toString(),
+      esProducto: a.tipo === 'PRODUCTO',
+      llevaSerie: a.llevaSerie,
+    }
+  }
 
   let articulos
   if (opciones.porPalabras) {
@@ -190,6 +224,31 @@ export async function buscarArticulosVendibles(
       })
     }
   } else {
+    // El IMEI, PRIMERO y por match EXACTO, y sólo en el camino del mostrador.
+    //
+    // Exacto y no `contains`, al revés que nombre y SKU: un IMEI son quince
+    // dígitos que se escanean enteros, así que un `contains` no mejora nada y
+    // en cambio haría que tipear "355" traiga media vitrina — además de no
+    // poder usar el índice. Y como el índice único parcial garantiza que no
+    // haya dos unidades LIBRES con el mismo IMEI, esto devuelve una o
+    // ninguna: nunca hay que desempatar.
+    //
+    // NO entra en la rama `porPalabras`, que es la que usa el bot: un cliente
+    // de WhatsApp no tiene por qué poder preguntar por un IMEI. La defensa es
+    // que no exista el camino, no que el prompt lo prohíba.
+    const unidad = await prisma.unidadDeArticulo.findFirst({
+      where: {
+        imei: busqueda,
+        ventaId: null,
+        bajaEn: null,
+        articulo: { desactivadoEn: null },
+      },
+      select: { id: true, imei: true, articulo: { select: SELECT } },
+    })
+    if (unidad) {
+      return [{ ...aVendible(unidad.articulo), unidad: { id: unidad.id, imei: unidad.imei } }]
+    }
+
     articulos = await prisma.articulo.findMany({
       where: {
         desactivadoEn: null,
@@ -204,13 +263,5 @@ export async function buscarArticulosVendibles(
     })
   }
 
-  return articulos.map((a) => ({
-    id: a.id,
-    sku: a.sku,
-    nombre: a.nombre,
-    precio: a.precio.toString(),
-    moneda: a.moneda,
-    stock: a.stock.toString(),
-    esProducto: a.tipo === 'PRODUCTO',
-  }))
+  return articulos.map(aVendible)
 }
