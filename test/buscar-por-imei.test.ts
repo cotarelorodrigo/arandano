@@ -12,6 +12,7 @@ let buscarArticulosVendibles: typeof import('@/lib/ventas/buscar').buscarArticul
 let enTransaccionDeTenant: typeof import('@/lib/tenant/transaccion').enTransaccionDeTenant
 let unidadesLibres: typeof import('@/lib/inventario/unidades').unidadesLibres
 let prenderSerie: typeof import('@/lib/inventario/unidades').prenderSerie
+let desactivarArticulo: typeof import('@/lib/inventario/articulos').desactivarArticulo
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -28,6 +29,7 @@ beforeAll(async () => {
   ;({ buscarArticulosVendibles } = await import('@/lib/ventas/buscar'))
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
   ;({ unidadesLibres, prenderSerie } = await import('@/lib/inventario/unidades'))
+  ;({ desactivarArticulo } = await import('@/lib/inventario/articulos'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -111,6 +113,18 @@ describe('buscarArticulosVendibles: búsqueda por IMEI', () => {
     const [u] = await unidadesLibres(tenantId, a.id)
     await marcarVendida(u!.id)
     expect(await buscarArticulosVendibles(tenantId, '111222333444555')).toHaveLength(0)
+  })
+
+  // Rider de Task 6: el `where` de la búsqueda por IMEI excluye
+  // `articulo: { desactivadoEn: null }`, pero eso nunca se probó. Sin este
+  // caso, un futuro cambio que borre esa condición pasaría en silencio y el
+  // mostrador podría agregar al carrito un artículo invendible — que el motor
+  // rechaza recién al cobrar, con ARTICULO_DESACTIVADO, con el cliente ya en
+  // la caja.
+  it('el IMEI de una unidad libre de un artículo DESACTIVADO no encuentra nada', async () => {
+    const a = await crearArticuloConSerie('iPhone 16', ['222333444555666'], '500000')
+    await desactivarArticulo({ tenantId, articuloId: a.id })
+    expect(await buscarArticulosVendibles(tenantId, '222333444555666')).toHaveLength(0)
   })
 
   it('buscar por nombre sigue funcionando y marca llevaSerie', async () => {
