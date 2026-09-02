@@ -115,6 +115,20 @@
   --marca-foreground: #FFFFFF;
   --marca-soft: #B6A6E8;
   --marca-dim: #9C8BD6;
+  /* La escala del anillo del dashboard: cinco gajos que van de --marca al más
+     claro. --marca es el primero y --primary el segundo, así que sólo hacen
+     falta tres escalones más. La maqueta los escribe literales, sin nombrarlos
+     con ninguna variable $ar-*, igual que ya pasaba con --marca-soft: son los
+     colores que más se repiten sin variable propia. */
+  --marca-2: #4A2AA5;
+  --marca-3: #7C5FD6;
+  --marca-4: #DCD3F2;
+  /* El verde del chip de delta SOBRE el paño de marca. No puede pagar --ok /
+     --ok-soft: sobre el violeta, el soft (casi blanco) desaparece y el --ok
+     (verde oscuro) no contrasta. No hay --marca-danger: la maqueta no dibuja
+     el chip a la baja sobre este paño, así que ése va sin color de signo en
+     vez de inventarle un rojo. */
+  --marca-ok: #C9F2DF;
   /* El halo del paño de login (persiana.module.css, nodo `E3Jah` del .pen):
      un violeta más claro que --marca que la maqueta no nombra con ningún
      token $ar-*, así que se aproxima mezclando los dos tokens de marca más

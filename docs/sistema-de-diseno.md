@@ -173,6 +173,10 @@ profundo. Ahora el token dice sobre qué va.
 | `--marca-foreground` | `#FFFFFF` |
 | `--marca-soft` | `#B6A6E8` |
 | `--marca-dim` | `#9C8BD6` |
+| `--marca-2` | `#4A2AA5` |
+| `--marca-3` | `#7C5FD6` |
+| `--marca-4` | `#DCD3F2` |
+| `--marca-ok` | `#C9F2DF` |
 | `--marca-halo` | `#6A4FB9` |
 | `--ok` | `#0F7048` |
 | `--ok-soft` | `#E1F3EA` |

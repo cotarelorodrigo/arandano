@@ -92,6 +92,15 @@ const SOLO_EN_CSS: Record<string, string> = {
     'como #B6A6E8 en los frames que lo usan, sin variable propia — es el color ' +
     'que más se repite sin variable y el candidato número uno a promoverse.',
   '--marca-dim': 'lo mismo que --marca-soft, un escalón más apagado (#9C8BD6).',
+  '--marca-2':
+    'la escala del anillo del dashboard. En la maqueta está escrito literal como ' +
+    '#4A2AA5 dentro de los gajos, sin variable propia — mismo caso que --marca-soft.',
+  '--marca-3': 'lo mismo, un escalón más claro (#7C5FD6).',
+  '--marca-4': 'lo mismo, el más claro de los cinco (#DCD3F2).',
+  '--marca-ok':
+    'el verde del chip de delta sobre el paño de marca (#C9F2DF, literal en el ' +
+    '.pen). No puede pagar --ok/--ok-soft: sobre el violeta uno desaparece y el ' +
+    'otro no contrasta.',
   '--marca-halo':
     'el halo del paño de login (persiana.module.css, nodo `E3Jah`). El .pen pinta ' +
     'ahí un violeta más claro que --marca sin nombrarlo con ningún token $ar-*, así ' +
