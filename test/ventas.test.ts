@@ -34,6 +34,10 @@ let totalDelPeriodo: typeof import('@/app/(app)/ventas/page').totalDelPeriodo
 // lib/dashboard/metricas.ts necesita esta misma función).
 let pagosDelPeriodo: typeof import('@/lib/ventas/cobrado').pagosDelPeriodo
 let metricasDelPeriodo: typeof import('@/lib/dashboard/metricas').metricasDelPeriodo
+// Task 9 del ciclo del dashboard: itemsDelPeriodo() es la otra mitad de la
+// regla I3 —anuladaEn: null— aplicada a un tercer módulo que consume el
+// mismo período.
+let itemsDelPeriodo: typeof import('@/lib/dashboard/composicion').itemsDelPeriodo
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -70,6 +74,7 @@ beforeAll(async () => {
   ;({ totalDelPeriodo } = await import('@/app/(app)/ventas/page'))
   ;({ pagosDelPeriodo } = await import('@/lib/ventas/cobrado'))
   ;({ metricasDelPeriodo } = await import('@/lib/dashboard/metricas'))
+  ;({ itemsDelPeriodo } = await import('@/lib/dashboard/composicion'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -1448,6 +1453,59 @@ describe('metricasDelPeriodo (lib/dashboard/metricas.ts)', () => {
     expect(m.ticket?.toString()).toBe('1000')
     expect(m.margen?.monto.toString()).toBe('400')
     expect(m.margen?.porcentaje.toFixed(1)).toBe('40.0')
+  })
+})
+
+// Task 9 del ciclo del dashboard: itemsDelPeriodo() es la materia prima del
+// anillo de categorías y del top de artículos, y `anuladaEn: null` es la
+// regla que ese módulo entero existe para proteger (ver su docblock en
+// lib/dashboard/composicion.ts). Mismo patrón que metricasDelPeriodo arriba:
+// un tenant propio, dos ventas del MISMO artículo con cantidades bien
+// distintas, una anulada, para que una fuga del filtro sea imposible de no
+// notar.
+describe('itemsDelPeriodo (lib/dashboard/composicion.ts)', () => {
+  it('no cuenta las unidades de la venta anulada', async () => {
+    const propioId = await crearTenant(owner, `dashboard-items-${Date.now()}`)
+    const u = await owner.query(
+      `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Vendedor', $2, 'EMPLEADO', now(), now())
+       RETURNING id`,
+      [propioId, `v-${Date.now()}@dashboard-items.test`],
+    )
+    const propioUsuarioId = u.rows[0].id
+    const art = await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'ITM-1', 'Ítem del período', 'PRODUCTO', 1000.00, 20, now(), now())
+       RETURNING id`,
+      [propioId],
+    )
+    const articuloId = art.rows[0].id
+
+    const prisma = prismaParaTenant(propioId)
+    const periodo = { desde: '2000-01-01', hasta: '2999-12-31' }
+
+    // La que sobrevive: 2 unidades.
+    await crearVenta({
+      tenantId: propioId,
+      usuarioId: propioUsuarioId,
+      items: [{ articuloId, cantidad: d('2') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: d('2000'), cotizacion: d('1') }],
+    })
+    // La que se anula: 7 unidades — bien distinta de las 2 que sobreviven,
+    // para que una fuga del filtro sea imposible de no notar en el total.
+    const { id: idAAnular } = await crearVenta({
+      tenantId: propioId,
+      usuarioId: propioUsuarioId,
+      items: [{ articuloId, cantidad: d('7') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: d('7000'), cotizacion: d('1') }],
+    })
+    await anularVenta({ tenantId: propioId, ventaId: idAAnular, usuarioId: propioUsuarioId })
+
+    const filas = await itemsDelPeriodo(prisma, periodo)
+
+    expect(filas).toHaveLength(1)
+    expect(filas[0].articuloId).toBe(articuloId)
+    expect(filas[0]._sum.cantidad?.toString()).toBe('2')
   })
 })
 
