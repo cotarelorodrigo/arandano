@@ -29,7 +29,11 @@ let desactivarPlan: typeof import('@/lib/planes/administrar').desactivarPlan
 // el arnés de base efímera que la puede ejercitar de verdad — page.test.tsx
 // (colocado con la pantalla) sólo prueba funciones que no tocan la base.
 let totalDelPeriodo: typeof import('@/app/(app)/ventas/page').totalDelPeriodo
-let pagosDelPeriodo: typeof import('@/app/(app)/ventas/page').pagosDelPeriodo
+// De lib/ventas/cobrado.ts (movida desde la página en la Task 7 del ciclo
+// del dashboard: un módulo de lib/ no puede importar de app/, y
+// lib/dashboard/metricas.ts necesita esta misma función).
+let pagosDelPeriodo: typeof import('@/lib/ventas/cobrado').pagosDelPeriodo
+let metricasDelPeriodo: typeof import('@/lib/dashboard/metricas').metricasDelPeriodo
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -63,7 +67,9 @@ beforeAll(async () => {
   ;({ prismaParaTenant } = await import('@/lib/tenant/prisma'))
   ;({ crearArticulo } = await import('@/lib/inventario/articulos'))
   ;({ crearPlan, desactivarPlan } = await import('@/lib/planes/administrar'))
-  ;({ totalDelPeriodo, pagosDelPeriodo } = await import('@/app/(app)/ventas/page'))
+  ;({ totalDelPeriodo } = await import('@/app/(app)/ventas/page'))
+  ;({ pagosDelPeriodo } = await import('@/lib/ventas/cobrado'))
+  ;({ metricasDelPeriodo } = await import('@/lib/dashboard/metricas'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -1342,7 +1348,7 @@ describe('totalDelPeriodo (app/(app)/ventas/page.tsx)', () => {
 //
 // Mismo patrón de antes/después que los tres casos de arriba: el tenant es
 // compartido por todo el archivo, así que lo único estable es el DELTA.
-describe('pagosDelPeriodo (app/(app)/ventas/page.tsx)', () => {
+describe('pagosDelPeriodo (lib/ventas/cobrado.ts)', () => {
   const donde = { creadoEn: { gte: new Date('2000-01-01T00:00:00Z'), lt: new Date('2999-01-01T00:00:00Z') } }
 
   const cobradoArs = (filas: { moneda: string; monto: Prisma.Decimal; _count: number }[]) =>
@@ -1377,6 +1383,72 @@ describe('pagosDelPeriodo (app/(app)/ventas/page.tsx)', () => {
     // Si el filtro de anulación se cayera, el primero valdría 1200.
     expect(cobradoDespues.minus(cobradoAntes).toString()).toBe('500')
     expect(devueltoDespues.minus(devueltoAntes).toString()).toBe('700')
+  })
+})
+
+// Task 7 del ciclo del dashboard: las cuatro métricas de metricasDelPeriodo()
+// tienen que excluir la venta anulada — es el mismo hallazgo I3 de siempre,
+// aplicado a un módulo nuevo. Un tenant PROPIO y no el compartido del resto de
+// este archivo: la mediana es un estadístico de orden, no una suma, así que un
+// antes/después por delta (el patrón del resto de este archivo) no alcanza
+// para probarla contra un tenant que otros tests ya poblaron con ventas de
+// montos arbitrarios — el valor exacto de la mediana depende de TODA la lista,
+// no sólo de lo que este test agrega. Con un tenant chico y controlado, las
+// cinco cifras (cobrado, cobradas, ticket, mediana, margen) tienen un valor
+// esperado exacto.
+describe('metricasDelPeriodo (lib/dashboard/metricas.ts)', () => {
+  it('no cuenta la venta anulada en NINGUNA de las cuatro métricas', async () => {
+    const propioId = await crearTenant(owner, `dashboard-${Date.now()}`)
+    const u = await owner.query(
+      `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Vendedor', $2, 'EMPLEADO', now(), now())
+       RETURNING id`,
+      [propioId, `v-${Date.now()}@dashboard.test`],
+    )
+    const propioUsuarioId = u.rows[0].id
+    const art = await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'MET-1', 'Métrica', 'PRODUCTO', 1000.00, 10, now(), now())
+       RETURNING id`,
+      [propioId],
+    )
+    const articuloId = art.rows[0].id
+    await ingresarStock({
+      tenantId: propioId, articuloId, cantidad: d('10'),
+      usuarioId: propioUsuarioId, costoUnitario: d('600'),
+    })
+
+    const prisma = prismaParaTenant(propioId)
+    const periodo = { desde: '2000-01-01', hasta: '2999-12-31' }
+
+    // La que sobrevive: 1 unidad a $1000, costo $600 → margen $400 = 40 %.
+    await crearVenta({
+      tenantId: propioId,
+      usuarioId: propioUsuarioId,
+      items: [{ articuloId, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: d('1000'), cotizacion: d('1') }],
+    })
+    // La que se anula: 3 unidades = $3000, costo $1800 — bien distinta de la
+    // que sobrevive, para que una fuga en CUALQUIERA de las cuatro métricas
+    // (cobrado, cantidad, ticket/mediana, margen) mueva el número de forma
+    // notoria y no se pierda en el redondeo.
+    const { id: idAAnular } = await crearVenta({
+      tenantId: propioId,
+      usuarioId: propioUsuarioId,
+      items: [{ articuloId, cantidad: d('3') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: d('3000'), cotizacion: d('1') }],
+    })
+    await anularVenta({ tenantId: propioId, ventaId: idAAnular, usuarioId: propioUsuarioId })
+
+    const m = await metricasDelPeriodo(prisma, periodo)
+
+    expect(m.cobradas).toBe(1)
+    expect(m.cobrado.ars.toString()).toBe('1000')
+    expect(m.cobrado.usd.toString()).toBe('0')
+    expect(m.ticket?.toString()).toBe('1000')
+    expect(m.mediana?.toString()).toBe('1000')
+    expect(m.margen?.monto.toString()).toBe('400')
+    expect(m.margen?.porcentaje.toFixed(1)).toBe('40.0')
   })
 })
 

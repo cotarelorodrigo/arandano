@@ -1,9 +1,20 @@
 import { Prisma } from '@/generated/prisma/client'
 import type { Moneda } from '@/generated/prisma/client'
 import { formatearPrecio, formatearDolares } from '@/lib/formato/mostrar'
+import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { redondearDinero, type Totales } from './totales'
 
+// Re-exportado: lib/dashboard/metricas.ts (Task 7) importa `Totales` desde
+// acá junto con `cobradoDeGrupos` y `pagosDelPeriodo` — las tres cosas que
+// arman "Cobrado" viven en el mismo módulo, así que no hace falta un segundo
+// import a './totales' sólo para el tipo.
+export type { Totales }
+
 type Decimal = Prisma.Decimal
+
+/** El mismo `where` de rango que arman /ventas y el dashboard: el filtro de
+ *  fechas, sin el resto de las condiciones de cada pantalla. */
+type FiltroDePeriodo = { creadoEn: { gte: Date; lt: Date } }
 
 /**
  * Un renglón de plata de las pantallas de venta: el importe ya formateado y,
@@ -61,6 +72,55 @@ export function cobradoDeGrupos(
       ? { ars: acc.ars, usd: acc.usd.add(suma) }
       : { ars: acc.ars.add(suma), usd: acc.usd }
   }, CERO())
+}
+
+/**
+ * Los pagos del período agrupados por moneda e importe, de un lado o del otro
+ * de la anulación.
+ *
+ * Es la fuente de las dos cifras de "Cobrado" del tile: la del período
+ * (`anuladas = false`) y la devuelta (`anuladas = true`).
+ *
+ * **Exportada y parametrizada a propósito, y no reusando el `groupBy` que ya
+ * alimenta "Cómo entró la plata"**, que selecciona exactamente las mismas
+ * filas del lado de las no anuladas. Ese `groupBy` está inline en el
+ * componente de página —un Server Component `async` que abre sesión—, así que
+ * ningún test lo puede llamar, y su `anuladaEn: null` quedaría tan
+ * desprotegido como el que el hallazgo I3 de la review del rediseño mostró que
+ * se podía borrar dejando 785 tests en verde. La regla "una venta anulada no
+ * es plata que entró" tiene que vivir donde la base efímera la pueda
+ * ejercitar; es el mismo motivo por el que `totalDelPeriodo` se extrajo.
+ *
+ * Las dos consultas no pueden desacordar con el panel: la suma de `monto` por
+ * moneda es idéntica se agrupe por `['moneda','monto']` o por
+ * `['medio','moneda','cotizacion','monto']` —agrupar por más columnas refina
+ * los grupos, no cambia la suma— y la cláusula `where` es la misma.
+ *
+ * `monto` va en la CLAVE con `_count`, y no en un `_sum`, por lo mismo que ya
+ * documenta `FilaDePagos` en lib/ventas/composicion.ts: es lo que mantiene el
+ * redondeo POR PAGO. Con `_sum` el tile y el panel se separaban por centavos
+ * en la misma pantalla.
+ *
+ * `groupBy` y no `$queryRaw`: la extensión de lib/tenant/prisma.ts intercepta
+ * operaciones de MODELO, y un raw sin el `set_config('arandano.tenant_id')`
+ * devuelve cero filas EN SILENCIO.
+ *
+ * **Movida acá desde app/(app)/ventas/page.tsx (Task 7 del ciclo del
+ * dashboard)**: un módulo de `lib/` no puede importar de `app/`, y
+ * `lib/dashboard/metricas.ts` necesita esta misma función para no abrir un
+ * segundo `groupBy` con el mismo `anuladaEn: null` — exactamente la
+ * duplicación que este docblock ya advertía.
+ */
+export function pagosDelPeriodo(
+  prisma: ReturnType<typeof prismaParaTenant>,
+  donde: FiltroDePeriodo,
+  anuladas: boolean,
+) {
+  return prisma.pago.groupBy({
+    by: ['moneda', 'monto'],
+    where: { venta: { ...donde, anuladaEn: anuladas ? { not: null } : null } },
+    _count: true,
+  })
 }
 
 /** Si dos magnitudes coinciden en las DOS monedas. */

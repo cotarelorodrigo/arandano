@@ -13,7 +13,8 @@ import { formatearPrecio, formatearHora, formatearCantidad } from '@/lib/formato
 import { componerPorMedio } from '@/lib/ventas/composicion'
 import { redondearDinero } from '@/lib/ventas/totales'
 import {
-  lineasDeImporte, vendidoDeVenta, cobradoDePagos, cobradoDeGrupos, type LineaDeImporte,
+  lineasDeImporte, vendidoDeVenta, cobradoDePagos, cobradoDeGrupos, pagosDelPeriodo,
+  type LineaDeImporte,
 } from '@/lib/ventas/cobrado'
 import {
   ROTULO_MEDIO, CONSUMIDOR_FINAL, monedaValida,
@@ -92,8 +93,9 @@ type FiltroDePeriodo = { creadoEn: { gte: Date; lt: Date } }
  * Suma `total`, `recargo` y `totalUsd` porque el llamador arma con los tres la
  * magnitud "Vendido" del tile (`total`/`totalUsd`, la mercadería a precio de
  * lista) y el argumento `recargo` de `hayQueDesglosar`. **Lo COBRADO no sale
- * de acá**: sale de `pagosDelPeriodo`, más abajo, porque la plata que entró se
- * apila por la moneda de cada pago y esta tabla no la conoce.
+ * de acá**: sale de `pagosDelPeriodo` (`@/lib/ventas/cobrado`), porque la
+ * plata que entró se apila por la moneda de cada pago y esta tabla no la
+ * conoce.
  */
 export function totalDelPeriodo(
   prisma: ReturnType<typeof prismaParaTenant>,
@@ -106,54 +108,12 @@ export function totalDelPeriodo(
 }
 
 /**
- * Los pagos del período agrupados por moneda e importe, de un lado o del otro
- * de la anulación.
- *
- * Es la fuente de las dos cifras de "Cobrado" del tile: la del período
- * (`anuladas = false`) y la devuelta (`anuladas = true`).
- *
- * **Exportada y parametrizada a propósito, y no reusando el `groupBy` que ya
- * alimenta "Cómo entró la plata"**, que selecciona exactamente las mismas
- * filas del lado de las no anuladas. Ese `groupBy` está inline en el
- * componente de página —un Server Component `async` que abre sesión—, así que
- * ningún test lo puede llamar, y su `anuladaEn: null` quedaría tan
- * desprotegido como el que el hallazgo I3 de la review del rediseño mostró que
- * se podía borrar dejando 785 tests en verde. La regla "una venta anulada no
- * es plata que entró" tiene que vivir donde la base efímera la pueda
- * ejercitar; es el mismo motivo por el que `totalDelPeriodo` se extrajo.
- *
- * Las dos consultas no pueden desacordar con el panel: la suma de `monto` por
- * moneda es idéntica se agrupe por `['moneda','monto']` o por
- * `['medio','moneda','cotizacion','monto']` —agrupar por más columnas refina
- * los grupos, no cambia la suma— y la cláusula `where` es la misma.
- *
- * `monto` va en la CLAVE con `_count`, y no en un `_sum`, por lo mismo que ya
- * documenta `FilaDePagos` en lib/ventas/composicion.ts: es lo que mantiene el
- * redondeo POR PAGO. Con `_sum` el tile y el panel se separaban por centavos
- * en la misma pantalla.
- *
- * `groupBy` y no `$queryRaw`: la extensión de lib/tenant/prisma.ts intercepta
- * operaciones de MODELO, y un raw sin el `set_config('arandano.tenant_id')`
- * devuelve cero filas EN SILENCIO.
- */
-export function pagosDelPeriodo(
-  prisma: ReturnType<typeof prismaParaTenant>,
-  donde: FiltroDePeriodo,
-  anuladas: boolean,
-) {
-  return prisma.pago.groupBy({
-    by: ['moneda', 'monto'],
-    where: { venta: { ...donde, anuladaEn: anuladas ? { not: null } : null } },
-    _count: true,
-  })
-}
-
-/**
  * El pie del tile "Ventas cobradas": el promedio por venta cobrada.
  *
  * `cobradoArs` es lo COBRADO EN PESOS —`Σ Pago.monto` de los pagos en pesos,
  * el mismo número que arma `cobradoPeriodo.ars` para el tile de al lado
- * (`pagosDelPeriodo`, más arriba)— y no la mercadería ni `total + recargo`:
+ * (`pagosDelPeriodo`, `@/lib/ventas/cobrado`)— y no la mercadería ni `total +
+ * recargo`:
  * las dos plata de la misma pantalla tienen que contestar la misma pregunta
  * ("cuánta plata entró"), y desde que un pago en pesos puede cubrir el total
  * en dólares, `total + recargo` dejó de ser esa respuesta.
@@ -199,8 +159,8 @@ export function pieDeCobradas(
 /**
  * El pie del tile "Anuladas": lo DEVUELTO, no el total del período de al
  * lado — dos números independientes, cada uno su propia llamada a
- * `pagosDelPeriodo` (más arriba) con `anuladas` en `false`/`true`: el tile de
- * al lado suma los pagos de las ventas NO anuladas, éste los de las SÍ
+ * `pagosDelPeriodo` (`@/lib/ventas/cobrado`) con `anuladas` en `false`/`true`:
+ * el tile de al lado suma los pagos de las ventas NO anuladas, éste los de las SÍ
  * anuladas. Mezclarlos sería el mismo bug que ya evita `crearVenta` al no
  * reutilizar sumas.
  *
