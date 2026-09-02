@@ -316,6 +316,19 @@ export type ItemVendido = {
  * ítem: se agrupan los IMEI de la venta por `articuloId` y se consumen de a
  * uno por línea de ese artículo, en el orden en que Prisma los devuelva.
  *
+ * **El emparejamiento es FIFO por orden de inserción cuando hay más de una
+ * línea del mismo artículo** (`cola.shift()`, más abajo): la primera línea de
+ * ese artículo en `items` se lleva el primer IMEI de la lista de esa venta, la
+ * segunda el segundo, y así — sin ordenar por nada más. Es una asignación
+ * arbitraria y ESO es lo que la hace segura: como las dos líneas ya son
+ * idénticas (mismo `articuloId`, misma descripción, mismo precio congelados),
+ * cualquier IMEI que le toque a cualquiera de las dos describe la venta
+ * igual de bien. Si algún día una línea con serie dejara de ser
+ * indistinguible de otra del mismo artículo —por ejemplo, si el ciclo del
+ * costo por unidad le sumara un precio propio a la unidad—, este supuesto
+ * dejaría de valer y haría falta volver a `VentaItem.unidadId` (la opción que
+ * el spec descartó acá arriba).
+ *
  * Un artículo sin ninguna unidad en esta venta —la inmensa mayoría— no
  * aparece en el resultado.
  */
@@ -330,6 +343,9 @@ export function imeisPorItem(
   const resultado = new Map<string, string>()
   for (const item of items) {
     const cola = porArticulo.get(item.articuloId)
+    // FIFO: la primera línea de este artículo se lleva el primer IMEI que
+    // quedó en la cola. Ver el docblock de la función para por qué el orden
+    // no importa.
     const imei = cola?.shift()
     if (imei) resultado.set(item.id, imei)
   }

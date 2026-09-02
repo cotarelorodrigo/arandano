@@ -2258,6 +2258,19 @@ Y del producto:
   sigue rigiendo "un tenant por local" por omisión, y una unidad no lleva
   sucursal.
 
+  **Los disparadores para reconsiderar las dos aditivas, cada uno concreto y
+  no una fecha:**
+
+  - **Costo por unidad**: que a un dueño le moleste que dos iPhones del mismo
+    modelo, comprados a precios distintos, midan su margen contra el mismo
+    número — hoy el tile "Último costo" de la ficha compara contra el
+    ingreso con costo más reciente, sin distinguir de cuál unidad concreta
+    salió ese costo.
+  - **Precio por unidad**: que el local empiece a vender usados en serio,
+    donde el estado de cada equipo —la pantalla rayada, la batería gastada—
+    mueve el precio y el mismo número de lista deja de alcanzar para las dos
+    unidades del mismo modelo.
+
   **La unicidad del IMEI es un índice único PARCIAL**, sólo entre las unidades
   LIBRES (`WHERE venta_id IS NULL AND baja_en IS NULL`) — Prisma no sabe
   expresarlo, así que vive escrito a mano en la migración, mismo mecanismo que
