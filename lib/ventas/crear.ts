@@ -14,7 +14,18 @@ import {
 import { exigirCliente, exigirUsuario } from './pertenencia'
 import { ErrorDeVenta, traducirErrorDeBase } from './errores'
 
-export type ItemDeVenta = { articuloId: string; cantidad: Prisma.Decimal }
+export type ItemDeVenta = {
+  articuloId: string
+  cantidad: Prisma.Decimal
+  /**
+   * Qué unidad física sale, cuando el artículo se maneja por IMEI. Obligatorio
+   * ahí y prohibido en el resto: un artículo sin serie que venga con unidadId
+   * se RECHAZA en vez de ignorarse, por lo mismo que `ARTICULO_DESACTIVADO`
+   * está separado de `ARTICULO_INEXISTENTE` — ignorar en silencio borra la
+   * distinción que hace falta para diagnosticar.
+   */
+  unidadId?: string
+}
 export type PagoDeVenta = {
   medio: MedioPago
   moneda: Moneda
@@ -77,6 +88,16 @@ export async function crearVenta(
         `la cantidad de ${i.articuloId} tiene a lo sumo ${ESCALA_CANTIDAD} decimales`,
       )
     }
+  }
+  // Dos líneas nombrando la misma unidad es malformado sin necesidad de
+  // consultar nada: no hace falta la base para saber que el mismo equipo no
+  // puede salir dos veces en el mismo carrito.
+  const unidadesPedidas = items.flatMap((i) => (i.unidadId ? [i.unidadId] : []))
+  if (new Set(unidadesPedidas).size !== unidadesPedidas.length) {
+    throw new ErrorDeVenta(
+      'UNIDAD_REPETIDA',
+      'el mismo equipo está dos veces en el carrito',
+    )
   }
   // Normalizado ACÁ, una sola vez: `cubre` ausente vale `ARS`, que es lo que
   // era toda venta antes de este ciclo, y de acá en más ningún otro lugar de
@@ -226,6 +247,25 @@ export async function crearVenta(
             `${a.nombre} está desactivado y no se puede vender`,
           )
         }
+        if (a.llevaSerie) {
+          if (i.unidadId === undefined) {
+            throw new ErrorDeVenta(
+              'UNIDAD_REQUERIDA',
+              `${a.nombre} se vende por unidad: elegí cuál equipo sale`,
+            )
+          }
+          if (!i.cantidad.equals(1)) {
+            throw new ErrorDeVenta(
+              'CANTIDAD_CON_SERIE',
+              `${a.nombre} se vende de a una unidad: dos equipos son dos líneas`,
+            )
+          }
+        } else if (i.unidadId !== undefined) {
+          throw new ErrorDeVenta(
+            'UNIDAD_NO_CORRESPONDE',
+            `${a.nombre} no se maneja por IMEI`,
+          )
+        }
         return {
           articuloId: a.id,
           descripcion: a.nombre,
@@ -233,6 +273,7 @@ export async function crearVenta(
           precioUnitario: a.precio,
           moneda: a.moneda,
           esProducto: a.tipo === 'PRODUCTO',
+          unidadId: i.unidadId,
         }
       })
 
@@ -323,10 +364,52 @@ export async function crearVenta(
         .sort((a, b) => (a.articuloId < b.articuloId ? -1 : a.articuloId > b.articuloId ? 1 : 0))
 
       for (const l of paraStock) {
+        // La unidad se TOMA con un UPDATE condicional, no se lee y después se
+        // escribe. Dos cajas pueden leer "libre" a la vez —ninguna comiteó
+        // todavía—, así que un chequeo previo no cierra nada: lo que lo cierra
+        // es que el WHERE se evalúe en el momento de escribir. La segunda caja
+        // se lleva cero filas y su venta se rechaza entera.
+        //
+        // `paraStock` ya viene ordenado por articuloId, y con serie hay una
+        // línea por unidad, así que los locks de unidad se toman en un orden
+        // derivado del mismo orden total que usa todo el motor.
+        if (l.unidadId !== undefined) {
+          const tomada = await tx.unidadDeArticulo.updateMany({
+            where: {
+              id: l.unidadId,
+              articuloId: l.articuloId,
+              ventaId: null,
+              bajaEn: null,
+            },
+            data: { ventaId: venta.id },
+          })
+          if (tomada.count !== 1) {
+            // Cero filas tiene dos causas que el mostrador vive distinto: la
+            // unidad no es de este artículo (o no existe), o ya salió. La
+            // consulta que las separa va acá y no antes: sólo corre en el
+            // camino excepcional.
+            const existe = await tx.unidadDeArticulo.findFirst({
+              where: { id: l.unidadId, articuloId: l.articuloId },
+              select: { imei: true },
+            })
+            if (!existe) {
+              throw new ErrorDeVenta(
+                'UNIDAD_INEXISTENTE',
+                'ese equipo no es de este artículo. Recargá la pantalla y elegí de nuevo.',
+              )
+            }
+            throw new ErrorDeVenta(
+              'UNIDAD_NO_DISPONIBLE',
+              `El equipo ${existe.imei} se acaba de vender. Elegí otro.`,
+            )
+          }
+        }
+
         await tx.movimientoStock.create({
           data: {
             tenantId,
             articuloId: l.articuloId,
+            unidadId: l.unidadId,
             delta: l.cantidad.negated(),
             motivo: 'VENTA',
             ventaId: venta.id,

@@ -21,6 +21,11 @@ let prismaParaTenant: typeof import('@/lib/tenant/prisma').prismaParaTenant
 // dólares: el resto del archivo sigue dando de alta artículos con SQL crudo
 // contra `owner` (ver el `beforeAll`), y así se queda.
 let crearArticulo: typeof import('@/lib/inventario/articulos').crearArticulo
+// Para el escenario de unidades por IMEI: la misma razón de import dinámico
+// que el resto — `lib/inventario/unidades.ts` arrastra `enTransaccionDeTenant`
+// y con él `lib/db.ts`.
+let unidadesLibres: typeof import('@/lib/inventario/unidades').unidadesLibres
+let prenderSerie: typeof import('@/lib/inventario/unidades').prenderSerie
 let crearPlan: typeof import('@/lib/planes/administrar').crearPlan
 let desactivarPlan: typeof import('@/lib/planes/administrar').desactivarPlan
 // De app/(app)/ventas/page.tsx, no de lib/: es la regla de negocio que arma
@@ -61,6 +66,7 @@ beforeAll(async () => {
   ;({ buscarArticulosVendibles } = await import('@/lib/ventas/buscar'))
   ;({ prismaParaTenant } = await import('@/lib/tenant/prisma'))
   ;({ crearArticulo } = await import('@/lib/inventario/articulos'))
+  ;({ unidadesLibres, prenderSerie } = await import('@/lib/inventario/unidades'))
   ;({ crearPlan, desactivarPlan } = await import('@/lib/planes/administrar'))
   ;({ totalDelPeriodo, pagosDelPeriodo } = await import('@/app/(app)/ventas/page'))
 
@@ -885,6 +891,159 @@ describe('cobrar con un plan de pago', () => {
     expect(venta.pagos[0].plan).not.toBeNull()
     expect(venta.pagos[0].plan?.nombre).toBe('Crédito 18 cuotas')
     expect(venta.pagos[0].plan?.cuotas).toBe(18)
+  })
+})
+
+describe('crearVenta con unidades identificadas (IMEI)', () => {
+  // `crearArticulo` de lib/inventario/articulos.ts pide tenantId/usuarioId y
+  // no sirve para armar un artículo sin serie de una línea, así que este
+  // describe se hace el suyo propio, con firma posicional — mismo patrón que
+  // el describe de dólares de arriba, que también sombrea el `crearArticulo`
+  // importado en vez de reusarlo.
+  async function crearArticulo(nombre: string, stock: string, precio: string) {
+    return enTransaccionDeTenant(tenantId, (tx) =>
+      tx.articulo.create({
+        data: {
+          tenantId,
+          sku: `SKU-${crypto.randomUUID()}`,
+          nombre,
+          tipo: 'PRODUCTO',
+          precio: d(precio),
+          stock: d(stock),
+        },
+      }),
+    )
+  }
+
+  /** Un artículo que YA lleva serie, con una unidad libre por cada IMEI de la
+   *  lista. Pasa por el camino real (`prenderSerie`) y no por SQL a mano: así
+   *  además de fixture confirma que ese camino deja el artículo en el estado
+   *  que estos tests dan por sentado. */
+  async function crearArticuloConSerie(nombre: string, imeis: string[], precio: string) {
+    const a = await crearArticulo(nombre, imeis.length.toString(), precio)
+    await prenderSerie({ tenantId, articuloId: a.id, imeis, usuarioId })
+    return a
+  }
+
+  async function leerArticulo(articuloId: string) {
+    return enTransaccionDeTenant(tenantId, (tx) =>
+      tx.articulo.findUniqueOrThrow({ where: { id: articuloId } }),
+    )
+  }
+
+  async function leerUnidad(unidadId: string) {
+    return enTransaccionDeTenant(tenantId, (tx) =>
+      tx.unidadDeArticulo.findUniqueOrThrow({ where: { id: unidadId } }),
+    )
+  }
+
+  it('vender un artículo con serie descuenta el stock y marca la unidad', async () => {
+    const a = await crearArticuloConSerie('iPhone 13', ['P1', 'P2'], '500000')
+    const [p1] = await unidadesLibres(tenantId, a.id)
+
+    const venta = await crearVenta({
+      tenantId, usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: p1.id }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+    })
+
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('1')
+    expect((await unidadesLibres(tenantId, a.id)).map((u) => u.imei)).toEqual(['P2'])
+    expect((await leerUnidad(p1.id)).ventaId).toBe(venta.id)
+  })
+
+  it('un artículo con serie sin unidadId se rechaza', async () => {
+    const a = await crearArticuloConSerie('iPhone 14', ['Q1'], '500000')
+    await expect(
+      crearVenta({
+        tenantId, usuarioId,
+        items: [{ articuloId: a.id, cantidad: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_REQUERIDA' }))
+  })
+
+  it('un artículo con serie con cantidad 2 se rechaza: dos equipos son dos líneas', async () => {
+    const a = await crearArticuloConSerie('iPhone 15', ['R1', 'R2'], '500000')
+    const [r1] = await unidadesLibres(tenantId, a.id)
+    await expect(
+      crearVenta({
+        tenantId, usuarioId,
+        items: [{ articuloId: a.id, cantidad: d('2'), unidadId: r1.id }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'CANTIDAD_CON_SERIE' }))
+  })
+
+  it('un artículo SIN serie con unidadId se rechaza, no se ignora', async () => {
+    const conSerie = await crearArticuloConSerie('iPhone 12', ['S1'], '500000')
+    const [s1] = await unidadesLibres(tenantId, conSerie.id)
+    const sinSerie = await crearArticulo('Funda', '10', '10000')
+    await expect(
+      crearVenta({
+        tenantId, usuarioId,
+        items: [{ articuloId: sinSerie.id, cantidad: d('1'), unidadId: s1.id }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('10000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_NO_CORRESPONDE' }))
+  })
+
+  it('una unidad de OTRO artículo se rechaza', async () => {
+    const a = await crearArticuloConSerie('iPhone 11', ['T1'], '500000')
+    const b = await crearArticuloConSerie('iPhone X', ['U1'], '400000')
+    const [u1] = await unidadesLibres(tenantId, b.id)
+    await expect(
+      crearVenta({
+        tenantId, usuarioId,
+        items: [{ articuloId: a.id, cantidad: d('1'), unidadId: u1.id }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_INEXISTENTE' }))
+  })
+
+  it('la misma unidad dos veces en el mismo carrito se rechaza', async () => {
+    const a = await crearArticuloConSerie('iPhone XR', ['V1'], '500000')
+    const [v1] = await unidadesLibres(tenantId, a.id)
+    await expect(
+      crearVenta({
+        tenantId, usuarioId,
+        items: [
+          { articuloId: a.id, cantidad: d('1'), unidadId: v1.id },
+          { articuloId: a.id, cantidad: d('1'), unidadId: v1.id },
+        ],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_REPETIDA' }))
+  })
+
+  it('una unidad ya vendida se rechaza', async () => {
+    const a = await crearArticuloConSerie('iPhone SE', ['W1'], '500000')
+    const [w1] = await unidadesLibres(tenantId, a.id)
+    const pagos = [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, base: d('500000'), cotizacion: d('1') }]
+    await crearVenta({ tenantId, usuarioId, items: [{ articuloId: a.id, cantidad: d('1'), unidadId: w1.id }], pagos })
+    await expect(
+      crearVenta({ tenantId, usuarioId, items: [{ articuloId: a.id, cantidad: d('1'), unidadId: w1.id }], pagos }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_NO_DISPONIBLE' }))
+  })
+
+  it('DOS CAJAS vendiendo la misma unidad al mismo tiempo: una sola cobra', async () => {
+    // Es el caso que justifica el diseño del motor. Un `findFirst` previo lo
+    // dejaría en verde estando roto: las dos transacciones leen "libre" antes de
+    // que ninguna comitee. Lo que lo cierra es el UPDATE condicional.
+    const a = await crearArticuloConSerie('iPhone 13 Pro', ['X1'], '500000')
+    const [x1] = await unidadesLibres(tenantId, a.id)
+    const items = [{ articuloId: a.id, cantidad: d('1'), unidadId: x1.id }]
+    const pagos = [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, base: d('500000'), cotizacion: d('1') }]
+
+    const resultados = await Promise.allSettled([
+      crearVenta({ tenantId, usuarioId, items, pagos }),
+      crearVenta({ tenantId, usuarioId, items, pagos }),
+    ])
+
+    expect(resultados.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
+    expect(resultados.filter((r) => r.status === 'rejected')).toHaveLength(1)
+    // Y el stock bajó UNA sola vez.
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('0')
   })
 })
 
