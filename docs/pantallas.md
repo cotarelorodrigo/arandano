@@ -1880,6 +1880,8 @@ largo, sino el mismo tramo calendario (a mitad de agosto, "comparado con
 julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
 `periodoAnterior` en `lib/dashboard/rango.ts`.
 
+**Acciones**: `exportarVentas`.
+
 **Qué se puede hacer**
 
 - Elegir el rango con el segmentado (`?rango`, sin JavaScript) y ver, en
@@ -1897,6 +1899,11 @@ julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
 - Ver **"Margen"**, sólo si la sesión tiene el permiso `COSTOS` — el mismo que
   ya protege el costo y el margen en `/inventario/[id]`.
 - Entrar a `/vender` desde el botón del Topbar (o la ranura del teléfono).
+- Bajar un CSV con las ventas del período elegido (`?rango`) desde "Exportar
+  CSV" —el Topbar en escritorio, un ícono de 38 px en el teléfono—: número,
+  fecha, hora, cliente, medios, vendido y cobrado por separado en cada moneda,
+  recargo y estado. Una fila por venta, sin límite —ni de página ni del
+  período: exporta lo que `?rango` esté mostrando, no un recorte—.
 
 **Decisiones**
 
@@ -1938,10 +1945,38 @@ julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
   período tuvo pagos en las dos monedas) es de esos paneles, no de esta
   pantalla: los cuatro tiles de acá no necesitan elegir moneda porque el tile
   de marca ya resuelve la suya solo (ver "Este tile invierte", arriba).
-- **"Exportar CSV" está en el Topbar y en la ranura del teléfono, sin
-  funcionalidad todavía.** Es la Task 12 del ciclo, que reemplaza este botón
-  (y su ranura) por `BotonDeExportar` en las dos copias, con la acción
-  `exportarVentas` detrás.
+- **"Exportar CSV" no lleva costo ni margen, aunque quien lo baje tenga el
+  permiso `COSTOS`.** Un CSV sale del sistema y sigue circulando —se manda
+  por mail, queda en una carpeta compartida—; el alcance de este ciclo es el
+  dashboard, no un reporte de rentabilidad. Es una decisión de PRODUCTO, no
+  una limitación técnica: `exportar-accion.ts` ni siquiera consulta
+  `costoUnitario`.
+- **`exportarVentas` vive en `app/(app)/dashboard/exportar-accion.ts`, no en
+  `acciones.ts`, y es la única pantalla del repo con esta forma.**
+  `acciones.ts` no lleva `'use server'` de módulo: `filaCsv`/`ENCABEZADO_CSV`
+  tienen que ser exports SUELTOS para poder testearse (`acciones.test.ts`), y
+  un archivo `'use server'` de módulo sólo puede exportar funciones async
+  (`test/use-server.test.ts`). Separar el archivo entero —no sólo el
+  directive— es lo que además mantiene a `acciones.ts` afuera del alcance de
+  `test/limite-cliente-servidor.test.ts`: sin `'use server'` de módulo,
+  `exportar-accion.ts` es la frontera que ese test necesita para no cruzar de
+  largo hasta `lib/tenant/prisma.ts` siguiendo el import que `exportarVentas`
+  necesita. Mismo patrón que `lib/clientes/rotulos.ts`, invertido: allá se
+  sacó la función PURA para que un Client Component la importara sin
+  arrastrar el módulo que la rodeaba; acá se saca la función IMPURA para que
+  el módulo puro pueda exportar de más sin romper el contrato de
+  `'use server'`.
+- **"Exportar CSV" existe en dos copias —el Topbar de escritorio y la
+  ranura de 38 px del teléfono (`controlMovil`, no `accionMovil`: es un
+  control que no navega)— y las dos llaman al mismo `BotonDeExportar`**
+  (`app/(app)/dashboard/exportar.tsx`), con `children` como una FUNCIÓN de
+  `exportando` en vez de un nodo fijo: el Topbar quiere texto
+  ("Exportar CSV" → "Exportando…"), la ranura de 38 px sólo tiene lugar para
+  un ícono (que pasa a un spinner) más un `sr-only` con el mismo texto —el
+  ícono solo no tiene nombre accesible—. `page.test.tsx` cuenta las DOS
+  apariciones en las DOS direcciones, mismo criterio que ya fija
+  `test/permisos-en-las-dos-copias.test.ts` para el resto de las pantallas
+  con un control duplicado.
 
 <!-- pantallas:fin -->
 

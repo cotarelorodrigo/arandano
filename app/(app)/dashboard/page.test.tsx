@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Tile, ChipDeDelta, SegmentadoDeRango, monedaEfectiva } from './page'
 import { SelectorDeMoneda } from './paneles'
@@ -107,5 +108,41 @@ describe('monedaEfectiva: los paneles nunca se quedan con la pila vacía', () =>
     const linkUsd = links.find((l) => l.endsWith('>US$</a>'))
     expect(linkArs, `no se encontró el link de $ en: ${html}`).toContain('aria-current="page"')
     expect(linkUsd, `no se encontró el link de US$ en: ${html}`).not.toContain('aria-current')
+  })
+})
+
+// Task 12: "Exportar CSV" existe en DOS copias —el Topbar de escritorio
+// (`acciones`) y la ranura de 38 px del teléfono (`controlMovil`)—, mismo
+// patrón que ya documenta test/permisos-en-las-dos-copias.test.ts para otras
+// pantallas. `Dashboard` (el default export) es un Server Component `async`
+// que abre sesión y consulta Prisma, así que no se puede montar acá — el
+// caso mira el FUENTE, como ya hacen los de /inventario y /formas-de-pago en
+// ese archivo.
+//
+// Se cuenta en las DOS direcciones a propósito (Ruling de esta task): un
+// `toContain` solo pasaría igual con una sola copia presente. Verificado a
+// mano, borrando cada copia por separado, que los tres casos de abajo se
+// ponen en rojo (ver task-12-report.md).
+describe('/dashboard: "Exportar CSV" existe dos veces —Topbar y ranura del teléfono— con el mismo rango', () => {
+  const FUENTE = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+
+  it('BotonDeExportar aparece exactamente dos veces', () => {
+    expect([...FUENTE.matchAll(/<BotonDeExportar\b/g)]).toHaveLength(2)
+  })
+
+  it('una copia vive dentro de `acciones` (Topbar) y la otra dentro de `controlMovil` (teléfono)', () => {
+    const accionesInicio = FUENTE.indexOf('acciones={')
+    const controlMovilInicio = FUENTE.indexOf('controlMovil={')
+    expect(accionesInicio, 'no se encontró el atributo acciones').toBeGreaterThan(-1)
+    expect(controlMovilInicio, 'no se encontró el atributo controlMovil').toBeGreaterThan(-1)
+    expect(FUENTE.slice(accionesInicio, controlMovilInicio)).toContain('<BotonDeExportar')
+    expect(FUENTE.slice(controlMovilInicio)).toContain('<BotonDeExportar')
+  })
+
+  // Las dos copias tienen que exportar el MISMO período, no uno cada una: es
+  // exactamente la clase de divergencia silenciosa que ya rompió "Anular
+  // orden" en el merge del ciclo móvil (CLAUDE.md).
+  it('las dos reciben rango={rango}', () => {
+    expect([...FUENTE.matchAll(/<BotonDeExportar rango=\{rango\}/g)]).toHaveLength(2)
   })
 })

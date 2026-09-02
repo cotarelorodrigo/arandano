@@ -1,11 +1,13 @@
 import Link from 'next/link'
-import { GitCompareArrows, ShoppingCart, TrendingDown, TrendingUp } from 'lucide-react'
+import {
+  Download, GitCompareArrows, Loader2, ShoppingCart, TrendingDown, TrendingUp,
+} from 'lucide-react'
 import { Prisma } from '@/generated/prisma/client'
-import { Encabezado } from '@/components/shell/encabezado'
+import { Encabezado, CLASES_RANURA_MOVIL } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { puedeConSesion } from '@/lib/permisos/guarda'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { formatearPrecio, formatearDolares, formatearCantidad } from '@/lib/formato/mostrar'
 import { hoyEnArgentina } from '@/lib/formato/fechas'
 import {
@@ -23,6 +25,7 @@ import { monedaValida, type MonedaElegida } from '@/lib/ventas/medios'
 import {
   VentasPorDia, AnilloDeMedios, VentasPorCategoria, TopDeArticulos, SelectorDeMoneda,
 } from './paneles'
+import { BotonDeExportar } from './exportar'
 import estilos from './tipografia.module.css'
 
 export const dynamic = 'force-dynamic'
@@ -433,13 +436,16 @@ export default async function Dashboard({
         }`}
         acciones={
           <>
-            {/* Sin funcionalidad todavía: la baja real llega en la Task 12
-                del ciclo ("Exportar CSV"), que reemplaza este botón por
-                `BotonDeExportar`. Éste sólo deja el lugar y el estilo que la
-                maqueta pide. */}
-            <Button variant="outline" size="sm">
-              Exportar CSV
-            </Button>
+            {/* Wireado en la Task 12 ("Exportar CSV"): `buttonVariants` y no
+                el `<Button>` de shadcn directo, porque `BotonDeExportar` es
+                un `<button>` pelado —no puede envolver a `Button` sin perder
+                el control del contenido que `children(exportando)` necesita
+                (el mismo componente sirve a esta copia y a la del teléfono,
+                ver su docblock en ./exportar.tsx)—, así que recibe la MISMA
+                clase que `Button` calcularía para "outline"/"sm". */}
+            <BotonDeExportar rango={rango} className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+              {(exportando) => (exportando ? 'Exportando…' : 'Exportar CSV')}
+            </BotonDeExportar>
             <Button asChild size="sm">
               <Link href="/vender">
                 <ShoppingCart aria-hidden="true" />
@@ -448,15 +454,30 @@ export default async function Dashboard({
             </Button>
           </>
         }
-        /* SIN accionMovil (Important 2 de la review de esta task):
-           `Encabezado` documenta esa ranura como SIEMPRE una navegación real
-           a un href, nunca un control que no navega — un `href="#"` sin
-           destino de verdad consumía la única entrada de historial del
-           Topbar del teléfono sin bajar ningún archivo, dejando el próximo
-           Atrás sin efecto visible. Vuelve en la Task 12, con
-           `BotonDeExportar` en `controlMovil` (que sí puede ser un control
-           sin navegación) en vez de acá. Hasta entonces el teléfono no
-           pierde nada que esta pantalla ya ofreciera. */
+        // La ranura del teléfono (Task 12): `controlMovil` y no `accionMovil`
+        // —`Encabezado` documenta esa ranura como SIEMPRE una navegación real
+        // a un href, y un `href="#"` sin destino de verdad (lo que Task 10
+        // dejó afuera a propósito) consumía la única entrada de historial del
+        // Topbar del teléfono sin bajar ningún archivo—. `CLASES_RANURA_MOVIL`
+        // es la misma caja de 38×38 que ya usa `accionMovil`: sin ella, esta
+        // copia quedaría de un tamaño distinto al resto de las ranuras del
+        // teléfono. El texto "Exportando…"/"Exportar CSV" viaja como
+        // `sr-only` —el ícono solo no tiene nombre accesible— en vez de
+        // reemplazar al ícono, que desbordaría los 38 px de la caja.
+        controlMovil={
+          <BotonDeExportar rango={rango} className={`${CLASES_RANURA_MOVIL} bg-muted text-foreground`}>
+            {(exportando) => (
+              <>
+                {exportando ? (
+                  <Loader2 aria-hidden="true" className="size-[19px] animate-spin" />
+                ) : (
+                  <Download aria-hidden="true" className="size-[19px]" />
+                )}
+                <span className="sr-only">{exportando ? 'Exportando…' : 'Exportar CSV'}</span>
+              </>
+            )}
+          </BotonDeExportar>
+        }
       />
       <div className="flex flex-col gap-3 p-[14px] lg:gap-4 lg:p-6">
         {/* Fila de rango: en el teléfono, sólo el segmentado a ancho
