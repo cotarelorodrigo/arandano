@@ -372,11 +372,19 @@ cantidad de ventas. La consulta trae `{ creadoEn, total, totalUsd }` de los
 catorce días — acotada por definición, sin el techo abierto que tiene el
 panel de horarios.
 
-**Cómo entró la plata**. `componerPorMedio` ya arreglada (Pieza 0), y el
-`GraficoDeMedios` de `/ventas` se muda a `components/` para que las dos
-pantallas usen el mismo componente. Es la regla que el merge del ciclo móvil
-dejó escrita: una sola fuente, no dos copias que haya que acordarse de
-sincronizar.
+**Cómo entró la plata**. Mismo nombre y mismo dato que el panel de `/ventas`,
+**y no el mismo componente**: `/ventas` dibuja barras horizontales
+(`GraficoDeMedios`) y el frame del dashboard dibuja un **anillo con leyenda**.
+Son dos presentaciones del mismo cálculo, y las dos las dibuja la maqueta así,
+cada una en su pantalla.
+
+Lo que se comparte es el **dato** —`componerPorMedio`, ya arreglada
+(Pieza 0)—, que es donde vive la regla que no puede desacordar. La
+presentación no: fusionar los dos paneles en un componente con un `variante`
+sería inventar una abstracción para dos usos que la maqueta quiere distintos.
+La regla del merge del ciclo móvil ("una sola fuente, no dos copias que haya
+que acordarse de sincronizar") aplica a la **lógica**, y la lógica está
+compartida.
 
 **Ventas por categoría** (`lib/dashboard/categorias.ts`). Anillo de cinco
 gajos: las cuatro ramas raíz con más importe más "Otros". El agrupamiento es
