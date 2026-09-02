@@ -442,9 +442,10 @@ RUTAS_APP_CRUDAS=$(rutas_autenticadas 'app/(app)') || {
 # pero habla del checkout y no de la imagen.
 #
 # `/` NO va acá desde que redirige al destino del rol: el barrido abre cada
-# ruta sin `-L` y exige 200. Su contrato lo fija caso_home_redirige_al_destino_del_rol,
-# que es una aserción más fuerte que la vieja —"algo renderizó con el nombre
-# del local"— porque nombra el destino.
+# ruta sin `-L` y exige 200. Su contrato lo fija
+# caso_home_redirige_al_destino_del_rol, que es una aserción más fuerte que
+# la vieja —"algo renderizó con el nombre del local"— porque nombra el
+# destino.
 RUTAS_APP=()
 while IFS= read -r ruta_derivada; do
   [[ -n "$ruta_derivada" ]] && RUTAS_APP+=("$ruta_derivada")

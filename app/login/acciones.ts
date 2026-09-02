@@ -118,9 +118,10 @@ export async function entrar(_estado: EstadoLogin, datos: FormData): Promise<Est
   // try: adentro, el catch la tomaría por un login fallido.
   //
   // Al destino del ROL, calculado con destinoAlEntrar (lib/auth/destino.ts) —
-  // la MISMA función que usa app/page.tsx, y no un literal repetido acá, que
-  // es la clase de defecto que su docblock explica. Directo al destino y no a
-  // `/`: `/` sólo redirige al mismo lugar, así que pasar por ahí sería un
-  // salto de servidor de más en cada login.
+  // la MISMA función que usan app/page.tsx y app/login/page.tsx (para quien
+  // abre /login ya logueado), y no un literal repetido acá, que es la clase
+  // de defecto que su docblock explica. Directo al destino y no a `/`: `/`
+  // sólo redirige al mismo lugar, así que pasar por ahí sería un salto de
+  // servidor de más en cada login.
   redirect(destinoAlEntrar(usuario?.rol ?? 'EMPLEADO'))
 }

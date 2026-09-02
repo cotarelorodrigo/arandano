@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound, forbidden, redirect } from 'next/navigation'
 import { tenantDelRequest } from '@/lib/tenant/desde-request'
 import { sesionActual } from '@/lib/auth/sesion'
+import { destinoAlEntrar } from '@/lib/auth/destino'
 import { piezasDeOrigen } from '@/lib/auth/origen'
 import { FormularioLogin } from './formulario'
 import estilos from './persiana.module.css'
@@ -18,9 +19,15 @@ export default async function Login() {
   if (resolucion.tipo !== 'tenant') notFound()
   if (resolucion.tenant.estado === 'SUSPENDIDO') forbidden()
 
-  // Ya logueado, esta pantalla no tiene sentido. Directo a /vender y no a /:
-  // desde que / redirige a /vender, pasar por ahí sería un salto de más.
-  if (await sesionActual()) redirect('/vender')
+  // Ya logueado, esta pantalla no tiene sentido. Directo al destino del ROL
+  // (destinoAlEntrar, lib/auth/destino.ts) y no a /: / redirige al mismo
+  // destino, así que pasar por ahí sería un salto de más. Es el TERCER lugar
+  // que redirige al entrar —junto a / y al final del server action de
+  // login—, y usa la misma función que los otros dos por el mismo motivo que
+  // ellos: un literal acá adentro es la clase de defecto que el docblock de
+  // destinoAlEntrar explica.
+  const sesion = await sesionActual()
+  if (sesion) redirect(destinoAlEntrar(sesion.usuario.rol))
 
   // Sólo el dominio base: el pie (design/arandano.pen, nodo `y8KkFc`) muestra
   // "flor.arandano.app", sin protocolo ni puerto — es una etiqueta para leer,

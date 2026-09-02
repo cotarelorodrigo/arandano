@@ -178,13 +178,27 @@ describe('página de login', () => {
     await expect(render()).rejects.toThrow('NEXT_FORBIDDEN')
   })
 
-  it('ya logueado, redirige a /vender', async () => {
+  // El destino depende del ROL de la sesión (destinoAlEntrar,
+  // lib/auth/destino.ts), no de un literal: un DUENO ya logueado que abre
+  // /login (favorito, botón Atrás, "Entrar a mi local" del ápex) tiene que
+  // caer en /dashboard igual que si hubiera entrado por /, no en /vender.
+  it('ya logueado como DUENO, redirige a /dashboard', async () => {
     tenantDelRequest.mockResolvedValue({
       tipo: 'tenant',
       tenant: { id: 't1', nombre: 'Celulares Flor', estado: 'ACTIVO' },
       subdominio: 'flor',
     })
-    sesionActual.mockResolvedValue({ usuario: { id: 'u1' } })
+    sesionActual.mockResolvedValue({ usuario: { id: 'u1', rol: 'DUENO' } })
+    await expect(render()).rejects.toThrow('NEXT_REDIRECT:/dashboard')
+  })
+
+  it('ya logueado como EMPLEADO, redirige a /vender', async () => {
+    tenantDelRequest.mockResolvedValue({
+      tipo: 'tenant',
+      tenant: { id: 't1', nombre: 'Celulares Flor', estado: 'ACTIVO' },
+      subdominio: 'flor',
+    })
+    sesionActual.mockResolvedValue({ usuario: { id: 'u1', rol: 'EMPLEADO' } })
     await expect(render()).rejects.toThrow('NEXT_REDIRECT:/vender')
   })
 })

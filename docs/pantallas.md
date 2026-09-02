@@ -42,8 +42,10 @@ copy literal de la maqueta; ahora son las siete que la maqueta dibuja, en
   local, quien atiende el mostrador quiere cobrar. No es una restricción de
   acceso: un empleado sigue llegando a `/dashboard` por el sidebar, sólo
   cambia dónde aterriza al entrar. `destinoAlEntrar` (`lib/auth/destino.ts`)
-  es la única fuente de ese destino — la usan tanto este redirect como el
-  final del server action de `/login`.
+  es la única fuente de ese destino — la usan este redirect, el final del
+  server action de `/login`, y `/login` mismo cuando quien lo abre YA tiene
+  sesión (favorito, botón Atrás, "Entrar a mi local" del ápex): los tres
+  redirigen al mismo lugar y ninguno lo hardcodea por su cuenta.
 
 **Decisiones**
 
