@@ -948,16 +948,25 @@ export default async function Ventas({
   // línea donde aparecer.
   const devueltoPeriodo = cobradoDeGrupos(pagosDevueltos)
   const paginas = Math.max(1, Math.ceil(total / POR_PAGINA))
+  // `moneda` viaja en las CUATRO — conPagina, hrefRango, hrefDeVista y
+  // hrefDeMoneda—, no sólo en la propia: mismo argumento que ya vale para
+  // `vista` (un local mirando el panel en US$ no puede volver a pesos por
+  // pasar de página, tocar un chip de rango o cambiar Hora/Día sin pedirlo),
+  // y el mismo criterio de no escribirla cuando es la default ('ars') — un
+  // link que siempre mandara `moneda=ars` no cambiaría nada en la práctica
+  // pero ensuciaría la URL de cualquier local que nunca toca dólares.
   const conPagina = (n: number) => {
     const u = new URLSearchParams({ desde: dDesde, hasta: dHasta })
     if (n > 1) u.set('p', String(n))
     if (vista !== 'hora') u.set('vista', vista)
+    if (moneda !== 'ars') u.set('moneda', moneda)
     return `/ventas?${u.toString()}`
   }
   const hrefRango = (r: Rango) => {
     const { desde: d, hasta: h } = rangoDeChip(r, hoy)
     const u = new URLSearchParams({ desde: d, hasta: h })
     if (vista !== 'hora') u.set('vista', vista)
+    if (moneda !== 'ars') u.set('moneda', moneda)
     return `/ventas?${u.toString()}`
   }
   // Al cambiar de vista SÍ se pierde `?p` (a propósito): la vista no cambia el
@@ -967,6 +976,7 @@ export default async function Ventas({
   const hrefDeVista = (v: Vista) => {
     const u = new URLSearchParams({ desde: dDesde, hasta: dHasta })
     if (v !== 'hora') u.set('vista', v)
+    if (moneda !== 'ars') u.set('moneda', moneda)
     return `/ventas?${u.toString()}`
   }
   // El selector $ / US$ de "Cómo entró la plata": preserva el resto del

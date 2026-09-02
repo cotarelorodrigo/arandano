@@ -611,6 +611,36 @@ describe('la consulta del panel de horarios', () => {
     // puede volver a pesos sin que nadie lo pida.
     expect(fuente).toContain("moneda !== 'ars' && <input type=\"hidden\" name=\"moneda\" value={moneda} />")
   })
+
+  // Ruling G del controller (Task 3): el plan original sólo pedía que
+  // `hrefDeMoneda` preservara el resto del filtro, nunca al revés — un hueco
+  // real, no sólo del plan: un local mirando el panel en US$ perdía la
+  // moneda en el primer click de "7 días", del toggle Hora/Día o de paginar,
+  // exactamente el mismo argumento que ya motiva preservar `vista` en esos
+  // tres sitios.
+  //
+  // Las DOS direcciones, y no una sola (el enunciado del controller: "A
+  // one-directional assertion would pass with the parameter hardcoded"):
+  //
+  // 1. Cuenta el patrón COMPLETO `if (moneda !== 'ars') u.set('moneda',
+  //    moneda)` — no sólo que la palabra "moneda" aparezca cerca de un
+  //    `u.set`, que pasaría igual con un valor hardcodeado
+  //    (`u.set('moneda', 'usd')`) o con la condición invertida. Exactamente
+  //    TRES: `conPagina`, `hrefRango` y `hrefDeVista` (a `hrefDeMoneda` no le
+  //    hace falta preservarse a sí misma, y su propia guarda usa `m`, no
+  //    `moneda`, así que no se cuenta acá).
+  // 2. Cuenta las apariciones SUELTAS de `u.set('moneda', moneda)`, sin la
+  //    guarda — tienen que ser las MISMAS tres. Si hubiera una cuarta
+  //    aparición sin la guarda que la precede, sería un `u.set` que escribe
+  //    `moneda` SIEMPRE, incluso en la default ('ars'): la mitad del defecto
+  //    que este caso tiene que atrapar (un local que nunca toca dólares
+  //    vería `?moneda=ars` en cada link).
+  it('conPagina, hrefRango y hrefDeVista preservan la moneda, sin escribirla cuando es la default', () => {
+    const conGuarda = fuente.match(/if \(moneda !== 'ars'\) u\.set\('moneda', moneda\)/g) ?? []
+    const sueltas = fuente.match(/u\.set\('moneda', moneda\)/g) ?? []
+    expect(conGuarda).toHaveLength(3)
+    expect(sueltas).toHaveLength(3)
+  })
 })
 
 // El resto de los cambios del ciclo móvil viven directo en `Ventas` (un
