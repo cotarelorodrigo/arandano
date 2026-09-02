@@ -43,6 +43,12 @@ let corregirPorConteo: typeof import('./acciones').corregirPorConteo
 let exportarHistorialCsv: typeof import('./acciones').exportarHistorialCsv
 let authParaTenant: typeof import('@/lib/auth/para-tenant').authParaTenant
 let origenDelRequest: typeof import('@/lib/auth/origen').origenDelRequest
+// Dinámico y no estático, como el resto de este archivo: `lib/inventario/
+// unidades.ts` arrastra `lib/db.ts` (vía `lib/tenant/transaccion.ts`), que arma
+// su Pool leyendo `DATABASE_URL` al importarse — un `import` estático de este
+// módulo correría ANTES de que `beforeAll` fije esa variable, y el Pool
+// quedaría apuntando a la base equivocada (o a ninguna).
+let unidadesLibres: typeof import('@/lib/inventario/unidades').unidadesLibres
 
 // Propio del test y no importado de acciones.ts: ese archivo es 'use server' y
 // sólo puede exportar funciones async.
@@ -83,6 +89,7 @@ beforeAll(async () => {
   } = await import('./acciones'))
   ;({ authParaTenant } = await import('@/lib/auth/para-tenant'))
   ;({ origenDelRequest } = await import('@/lib/auth/origen'))
+  ;({ unidadesLibres } = await import('@/lib/inventario/unidades'))
   const administrar = await import('@/lib/usuarios/administrar')
   const { otorgar } = await import('@/lib/permisos/administrar')
 
@@ -210,6 +217,22 @@ async function crearArticuloDePrueba(nombre: string, stock = '0'): Promise<strin
     [estado.tenantId, `ACC-TEST-${contadorSku}`, nombre, stock],
   )
   return rows[0].id
+}
+
+/** El artículo recién creado por `altaArticulo`, leído directo con `owner`
+ *  (sin RLS, así que ve la verdad tal cual quedó guardada). `stock` viaja
+ *  envuelto en `Prisma.Decimal` porque `pg` devuelve la columna numérica como
+ *  string ("2.000"), y lo que los tests quieren comparar es "2". */
+async function buscarPorNombre(
+  nombre: string,
+): Promise<{ id: string; llevaSerie: boolean; stock: Prisma.Decimal } | null> {
+  const { rows } = await owner.query(
+    `SELECT id, lleva_serie AS "llevaSerie", stock FROM articulos
+      WHERE nombre = $1 AND tenant_id = $2`,
+    [nombre, estado.tenantId],
+  )
+  if (rows.length === 0) return null
+  return { id: rows[0].id, llevaSerie: rows[0].llevaSerie, stock: new Prisma.Decimal(rows[0].stock) }
 }
 
 /** Una rama del árbol de este tenant, creada directo por SQL de dueño. Devuelve
@@ -983,5 +1006,80 @@ describe('el blindaje de COSTOS, por efecto y no por texto (I5 de la review fina
     estado.cookie = cookieEmpleado
     const { csv } = await exportarHistorialCsv(id)
     expect(csv).not.toContain('473')
+  })
+})
+
+// Task 7 del ciclo de unidades por IMEI (design/superpowers/specs/
+// 2026-09-02-unidades-por-imei-design.md): el alta carga las unidades cuando
+// el switch viene prendido.
+describe('altaArticulo con unidades por IMEI', () => {
+  it('el alta con serie crea el artículo, sus unidades y el stock que corresponde', async () => {
+    estado.cookie = cookieDuenio
+    const datos = new FormData()
+    datos.set('nombre', 'iPhone 13 128GB')
+    datos.set('precio', '500000')
+    datos.set('tipo', 'PRODUCTO')
+    datos.set('moneda', 'ARS')
+    datos.set('llevaSerie', 'on')
+    datos.append('imeis', '355000000000001')
+    datos.append('imeis', '355000000000002')
+
+    const estadoAlta = await altaArticulo(INICIAL, datos)
+    expect(estadoAlta.error).toBeNull()
+
+    const a = await buscarPorNombre('iPhone 13 128GB')
+    expect(a, 'no se encontró el artículo recién creado').not.toBeNull()
+    expect(a!.llevaSerie).toBe(true)
+    expect(a!.stock.toString()).toBe('2')
+    expect((await unidadesLibres(estado.tenantId, a!.id)).map((u) => u.imei)).toEqual([
+      '355000000000001',
+      '355000000000002',
+    ])
+  })
+
+  it('el alta con serie y cero IMEI crea el artículo con stock 0 y sin unidades', async () => {
+    // Es el caso normal: se carga el modelo antes de que llegue la mercadería.
+    estado.cookie = cookieDuenio
+    const datos = new FormData()
+    datos.set('nombre', 'iPhone 14 128GB')
+    datos.set('precio', '600000')
+    datos.set('tipo', 'PRODUCTO')
+    datos.set('moneda', 'ARS')
+    datos.set('llevaSerie', 'on')
+
+    await altaArticulo(INICIAL, datos)
+    const a = await buscarPorNombre('iPhone 14 128GB')
+    expect(a, 'no se encontró el artículo recién creado').not.toBeNull()
+    expect(a!.llevaSerie).toBe(true)
+    expect(a!.stock.toString()).toBe('0')
+  })
+
+  it('un SERVICIO no puede llevar serie', async () => {
+    estado.cookie = cookieDuenio
+    const datos = new FormData()
+    datos.set('nombre', 'Cambio de módulo')
+    datos.set('precio', '80000')
+    datos.set('tipo', 'SERVICIO')
+    datos.set('moneda', 'ARS')
+    datos.set('llevaSerie', 'on')
+
+    const estadoAlta = await altaArticulo(INICIAL, datos)
+    expect(estadoAlta.error).toContain('servicio')
+  })
+
+  it('dos IMEI iguales en el alta se rechazan y no crean el artículo', async () => {
+    estado.cookie = cookieDuenio
+    const datos = new FormData()
+    datos.set('nombre', 'iPhone 15 repetido')
+    datos.set('precio', '700000')
+    datos.set('tipo', 'PRODUCTO')
+    datos.set('moneda', 'ARS')
+    datos.set('llevaSerie', 'on')
+    datos.append('imeis', '355111111111111')
+    datos.append('imeis', '355111111111111')
+
+    const estadoAlta = await altaArticulo(INICIAL, datos)
+    expect(estadoAlta.error).not.toBeNull()
+    await expect(buscarPorNombre('iPhone 15 repetido')).resolves.toBeNull()
   })
 })

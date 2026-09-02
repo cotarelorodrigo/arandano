@@ -113,6 +113,11 @@ export async function altaArticulo(
 ): Promise<EstadoInventario> {
   try {
     const tipo = datos.get('tipo') === 'SERVICIO' ? 'SERVICIO' : 'PRODUCTO'
+    const llevaSerie = datos.get('llevaSerie') === 'on'
+    // `getAll` y no `get`: el formulario postea un campo por línea, todos con
+    // el mismo name. Los vacíos se descartan acá —la lista arranca con una
+    // fila en blanco y quien no la usa no debería recibir un IMEI_VACIO.
+    const imeis = datos.getAll('imeis').map(String).filter((i) => i.trim() !== '')
     const creado = await comoPuede('ARTICULOS_CREAR', async (tenantId, usuarioId) =>
       crearArticulo({
         tenantId,
@@ -127,11 +132,20 @@ export async function altaArticulo(
         // solo, el artículo cuelga del rubro, que es un caso válido.
         categoriaId: texto(datos, 'marcaId') || texto(datos, 'categoriaId') || null,
         facturaProveedor: texto(datos, 'facturaProveedor') || null,
+        // El switch viaja tal cual llegó, sin filtrar por tipo: un SERVICIO
+        // con el switch prendido tiene que rechazarse con SERVICIO_SIN_STOCK
+        // adentro de `crearArticulo`, no perderse en silencio acá.
+        llevaSerie,
+        imeis: llevaSerie ? imeis : undefined,
         // Un servicio no lleva stock, y sin JavaScript los campos se ven
         // igual: se ignoran acá en vez de rechazar el alta por algo que la
-        // persona no eligió mandar.
+        // persona no eligió mandar. Con el switch de IMEI prendido tampoco se
+        // manda: el stock nace de la lista de unidades, no de un número
+        // tipeado — `crearArticulo` rechaza recibir los dos juntos.
         stockInicial:
-          tipo === 'PRODUCTO' ? aDecimalOpcional(texto(datos, 'stockInicial'), 'el stock inicial') : null,
+          tipo === 'PRODUCTO' && !llevaSerie
+            ? aDecimalOpcional(texto(datos, 'stockInicial'), 'el stock inicial')
+            : null,
         // El costo se descarta si esta persona no puede cargarlo: el campo no
         // se le dibuja, pero el <input> viaja igual si alguien arma el POST a
         // mano. La UI esconde; esto es lo que autoriza.

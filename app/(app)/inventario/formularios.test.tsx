@@ -82,6 +82,22 @@ describe('FormularioDeAlta', () => {
     expect(html).toContain('Stock inicial')
   })
 
+  // Task 7 del ciclo de unidades por IMEI (design/superpowers/specs/
+  // 2026-09-02-unidades-por-imei-design.md): el switch vive al lado del
+  // selector de tipo, en "Qué estás cargando".
+  it('el alta ofrece el switch de IMEI', async () => {
+    const html = await renderAlta()
+    expect(html).toContain('Lleva IMEI o número de serie')
+  })
+
+  it('con el switch prendido, el campo de cantidad se reemplaza por la lista de IMEI', async () => {
+    // El switch es interactivo y este test renderiza estático, así que se
+    // afirma sobre lo que el marcado declara: los dos bloques existen y el que
+    // corresponde se muestra según el estado inicial (apagado).
+    const html = await renderAlta()
+    expect(html).toContain('name="stockInicial"')
+  })
+
   it('Producto y Servicio son tarjetas seleccionables (radio), no un <select>', async () => {
     const html = await renderAlta()
     // `name="tipo"` y no "<select>" a secas: desde que la categoría se elige
@@ -138,7 +154,11 @@ describe('FormularioDeAlta', () => {
     const FUENTE = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')
 
     it('el radio de Servicio dispara setTipo("SERVICIO")', () => {
-      expect(FUENTE).toMatch(/value="SERVICIO"[\s\S]{0,200}onChange=\{\(\) => setTipo\('SERVICIO'\)\}/)
+      // El onChange pasó de una expresión única a un bloque (Task 7 del ciclo
+      // de unidades por IMEI: también apaga el switch de serie), así que la
+      // aserción ya no puede fijar el cuerpo entero de la flecha — sólo que
+      // `setTipo('SERVICIO')` sigue estando ahí cerca.
+      expect(FUENTE).toMatch(/value="SERVICIO"[\s\S]{0,450}setTipo\('SERVICIO'\)/)
     })
 
     it('el bloque de Stock inicial está condicionado a tipo === \'PRODUCTO\'', () => {

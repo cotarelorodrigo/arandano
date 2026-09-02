@@ -925,6 +925,12 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
   mostrado como ayuda.
 - Cargar stock inicial y, con el permiso `COSTOS`, su costo unitario, que nace
   como movimiento y no como un número suelto.
+- **Prender "Lleva IMEI o número de serie"** (ciclo de unidades por IMEI,
+  2026-09-02): el par "Cantidad / Costo unitario" cambia y "Cantidad" se
+  reemplaza por una lista donde se escanea o tipea un IMEI por línea —Enter
+  agrega una fila y la enfoca, así que un lector de código de barras carga
+  varias unidades sin ningún click—. El costo unitario se mantiene. Sólo tiene
+  sentido con Producto: con Servicio el switch se apaga y se deshabilita.
 
 **Decisiones**
 
@@ -957,6 +963,12 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
   teléfono.
 - El stock inicial entra como `MovimientoStock`, así que el historial del
   artículo arranca explicando de dónde salió cada unidad.
+- **Con el switch de serie prendido, el stock nace de la lista y no de un
+  número tipeado**: `stockInicial` se rechaza si viene junto con `llevaSerie`.
+  Que la pantalla deshabilite el switch con Servicio o esconda "Cantidad" no
+  es la guarda — `crearArticulo` rechaza la combinación igual del lado del
+  servidor. Sin frame en `design/arandano.pen`: es anterior a esta feature
+  (`docs/superpowers/specs/2026-09-02-unidades-por-imei-design.md`).
 - **La categoría se elige, no se tipea**, y eso **quita una capacidad que
   existía**: hasta el 2026-08-24 el campo era texto libre y escribir
   "Fundas · Samsung" creaba las dos ramas al vuelo. Ahora se elige de lo que

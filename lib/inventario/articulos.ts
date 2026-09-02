@@ -4,6 +4,7 @@ import { excedeEscala, ESCALA_DINERO, ESCALA_CANTIDAD } from '@/lib/ventas/total
 import { exigirUsuario } from '@/lib/ventas/pertenencia'
 import { ErrorDeInventario, traducirErrorDeBase } from './errores'
 import { asegurarCategoria, ramaElegida, textoDeCategoria } from './categorias'
+import { crearUnidadesEnTx, normalizarLista } from './unidades'
 
 type Decimal = Prisma.Decimal
 
@@ -53,6 +54,14 @@ export type EntradaCrearArticulo = {
    * ficha ya hace.
    */
   facturaProveedor?: string | null
+  /** Si el artículo se maneja por unidad identificada. Sólo PRODUCTO. */
+  llevaSerie?: boolean
+  /**
+   * Los IMEI de las unidades con las que nace. Con `llevaSerie`, el stock
+   * inicial es su longitud y `stockInicial` se rechaza — un artículo con serie
+   * no tiene un stock que se tipee, tiene unidades que se cargan.
+   */
+  imeis?: string[]
 }
 
 /**
@@ -214,13 +223,41 @@ function esSkuRepetido(e: unknown): boolean {
 export async function crearArticulo(
   entrada: EntradaCrearArticulo,
 ): Promise<{ id: string; sku: string }> {
-  const { tenantId, usuarioId, tipo, precio, stockInicial, costoUnitario } = entrada
+  const { tenantId, usuarioId, tipo, precio, stockInicial, costoUnitario, llevaSerie } = entrada
   const categoria = limpiarCategoria(entrada.categoria)
 
   const nombre = exigirNombre(entrada.nombre)
   exigirPrecio(precio)
 
   const skuTipeado = entrada.sku?.trim()
+
+  // Los chequeos de unidades por IMEI, antes que cualquier otra cosa: un
+  // artículo con serie no tiene un stock que se tipee, y uno sin serie no
+  // tiene unidades que cargar. `normalizarLista` corre acá, no adentro de la
+  // transacción de más abajo — un IMEI repetido falla sin siquiera pedir un
+  // SKU.
+  if (llevaSerie) {
+    if (tipo === 'SERVICIO') {
+      throw new ErrorDeInventario(
+        'SERVICIO_SIN_STOCK',
+        'un servicio no puede llevar IMEI: no tiene stock que identificar',
+      )
+    }
+    if (stockInicial !== null && stockInicial !== undefined) {
+      throw new ErrorDeInventario(
+        'SERIE_REQUIERE_IMEIS',
+        'un artículo con IMEI no tiene un stock que se tipee: el stock nace de la lista de unidades',
+      )
+    }
+  } else if (entrada.imeis !== undefined) {
+    throw new ErrorDeInventario(
+      'IMEIS_SIN_SERIE',
+      'este artículo no se maneja por IMEI: prendé el switch antes de cargar unidades',
+    )
+  }
+  // Normalizada ACÁ, fuera de la transacción: si hay un IMEI vacío o
+  // repetido, el alta falla antes de pedir un SKU o tocar la base.
+  const listaImeis = llevaSerie ? normalizarLista(entrada.imeis ?? []) : undefined
 
   if (stockInicial !== null && stockInicial !== undefined) {
     if (tipo === 'SERVICIO') {
@@ -279,6 +316,7 @@ export async function crearArticulo(
             moneda: entrada.moneda ?? 'ARS',
             categoria: rama.texto,
             categoriaId: rama.id,
+            llevaSerie: llevaSerie ?? false,
           },
         })
 
@@ -287,7 +325,36 @@ export async function crearArticulo(
         // es la suma de sus movimientos, y un artículo que nace con 5 sin nada
         // que lo explique es justo la pregunta que la tabla append-only existe
         // para poder responder.
-        if (stockInicial && stockInicial.greaterThan(0)) {
+        //
+        // Con `llevaSerie`, el stock nace de la LISTA: `listaImeis.length`
+        // reemplaza a `stockInicial`, que la validación de arriba ya rechazó
+        // si vino junto con el switch prendido. Con la lista vacía —el caso
+        // normal: se carga el modelo antes de que llegue la mercadería— no
+        // hay nada que mover, ni unidades ni movimiento. **El bug conocido que
+        // NO se arregla acá**: igual que con `stockInicial`, un costo cargado
+        // sin ninguna unidad se pierde en silencio, porque sin movimiento no
+        // hay dónde guardarlo.
+        if (listaImeis && listaImeis.length > 0) {
+          await crearUnidadesEnTx(tx, {
+            tenantId, articuloId: articulo.id, imeis: listaImeis, usuarioId,
+          })
+          const cantidad = new Prisma.Decimal(listaImeis.length)
+          await tx.movimientoStock.create({
+            data: {
+              tenantId,
+              articuloId: articulo.id,
+              delta: cantidad,
+              motivo: 'INGRESO',
+              usuarioId,
+              costoUnitario: costoUnitario ?? null,
+              nota: notaDelStockInicial(entrada.facturaProveedor),
+            },
+          })
+          await tx.articulo.update({
+            where: { id: articulo.id },
+            data: { stock: { increment: cantidad } },
+          })
+        } else if (stockInicial && stockInicial.greaterThan(0)) {
           await tx.movimientoStock.create({
             data: {
               tenantId,

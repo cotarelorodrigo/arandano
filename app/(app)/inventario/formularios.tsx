@@ -20,9 +20,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Switch } from '@/components/ui/switch'
 import type { RamaConHijas } from '@/lib/inventario/categorias'
 import { SelectorDeCategoria } from './selector-categoria'
 import { SelectorDeMoneda } from '@/components/selector-de-moneda'
+import { ListaDeImeis } from './lista-de-imeis'
 import estilos from './tipografia.module.css'
 
 // Acá y no en acciones.ts: aquel archivo es 'use server' y sólo puede exportar
@@ -121,6 +123,11 @@ export function FormularioDeAlta({
 }) {
   const [estado, accion, pendiente] = useActionState(altaArticulo, INICIAL)
   const [tipo, setTipo] = useState<'PRODUCTO' | 'SERVICIO'>('PRODUCTO')
+  // Apagado por default: la mayoría de los artículos no llevan IMEI. Un
+  // SERVICIO no puede llevar serie — el switch se deshabilita al elegirlo, y
+  // el servidor lo rechaza igual (crearArticulo), porque una pantalla que
+  // esconde un control no es la guarda, sólo el servidor lo es.
+  const [llevaSerie, setLlevaSerie] = useState(false)
 
   return (
     <form action={accion} className="contents">
@@ -180,7 +187,14 @@ export function FormularioDeAlta({
                   name="tipo"
                   value="SERVICIO"
                   className="sr-only"
-                  onChange={() => setTipo('SERVICIO')}
+                  // Un servicio no lleva stock, así que tampoco puede llevar
+                  // serie: apagar el switch acá evita que quede prendido y
+                  // deshabilitado a la vez, mandando `llevaSerie=on` con un
+                  // <Switch disabled> que ya no se puede destildar.
+                  onChange={() => {
+                    setTipo('SERVICIO')
+                    setLlevaSerie(false)
+                  }}
                 />
                 <Wrench aria-hidden="true" className={ICONO_TARJETA_TIPO} />
                 <div className="flex flex-col gap-[3px]">
@@ -190,6 +204,29 @@ export function FormularioDeAlta({
                   </span>
                 </div>
               </label>
+            </div>
+            {/* Sin frame en design/arandano.pen: es anterior a esta feature
+                (docs/superpowers/specs/2026-09-02-unidades-por-imei-design.md).
+                Al lado del selector de tipo, en la misma card, porque sólo
+                tiene sentido con PRODUCTO — deshabilitado y apagado con
+                SERVICIO, misma razón por la que un servicio no lleva stock. El
+                servidor (`crearArticulo`) rechaza igual la combinación: que
+                la pantalla esconda o deshabilite un control nunca es la
+                guarda, sólo lo es el servidor. */}
+            <div className="flex items-center justify-between gap-3 rounded-[10px] bg-background p-3">
+              <div className="flex flex-col gap-0.5">
+                <Label htmlFor="llevaSerie">Lleva IMEI o número de serie</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Cada unidad se identifica y se vende por separado
+                </p>
+              </div>
+              <Switch
+                id="llevaSerie"
+                name="llevaSerie"
+                checked={llevaSerie}
+                disabled={tipo === 'SERVICIO'}
+                onCheckedChange={setLlevaSerie}
+              />
             </div>
           </CardDelFormulario>
 
@@ -246,26 +283,36 @@ export function FormularioDeAlta({
         <div className="flex flex-col gap-3 lg:w-[420px] lg:shrink-0 lg:gap-4">
           {tipo === 'PRODUCTO' && (
             <CardDelFormulario titulo="Stock inicial">
-              <div className="flex gap-3">
+              {/* Prendido el switch, la Cantidad se reemplaza por la lista de
+                  IMEI: el stock deja de ser un número que se tipea y pasa a
+                  ser cuántas unidades hay en la lista. El costo unitario se
+                  mantiene en los dos casos, así que va en su propia fila y no
+                  adentro de este condicional. */}
+              {llevaSerie ? (
+                <div className="flex flex-col gap-2">
+                  <Label>IMEI o número de serie</Label>
+                  <ListaDeImeis />
+                </div>
+              ) : (
                 <div className="flex w-[220px] flex-col gap-2">
                   <Label htmlFor="stockInicial">Cantidad (opcional)</Label>
                   <Input id="stockInicial" name="stockInicial" inputMode="decimal" className="h-10 rounded-[9px]" />
                 </div>
-                {/* Sin el permiso COSTOS, el campo no se dibuja. El
-                    blindaje real está en el servidor (altaArticulo,
-                    acciones.ts): esconderlo acá es sólo la UI. */}
-                {puedeCostos && (
-                  <div className="flex flex-1 flex-col gap-2">
-                    <Label htmlFor="costoUnitario">Costo unitario (opcional)</Label>
-                    <Input
-                      id="costoUnitario"
-                      name="costoUnitario"
-                      inputMode="decimal"
-                      className="h-10 rounded-[9px]"
-                    />
-                  </div>
-                )}
-              </div>
+              )}
+              {/* Sin el permiso COSTOS, el campo no se dibuja. El
+                  blindaje real está en el servidor (altaArticulo,
+                  acciones.ts): esconderlo acá es sólo la UI. */}
+              {puedeCostos && (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="costoUnitario">Costo unitario (opcional)</Label>
+                  <Input
+                    id="costoUnitario"
+                    name="costoUnitario"
+                    inputMode="decimal"
+                    className="h-10 rounded-[9px]"
+                  />
+                </div>
+              )}
               {/* El tercer campo que la maqueta dibuja en esta card
                   (design/arandano.pen, frame `B4O7t`). **No es una columna
                   nueva**: va como nota del movimiento de stock inicial, que es
