@@ -1165,9 +1165,13 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   IMEI), sólo para un producto activo — un servicio no tiene stock que
   identificar y un artículo desactivado no se ofrece para operaciones nuevas.
   Con stock en cero, prender postea directo; con stock cargado abre un diálogo
-  que pide exactamente esa cantidad de IMEI antes de confirmar — el artículo
-  queda cuadrado al instante, sin un paso de "vaciar y volver a cargar" que
-  ensuciaría el historial con movimientos que nunca pasaron.
+  que pide los IMEI que faltan antes de confirmar — el artículo queda cuadrado
+  al instante, sin un paso de "vaciar y volver a cargar" que ensuciaría el
+  historial con movimientos que nunca pasaron. "Los que faltan" y no "tantos
+  como stock": `prenderSerie` cuenta las unidades libres que YA existen y las
+  reusa (ver la decisión de abajo), así que en el caso normal —ninguna— son las
+  dos mismas cantidades. El servidor es el que manda: el diálogo dibuja tantas
+  filas como stock, y las que sobren se dejan vacías.
 - Con el switch prendido, ver la card **"Unidades"**: la lista de IMEI libres,
   cuándo entró cada uno, y **darlos de baja** uno por uno, con una nota
   (se rompió, se robó, garantía). Con más de 8 unidades libres, un filtro por
@@ -1359,6 +1363,36 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   la cantidad de filas de la card "Unidades" — el invariante del motor
   (`stock = unidades libres`), no un dato distinto que haya que reconciliar a
   la vista.
+- **Prender el switch CUENTA las unidades libres que ya existan y las reusa**,
+  en vez de pedir un IMEI por cada unidad de stock (hallazgo C1 de la review de
+  rama). Suena a caso imposible —un artículo sin serie no debería tener
+  unidades— y no lo es: `apagarSerie` sólo mira las LIBRES, y una unidad atada
+  a una venta viva no lo es, así que con todo el stock vendido el switch se
+  apaga; si después se anula esa venta, la unidad vuelve a la vitrina sobre un
+  artículo que ya no lleva serie. Validando `stock === imeis.length` a secas,
+  volver a prender creaba una fila DUPLICADA del mismo equipo: la card listaba
+  dos y el tile decía uno, y venderlas dejaba el stock en −1 sin nada que lo
+  detectara. La regla es `stock === libres existentes + IMEI tipeados`. **No se
+  arregla del otro lado** —prohibiendo apagar mientras alguna unidad esté atada
+  a una venta— porque una unidad vendida queda atada a su venta para siempre, y
+  esa regla dejaría el switch irreversible para cualquier local que haya
+  vendido un solo teléfono.
+- **El error de prender se pinta DENTRO del diálogo** (hallazgo I4). El `<p>`
+  del error también vive en la fila del switch, para los dos caminos que no
+  abren diálogo (apagar, y prender con stock en cero), pero con el diálogo
+  abierto ese `<p>` queda detrás de un velo de pantalla completa con el foco
+  atrapado adentro: los tres errores más probables de este camino
+  (`SERIE_CONTEO_NO_COINCIDE`, `IMEI_REPETIDO`, `SERIE_STOCK_NO_ENTERO`) no le
+  mostraban nada a quien apretaba "Prender". Y las tres llamadas liberan su
+  `enCurso` en un `finally`: sin eso, una acción que tira dejaba el botón
+  congelado en "Prendiendo…" y el switch deshabilitado hasta recargar.
+- **El choque de un IMEI ya cargado sale como cartel, no como 500** (hallazgo
+  I1). La traducción del `P2002` del índice parcial vive en `crearUnidadesEnTx`
+  (`lib/inventario/unidades.ts`), que es el único lugar del motor que sabe que
+  ese choque habla de un IMEI: más arriba —en `traducirErrorDeBase` o en el
+  catch de `crearArticulo`— no se puede distinguir del choque del SKU, porque
+  bajo `arandano_app` Postgres retiene el `DETAIL` del error. Alcanza a las
+  tres puertas de una: el alta, el ingreso de mercadería y el switch.
 
 **En el teléfono**
 

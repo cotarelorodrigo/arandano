@@ -424,10 +424,26 @@ TDD, y los casos que de verdad importan:
 - **`corregirStock` rechazado** sobre un artículo con serie.
 - **El bot no puede llegar a un IMEI**, por fuente: la condición nueva no está
   en el camino de `porPalabras`.
-- **Las DOS copias** de "Dar de baja" y del selector de unidad (escritorio y
-  teléfono), contadas en las dos direcciones — la regla que dejó escrita el
-  merge del ciclo móvil. Un `not.toContain` no alcanza: pasa igual si una quedó
-  gateada y la otra no.
+- **Que "Dar de baja" y el selector de unidad aparezcan UNA sola vez.** Esto
+  invierte lo que este spec pedía antes de escribirse —"las DOS copias,
+  contadas en las dos direcciones"—, y el cambio es deliberado: la fila de
+  unidad se construyó como **un solo árbol** (un `<div>` interno `flex-col
+  lg:flex-row` para el par IMEI/fecha), no como dos presentaciones ocultas una
+  por CSS, así que no hay dos copias que contar. El argumento está en el
+  docblock de `FilaDeUnidad` y es el mismo que CLAUDE.md ya registra como
+  decisión tomada ("Un solo árbol, no dos presentaciones: el patrón
+  `lg:contents`"): renderizar dos veces deja el mismo dato dos veces en el DOM
+  y manufactura justamente las copias que después hay que probar que estén
+  gateadas igual. El selector de unidad de `/vender` es un `Dialog` único por
+  la misma razón. Los casos asertan **exactamente una** aparición
+  (`unidades.test.tsx`), que es lo que atrapa una regresión hacia el patrón
+  duplicado.
+
+  **La regla de las dos copias sigue vigente donde la duplicación es real** —un
+  botón en el Topbar (`hidden lg:flex`) más su gemelo en `accionMovil` o al pie
+  (`lg:hidden`), que es lo que `<Encabezado>` obliga—: ahí se cuenta en las dos
+  direcciones, porque un `not.toContain` pasa igual si una quedó gateada y la
+  otra no. Lo que cambió no es la regla: es que esta pantalla no la necesita.
 - `docs/pantallas.md`, sección por pantalla tocada, **en el mismo commit**.
 
 ## El riesgo, y por qué esta migración es inerte
