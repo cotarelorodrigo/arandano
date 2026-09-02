@@ -878,7 +878,7 @@ cantidad`, y las validaciones de `> 0` y de escala se corren **después** de
 resolverla (una lista vacía cae en `CANTIDAD_INVALIDA` con el mismo mensaje que
 ya existe: ingresar cero unidades no es un ingreso). Con `imeis`, antes de
 `aplicarMovimiento`, llamar a `crearUnidadesEnTx` con la lista ya normalizada
-por `normalizarLista` — que hay que exportar desde `unidades.ts` para esto.
+por `normalizarLista`, que la Task 2 ya exporta desde `unidades.ts`.
 
 - [ ] **Step 4: Apagar `corregirStock` para artículos con serie**
 
@@ -1354,7 +1354,9 @@ antes del `create` del movimiento:
         }
 ```
 
-Y envolver la traducción del choque contra el índice parcial. En el `catch` de
+Y envolver la traducción del choque contra el índice parcial. `anular.ts` NO
+importa `Prisma` hoy, así que hay que sumar
+`import { Prisma } from '@/generated/prisma/client'`. En el `catch` de
 `anularVenta`, antes del `traducirErrorDeBase` que ya está:
 
 ```ts
@@ -1963,6 +1965,12 @@ líneas y esto es una responsabilidad distinta. La ficha lo instancia por
 - `page.tsx` consulta `unidadesLibres(tenantId, articulo.id)` **sólo si**
   `articulo.llevaSerie` —para no pagar una consulta que ningún local sin serie
   necesita— y pasa la card a `FichaDeArticulo`.
+- **`ingresarMercaderia` (`acciones.ts`) aprende a leer `imeis`**, y esto es de
+  esta task aunque el archivo lo haya tocado la Task 7: es acá donde `MoverStock`
+  empieza a postearlos. Mismo parseo que `altaArticulo`
+  (`datos.getAll('imeis').map(String).filter(…)`), y se le pasa a `ingresarStock`
+  **o** `cantidad` **o** `imeis`, nunca los dos — el motor rechaza que vengan
+  juntos, así que la pantalla no puede mandar los dos "por las dudas".
 - `MoverStock` gana `llevaSerie: boolean`. Con `true`: el campo "Cantidad que
   entra" se reemplaza por la lista de IMEI (`name="imeis"`), y la card "Corregir
   por conteo" se dibuja **deshabilitada** con el texto *"Este artículo se maneja

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { formatearPrecio } from '@/lib/formato/mostrar'
 import type { PlanVisible } from '@/lib/planes/consultar'
+import type { Linea } from './punto-de-venta'
 import { SidebarProvider } from '@/components/ui/sidebar'
 
 // Las funciones que el componente importa viven en un archivo 'use server'.
@@ -13,6 +14,7 @@ import { SidebarProvider } from '@/components/ui/sidebar'
 vi.mock('./acciones', () => ({
   cobrar: vi.fn(),
   buscarArticulos: vi.fn(async () => []),
+  unidadesDeArticulo: vi.fn(async () => []),
   abrirCajaDesdeVender: vi.fn(),
   cerrarCajaDesdeVender: vi.fn(),
 }))
@@ -85,6 +87,44 @@ async function render(
         caja={props.caja ?? null}
         cotizacionUsd={null}
         cotizacionUsdEn={null}
+      />
+    </SidebarProvider>,
+  )
+}
+
+/**
+ * Renderiza `<PuntoDeVenta>` con el carrito YA armado, vía `lineasIniciales`
+ * —una prop SÓLO PARA TESTS (ver su comentario en `punto-de-venta.tsx`)—: es
+ * lo único que permite afirmar sobre una línea con serie sin simular clics
+ * en un archivo que se prueba con `renderToStaticMarkup`, sin jsdom.
+ *
+ * Cada línea es PARCIAL: los campos que no hacen a lo que el caso prueba
+ * (sku, precio, moneda, stock, esProducto) se completan con un default común,
+ * así que un caso de la línea con serie sólo tiene que nombrar lo que le
+ * importa.
+ */
+async function renderConCarrito(lineas: Partial<Linea>[]) {
+  const { PuntoDeVenta } = await import('./punto-de-venta')
+  const completas: Linea[] = lineas.map((l, i) => ({
+    articuloId: `articulo-${i}`,
+    sku: `SKU-${i}`,
+    descripcion: 'Artículo de prueba',
+    precio: '1000',
+    moneda: 'ARS',
+    stock: '5',
+    esProducto: true,
+    cantidad: '1',
+    llevaSerie: false,
+    ...l,
+  }))
+  return renderToStaticMarkup(
+    <SidebarProvider>
+      <PuntoDeVenta
+        planes={[]}
+        caja={null}
+        cotizacionUsd={null}
+        cotizacionUsdEn={null}
+        lineasIniciales={completas}
       />
     </SidebarProvider>,
   )
@@ -294,6 +334,96 @@ describe('el punto de venta', () => {
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
     expect(fuente).toMatch(/PASOS_STEPPER\.map\(/)
     expect(fuente).toMatch(/pasoDeCantidad\(x\.cantidad,\s*delta\)/)
+  })
+
+  // --- Task 9: unidades identificadas — el IMEI en el lugar del stepper ---
+
+  it('la línea de un artículo con serie muestra el IMEI en lugar del stepper', async () => {
+    const html = await renderConCarrito([
+      {
+        articuloId: 'a1', descripcion: 'iPhone 13', llevaSerie: true,
+        unidadId: 'u1', imei: '355000000000001',
+      },
+    ])
+    expect(html).toContain('355000000000001')
+    // El stepper no se dibuja para esta línea: su cantidad es 1 y no se
+    // puede cambiar, así que no hay botón "Sumar" para ESTE artículo.
+    expect(html).not.toContain('aria-label="Sumar una unidad a iPhone 13"')
+    expect(html).not.toContain('aria-label="Restar una unidad a iPhone 13"')
+  })
+
+  it('la línea de un artículo SIN serie sigue mostrando el stepper', async () => {
+    const html = await renderConCarrito([
+      { articuloId: 'a2', descripcion: 'Funda', llevaSerie: false, cantidad: '2' },
+    ])
+    expect(html).toContain('aria-label="Sumar una unidad a Funda"')
+    expect(html).toContain('aria-label="Restar una unidad a Funda"')
+  })
+
+  // El botón "quitar" (la x) se conserva para una línea con serie: sacarla
+  // del carrito sigue siendo posible, aunque su cantidad no se pueda tocar.
+  it('la línea con serie conserva el botón de quitar', async () => {
+    const html = await renderConCarrito([
+      {
+        articuloId: 'a1', descripcion: 'iPhone 13', llevaSerie: true,
+        unidadId: 'u1', imei: '355000000000001',
+      },
+    ])
+    expect(html).toContain('aria-label="Quitar iPhone 13"')
+  })
+
+  // El hallazgo de la review de esta task: nada probaba que el `unidadId` de
+  // una línea con serie efectivamente saliera en el `items` que postea el
+  // `<form>`. Sacarlo del `.map` de producción dejaba pasar los tres casos de
+  // arriba igual —afirman sobre el HTML de la línea, no sobre el JSON
+  // escondido—, y el mostrador cobraba UNIDAD_REQUERIDA con el cliente ya en
+  // la caja. Se prueba llamando a la función pura, mismo criterio que
+  // `pasoDeCantidad`: este archivo no tiene forma de leer el `value` de un
+  // `<input type=hidden>` después de un clic, así que llamar la función
+  // directo reemplaza esa lectura.
+  it('itemsParaCobrar manda el unidadId de una línea con serie', async () => {
+    const { itemsParaCobrar } = await import('./punto-de-venta')
+    const items = itemsParaCobrar([
+      {
+        articuloId: 'a1', sku: 'S1', descripcion: 'iPhone 13', precio: '500000',
+        moneda: 'ARS', stock: '1', esProducto: true, cantidad: '1',
+        llevaSerie: true, unidadId: 'u1', imei: '355000000000001',
+      },
+    ])
+    expect(items).toEqual([{ articuloId: 'a1', cantidad: '1', unidadId: 'u1' }])
+  })
+
+  // Y la mitad sin serie del mismo camino: una línea sin unidad no manda
+  // `unidadId` de ningún valor (ni `null` ni `''`) — `JSON.stringify`
+  // descarta las propiedades `undefined`, que es justo lo que `cobrar`
+  // (acciones.ts) espera para "sin unidad" (ver su guard de `esUuid`).
+  it('itemsParaCobrar no manda unidadId para una línea sin serie', async () => {
+    const { itemsParaCobrar } = await import('./punto-de-venta')
+    const items = itemsParaCobrar([
+      {
+        articuloId: 'a2', sku: 'S2', descripcion: 'Funda', precio: '1000',
+        moneda: 'ARS', stock: '5', esProducto: true, cantidad: '2', llevaSerie: false,
+      },
+    ])
+    expect(JSON.stringify(items)).toBe('[{"articuloId":"a2","cantidad":"2"}]')
+  })
+
+  // El requisito duro de la task: dos pasadas del lector sobre el mismo
+  // equipo son el mismo teléfono, y sumar convertiría eso en dos ventas del
+  // mismo IMEI. Probado en las DOS direcciones, como pide la review: una
+  // unidad ausente no puede dar falso positivo.
+  it('estaEnElCarrito reconoce una unidad ya agregada, y sólo esa', async () => {
+    const { estaEnElCarrito } = await import('./punto-de-venta')
+    const carrito = [
+      {
+        articuloId: 'a1', sku: 'S1', descripcion: 'iPhone 13', precio: '500000',
+        moneda: 'ARS' as const, stock: '1', esProducto: true, cantidad: '1',
+        llevaSerie: true, unidadId: 'u1', imei: '355000000000001',
+      },
+    ]
+    expect(estaEnElCarrito(carrito, 'u1')).toBe(true)
+    expect(estaEnElCarrito(carrito, 'u2')).toBe(false)
+    expect(estaEnElCarrito([], 'u1')).toBe(false)
   })
 
   // --- Task 3: la banda del total ---

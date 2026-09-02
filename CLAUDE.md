@@ -2184,6 +2184,175 @@ Y del producto:
   mano la venta del feedback y mirar, a 1440 y a 390 px, que el tile con dos
   líneas rotuladas no quede apretado en el teléfono —es el riesgo específico
   de este ciclo y ningún test lo puede juzgar.
+- ~~Poder cargar el IMEI de un celular y elegir cuál unidad se vende.~~
+  **Hecho** (2026-09-02). Sale del feedback textual de un cliente: *"Necesito
+  la casilla IMEI en los celulares. Es posible que se pueda cargar este dato
+  en los productos del inventario? Idealmente también si estamos vendiendo un
+  celular y hay varias unidades en stock (cada una con su IMEI) podríamos
+  seleccionar cuál de todos esos estamos vendiendo. Sería un nivel más de
+  detalle ya que dentro del stock de un producto tenemos que saber cuál se
+  vendió. Esto por ahí se puede generalizar ya que es un caso de uso de
+  productos caros"*. El propio cliente nombra la generalización, y el ciclo la
+  toma en serio desde el modelo: esto no es un campo IMEI, es **un nivel más
+  abajo del stock**. Hoy el catálogo modela *modelos* ("iPhone 13 128 GB") y el
+  stock es cuántos hay; el pedido es que abajo del modelo exista la *unidad
+  física*, con identidad propia, y que vender signifique elegir una. Ver
+  `docs/superpowers/specs/2026-09-02-unidades-por-imei-design.md`.
+
+  **Las cinco decisiones del ciclo, cada una con la alternativa que se
+  descartó — tomadas con el dueño del producto antes de escribir una línea:**
+
+  - **La unidad convive con `Articulo.stock`, no lo reemplaza.** Para un
+    artículo con serie se le suma un invariante (`stock = unidades libres`),
+    pero la columna sigue siendo el mismo caché de siempre, actualizado por
+    las mismas dos escrituras en la misma transacción. La alternativa —que la
+    unidad *fuera* el stock, con `count()` en cada lectura— se descartó por
+    superficie: cada lector de stock del producto (el listado, el chip "Queda
+    poco", la disponibilidad del bot, el carrito, el tile "En stock", el CSV)
+    pasaría a ramificar por `llevaSerie`, para eliminar un riesgo que este
+    motor ya sabe defender desde el ciclo de inventario. La otra alternativa
+    —cero tablas nuevas, una columna `serie` en `MovimientoStock`— se
+    descartó porque "qué IMEI tengo" pasaría a ser un agregado sobre una
+    tabla que crece para siempre, sin dónde poner el índice único que impide
+    cargar dos veces el mismo IMEI.
+  - **El switch es del artículo, y con el switch prendido no hay
+    excepciones.** Prendido, TODA unidad se carga al ingresar y vender EXIGE
+    elegir una; apagado, funciona exactamente como hoy. Lo opcional es qué
+    artículos lo usan, nunca qué unidades — la alternativa (un mixto, con
+    algunas unidades sin IMEI cargado) se descartó porque deja el stock con
+    dos verdades posibles ("dice 5 y hay 3 IMEI") sin ninguna respuesta buena
+    a qué significa el número.
+  - **La unidad es identidad pura: sin costo ni precio propios.** Se
+    evaluaron las dos —costo por unidad (los equipos caros varían de costo
+    entre unidades del mismo modelo) y precio por unidad (la pantalla rayada
+    sale menos)— y las dos se descartaron para este ciclo: la segunda rompe
+    el supuesto de que el precio lo pone el artículo, que sostienen el punto
+    de venta, el catálogo y el bot; la primera es la mitad de la deuda del
+    costo que ya tiene su propia investigación escrita más arriba en este
+    documento y merece su propio ciclo. Ninguna de las dos queda bloqueada:
+    las dos son columnas nullable sobre una tabla que este ciclo ya crea.
+  - **Prender el switch con stock cargado pide los IMEI ahí mismo**, en un
+    diálogo que abre exactamente esa cantidad de campos y no queda prendido
+    hasta cargarlos todos. La alternativa —exigir stock en cero (corregir por
+    conteo a 0, prender, volver a ingresar con IMEI)— se descartó porque
+    ensucia el historial con una baja y un alta que nunca pasaron; la otra
+    —sólo permitirlo en artículos nuevos— obligaría a recargar como artículo
+    nuevo cualquier modelo que ya se viene vendiendo. Se eligió la
+    interrupción de una vez, que deja el artículo cuadrado al instante.
+  - **La corrección por conteo se apaga; la baja es por unidad, con nota.**
+    En un artículo con serie no alcanza con decir "quedan 4": hay que decir
+    CUÁL se fue. Se evaluó conservar el conteo con tildes —marcar en la
+    vitrina cuáles se encontraron y dar de baja el resto junto, mejor para un
+    arqueo periódico— y se descartó por ahora en favor de la baja individual,
+    que es el caso frecuente; el conteo con tildes sigue siendo aditivo si
+    aparece la necesidad.
+
+  **Lo que este ciclo NO hace, explícito para que no se lea como olvido**:
+  costo por unidad y precio por unidad (ver arriba, las dos aditivas); el
+  aviso "este IMEI ya pasó por acá" al reingresar uno que está en el
+  historial (una consulta y un cartel, aditivo); el conteo con tildes; y
+  cualquier relación con `OrdenDeTrabajo.equipoSerie` —es el equipo DEL
+  CLIENTE que entra a reparar, no del inventario, y unirlos es un ciclo
+  propio con su propia pregunta de producto ("qué significa que el equipo que
+  entró a reparar sea uno que este local vendió"). Multi-sucursal tampoco:
+  sigue rigiendo "un tenant por local" por omisión, y una unidad no lleva
+  sucursal.
+
+  **Los disparadores para reconsiderar las dos aditivas, cada uno concreto y
+  no una fecha:**
+
+  - **Costo por unidad**: que a un dueño le moleste que dos iPhones del mismo
+    modelo, comprados a precios distintos, midan su margen contra el mismo
+    número — hoy el tile "Último costo" de la ficha compara contra el
+    ingreso con costo más reciente, sin distinguir de cuál unidad concreta
+    salió ese costo.
+  - **Precio por unidad**: que el local empiece a vender usados en serio,
+    donde el estado de cada equipo —la pantalla rayada, la batería gastada—
+    mueve el precio y el mismo número de lista deja de alcanzar para las dos
+    unidades del mismo modelo.
+
+  **La unicidad del IMEI es un índice único PARCIAL**, sólo entre las unidades
+  LIBRES (`WHERE venta_id IS NULL AND baja_en IS NULL`) — Prisma no sabe
+  expresarlo, así que vive escrito a mano en la migración, mismo mecanismo que
+  "una sola caja abierta por tenant" y las raíces homónimas del árbol de
+  categorías. Es a propósito **parcial y no global**: un local que recompra el
+  equipo que vendió tiene que poder cargarlo de nuevo, y dos filas con el
+  mismo IMEI en el historial no son un defecto — son el mismo teléfono
+  pasando dos veces por el mismo local. La carrera de dos cajas por la misma
+  unidad se cierra con un `UPDATE` condicional (`updateMany` exigiendo
+  `count === 1`), no con un `findFirst` previo — el mismo criterio que ya hace
+  del índice único, y no del chequeo temprano, la defensa real de la
+  idempotencia del cobro.
+
+  **`VentaItem` NO lleva `unidadId`**, decisión explícita del spec: con
+  `UnidadDeArticulo.ventaId` alcanza, porque la línea de un artículo con serie
+  es siempre una unidad con cantidad 1 (`crearVenta` rechaza cualquier otra
+  con `CANTIDAD_CON_SERIE`), y dos líneas del mismo artículo dicen exactamente
+  lo mismo — a cuál le toca cuál IMEI es irrelevante. Sumar la columna sería
+  un segundo vínculo para el mismo hecho, con el modo de falla clásico de los
+  vínculos redundantes: que un día digan cosas distintas. Es la razón por la
+  que el detalle de venta (`/ventas/[id]`) reparte los IMEI por ARTÍCULO —
+  `imeisPorItem`, agrupa por `articuloId` y consume uno por línea de ese
+  artículo, en el orden que Prisma los devuelva.
+
+  **La consulta del detalle de venta se extrajo a `datosDelDetalle`**
+  (`app/(app)/ventas/[id]/page.tsx`), separada del Server Component por el
+  mismo motivo que ya separó `totalDelPeriodo`/`pagosDelPeriodo` en
+  `app/(app)/ventas/page.tsx`: page.test.tsx (colocado con la pantalla) sólo
+  puede probar funciones que no abren sesión ni tocan Prisma, y sin esta
+  función el `select` que trae `venta.unidades` para los IMEI sólo se podía
+  verificar abriendo la pantalla en un navegador — exactamente el punto ciego
+  que este mismo documento viene señalando en cada ciclo reciente.
+  `test/ventas.test.ts` la llama contra una venta real, con y sin unidades, y
+  renderiza `Detalle` con el resultado.
+
+  **El principio que gobierna las cinco pantallas, otra vez**: un local que no
+  usa esto no ve ninguna diferencia. El detalle de una venta sin unidades no
+  dibuja ni la línea del IMEI ni el rótulo "IMEI" en ningún lado del
+  documento — probado literalmente así (`test/ventas.test.ts` afirma que el
+  HTML entero no contiene la palabra), no por inferencia.
+
+  **`design/arandano.pen` no dibuja nada de esto, en ningún ancho**: ni el
+  switch, ni la card "Unidades", ni el selector de unidad del carrito, ni la
+  línea del carrito sin stepper. Se derivó del código con los patrones que ya
+  existen (la card, el `Dialog` de shadcn, el switch de card que ya estrenó
+  el ciclo del bot). Anotado en `docs/correcciones-pendientes-del-pen.md`,
+  entrada 27.
+
+  **Y la migración es inerte**, mismo argumento que ya dejó escrito el ciclo
+  del precio en dólares: tabla nueva, `articulos.lleva_serie` con default
+  `false`, `movimientos_stock.unidad_id` nullable, cero `DROP`. Mientras nadie
+  prenda el switch, ninguna fila que la migración pueda producir es distinta
+  de lo que la imagen anterior ya sabe leer, así que la migración y la UI
+  viajan en el mismo deploy.
+
+  **Sin permiso nuevo.** El switch y los IMEI del alta/ficha viajan con
+  `ARTICULOS_CREAR`/`ARTICULOS_EDITAR`, igual que el precio y la moneda —
+  mueven UN artículo. Ingresar unidades y darlas de baja quedan detrás de
+  `conSesion` sin permiso propio, exactamente donde ya están hoy
+  `ingresarMercaderia` y `corregirPorConteo`. El catálogo de
+  `lib/permisos/catalogo.ts` no crece.
+
+  **Queda pendiente la verificación manual, y en dos formas distintas a las de
+  los ciclos anteriores.** Primero, lo de siempre: `arandano-dev` bind-montea
+  `/root/arandano` y no el worktree, así que **nada de este ciclo se vio en un
+  navegador**, ni siquiera lo que sí se pudo ver en el ciclo anterior (ese
+  corría contra Next nativo en `:3001`; éste no llegó a probarse así). Segundo,
+  un hallazgo concreto de la implementación que necesita un ojo humano y no
+  tiene frame contra el cual confirmarlo: en el teléfono, el botón "Dar de
+  baja" de una fila de unidad pasó a ocupar el ancho completo, DEBAJO del
+  campo "Motivo" —antes, en el diseño de escritorio, vive al lado del IMEI—, y
+  nadie lo vio a 390 px con varias unidades listadas. `scripts/sembrar-catalogo-dev.mts`
+  siembra `A-0010` (un iPhone con tres IMEI ya cargados) para que haya contra
+  qué mirar en cuanto el entorno lo permita. El resto de la lista, ya escrita
+  en el spec: prender el switch en un artículo con stock y ver que abre tantos
+  campos como unidades hay; escanear un IMEI en `/vender` y ver que la línea
+  entra con esa unidad elegida, sin stepper; escanear el mismo IMEI dos veces y
+  ver que avisa sin duplicar; dar de baja una unidad y ver que el stock baja
+  uno con la nota en el historial; cobrar, anular, y ver que el equipo vuelve a
+  la lista de unidades libres; y que un artículo SIN serie se vea exactamente
+  como antes — sin switch prendido, sin card de Unidades, con su stepper y su
+  corrección por conteo de siempre.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

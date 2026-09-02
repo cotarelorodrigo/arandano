@@ -4,6 +4,7 @@ import { excedeEscala, ESCALA_DINERO, ESCALA_CANTIDAD } from '@/lib/ventas/total
 import { exigirUsuario } from '@/lib/ventas/pertenencia'
 import { ErrorDeInventario, traducirErrorDeBase } from './errores'
 import { asegurarCategoria, ramaElegida, textoDeCategoria } from './categorias'
+import { crearUnidadesEnTx, normalizarLista } from './unidades'
 
 type Decimal = Prisma.Decimal
 
@@ -53,6 +54,14 @@ export type EntradaCrearArticulo = {
    * ficha ya hace.
    */
   facturaProveedor?: string | null
+  /** Si el artículo se maneja por unidad identificada. Sólo PRODUCTO. */
+  llevaSerie?: boolean
+  /**
+   * Los IMEI de las unidades con las que nace. Con `llevaSerie`, el stock
+   * inicial es su longitud y `stockInicial` se rechaza — un artículo con serie
+   * no tiene un stock que se tipee, tiene unidades que se cargan.
+   */
+  imeis?: string[]
 }
 
 /**
@@ -172,14 +181,27 @@ async function proximoSku(tx: ClienteTx, tenantId: string): Promise<string> {
  * `arandano_app` no trae ningún `DETAIL` ni con `VERBOSITY verbose`; como
  * superusuario con `BYPASSRLS` sí lo trae.
  *
- * Así que lo que sostiene esta función, hoy, es sólo el argumento de la
- * unicidad única: `articulos` tiene UNA sola (`@@unique([tenantId, sku])`) y
- * `movimientos_stock` ninguna, así que adentro de esta transacción un P2002
- * no puede ser otra cosa que el SKU. El chequeo de `campos` queda como red
- * LATENTE, no activa: para el día que aparezca una segunda unicidad en
- * `Articulo`, o que esto corra bajo un rol no sujeto a RLS —una migración,
- * un script de mantenimiento—, donde `fields` sí puede llegar poblado y
- * discriminar de verdad.
+ * Así que lo que sostiene esta función, hoy, es el argumento de qué otras
+ * unicidades pueden chocar adentro de esta transacción. `articulos` tiene UNA
+ * sola (`@@unique([tenantId, sku])`) y `movimientos_stock` ninguna — pero
+ * `unidades_articulo` SÍ tiene la suya, el índice parcial
+ * `unidades_articulo_imei_libre`, y desde que el alta carga unidades
+ * (`crearUnidadesEnTx`) esa tabla se escribe en esta misma transacción. Lo que
+ * mantiene la premisa en pie no es que no haya una segunda unicidad: es que
+ * **`crearUnidadesEnTx` traduce su propio P2002 a `IMEI_REPETIDO` antes de
+ * relanzarlo**, así que el choque del IMEI nunca llega hasta acá como P2002.
+ *
+ * Esa dependencia es real y conviene tenerla escrita, porque es la que se
+ * rompe sola: si alguna vez esa traducción se saca, un IMEI repetido vuelve a
+ * llegar como P2002 con `fields` ausente, esta función devuelve `true` y el
+ * alta reporta un choque de SKU que no ocurrió —con SKU autogenerado, además,
+ * quemando los cinco intentos y sus números—. Es el defecto que tuvo esta rama
+ * (hallazgo I2 de la review) y por el que la traducción vive donde vive.
+ *
+ * El chequeo de `campos` queda como red LATENTE, no activa: para el día que
+ * aparezca una segunda unicidad en `Articulo`, o que esto corra bajo un rol no
+ * sujeto a RLS —una migración, un script de mantenimiento—, donde `fields` sí
+ * puede llegar poblado y discriminar de verdad.
  */
 function esSkuRepetido(e: unknown): boolean {
   if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== 'P2002') return false
@@ -214,13 +236,41 @@ function esSkuRepetido(e: unknown): boolean {
 export async function crearArticulo(
   entrada: EntradaCrearArticulo,
 ): Promise<{ id: string; sku: string }> {
-  const { tenantId, usuarioId, tipo, precio, stockInicial, costoUnitario } = entrada
+  const { tenantId, usuarioId, tipo, precio, stockInicial, costoUnitario, llevaSerie } = entrada
   const categoria = limpiarCategoria(entrada.categoria)
 
   const nombre = exigirNombre(entrada.nombre)
   exigirPrecio(precio)
 
   const skuTipeado = entrada.sku?.trim()
+
+  // Los chequeos de unidades por IMEI, antes que cualquier otra cosa: un
+  // artículo con serie no tiene un stock que se tipee, y uno sin serie no
+  // tiene unidades que cargar. `normalizarLista` corre acá, no adentro de la
+  // transacción de más abajo — un IMEI repetido falla sin siquiera pedir un
+  // SKU.
+  if (llevaSerie) {
+    if (tipo === 'SERVICIO') {
+      throw new ErrorDeInventario(
+        'SERVICIO_SIN_STOCK',
+        'un servicio no puede llevar IMEI: no tiene stock que identificar',
+      )
+    }
+    if (stockInicial !== null && stockInicial !== undefined) {
+      throw new ErrorDeInventario(
+        'SERIE_REQUIERE_IMEIS',
+        'un artículo con IMEI no tiene un stock que se tipee: el stock nace de la lista de unidades',
+      )
+    }
+  } else if (entrada.imeis !== undefined) {
+    throw new ErrorDeInventario(
+      'IMEIS_SIN_SERIE',
+      'este artículo no se maneja por IMEI: prendé el switch antes de cargar unidades',
+    )
+  }
+  // Normalizada ACÁ, fuera de la transacción: si hay un IMEI vacío o
+  // repetido, el alta falla antes de pedir un SKU o tocar la base.
+  const listaImeis = llevaSerie ? normalizarLista(entrada.imeis ?? []) : undefined
 
   if (stockInicial !== null && stockInicial !== undefined) {
     if (tipo === 'SERVICIO') {
@@ -279,6 +329,7 @@ export async function crearArticulo(
             moneda: entrada.moneda ?? 'ARS',
             categoria: rama.texto,
             categoriaId: rama.id,
+            llevaSerie: llevaSerie ?? false,
           },
         })
 
@@ -287,7 +338,36 @@ export async function crearArticulo(
         // es la suma de sus movimientos, y un artículo que nace con 5 sin nada
         // que lo explique es justo la pregunta que la tabla append-only existe
         // para poder responder.
-        if (stockInicial && stockInicial.greaterThan(0)) {
+        //
+        // Con `llevaSerie`, el stock nace de la LISTA: `listaImeis.length`
+        // reemplaza a `stockInicial`, que la validación de arriba ya rechazó
+        // si vino junto con el switch prendido. Con la lista vacía —el caso
+        // normal: se carga el modelo antes de que llegue la mercadería— no
+        // hay nada que mover, ni unidades ni movimiento. **El bug conocido que
+        // NO se arregla acá**: igual que con `stockInicial`, un costo cargado
+        // sin ninguna unidad se pierde en silencio, porque sin movimiento no
+        // hay dónde guardarlo.
+        if (listaImeis && listaImeis.length > 0) {
+          await crearUnidadesEnTx(tx, {
+            tenantId, articuloId: articulo.id, imeis: listaImeis, usuarioId,
+          })
+          const cantidad = new Prisma.Decimal(listaImeis.length)
+          await tx.movimientoStock.create({
+            data: {
+              tenantId,
+              articuloId: articulo.id,
+              delta: cantidad,
+              motivo: 'INGRESO',
+              usuarioId,
+              costoUnitario: costoUnitario ?? null,
+              nota: notaDelStockInicial(entrada.facturaProveedor),
+            },
+          })
+          await tx.articulo.update({
+            where: { id: articulo.id },
+            data: { stock: { increment: cantidad } },
+          })
+        } else if (stockInicial && stockInicial.greaterThan(0)) {
           await tx.movimientoStock.create({
             data: {
               tenantId,

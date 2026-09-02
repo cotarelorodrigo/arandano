@@ -2,11 +2,16 @@
 
 import { Fragment, useActionState, useCallback, useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { ArrowRight, CircleAlert, Minus, Plus, ScanBarcode, TriangleAlert, X } from 'lucide-react'
-import { cobrar, buscarArticulos, type EstadoCobro } from './acciones'
+import { cobrar, buscarArticulos, unidadesDeArticulo, type EstadoCobro } from './acciones'
 import { usePasoDeCobro, type Paso } from './paso'
 import { ChipCaja, ChipsDeEstado, ControlDeCaja, type CajaDelChip } from './caja'
 import type { ArticuloVendible } from '@/lib/ventas/buscar'
+// De TIPO y no de valor, por lo mismo que `PlanVisible` más abajo:
+// `lib/inventario/unidades.ts` arrastra `lib/tenant/transaccion.ts`, y un
+// import de valor desde este archivo cliente arrastraría `pg` al bundle.
+import type { UnidadLibre } from '@/lib/inventario/unidades'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { Encabezado } from '@/components/shell/encabezado'
 import {
@@ -21,7 +26,7 @@ import {
 // test/limite-cliente-servidor.test.ts.
 import type { PlanVisible } from '@/lib/planes/consultar'
 import {
-  formatearPrecio, formatearCantidad, montoSinSigno, precioEnSuMoneda,
+  formatearFechaCorta, formatearPrecio, formatearCantidad, montoSinSigno, precioEnSuMoneda,
 } from '@/lib/formato/mostrar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,6 +35,9 @@ import { Card } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
 import estilos from '@/components/importe.module.css'
 import estilosCobro from './cobro.module.css'
 
@@ -47,7 +55,11 @@ const INICIAL: EstadoCobro = { error: null, venta: null }
  */
 const ID_FORMULARIO_DE_COBRO = 'formulario-de-cobro'
 
-type Linea = {
+// Exportado por `renderConCarrito`, el helper de
+// `punto-de-venta.test.tsx` que arma un carrito ya armado sin simular clics
+// —este archivo se prueba con `renderToStaticMarkup`, sin jsdom—: necesita el
+// tipo exacto para construir líneas válidas.
+export type Linea = {
   articuloId: string
   sku: string
   descripcion: string
@@ -62,6 +74,15 @@ type Linea = {
   // Lo que la persona tipeó, tal cual: se parsea al calcular y se manda como
   // texto, que es lo que el server action espera.
   cantidad: string
+  // Si el artículo se maneja por unidad identificada (Task 9). Gobierna que
+  // la línea muestre el IMEI en vez del stepper y que su cantidad sea siempre
+  // 1: dos equipos son dos líneas, nunca una con cantidad 2.
+  llevaSerie: boolean
+  // La unidad elegida. Presente siempre que `llevaSerie` sea true: una línea
+  // con serie sin unidad no se puede cobrar, y el motor la rechaza con
+  // UNIDAD_REQUERIDA.
+  unidadId?: string
+  imei?: string
 }
 
 type Pago = {
@@ -107,18 +128,66 @@ const SIN_PLAN = 'sin-plan'
 /**
  * Qué carrito es éste, para la clave de idempotencia.
  *
- * Artículos y cantidades, que es lo que define la venta; el orden cuenta, y
- * está bien que cuente: reordenar es un cambio del carrito como cualquier otro
- * y lo único que provoca es una clave nueva.
+ * Artículo, cantidad y —desde Task 9— unidad, que es lo que define la venta;
+ * el orden cuenta, y está bien que cuente: reordenar es un cambio del
+ * carrito como cualquier otro y lo único que provoca es una clave nueva.
+ *
+ * `unidadId` entra al tuple aunque hoy ningún camino lo cambie IN PLACE en
+ * una línea ya existente (agregar y quitar SÍ cambian la firma, porque
+ * cambia la cantidad de entradas del array): sin él, dos unidades distintas
+ * del mismo artículo — la única que hoy hay en el carrito, cambiada por
+ * otra del mismo modelo — producirían la MISMA firma, y el día que exista un
+ * botón para "cambiar la unidad de esta línea" (el paso natural después de
+ * "otra caja se llevó este equipo"), la clave no se enteraría de que el
+ * carrito cambió y una venta genuinamente distinta podría volver como la
+ * anterior.
  */
 function firmaDelCarrito(lineas: Linea[]): string {
-  return JSON.stringify(lineas.map((l) => [l.articuloId, l.cantidad]))
+  return JSON.stringify(lineas.map((l) => [l.articuloId, l.cantidad, l.unidadId ?? '']))
 }
 
 // La firma del carrito vacío, que es con lo que arranca la pantalla. Como
 // constante y no calculada al vuelo: es el valor inicial del estado, y tiene
 // que ser el MISMO en el render del servidor y en el del navegador.
 const CARRITO_VACIO = firmaDelCarrito([])
+
+/**
+ * El `items` que postea el `<form>` de cobro, a partir del carrito.
+ *
+ * Exportada como función pura, con el mismo criterio que ya explica el
+ * comentario de `pasoDeCantidad`, un poco más abajo: este archivo se prueba
+ * con `renderToStaticMarkup`, sin jsdom, así que no hay forma de "leer el
+ * `value` del `<input type=hidden>` después de armar el carrito" — llamar
+ * la función pura es lo que reemplaza esa lectura.
+ *
+ * Sin esto, la Task 9 quedaba con un agujero real: nada probaba que el
+ * `unidadId` de una línea con serie efectivamente saliera en el JSON que
+ * recibe el servidor. Sacarlo del `.map` de más abajo dejaba pasar todos los
+ * tests de este archivo igual, y el mostrador cobraba UNIDAD_REQUERIDA con
+ * el cliente ya en la caja — el hallazgo de la review de esta task.
+ */
+export function itemsParaCobrar(
+  lineas: Linea[],
+): { articuloId: string; cantidad: string; unidadId?: string }[] {
+  return lineas.map((l) => ({
+    articuloId: l.articuloId,
+    cantidad: l.cantidad,
+    unidadId: l.unidadId,
+  }))
+}
+
+/**
+ * Si esa unidad YA está en el carrito.
+ *
+ * Exportada para probarse directo, en las dos direcciones: dos pasadas del
+ * lector sobre el mismo equipo (o elegirlo dos veces del selector) tienen
+ * que dar la misma respuesta que una unidad que todavía no se agregó — sin
+ * esto, sumar convertiría un reescaneo en dos ventas del mismo IMEI, que es
+ * justo lo que este mecanismo existe para evitar.
+ */
+export function estaEnElCarrito(lineas: Linea[], unidadId: string): boolean {
+  return lineas.some((l) => l.unidadId === unidadId)
+}
 
 /**
  * Un paso del stepper de cantidad: +1 o -1 unidad completa (1000 milésimas),
@@ -804,6 +873,7 @@ export function PuntoDeVenta({
   caja,
   cotizacionUsd,
   cotizacionUsdEn,
+  lineasIniciales,
 }: {
   // `cotizacionInicial` se borró en este ciclo: era la última cotización con la
   // que se había cobrado un pago (`Pago.cotizacion`, histórica) y precargaba el
@@ -820,6 +890,12 @@ export function PuntoDeVenta({
   caja: CajaDelChip | null
   cotizacionUsd: string | null
   cotizacionUsdEn: Date | null
+  // SÓLO PARA TESTS: seedea el carrito ya armado. `page.tsx`, el único
+  // llamador real, nunca lo pasa —ahí el carrito siempre arranca vacío—; es
+  // lo que le permite a `punto-de-venta.test.tsx` (`renderConCarrito`)
+  // afirmar sobre una línea con serie sin simular clics, en un archivo que se
+  // prueba con `renderToStaticMarkup` y sin jsdom.
+  lineasIniciales?: Linea[]
 }) {
   const [estado, accion, cobrando] = useActionState(cobrar, INICIAL)
   // El paso de la venta en el teléfono: carrito o cobro. Vive en la URL vía
@@ -835,9 +911,19 @@ export function PuntoDeVenta({
   // necesita saber el ancho; el Topbar no puede, porque su título y su flecha
   // son props y no clases, así que ahí sí hace falta preguntar.
   const pasoVisible = enTelefono ? paso : 'carrito'
-  const [lineas, setLineas] = useState<Linea[]>([])
+  const [lineas, setLineas] = useState<Linea[]>(lineasIniciales ?? [])
   const [busqueda, setBusqueda] = useState('')
   const [resultados, setResultados] = useState<ArticuloVendible[]>([])
+  // El selector de unidad: se abre cuando se agrega por NOMBRE un artículo con
+  // serie (sin `a.unidad`, que sólo trae el escaneo exacto de un IMEI). `null`
+  // significa cerrado. `unidades: null` (con el diálogo abierto) es "todavía
+  // consultando" — se pide con un server action porque el catálogo del
+  // mostrador no trae las unidades libres de cada artículo, sólo cuál IMEI se
+  // escaneó, si se escaneó uno.
+  const [selectorUnidad, setSelectorUnidad] = useState<{
+    articulo: ArticuloVendible
+    unidades: UnidadLibre[] | null
+  } | null>(null)
   // Una clave por CARRITO, no por formulario: se renueva cuando cambia lo que
   // se está vendiendo (ver el ajuste de más abajo). Atarla a la vida del
   // componente —renovarla sólo al cobrar bien— tenía un modo de falla que es
@@ -1124,7 +1210,103 @@ export function PuntoDeVenta({
     setVaciadoArmado((actual) => (actual ? false : actual))
   }
 
+  // Agrega la línea de una unidad ya elegida —sea porque el escaneo la trajo
+  // (`a.unidad`) o porque se tocó una del selector—. Si esa unidad YA está en
+  // el carrito, no duplica ni suma: avisa. Dos pasadas del lector sobre el
+  // mismo equipo (o elegirlo dos veces del selector) son el mismo IMEI, y
+  // sumar convertiría eso en dos ventas del mismo equipo — el motor las
+  // rechazaría igual con UNIDAD_REPETIDA, pero avisar antes es mejor
+  // mostrador que dejar que la venta entera se caiga recién al cobrar.
+  //
+  // El chequeo va ADENTRO del updater de `actualizarCarrito` —contra
+  // `previas`, no contra el `lineas` del closure— por la misma razón que ya
+  // gobierna el camino sin serie un poco más abajo: es la única lectura que
+  // React garantiza al día, sin depender de que nada más serialice las
+  // llamadas. Leerlo del closure funcionaba hoy —`consultando.current` en el
+  // buscador y el foco atrapado del diálogo ya serializan los escaneos—, pero
+  // es una construcción más débil para el mismo error de plata, y no hace
+  // falta pagarla: `estaEnElCarrito` cuesta lo mismo llamada desde acá.
+  function agregarUnidad(a: ArticuloVendible, unidad: { id: string; imei: string }) {
+    let repetida = false
+    actualizarCarrito((previas) => {
+      if (estaEnElCarrito(previas, unidad.id)) {
+        repetida = true
+        return previas
+      }
+      return [
+        ...previas,
+        {
+          articuloId: a.id,
+          sku: a.sku,
+          descripcion: a.nombre,
+          precio: a.precio,
+          moneda: a.moneda,
+          stock: a.stock,
+          esProducto: a.esProducto,
+          cantidad: '1',
+          llevaSerie: true,
+          unidadId: unidad.id,
+          imei: unidad.imei,
+        },
+      ]
+    })
+    if (repetida) {
+      // Clave estable por unidad: pasar el lector dos o tres veces sobre el
+      // mismo equipo actualiza el mismo toast en vez de apilar uno por cada
+      // pasada — mismo criterio que ya usa el ABM de categorías.
+      toast.warning(`El equipo ${unidad.imei} ya está en el carrito.`, {
+        id: `unidad-repetida-${unidad.id}`,
+      })
+    }
+  }
+
+  // Abre el selector y dispara la consulta. `unidades: null` mientras tanto,
+  // que es lo que el diálogo lee como "consultando". La respuesta se
+  // descarta si mientras tanto se cerró el selector o se abrió para OTRO
+  // artículo — el mismo cuidado que `alTeclearEnBuscador` ya tiene con
+  // `busquedaVigente`, acá contra el `articuloId` que sigue vigente cuando
+  // la consulta resuelve.
+  //
+  // Si la consulta falla, el diálogo NO se queda colgado en "Buscando
+  // equipos…" para siempre: se cierra y se avisa, mismo criterio que el resto
+  // del producto usa para una acción que no salió — a diferencia del
+  // buscador de al lado, que libera su guarda en un `finally` porque ahí
+  // "seguir usable" alcanza, acá no hay nada que reintentar sin volver a
+  // tocar el artículo.
+  function abrirSelectorDeUnidad(a: ArticuloVendible) {
+    setSelectorUnidad({ articulo: a, unidades: null })
+    unidadesDeArticulo(a.id)
+      .then((unidades) => {
+        setSelectorUnidad((actual) =>
+          actual && actual.articulo.id === a.id ? { ...actual, unidades } : actual,
+        )
+      })
+      .catch(() => {
+        setSelectorUnidad((actual) => (actual && actual.articulo.id === a.id ? null : actual))
+        toast.error(`No se pudieron traer los equipos de ${a.nombre}. Probá de nuevo.`)
+      })
+  }
+
   function agregar(a: ArticuloVendible) {
+    // Con serie: si el escaneo ya trajo la unidad, se agrega directo; si se
+    // agregó por nombre, hay que preguntar cuál — el buscador no sabe cuál
+    // unidad sin abrir el selector.
+    if (a.llevaSerie) {
+      if (a.unidad) {
+        agregarUnidad(a, a.unidad)
+      } else {
+        abrirSelectorDeUnidad(a)
+      }
+      setBusqueda('')
+      setResultados([])
+      // Sin foco al buscador acá cuando se abre el selector: el diálogo se
+      // lo va a robar solo al montarse, y pelear por el foco es peor que no
+      // moverlo. Con el escaneo (agregarUnidad, sin diálogo) sí hace falta —
+      // ver el `return` de más abajo, que es el camino sin serie.
+      if (a.unidad) buscador.current?.focus()
+      return
+    }
+
     actualizarCarrito((previas) => {
       const yaEsta = previas.find((l) => l.articuloId === a.id)
       // Incrementa en vez de duplicar: dos pasadas del lector sobre el mismo
@@ -1152,6 +1334,7 @@ export function PuntoDeVenta({
           stock: a.stock,
           esProducto: a.esProducto,
           cantidad: '1',
+          llevaSerie: false,
         },
       ]
     })
@@ -1749,43 +1932,60 @@ export function PuntoDeVenta({
                               buscador: el <Input> del medio apaga su propio ring
                               para que el foco se vea en el stepper entero, no en
                               un rectángulo que ignora los botones [-]/[+]. */}
-                          <div className="flex h-9 w-[104px] items-center rounded-[9px] border border-input focus-within:ring-3 focus-within:ring-ring/50">
-                            {PASOS_STEPPER.map(({ verbo, delta, Icono }) => (
-                              <Fragment key={verbo}>
-                                <button
-                                  type="button"
-                                  aria-label={`${verbo} una unidad a ${l.descripcion}`}
-                                  className="flex h-full w-8 items-center justify-center text-foreground-soft hover:bg-muted"
-                                  onClick={() =>
-                                    actualizarCarrito((p) =>
-                                      p.map((x, j) =>
-                                        j === i ? { ...x, cantidad: pasoDeCantidad(x.cantidad, delta) } : x,
-                                      ),
-                                    )
-                                  }
-                                >
-                                  <Icono className="size-[13px]" />
-                                </button>
-                                {/* El valor editable va entre los dos botones:
-                                    se intercala acá, después del primero
-                                    (Restar), en vez de partir el .map en dos para
-                                    no perder el orden visual [-] [valor] [+]. */}
-                                {delta === -1 && (
-                                  <Input
-                                    inputMode="decimal"
-                                    value={l.cantidad}
-                                    onChange={(e) =>
+                          {l.llevaSerie ? (
+                            // Con serie: el IMEI en el lugar del stepper. Su
+                            // cantidad es siempre 1 y no se puede tocar — dos
+                            // equipos son dos líneas, nunca una con cantidad 2
+                            // — así que acá no hay ni botones ni campo
+                            // editable, sólo el dato que identifica cuál
+                            // equipo es esta línea.
+                            <div
+                              className="flex h-9 w-[104px] items-center justify-center overflow-hidden rounded-[9px] border border-input px-1"
+                              title={l.imei}
+                            >
+                              <span className="truncate text-[11px] font-semibold text-foreground">
+                                {l.imei}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex h-9 w-[104px] items-center rounded-[9px] border border-input focus-within:ring-3 focus-within:ring-ring/50">
+                              {PASOS_STEPPER.map(({ verbo, delta, Icono }) => (
+                                <Fragment key={verbo}>
+                                  <button
+                                    type="button"
+                                    aria-label={`${verbo} una unidad a ${l.descripcion}`}
+                                    className="flex h-full w-8 items-center justify-center text-foreground-soft hover:bg-muted"
+                                    onClick={() =>
                                       actualizarCarrito((p) =>
-                                        p.map((x, j) => (j === i ? { ...x, cantidad: e.target.value } : x)),
+                                        p.map((x, j) =>
+                                          j === i ? { ...x, cantidad: pasoDeCantidad(x.cantidad, delta) } : x,
+                                        ),
                                       )
                                     }
-                                    aria-label={`Cantidad de ${l.descripcion}`}
-                                    className={`h-full flex-1 border-0 bg-transparent px-0 py-0 text-center font-semibold text-foreground shadow-none focus-visible:ring-0 ${estilos.importe}`}
-                                  />
-                                )}
-                              </Fragment>
-                            ))}
-                          </div>
+                                  >
+                                    <Icono className="size-[13px]" />
+                                  </button>
+                                  {/* El valor editable va entre los dos botones:
+                                      se intercala acá, después del primero
+                                      (Restar), en vez de partir el .map en dos para
+                                      no perder el orden visual [-] [valor] [+]. */}
+                                  {delta === -1 && (
+                                    <Input
+                                      inputMode="decimal"
+                                      value={l.cantidad}
+                                      onChange={(e) =>
+                                        actualizarCarrito((p) =>
+                                          p.map((x, j) => (j === i ? { ...x, cantidad: e.target.value } : x)),
+                                        )
+                                      }
+                                      aria-label={`Cantidad de ${l.descripcion}`}
+                                      className={`h-full flex-1 border-0 bg-transparent px-0 py-0 text-center font-semibold text-foreground shadow-none focus-visible:ring-0 ${estilos.importe}`}
+                                    />
+                                  )}
+                                </Fragment>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                       {/* Su columnheader ya explica por qué esta celda no se
@@ -1993,9 +2193,7 @@ export function PuntoDeVenta({
               <input
                 type="hidden"
                 name="items"
-                value={JSON.stringify(
-                  lineas.map((l) => ({ articuloId: l.articuloId, cantidad: l.cantidad })),
-                )}
+                value={JSON.stringify(itemsParaCobrar(lineas))}
               />
               <input
                 type="hidden"
@@ -2188,6 +2386,65 @@ export function PuntoDeVenta({
         irACobro={irACobro}
         lineasDelPie={lineasDelPie}
       />
+
+      {/* El selector de unidad: se abre al agregar por NOMBRE un artículo con
+          serie. `Dialog` de Radix es un overlay más de los que
+          `hayOverlayDeRadixAbierto()` ya reconoce (`[role="dialog"]`), así
+          que mientras está abierto Enter no cobra la venta ni Esc arma el
+          vaciado del carrito — el mismo bug que ya se pagó una vez con los
+          `Select` de medio y moneda (ver el comentario de esa función). Se
+          cierra tocando afuera, con Esc, o al elegir una unidad. */}
+      <Dialog
+        open={selectorUnidad !== null}
+        onOpenChange={(abierto) => {
+          if (!abierto) setSelectorUnidad(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectorUnidad?.articulo.nombre}</DialogTitle>
+            <DialogDescription>Elegí qué equipo sale.</DialogDescription>
+          </DialogHeader>
+          {selectorUnidad?.unidades === null && (
+            <p className="py-4 text-center text-sm text-muted-foreground">Buscando equipos…</p>
+          )}
+          {selectorUnidad?.unidades?.length === 0 && (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No quedan equipos disponibles de este artículo.
+            </p>
+          )}
+          {selectorUnidad?.unidades && selectorUnidad.unidades.length > 0 && (
+            <div className="flex max-h-[50vh] flex-col gap-2 overflow-y-auto">
+              {selectorUnidad.unidades.map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  className="flex flex-col gap-0.5 rounded-[9px] border border-input px-3 py-2 text-left hover:bg-muted"
+                  onClick={() => {
+                    agregarUnidad(selectorUnidad.articulo, u)
+                    setSelectorUnidad(null)
+                  }}
+                >
+                  <span className="text-sm font-semibold text-foreground">{u.imei}</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {/* `new Date(...)` y no `u.ingresadaEn` directo: React
+                        Flight serializa `Date` de punta a punta, pero si
+                        alguna vez no lo hiciera —`unidadesDeArticulo` es un
+                        server action invocado desde el cliente, un camino
+                        que este repo no ejercita en ningún otro lado con un
+                        `Date`—, `formatearFechaCorta` (un
+                        `Intl.DateTimeFormat.format`) tira `RangeError` sobre
+                        un string y se lleva puesto el mostrador entero. Un
+                        `Date` ya construido pasa por `new Date(...)` sin
+                        cambiar nada. */}
+                    Entró el {formatearFechaCorta(new Date(u.ingresadaEn))}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

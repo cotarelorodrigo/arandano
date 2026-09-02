@@ -1,3 +1,4 @@
+import { Prisma } from '@/generated/prisma/client'
 import { enTransaccionDeTenant } from '@/lib/tenant/transaccion'
 import { exigirUsuario } from './pertenencia'
 import { ErrorDeVenta, traducirErrorDeBase } from './errores'
@@ -68,14 +69,40 @@ export async function anularVenta(entrada: {
       // garantiza que las dos mitades coincidan siempre.
       //
       // El `orderBy` no es cosmético: el `update` de abajo toma el lock de la
-      // fila del artículo, y sin un orden fijo dos anulaciones simultáneas de
-      // ventas que comparten artículos los toman en orden distinto y se
-      // deadlockean (`40P01`), que sale como error crudo de Prisma. Es el mismo
-      // orden —por `articuloId` ascendente— que usa `crearVenta`, y tiene que
-      // seguir siéndolo: un orden total sirve si es el MISMO en todo el motor.
+      // fila del artículo (y, con serie, el `update` de la unidad toma el de
+      // esa fila), y sin un orden fijo dos anulaciones que compartan artículos
+      // los toman en orden distinto y se deadlockean (`40P01`), que sale como
+      // error crudo de Prisma. El empate por `unidadId` hace falta porque con
+      // serie una venta puede traer VARIAS líneas del MISMO artículo (una por
+      // unidad), y `anularVenta` —a diferencia de `crearVenta`— no toma ningún
+      // lock de tenant antes de llegar acá, así que es el escritor que de
+      // verdad puede interleavearse con otro.
+      //
+      // Es el mismo orden de ITERACIÓN que usa `crearVenta` en `paraStock`
+      // (`articuloId`, y en el empate `unidadId`), y NO el mismo orden de
+      // RECURSOS: acá el bucle hace movimiento → artículo → unidad, o sea que
+      // toma el lock del artículo ANTES que el de la unidad, y `crearVenta`
+      // los toma al revés —todas las unidades primero, todos los artículos
+      // después—. Decir que "es el mismo orden" a secas sería falso, y lo que
+      // impide el ciclo es otra cosa: los CONJUNTOS son disjuntos. Esta
+      // función sólo toca unidades VENDIDAS (las de la venta que se anula),
+      // mientras `crearVenta` y `darDeBajaUnidad` sólo tocan unidades LIBRES
+      // —sus dos `updateMany` llevan `ventaId: null, bajaEn: null` en el
+      // WHERE—, así que nunca hay una fila de `unidades_articulo` que dos de
+      // estos escritores se disputen en direcciones opuestas. Si algún día
+      // esta función pasara a tocar una unidad libre, o alguno de los otros
+      // dos a tocar una vendida, esa disjunción se cae y hay que igualar el
+      // orden de recursos de verdad.
+      //
+      // (El `orderBy` de acá lo resuelve Postgres, donde un `unidad_id` NULL
+      // ordena ÚLTIMO en un ASC, mientras el `sort` de `crearVenta` usa `?? ''`
+      // y lo pone primero. Esa diferencia no importa por lo mismo de arriba:
+      // el orden entre líneas del mismo artículo sólo decide el orden de los
+      // locks de unidad —y ésos no se disputan entre estos dos escritores—,
+      // porque el lock del artículo es la MISMA fila para todas ellas.)
       const movimientos = await tx.movimientoStock.findMany({
         where: { ventaId, motivo: 'VENTA' },
-        orderBy: { articuloId: 'asc' },
+        orderBy: [{ articuloId: 'asc' }, { unidadId: 'asc' }],
       })
 
       for (const m of movimientos) {
@@ -83,6 +110,7 @@ export async function anularVenta(entrada: {
           data: {
             tenantId,
             articuloId: m.articuloId,
+            unidadId: m.unidadId,
             delta: m.delta.negated(),
             motivo: 'ANULACION_VENTA',
             ventaId,
@@ -93,9 +121,36 @@ export async function anularVenta(entrada: {
           where: { id: m.articuloId },
           data: { stock: { increment: m.delta.negated() } },
         })
+
+        // La unidad vuelve a la vitrina. Va DENTRO del mismo bucle que
+        // compensa el stock —y no en un update aparte— porque las dos mitades
+        // tienen que moverse juntas o no moverse: una unidad libre con el stock
+        // sin devolver es exactamente la desincronización que el invariante
+        // existe para impedir.
+        //
+        // Es idempotente por el guard de arriba: si la venta ya estaba anulada,
+        // el UPDATE de `ventas` se llevó cero filas y no llegamos acá.
+        if (m.unidadId !== null) {
+          await tx.unidadDeArticulo.update({
+            where: { id: m.unidadId },
+            data: { ventaId: null },
+          })
+        }
       }
     })
   } catch (e) {
+    // El caso de borde real: mientras la venta estuvo viva, el local RECOMPRÓ
+    // el mismo equipo y lo cargó de nuevo. Liberar el vendido dejaría dos
+    // unidades libres con el mismo IMEI, que es justo lo que el índice parcial
+    // impide. Sin esta traducción sale un P2002 crudo —un 500 sin `codigo`— en
+    // lugar de un cartel que dice qué pasó.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      throw new ErrorDeVenta(
+        'UNIDAD_NO_DISPONIBLE',
+        'no se puede anular: uno de los equipos de esta venta volvió a cargarse en el ' +
+          'stock. Dalo de baja desde la ficha del artículo y anulá de nuevo.',
+      )
+    }
     throw traducirErrorDeBase(e)
   }
 }

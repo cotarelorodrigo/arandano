@@ -117,7 +117,10 @@ describe('/ventas/[id]: el permiso se combina con anuladaEn antes de llegar al c
   const VENTA = readFileSync('app/(app)/ventas/[id]/page.tsx', 'utf8')
 
   it('Detalle recibe seOfreceAnular(permiso, anuladaEn), nunca el permiso pelado', () => {
-    expect(VENTA).toContain('ofreceAnular={seOfreceAnular(puedeAnularVenta, venta.anuladaEn)}')
+    // Task 10: `anuladaEn` viaja en `datos` —lo que devuelve `datosDelDetalle`,
+    // extraída del Server Component para poder probar el `select` de los
+    // IMEI contra la base—, ya no en `venta.anuladaEn` a secas.
+    expect(VENTA).toContain('ofreceAnular={seOfreceAnular(puedeAnularVenta, datos.anuladaEn)}')
     expect(VENTA).not.toContain('ofreceAnular={puedeAnularVenta}')
   })
 

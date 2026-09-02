@@ -82,6 +82,22 @@ describe('FormularioDeAlta', () => {
     expect(html).toContain('Stock inicial')
   })
 
+  // Task 7 del ciclo de unidades por IMEI (design/superpowers/specs/
+  // 2026-09-02-unidades-por-imei-design.md): el switch vive al lado del
+  // selector de tipo, en "Qué estás cargando".
+  it('el alta ofrece el switch de IMEI', async () => {
+    const html = await renderAlta()
+    expect(html).toContain('Lleva IMEI o número de serie')
+  })
+
+  it('con el switch prendido, el campo de cantidad se reemplaza por la lista de IMEI', async () => {
+    // El switch es interactivo y este test renderiza estático, así que se
+    // afirma sobre lo que el marcado declara: los dos bloques existen y el que
+    // corresponde se muestra según el estado inicial (apagado).
+    const html = await renderAlta()
+    expect(html).toContain('name="stockInicial"')
+  })
+
   it('Producto y Servicio son tarjetas seleccionables (radio), no un <select>', async () => {
     const html = await renderAlta()
     // `name="tipo"` y no "<select>" a secas: desde que la categoría se elige
@@ -138,7 +154,11 @@ describe('FormularioDeAlta', () => {
     const FUENTE = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')
 
     it('el radio de Servicio dispara setTipo("SERVICIO")', () => {
-      expect(FUENTE).toMatch(/value="SERVICIO"[\s\S]{0,200}onChange=\{\(\) => setTipo\('SERVICIO'\)\}/)
+      // El onChange pasó de una expresión única a un bloque (Task 7 del ciclo
+      // de unidades por IMEI: también apaga el switch de serie), así que la
+      // aserción ya no puede fijar el cuerpo entero de la flecha — sólo que
+      // `setTipo('SERVICIO')` sigue estando ahí cerca.
+      expect(FUENTE).toMatch(/value="SERVICIO"[\s\S]{0,450}setTipo\('SERVICIO'\)/)
     })
 
     it('el bloque de Stock inicial está condicionado a tipo === \'PRODUCTO\'', () => {
@@ -311,9 +331,11 @@ describe('FichaDeArticulo', () => {
 })
 
 describe('MoverStock', () => {
-  async function renderMoverStock(puedeCostos = true) {
+  async function renderMoverStock(puedeCostos = true, llevaSerie = false) {
     const { MoverStock } = await import('./formularios')
-    return renderToStaticMarkup(<MoverStock articuloId="a1" puedeCostos={puedeCostos} />)
+    return renderToStaticMarkup(
+      <MoverStock articuloId="a1" puedeCostos={puedeCostos} llevaSerie={llevaSerie} />,
+    )
   }
 
   // Mismo hallazgo M2: "Ingresar mercadería" y "Corregir por conteo" son las
@@ -329,6 +351,52 @@ describe('MoverStock', () => {
       expect(inicio, `no se encontró el campo ${campo}`).toBeGreaterThan(-1)
       expect(html.slice(inicio, cierre), `${campo} no mide h-10`).toContain('h-10')
     }
+  })
+
+  // Task 8 del ciclo de unidades por IMEI.
+  describe('con llevaSerie', () => {
+    it('reemplaza "Cantidad que entra" por la lista de IMEI', async () => {
+      const html = await renderMoverStock(true, true)
+      expect(html).not.toContain('Cantidad que entra')
+      expect(html).toContain('IMEI o número de serie')
+    })
+
+    it('sin llevaSerie sigue pidiendo la cantidad, como siempre', async () => {
+      const html = await renderMoverStock(true, false)
+      expect(html).toContain('Cantidad que entra')
+    })
+
+    // El atributo REAL, no la clase utilitaria `disabled:pointer-events-none`
+    // que shadcn ya trae en cualquier <Button> —esa substring está SIEMPRE,
+    // esté o no deshabilitado—: React renderiza el booleano como
+    // `disabled=""`, y es eso lo que hay que buscar.
+    function botonDeshabilitado(html: string, texto: string): boolean {
+      const inicioBoton = html.indexOf(`${texto}</button>`)
+      // Sin esto, un `texto` que dejara de existir (una etiqueta que cambia)
+      // haría que `indexOf` diera -1, `lastIndexOf` diera -1 también, el
+      // slice quedara vacío, y el caso NEGATIVO ("no está deshabilitado")
+      // pasara de pura casualidad en vez de por haber mirado el botón real.
+      expect(inicioBoton, `no se encontró el botón "${texto}"`).toBeGreaterThan(-1)
+      const inicio = html.lastIndexOf('<button', inicioBoton)
+      expect(inicio, `no se encontró la apertura de "<button" para "${texto}"`).toBeGreaterThan(-1)
+      return /\sdisabled=""/.test(html.slice(inicio, inicioBoton))
+    }
+
+    it('"Corregir por conteo" queda deshabilitada y explicada, no escondida', async () => {
+      const html = await renderMoverStock(true, true)
+      expect(html).toContain('Corregir por conteo')
+      expect(html).toContain(
+        'Este artículo se maneja por IMEI: para sacar una unidad, dala de baja desde',
+      )
+      expect(html).toContain('href="#unidades"')
+      expect(botonDeshabilitado(html, 'Corregir')).toBe(true)
+    })
+
+    it('sin llevaSerie, "Corregir por conteo" sigue habilitada y sin la explicación', async () => {
+      const html = await renderMoverStock(true, false)
+      expect(html).not.toContain('se maneja por IMEI')
+      expect(botonDeshabilitado(html, 'Corregir')).toBe(false)
+    })
   })
 })
 

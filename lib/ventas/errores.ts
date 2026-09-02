@@ -25,6 +25,16 @@ export type CodigoErrorDeVenta =
   | 'PLAN_INEXISTENTE'
   | 'PLAN_NO_CORRESPONDE'
   | 'PLAN_EN_DOLARES'
+  // Los de unidades identificadas. Separados por lo mismo que
+  // ARTICULO_DESACTIVADO está separado de ARTICULO_INEXISTENTE: para el que
+  // está cobrando son situaciones con salidas distintas — elegir otra unidad,
+  // recargar la pantalla, o sacar la línea del carrito.
+  | 'UNIDAD_REQUERIDA'
+  | 'CANTIDAD_CON_SERIE'
+  | 'UNIDAD_NO_CORRESPONDE'
+  | 'UNIDAD_INEXISTENTE'
+  | 'UNIDAD_NO_DISPONIBLE'
+  | 'UNIDAD_REPETIDA'
 
 /**
  * Con código y no sólo con mensaje: la UI que venga después tiene que poder

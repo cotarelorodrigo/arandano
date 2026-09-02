@@ -213,8 +213,19 @@ campo de cotización, ver *Decisiones*.
   barra prominente a todo el ancho de la pantalla con su propio atajo (`F2`
   la enfoca desde cualquier lado). El buscador habilita el lector de código de
   barras sin código propio: el lector tipea y manda Enter.
+- **Escanear el IMEI de un equipo con serie** (ciclo de unidades por IMEI): el
+  artículo entra al carrito con esa unidad ya elegida, sin ningún diálogo de
+  por medio. Escanear el mismo IMEI otra vez no lo duplica: avisa por toast
+  ("El equipo … ya está en el carrito") y no toca el carrito.
+- **Agregar por nombre un artículo con serie abre un selector de unidad**: un
+  diálogo con la lista de IMEI libres de ese artículo (con "Buscando
+  equipos…" mientras llega y "No quedan equipos disponibles" si la vitrina
+  está vacía), y tocar uno lo agrega igual que si se hubiera escaneado.
 - Cambiar cantidades con un stepper `[−] [valor] [+]` —el valor del medio
   sigue siendo editable a mano, no sólo con los botones— y quitar ítems.
+  **Un artículo con serie no tiene stepper**: su línea muestra el IMEI en ese
+  lugar, porque su cantidad es siempre 1 y no se puede tocar — dos equipos son
+  dos líneas, nunca una con cantidad 2.
 - Cobrar con **pagos partidos**, en pesos y en dólares, cada uno con su medio
   (efectivo, transferencia, débito, crédito) y su cotización. Un pago en
   dólares muestra cuántos pesos representa (`Entran $X` — `Base en pesos $X`
@@ -312,6 +323,37 @@ campo de cotización, ver *Decisiones*.
   stock negativo está permitido en este producto —el mostrador manda—, así que
   es "hay que mirar", no "esto impide seguir"; el rojo queda para lo que sí
   bloquea (una cantidad ilegible, que sí apaga "Cobrar").
+- **El match del IMEI es EXACTO y sólo entre unidades LIBRES, al revés que el
+  `contains` de nombre y SKU** (ciclo de unidades por IMEI, `buscarArticulosVendibles`
+  en `lib/ventas/buscar.ts`). Un IMEI son quince dígitos que se escanean
+  enteros: un `contains` no mejora nada y en cambio haría que tipear "355"
+  traiga media vitrina, además de no poder usar el índice. Y como el índice
+  único parcial de la base garantiza que no haya dos unidades libres con el
+  mismo IMEI, esto devuelve una fila o ninguna — nunca hay que desempatar.
+  **Sólo entra en el camino del mostrador**, no en el que usa el bot
+  (`porPalabras`): un cliente de WhatsApp no tiene por qué poder preguntar por
+  un IMEI, y la defensa es que el camino de código no exista, no que el
+  prompt lo prohíba.
+- **Escanear y elegir del selector terminan en la MISMA función,
+  `agregarUnidad`.** No hay dos caminos de código para "unidad ya conocida":
+  el escaneo la trae en `ArticuloVendible.unidad` (presente sólo cuando la
+  búsqueda entró por IMEI exacto) y el selector la resuelve al tocar una fila,
+  pero los dos llaman a la misma función, que es también la que detecta la
+  unidad repetida y dispara el toast.
+- **`agregarUnidad` siempre AGREGA una línea nueva, nunca suma cantidad a una
+  existente.** El camino sin serie, al agregar un artículo que ya está en el
+  carrito, le suma 1 a su línea; una unidad con serie no puede hacer eso —dos
+  iPhones del mismo modelo son dos entradas del array, cada una con su propio
+  `unidadId` y cantidad fija en `1`—, porque el motor rechaza cualquier línea
+  con serie y cantidad distinta de 1 (`CANTIDAD_CON_SERIE`). Lo único que
+  `agregarUnidad` verifica antes de empujar la línea es que esa MISMA unidad
+  (`estaEnElCarrito`, por `unidadId`) no esté ya adentro — eso sí sería
+  vender el mismo equipo dos veces.
+- **`firmaDelCarrito` —la clave de idempotencia del cobro— incluye
+  `unidadId`** en la tupla de cada línea, no sólo `articuloId` y `cantidad`.
+  Sin él, cambiar la unidad de una línea (agregar un botón para eso es un paso
+  futuro natural: "otra caja se llevó este equipo") no cambiaría la firma, y
+  una venta genuinamente distinta podría volver como si fuera la anterior.
 - **Los `<select>` nativos de medio de pago y moneda pasaron a `Select` de
   shadcn (Radix), a conciencia.** Trae popover propio y navegación por
   teclado —alcance que un comentario de una task anterior había diferido
@@ -477,7 +519,13 @@ Es la pantalla que más cambia del ciclo, y la única que se parte en dos frames
   desincronizar.
 - **La fila del carrito se apila**: nombre y "Quitar" arriba, stepper y
   subtotal debajo, y el precio unitario fundido en la línea de meta. Mismo
-  patrón `lg:contents` que los cuatro listados.
+  patrón `lg:contents` que los cuatro listados. **La línea sin stepper de un
+  artículo con serie usa la MISMA celda** —no hay una versión de teléfono
+  distinta—: el recuadro con el IMEI ocupa el lugar de `[−] [valor] [+]` en
+  los dos anchos, porque en el teléfono es donde más se va a usar (el lector
+  de código de barras es la cámara). El selector de unidad y el toast de
+  "equipo repetido" tampoco llevan tratamiento propio: el `Dialog` de shadcn
+  ya se adapta solo, y sonner apila sus toasts arriba de cualquier ancho.
 
   **"Quitar" queda arriba a la derecha con `position: absolute`, no anidado
   junto al nombre**, así que en el DOM sigue siendo la quinta celda: por
@@ -513,6 +561,9 @@ Es la pantalla que más cambia del ciclo, y la única que se parte en dos frames
   dólares—: ni el selector `Cubre`, ni la banda de dos líneas, ni el segundo
   chip de faltante. Anotado en `docs/correcciones-pendientes-del-pen.md`,
   entrada 23.
+- **Tampoco dibuja nada de las unidades por IMEI** —es anterior también a ese
+  ciclo—: ni el selector de unidad del carrito, ni la línea sin stepper.
+  Anotado en `docs/correcciones-pendientes-del-pen.md`, entrada 27.
 
 ## `/ventas`
 
@@ -689,6 +740,12 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 - Ver los ítems con su SKU (o "Servicio" si no lleva stock), cantidad, precio
   unitario y subtotal — **cada uno en su propia moneda** (Task 11): un ítem en
   dólares muestra "US$", sin convertirlo a pesos.
+- **Ver el IMEI del equipo que se llevó cada línea, cuando lo hay** (ciclo de
+  unidades por IMEI). Un artículo con `llevaSerie` deja bajo su nombre "IMEI
+  355000000000001"; un artículo sin serie —la inmensa mayoría de las
+  ventas— no muestra ni la línea ni el rótulo. Es lo que hace útil el reclamo
+  de garantía tres meses después: "¿este teléfono salió de acá?" se contesta
+  buscando el IMEI, no adivinando cuál de los N que había en stock era.
 - Ver el pie de "Qué se vendió" **desglosado en Vendido / Recargo (o
   Descuento) / Cobrado cuando hay algo que desglosar**, o el renglón único
   "Total" de siempre si no — que desde el ciclo del cobrado por moneda incluye
@@ -764,6 +821,39 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
   ninguna venta tiene comprobante fiscal, así que el texto es exactamente
   cierto para todas. Cuando ARCA se integre, este campo pasa a leer del
   modelo — no antes.
+- **El IMEI se reparte por ARTÍCULO, no por ítem — `VentaItem` no lleva
+  `unidadId`.** El spec del ciclo lo descarta a propósito: con
+  `UnidadDeArticulo.ventaId` alcanza, porque la línea de un artículo con serie
+  es siempre UNA unidad con cantidad 1 (`crearVenta` rechaza cualquier otra con
+  `CANTIDAD_CON_SERIE`), y dos líneas del mismo artículo —dos iPhones idénticos
+  en la misma venta— dicen exactamente lo mismo: misma descripción, mismo
+  precio, ambos congelados. `imeisPorItem` (`page.tsx`) agrupa los IMEI de la
+  venta por `articuloId` y consume uno por línea de ese artículo, en el orden
+  que Prisma los devuelva — a cuál línea le toca cuál IMEI es irrelevante,
+  porque las dos son indistinguibles. Sumar `VentaItem.unidadId` sería un
+  segundo vínculo para el mismo hecho, con el modo de falla clásico de los
+  vínculos redundantes: que un día digan cosas distintas.
+- **La consulta y el armado de props se extrajeron a `datosDelDetalle`**,
+  separada del Server Component por el mismo motivo que ya separó
+  `totalDelPeriodo`/`pagosDelPeriodo` en `app/(app)/ventas/page.tsx`:
+  page.test.tsx (colocado con la pantalla) sólo puede probar funciones que no
+  abren sesión ni tocan Prisma, y sin esta función el `select` que trae
+  `venta.unidades` para los IMEI sólo se podía verificar abriendo la pantalla
+  en un navegador. `test/ventas.test.ts` la llama directo contra una venta
+  real (con y sin unidades) y renderiza `Detalle` con el resultado — el mismo
+  camino que corre en producción, no una reconstrucción a mano.
+- **El IMEI no lleva `hidden`: es UN solo nodo para los dos anchos**, a
+  diferencia del subtítulo (SKU), que está oculto en el teléfono porque ya va
+  fundido en la meta. No hace falta fundirlo ni duplicarlo: es una línea más
+  bajo el nombre, visible siempre, y eso evita fabricar dos copias del mismo
+  dato que después haya que probar que dicen lo mismo (la lección que dejó el
+  merge del ciclo móvil sobre las guardas de permiso duplicadas, aplicada acá
+  a un dato en vez de a un botón).
+- **Sin ninguna unidad identificada, la pantalla no dibuja NADA nuevo — ni la
+  línea, ni el rótulo "IMEI" en ningún lado del documento.** Es el principio
+  del ciclo entero: un local que no usa esto no ve ninguna diferencia. Probado
+  literalmente así, no por inferencia: `test/ventas.test.ts` arma una venta
+  común y afirma que el HTML entero no contiene la palabra "IMEI".
 
 **En el teléfono**
 
@@ -925,6 +1015,12 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
   mostrado como ayuda.
 - Cargar stock inicial y, con el permiso `COSTOS`, su costo unitario, que nace
   como movimiento y no como un número suelto.
+- **Prender "Lleva IMEI o número de serie"** (ciclo de unidades por IMEI,
+  2026-09-02): el par "Cantidad / Costo unitario" cambia y "Cantidad" se
+  reemplaza por una lista donde se escanea o tipea un IMEI por línea —Enter
+  agrega una fila y la enfoca, así que un lector de código de barras carga
+  varias unidades sin ningún click—. El costo unitario se mantiene. Sólo tiene
+  sentido con Producto: con Servicio el switch se apaga y se deshabilita.
 
 **Decisiones**
 
@@ -957,6 +1053,12 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
   teléfono.
 - El stock inicial entra como `MovimientoStock`, así que el historial del
   artículo arranca explicando de dónde salió cada unidad.
+- **Con el switch de serie prendido, el stock nace de la lista y no de un
+  número tipeado**: `stockInicial` se rechaza si viene junto con `llevaSerie`.
+  Que la pantalla deshabilite el switch con Servicio o esconda "Cantidad" no
+  es la guarda — `crearArticulo` rechaza la combinación igual del lado del
+  servidor. Sin frame en `design/arandano.pen`: es anterior a esta feature
+  (`docs/superpowers/specs/2026-09-02-unidades-por-imei-design.md`).
 - **La categoría se elige, no se tipea**, y eso **quita una capacidad que
   existía**: hasta el 2026-08-24 el campo era texto libre y escribir
   "Fundas · Samsung" creaba las dos ramas al vuelo. Ahora se elige de lo que
@@ -1059,6 +1161,21 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
 - **Exportar CSV** con el historial completo (sin el límite de la tabla en
   pantalla; la columna de costo del CSV sigue la misma regla de `COSTOS` que la
   tabla, porque las dos arman su celda con la misma función).
+- **Prender o apagar "Lleva IMEI o número de serie"** (ciclo de unidades por
+  IMEI), sólo para un producto activo — un servicio no tiene stock que
+  identificar y un artículo desactivado no se ofrece para operaciones nuevas.
+  Con stock en cero, prender postea directo; con stock cargado abre un diálogo
+  que pide los IMEI que faltan antes de confirmar — el artículo queda cuadrado
+  al instante, sin un paso de "vaciar y volver a cargar" que ensuciaría el
+  historial con movimientos que nunca pasaron. "Los que faltan" y no "tantos
+  como stock": `prenderSerie` cuenta las unidades libres que YA existen y las
+  reusa (ver la decisión de abajo), así que en el caso normal —ninguna— son las
+  dos mismas cantidades. El servidor es el que manda: el diálogo dibuja tantas
+  filas como stock, y las que sobren se dejan vacías.
+- Con el switch prendido, ver la card **"Unidades"**: la lista de IMEI libres,
+  cuándo entró cada uno, y **darlos de baja** uno por uno, con una nota
+  (se rompió, se robó, garantía). Con más de 8 unidades libres, un filtro por
+  IMEI dentro de la misma card.
 
 **Decisiones**
 
@@ -1186,6 +1303,96 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
 - Los movimientos llevan el motivo (`VENTA`, `ANULACION_VENTA`, `AJUSTE`,
   `INGRESO`). Sumar un motivo es una migración aditiva: es el punto de extensión
   que el núcleo le promete a los módulos.
+- **"Corregir por conteo" queda DESHABILITADA y EXPLICADA para un artículo con
+  serie, nunca escondida.** Con `llevaSerie`, los dos campos y el botón se
+  deshabilitan (`disabled={llevaSerie}`) y aparece un texto que dice por qué
+  ("Este artículo se maneja por IMEI: para sacar una unidad, dala de baja
+  desde Unidades") con un link ancla a la card `#unidades`. El motivo de
+  negocio: en un artículo con serie no alcanza con decir "quedan 4" — hay que
+  decir **cuál** se fue, y "corregir por conteo" no tiene forma de expresar
+  eso. El motivo de UX: desaparecer un control sin decir nada es lo que este
+  repo trata como defecto en todos lados (el mismo criterio que ya aplican el
+  botón "Anular" con su Zona de riesgo permanente, o el chip "Queda poco" que
+  siempre dice por qué). El servidor es la defensa real —`corregirStock`
+  rechaza con `SERIE_SIN_CONTEO` sin importar qué mande el formulario—; esto
+  es sólo la UI que evita ofrecer un botón que va a fallar.
+- **"Ingresar mercadería" cambia de forma con `llevaSerie`, no de acción.** El
+  campo "Cantidad que entra" se reemplaza por la misma `ListaDeImeis` que usa
+  el alta —se escanea o se tipea un IMEI por línea, y la cantidad es cuántos
+  hay—, pero `ingresarMercaderia` es la MISMA server action de siempre: decide
+  por la **presencia** del campo `imeis` en el `FormData`, no por su longitud,
+  así que una lista vacía sigue siendo "esto vino con IMEI" y no cae al camino
+  de cantidad suelta.
+- **La unicidad del IMEI es EXACTA y sólo entre las unidades LIBRES de todo el
+  tenant**, no un `contains` como el buscador de nombre/SKU: es un
+  identificador de quince dígitos que se escanea entero, y un índice único
+  PARCIAL en la base (`(tenant_id, imei) WHERE venta_id IS NULL AND baja_en IS
+  NULL`) es lo único que impide cargar el mismo IMEI dos veces en la vitrina —
+  Prisma no sabe expresar un índice parcial, así que vive escrito a mano en la
+  migración. Es **parcial y no global** a propósito: un local que recompra el
+  equipo que vendió tiene que poder cargarlo de nuevo, y dos filas con el
+  mismo IMEI en el historial no son un defecto — son el mismo teléfono
+  pasando dos veces por el mismo local.
+- **Dar de baja usa la misma confirmación en dos pasos sobre el MISMO botón**
+  que ya usa `AnularVenta` y el doble `Esc` del carrito de `/vender`:
+  "irreversible pero frecuente". El primer toque arma la confirmación (cambia
+  el rótulo a "Confirmar baja" y se desarma solo a los 3 segundos); sólo el
+  segundo confirma. Sin diálogo modal ni deshacer, mismo criterio que las
+  otras dos.
+- **La fila de una unidad es UN solo árbol, no dos presentaciones.** El IMEI y
+  la fecha son columna en el teléfono y fila en escritorio con el MISMO
+  `<span>` cada uno —nunca duplicados—, por la misma regla que dejó escrita el
+  merge del ciclo móvil sobre las dos copias de un botón: fabricar dos nodos
+  para dos anchos es fabricar dos cosas que después hay que probar que dicen
+  lo mismo.
+- **El switch vive en `children` de `FichaDeArticulo`, no en ninguna de las
+  dos columnas**: es de ancho completo, igual que el `<Alert>` de "artículo
+  desactivado" que ya ocupaba ese lugar. Sólo se ofrece para un producto
+  activo — un servicio no tiene stock que identificar, y un artículo
+  desactivado no se ofrece para operaciones nuevas (los dos casos son, de
+  hecho, mutuamente excluyentes en la pantalla: nunca se ven los dos a la
+  vez).
+- **El switch es optimista, con rollback.** Cambia al toque y vuelve atrás si
+  el servidor lo rechaza (`apagarSerie` rechaza con unidades libres; prender
+  con stock cargado y sin los IMEI correctos rechaza también) — mismo patrón
+  que ya usa `Interruptor` de `app/(app)/bot/formularios.tsx`. El estado real
+  termina de confirmarse cuando `revalidatePath` trae la ficha de nuevo con
+  `llevaSerie` actualizado.
+- **El tile "En stock" no cambia con `llevaSerie`.** Sigue mostrando el mismo
+  número, pintado con `--marca`: para un artículo con serie ese número **es**
+  la cantidad de filas de la card "Unidades" — el invariante del motor
+  (`stock = unidades libres`), no un dato distinto que haya que reconciliar a
+  la vista.
+- **Prender el switch CUENTA las unidades libres que ya existan y las reusa**,
+  en vez de pedir un IMEI por cada unidad de stock (hallazgo C1 de la review de
+  rama). Suena a caso imposible —un artículo sin serie no debería tener
+  unidades— y no lo es: `apagarSerie` sólo mira las LIBRES, y una unidad atada
+  a una venta viva no lo es, así que con todo el stock vendido el switch se
+  apaga; si después se anula esa venta, la unidad vuelve a la vitrina sobre un
+  artículo que ya no lleva serie. Validando `stock === imeis.length` a secas,
+  volver a prender creaba una fila DUPLICADA del mismo equipo: la card listaba
+  dos y el tile decía uno, y venderlas dejaba el stock en −1 sin nada que lo
+  detectara. La regla es `stock === libres existentes + IMEI tipeados`. **No se
+  arregla del otro lado** —prohibiendo apagar mientras alguna unidad esté atada
+  a una venta— porque una unidad vendida queda atada a su venta para siempre, y
+  esa regla dejaría el switch irreversible para cualquier local que haya
+  vendido un solo teléfono.
+- **El error de prender se pinta DENTRO del diálogo** (hallazgo I4). El `<p>`
+  del error también vive en la fila del switch, para los dos caminos que no
+  abren diálogo (apagar, y prender con stock en cero), pero con el diálogo
+  abierto ese `<p>` queda detrás de un velo de pantalla completa con el foco
+  atrapado adentro: los tres errores más probables de este camino
+  (`SERIE_CONTEO_NO_COINCIDE`, `IMEI_REPETIDO`, `SERIE_STOCK_NO_ENTERO`) no le
+  mostraban nada a quien apretaba "Prender". Y las tres llamadas liberan su
+  `enCurso` en un `finally`: sin eso, una acción que tira dejaba el botón
+  congelado en "Prendiendo…" y el switch deshabilitado hasta recargar.
+- **El choque de un IMEI ya cargado sale como cartel, no como 500** (hallazgo
+  I1). La traducción del `P2002` del índice parcial vive en `crearUnidadesEnTx`
+  (`lib/inventario/unidades.ts`), que es el único lugar del motor que sabe que
+  ese choque habla de un IMEI: más arriba —en `traducirErrorDeBase` o en el
+  catch de `crearArticulo`— no se puede distinguir del choque del SKU, porque
+  bajo `arandano_app` Postgres retiene el `DETAIL` del error. Alcanza a las
+  tres puertas de una: el alta, el ingreso de mercadería y el switch.
 
 **En el teléfono**
 
@@ -1205,6 +1412,14 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   `more-vertical`: las dos acciones principales ya están al pie y las
   secundarias en el cuerpo, así que ese menú no tendría qué contener sin
   inventarlo. Ver `docs/correcciones-pendientes-del-pen.md`, entrada 13.
+- **El switch, la card "Unidades" y su diálogo de prender no llevan tratamiento
+  propio del teléfono**: usan las mismas clases responsive de siempre
+  (`flex-col lg:flex-row`, el `Dialog` de shadcn, que ya centra y ajusta su
+  ancho solo). Sin frame en `design/arandano.pen` para ninguno de los tres —es
+  anterior a esta feature—, así que no hay una maqueta contra la que confirmar
+  que se ven bien apretados a 390 px; anotado en
+  `docs/correcciones-pendientes-del-pen.md`, entrada 27, y queda en la
+  verificación manual pendiente (ver CLAUDE.md).
 
 ## `/servicio-tecnico`
 

@@ -16,6 +16,7 @@ let crearArticulo: typeof import('@/lib/inventario/articulos').crearArticulo
 let editarArticulo: typeof import('@/lib/inventario/articulos').editarArticulo
 let desactivarArticulo: typeof import('@/lib/inventario/articulos').desactivarArticulo
 let reactivarArticulo: typeof import('@/lib/inventario/articulos').reactivarArticulo
+let unidadesLibres: typeof import('@/lib/inventario/unidades').unidadesLibres
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -63,15 +64,46 @@ async function categoriaIdDe(articuloId: string): Promise<string> {
 }
 
 /** El artículo tal como quedó escrito, leído con el OWNER —mismo motivo que
- *  `categoriaDe`—. `precio` vuelve como `Decimal` de Prisma y no como string
- *  crudo de `pg`, para que los tests puedan comparar `.toString()` igual que
- *  en el resto del archivo. */
-async function leerArticulo(articuloId: string): Promise<{ moneda: string; precio: Prisma.Decimal }> {
+ *  `categoriaDe`—. `precio` y `stock` vuelven como `Decimal` de Prisma y no
+ *  como string crudo de `pg`, para que los tests puedan comparar `.toString()`
+ *  igual que en el resto del archivo. */
+async function leerArticulo(
+  articuloId: string,
+): Promise<{ moneda: string; precio: Prisma.Decimal; stock: Prisma.Decimal }> {
   const { rows } = await owner.query(
-    `SELECT moneda, precio FROM articulos WHERE id = $1`,
+    `SELECT moneda, precio, stock FROM articulos WHERE id = $1`,
     [articuloId],
   )
-  return { moneda: rows[0].moneda, precio: new Prisma.Decimal(rows[0].precio) }
+  return {
+    moneda: rows[0].moneda,
+    precio: new Prisma.Decimal(rows[0].precio),
+    stock: new Prisma.Decimal(rows[0].stock),
+  }
+}
+
+/** Un artículo que YA lleva serie, con una unidad libre por cada IMEI de la
+ *  lista y el stock ya asentado en esa misma cantidad — el estado en el que
+ *  queda un artículo real después de `prenderSerie`, armado directo por SQL
+ *  para no encadenar un ciclo completo sólo para llegar al punto de partida
+ *  de estos tests. */
+async function crearArticuloConSerie(nombre: string, imeis: string[]) {
+  const a = await owner.query(
+    `INSERT INTO articulos
+       (id, tenant_id, sku, nombre, tipo, precio, stock, lleva_serie, creado_en, actualizado_en)
+     VALUES (gen_random_uuid(), $1, $2, $3, 'PRODUCTO', 1000.00, $4, true, now(), now())
+     RETURNING id`,
+    [tenantId, `SKU-${crypto.randomUUID()}`, nombre, imeis.length],
+  )
+  const articuloId = a.rows[0].id
+  for (const imei of imeis) {
+    await owner.query(
+      `INSERT INTO unidades_articulo
+         (id, tenant_id, articulo_id, imei, ingresada_por_id, ingresada_en, creado_en)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, now(), now())`,
+      [tenantId, articuloId, imei, usuarioId],
+    )
+  }
+  return { id: articuloId as string }
 }
 
 beforeAll(async () => {
@@ -81,6 +113,7 @@ beforeAll(async () => {
   ;({ crearArticulo, editarArticulo, desactivarArticulo, reactivarArticulo } = await import(
     '@/lib/inventario/articulos'
   ))
+  ;({ unidadesLibres } = await import('@/lib/inventario/unidades'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -253,6 +286,19 @@ describe('ingresarStock', () => {
     }
   })
 
+  it('rechaza no decir ni cantidad ni IMEIs: sin ninguno de los dos no hay nada que ingresar', async () => {
+    const antes = new Prisma.Decimal(await stockDe(remera))
+    // El tipo permite omitir los dos campos —son opcionales de forma
+    // independiente, no "uno de los dos obligatorio"—, así que este llamado es
+    // exactamente el que TypeScript no frena y que llegaría de un body JSON
+    // armado a mano, sin pasar por ninguna pantalla tipada.
+    await expect(
+      ingresarStock({ tenantId, articuloId: remera, usuarioId }),
+    ).rejects.toMatchObject({ codigo: 'CANTIDAD_INVALIDA' })
+    // Nada quedó a medias: el stock es el mismo que antes del llamado.
+    expect(await stockDe(remera)).toBe(antes.toString())
+  })
+
   it('rechaza un costo negativo y uno con más decimales de los que se guardan', async () => {
     await expect(
       ingresarStock({ tenantId, articuloId: remera, cantidad: d('1'), usuarioId, costoUnitario: d('-1') }),
@@ -268,6 +314,62 @@ describe('ingresarStock', () => {
     await expect(
       ingresarStock({ tenantId, articuloId: servicio, cantidad: d('1'), usuarioId }),
     ).rejects.toMatchObject({ codigo: 'SERVICIO_SIN_STOCK' })
+  })
+
+  it('un artículo con serie ingresa por IMEIs y el stock sube por la longitud de la lista', async () => {
+    const a = await crearArticuloConSerie('iPhone 13', ['I1'])
+    await ingresarStock({ tenantId, articuloId: a.id, imeis: ['I2', 'I3'], usuarioId })
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('3')
+    expect((await unidadesLibres(tenantId, a.id)).map((u) => u.imei)).toEqual(['I1', 'I2', 'I3'])
+  })
+
+  it('un artículo con serie rechaza una cantidad suelta', async () => {
+    const a = await crearArticuloConSerie('iPhone 14', [])
+    await expect(
+      ingresarStock({ tenantId, articuloId: a.id, cantidad: d('2'), usuarioId }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'SERIE_REQUIERE_IMEIS' }))
+  })
+
+  it('un artículo SIN serie rechaza que le manden IMEIs', async () => {
+    const a = await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, $2, 'Funda', 'PRODUCTO', 1000.00, 0, now(), now())
+       RETURNING id`,
+      [tenantId, `SKU-${crypto.randomUUID()}`],
+    )
+    const articuloId = a.rows[0].id
+    await expect(
+      ingresarStock({ tenantId, articuloId, imeis: ['J1'], usuarioId }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'IMEIS_SIN_SERIE' }))
+  })
+
+  // El `codigo` NO es decoración en este caso: la versión anterior asertaba un
+  // `.rejects.toThrow()` pelado y pasaba PORQUE el error no tenía ninguno —era
+  // el `PrismaClientKnownRequestError` crudo del índice parcial, que
+  // `traducir()` (app/(app)/inventario/acciones.ts) relanza por no ser un
+  // `ErrorDeInventario`, o sea el error boundary de Next en la cara de quien
+  // escanea. Hallazgo I1 de la review de rama.
+  it('ingresar un IMEI que ya está libre sale como IMEI_REPETIDO y NO sube el stock', async () => {
+    const a = await crearArticuloConSerie('iPhone 15', ['K1'])
+    const promesa = ingresarStock({ tenantId, articuloId: a.id, imeis: ['K1'], usuarioId })
+    await expect(promesa).rejects.toBeInstanceOf(ErrorDeInventario)
+    await expect(promesa).rejects.toMatchObject({ codigo: 'IMEI_REPETIDO' })
+    // Y el mensaje nombra el equipo: sin eso, quien escanea no sabe cuál de
+    // los que cargó es el que ya estaba.
+    await expect(promesa).rejects.toThrow(/K1/)
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('1')
+  })
+
+  it('el IMEI libre de OTRO artículo choca igual: el índice es por tenant, no por artículo', async () => {
+    // El índice parcial es `(tenant_id, imei) WHERE libre`, así que cargar en
+    // el iPhone un IMEI que está libre colgado del Samsung choca — y es el
+    // caso que más confunde si el mensaje no lo nombra.
+    await crearArticuloConSerie('Samsung A54', ['K9'])
+    const otro = await crearArticuloConSerie('iPhone 15 Pro', ['K8'])
+    await expect(
+      ingresarStock({ tenantId, articuloId: otro.id, imeis: ['K9'], usuarioId }),
+    ).rejects.toMatchObject({ codigo: 'IMEI_REPETIDO' })
+    expect((await leerArticulo(otro.id)).stock.toString()).toBe('1')
   })
 
   // El único fallo que no se puede anticipar con una validación previa. Tiene
@@ -349,6 +451,15 @@ describe('corregirStock', () => {
       corregirStock({ tenantId, articuloId: servicio, stockContado: d('3'), usuarioId }),
     ).rejects.toMatchObject({ codigo: 'SERVICIO_SIN_STOCK' })
   })
+
+  it('corregirStock se rechaza sobre un artículo con serie', async () => {
+    const a = await crearArticuloConSerie('iPhone 12', ['L1', 'L2'])
+    await expect(
+      corregirStock({ tenantId, articuloId: a.id, stockContado: d('1'), usuarioId }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'SERIE_SIN_CONTEO' }))
+    // Y no dejó nada a medias: el stock sigue siendo el que era.
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('2')
+  })
 })
 
 // La invariante de todo el motor, ejercitada por las TRES vías de movimiento.
@@ -427,6 +538,68 @@ describe('crearArticulo', () => {
     })
     expect(siguiente.sku).not.toBe(ocupado)
     expect(siguiente.sku).toMatch(/^A-\d{4}$/)
+  })
+
+  // Hallazgo I2 de la review de rama: el alta escribe unidades en la MISMA
+  // transacción que el artículo desde que existe `llevaSerie`, así que el
+  // P2002 del índice parcial del IMEI llegaba al catch que sólo sabía de SKU
+  // —`esSkuRepetido` devuelve `true` cuando `fields` está ausente, y bajo
+  // `arandano_app` está siempre ausente—. Los dos mensajes que salían eran
+  // falsos y ninguno nombraba el problema real.
+  it('un IMEI ya cargado en el alta sale como IMEI_REPETIDO, no como choque de SKU', async () => {
+    await crearArticuloConSerie('iPhone 13 usado', ['SERIE-ALTA-1'])
+    const promesa = crearArticulo({
+      tenantId, usuarioId, nombre: 'iPhone 13 otro', tipo: 'PRODUCTO', precio: d('500000'),
+      llevaSerie: true, imeis: ['SERIE-ALTA-1'],
+    })
+    await expect(promesa).rejects.toMatchObject({ codigo: 'IMEI_REPETIDO' })
+    await expect(promesa).rejects.toThrow(/SERIE-ALTA-1/)
+  })
+
+  it('y con SKU tipeado tampoco lo culpa al código', async () => {
+    await crearArticuloConSerie('Samsung S23', ['SERIE-ALTA-2'])
+    await expect(
+      crearArticulo({
+        tenantId, usuarioId, nombre: 'Samsung S23 otro', tipo: 'PRODUCTO', precio: d('400000'),
+        sku: 'S23-LIBRE', llevaSerie: true, imeis: ['SERIE-ALTA-2'],
+      }),
+    ).rejects.toMatchObject({ codigo: 'IMEI_REPETIDO' })
+    // Y el SKU tipeado quedó libre: el alta falló por el IMEI, no por él.
+    const usado = await owner.query(`SELECT 1 FROM articulos WHERE sku = $1`, ['S23-LIBRE'])
+    expect(usado.rowCount).toBe(0)
+  })
+
+  // La otra mitad del mismo hallazgo, y la más cara: con SKU autogenerado el
+  // choque mal atribuido hacía reintentar los cinco intentos, cada uno con su
+  // `proximoSku` YA COMITEADO —hueco permanente en el correlativo—, para
+  // terminar diciendo "no se pudo generar un código libre". Un solo número
+  // consumido es la prueba de que no se reintentó.
+  it('y no quema el correlativo del SKU reintentando cinco veces', async () => {
+    await crearArticuloConSerie('Motorola G84', ['SERIE-ALTA-3'])
+    const antes = await owner.query(
+      `SELECT proximo_sku_articulo AS n FROM tenants WHERE id = $1`, [tenantId],
+    )
+    await expect(
+      crearArticulo({
+        tenantId, usuarioId, nombre: 'Motorola G84 otro', tipo: 'PRODUCTO', precio: d('300000'),
+        llevaSerie: true, imeis: ['SERIE-ALTA-3'],
+      }),
+    ).rejects.toMatchObject({ codigo: 'IMEI_REPETIDO' })
+    const despues = await owner.query(
+      `SELECT proximo_sku_articulo AS n FROM tenants WHERE id = $1`, [tenantId],
+    )
+    expect(Number(despues.rows[0].n) - Number(antes.rows[0].n)).toBe(1)
+  })
+
+  it('el alta con serie carga sus unidades y el stock nace de la lista', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'iPhone 14 nuevo', tipo: 'PRODUCTO', precio: d('700000'),
+      llevaSerie: true, imeis: ['SERIE-ALTA-4', 'SERIE-ALTA-5'],
+    })
+    expect(await stockDe(a.id)).toBe('2')
+    expect((await unidadesLibres(tenantId, a.id)).map((u) => u.imei)).toEqual([
+      'SERIE-ALTA-4', 'SERIE-ALTA-5',
+    ])
   })
 
   it('el stock inicial nace como movimiento, no como número suelto', async () => {

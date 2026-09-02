@@ -5,12 +5,14 @@ import { exigirSesion } from '@/lib/auth/sesion'
 import { puedeConSesion } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { FichaDeArticulo, MoverStock, BotonExportarCsv } from '../formularios'
+import { CardDeUnidades, SwitchDeSerie } from '../unidades'
 import { calcularSaldos, filaDeMovimiento, HistorialDeMovimientos } from '../historial'
 import { GraficoDeRotacion, agregarVentasPorMes } from '../rotacion'
 import { formatearPrecio, formatearCantidad, precioEnSuMoneda } from '@/lib/formato/mostrar'
 import { esUuid } from '@/lib/uuid'
 import { planesDelTenant, type PlanVisible } from '@/lib/planes/consultar'
 import { arbolDeCategorias } from '@/lib/inventario/categorias'
+import { unidadesLibres } from '@/lib/inventario/unidades'
 import { precioConPlan } from '@/lib/planes/precio'
 import { ROTULO_MEDIO } from '@/lib/ventas/medios'
 import estilos from '../tipografia.module.css'
@@ -262,7 +264,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   const SIETE_MESES_ATRAS = new Date()
   SIETE_MESES_ATRAS.setUTCMonth(SIETE_MESES_ATRAS.getUTCMonth() - 7)
 
-  const [movimientos, ultimoConCosto, ventasPorMes, planes, arbol] = await Promise.all([
+  const [movimientos, ultimoConCosto, ventasPorMes, planes, arbol, unidades] = await Promise.all([
     prisma.movimientoStock.findMany({
       where: { articuloId: id },
       // `id` como segundo criterio, no sólo `creadoEn`: `creado_en` es la
@@ -329,6 +331,10 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
     // único. Sólo se consulta si esta persona puede editar: sin
     // `ARTICULOS_EDITAR` la card "Datos" no se renderiza y el árbol no se usa.
     puedeEditar ? arbolDeCategorias(sesion.tenant.id, { verInactivos: true }) : [],
+    // Task 8 del ciclo de unidades por IMEI: sólo se consulta cuando el
+    // artículo lleva serie — pagar esta ida a Postgres por cada artículo del
+    // catálogo, cuando la inmensa mayoría no la usa, no tiene sentido.
+    articulo.llevaSerie ? unidadesLibres(sesion.tenant.id, articulo.id) : [],
   ])
 
   const ultimoCosto = ultimoConCosto?.costoUnitario ?? null
@@ -350,11 +356,15 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   // `FichaDeArticulo` en `../formularios.tsx`).
   const hayPanelPrecios = planes.length > 0
   const columnaDerechaExtra =
-    hayPanelPrecios || esProducto ? (
+    hayPanelPrecios || esProducto || articulo.llevaSerie ? (
       <>
         {hayPanelPrecios && (
           <PanelPreciosPorFormaDePago precio={articulo.precio} moneda={articulo.moneda} planes={planes} />
         )}
+        {/* Task 8 del ciclo de unidades por IMEI: la card "Unidades", sólo
+            para artículos que llevan serie — un servicio nunca puede, así
+            que `articulo.llevaSerie` alcanza sin sumar `esProducto` acá. */}
+        {articulo.llevaSerie && <CardDeUnidades articuloId={articulo.id} unidades={unidades} />}
         {esProducto && <GraficoDeRotacion meses={meses} />}
       </>
     ) : undefined
@@ -431,7 +441,11 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
 
       {esProducto && !articulo.desactivadoEn && (
         <div className="order-3 lg:order-none">
-          <MoverStock articuloId={articulo.id} puedeCostos={puedeCostos} />
+          <MoverStock
+            articuloId={articulo.id}
+            puedeCostos={puedeCostos}
+            llevaSerie={articulo.llevaSerie}
+          />
         </div>
       )}
 
@@ -475,6 +489,19 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
       columnaIzquierda={columnaIzquierda}
       columnaDerechaExtra={columnaDerechaExtra}
     >
+      {/* Task 8 del ciclo de unidades por IMEI: el switch, en `children` y no
+          en ninguna de las dos columnas — es ancho completo, como el
+          `<Alert>` de desactivado que ya vive acá. Sólo para productos
+          activos: un servicio no puede llevar serie, y un artículo
+          desactivado no se ofrece para operaciones nuevas. */}
+      {esProducto && !articulo.desactivadoEn && (
+        <SwitchDeSerie
+          articuloId={articulo.id}
+          llevaSerie={articulo.llevaSerie}
+          stock={articulo.stock.toString()}
+          puedeEditar={puedeEditar}
+        />
+      )}
       {articulo.desactivadoEn && (
         <Alert>
           <AlertDescription>

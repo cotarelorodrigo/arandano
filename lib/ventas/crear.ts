@@ -14,7 +14,18 @@ import {
 import { exigirCliente, exigirUsuario } from './pertenencia'
 import { ErrorDeVenta, traducirErrorDeBase } from './errores'
 
-export type ItemDeVenta = { articuloId: string; cantidad: Prisma.Decimal }
+export type ItemDeVenta = {
+  articuloId: string
+  cantidad: Prisma.Decimal
+  /**
+   * Qué unidad física sale, cuando el artículo se maneja por IMEI. Obligatorio
+   * ahí y prohibido en el resto: un artículo sin serie que venga con unidadId
+   * se RECHAZA en vez de ignorarse, por lo mismo que `ARTICULO_DESACTIVADO`
+   * está separado de `ARTICULO_INEXISTENTE` — ignorar en silencio borra la
+   * distinción que hace falta para diagnosticar.
+   */
+  unidadId?: string
+}
 export type PagoDeVenta = {
   medio: MedioPago
   moneda: Moneda
@@ -77,6 +88,21 @@ export async function crearVenta(
         `la cantidad de ${i.articuloId} tiene a lo sumo ${ESCALA_CANTIDAD} decimales`,
       )
     }
+  }
+  // Dos líneas nombrando la misma unidad es malformado sin necesidad de
+  // consultar nada: no hace falta la base para saber que el mismo equipo no
+  // puede salir dos veces en el mismo carrito.
+  //
+  // `!== undefined` y no truthy: es la misma lectura que hace el guard de
+  // `a.llevaSerie` más abajo, y las dos tienen que leer el campo IGUAL — con
+  // truthy acá, un `unidadId: ''` se escapa de este chequeo y sin embargo
+  // cuenta como "presente" para esa otra validación.
+  const unidadesPedidas = items.flatMap((i) => (i.unidadId !== undefined ? [i.unidadId] : []))
+  if (new Set(unidadesPedidas).size !== unidadesPedidas.length) {
+    throw new ErrorDeVenta(
+      'UNIDAD_REPETIDA',
+      'el mismo equipo está dos veces en el carrito',
+    )
   }
   // Normalizado ACÁ, una sola vez: `cubre` ausente vale `ARS`, que es lo que
   // era toda venta antes de este ciclo, y de acá en más ningún otro lugar de
@@ -226,6 +252,25 @@ export async function crearVenta(
             `${a.nombre} está desactivado y no se puede vender`,
           )
         }
+        if (a.llevaSerie) {
+          if (i.unidadId === undefined) {
+            throw new ErrorDeVenta(
+              'UNIDAD_REQUERIDA',
+              `${a.nombre} se vende por unidad: elegí cuál equipo sale`,
+            )
+          }
+          if (!i.cantidad.equals(1)) {
+            throw new ErrorDeVenta(
+              'CANTIDAD_CON_SERIE',
+              `${a.nombre} se vende de a una unidad: dos equipos son dos líneas`,
+            )
+          }
+        } else if (i.unidadId !== undefined) {
+          throw new ErrorDeVenta(
+            'UNIDAD_NO_CORRESPONDE',
+            `${a.nombre} no se maneja por IMEI`,
+          )
+        }
         return {
           articuloId: a.id,
           descripcion: a.nombre,
@@ -233,6 +278,7 @@ export async function crearVenta(
           precioUnitario: a.precio,
           moneda: a.moneda,
           esProducto: a.tipo === 'PRODUCTO',
+          unidadId: i.unidadId,
         }
       })
 
@@ -318,15 +364,119 @@ export async function crearVenta(
       // la venta NO se reordenan: el ticket conserva el orden en que se
       // cargaron, y los `INSERT` de `venta_items` sólo toman locks compartidos
       // (`FOR KEY SHARE`), que no se bloquean entre sí.
+      // Ordenado por articuloId y, en el empate, por unidadId: con serie un
+      // carrito puede traer VARIAS líneas del MISMO artículo —CANTIDAD_CON_SERIE
+      // lo fuerza: dos equipos son dos líneas—, así que el empate en articuloId
+      // por sí solo dejaría el orden entre esas líneas librado al orden del
+      // carrito. El desempate por unidadId es lo que hace que el orden sea
+      // total de verdad y no dependa de en qué renglón se cargó cada equipo.
       const paraStock = lineas
         .filter((l) => l.esProducto)
-        .sort((a, b) => (a.articuloId < b.articuloId ? -1 : a.articuloId > b.articuloId ? 1 : 0))
+        .sort((a, b) => {
+          if (a.articuloId !== b.articuloId) return a.articuloId < b.articuloId ? -1 : 1
+          const ua = a.unidadId ?? ''
+          const ub = b.unidadId ?? ''
+          return ua < ub ? -1 : ua > ub ? 1 : 0
+        })
 
+      // PRIMERO todas las unidades, DESPUÉS todos los artículos. Los dos
+      // bucles recorren `paraStock` en el MISMO orden total; lo que los separa
+      // es el orden en que se toman los dos TIPOS de lock, y ahí estaba el
+      // deadlock.
+      //
+      // Con las dos escrituras entrelazadas —unidad, artículo, unidad,
+      // artículo— dos líneas del mismo artículo (que `CANTIDAD_CON_SERIE`
+      // vuelve obligatorias: dos teléfonos son dos líneas) tomaban `u1, A, u2,
+      // A`, mientras `darDeBajaUnidad` (lib/inventario/stock.ts) toma `u2, A`.
+      // Interleavadas: la venta tiene `u1` y `A` y espera `u2`; la baja tiene
+      // `u2` y espera `A`. Ciclo, `40P01`, y sale como error crudo de Prisma
+      // con la venta caída en el mostrador. Y `darDeBajaUnidad` es justamente
+      // el escritor que NO pasa por `proximoNumero`, así que no hay ningún
+      // lock de tenant que los serialice antes — es el que el comentario de
+      // abajo nombra como la amenaza real.
+      //
+      // Tomando todas las unidades antes que cualquier artículo, el ciclo no
+      // se puede formar: quien tenga las unidades avanza hasta el commit, y
+      // quien no las tenga se lleva `count === 0` y se rechaza entero.
+      for (const l of paraStock) {
+        // La unidad se TOMA con un UPDATE condicional, no se lee y después se
+        // escribe — pero OJO con contra quién: dos `crearVenta` del MISMO
+        // tenant no son la amenaza. `proximoNumero`, más arriba, ya tomó el
+        // lock exclusivo de la fila del tenant y lo retiene hasta el commit,
+        // así que dos ventas de este negocio están serializadas ANTES de
+        // llegar acá — la segunda, bajo READ COMMITTED, ve el estado ya
+        // comiteado de la primera en cuanto reanuda.
+        //
+        // Lo que el UPDATE condicional defiende de verdad es un escritor que
+        // NO pasa por `proximoNumero` y por lo tanto no toma ese lock:
+        // `darDeBajaUnidad` (lib/inventario/stock.ts), que es el otro que
+        // compite por una unidad LIBRE. Frente a él sí puede pasar que las dos
+        // transacciones lean la misma unidad como libre sin que ninguna haya
+        // comiteado todavía, y ahí sólo cierra que el WHERE se evalúe en el
+        // momento de ESCRIBIR: la que pierde se lleva cero filas y su
+        // operación entera se rechaza.
+        //
+        // `anularVenta` no está en esa lista, aunque tampoco tome el lock del
+        // tenant: se mueve en la dirección contraria —libera unidades ya
+        // VENDIDAS—, así que nunca disputa la misma fila que este UPDATE, que
+        // sólo mira las libres.
+        //
+        // `paraStock` ya viene ordenado por articuloId con unidadId de
+        // desempate (arriba), y con serie hay una línea por unidad, así que
+        // los locks de unidad se toman en un orden derivado del mismo orden
+        // total que usa todo el motor.
+        if (l.unidadId === undefined) continue
+        const tomada = await tx.unidadDeArticulo.updateMany({
+          where: {
+            id: l.unidadId,
+            articuloId: l.articuloId,
+            ventaId: null,
+            bajaEn: null,
+          },
+          data: { ventaId: venta.id },
+        })
+        if (tomada.count !== 1) {
+          // Cero filas tiene dos causas que el mostrador vive distinto: la
+          // unidad no es de este artículo (o no existe), ya se vendió, o se
+          // dio de baja (rota, robada, a garantía). La consulta que las
+          // separa va acá y no antes: sólo corre en el camino excepcional.
+          // Trae `bajaEn` a propósito — sin él, un equipo dado de baja
+          // diría "se acaba de vender" en el cartel del mostrador, que es
+          // simplemente falso: nadie lo vendió. No hace falta `ventaId`
+          // para la otra rama: si no está de baja y de todos modos no
+          // matcheó el UPDATE de arriba, sólo queda que esté vendida.
+          const existe = await tx.unidadDeArticulo.findFirst({
+            where: { id: l.unidadId, articuloId: l.articuloId },
+            select: { imei: true, bajaEn: true },
+          })
+          if (!existe) {
+            throw new ErrorDeVenta(
+              'UNIDAD_INEXISTENTE',
+              'ese equipo no es de este artículo. Recargá la pantalla y elegí de nuevo.',
+            )
+          }
+          if (existe.bajaEn) {
+            throw new ErrorDeVenta(
+              'UNIDAD_NO_DISPONIBLE',
+              `El equipo ${existe.imei} se dio de baja y ya no está en stock. Elegí otro.`,
+            )
+          }
+          throw new ErrorDeVenta(
+            'UNIDAD_NO_DISPONIBLE',
+            `El equipo ${existe.imei} se acaba de vender. Elegí otro.`,
+          )
+        }
+      }
+
+      // El movimiento y el stock, sobre el MISMO `paraStock` y en el mismo
+      // orden: acá recién se toman los locks de `articulos`, con todos los de
+      // `unidades_articulo` ya tomados por el bucle de arriba.
       for (const l of paraStock) {
         await tx.movimientoStock.create({
           data: {
             tenantId,
             articuloId: l.articuloId,
+            unidadId: l.unidadId,
             delta: l.cantidad.negated(),
             motivo: 'VENTA',
             ventaId: venta.id,

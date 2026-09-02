@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { Client } from 'pg'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { Prisma } from '@/generated/prisma/client'
 import { urlOwner, urlApp } from './postgres-efimero'
 import { crearTenant } from './datos'
@@ -15,12 +17,26 @@ let enTransaccionDeTenant: typeof import('@/lib/tenant/transaccion').enTransacci
 let crearVenta: typeof import('@/lib/ventas/crear').crearVenta
 let anularVenta: typeof import('@/lib/ventas/anular').anularVenta
 let ajustarStock: typeof import('@/lib/inventario/stock').ajustarStock
+// Para la carrera real de la Task 4: el otro escritor que toma una unidad sin
+// pasar por `proximoNumero` y por lo tanto sin el lock de tenant que serializa
+// dos `crearVenta` entre sí.
+let darDeBajaUnidad: typeof import('@/lib/inventario/stock').darDeBajaUnidad
+// Para recargar un IMEI ya vendido en un artículo que YA lleva serie: es lo
+// que produce el choque contra el índice parcial que `anularVenta` traduce.
+// `prenderSerie` no sirve para esto — rechaza con `SERIE_YA_PRENDIDA` un
+// artículo que ya se maneja por IMEI.
+let ingresarStock: typeof import('@/lib/inventario/stock').ingresarStock
 let buscarArticulosVendibles: typeof import('@/lib/ventas/buscar').buscarArticulosVendibles
 let prismaParaTenant: typeof import('@/lib/tenant/prisma').prismaParaTenant
 // Sólo para el test de `buscarArticulosVendibles` que necesita un artículo en
 // dólares: el resto del archivo sigue dando de alta artículos con SQL crudo
 // contra `owner` (ver el `beforeAll`), y así se queda.
 let crearArticulo: typeof import('@/lib/inventario/articulos').crearArticulo
+// Para el escenario de unidades por IMEI: la misma razón de import dinámico
+// que el resto — `lib/inventario/unidades.ts` arrastra `enTransaccionDeTenant`
+// y con él `lib/db.ts`.
+let unidadesLibres: typeof import('@/lib/inventario/unidades').unidadesLibres
+let prenderSerie: typeof import('@/lib/inventario/unidades').prenderSerie
 let crearPlan: typeof import('@/lib/planes/administrar').crearPlan
 let desactivarPlan: typeof import('@/lib/planes/administrar').desactivarPlan
 // De app/(app)/ventas/page.tsx, no de lib/: es la regla de negocio que arma
@@ -29,8 +45,69 @@ let desactivarPlan: typeof import('@/lib/planes/administrar').desactivarPlan
 // (colocado con la pantalla) sólo prueba funciones que no tocan la base.
 let totalDelPeriodo: typeof import('@/app/(app)/ventas/page').totalDelPeriodo
 let pagosDelPeriodo: typeof import('@/app/(app)/ventas/page').pagosDelPeriodo
+// De app/(app)/ventas/[id]/page.tsx (Task 10): `datosDelDetalle` es la
+// consulta + el armado de props del detalle, separada del Server Component
+// por el mismo motivo que `totalDelPeriodo`/`pagosDelPeriodo` de arriba —
+// page.test.tsx (colocado) sólo prueba funciones puras, y ésta abre Prisma.
+// `Detalle` no toca la base (recibe todo ya resuelto a texto) pero viaja
+// DINÁMICO igual: page.tsx la exporta desde el MISMO módulo que
+// `datosDelDetalle`, y ese módulo arrastra `lib/db.ts` — importarla estática
+// construiría el Pool antes de que este archivo setee `DATABASE_URL`.
+let datosDelDetalle: typeof import('@/app/(app)/ventas/[id]/page').datosDelDetalle
+let Detalle: typeof import('@/app/(app)/ventas/[id]/page').Detalle
 
 const d = (v: string) => new Prisma.Decimal(v)
+
+/**
+ * Espera a que ALGÚN backend, distinto de `cliente`, quede bloqueado
+ * esperando un lock — o falla si eso no pasa dentro de `timeoutMs`.
+ * `descripcion` sólo identifica el escenario en el mensaje de error; no filtra
+ * nada (ver el comentario de más abajo sobre por qué no se puede filtrar por
+ * la consulta ni por el tipo de lock).
+ *
+ * Reemplaza un `setTimeout` fijo entre el `UPDATE` que toma el lock y el
+ * arranque de la operación que se supone queda esperándolo: con un tiempo
+ * fijo, si la operación tarda más de lo previsto en LLEGAR al lock —una
+ * corrida lenta de CI, por ejemplo—, el test sigue de largo sin haber forzado
+ * ningún solape real. Eso no falla ruidoso: degenera en silencio a un caso
+ * que pasaría igual con la protección rota, que es exactamente el modo de
+ * falla que este archivo ya documentó dos veces para esta misma carrera. Con
+ * el poll, o se observa el bloqueo de verdad, o el test falla diciendo que
+ * nunca lo vio — nunca pasa por casualidad.
+ */
+async function esperarBloqueoEn(
+  cliente: Client,
+  descripcion: string,
+  { timeoutMs = 5_000, intervaloMs = 20 } = {},
+): Promise<void> {
+  // `pg_stat_activity` no sirve para esto: `arandano_owner` no es superusuario
+  // ni miembro de `pg_read_all_stats`, y Postgres le devuelve NULL en `state`,
+  // `wait_event_type` y `query` para las sesiones de OTROS roles —confirmado a
+  // mano contra la conexión de `crearVenta`, que corre como `arandano_app`—,
+  // así que un filtro por esa vista habría dado falso negativo SIEMPRE, sin
+  // importar si el bloqueo ocurrió de verdad. `pg_locks` no tiene esa
+  // restricción de rol: expone el estado del lock manager entero a cualquiera.
+  // Y ahí, esperar un lock de FILA no aparece como `locktype = 'tuple'`, sino
+  // como `transactionid`/`granted = false` — Postgres resuelve la espera de un
+  // `UPDATE` sobre una fila ya bloqueada esperando el XID de quien la tiene
+  // tomada, no la fila en sí. Confirmado empíricamente contra este mismo test.
+  const limite = Date.now() + timeoutMs
+  while (Date.now() < limite) {
+    const { rows } = await cliente.query(
+      `SELECT 1
+         FROM pg_locks
+        WHERE granted = false
+          AND pid <> pg_backend_pid()
+        LIMIT 1`,
+    )
+    if (rows.length > 0) return
+    await new Promise((resolve) => setTimeout(resolve, intervaloMs))
+  }
+  throw new Error(
+    `nadie quedó esperando un lock (${descripcion}) dentro de ${timeoutMs}ms: ` +
+      'la carrera que este test fuerza no llegó a solapar',
+  )
+}
 
 let owner: Client
 let tenantId: string
@@ -57,12 +134,14 @@ beforeAll(async () => {
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
   ;({ crearVenta } = await import('@/lib/ventas/crear'))
   ;({ anularVenta } = await import('@/lib/ventas/anular'))
-  ;({ ajustarStock } = await import('@/lib/inventario/stock'))
+  ;({ ajustarStock, darDeBajaUnidad, ingresarStock } = await import('@/lib/inventario/stock'))
   ;({ buscarArticulosVendibles } = await import('@/lib/ventas/buscar'))
   ;({ prismaParaTenant } = await import('@/lib/tenant/prisma'))
   ;({ crearArticulo } = await import('@/lib/inventario/articulos'))
+  ;({ unidadesLibres, prenderSerie } = await import('@/lib/inventario/unidades'))
   ;({ crearPlan, desactivarPlan } = await import('@/lib/planes/administrar'))
   ;({ totalDelPeriodo, pagosDelPeriodo } = await import('@/app/(app)/ventas/page'))
+  ;({ datosDelDetalle, Detalle } = await import('@/app/(app)/ventas/[id]/page'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -885,6 +964,505 @@ describe('cobrar con un plan de pago', () => {
     expect(venta.pagos[0].plan).not.toBeNull()
     expect(venta.pagos[0].plan?.nombre).toBe('Crédito 18 cuotas')
     expect(venta.pagos[0].plan?.cuotas).toBe(18)
+  })
+})
+
+describe('crearVenta con unidades identificadas (IMEI)', () => {
+  // `crearArticulo` de lib/inventario/articulos.ts pide tenantId/usuarioId y
+  // no sirve para armar un artículo sin serie de una línea, así que este
+  // describe se hace el suyo propio, con firma posicional — mismo patrón que
+  // el describe de dólares de arriba, que también sombrea el `crearArticulo`
+  // importado en vez de reusarlo.
+  async function crearArticulo(nombre: string, stock: string, precio: string) {
+    return enTransaccionDeTenant(tenantId, (tx) =>
+      tx.articulo.create({
+        data: {
+          tenantId,
+          sku: `SKU-${crypto.randomUUID()}`,
+          nombre,
+          tipo: 'PRODUCTO',
+          precio: d(precio),
+          stock: d(stock),
+        },
+      }),
+    )
+  }
+
+  /** Un artículo que YA lleva serie, con una unidad libre por cada IMEI de la
+   *  lista. Pasa por el camino real (`prenderSerie`) y no por SQL a mano: así
+   *  además de fixture confirma que ese camino deja el artículo en el estado
+   *  que estos tests dan por sentado. */
+  async function crearArticuloConSerie(nombre: string, imeis: string[], precio: string) {
+    const a = await crearArticulo(nombre, imeis.length.toString(), precio)
+    await prenderSerie({ tenantId, articuloId: a.id, imeis, usuarioId })
+    return a
+  }
+
+  async function leerArticulo(articuloId: string) {
+    return enTransaccionDeTenant(tenantId, (tx) =>
+      tx.articulo.findUniqueOrThrow({ where: { id: articuloId } }),
+    )
+  }
+
+  async function leerUnidad(unidadId: string) {
+    return enTransaccionDeTenant(tenantId, (tx) =>
+      tx.unidadDeArticulo.findUniqueOrThrow({ where: { id: unidadId } }),
+    )
+  }
+
+  async function movimientosDe(articuloId: string) {
+    return enTransaccionDeTenant(tenantId, (tx) =>
+      tx.movimientoStock.findMany({ where: { articuloId }, orderBy: { creadoEn: 'asc' } }),
+    )
+  }
+
+  it('vender un artículo con serie descuenta el stock y marca la unidad', async () => {
+    const a = await crearArticuloConSerie('iPhone 13', ['P1', 'P2'], '500000')
+    const [p1] = await unidadesLibres(tenantId, a.id)
+
+    const venta = await crearVenta({
+      tenantId, usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: p1.id }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+    })
+
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('1')
+    expect((await unidadesLibres(tenantId, a.id)).map((u) => u.imei)).toEqual(['P2'])
+    expect((await leerUnidad(p1.id)).ventaId).toBe(venta.id)
+  })
+
+  // Dos equipos del MISMO modelo en una sola venta, que es el carrito que
+  // `CANTIDAD_CON_SERIE` vuelve obligatorio (dos teléfonos son dos líneas) y
+  // el que produce la secuencia de locks `u1, A, u2, A` que el hallazgo I3
+  // desarmó. Después del arreglo son dos bucles —todas las unidades primero,
+  // todos los artículos después— y el resultado no cambia: las dos unidades
+  // salen, el stock baja dos, y quedan dos movimientos, uno por unidad.
+  it('dos unidades del mismo artículo en una venta: las dos salen y el stock baja dos', async () => {
+    const a = await crearArticuloConSerie('iPhone 13 x2', ['P3', 'P4'], '500000')
+    const [p3, p4] = await unidadesLibres(tenantId, a.id)
+
+    const venta = await crearVenta({
+      tenantId, usuarioId,
+      items: [
+        { articuloId: a.id, cantidad: d('1'), unidadId: p3.id },
+        { articuloId: a.id, cantidad: d('1'), unidadId: p4.id },
+      ],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000000'), cotizacion: d('1') }],
+    })
+
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('0')
+    expect(await unidadesLibres(tenantId, a.id)).toHaveLength(0)
+    expect((await leerUnidad(p3.id)).ventaId).toBe(venta.id)
+    expect((await leerUnidad(p4.id)).ventaId).toBe(venta.id)
+
+    const movs = (await movimientosDe(a.id)).filter((m) => m.motivo === 'VENTA')
+    expect(movs).toHaveLength(2)
+    expect(movs.map((m) => m.unidadId).sort()).toEqual([p3.id, p4.id].sort())
+  })
+
+  it('un artículo con serie sin unidadId se rechaza', async () => {
+    const a = await crearArticuloConSerie('iPhone 14', ['Q1'], '500000')
+    await expect(
+      crearVenta({
+        tenantId, usuarioId,
+        items: [{ articuloId: a.id, cantidad: d('1') }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_REQUERIDA' }))
+  })
+
+  it('un artículo con serie con cantidad 2 se rechaza: dos equipos son dos líneas', async () => {
+    const a = await crearArticuloConSerie('iPhone 15', ['R1', 'R2'], '500000')
+    const [r1] = await unidadesLibres(tenantId, a.id)
+    await expect(
+      crearVenta({
+        tenantId, usuarioId,
+        items: [{ articuloId: a.id, cantidad: d('2'), unidadId: r1.id }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'CANTIDAD_CON_SERIE' }))
+  })
+
+  it('un artículo SIN serie con unidadId se rechaza, no se ignora', async () => {
+    const conSerie = await crearArticuloConSerie('iPhone 12', ['S1'], '500000')
+    const [s1] = await unidadesLibres(tenantId, conSerie.id)
+    const sinSerie = await crearArticulo('Funda', '10', '10000')
+    await expect(
+      crearVenta({
+        tenantId, usuarioId,
+        items: [{ articuloId: sinSerie.id, cantidad: d('1'), unidadId: s1.id }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('10000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_NO_CORRESPONDE' }))
+  })
+
+  it('una unidad de OTRO artículo se rechaza', async () => {
+    const a = await crearArticuloConSerie('iPhone 11', ['T1'], '500000')
+    const b = await crearArticuloConSerie('iPhone X', ['U1'], '400000')
+    const [u1] = await unidadesLibres(tenantId, b.id)
+    await expect(
+      crearVenta({
+        tenantId, usuarioId,
+        items: [{ articuloId: a.id, cantidad: d('1'), unidadId: u1.id }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_INEXISTENTE' }))
+  })
+
+  it('la misma unidad dos veces en el mismo carrito se rechaza', async () => {
+    const a = await crearArticuloConSerie('iPhone XR', ['V1'], '500000')
+    const [v1] = await unidadesLibres(tenantId, a.id)
+    await expect(
+      crearVenta({
+        tenantId, usuarioId,
+        items: [
+          { articuloId: a.id, cantidad: d('1'), unidadId: v1.id },
+          { articuloId: a.id, cantidad: d('1'), unidadId: v1.id },
+        ],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_REPETIDA' }))
+  })
+
+  it('una unidad ya vendida se rechaza, y no deja nada a medias', async () => {
+    const a = await crearArticuloConSerie('iPhone SE', ['W1'], '500000')
+    const [w1] = await unidadesLibres(tenantId, a.id)
+    const pagos = [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, base: d('500000'), cotizacion: d('1') }]
+    const primera = await crearVenta({
+      tenantId, usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: w1.id }],
+      pagos,
+    })
+    await expect(
+      crearVenta({ tenantId, usuarioId, items: [{ articuloId: a.id, cantidad: d('1'), unidadId: w1.id }], pagos }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_NO_DISPONIBLE' }))
+
+    // El intento rechazado no tocó nada: la unidad sigue de la PRIMERA venta,
+    // no de la segunda, y el stock no volvió a bajar.
+    expect((await leerUnidad(w1.id)).ventaId).toBe(primera.id)
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('0')
+  })
+
+  it('DOS CAJAS vendiendo la misma unidad al mismo tiempo: una sola cobra', async () => {
+    // Este par NO ejercita el UPDATE condicional de la unidad: las dos
+    // `crearVenta` son del MISMO tenant, y `proximoNumero` —adentro de
+    // `crearVenta`, antes de tocar cualquier unidad— toma el lock exclusivo de
+    // la fila del tenant hasta el commit. La segunda transacción se queda
+    // esperando ahí, y cuando reanuda ve, bajo READ COMMITTED, el estado ya
+    // comiteado de la primera: aunque el `updateMany` de la unidad fuera un
+    // `findFirst` + `update` sin condición, este test seguiría en verde. Lo
+    // que sí verifica, y vale la pena verificar, es el RESULTADO: una sola
+    // venta gana, el stock baja una sola vez. El test que ejercita el
+    // mecanismo de verdad es el de abajo, contra `darDeBajaUnidad`, que no
+    // comparte ningún lock con `crearVenta`.
+    const a = await crearArticuloConSerie('iPhone 13 Pro', ['X1'], '500000')
+    const [x1] = await unidadesLibres(tenantId, a.id)
+    const items = [{ articuloId: a.id, cantidad: d('1'), unidadId: x1.id }]
+    const pagos = [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, base: d('500000'), cotizacion: d('1') }]
+
+    const resultados = await Promise.allSettled([
+      crearVenta({ tenantId, usuarioId, items, pagos }),
+      crearVenta({ tenantId, usuarioId, items, pagos }),
+    ])
+
+    expect(resultados.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
+    expect(resultados.filter((r) => r.status === 'rejected')).toHaveLength(1)
+    // Y el stock bajó UNA sola vez.
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('0')
+  })
+
+  it('crearVenta contra darDeBajaUnidad sobre la misma unidad: gana una sola (smoke, no discrimina el mecanismo)', async () => {
+    // NO discrimina entre el UPDATE condicional y un `findFirst` + `update`
+    // sin condición: en la práctica `darDeBajaUnidad` —dos idas y vueltas
+    // hasta su propio `updateMany`— termina y comitea mucho antes de que
+    // `crearVenta` —seis o siete idas y vueltas antes de llegar a la unidad:
+    // validaciones, `findMany` de artículos, el UPDATE de `proximoNumero`,
+    // `venta.create`, ítems, pagos— toque la fila. Las dos escrituras no
+    // llegan a solaparse nunca, así que un `findFirst` acá vería el estado ya
+    // comiteado de la baja e igual se rechazaría, sin necesitar el WHERE
+    // condicional en la escritura. Sirve como smoke test de que los dos
+    // caminos de baja de una unidad coexisten sin romperse mutuamente, pero
+    // el test que fuerza el solape real —y que si se reemplaza el UPDATE
+    // condicional por `findFirst` + `update` falla de verdad— es el de abajo.
+    const a = await crearArticuloConSerie('iPhone 13 mini', ['Y1'], '500000')
+    const [y1] = await unidadesLibres(tenantId, a.id)
+    const items = [{ articuloId: a.id, cantidad: d('1'), unidadId: y1.id }]
+    const pagos = [{ medio: 'EFECTIVO' as const, moneda: 'ARS' as const, base: d('500000'), cotizacion: d('1') }]
+
+    const [venta, baja] = await Promise.allSettled([
+      crearVenta({ tenantId, usuarioId, items, pagos }),
+      darDeBajaUnidad({ tenantId, unidadId: y1.id, usuarioId, nota: 'pantalla rota' }),
+    ])
+
+    // Gana uno solo, cualquiera de los dos.
+    const ganadores = [venta, baja].filter((r) => r.status === 'fulfilled')
+    expect(ganadores).toHaveLength(1)
+
+    const unidad = await leerUnidad(y1.id)
+    // El stock baja en los dos caminos (VENTA o AJUSTE por baja), así que
+    // termina en 0 gane quien gane — es lo que hace que el assert de abajo no
+    // tenga que ramificar sobre cuál ganó para juzgar el número.
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('0')
+    if (venta.status === 'fulfilled') {
+      expect(baja.status).toBe('rejected')
+      expect(unidad.ventaId).toBe(venta.value.id)
+      expect(unidad.bajaEn).toBeNull()
+    } else {
+      expect(baja.status).toBe('fulfilled')
+      expect(unidad.ventaId).toBeNull()
+      expect(unidad.bajaEn).not.toBeNull()
+    }
+  })
+
+  it(
+    'crearVenta bloqueada por una baja ya comiteada de la misma unidad: se rechaza sin escribir nada',
+    async () => {
+      // ÉSTE es el que fuerza el solape que el test de arriba no logra. Un
+      // tercer actor —el OWNER, dueño de la tabla y por lo tanto sin
+      // FORCE ROW LEVEL SECURITY de por medio— deja EXACTAMENTE lo que
+      // `darDeBajaUnidad` deja, pero sin comitear: eso toma el lock de la
+      // fila de la unidad y lo retiene. Mientras el lock está tomado,
+      // arrancamos `crearVenta` sin esperarla: corre sus validaciones, toma
+      // el lock del tenant vía `proximoNumero`, crea la venta, y recién ahí
+      // se topa con la fila de la unidad — BLOQUEADA detrás del lock del
+      // owner. Sólo cuando el owner comitea, `crearVenta` puede continuar, y
+      // lo hace viendo el `baja_en` ya escrito.
+      //
+      // Es la única forma determinística de garantizar el solape: sin este
+      // tercer actor, `darDeBajaUnidad` (dos idas y vueltas) siempre termina
+      // antes de que `crearVenta` (seis o siete) llegue a la unidad, y un
+      // `findFirst` + `update` roto pasaría iguales — es lo que probó el
+      // test de arriba, y por lo que su comentario dice que no discrimina.
+      // Acá si el UPDATE fuera un `findFirst` + `update` sin condición: el
+      // `findFirst` correría ANTES del commit del owner, vería la unidad
+      // libre, y al reanudar (ya con la baja comiteada) escribiría la venta
+      // IGUAL — la unidad quedaría vendida Y dada de baja a la vez, y el
+      // stock bajaría dos veces por la misma unidad física. Lo comprobé
+      // haciendo ese cambio a mano, ver el reporte.
+      const a = await crearArticuloConSerie('iPhone 13 Pro Max', ['Z1'], '500000')
+      const [z1] = await unidadesLibres(tenantId, a.id)
+      const items = [{ articuloId: a.id, cantidad: d('1'), unidadId: z1.id }]
+      const pagos = [
+        { medio: 'EFECTIVO' as const, moneda: 'ARS' as const, base: d('500000'), cotizacion: d('1') },
+      ]
+
+      const owner2 = new Client({ connectionString: urlOwner() })
+      await owner2.connect()
+      let venta: Promise<{ id: string; numero: number }>
+      try {
+        await owner2.query('BEGIN')
+        // Lo mismo que escribe `darDeBajaUnidad`, sin pasar por la función:
+        // lo que importa acá es el LOCK de fila que deja la transacción
+        // abierta, no el camino de código.
+        await owner2.query(
+          `UPDATE unidades_articulo SET baja_en = now(), baja_por_id = $1 WHERE id = $2`,
+          [usuarioId, z1.id],
+        )
+
+        venta = crearVenta({ tenantId, usuarioId, items, pagos })
+
+        // Se espera a que `crearVenta` haya corrido TODO lo que corre antes de
+        // tocar la unidad (validaciones, findMany de artículos, proximoNumero,
+        // venta.create, ítems, pagos) y haya quedado bloqueada de verdad en el
+        // UPDATE de la unidad, detrás del lock de owner2 — no un tiempo fijo
+        // que se supone alcanza.
+        await esperarBloqueoEn(owner2, 'unidades_articulo')
+
+        await owner2.query('COMMIT')
+
+        await expect(venta).rejects.toThrow(
+          expect.objectContaining({ codigo: 'UNIDAD_NO_DISPONIBLE' }),
+        )
+      } finally {
+        // SIEMPRE, pase lo que pase arriba: si algo entre el BEGIN y el
+        // COMMIT tira, `venta` queda esperando esta transacción para
+        // siempre, y sin este `finally` cuelga la corrida entera en vez de
+        // fallar el test. `COMMIT` fuera de una transacción no es un error
+        // en Postgres —a lo sumo una advertencia—, así que llamarlo de nuevo
+        // acá cuando ya se llamó arriba no rompe nada.
+        await owner2.query('COMMIT').catch(() => {})
+        await owner2.end()
+      }
+
+      // Nada quedó a medias: la unidad sigue dada de baja y NO vendida.
+      const unidad = await leerUnidad(z1.id)
+      expect(unidad.bajaEn).not.toBeNull()
+      expect(unidad.ventaId).toBeNull()
+      // El stock queda en el `1` inicial: este test sólo imita el LOCK de
+      // fila que deja una baja real —el `UPDATE` de arriba, a mano—, no las
+      // otras dos escrituras que hace `darDeBajaUnidad` (el movimiento y el
+      // decremento de stock), que ya cubre sin contención el smoke test de
+      // arriba. Lo que importa acá es que la venta rechazada no tocó nada: ni
+      // la unidad, ni el stock.
+      expect((await leerArticulo(a.id)).stock.toString()).toBe('1')
+    },
+    10_000,
+  )
+
+  it('anular devuelve la unidad a la vitrina', async () => {
+    const a = await crearArticuloConSerie('iPhone 13 mini', ['Y1'], '500000')
+    const [y1] = await unidadesLibres(tenantId, a.id)
+    const venta = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: y1.id }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+    })
+
+    await anularVenta({ tenantId, ventaId: venta.id, usuarioId })
+
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('1')
+    expect((await unidadesLibres(tenantId, a.id)).map((u) => u.imei)).toEqual(['Y1'])
+    expect((await leerUnidad(y1.id)).ventaId).toBeNull()
+  })
+
+  it('el movimiento de anulación anota la unidad', async () => {
+    const a = await crearArticuloConSerie('iPhone 14 Plus', ['Z1'], '500000')
+    const [z1] = await unidadesLibres(tenantId, a.id)
+    const venta = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: z1.id }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+    })
+    await anularVenta({ tenantId, ventaId: venta.id, usuarioId })
+
+    const movimientos = await movimientosDe(a.id)
+    const anulacion = movimientos.find((m) => m.motivo === 'ANULACION_VENTA')
+    expect(anulacion?.unidadId).toBe(z1.id)
+  })
+
+  it('anular dos veces no devuelve la unidad dos veces', async () => {
+    const a = await crearArticuloConSerie('iPhone 15 Pro', ['AA1'], '500000')
+    const [aa1] = await unidadesLibres(tenantId, a.id)
+    const venta = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: aa1.id }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+    })
+    await anularVenta({ tenantId, ventaId: venta.id, usuarioId })
+    await anularVenta({ tenantId, ventaId: venta.id, usuarioId })
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('1')
+    expect(await unidadesLibres(tenantId, a.id)).toHaveLength(1)
+  })
+
+  // El caso de borde real que motiva la traducción de P2002 en `anularVenta`:
+  // mientras la venta estuvo viva, el local recompró el MISMO equipo y lo
+  // cargó de nuevo (el índice parcial lo permite: el IMEI vendido ya no cuenta
+  // como "libre"). Liberar la unidad vendida al anular dejaría DOS unidades
+  // libres con el mismo IMEI, que es justo lo que ese índice impide. Sin la
+  // traducción, esto sale como un P2002 crudo de Prisma —un 500 sin `codigo`—
+  // en vez de un `ErrorDeVenta` que le dice al mostrador qué pasó.
+  it('anular se rechaza si el mismo IMEI se recargó mientras la venta estaba viva', async () => {
+    const a = await crearArticuloConSerie('iPhone 16', ['BB1'], '500000')
+    const [bb1] = await unidadesLibres(tenantId, a.id)
+    const venta = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: bb1.id }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+    })
+
+    // El mismo IMEI, recargado como un ingreso de mercadería más: el índice
+    // parcial sólo mira unidades LIBRES, y `bb1` ya está vendida, así que esta
+    // alta no choca contra nada.
+    await ingresarStock({ tenantId, articuloId: a.id, imeis: ['BB1'], usuarioId })
+
+    await expect(
+      anularVenta({ tenantId, ventaId: venta.id, usuarioId }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_NO_DISPONIBLE' }))
+  })
+})
+
+// Task 10: el detalle de venta (app/(app)/ventas/[id]/page.tsx) muestra los
+// IMEI que se llevó la venta. Es el único ida y vuelta real contra la base de
+// este ciclo para esa pantalla —el resto de page.test.tsx son funciones
+// puras—, porque lo que hay que probar es la CONSULTA (el `select` trae
+// `unidades`) más el reparto de esos IMEI entre los ítems, no sólo cómo se ve
+// un `<span>` con un string ya armado a mano.
+describe('el detalle de venta muestra los IMEI (Task 10)', () => {
+  // Firma propia, igual que `crearArticulo` de los describes de arriba
+  // (dólares, IMEI): no hace falta pasar por `lib/inventario/articulos.ts`
+  // para armar un artículo de una línea.
+  async function crearArticuloConSerie(nombre: string, imeis: string[], precio: string) {
+    const articulo = await enTransaccionDeTenant(tenantId, (tx) =>
+      tx.articulo.create({
+        data: {
+          tenantId,
+          sku: `SKU-${crypto.randomUUID()}`,
+          nombre,
+          tipo: 'PRODUCTO',
+          precio: d(precio),
+          stock: d(imeis.length.toString()),
+        },
+      }),
+    )
+    await prenderSerie({ tenantId, articuloId: articulo.id, imeis, usuarioId })
+    return articulo
+  }
+
+  /** Arma una venta con un ítem de un artículo con serie y devuelve su id —
+   *  el `construirVentaId` que espera `renderDetalle`. */
+  async function ventaConUnidades(): Promise<string> {
+    const a = await crearArticuloConSerie('iPhone Detalle', ['355000000000001'], '500000')
+    const [u1] = await unidadesLibres(tenantId, a.id)
+    const venta = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: u1.id }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+    })
+    return venta.id
+  }
+
+  /** Una venta común, sin ninguna unidad identificada — el caso de todos los
+   *  locales que no usan esta feature, y el que tiene que verse EXACTAMENTE
+   *  igual que antes de este ciclo. `remera` es el artículo sin serie del
+   *  `beforeAll` de este archivo. */
+  async function ventaComun(): Promise<string> {
+    const venta = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+    })
+    return venta.id
+  }
+
+  /** Arma la venta (contra la base efímera, con o sin unidades) y renderiza
+   *  el cuerpo real de la pantalla —`datosDelDetalle` es la MISMA consulta
+   *  que corre `DetalleDeVenta`, y `Detalle` el mismo componente— con
+   *  `renderToStaticMarkup`, igual que hace page.test.tsx para sus propios
+   *  fixtures a mano. */
+  async function renderDetalle(construirVentaId: () => Promise<string>): Promise<string> {
+    const ventaId = await construirVentaId()
+    const datos = await datosDelDetalle(tenantId, ventaId)
+    if (!datos) throw new Error('la venta recién creada no se encontró')
+    return renderToStaticMarkup(
+      createElement(Detalle, {
+        resumen: datos.resumen,
+        anulada: datos.anulada,
+        notaDeAnulacionTexto: datos.notaDeAnulacionTexto,
+        items: datos.items,
+        totalFormateado: datos.totalFormateado,
+        lineasDeTotal: datos.lineasDeTotal,
+        pagos: datos.pagos,
+        ofreceAnular: false,
+        ventaId,
+      }),
+    )
+  }
+
+  it('el detalle muestra los IMEI que se llevó la venta', async () => {
+    const html = await renderDetalle(ventaConUnidades)
+    expect(html).toContain('355000000000001')
+  })
+
+  it('una venta sin unidades identificadas se ve exactamente como antes', async () => {
+    // El principio del ciclo: un local que no usa esto no ve ninguna diferencia.
+    const html = await renderDetalle(ventaComun)
+    expect(html).not.toContain('IMEI')
   })
 })
 
