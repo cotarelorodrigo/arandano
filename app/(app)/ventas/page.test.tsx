@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
-  rangoDeChip, chipActivo, pieDeCobradas, pieDeAnuladas, rotuloDeMedios, ventanaDePaginas, monedaEfectiva,
+  rangoDeChip, chipActivo, pieDeCobradas, pieDeAnuladas, ventanaDePaginas, monedaEfectiva,
   Listado, Tile,
 } from './page'
 import { GraficoDeMedios } from './grafico'
@@ -132,39 +132,9 @@ describe('pieDeAnuladas', () => {
   })
 })
 
-describe('rotuloDeMedios', () => {
-  it('un solo medio en pesos', () => {
-    expect(rotuloDeMedios([{ medio: 'EFECTIVO', moneda: 'ARS' }])).toBe('Efectivo')
-  })
-
-  it('un medio con algún pago en dólares lo marca', () => {
-    // La fila #1040 del relevamiento: "Efectivo · US$" — dos pagos en
-    // efectivo, uno en pesos y otro en dólares, es UN medio con la marca.
-    expect(
-      rotuloDeMedios([
-        { medio: 'EFECTIVO', moneda: 'ARS' },
-        { medio: 'EFECTIVO', moneda: 'USD' },
-      ]),
-    ).toBe('Efectivo · US$')
-  })
-
-  it('dos medios distintos se listan los dos, en el orden de los pagos', () => {
-    expect(
-      rotuloDeMedios([
-        { medio: 'TRANSFERENCIA', moneda: 'ARS' },
-        { medio: 'EFECTIVO', moneda: 'ARS' },
-      ]),
-    ).toBe('Transferencia + Efectivo')
-  })
-
-  it('sin pagos, una raya y no una cadena vacía', () => {
-    expect(rotuloDeMedios([])).toBe('—')
-  })
-
-  it('rotula en castellano, nunca el nombre del enum', () => {
-    expect(rotuloDeMedios([{ medio: 'TARJETA_CREDITO', moneda: 'ARS' }])).not.toContain('TARJETA')
-  })
-})
+// `rotuloDeMedios` se movió a `lib/ventas/medios.ts` (Minor 5 de la review de
+// Task 12, ciclo del dashboard) — sus tests viven ahora en
+// `lib/ventas/medios.test.ts`, junto a la función.
 
 describe('ventanaDePaginas', () => {
   it('sin páginas, ventana vacía', () => {

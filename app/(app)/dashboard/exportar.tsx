@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
-import { exportarVentas } from './exportar-accion'
+import { exportarVentas } from './acciones'
 import type { Rango } from '@/lib/dashboard/rango'
 
 /**

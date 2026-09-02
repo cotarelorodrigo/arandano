@@ -17,8 +17,8 @@ import {
   type LineaDeImporte,
 } from '@/lib/ventas/cobrado'
 import {
-  ROTULO_MEDIO, CONSUMIDOR_FINAL, monedaValida,
-  type Medio, type MonedaElegida, type ComposicionPorMoneda,
+  CONSUMIDOR_FINAL, monedaValida, rotuloDeMedios,
+  type MonedaElegida, type ComposicionPorMoneda,
 } from '@/lib/ventas/medios'
 import { agregarPorTiempo, vistaValida, type Vista } from '@/lib/ventas/horarios'
 import {
@@ -184,28 +184,12 @@ export function pieDeAnuladas(devueltoArs: string, hayDolaresDevueltos: boolean)
   return `${formatearPrecio(devueltoArs)} devueltos`
 }
 
-/**
- * La celda "Medios" del listado: los medios distintos de una venta, en el
- * orden en que se cobraron, cada uno marcado con "· US$" si tuvo algún pago
- * en dólares (fila #1040 del relevamiento: "Efectivo · US$").
- *
- * **Decisión de UI que la maqueta no muestra**: ninguna de las siete filas de
- * ejemplo combina dos medios en la misma venta, así que no hay ninguna pista
- * de cómo resumir un pago partido entre efectivo y tarjeta. Acá se listan
- * los dos, separados por "+" — no es lo único razonable ("Mixto" también lo
- * sería), pero es el que no pierde información, y `Pago` ya admite varios
- * registros por venta a propósito (ver el comentario de ese modelo).
- */
-export function rotuloDeMedios(pagos: { medio: Medio; moneda: 'ARS' | 'USD' }[]): string {
-  if (pagos.length === 0) return '—'
-  const conDolares = new Map<Medio, boolean>()
-  for (const p of pagos) {
-    conDolares.set(p.medio, (conDolares.get(p.medio) ?? false) || p.moneda === 'USD')
-  }
-  return [...conDolares.entries()]
-    .map(([medio, usd]) => ROTULO_MEDIO[medio] + (usd ? ' · US$' : ''))
-    .join(' + ')
-}
+// `rotuloDeMedios` (la celda "Medios" del listado) se movió a
+// `lib/ventas/medios.ts`, junto a `ROTULO_MEDIO` (que ya vivía ahí): el CSV
+// de ventas del dashboard necesita la MISMA regla, y reimplementarla ahí en
+// vez de importarla habría dejado dos versiones para que alguien desincronice
+// (Minor 5 de la review de Task 12, ciclo del dashboard). Se importa arriba,
+// junto con el resto de `@/lib/ventas/medios`.
 
 /**
  * La moneda que el panel "Cómo entró la plata" TERMINA mostrando — con

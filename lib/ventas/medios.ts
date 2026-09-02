@@ -42,6 +42,40 @@ export const ROTULO_MEDIO: Record<Medio, string> = {
 }
 
 /**
+ * Los medios distintos de una venta, en el orden en que se cobraron, cada
+ * uno marcado con "· US$" si tuvo algún pago en dólares (fila #1040 del
+ * relevamiento: "Efectivo · US$").
+ *
+ * **Vive acá y no en `app/(app)/ventas/page.tsx`, de donde salió** (Minor 5
+ * de la review de Task 12, ciclo del dashboard): el CSV de ventas del
+ * dashboard necesita la MISMA regla para su columna "Medios", y reimplementarla
+ * ahí —en vez de importarla— es la clase de divergencia silenciosa que ya
+ * rompió el selector de categoría duplicado entre el alta y la ficha de
+ * artículo (CLAUDE.md, 2026-08-28). `/ventas/page.tsx` la importa de acá para
+ * la celda "Medios" del listado; `app/(app)/dashboard/csv.ts` para la columna
+ * homónima del CSV. Los dos son el mismo dato, así que tienen que ser la
+ * misma función.
+ *
+ * **Decisión de UI que la maqueta no muestra**: ninguna de las siete filas de
+ * ejemplo del relevamiento combina dos medios en la misma venta, así que no
+ * hay ninguna pista de cómo resumir un pago partido entre efectivo y
+ * tarjeta. Acá se listan los dos, separados por "+" — no es lo único
+ * razonable ("Mixto" también lo sería), pero es el que no pierde información,
+ * y `Pago` ya admite varios registros por venta a propósito (ver el
+ * comentario de ese modelo).
+ */
+export function rotuloDeMedios(pagos: { medio: Medio; moneda: 'ARS' | 'USD' }[]): string {
+  if (pagos.length === 0) return '—'
+  const conDolares = new Map<Medio, boolean>()
+  for (const p of pagos) {
+    conDolares.set(p.medio, (conDolares.get(p.medio) ?? false) || p.moneda === 'USD')
+  }
+  return [...conDolares.entries()]
+    .map(([medio, usd]) => ROTULO_MEDIO[medio] + (usd ? ' · US$' : ''))
+    .join(' + ')
+}
+
+/**
  * El cliente de una venta de mostrador, sin identificar — literal en
  * `design/arandano.pen` (el listado de /ventas y el panel Resumen de
  * /ventas/[id]). Un solo lugar y no un literal repetido en cada pantalla que

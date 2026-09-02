@@ -1,35 +1,27 @@
 import { describe, it, expect } from 'vitest'
 import { Prisma } from '@/generated/prisma/client'
-import { filaCsv, ENCABEZADO_CSV, filaDeVenta } from './acciones'
+import { ENCABEZADO_CSV, filaDeVenta } from './csv'
 
-describe('el CSV escapa por RFC 4180', () => {
-  it('encomilla lo que lleva coma, comilla o salto de línea', () => {
-    expect(filaCsv(['1042', 'Pérez, Ana', 'dijo "hola"'])).toBe(
-      '1042,"Pérez, Ana","dijo ""hola"""',
-    )
-  })
-
-  it('deja pasar lo que no necesita comillas', () => {
-    expect(filaCsv(['1042', 'Efectivo'])).toBe('1042,Efectivo')
-  })
-
-  it('el encabezado nombra las dos monedas por separado', () => {
+describe('ENCABEZADO_CSV', () => {
+  it('nombra las dos monedas por separado', () => {
     expect(ENCABEZADO_CSV).toContain('Vendido ARS')
     expect(ENCABEZADO_CSV).toContain('Vendido USD')
     expect(ENCABEZADO_CSV).toContain('Cobrado ARS')
     expect(ENCABEZADO_CSV).toContain('Cobrado USD')
-    // No lleva costo ni margen aunque quien lo baje tenga COSTOS: un CSV sale
-    // del sistema y sigue circulando.
-    expect(ENCABEZADO_CSV).not.toContain('Costo')
-    expect(ENCABEZADO_CSV).not.toContain('Margen')
   })
 
-  // Un nombre que arranca con "=" es el caso real de CSV injection (guía de
-  // OWASP), no de laboratorio: cualquier cliente cargado así alcanza para
-  // dispararlo en cuanto tenga una venta en el período.
-  it('neutraliza una celda que arranca con =, +, - o @ para que una planilla no la lea como fórmula', () => {
-    expect(filaCsv(['=HOY()'])).toBe("'=HOY()")
-    expect(filaCsv(['+1', '-1', '@x'])).toBe("'+1,'-1,'@x")
+  // Minor 3 de la review: `toContain` sobre un array es membresía EXACTA de
+  // un elemento — una columna futura llamada "Costo unitario" pasaría igual
+  // un `.not.toContain('Costo')` sin decir nada, porque ningún elemento del
+  // array es exactamente la cadena "Costo". Contra el string JOINEADO y con
+  // `\b` sí detecta la palabra dentro de una columna más larga. Dicho así de
+  // explícito porque igual no es la garantía real: la garantía real es que
+  // `exportarVentas` (./acciones.ts) nunca pide `costoUnitario` en su
+  // `select` — esto es un smoke check sobre los NOMBRES, no sobre los datos.
+  it('no lleva costo ni margen en ningún encabezado, aunque quien lo baje tenga COSTOS', () => {
+    const encabezadoUnido = ENCABEZADO_CSV.join(' ')
+    expect(encabezadoUnido).not.toMatch(/\bCosto\b/)
+    expect(encabezadoUnido).not.toMatch(/\bMargen\b/)
   })
 })
 
@@ -55,6 +47,14 @@ describe('filaDeVenta: una venta -> las once columnas de ENCABEZADO_CSV', () => 
     const fila = filaDeVenta(venta())
     expect(fila).toHaveLength(ENCABEZADO_CSV.length)
     expect(fila[0]).toBe('1042')
+    // Minor 4 de la review: Fecha y Hora estaban en el fixture (el comentario
+    // "14:28 en America/Argentina") pero nadie las afirmaba — un comentario
+    // que promete una garantía que el fixture nunca ejercita. `formatearFecha
+    // Corta`/`formatearHora` ya convierten UTC a America/Argentina/Buenos_Aires
+    // (ver lib/formato/mostrar.ts), así que 17:28 UTC tiene que leerse acá
+    // como 14:28 local.
+    expect(fila[1]).toBe('21/08/2026') // Fecha
+    expect(fila[2]).toBe('14:28') // Hora
     expect(fila[3]).toBe('Ana Pérez')
     expect(fila[4]).toBe('Efectivo')
     expect(fila[5]).toContain('50.000') // Vendido ARS

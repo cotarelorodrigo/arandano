@@ -1949,23 +1949,35 @@ julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
   permiso `COSTOS`.** Un CSV sale del sistema y sigue circulando —se manda
   por mail, queda en una carpeta compartida—; el alcance de este ciclo es el
   dashboard, no un reporte de rentabilidad. Es una decisión de PRODUCTO, no
-  una limitación técnica: `exportar-accion.ts` ni siquiera consulta
-  `costoUnitario`.
-- **`exportarVentas` vive en `app/(app)/dashboard/exportar-accion.ts`, no en
-  `acciones.ts`, y es la única pantalla del repo con esta forma.**
-  `acciones.ts` no lleva `'use server'` de módulo: `filaCsv`/`ENCABEZADO_CSV`
-  tienen que ser exports SUELTOS para poder testearse (`acciones.test.ts`), y
-  un archivo `'use server'` de módulo sólo puede exportar funciones async
-  (`test/use-server.test.ts`). Separar el archivo entero —no sólo el
-  directive— es lo que además mantiene a `acciones.ts` afuera del alcance de
-  `test/limite-cliente-servidor.test.ts`: sin `'use server'` de módulo,
-  `exportar-accion.ts` es la frontera que ese test necesita para no cruzar de
-  largo hasta `lib/tenant/prisma.ts` siguiendo el import que `exportarVentas`
-  necesita. Mismo patrón que `lib/clientes/rotulos.ts`, invertido: allá se
-  sacó la función PURA para que un Client Component la importara sin
-  arrastrar el módulo que la rodeaba; acá se saca la función IMPURA para que
-  el módulo puro pueda exportar de más sin romper el contrato de
-  `'use server'`.
+  una limitación técnica: `exportarVentas` (`./acciones.ts`) ni siquiera
+  consulta `costoUnitario`.
+- **`exportarVentas` vive SOLA en `app/(app)/dashboard/acciones.ts`, con
+  `'use server'` de MÓDULO — como en toda pantalla del repo, sin excepción.**
+  La primera versión de este ciclo invertía esto (la acción afuera, lo puro
+  adentro de `acciones.ts`); la review lo corrigió: `ENCABEZADO_CSV` y
+  `filaDeVenta` —los exports sueltos que `csv.test.ts` necesita para
+  testearse sin sesión ni Prisma— viven en `./csv.ts`, sin `'use server'`, y
+  el escapado RFC 4180 (`filaCsv`) en `lib/formato/csv.ts`, compartido con
+  `exportarHistorialCsv` de `/inventario` (antes duplicado byte a byte entre
+  las dos pantallas — Important 1 de la review de Task 12). `acciones.ts`
+  importa las dos cosas. Es la MISMA razón por la que `lib/clientes/
+  rotulos.ts` existe (una función pura afuera del módulo que arrastra
+  Postgres, para que un Client Component la alcance sin arrastrarlo), no su
+  inverso: lo que va afuera es lo PURO, lo que se queda adentro —solo, con el
+  directive de módulo— es la acción.
+
+  El motivo técnico, para quien lo necesite completo: `test/use-server.
+  test.ts` exige que TODO export de un archivo `'use server'` de módulo sea
+  una función async, así que `ENCABEZADO_CSV`/`filaDeVenta` no pueden estar
+  ahí. `test/limite-cliente-servidor.test.ts` sólo trata un archivo como
+  frontera —deja de seguir sus imports— cuando su PRIMERA línea es
+  `'use server'`; con el directive a nivel de FUNCIÓN en vez de módulo (lo
+  que un archivo puro con una acción escondida adentro habría necesitado)
+  ese test cruza de largo hasta `lib/tenant/prisma.ts`, que
+  `exportar.tsx` (`'use client'`) no puede alcanzar. Con `'use server'` de
+  módulo en `acciones.ts` —y SÓLO `exportarVentas` ahí—, las dos reglas
+  quedan satisfechas por construcción, sin ningún archivo de más: el mismo
+  esqueleto que usan `/inventario`, `/ventas`, `/formas-de-pago`, etc.
 - **"Exportar CSV" existe en dos copias —el Topbar de escritorio y la
   ranura de 38 px del teléfono (`controlMovil`, no `accionMovil`: es un
   control que no navega)— y las dos llaman al mismo `BotonDeExportar`**

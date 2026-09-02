@@ -24,6 +24,7 @@ import { aDecimal, aDecimalOpcional, ErrorDeFormato } from '@/lib/formato/numero
 import { esUuid } from '@/lib/uuid'
 import { calcularSaldos, detalleDeMovimiento, textoDeMotivo } from './historial'
 import { formatearCantidad, formatearFechaCorta, formatearHora } from '@/lib/formato/mostrar'
+import { filaCsv } from '@/lib/formato/csv'
 
 export type EstadoInventario = { error: string | null; aviso: string | null }
 
@@ -296,41 +297,11 @@ export async function corregirPorConteo(
 // procesar (I6 de la review).
 const ENCABEZADO_CSV = ['Fecha', 'Motivo', 'Detalle', 'Cambio', 'Queda', 'Usuario']
 
-/**
- * Un apóstrofe adelante si el valor arranca con `=`, `+`, `-` o `@`: sin él,
- * Excel y Google Sheets abren esos cuatro caracteres iniciales como el
- * comienzo de una fórmula en vez de como texto (inyección de fórmulas, ver
- * la guía de OWASP sobre CSV injection). No es un caso de laboratorio: la
- * columna "Cambio" de ESTE MISMO archivo emite "+5" literal en cada ingreso,
- * así que sin neutralizar, cualquier exportación con al menos un ingreso ya
- * dispara el problema — no hace falta una nota manipulada a propósito. El
- * apóstrofe fuerza texto sin mostrarse en la celda al abrirla en una
- * planilla, que es como Excel y Sheets leen un CSV (no sólo cómo se tipea a
- * mano).
- */
-function neutralizarFormula(valor: string): string {
-  return /^[=+\-@]/.test(valor) ? `'${valor}` : valor
-}
-
-/**
- * Comillas dobles si el valor trae coma, comilla o salto de línea (regla
- * estándar de CSV, RFC 4180); las comillas internas se duplican al doblarlas.
- *
- * Sin esto, una nota como "Factura A 0001-00023145 · Distribuidora Sur" —el
- * estilo real de este repo, CLAUDE.md— todavía anda porque no tiene coma,
- * pero alcanza con que UNA nota la tenga (o traiga comillas) para que la fila
- * se parta en dos al abrirla en una planilla, silenciosamente: ninguna
- * herramienta avisa "esto estaba mal separado", el importe simplemente cae
- * en la columna de al lado.
- */
-function celdaCsv(valor: string): string {
-  const segura = neutralizarFormula(valor)
-  return /[",\r\n]/.test(segura) ? `"${segura.replace(/"/g, '""')}"` : segura
-}
-
-function filaCsv(campos: string[]): string {
-  return campos.map(celdaCsv).join(',')
-}
+// `filaCsv` (el escapado RFC 4180 + neutralización de fórmulas) vive en
+// `lib/formato/csv.ts`, compartido con el CSV de ventas del dashboard: dos
+// implementaciones de la misma regla de escapado es exactamente la clase de
+// bug que este repo ya pagó (Important 1 de la review de Task 12, ciclo del
+// dashboard). Ver el docblock de ese módulo para el detalle.
 
 /**
  * `Date` → "21/08/2026 · 14:28", CON año — a propósito distinto de
