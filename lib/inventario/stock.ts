@@ -196,6 +196,23 @@ export async function ingresarStock(entrada: {
       }
 
       const listaNormalizada = imeis ? normalizarLista(imeis) : undefined
+
+      // Un artículo sin serie no exige `imeis` (ver el `else if` de arriba), pero
+      // eso deja pasar el llamador que no manda NINGUNO de los dos campos —el
+      // tipo lo permite, porque los dos son opcionales de forma independiente,
+      // y este chequeo es precisamente para el llamador que TypeScript no ve:
+      // un body JSON armado a mano. Sin esto, `cantidadEfectiva` queda
+      // `undefined` y el `.lessThanOrEqualTo` de abajo revienta con un
+      // `TypeError` crudo, sin código, en una función donde toda otra entrada
+      // inválida sale como `ErrorDeInventario`. Mismo espíritu que el
+      // `filas.length === 0` de `proximoNumero` en `lib/ventas/crear.ts`.
+      if (listaNormalizada === undefined && cantidad === undefined) {
+        throw new ErrorDeInventario(
+          'CANTIDAD_INVALIDA',
+          'hay que decir cuántas unidades entran',
+        )
+      }
+
       const cantidadEfectiva = listaNormalizada
         ? new Prisma.Decimal(listaNormalizada.length)
         : (cantidad as Decimal)

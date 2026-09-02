@@ -286,6 +286,19 @@ describe('ingresarStock', () => {
     }
   })
 
+  it('rechaza no decir ni cantidad ni IMEIs: sin ninguno de los dos no hay nada que ingresar', async () => {
+    const antes = new Prisma.Decimal(await stockDe(remera))
+    // El tipo permite omitir los dos campos —son opcionales de forma
+    // independiente, no "uno de los dos obligatorio"—, así que este llamado es
+    // exactamente el que TypeScript no frena y que llegaría de un body JSON
+    // armado a mano, sin pasar por ninguna pantalla tipada.
+    await expect(
+      ingresarStock({ tenantId, articuloId: remera, usuarioId }),
+    ).rejects.toMatchObject({ codigo: 'CANTIDAD_INVALIDA' })
+    // Nada quedó a medias: el stock es el mismo que antes del llamado.
+    expect(await stockDe(remera)).toBe(antes.toString())
+  })
+
   it('rechaza un costo negativo y uno con más decimales de los que se guardan', async () => {
     await expect(
       ingresarStock({ tenantId, articuloId: remera, cantidad: d('1'), usuarioId, costoUnitario: d('-1') }),
