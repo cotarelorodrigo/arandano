@@ -128,18 +128,66 @@ const SIN_PLAN = 'sin-plan'
 /**
  * Qué carrito es éste, para la clave de idempotencia.
  *
- * Artículos y cantidades, que es lo que define la venta; el orden cuenta, y
- * está bien que cuente: reordenar es un cambio del carrito como cualquier otro
- * y lo único que provoca es una clave nueva.
+ * Artículo, cantidad y —desde Task 9— unidad, que es lo que define la venta;
+ * el orden cuenta, y está bien que cuente: reordenar es un cambio del
+ * carrito como cualquier otro y lo único que provoca es una clave nueva.
+ *
+ * `unidadId` entra al tuple aunque hoy ningún camino lo cambie IN PLACE en
+ * una línea ya existente (agregar y quitar SÍ cambian la firma, porque
+ * cambia la cantidad de entradas del array): sin él, dos unidades distintas
+ * del mismo artículo — la única que hoy hay en el carrito, cambiada por
+ * otra del mismo modelo — producirían la MISMA firma, y el día que exista un
+ * botón para "cambiar la unidad de esta línea" (el paso natural después de
+ * "otra caja se llevó este equipo"), la clave no se enteraría de que el
+ * carrito cambió y una venta genuinamente distinta podría volver como la
+ * anterior.
  */
 function firmaDelCarrito(lineas: Linea[]): string {
-  return JSON.stringify(lineas.map((l) => [l.articuloId, l.cantidad]))
+  return JSON.stringify(lineas.map((l) => [l.articuloId, l.cantidad, l.unidadId ?? '']))
 }
 
 // La firma del carrito vacío, que es con lo que arranca la pantalla. Como
 // constante y no calculada al vuelo: es el valor inicial del estado, y tiene
 // que ser el MISMO en el render del servidor y en el del navegador.
 const CARRITO_VACIO = firmaDelCarrito([])
+
+/**
+ * El `items` que postea el `<form>` de cobro, a partir del carrito.
+ *
+ * Exportada como función pura, con el mismo criterio que ya explica el
+ * comentario de `pasoDeCantidad`, un poco más abajo: este archivo se prueba
+ * con `renderToStaticMarkup`, sin jsdom, así que no hay forma de "leer el
+ * `value` del `<input type=hidden>` después de armar el carrito" — llamar
+ * la función pura es lo que reemplaza esa lectura.
+ *
+ * Sin esto, la Task 9 quedaba con un agujero real: nada probaba que el
+ * `unidadId` de una línea con serie efectivamente saliera en el JSON que
+ * recibe el servidor. Sacarlo del `.map` de más abajo dejaba pasar todos los
+ * tests de este archivo igual, y el mostrador cobraba UNIDAD_REQUERIDA con
+ * el cliente ya en la caja — el hallazgo de la review de esta task.
+ */
+export function itemsParaCobrar(
+  lineas: Linea[],
+): { articuloId: string; cantidad: string; unidadId?: string }[] {
+  return lineas.map((l) => ({
+    articuloId: l.articuloId,
+    cantidad: l.cantidad,
+    unidadId: l.unidadId,
+  }))
+}
+
+/**
+ * Si esa unidad YA está en el carrito.
+ *
+ * Exportada para probarse directo, en las dos direcciones: dos pasadas del
+ * lector sobre el mismo equipo (o elegirlo dos veces del selector) tienen
+ * que dar la misma respuesta que una unidad que todavía no se agregó — sin
+ * esto, sumar convertiría un reescaneo en dos ventas del mismo IMEI, que es
+ * justo lo que este mecanismo existe para evitar.
+ */
+export function estaEnElCarrito(lineas: Linea[], unidadId: string): boolean {
+  return lineas.some((l) => l.unidadId === unidadId)
+}
 
 /**
  * Un paso del stepper de cantidad: +1 o -1 unidad completa (1000 milésimas),
@@ -1169,32 +1217,47 @@ export function PuntoDeVenta({
   // sumar convertiría eso en dos ventas del mismo equipo — el motor las
   // rechazaría igual con UNIDAD_REPETIDA, pero avisar antes es mejor
   // mostrador que dejar que la venta entera se caiga recién al cobrar.
+  //
+  // El chequeo va ADENTRO del updater de `actualizarCarrito` —contra
+  // `previas`, no contra el `lineas` del closure— por la misma razón que ya
+  // gobierna el camino sin serie un poco más abajo: es la única lectura que
+  // React garantiza al día, sin depender de que nada más serialice las
+  // llamadas. Leerlo del closure funcionaba hoy —`consultando.current` en el
+  // buscador y el foco atrapado del diálogo ya serializan los escaneos—, pero
+  // es una construcción más débil para el mismo error de plata, y no hace
+  // falta pagarla: `estaEnElCarrito` cuesta lo mismo llamada desde acá.
   function agregarUnidad(a: ArticuloVendible, unidad: { id: string; imei: string }) {
-    if (lineas.some((l) => l.unidadId === unidad.id)) {
+    let repetida = false
+    actualizarCarrito((previas) => {
+      if (estaEnElCarrito(previas, unidad.id)) {
+        repetida = true
+        return previas
+      }
+      return [
+        ...previas,
+        {
+          articuloId: a.id,
+          sku: a.sku,
+          descripcion: a.nombre,
+          precio: a.precio,
+          moneda: a.moneda,
+          stock: a.stock,
+          esProducto: a.esProducto,
+          cantidad: '1',
+          llevaSerie: true,
+          unidadId: unidad.id,
+          imei: unidad.imei,
+        },
+      ]
+    })
+    if (repetida) {
       // Clave estable por unidad: pasar el lector dos o tres veces sobre el
       // mismo equipo actualiza el mismo toast en vez de apilar uno por cada
       // pasada — mismo criterio que ya usa el ABM de categorías.
       toast.warning(`El equipo ${unidad.imei} ya está en el carrito.`, {
         id: `unidad-repetida-${unidad.id}`,
       })
-      return
     }
-    actualizarCarrito((previas) => [
-      ...previas,
-      {
-        articuloId: a.id,
-        sku: a.sku,
-        descripcion: a.nombre,
-        precio: a.precio,
-        moneda: a.moneda,
-        stock: a.stock,
-        esProducto: a.esProducto,
-        cantidad: '1',
-        llevaSerie: true,
-        unidadId: unidad.id,
-        imei: unidad.imei,
-      },
-    ])
   }
 
   // Abre el selector y dispara la consulta. `unidades: null` mientras tanto,
@@ -1203,13 +1266,25 @@ export function PuntoDeVenta({
   // artículo — el mismo cuidado que `alTeclearEnBuscador` ya tiene con
   // `busquedaVigente`, acá contra el `articuloId` que sigue vigente cuando
   // la consulta resuelve.
+  //
+  // Si la consulta falla, el diálogo NO se queda colgado en "Buscando
+  // equipos…" para siempre: se cierra y se avisa, mismo criterio que el resto
+  // del producto usa para una acción que no salió — a diferencia del
+  // buscador de al lado, que libera su guarda en un `finally` porque ahí
+  // "seguir usable" alcanza, acá no hay nada que reintentar sin volver a
+  // tocar el artículo.
   function abrirSelectorDeUnidad(a: ArticuloVendible) {
     setSelectorUnidad({ articulo: a, unidades: null })
-    unidadesDeArticulo(a.id).then((unidades) => {
-      setSelectorUnidad((actual) =>
-        actual && actual.articulo.id === a.id ? { ...actual, unidades } : actual,
-      )
-    })
+    unidadesDeArticulo(a.id)
+      .then((unidades) => {
+        setSelectorUnidad((actual) =>
+          actual && actual.articulo.id === a.id ? { ...actual, unidades } : actual,
+        )
+      })
+      .catch(() => {
+        setSelectorUnidad((actual) => (actual && actual.articulo.id === a.id ? null : actual))
+        toast.error(`No se pudieron traer los equipos de ${a.nombre}. Probá de nuevo.`)
+      })
   }
 
   function agregar(a: ArticuloVendible) {
@@ -2118,13 +2193,7 @@ export function PuntoDeVenta({
               <input
                 type="hidden"
                 name="items"
-                value={JSON.stringify(
-                  lineas.map((l) => ({
-                    articuloId: l.articuloId,
-                    cantidad: l.cantidad,
-                    unidadId: l.unidadId,
-                  })),
-                )}
+                value={JSON.stringify(itemsParaCobrar(lineas))}
               />
               <input
                 type="hidden"
@@ -2358,7 +2427,17 @@ export function PuntoDeVenta({
                 >
                   <span className="text-sm font-semibold text-foreground">{u.imei}</span>
                   <span className="text-[11px] text-muted-foreground">
-                    Entró el {formatearFechaCorta(u.ingresadaEn)}
+                    {/* `new Date(...)` y no `u.ingresadaEn` directo: React
+                        Flight serializa `Date` de punta a punta, pero si
+                        alguna vez no lo hiciera —`unidadesDeArticulo` es un
+                        server action invocado desde el cliente, un camino
+                        que este repo no ejercita en ningún otro lado con un
+                        `Date`—, `formatearFechaCorta` (un
+                        `Intl.DateTimeFormat.format`) tira `RangeError` sobre
+                        un string y se lleva puesto el mostrador entero. Un
+                        `Date` ya construido pasa por `new Date(...)` sin
+                        cambiar nada. */}
+                    Entró el {formatearFechaCorta(new Date(u.ingresadaEn))}
                   </span>
                 </button>
               ))}

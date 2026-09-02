@@ -372,6 +372,60 @@ describe('el punto de venta', () => {
     expect(html).toContain('aria-label="Quitar iPhone 13"')
   })
 
+  // El hallazgo de la review de esta task: nada probaba que el `unidadId` de
+  // una línea con serie efectivamente saliera en el `items` que postea el
+  // `<form>`. Sacarlo del `.map` de producción dejaba pasar los tres casos de
+  // arriba igual —afirman sobre el HTML de la línea, no sobre el JSON
+  // escondido—, y el mostrador cobraba UNIDAD_REQUERIDA con el cliente ya en
+  // la caja. Se prueba llamando a la función pura, mismo criterio que
+  // `pasoDeCantidad`: este archivo no tiene forma de leer el `value` de un
+  // `<input type=hidden>` después de un clic, así que llamar la función
+  // directo reemplaza esa lectura.
+  it('itemsParaCobrar manda el unidadId de una línea con serie', async () => {
+    const { itemsParaCobrar } = await import('./punto-de-venta')
+    const items = itemsParaCobrar([
+      {
+        articuloId: 'a1', sku: 'S1', descripcion: 'iPhone 13', precio: '500000',
+        moneda: 'ARS', stock: '1', esProducto: true, cantidad: '1',
+        llevaSerie: true, unidadId: 'u1', imei: '355000000000001',
+      },
+    ])
+    expect(items).toEqual([{ articuloId: 'a1', cantidad: '1', unidadId: 'u1' }])
+  })
+
+  // Y la mitad sin serie del mismo camino: una línea sin unidad no manda
+  // `unidadId` de ningún valor (ni `null` ni `''`) — `JSON.stringify`
+  // descarta las propiedades `undefined`, que es justo lo que `cobrar`
+  // (acciones.ts) espera para "sin unidad" (ver su guard de `esUuid`).
+  it('itemsParaCobrar no manda unidadId para una línea sin serie', async () => {
+    const { itemsParaCobrar } = await import('./punto-de-venta')
+    const items = itemsParaCobrar([
+      {
+        articuloId: 'a2', sku: 'S2', descripcion: 'Funda', precio: '1000',
+        moneda: 'ARS', stock: '5', esProducto: true, cantidad: '2', llevaSerie: false,
+      },
+    ])
+    expect(JSON.stringify(items)).toBe('[{"articuloId":"a2","cantidad":"2"}]')
+  })
+
+  // El requisito duro de la task: dos pasadas del lector sobre el mismo
+  // equipo son el mismo teléfono, y sumar convertiría eso en dos ventas del
+  // mismo IMEI. Probado en las DOS direcciones, como pide la review: una
+  // unidad ausente no puede dar falso positivo.
+  it('estaEnElCarrito reconoce una unidad ya agregada, y sólo esa', async () => {
+    const { estaEnElCarrito } = await import('./punto-de-venta')
+    const carrito = [
+      {
+        articuloId: 'a1', sku: 'S1', descripcion: 'iPhone 13', precio: '500000',
+        moneda: 'ARS' as const, stock: '1', esProducto: true, cantidad: '1',
+        llevaSerie: true, unidadId: 'u1', imei: '355000000000001',
+      },
+    ]
+    expect(estaEnElCarrito(carrito, 'u1')).toBe(true)
+    expect(estaEnElCarrito(carrito, 'u2')).toBe(false)
+    expect(estaEnElCarrito([], 'u1')).toBe(false)
+  })
+
   // --- Task 3: la banda del total ---
 
   // El "$" y el monto son dos <span> con tratamiento tipográfico distinto
