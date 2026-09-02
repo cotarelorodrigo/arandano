@@ -2461,3 +2461,130 @@ y sigue circulando."
       persona: el MCP lee el documento pero no lo persiste. Sin esto, el `.pen`
       del repo sigue siendo el commit `87973d4` del 2026-08-21 y el próximo
       ciclo no ve este diseño.
+
+---
+
+### Task 13: Al entrar, cada rol abre donde trabaja
+
+**Sale de un pedido del dueño del producto, posterior al plan original.** La
+Task 10 había dejado escrito que `/` seguía yendo a `/vender` porque "mover la
+home es una decisión de producto que nadie pidió". Ya está pedida.
+
+**La decisión**: un `DUENO` abre en `/dashboard`; un `EMPLEADO` abre en
+`/vender`. Cada uno cae donde trabaja — el dueño quiere ver cómo viene el
+local, quien atiende el mostrador quiere cobrar, y CLAUDE.md ya tiene escrito
+que "el mostrador es lo primero que se abre a la mañana". El empleado sigue
+llegando al dashboard por el sidebar; lo que cambia es dónde aterriza.
+
+**Files:**
+- Create: `lib/auth/destino.ts`, `lib/auth/destino.test.ts`
+- Modify: `app/page.tsx` (el `redirect('/vender')` del final y su docblock)
+- Modify: `app/login/acciones.ts` (el `redirect('/vender')` del final)
+- Modify: `scripts/smoke.sh` (`caso_home_redirige_a_vender` y sus referencias)
+- Modify: `test/rutas-con-guard.test.ts` (la razón declarada de `app/page.tsx`)
+- Modify: `docs/pantallas.md` (la sección `` `/` ``)
+
+**Interfaces:**
+- Produces: `destinoAlEntrar(rol: RolUsuario): string`
+
+- [ ] **Step 1: El test que falla**
+
+```ts
+// lib/auth/destino.test.ts
+import { describe, it, expect } from 'vitest'
+import { destinoAlEntrar } from './destino'
+
+describe('cada rol abre donde trabaja', () => {
+  it('el dueño abre en el tablero', () => {
+    expect(destinoAlEntrar('DUENO')).toBe('/dashboard')
+  })
+
+  it('el empleado abre en el mostrador', () => {
+    expect(destinoAlEntrar('EMPLEADO')).toBe('/vender')
+  })
+})
+```
+
+- [ ] **Step 2: Correr y verlo fallar**
+
+Run: `npx vitest run lib/auth/destino.test.ts` → FAIL, no resuelve el import.
+
+- [ ] **Step 3: Implementar**
+
+```ts
+// lib/auth/destino.ts
+import type { RolUsuario } from './sesion'
+
+/**
+ * Dónde aterriza una sesión recién abierta.
+ *
+ * **Una sola función para los DOS lugares que redirigen** —el `/` de un tenant
+ * con sesión y el final del server action de login—, y no un literal repetido
+ * en cada uno. Este repo ya pagó dos veces el peaje de una regla escrita dos
+ * veces: el merge del ciclo móvil dejó una de las dos copias de "Anular orden"
+ * atada al permiso equivocado, y el ciclo del dashboard tuvo que rulear el
+ * mismo fallback de moneda en /ventas y otra vez, ocho tasks después, en
+ * /dashboard. Dos redirects que pueden discrepar son ese mismo defecto
+ * esperando.
+ *
+ * El dueño abre en el tablero y quien atiende el mostrador en el punto de
+ * venta: cada uno donde trabaja. Un empleado sigue llegando a /dashboard por
+ * el sidebar —no es una restricción de acceso, es dónde aterriza—, y esa es la
+ * diferencia con `soloDueno`, que sí cierra una pantalla.
+ */
+export function destinoAlEntrar(rol: RolUsuario): string {
+  return rol === 'DUENO' ? '/dashboard' : '/vender'
+}
+```
+
+- [ ] **Step 4: Correr y verlo pasar**
+
+Run: `npx vitest run lib/auth/destino.test.ts` → PASS, 2 casos.
+
+- [ ] **Step 5: Los dos redirects**
+
+En `app/page.tsx`, el `redirect('/vender')` del final pasa a usar la sesión que
+`exigirSesion()` ya devuelve (hoy se descarta su valor). Actualizar también el
+docblock de `Home`, que hoy afirma "La pantalla que se ve es /vender".
+
+En `app/login/acciones.ts`, ídem con el rol del usuario que acaba de entrar.
+El `redirect()` sigue yendo FUERA del `try`, por lo que ya explica el
+comentario que está ahí: tira una excepción de control de Next.
+
+- [ ] **Step 6: El caso que ata las dos copias**
+
+`test/permisos-en-las-dos-copias.test.ts` es el precedente del mecanismo, y
+éste es el mismo modo de falla. Agregar un caso por FUENTE que exija que
+**ninguno de los dos archivos** contenga un `redirect('/vender')` ni un
+`redirect('/dashboard')` literal, y que los dos importen `destinoAlEntrar`.
+Contar en las dos direcciones: con la función tienen que estar los dos, sin
+ella ninguno — un `not.toContain` pasa igual si sólo una copia quedó bien.
+
+- [ ] **Step 7: El smoke**
+
+`caso_home_redirige_a_vender` (`scripts/smoke.sh:185`) afirma el contrato de
+`/`, que ahora depende del rol. Renombrarlo y hacerlo afirmar el destino del
+rol con el que el smoke entra (el canario). Hay referencias a su nombre en los
+comentarios de las líneas 11, 326, 364, 435-436, 476 y 481, y en la lista de
+casos de la 451 — el nombre viejo no puede sobrevivir en ninguna.
+
+**Cuidado con el conteo**: la línea 481 suma "+1" contando este caso entre los
+que no corren sin sesión. Si el caso se parte en dos (dueño y empleado), ese
+número miente.
+
+- [ ] **Step 8: La documentación**
+
+`docs/pantallas.md`, sección `` `/` ``: hoy dice "redirige a `/vender` si hay
+sesión". Pasa a describir los dos destinos y por qué.
+
+- [ ] **Step 9: El gate**
+
+Run: `npx vitest run lib/auth test/rutas-con-guard.test.ts test/pantallas.test.ts`,
+después `npx tsc --noEmit` y `npm run lint`.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add lib/auth app/page.tsx app/login/acciones.ts scripts/smoke.sh test/ docs/
+git commit -m "feat(entrar): el dueño abre en el tablero y el empleado en el mostrador"
+```

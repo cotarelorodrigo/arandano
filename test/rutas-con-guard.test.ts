@@ -8,7 +8,8 @@ import path from 'node:path'
 const FUERA_DEL_GRUPO: Record<string, string> = {
   'app/page.tsx':
     'sirve el ápex público y, para un tenant, llama a exigirSesion() por su cuenta ' +
-    'antes de redirigir a /vender; no puede estar en (app) porque el ápex no tiene sesión',
+    'antes de redirigir al destino del rol (/dashboard o /vender); no puede estar en ' +
+    '(app) porque el ápex no tiene sesión',
   'app/login/page.tsx': 'es la pantalla de login: exigir sesión para verla sería un bucle',
   'app/forbidden.tsx': 'la renderiza Next ante forbidden(); no es una ruta navegable',
 }

@@ -3,6 +3,7 @@ import { notFound, forbidden, redirect } from 'next/navigation'
 import { tenantDelRequest } from '@/lib/tenant/desde-request'
 import { piezasDeOrigen } from '@/lib/auth/origen'
 import { exigirSesion } from '@/lib/auth/sesion'
+import { destinoAlEntrar } from '@/lib/auth/destino'
 import { Landing } from '@/app/sitio/landing'
 import type { BaseDeTenant } from '@/app/sitio/entrar'
 
@@ -77,9 +78,10 @@ function PaginaApex({ base }: { base: BaseDeTenant }) {
 /**
  * `/` no es una pantalla: es la aplicación abierta en la pestaña por defecto.
  *
- * Para un tenant con sesión esto redirige y no renderiza nada. La pantalla que
- * se ve es /vender, y ahí el shell de app/(app)/layout.tsx pone la navegación,
- * la identidad y el contexto.
+ * Para un tenant con sesión esto redirige y no renderiza nada. El destino
+ * depende del rol —`destinoAlEntrar`, lib/auth/destino.ts—: un `DUENO` cae en
+ * /dashboard, un `EMPLEADO` en /vender. En cualquiera de los dos, el shell de
+ * app/(app)/layout.tsx pone la navegación, la identidad y el contexto.
  *
  * El ápex se queda: llega por DNS y no por path, así que no hay forma de
  * sacarlo a otra ruta. Eso es lo que impide que este archivo viva bajo (app).
@@ -104,14 +106,14 @@ export default async function Home() {
   if (resolucion.tipo !== 'tenant') notFound()
 
   // ANTES del redirect, y no es cuestión de estilo: un tenant suspendido tiene
-  // que ver el 403 y no ser mandado a /vender para que ahí lo rebote otra cosa
-  // sin decirle por qué.
+  // que ver el 403 y no ser mandado a su destino habitual para que ahí lo
+  // rebote otra cosa sin decirle por qué.
   if (resolucion.tenant.estado === 'SUSPENDIDO') forbidden()
 
   // El guard se llama acá a mano porque esta página no vive bajo (app) — el
   // ápex entra por la misma ruta y no tiene sesión. Está declarada en
   // test/rutas-con-guard.test.ts con esa razón escrita.
-  await exigirSesion()
+  const sesion = await exigirSesion()
 
-  redirect('/vender')
+  redirect(destinoAlEntrar(sesion.usuario.rol))
 }

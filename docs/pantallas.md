@@ -36,8 +36,14 @@ copy literal de la maqueta; ahora son las siete que la maqueta dibuja, en
   un solo campo). "Entrar a mi local" (Nav) revela un campo de subdominio
   para quien ya es cliente y se olvidó de su dirección (Minor 15 de la
   review final: esta sección no lo mencionaba).
-- En `flor.arandano.app`: nada — redirige a `/vender` si hay sesión, o a
-  `/login` si no.
+- En `flor.arandano.app`: nada — redirige según el rol de la sesión (o a
+  `/login` si no hay una): un `DUENO` a `/dashboard`, un `EMPLEADO` a
+  `/vender`. Cada uno abre donde trabaja — el dueño quiere ver cómo viene el
+  local, quien atiende el mostrador quiere cobrar. No es una restricción de
+  acceso: un empleado sigue llegando a `/dashboard` por el sidebar, sólo
+  cambia dónde aterriza al entrar. `destinoAlEntrar` (`lib/auth/destino.ts`)
+  es la única fuente de ese destino — la usan tanto este redirect como el
+  final del server action de `/login`.
 
 **Decisiones**
 

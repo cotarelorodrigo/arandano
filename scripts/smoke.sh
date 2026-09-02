@@ -8,11 +8,11 @@
 # Un caso por función, y la lista abajo. Sumar un caso es agregar una función y
 # un renglón. Hoy cubre /api/health, las pantallas sin credenciales, un login
 # real contra /api/auth/sign-in/email y —con esa sesión— cada pantalla de
-# app/(app)/**/page.tsx, caso_home_redirige_a_vender (/ ya no es una pantalla
-# propia, así que lo que se cubre es el redirect), y el login POR LA PANTALLA,
-# que es lo único que ejercita el redirect de un server action. Lo que falta
-# (venta, factura, orden de trabajo, catálogo público) entra cuando exista ese
-# código.
+# app/(app)/**/page.tsx, caso_home_redirige_al_destino_del_rol (/ ya no es una
+# pantalla propia, así que lo que se cubre es el redirect), y el login POR LA
+# PANTALLA, que es lo único que ejercita el redirect de un server action. Lo
+# que falta (venta, factura, orden de trabajo, catálogo público) entra cuando
+# exista ese código.
 #
 # ok/bad/PASS/FAIL van inline y NO se sourcean desde scripts/tests/lib-asserts.sh,
 # a propósito: ese archivo se declara a sí mismo compartido entre los
@@ -179,15 +179,23 @@ caso_home_exige_sesion() {
 }
 
 # El home es la aplicación abierta en la pestaña por defecto, así que `/` con
-# sesión tiene que mandar a /vender. Se afirma el DESTINO y no sólo que hubo
-# un redirect: un rebote a /login también sería un redirect, y significaría
-# que el guard se rompió.
-caso_home_redirige_a_vender() {
+# sesión tiene que mandar al destino de QUIEN entró —lib/auth/destino.ts,
+# destinoAlEntrar(rol)— y no a un path fijo. Se afirma el DESTINO y no sólo que
+# hubo un redirect: un rebote a /login también sería un redirect, y
+# significaría que el guard se rompió.
+#
+# El canario con el que este script inicia sesión (MAIL_CANARIO) es un DUENO
+# —crear-tenant.mts inserta al primer usuario con rol='DUENO', y deploy.sh da
+# de alta al canario con ese mismo script—, así que el destino que se afirma
+# acá es /dashboard. Si algún día el smoke empieza a loguearse como un
+# EMPLEADO, esta aserción tiene que cambiar con él: no hay forma de que este
+# caso, por sí solo, cubra los dos destinos a la vez.
+caso_home_redirige_al_destino_del_rol() {
   local destino
   destino=$(curl -s -o /dev/null --max-time 10 -w '%{redirect_url}' \
     -H "Cookie: ${COOKIE_SESION}" \
     -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/")
-  [[ "$destino" == */vender ]]
+  [[ "$destino" == */dashboard ]]
 }
 
 # El ápex no tiene login, y no puede delatar nada distinto de una ruta que no
@@ -323,9 +331,9 @@ caso_login_devuelve_sesion() {
 #
 # POR QUÉ EXISTE. caso_login_devuelve_sesion entra por
 # /api/auth/sign-in/email, que es un endpoint común y corriente: nunca pasa
-# por app/login/acciones.ts ni por el redirect('/vender') del final. Y ese
-# redirect es lo único que ejercita el camino que Next resuelve con un
-# fetch() contra sí mismo.
+# por app/login/acciones.ts ni por el redirect(destinoAlEntrar(rol)) del
+# final. Y ese redirect es lo único que ejercita el camino que Next resuelve
+# con un fetch() contra sí mismo.
 #
 # SIN header Origin, por el mismo motivo que el login de arriba: Next deja
 # pasar un action sin Origin (loguea un warning), y mandarlo obligaría a
@@ -361,9 +369,10 @@ caso_login_por_la_pantalla() {
   # sea que el login falló o que el encoding de arriba dejó de valer.
   [[ "$codigo" == "303" ]] || return 1
   # OJO al diagnosticar un rojo acá: el cuerpo trae el render incrustado del
-  # DESTINO del redirect, y desde este ciclo el destino es /vender —que
-  # consulta la base— y no / —que era estático—. Un /vender roto pinta este
-  # caso de rojo diciendo "login por la pantalla" y no habla del punto de venta.
+  # DESTINO del redirect, y ese destino depende del rol (destinoAlEntrar) —para
+  # el canario, un DUENO, es /dashboard— y no / —que era estático—. Un
+  # /dashboard roto pinta este caso de rojo diciendo "login por la pantalla" y
+  # no habla del tablero.
   # El nombre del local prueba que el render incrustado resolvió el tenant
   # —era exactamente lo que fallaba—, y usuario-nombre prueba que además es la
   # home autenticada y no la pantalla de login: /login lleva el MISMO marcador
@@ -432,10 +441,10 @@ RUTAS_APP_CRUDAS=$(rutas_autenticadas 'app/(app)') || {
 # este barrido puede pedir rutas que la imagen no tiene: eso es un rojo honesto,
 # pero habla del checkout y no de la imagen.
 #
-# `/` NO va acá desde que redirige a /vender: el barrido abre cada ruta sin
-# `-L` y exige 200. Su contrato lo fija caso_home_redirige_a_vender, que es
-# una aserción más fuerte que la vieja —"algo renderizó con el nombre del
-# local"— porque nombra el destino.
+# `/` NO va acá desde que redirige al destino del rol: el barrido abre cada
+# ruta sin `-L` y exige 200. Su contrato lo fija caso_home_redirige_al_destino_del_rol,
+# que es una aserción más fuerte que la vieja —"algo renderizó con el nombre
+# del local"— porque nombra el destino.
 RUTAS_APP=()
 while IFS= read -r ruta_derivada; do
   [[ -n "$ruta_derivada" ]] && RUTAS_APP+=("$ruta_derivada")
@@ -473,13 +482,18 @@ done
 # No afloja el gate: caso_login_devuelve_sesion ya sumó su rojo unas líneas más
 # arriba, así que FAIL ya es distinto de cero y el smoke igual sale con 1.
 if [[ -n "$COOKIE_SESION" ]]; then
-  if caso_home_redirige_a_vender; then ok "/ manda a /vender"; else bad "/ manda a /vender"; fi
+  if caso_home_redirige_al_destino_del_rol; then
+    ok "/ manda al destino del rol (/dashboard para el canario)"
+  else
+    bad "/ manda al destino del rol (/dashboard para el canario)"
+  fi
   for ruta in "${RUTAS_APP[@]}"; do
     if caso_pantalla "$ruta"; then ok "pantalla ${ruta}"; else bad "pantalla ${ruta}"; fi
   done
 else
-  # +1: sin sesión tampoco corre caso_home_redirige_a_vender, no sólo el
-  # barrido de RUTAS_APP — el conteo tiene que incluirlo o miente de menos.
+  # +1: sin sesión tampoco corre caso_home_redirige_al_destino_del_rol, no
+  # sólo el barrido de RUTAS_APP — el conteo tiene que incluirlo o miente de
+  # menos.
   omit "$((${#RUTAS_APP[@]} + 1)) chequeos omitidos: sin sesión (ver caso_login_devuelve_sesion)"
 fi
 

@@ -4,6 +4,7 @@ import { tenantDelRequest } from '@/lib/tenant/desde-request'
 import { authParaTenant } from '@/lib/auth/para-tenant'
 import { origenDelRequest } from '@/lib/auth/origen'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
+import { destinoAlEntrar } from '@/lib/auth/destino'
 import { claveDeIntento, loginBloqueado, registrarLoginFallido } from '@/lib/auth/limite-de-intentos'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
@@ -116,7 +117,10 @@ export async function entrar(_estado: EstadoLogin, datos: FormData): Promise<Est
   // redirect() tira una excepción de control de Next, así que va FUERA del
   // try: adentro, el catch la tomaría por un login fallido.
   //
-  // A /vender y no a `/`: `/` sólo redirige acá, así que pasar por ahí era un
+  // Al destino del ROL, calculado con destinoAlEntrar (lib/auth/destino.ts) —
+  // la MISMA función que usa app/page.tsx, y no un literal repetido acá, que
+  // es la clase de defecto que su docblock explica. Directo al destino y no a
+  // `/`: `/` sólo redirige al mismo lugar, así que pasar por ahí sería un
   // salto de servidor de más en cada login.
-  redirect('/vender')
+  redirect(destinoAlEntrar(usuario?.rol ?? 'EMPLEADO'))
 }
