@@ -15,6 +15,7 @@ let enTransaccionDeTenant: typeof import('@/lib/tenant/transaccion').enTransacci
 let crearVenta: typeof import('@/lib/ventas/crear').crearVenta
 let anularVenta: typeof import('@/lib/ventas/anular').anularVenta
 let ajustarStock: typeof import('@/lib/inventario/stock').ajustarStock
+let ingresarStock: typeof import('@/lib/inventario/stock').ingresarStock
 let buscarArticulosVendibles: typeof import('@/lib/ventas/buscar').buscarArticulosVendibles
 let prismaParaTenant: typeof import('@/lib/tenant/prisma').prismaParaTenant
 // Sólo para el test de `buscarArticulosVendibles` que necesita un artículo en
@@ -57,7 +58,7 @@ beforeAll(async () => {
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
   ;({ crearVenta } = await import('@/lib/ventas/crear'))
   ;({ anularVenta } = await import('@/lib/ventas/anular'))
-  ;({ ajustarStock } = await import('@/lib/inventario/stock'))
+  ;({ ajustarStock, ingresarStock } = await import('@/lib/inventario/stock'))
   ;({ buscarArticulosVendibles } = await import('@/lib/ventas/buscar'))
   ;({ prismaParaTenant } = await import('@/lib/tenant/prisma'))
   ;({ crearArticulo } = await import('@/lib/inventario/articulos'))
@@ -1570,5 +1571,91 @@ describe('el caso del feedback: US$ 300 cobrados en dos monedas', () => {
     // Y el defecto que este ciclo arregla, dicho como aserción: las dos
     // magnitudes NO son la misma, así que la pantalla tiene que mostrar las dos.
     expect(cobrado.usd.equals(vendido.usd)).toBe(false)
+  })
+})
+
+describe('el costo se congela al cobrar', () => {
+  it('toma el último INGRESO CON COSTO, no el ingreso más reciente', async () => {
+    // Dos ingresos: el primero con costo, el segundo sin. El segundo es el más
+    // reciente, y el que hay que ignorar — mismo criterio que el tile
+    // "Último costo" de /inventario/[id].
+    await ingresarStock({ tenantId, articuloId: remera, cantidad: d('10'),
+      usuarioId, costoUnitario: d('600') })
+    await ingresarStock({ tenantId, articuloId: remera, cantidad: d('5'),
+      usuarioId, costoUnitario: null })
+
+    const venta = await crearVenta({
+      tenantId, usuarioId,
+      items: [{ articuloId: remera, cantidad: d('2') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS',
+        base: d('2000'), cotizacion: d('1') }],
+    })
+
+    const prisma = prismaParaTenant(tenantId)
+    const items = await prisma.ventaItem.findMany({ where: { ventaId: venta.id } })
+    expect(items[0].costoUnitario?.toString()).toBe('600')
+
+    const guardada = await prisma.venta.findUniqueOrThrow({ where: { id: venta.id } })
+    expect(guardada.costoArs.toString()).toBe('1200')        // 600 × 2
+    expect(guardada.vendidoConCosto.toString()).toBe('2000') // 1000 × 2, a precio de lista
+  })
+
+  it('un artículo sin ningún ingreso con costo queda en NULL y no suma', async () => {
+    const venta = await crearVenta({
+      tenantId, usuarioId,
+      items: [{ articuloId: servicio, cantidad: d('1') }], // $500, sin costo
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS',
+        base: d('500'), cotizacion: d('1') }],
+    })
+    const prisma = prismaParaTenant(tenantId)
+    const items = await prisma.ventaItem.findMany({ where: { ventaId: venta.id } })
+    expect(items[0].costoUnitario).toBeNull()
+    const guardada = await prisma.venta.findUniqueOrThrow({ where: { id: venta.id } })
+    expect(guardada.costoArs.toString()).toBe('0')
+    expect(guardada.vendidoConCosto.toString()).toBe('0')
+  })
+
+  // El costo se guarda en PESOS y el precio de este artículo está en dólares:
+  // compararlos exigiría inventar una cotización. Misma decisión que
+  // `textoDeMargen` en /inventario/[id].
+  it('un ítem en dólares queda en NULL aunque el artículo tenga costo', async () => {
+    const enUsd = await crearArticulo({
+      tenantId, usuarioId, nombre: 'iPhone', tipo: 'PRODUCTO',
+      precio: d('300'), moneda: 'USD', stockInicial: d('3'), costoUnitario: d('200000'),
+    })
+    const venta = await crearVenta({
+      tenantId, usuarioId,
+      items: [{ articuloId: enUsd.id, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'USD', cubre: 'USD',
+        base: d('300'), cotizacion: d('1') }],
+    })
+    const prisma = prismaParaTenant(tenantId)
+    const items = await prisma.ventaItem.findMany({ where: { ventaId: venta.id } })
+    expect(items[0].costoUnitario).toBeNull()
+    const guardada = await prisma.venta.findUniqueOrThrow({ where: { id: venta.id } })
+    expect(guardada.costoArs.toString()).toBe('0')
+    expect(guardada.vendidoConCosto.toString()).toBe('0')
+  })
+
+  // La mitad que importa del par de columnas: las dos suman EXACTAMENTE los
+  // mismos ítems, así que el margen nunca divide por mercadería cuyo costo no
+  // se conoce.
+  it('con un ítem con costo y otro sin él, las dos columnas cubren sólo el primero', async () => {
+    await ingresarStock({ tenantId, articuloId: remera, cantidad: d('10'),
+      usuarioId, costoUnitario: d('600') })
+    const venta = await crearVenta({
+      tenantId, usuarioId,
+      items: [
+        { articuloId: remera, cantidad: d('1') },   // $1000, costo 600
+        { articuloId: servicio, cantidad: d('1') }, // $500, sin costo
+      ],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS',
+        base: d('1500'), cotizacion: d('1') }],
+    })
+    const prisma = prismaParaTenant(tenantId)
+    const g = await prisma.venta.findUniqueOrThrow({ where: { id: venta.id } })
+    expect(g.costoArs.toString()).toBe('600')
+    expect(g.vendidoConCosto.toString()).toBe('1000')
+    expect(g.total.toString()).toBe('1500')
   })
 })

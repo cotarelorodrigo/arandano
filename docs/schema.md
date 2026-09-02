@@ -256,6 +256,7 @@ erDiagram
     decimal(12,3) cantidad
     decimal(12,2) precio_unitario
     moneda moneda
+    decimal(12,2) costo_unitario "opcional"
   }
   ventas {
     uuid id PK
@@ -267,6 +268,8 @@ erDiagram
     decimal(12,2) total
     decimal(12,2) recargo
     decimal(12,2) total_usd
+    decimal(12,2) costo_ars
+    decimal(12,2) vendido_con_costo
     timestamptz(3) anulada_en "opcional"
     uuid anulada_por_id FK "opcional"
     timestamptz(3) creado_en

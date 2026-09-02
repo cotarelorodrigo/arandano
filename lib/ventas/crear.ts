@@ -7,6 +7,7 @@ import {
   montoEntregado,
   recargoDePago,
   excedeEscala,
+  subtotalItem,
   ESCALA_CANTIDAD,
   ESCALA_DINERO,
   ESCALA_COTIZACION,
@@ -206,6 +207,26 @@ export async function crearVenta(
       })
       const porId = new Map(articulos.map((a) => [a.id, a]))
 
+      // El último costo conocido de cada artículo, para congelarlo en el ítem.
+      //
+      // `distinct` sobre `articuloId` con `orderBy` descendente devuelve la fila más
+      // reciente de cada artículo en UNA consulta, sin un query por ítem.
+      //
+      // El filtro es `costoUnitario: { not: null }` y no "el ingreso más reciente":
+      // un ingreso cargado sin costo no borra lo que se sabía del anterior. Mismo
+      // criterio que el tile "Último costo" de app/(app)/inventario/[id]/page.tsx.
+      const ultimosCostos = await tx.movimientoStock.findMany({
+        where: {
+          articuloId: { in: items.map((i) => i.articuloId) },
+          motivo: 'INGRESO',
+          costoUnitario: { not: null },
+        },
+        orderBy: [{ articuloId: 'asc' }, { creadoEn: 'desc' }],
+        distinct: ['articuloId'],
+        select: { articuloId: true, costoUnitario: true },
+      })
+      const costoPorArticulo = new Map(ultimosCostos.map((m) => [m.articuloId, m.costoUnitario]))
+
       // Congelar precio y descripción ACÁ. El artículo puede renombrarse o cambiar
       // de precio mañana; esta venta tiene que seguir diciendo lo de hoy.
       const lineas = items.map((i) => {
@@ -233,10 +254,27 @@ export async function crearVenta(
           precioUnitario: a.precio,
           moneda: a.moneda,
           esProducto: a.tipo === 'PRODUCTO',
+          // NULL para un ítem en dólares aunque el artículo tenga costo: el costo está
+          // en pesos, y compararlos exigiría inventar una cotización.
+          costoUnitario: a.moneda === 'USD' ? null : (costoPorArticulo.get(a.id) ?? null),
         }
       })
 
       const totales = totalesDeItems(lineas)
+      // Las DOS columnas cubren exactamente los mismos ítems, y por eso se calculan
+      // en el mismo reduce: el margen del período divide una contra la otra, así que
+      // un ítem que entrara en una y no en la otra sesgaría el porcentaje sin que
+      // nada lo dijera.
+      const conCosto = lineas.reduce(
+        (acc, l) =>
+          l.costoUnitario === null
+            ? acc
+            : {
+                costo: acc.costo.add(subtotalItem(l.cantidad, l.costoUnitario)),
+                vendido: acc.vendido.add(subtotalItem(l.cantidad, l.precioUnitario)),
+              },
+        { costo: new Prisma.Decimal(0), vendido: new Prisma.Decimal(0) },
+      )
       // Contra las BASES y no contra los montos: el recargo no es mercadería.
       // Y ahora son DOS comparaciones, una por moneda: una venta que cierra en
       // pesos y no en dólares es tan inválida como la que no cierra a secas.
@@ -280,6 +318,11 @@ export async function crearVenta(
           // mercadería a precio de lista: son dos números distintos y este
           // ciclo existe justamente para no confundirlos.
           recargo: recargoTotal,
+          // Caché de los ítems que SÍ tenían costo, calculado arriba en el mismo
+          // reduce que `vendidoConCosto` — las dos cubren exactamente los mismos
+          // ítems.
+          costoArs: conCosto.costo,
+          vendidoConCosto: conCosto.vendido,
           items: {
             create: lineas.map((l) => ({
               tenantId,
@@ -288,6 +331,7 @@ export async function crearVenta(
               cantidad: l.cantidad,
               precioUnitario: l.precioUnitario,
               moneda: l.moneda,
+              costoUnitario: l.costoUnitario,
             })),
           },
           // Campo por campo, igual que los ítems dos líneas arriba: un

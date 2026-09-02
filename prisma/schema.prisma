@@ -509,6 +509,15 @@ model Venta {
   // de lo mismo, y no cambió de significado para ninguna fila anterior a este
   // ciclo: todas tienen `totalUsd = 0`.
   totalUsd          Decimal   @default(0) @map("total_usd") @db.Decimal(12, 2)
+  /// Caché de la suma de los ítems que SÍ tenían costo. Mismo criterio que
+  /// `recargo` frente a `Pago.recargo` y que `Articulo.stock` frente a sus
+  /// movimientos: la fuente de verdad son los ítems, esto evita traerlos.
+  costoArs          Decimal   @default(0) @map("costo_ars") @db.Decimal(12, 2)
+  /// La mercadería EN PESOS de ESOS MISMOS ítems, a precio de lista.
+  /// Existe para que el margen del período se divida contra la mercadería
+  /// cuyo costo se conoce y no contra `total`, que incluye lo que no lo tiene:
+  /// con `total` el porcentaje saldría subestimado sin que nada lo dijera.
+  vendidoConCosto   Decimal   @default(0) @map("vendido_con_costo") @db.Decimal(12, 2)
   // La venta anulada NO se borra: sus ítems y su total quedan intactos porque
   // el historial tiene que poder responder qué se cobró, y cuando llegue ARCA
   // ésta va a ser el comprobante que necesita su nota de crédito.
@@ -548,6 +557,14 @@ model VentaItem {
   // artículo puede pasar de dólares a pesos mañana y esta venta tiene que
   // seguir diciendo en qué moneda se cobró.
   moneda         Moneda  @default(ARS)
+  /// El último costo conocido del artículo AL MOMENTO DE COBRAR, en pesos.
+  /// Congelado, igual que `descripcion` y `precioUnitario` y por el mismo
+  /// motivo: un costo que se corrige mañana no puede cambiar lo que una venta
+  /// de hoy dice que costó.
+  /// NULL cuando el artículo no tenía ningún ingreso con costo cargado, y NULL
+  /// SIEMPRE para un ítem en dólares — el costo se guarda en pesos y
+  /// compararlo contra un precio en dólares exigiría inventar una cotización.
+  costoUnitario  Decimal? @map("costo_unitario") @db.Decimal(12, 2)
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   venta    Venta    @relation(fields: [ventaId], references: [id], onDelete: Cascade)
