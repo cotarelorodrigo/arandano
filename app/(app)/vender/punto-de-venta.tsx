@@ -84,11 +84,18 @@ export type Linea = {
   unidadId?: string
   // `string | null` y no sólo `string | undefined` desde el ciclo "unidades
   // sin identificar" (Task 2 de ese ciclo, que amplía `UnidadLibre.imei` en
-  // lib/inventario/unidades.ts): el selector de unidades puede ahora traer
-  // una unidad sin IMEI todavía. Mostrarla sin identificador es lo que hace
-  // ESTE archivo sin decidir nada nuevo — capturarlo en el momento de vender
-  // es la Task 7 de ese ciclo, no ésta.
+  // lib/inventario/unidades.ts): el selector de unidades puede traer una
+  // unidad sin IMEI todavía, y la línea la muestra como tal.
   imei?: string | null
+  // Lo que se escaneó EN EL MOSTRADOR, para una unidad que entró sin número
+  // (Task 7 de ese ciclo). **Opcional y saltable**: si quien cobra no tiene
+  // la caja a mano, la venta sale igual y el equipo se va sin identificar —
+  // es el camino por defecto, no un error. Sólo puede tener valor en una
+  // línea cuyo `imei` sea `null`: capturar sobre una unidad YA identificada
+  // sería una corrección, y las correcciones son trabajo de la ficha del
+  // artículo, sobre una unidad libre (el motor lo rechaza con
+  // UNIDAD_NO_CORRESPONDE si el número no coincide).
+  imeiCapturado?: string
 }
 
 type Pago = {
@@ -174,11 +181,18 @@ const CARRITO_VACIO = firmaDelCarrito([])
  */
 export function itemsParaCobrar(
   lineas: Linea[],
-): { articuloId: string; cantidad: string; unidadId?: string }[] {
+): { articuloId: string; cantidad: string; unidadId?: string; imeiCapturado?: string }[] {
   return lineas.map((l) => ({
     articuloId: l.articuloId,
     cantidad: l.cantidad,
     unidadId: l.unidadId,
+    // Vacío o en blanco no viaja: `JSON.stringify` descarta un `undefined`,
+    // así que el servidor recibe el ítem SIN el campo — que es exactamente
+    // "no se escaneó nada". Mandar la cadena vacía funcionaría igual (el
+    // motor la trata como ausencia, ver `imeisCapturados` en
+    // lib/ventas/crear.ts), pero deja al JSON afirmando un escaneo que no
+    // pasó.
+    imeiCapturado: l.imeiCapturado?.trim() === '' ? undefined : l.imeiCapturado,
   }))
 }
 
@@ -193,6 +207,79 @@ export function itemsParaCobrar(
  */
 export function estaEnElCarrito(lineas: Linea[], unidadId: string): boolean {
   return lineas.some((l) => l.unidadId === unidadId)
+}
+
+/**
+ * La lista del selector de unidad: qué equipo sale.
+ *
+ * **Las identificadas van una por fila; las SIN identificar van todas en UNA
+ * fila** (Task 7 del ciclo "unidades sin identificar"), con el contador de
+ * cuántas quedan. Listar treinta filas idénticas —mismo artículo, sin número,
+ * misma fecha— es pedirle a alguien que elija entre cosas indistinguibles: no
+ * hay ninguna decisión que tomar ahí, así que la fila se lleva la MÁS VIEJA,
+ * que es la que un mostrador vende primero y la que `unidadesLibres` ya deja
+ * al frente de su orden.
+ *
+ * **Componente exportado y no JSX inline en el diálogo**: abrir el diálogo de
+ * verdad exige un click sobre un resultado del buscador y una respuesta de
+ * `unidadesDeArticulo`, dos cosas que `renderToStaticMarkup` no puede hacer.
+ * Con el agrupamiento acá, `punto-de-venta.test.tsx` lo afirma directo. Mismo
+ * criterio que `itemsParaCobrar`.
+ */
+export function UnidadesDelSelector({
+  unidades,
+  onElegir,
+}: {
+  unidades: UnidadLibre[]
+  onElegir: (u: UnidadLibre) => void
+}) {
+  const identificadas = unidades.filter((u) => u.imei !== null)
+  const sinIdentificar = unidades.filter((u) => u.imei === null)
+  const proxima = sinIdentificar[0]
+
+  return (
+    <div className="flex max-h-[50vh] flex-col gap-2 overflow-y-auto">
+      {identificadas.map((u) => (
+        <button
+          key={u.id}
+          type="button"
+          className="flex flex-col gap-0.5 rounded-[9px] border border-input px-3 py-2 text-left hover:bg-muted"
+          onClick={() => onElegir(u)}
+        >
+          <span className="text-sm font-semibold text-foreground">{u.imei}</span>
+          <span className="text-[11px] text-muted-foreground">
+            {/* `new Date(...)` y no `u.ingresadaEn` directo: React Flight
+                serializa `Date` de punta a punta, pero si alguna vez no lo
+                hiciera —`unidadesDeArticulo` es un server action invocado
+                desde el cliente, un camino que este repo no ejercita en
+                ningún otro lado con un `Date`—, `formatearFechaCorta` (un
+                `Intl.DateTimeFormat.format`) tira `RangeError` sobre un
+                string y se lleva puesto el mostrador entero. Un `Date` ya
+                construido pasa por `new Date(...)` sin cambiar nada. */}
+            Entró el {formatearFechaCorta(new Date(u.ingresadaEn))}
+          </span>
+        </button>
+      ))}
+      {proxima !== undefined && (
+        <button
+          key={proxima.id}
+          type="button"
+          className="flex flex-col gap-0.5 rounded-[9px] border border-dashed border-input px-3 py-2 text-left hover:bg-muted"
+          onClick={() => onElegir(proxima)}
+        >
+          <span className="text-sm font-semibold text-foreground">
+            {sinIdentificar.length === 1
+              ? 'Una sin identificar'
+              : `Una sin identificar — quedan ${sinIdentificar.length}`}
+          </span>
+          <span className="text-[11px] text-muted-foreground">
+            Entró el {formatearFechaCorta(new Date(proxima.ingresadaEn))}. Si tenés la caja a
+            mano, escaneás el IMEI en el carrito.
+          </span>
+        </button>
+      )}
+    </div>
+  )
 }
 
 /**
@@ -1906,6 +1993,21 @@ export function PuntoDeVenta({
                               sin stock suficiente
                             </Badge>
                           )}
+                          {/* La leyenda del IMEI opcional, sólo para una
+                              línea cuya unidad todavía no tiene número
+                              (Task 7 del ciclo "unidades sin identificar").
+                              Va acá y no dentro del campo: en los 104 px de
+                              la columna "Cant." no entra una frase, y el
+                              placeholder se va apenas se escribe la primera
+                              cifra — justo cuando alguien podría dudar de si
+                              es obligatorio. Sin `Badge` ni color de aviso: no
+                              es algo que haya que mirar, es lo contrario —
+                              permiso explícito para seguir de largo. */}
+                          {l.llevaSerie && (l.imei === null || l.imei === undefined) && (
+                            <span className="text-[11px] text-muted-foreground">
+                              IMEI opcional: podés dejarlo en blanco y cargarlo después
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1945,6 +2047,15 @@ export function PuntoDeVenta({
                             // — así que acá no hay ni botones ni campo
                             // editable, sólo el dato que identifica cuál
                             // equipo es esta línea.
+                            //
+                            // Salvo que la unidad haya entrado SIN número
+                            // (Task 7): ahí el mismo lugar es un campo para
+                            // escanearlo, opcional. `name` sólo por
+                            // convención y para que se lea qué es: el carrito
+                            // vive FUERA del `<form>` de cobro, y lo que
+                            // viaja al servidor es el JSON escondido que arma
+                            // `itemsParaCobrar`, no este input.
+                            l.imei !== null && l.imei !== undefined ? (
                             <div
                               className="flex h-9 w-[104px] items-center justify-center overflow-hidden rounded-[9px] border border-input px-1"
                               title={l.imei ?? undefined}
@@ -1953,6 +2064,22 @@ export function PuntoDeVenta({
                                 {l.imei}
                               </span>
                             </div>
+                            ) : (
+                              <Input
+                                name="imeiCapturado"
+                                value={l.imeiCapturado ?? ''}
+                                onChange={(e) =>
+                                  actualizarCarrito((p) =>
+                                    p.map((x, j) =>
+                                      j === i ? { ...x, imeiCapturado: e.target.value } : x,
+                                    ),
+                                  )
+                                }
+                                placeholder="IMEI"
+                                aria-label={`IMEI de ${l.descripcion}, opcional`}
+                                className="h-9 w-[104px] rounded-[9px] px-2 text-center text-[11px] font-semibold"
+                              />
+                            )
                           ) : (
                             <div className="flex h-9 w-[104px] items-center rounded-[9px] border border-input focus-within:ring-3 focus-within:ring-ring/50">
                               {PASOS_STEPPER.map(({ verbo, delta, Icono }) => (
@@ -2420,34 +2547,13 @@ export function PuntoDeVenta({
             </p>
           )}
           {selectorUnidad?.unidades && selectorUnidad.unidades.length > 0 && (
-            <div className="flex max-h-[50vh] flex-col gap-2 overflow-y-auto">
-              {selectorUnidad.unidades.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  className="flex flex-col gap-0.5 rounded-[9px] border border-input px-3 py-2 text-left hover:bg-muted"
-                  onClick={() => {
-                    agregarUnidad(selectorUnidad.articulo, u)
-                    setSelectorUnidad(null)
-                  }}
-                >
-                  <span className="text-sm font-semibold text-foreground">{u.imei}</span>
-                  <span className="text-[11px] text-muted-foreground">
-                    {/* `new Date(...)` y no `u.ingresadaEn` directo: React
-                        Flight serializa `Date` de punta a punta, pero si
-                        alguna vez no lo hiciera —`unidadesDeArticulo` es un
-                        server action invocado desde el cliente, un camino
-                        que este repo no ejercita en ningún otro lado con un
-                        `Date`—, `formatearFechaCorta` (un
-                        `Intl.DateTimeFormat.format`) tira `RangeError` sobre
-                        un string y se lleva puesto el mostrador entero. Un
-                        `Date` ya construido pasa por `new Date(...)` sin
-                        cambiar nada. */}
-                    Entró el {formatearFechaCorta(new Date(u.ingresadaEn))}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <UnidadesDelSelector
+              unidades={selectorUnidad.unidades}
+              onElegir={(u) => {
+                agregarUnidad(selectorUnidad.articulo, u)
+                setSelectorUnidad(null)
+              }}
+            />
           )}
         </DialogContent>
       </Dialog>

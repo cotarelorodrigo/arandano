@@ -57,7 +57,12 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
     const sesion = await exigirSesion()
 
     const items = listaDeJson(datos, 'items').map((crudo) => {
-      const i = crudo as { articuloId?: unknown; cantidad?: unknown; unidadId?: unknown }
+      const i = crudo as {
+        articuloId?: unknown
+        cantidad?: unknown
+        unidadId?: unknown
+        imeiCapturado?: unknown
+      }
       const articuloId = String(i.articuloId ?? '')
       // El mismo guard que el detalle de venta y el de artículo. Desde la
       // pantalla no llega otra cosa —los ids salen del buscador—, pero un POST
@@ -77,10 +82,35 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
       if (unidadId !== undefined && !esUuid(unidadId)) {
         throw new ErrorDeVenta('UNIDAD_INEXISTENTE', 'ese equipo no existe')
       }
+      // El IMEI escaneado en el mostrador (Task 7 del ciclo "unidades sin
+      // identificar"). Acá NO hay `esUuid` que valga: es texto libre a
+      // propósito, porque el mismo campo es el número de serie de una
+      // notebook o de un electrodoméstico (ver `normalizarImei`,
+      // lib/inventario/unidades.ts). Lo que sí hace falta es que un valor que
+      // no es texto no se convierta en un IMEI inventado: `String({})` es
+      // "[object Object]", que el motor aceptaría y GRABARÍA como el número
+      // de serie de un equipo real. Ausente o `null` valen lo mismo —no se
+      // escaneó nada—, y el motor trata la cadena vacía igual (ver
+      // `imeisCapturados` en lib/ventas/crear.ts), que es lo que manda un
+      // `<input>` en blanco: el camino por defecto de este ciclo no puede ser
+      // un error.
+      const crudoImei = i.imeiCapturado
+      if (
+        crudoImei !== undefined &&
+        crudoImei !== null &&
+        typeof crudoImei !== 'string' &&
+        typeof crudoImei !== 'number'
+      ) {
+        throw new ErrorDeVenta('SIN_ITEMS', 'no se entendió el IMEI que llegó')
+      }
+      const imeiCapturado =
+        crudoImei === undefined || crudoImei === null ? undefined : String(crudoImei)
+
       return {
         articuloId,
         cantidad: aDecimal(String(i.cantidad ?? ''), 'la cantidad'),
         unidadId,
+        imeiCapturado,
       }
     })
 
