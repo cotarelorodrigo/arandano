@@ -11,70 +11,31 @@
  */
 import Link from 'next/link'
 import { Anillo, COLORES_DEL_ANILLO, type Gajo } from '@/components/anillo'
-import { formatearPrecio, formatearDolares } from '@/lib/formato/mostrar'
 import { porcentajesQueSuman100 } from '@/lib/ventas/porcentajes'
-import { ROTULO_MEDIO, type Composicion, type MonedaElegida } from '@/lib/ventas/medios'
+import { ROTULO_MEDIO, formateadorDe, type Composicion, type MonedaElegida } from '@/lib/ventas/medios'
 import type { BarraDeDia } from '@/lib/dashboard/tendencia'
 import type { FilaDeTop } from '@/lib/dashboard/composicion'
 import estilos from './tipografia.module.css'
 
-function formateadorDe(moneda: MonedaElegida): (v: string) => string {
-  return moneda === 'usd' ? formatearDolares : formatearPrecio
-}
-
-/**
- * El selector `$ / US$` (design/arandano.pen, mismo control que ya usa
- * "Cómo entró la plata" en /ventas). Acá gobierna los CUATRO paneles a la
- * vez —no uno por panel—, así que vive una sola vez en la pantalla y no
- * dentro de cada card.
- *
- * La regla del producto: un local que no usa dólares no ve NINGUNA
- * diferencia con lo que ya conoce — por eso no se dibuja nada sin
- * `hayDolares`, ni siquiera un control deshabilitado.
- *
- * Dos LINKS y no un control de cliente: el estado vive en `?moneda`, como
- * `?rango`, así que el selector funciona sin JavaScript.
- */
-export function SelectorDeMoneda({
-  hayDolares, moneda, href,
-}: {
-  hayDolares: boolean
-  moneda: MonedaElegida
-  /** El link de cada opción, armado por el llamador: este componente no
-   *  conoce el resto del query string (`?rango`). */
-  href: (m: MonedaElegida) => string
-}) {
-  if (!hayDolares) return null
-  return (
-    <div className="flex gap-0.5 rounded-[9px] bg-muted p-[3px]">
-      {(['ars', 'usd'] as const).map((m) => (
-        <Link
-          key={m}
-          href={href(m)}
-          aria-current={m === moneda ? 'page' : undefined}
-          className={
-            m === moneda
-              ? 'rounded-[8px] bg-card px-[10px] py-1 text-[11px] font-semibold text-foreground shadow-sm'
-              : 'rounded-[8px] px-[10px] py-1 text-[11px] font-semibold text-muted-foreground'
-          }
-        >
-          {m === 'ars' ? '$' : 'US$'}
-        </Link>
-      ))}
-    </div>
-  )
-}
+// El selector `$ / US$` que gobierna los cuatro paneles vive en
+// components/selector-de-moneda-elegida.tsx —compartido con "Cómo entró la
+// plata" de /ventas—, y page.tsx lo importa de ahí directo. No se reexporta
+// desde acá: este archivo dejó de tener una versión propia (review final de
+// rama — el marcado y las clases eran idénticos a los de /ventas, y ya habían
+// divergido en el tipo de link).
 
 /**
  * El encabezado de card que comparten los cuatro paneles (design/arandano.pen,
- * nodos `Y1sSh`/`Db1MT`): título en `.tituloDeCard` y, opcionalmente, un dato
- * a la derecha (acá sólo lo usa "Ventas por día", para "últimos 14 días").
+ * nodos `Y1sSh`/`Db1MT`): título en `.tituloDeCard` y, opcionalmente, algo a
+ * la derecha — un dato ("Ventas por día", "últimos 14 días") o una acción
+ * ("Lo que más se vendió", el link "Ver inventario →"), por eso `nota` acepta
+ * cualquier nodo y no sólo texto.
  */
-function EncabezadoDePanel({ titulo, nota }: { titulo: string; nota?: string }) {
+function EncabezadoDePanel({ titulo, nota }: { titulo: string; nota?: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-2 border-b px-[14px] py-[12px] lg:px-[18px] lg:py-[13px]">
       <h2 className={`${estilos.tituloDeCard} text-foreground`}>{titulo}</h2>
-      {nota && <span className="text-[11px] text-muted-foreground">{nota}</span>}
+      {nota}
     </div>
   )
 }
@@ -97,7 +58,10 @@ export function VentasPorDia({
 
   return (
     <section className="flex flex-col overflow-hidden rounded-2xl border bg-card">
-      <EncabezadoDePanel titulo="Ventas por día" nota="últimos 14 días" />
+      <EncabezadoDePanel
+        titulo="Ventas por día"
+        nota={<span className="text-[11px] text-muted-foreground">últimos 14 días</span>}
+      />
       <div className="flex flex-col gap-3 p-[14px] lg:p-[18px]">
         <div className="flex h-[165px] items-end gap-1 lg:h-[190px] lg:gap-[7px]">
           {barras.map((b) => {
@@ -358,7 +322,20 @@ export function TopDeArticulos({
   const formatear = formateadorDe(moneda)
   return (
     <section className="flex flex-col overflow-hidden rounded-2xl border bg-card lg:flex-1">
-      <EncabezadoDePanel titulo="Lo que más se vendió" />
+      <EncabezadoDePanel
+        titulo="Lo que más se vendió"
+        // "Ver inventario →" (Pieza 4 del spec, design/arandano.pen): faltaba
+        // en código, en el plan y en docs/correcciones-pendientes-del-pen.md
+        // por igual (review final de rama). Mismas clases que ya usa
+        // "Exportar CSV →" en app/(app)/inventario/formularios.tsx —el único
+        // precedente de un link de acción con flecha en el repo—, no una
+        // decisión nueva de estilo.
+        nota={
+          <Link href="/inventario" className="text-[12px] font-semibold text-primary hover:underline">
+            Ver inventario →
+          </Link>
+        }
+      />
       {filas.length > 0 ? (
         <div className="flex flex-col gap-3 p-[14px] lg:gap-4 lg:p-[18px]">
           {filas.map((f, i) => (

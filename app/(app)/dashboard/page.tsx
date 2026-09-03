@@ -17,14 +17,15 @@ import {
 import { metricasDelPeriodo, delta, soloEnDolares, type Delta } from '@/lib/dashboard/metricas'
 import { agregarPorDia, pieDeTendencia, ventasDeLaTendencia } from '@/lib/dashboard/tendencia'
 import {
-  itemsDelPeriodo, ramaPorArticulo, agruparPorArticulo, repartirEnGajos, gajoMasGrande,
-  topDeArticulos, TOP_DE_ARTICULOS, SIN_CATEGORIA,
+  itemsDelPeriodo, ramaPorArticulo, agruparPorArticulo, sumarPorRama, repartirEnGajos, gajoMasGrande,
+  topDeArticulos, TOP_DE_ARTICULOS,
 } from '@/lib/dashboard/composicion'
 import { componerPorMedio } from '@/lib/ventas/composicion'
 import { monedaValida, type MonedaElegida } from '@/lib/ventas/medios'
 import {
-  VentasPorDia, AnilloDeMedios, VentasPorCategoria, TopDeArticulos, SelectorDeMoneda,
+  VentasPorDia, AnilloDeMedios, VentasPorCategoria, TopDeArticulos,
 } from './paneles'
+import { SelectorDeMonedaElegida } from '@/components/selector-de-moneda-elegida'
 import { BotonDeExportar } from './exportar'
 import estilos from './tipografia.module.css'
 
@@ -336,21 +337,24 @@ export default async function Dashboard({
   const nombres = new Map(articulosTop.map((a) => [a.id, a.nombre]))
   const filasTop = topDeArticulos(vendidoElegido, nombres)
 
-  // Importe por rama, de mayor a menor: repartirEnGajos asume esa entrada ya
-  // ordenada. La suma es en Decimal —no en la vista de string que consumen
-  // los paneles— porque repartirEnGajos necesita sumar la cola de verdad, y
-  // porque el total y el gajo más grande se resuelven ACÁ, con `Decimal`
-  // exacto, y no en `paneles.tsx` re-sumando o comparando en float (Minor 1
-  // de la review de Task 11 — `AnilloDeMedios` ya seguía esta regla con
-  // `composicion.total`, ahora `VentasPorCategoria` también).
-  const sumaPorRama = new Map<string, Prisma.Decimal>()
-  for (const v of vendidoElegido) {
-    const rama = ramas.get(v.articuloId) ?? SIN_CATEGORIA
-    sumaPorRama.set(rama, (sumaPorRama.get(rama) ?? new Prisma.Decimal(0)).add(v.importe))
-  }
-  const porCategoriaOrdenado = [...sumaPorRama.entries()]
-    .map(([rotulo, importe]) => ({ rotulo, importe }))
-    .sort((a, b) => b.importe.comparedTo(a.importe))
+  // Importe por rama, de mayor a menor: sumarPorRama ya deja el resultado
+  // ordenado, que es lo que repartirEnGajos asume. La suma es en Decimal —no
+  // en la vista de string que consumen los paneles— porque repartirEnGajos
+  // necesita sumar la cola de verdad, y porque el total y el gajo más grande
+  // se resuelven ACÁ, con `Decimal` exacto, y no en `paneles.tsx`
+  // re-sumando o comparando en float (Minor 1 de la review de Task 11 —
+  // `AnilloDeMedios` ya seguía esta regla con `composicion.total`, ahora
+  // `VentasPorCategoria` también).
+  //
+  // El balde de "sin categoría" lo elige `sumarPorRama` ADENTRO, contra las
+  // ramas reales que `ramaPorArticulo` ya trajo para este período, y no un
+  // literal fijo: `Categoria.nombre` es texto libre, así que un local puede
+  // tener un rubro real llamado "Sin categoría" (un catch-all tan plausible
+  // como cualquier otro), y sin esto la mercadería sin categorizar se sumaba
+  // en silencio dentro del gajo de esa rama real (review final de rama,
+  // Important). Mismo mecanismo que ya usa `repartirEnGajos` para "Otros",
+  // unificado en `elegirRotuloSintetico`.
+  const porCategoriaOrdenado = sumarPorRama(vendidoElegido, ramas)
   const gajosDeCategoria = repartirEnGajos(porCategoriaOrdenado)
   // El gajo más grande DE VERDAD —no `gajosDeCategoria[0]`—: repartirEnGajos
   // agrega la cola "Otros" al FINAL sin reordenar, así que esa cola puede
@@ -380,9 +384,16 @@ export default async function Dashboard({
   // El pie de este tile tiene DOS trabajos que no compiten entre sí: avisar
   // que también entraron dólares (cuando no está invertido) siempre pesa más
   // que explicar la falta de comparación, porque es plata real que el pie de
-  // al lado no menciona en ningún otro lado.
+  // al lado no menciona en ningún otro lado. Invertido no tiene "aparte" que
+  // avisar —`soloEnDolares` ya exige `cobrado.ars` en cero, así que no hay
+  // pesos sueltos que mencionar—, pero SÍ puede quedarse sin período anterior
+  // contra el que comparar: un local que recién este mes empezó a cobrar en
+  // dólares tiene `deltaMarca === null` en dólares igual que uno en pesos, y
+  // sin esta rama el tile invertido quedaba mudo donde el no invertido explica.
   const pieMarca = invertido
-    ? undefined
+    ? deltaMarca === null
+      ? sinVentasEnPeriodoAnterior(rango, hoy)
+      : undefined
     : !metricas.cobrado.usd.isZero()
       ? `${formatearDolares(metricas.cobrado.usd.toString())} aparte`
       : deltaMarca === null
@@ -561,7 +572,7 @@ export default async function Dashboard({
                   fallback la corrigió, el selector tiene que resaltar la
                   opción que REALMENTE está en pantalla — resaltar la pedida
                   mentiría sobre qué se está mirando. */}
-              <SelectorDeMoneda hayDolares={hayDolares} moneda={monedaMostrada} href={hrefDeMoneda} />
+              <SelectorDeMonedaElegida hayDolares={hayDolares} moneda={monedaMostrada} href={hrefDeMoneda} />
             </div>
           )}
           <VentasPorDia barras={barrasTendencia} pie={pieTendencia} moneda={monedaMostrada} />

@@ -5,9 +5,9 @@
 // simplificación que motiva el cambio, no un efecto secundario.
 import { Info } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
-import { formatearPrecio, formatearDolares } from '@/lib/formato/mostrar'
+import { SelectorDeMonedaElegida } from '@/components/selector-de-moneda-elegida'
 import { porcentajesQueSuman100 } from '@/lib/ventas/porcentajes'
-import { ROTULO_MEDIO, type Composicion, type MonedaElegida } from '@/lib/ventas/medios'
+import { ROTULO_MEDIO, formateadorDe, type Composicion, type MonedaElegida } from '@/lib/ventas/medios'
 import estilos from './tipografia.module.css'
 
 /**
@@ -33,8 +33,13 @@ import estilos from './tipografia.module.css'
  * período** (`hayDolares`): un local que nunca cobró en dólares no puede ver
  * un control que elige entre dos pilas cuando una de las dos siempre está
  * vacía — mismo principio que ya rige el resto de esta pantalla ("un local
- * que no usa dólares no ve ninguna diferencia", CLAUDE.md). Son dos LINKS y
- * no un control de cliente: el estado vive en `?moneda`, como el resto de los
+ * que no usa dólares no ve ninguna diferencia", CLAUDE.md). Es
+ * `SelectorDeMonedaElegida` (components/selector-de-moneda-elegida.tsx),
+ * compartido con los cuatro paneles de `/dashboard` —antes cada pantalla
+ * tenía su propia copia del mismo marcado, y ya habían divergido: acá seguía
+ * siendo un `<a>` pelado (recarga completa en cada toggle) mientras
+ * `/dashboard` ya usaba `<Link>` (review final de rama). Dos LINKS y no un
+ * control de cliente: el estado vive en `?moneda`, como el resto de los
  * filtros de esta pantalla (`?rango`, `?vista`), así que el panel funciona sin
  * JavaScript.
  *
@@ -54,7 +59,7 @@ export function GraficoDeMedios({
   hrefDeMoneda: (m: MonedaElegida) => string
 }) {
   const { barras, total } = composicion
-  const formatear = moneda === 'ars' ? formatearPrecio : formatearDolares
+  const formatear = formateadorDe(moneda)
   const porcentajes = porcentajesQueSuman100(barras.map((b) => Number(b.monto)), Number(total))
 
   return (
@@ -67,24 +72,7 @@ export function GraficoDeMedios({
     <section className="flex w-full flex-col overflow-hidden rounded-2xl border bg-card lg:w-[344px] lg:shrink-0">
       <div className="flex items-center justify-between gap-2 border-b px-[18px] py-[13px]">
         <h2 className={`${estilos.tituloDeCard} text-foreground`}>Cómo entró la plata</h2>
-        {hayDolares && (
-          <div className="flex gap-0.5 rounded-[9px] bg-muted p-[3px]">
-            {(['ars', 'usd'] as const).map((m) => (
-              <a
-                key={m}
-                href={hrefDeMoneda(m)}
-                aria-current={m === moneda ? 'page' : undefined}
-                className={
-                  m === moneda
-                    ? 'rounded-[8px] bg-card px-[10px] py-1 text-[11px] font-semibold text-foreground shadow-sm'
-                    : 'rounded-[8px] px-[10px] py-1 text-[11px] font-semibold text-muted-foreground'
-                }
-              >
-                {m === 'ars' ? '$' : 'US$'}
-              </a>
-            ))}
-          </div>
-        )}
+        <SelectorDeMonedaElegida hayDolares={hayDolares} moneda={moneda} href={hrefDeMoneda} />
       </div>
       <div className="flex flex-col gap-[18px] p-[18px]">
         {barras.map((b, i) => (

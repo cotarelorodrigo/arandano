@@ -2,8 +2,18 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Tile, ChipDeDelta, SegmentadoDeRango, monedaEfectiva } from './page'
-import { SelectorDeMoneda } from './paneles'
+import { SelectorDeMonedaElegida } from '@/components/selector-de-moneda-elegida'
 
+// La decisión de invertir el tile —qué magnitud es "el número grande" cuando
+// el período sólo cobró dólares— es la regla real, y vive en `soloEnDolares`
+// (lib/dashboard/metricas.ts), con su propia cobertura en metricas.test.ts.
+// Acá hubo un caso que decía protegerla pasándole `valor="US$ 4.120"` ya
+// resuelto directo a `Tile` y afirmando que no aparecía '$ 0,00' —una cadena
+// que esa fixture nunca podía producir—: ejercitaba la PRESENTACIÓN de un
+// resultado ya decidido, nunca la decisión (octavo test hueco del ciclo,
+// review final de rama). Se borra en vez de repetirse: `Tile` es un
+// componente de presentación puro y `en pesos: el número grande y el dólar
+// al pie` ya prueba que renderiza lo que se le pasa.
 describe('el tile de marca', () => {
   it('en pesos: el número grande y el dólar al pie', () => {
     const html = renderToStaticMarkup(
@@ -13,17 +23,6 @@ describe('el tile de marca', () => {
     expect(html).toContain('$ 8.412.900')
     expect(html).toContain('US$ 4.120 aparte')
     expect(html).toContain('+18,4%')
-  })
-
-  // Sin esta regla, un local que carga y cobra TODO su catálogo en dólares
-  // —el único que hoy usa esa feature— abriría el dashboard con "$ 0,00" de
-  // titular.
-  it('sin pesos cobrados, el número grande es el dólar y no hay pie', () => {
-    const html = renderToStaticMarkup(
-      <Tile rotulo="TOTAL DEL PERÍODO" valor="US$ 4.120" marca />,
-    )
-    expect(html).toContain('US$ 4.120')
-    expect(html).not.toContain('$ 0,00')
   })
 })
 
@@ -42,14 +41,26 @@ describe('el chip de delta', () => {
 })
 
 describe('el segmentado de rango', () => {
+  // Antes, este caso sólo afirmaba que 'aria-current="page"' aparecía EN
+  // ALGÚN LUGAR del HTML y que el href de "Hoy" existía — pasaría igual si
+  // SegmentadoDeRango marcara TODOS los chips como activos, o marcara el
+  // chip equivocado. Lo que hay que afirmar es que el ÚNICO chip con
+  // aria-current es el que se pidió como activo, y que los otros tres son
+  // links de verdad a su propio rango.
   it('marca el activo y linkea los otros tres', () => {
     const html = renderToStaticMarkup(
       <SegmentadoDeRango activo="estemes" href={(r) => `/dashboard?rango=${r}`} />,
     )
-    expect(html).toContain('Este año')
-    expect(html).toContain('aria-current="page"')
+
+    const activo = html.match(/aria-current="page"[^>]*>([^<]*)</)
+    expect(activo?.[1]).toBe('Este mes')
+    expect(html.match(/aria-current="page"/g)).toHaveLength(1)
+
+    expect(html).toContain('href="/dashboard?rango=hoy"')
+    expect(html).toContain('href="/dashboard?rango=7dias"')
+    expect(html).toContain('href="/dashboard?rango=esteanio"')
     // El activo no se linkea a sí mismo con el parámetro puesto de más.
-    expect(html).toContain('/dashboard?rango=hoy')
+    expect(html).not.toContain('href="/dashboard?rango=estemes"')
   })
 })
 
@@ -101,7 +112,7 @@ describe('monedaEfectiva: los paneles nunca se quedan con la pila vacía', () =>
     // la pedida—: pasarle `moneda` en vez de `monedaMostrada` marcaría "US$"
     // como activo mientras el panel de al lado muestra pesos.
     const html = renderToStaticMarkup(
-      <SelectorDeMoneda hayDolares moneda={monedaMostrada} href={(m) => `/dashboard?moneda=${m}`} />,
+      <SelectorDeMonedaElegida hayDolares moneda={monedaMostrada} href={(m) => `/dashboard?moneda=${m}`} />,
     )
     const links = html.match(/<a [^>]*>[^<]*<\/a>/g) ?? []
     const linkArs = links.find((l) => l.endsWith('>$</a>'))

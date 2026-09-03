@@ -47,6 +47,21 @@ import { ENCABEZADO_CSV, filaDeVenta } from './csv'
  * `pagos.groupBy` y `ventasDelPeriodo` en `app/(app)/ventas/page.tsx`: el
  * sentido de exportar es llevarse TODO el período, no el recorte que entra
  * cómodo en una pantalla.
+ *
+ * **Y ese "sin techo" tiene un costo real, documentado y no forzado en
+ * código** (review final de rama): `?rango=esteanio` en un local con mucho
+ * movimiento son decenas de miles de ventas, cada una con sus pagos,
+ * materializadas ENTERAS en memoria antes de convertirse en el string final
+ * — adentro del mismo contenedor de 3200 MiB que sirve a todos los tenants
+ * de producción (ver CLAUDE.md, "Convivencia sobre 2 vCPU"). Deliberadamente
+ * SIN un cap silencioso: un CSV recortado sin decirlo miente sobre el
+ * período que dice exportar, y eso es peor que uno lento o que uno que falla
+ * a tiempo con un error visible. El disparador para ponerle un techo de
+ * verdad (paginado, streaming a un archivo, o un job de background que arme
+ * el CSV aparte) es que esto empiece a doler en la práctica —un timeout de
+ * request, un local grande que tarda en serio, o un OOM real—, no un número
+ * elegido de antemano sin ese dato. Hasta entonces, el límite es este
+ * párrafo: escrito y conocido, no impuesto.
  */
 export async function exportarVentas(rango: string): Promise<string> {
   const sesion = await exigirSesion()

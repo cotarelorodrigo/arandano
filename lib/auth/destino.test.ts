@@ -72,16 +72,22 @@ describe('el destino se deriva en UNA función, no en literales repetidos', () =
   // sesión real) y no de un string entre comillas.
   it('destinoAlEntrar recibe un rol de sesión, nunca un string entre comillas', () => {
     for (const [nombre, fuente] of Object.entries(FUENTES)) {
-      const llamada = fuente.match(/destinoAlEntrar\(([^)]*)\)/)
-      expect(llamada, `${nombre}: no se encontró ninguna llamada a destinoAlEntrar`).not.toBeNull()
+      // matchAll y no match: un archivo puede llamar a destinoAlEntrar más de
+      // una vez (import más una llamada, o dos llamadas reales), y `.match`
+      // sin la bandera global sólo mira la PRIMERA — una segunda llamada con
+      // un rol cableado a mano pasaría en verde sin que nada la viera.
+      const llamadas = [...fuente.matchAll(/destinoAlEntrar\(([^)]*)\)/g)]
+      expect(llamadas.length, `${nombre}: no se encontró ninguna llamada a destinoAlEntrar`).toBeGreaterThan(0)
 
-      const argumento = llamada![1]
-      expect(argumento, `${nombre}: el argumento no puede ser un string literal`).not.toMatch(
-        /^\s*['"`]/,
-      )
-      expect(argumento, `${nombre}: el argumento tiene que leer .rol de una sesión`).toContain(
-        '.rol',
-      )
+      for (const llamada of llamadas) {
+        const argumento = llamada[1]
+        expect(argumento, `${nombre}: el argumento no puede ser un string literal`).not.toMatch(
+          /^\s*['"`]/,
+        )
+        expect(argumento, `${nombre}: el argumento tiene que leer .rol de una sesión`).toContain(
+          '.rol',
+        )
+      }
     }
   })
 })

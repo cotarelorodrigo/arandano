@@ -23,6 +23,7 @@
  * La regla, entonces: lo que no necesita sumar plata vive acá; lo que sí, en
  * `composicion.ts`.
  */
+import { formatearPrecio, formatearDolares } from '@/lib/formato/mostrar'
 
 /** En el orden del enum `MedioPago` del schema. */
 export const MEDIOS = [
@@ -119,4 +120,24 @@ export type MonedaElegida = 'ars' | 'usd'
 
 export function monedaValida(v: string | undefined): MonedaElegida {
   return v === 'usd' ? 'usd' : 'ars'
+}
+
+/**
+ * El formateador que corresponde a la moneda elegida —nunca convierte, sólo
+ * decide con qué función mostrar un número que YA está en esa moneda.
+ *
+ * Vivía duplicada dos veces: `formateadorDe` en
+ * `app/(app)/dashboard/paneles.tsx` y la misma regla en línea, sin nombre, en
+ * `app/(app)/ventas/grafico.tsx` (`moneda === 'ars' ? formatearPrecio :
+ * formatearDolares`). Es la tercera instancia de la forma "dos copias que hay
+ * que acordarse de sincronizar" que este ciclo cierra — junto con el
+ * selector `$ / US$` mismo, unificado en `SelectorDeMonedaElegida`
+ * (`components/selector-de-moneda-elegida.tsx` — distinto de
+ * `SelectorDeMoneda` en `components/selector-de-moneda.tsx`, que es la
+ * moneda de un ARTÍCULO, un concepto sin relación). `formatearPrecio` y
+ * `formatearDolares` no arrastran Prisma (ver el docblock de este archivo),
+ * así que importarlas acá no rompe la separación que ese docblock explica.
+ */
+export function formateadorDe(moneda: MonedaElegida): (v: string) => string {
+  return moneda === 'usd' ? formatearDolares : formatearPrecio
 }

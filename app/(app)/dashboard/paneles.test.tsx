@@ -1,24 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { VentasPorDia, SelectorDeMoneda, TopDeArticulos } from './paneles'
+import { VentasPorDia, TopDeArticulos } from './paneles'
 
-describe('el selector de moneda', () => {
-  // La regla del producto: un local que no usa dólares no ve NINGUNA
-  // diferencia con lo que ya conoce.
-  it('no se dibuja si el período tuvo una sola moneda', () => {
-    expect(renderToStaticMarkup(
-      <SelectorDeMoneda hayDolares={false} moneda="ars" href={(m) => `?moneda=${m}`} />,
-    )).toBe('')
-  })
-
-  it('con las dos monedas ofrece las dos', () => {
-    const html = renderToStaticMarkup(
-      <SelectorDeMoneda hayDolares moneda="ars" href={(m) => `?moneda=${m}`} />,
-    )
-    expect(html).toContain('US$')
-    expect(html).toContain('?moneda=usd')
-  })
-})
+// El selector `$ / US$` ya NO vive acá: es SelectorDeMonedaElegida
+// (components/selector-de-moneda-elegida.tsx), compartido con /ventas, con
+// su propio test en components/selector-de-moneda-elegida.test.tsx (review
+// final de rama — este archivo tenía una copia byte a byte del marcado que
+// también vivía, ya divergida, en app/(app)/ventas/grafico.tsx).
 
 describe('ventas por día', () => {
   const barras = [
@@ -64,5 +52,13 @@ describe('lo que más se vendió', () => {
   it('sin ventas muestra un vacío, no una tabla vacía', () => {
     expect(renderToStaticMarkup(<TopDeArticulos filas={[]} moneda="ars" />))
       .toContain('Todavía no se vendió nada')
+  })
+
+  // Pieza 4 del spec: faltaba en código, en el plan y en
+  // docs/correcciones-pendientes-del-pen.md por igual (review final de rama).
+  it('lleva el link "Ver inventario →" a /inventario', () => {
+    const html = renderToStaticMarkup(<TopDeArticulos filas={[]} moneda="ars" />)
+    expect(html).toContain('href="/inventario"')
+    expect(html).toContain('Ver inventario')
   })
 })

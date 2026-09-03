@@ -12,6 +12,7 @@ import {
 } from '@/lib/formato/mostrar'
 import { cobradoDePagos } from '@/lib/ventas/cobrado'
 import { CONSUMIDOR_FINAL, rotuloDeMedios, type Medio } from '@/lib/ventas/medios'
+import { ROTULO_ANULADA, ROTULO_COBRADA } from '@/app/(app)/ventas/chip-estado'
 
 /**
  * El encabezado del CSV: número, fecha y hora por separado —no el combinado
@@ -58,10 +59,12 @@ export type VentaParaCsv = {
 /**
  * Una venta, ya resuelta a las once columnas de `ENCABEZADO_CSV`.
  *
- * "Estado" usa los MISMOS dos rótulos que `ChipEstado`
- * (`app/(app)/ventas/chip-estado.tsx`, "Cobrada"/"Anulada"): dos palabras
- * distintas para lo mismo en la pantalla y en el CSV es la clase de
- * inconsistencia que confunde a quien cruza los dos.
+ * "Estado" usa `ROTULO_ANULADA`/`ROTULO_COBRADA`, importados de `ChipEstado`
+ * (`app/(app)/ventas/chip-estado.tsx`) y no dos literales propios: antes eran
+ * dos strings repetidos a mano, y este docblock afirmaba que eran "los
+ * MISMOS dos rótulos" sin que nada lo garantizara —renombrar el chip habría
+ * divergido el CSV en silencio (review final de rama). Compartir la
+ * constante es lo que hace la afirmación cierta.
  *
  * Una venta ANULADA se exporta igual, con su plata tal como se cobró antes de
  * anular —mismo criterio que ya documenta el listado de /ventas ("Las
@@ -81,6 +84,6 @@ export function filaDeVenta(v: VentaParaCsv): string[] {
     formatearPrecio(cobrado.ars.toString()),
     formatearDolares(cobrado.usd.toString()),
     formatearPrecio(v.recargo.toString()),
-    v.anuladaEn ? 'Anulada' : 'Cobrada',
+    v.anuladaEn ? ROTULO_ANULADA : ROTULO_COBRADA,
   ]
 }

@@ -60,8 +60,15 @@ export function agregarPorDia(
     const casilla = acumulado.get(diaDe(v.creadoEn))
     // Una venta fuera de la ventana simplemente no entra.
     if (!casilla) continue
-    casilla.monto = casilla.monto.add(moneda === 'usd' ? v.totalUsd : v.total)
-    casilla.ventas += 1
+    const montoEnEstaMoneda = new Prisma.Decimal(moneda === 'usd' ? v.totalUsd : v.total)
+    casilla.monto = casilla.monto.add(montoEnEstaMoneda)
+    // El conteo sigue el MISMO filtro que el monto: una venta que no tocó
+    // esta moneda —`totalUsd = 0` mirando en pesos, o `total = 0` mirando en
+    // dólares, el caso de un carrito 100% en la otra moneda— no puede sumar
+    // al "N ventas" del pie. Sin este filtro, el pie decía "…US$ 300,00 en
+    // 14 ventas" con trece de esas catorce sin un solo dólar adentro
+    // (review final de rama).
+    if (montoEnEstaMoneda.greaterThan(0)) casilla.ventas += 1
   }
 
   // `>=` y no `>`, recorriendo del más viejo al más nuevo: es lo que hace que

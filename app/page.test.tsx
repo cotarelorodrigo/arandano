@@ -112,15 +112,25 @@ describe('página raíz', () => {
   })
 
   // El home dejó de ser una pantalla: es la aplicación abierta en la pestaña
-  // por defecto. Lo que se afirma es el DESTINO, que es el contrato entero.
-  it('con sesión, un tenant va a /vender', async () => {
+  // por defecto. Lo que se afirma es el DESTINO, que depende del ROL
+  // (destinoAlEntrar, lib/auth/destino.ts) y no es un único literal: un DUENO
+  // cae en /dashboard y un EMPLEADO en /vender, los dos casos de abajo.
+  it('con sesión, un DUENO va a /dashboard', async () => {
     tenantDelRequest.mockResolvedValue({
       tipo: 'tenant',
       tenant: { id: 'x', nombre: 'Flor', estado: 'TRIAL' },
     })
-    // Home() no lee nada de lo que devuelve exigirSesion(); sólo importa que
-    // la promesa resuelva.
-    exigirSesion.mockResolvedValue(undefined)
+    exigirSesion.mockResolvedValue({ usuario: { id: 'u1', rol: 'DUENO' } })
+    await expect(render()).rejects.toThrow('NEXT_REDIRECT:/dashboard')
+    expect(redirect).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('con sesión, un EMPLEADO va a /vender', async () => {
+    tenantDelRequest.mockResolvedValue({
+      tipo: 'tenant',
+      tenant: { id: 'x', nombre: 'Flor', estado: 'TRIAL' },
+    })
+    exigirSesion.mockResolvedValue({ usuario: { id: 'u1', rol: 'EMPLEADO' } })
     await expect(render()).rejects.toThrow('NEXT_REDIRECT:/vender')
     expect(redirect).toHaveBeenCalledWith('/vender')
   })

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { rotuloDeMedios } from './medios'
+import { rotuloDeMedios, formateadorDe } from './medios'
+import { formatearPrecio, formatearDolares } from '@/lib/formato/mostrar'
 
 describe('rotuloDeMedios', () => {
   it('un solo medio en pesos', () => {
@@ -32,5 +33,29 @@ describe('rotuloDeMedios', () => {
 
   it('rotula en castellano, nunca el nombre del enum', () => {
     expect(rotuloDeMedios([{ medio: 'TARJETA_CREDITO', moneda: 'ARS' }])).not.toContain('TARJETA')
+  })
+})
+
+// Antes duplicada, sin nombre, en app/(app)/ventas/grafico.tsx
+// (`moneda === 'ars' ? formatearPrecio : formatearDolares`) y con nombre en
+// app/(app)/dashboard/paneles.tsx — unificada acá (review final de rama).
+describe('formateadorDe', () => {
+  // El esperado sale de llamar al formateador real, no se tipea a mano:
+  // `Intl.NumberFormat('es-AR', { style: 'currency' })` separa el símbolo
+  // con un espacio DURO (U+00A0), así que un literal con espacio común
+  // fallaría por un carácter invisible (mismo hallazgo que Ruling C del
+  // ciclo del dashboard).
+  it('en pesos, usa el formateador de pesos', () => {
+    expect(formateadorDe('ars')('512400')).toBe(formatearPrecio('512400'))
+  })
+
+  it('en dólares, usa el formateador de dólares', () => {
+    expect(formateadorDe('usd')('300')).toBe(formatearDolares('300'))
+  })
+
+  // Lo que distingue a un formateador del otro: no es sólo que llame a la
+  // función correcta, es que la salida sea distinguible entre sí.
+  it('las dos monedas no formatean igual', () => {
+    expect(formateadorDe('ars')('300')).not.toBe(formateadorDe('usd')('300'))
   })
 })

@@ -85,7 +85,9 @@ export async function itemsDelPeriodo(prisma: PrismaDeTenant, periodo: Periodo):
  * Un artículo colgado de una HOJA (una marca, "Samsung") suma a su RAÍZ
  * ("Celulares") — `padre?.nombre ?? nombre` —, que es como el panel de
  * `/inventario` ya cuenta. Uno sin `categoriaId` no aparece en el mapa; el
- * llamador lo resuelve a `SIN_CATEGORIA`.
+ * llamador lo resuelve al rótulo sintético que elija `elegirRotuloSintetico`
+ * contra `CANDIDATOS_SIN_CATEGORIA`, no a un literal fijo — ver esa función,
+ * más abajo, para el motivo.
  */
 export async function ramaPorArticulo(prisma: PrismaDeTenant, ids: string[]): Promise<Map<string, string>> {
   const articulos = await prisma.articulo.findMany({
@@ -103,27 +105,92 @@ export async function ramaPorArticulo(prisma: PrismaDeTenant, ids: string[]): Pr
 
 /** Cuántos gajos dibuja el anillo como máximo, cola "Otros" incluida. */
 export const MAX_GAJOS = 5
-/** La cola de ramas chicas, agrupada. */
-export const ROTULO_OTROS = 'Otros'
+
 /**
- * El rótulo del agregado cuando una rama REAL del árbol ya se llama
- * `ROTULO_OTROS` (Ruling N de la review de la Task 9). Un local puede tener
- * un rubro literalmente nombrado "Otros" —o "Otros accesorios", abreviado—, y
- * sin esta salida de emergencia dos gajos terminan indistinguibles para quien
- * mira el anillo: si la rama real entra en el top, hay DOS gajos "Otros" con
- * importes distintos; si cae en la cola, se funde con las demás bajo el mismo
- * nombre y el lector no puede saber que ahí adentro hay algo que el local
- * nombró así. `repartirEnGajos` lo elige apenas detecta la colisión, sin
- * importar en cuál de los dos casos está.
+ * Candidatas para el rótulo del agregado "Otros" del anillo, en orden de
+ * preferencia. `Categoria.nombre` es texto libre: un local puede tener un
+ * rubro literalmente nombrado "Otros" —o "Otros accesorios", abreviado—, así
+ * que la primera candidata sola no alcanza (Ruling N de la review de la Task
+ * 9). Una lista con MÁS de una alternativa es lo que además cierra el caso de
+ * segundo orden que quedó diferido en esa misma review: un local con ramas
+ * reales llamadas "Otros" **y** "Otras categorías" a la vez agota las dos
+ * primeras y necesita la tercera. `elegirRotuloSintetico`, más abajo, recorre
+ * esta lista contra los nombres reales presentes en los datos del local.
  */
-export const ROTULO_OTROS_AGRUPADO = 'Otras categorías'
+export const CANDIDATOS_OTROS = ['Otros', 'Otras categorías', 'Otros artículos'] as const
+/** El rótulo del agregado en el caso común, sin ninguna colisión. */
+export const ROTULO_OTROS: string = CANDIDATOS_OTROS[0]
+/** El rótulo del agregado cuando la primera candidata colisiona con una rama real. */
+export const ROTULO_OTROS_AGRUPADO: string = CANDIDATOS_OTROS[1]
+
 /**
- * Un artículo sin `categoriaId`. **Distinto de `ROTULO_OTROS`** a propósito:
- * uno es una rama que el local nunca asignó, el otro es la cola de ramas
- * chicas — dos cosas que un dueño resuelve de manera distinta, y por eso
- * nunca se pliegan una sobre la otra.
+ * Candidatas para el balde de artículos sin `categoriaId`, en el mismo orden
+ * de preferencia que `CANDIDATOS_OTROS` y por el mismo motivo: un local puede
+ * tener una rama real llamada "Sin categoría" —un catch-all tan plausible
+ * como cualquier otro rubro—, y hasta la review final del ciclo esa colisión
+ * no tenía salida (a diferencia de "Otros", que sí la tenía desde la Task 9).
+ * Sin ella, la mercadería sin categorizar del local se sumaba en silencio
+ * DENTRO del gajo de esa rama real, sin forma de distinguir una cosa de la
+ * otra.
  */
-export const SIN_CATEGORIA = 'Sin categoría'
+export const CANDIDATOS_SIN_CATEGORIA = ['Sin categoría', 'Sin categorizar', 'Artículos sin categoría'] as const
+/** El balde en el caso común, sin ninguna colisión. */
+export const SIN_CATEGORIA: string = CANDIDATOS_SIN_CATEGORIA[0]
+
+/**
+ * Elige, de una lista de candidatas en orden de preferencia, la primera que
+ * NO coincida con el nombre de ninguna rama real presente en los datos.
+ *
+ * Es el mecanismo ÚNICO detrás de los dos rótulos sintéticos de este
+ * módulo —el agregado "Otros" y el balde `SIN_CATEGORIA`—, unificados en la
+ * review final del ciclo: antes cada uno resolvía su colisión por separado
+ * (uno la resolvía, el otro ni la intentaba), y las dos son exactamente el
+ * mismo problema — una etiqueta que el código inventa puede coincidir con un
+ * nombre que el local ya usa de verdad.
+ *
+ * Si TODAS las candidatas colisionan —un local con una rama real para cada
+ * alternativa de la lista, un caso extremo pero posible con texto libre
+ * ilimitado— se devuelve la última candidata igual: no hay forma de
+ * garantizar cero colisión contra un catálogo de nombres sin límite, y no
+ * devolver ningún rótulo sería peor que uno que, en ese caso extremo,
+ * todavía puede colisionar.
+ */
+export function elegirRotuloSintetico(
+  candidatas: readonly string[],
+  nombresReales: ReadonlySet<string>,
+): string {
+  return candidatas.find((c) => !nombresReales.has(c)) ?? candidatas[candidatas.length - 1]
+}
+
+/**
+ * Suma lo vendido por rama —RAÍZ, ya resuelta por `ramaPorArticulo`—,
+ * ordenado de mayor a menor importe.
+ *
+ * Exportada y no inline en `app/(app)/dashboard/page.tsx` (el Server
+ * Component async que la llama) por la misma regla que ya rige
+ * `itemsDelPeriodo` en este archivo: una regla de negocio en un componente
+ * async no la puede llamar ningún test — ver el hallazgo I3 que cita ese
+ * docblock. Acá la regla es la elección del balde de "sin categoría": se
+ * calcula ADENTRO de esta función, contra las ramas reales de `vendido`, no
+ * antes — es la única forma de saber qué nombres colisionan sin haber armado
+ * todavía la lista.
+ */
+export function sumarPorRama(
+  vendido: VendidoPorArticulo[],
+  ramas: ReadonlyMap<string, string>,
+): { rotulo: string; importe: Decimal }[] {
+  const rotuloSinCategoria = elegirRotuloSintetico(CANDIDATOS_SIN_CATEGORIA, new Set(ramas.values()))
+
+  const suma = new Map<string, Decimal>()
+  for (const v of vendido) {
+    const rama = ramas.get(v.articuloId) ?? rotuloSinCategoria
+    suma.set(rama, (suma.get(rama) ?? new Prisma.Decimal(0)).add(v.importe))
+  }
+
+  return [...suma.entries()]
+    .map(([rotulo, importe]) => ({ rotulo, importe }))
+    .sort((a, b) => b.importe.comparedTo(a.importe))
+}
 
 /**
  * Recorta a `MAX_GAJOS`, sumando la cola en un gajo agregado cuando hay más
@@ -133,9 +200,9 @@ export const SIN_CATEGORIA = 'Sin categoría'
  * partir de `agruparPorArticulo`, que ya ordena— así que la cola son
  * exactamente las ramas más chicas.
  *
- * El agregado se llama `ROTULO_OTROS` salvo que ESE nombre ya lo use una rama
- * real de la entrada —en cualquier posición, no sólo en la cola—, en cuyo
- * caso toma `ROTULO_OTROS_AGRUPADO`. Agrupar una rama chica real llamada
+ * El agregado toma la primera candidata de `CANDIDATOS_OTROS` que no
+ * coincida con ninguna rama de la entrada —en cualquier posición, no sólo en
+ * la cola—, vía `elegirRotuloSintetico`. Agrupar una rama chica real llamada
  * "Otros" dentro de la cola sigue siendo correcto —es exactamente lo que la
  * cola es, "todo lo demás"—; lo que no puede pasar es que el agregado y esa
  * rama se vuelvan indistinguibles para quien lee el anillo.
@@ -148,8 +215,8 @@ export function repartirEnGajos(
   const primeros = porCategoria.slice(0, MAX_GAJOS - 1)
   const cola = porCategoria.slice(MAX_GAJOS - 1)
   const otros = cola.reduce((acc, c) => acc.add(c.importe), new Prisma.Decimal(0))
-  const hayRamaOtros = porCategoria.some((c) => c.rotulo === ROTULO_OTROS)
-  const rotuloDelAgregado = hayRamaOtros ? ROTULO_OTROS_AGRUPADO : ROTULO_OTROS
+  const nombresReales = new Set(porCategoria.map((c) => c.rotulo))
+  const rotuloDelAgregado = elegirRotuloSintetico(CANDIDATOS_OTROS, nombresReales)
   return [...primeros, { rotulo: rotuloDelAgregado, importe: otros }]
 }
 

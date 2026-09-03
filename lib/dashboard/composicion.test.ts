@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { Prisma } from '@/generated/prisma/client'
 import {
   agruparPorArticulo, repartirEnGajos, topDeArticulos, gajoMasGrande, MAX_GAJOS, TOP_DE_ARTICULOS,
-  ROTULO_OTROS, ROTULO_OTROS_AGRUPADO,
+  ROTULO_OTROS, ROTULO_OTROS_AGRUPADO, CANDIDATOS_OTROS, CANDIDATOS_SIN_CATEGORIA, SIN_CATEGORIA,
+  elegirRotuloSintetico, sumarPorRama, type VendidoPorArticulo,
 } from './composicion'
 
 const d = (v: string) => new Prisma.Decimal(v)
@@ -103,6 +104,92 @@ describe('el anillo agrupa la cola en Otros', () => {
     // local nombró "Otros".
     expect(g[4]).toEqual({ rotulo: ROTULO_OTROS_AGRUPADO, importe: d('1100') })
     expect(g.map((x) => x.rotulo)).not.toContain(ROTULO_OTROS)
+  })
+
+  // Caso de segundo orden diferido de la review de la Task 9, y cerrado
+  // acá: un local con ramas reales llamadas "Otros" Y "Otras categorías" a
+  // la vez agota las dos primeras candidatas y necesita la tercera. Sin la
+  // lista de más de dos candidatas, esto reproducía el bug un nivel más
+  // abajo — el agregado hubiera tomado 'Otras categorías' y se hubiera
+  // confundido con la rama real de ese mismo nombre.
+  it('con ramas reales "Otros" Y "Otras categorías" a la vez, el agregado cae a la tercera candidata', () => {
+    const g = repartirEnGajos([
+      cat('Otros', '5000'), cat('Otras categorías', '4400'), cat('Fundas', '1400'),
+      cat('Cables', '1200'), cat('Vidrios', '700'), cat('Cargadores', '400'),
+    ])
+    expect(g).toHaveLength(MAX_GAJOS)
+    expect(g[0]).toEqual({ rotulo: 'Otros', importe: d('5000') })
+    expect(g[1]).toEqual({ rotulo: 'Otras categorías', importe: d('4400') })
+    expect(g[4]).toEqual({ rotulo: CANDIDATOS_OTROS[2], importe: d('1100') })
+  })
+})
+
+describe('elegirRotuloSintetico', () => {
+  const candidatas = ['a', 'b', 'c'] as const
+
+  it('sin colisión, la primera candidata', () => {
+    expect(elegirRotuloSintetico(candidatas, new Set())).toBe('a')
+  })
+
+  it('con la primera colisionando, cae a la segunda', () => {
+    expect(elegirRotuloSintetico(candidatas, new Set(['a']))).toBe('b')
+  })
+
+  it('con las dos primeras colisionando, cae a la tercera', () => {
+    expect(elegirRotuloSintetico(candidatas, new Set(['a', 'b']))).toBe('c')
+  })
+
+  // Un local con una rama real para CADA candidata es un caso extremo, pero
+  // con texto libre ilimitado no se puede descartar. Sin este fallback la
+  // función devolvería `undefined` y el llamador se quedaría sin rótulo.
+  it('con todas colisionando, devuelve la última igual', () => {
+    expect(elegirRotuloSintetico(candidatas, new Set(['a', 'b', 'c']))).toBe('c')
+  })
+})
+
+describe('sumarPorRama', () => {
+  const v = (articuloId: string, importe: string): VendidoPorArticulo =>
+    ({ articuloId, unidades: d('1'), importe: d(importe) })
+
+  it('un artículo sin rama asignada cae en el balde sintético', () => {
+    const r = sumarPorRama([v('a', '1000')], new Map())
+    expect(r).toEqual([{ rotulo: SIN_CATEGORIA, importe: d('1000') }])
+  })
+
+  it('suma varios artículos de la misma rama', () => {
+    const ramas = new Map([['a', 'Celulares'], ['b', 'Celulares']])
+    const r = sumarPorRama([v('a', '1000'), v('b', '500')], ramas)
+    expect(r).toEqual([{ rotulo: 'Celulares', importe: d('1500') }])
+  })
+
+  it('ordena de mayor a menor importe', () => {
+    const ramas = new Map([['a', 'Celulares'], ['b', 'Fundas']])
+    const r = sumarPorRama([v('a', '100'), v('b', '900')], ramas)
+    expect(r.map((x) => x.rotulo)).toEqual(['Fundas', 'Celulares'])
+  })
+
+  // EL CASO QUE ESTE ARREGLO EXISTE PARA CUBRIR: un local con una rama REAL
+  // llamada "Sin categoría" —un catch-all tan plausible como cualquier
+  // otro— no puede terminar con su mercadería sin categorizar sumada
+  // DENTRO de esa rama. Antes de este arreglo, `SIN_CATEGORIA` era un
+  // literal fijo que colisionaba exactamente con este caso: un gajo, un
+  // importe, sin forma de distinguir "lo que el local llamó así" de "lo que
+  // nadie categorizó". Revertir `sumarPorRama` a esa versión (el balde fijo
+  // en vez de `elegirRotuloSintetico`) hace que este caso falle: los dos
+  // artículos caerían en un solo rotulo 'Sin categoría' con importe 1500 en
+  // vez de dos rotulos separados.
+  it('una rama real llamada "Sin categoría" no se confunde con el balde sintético', () => {
+    // 'a' cuelga de una rama REAL que el local nombró "Sin categoría".
+    // 'b' no tiene categoría asignada (no aparece en el mapa de ramas).
+    const ramas = new Map([['a', 'Sin categoría']])
+    const r = sumarPorRama([v('a', '1000'), v('b', '500')], ramas)
+
+    expect(r).toHaveLength(2)
+    // La rama real, con su propio importe, intacta.
+    expect(r).toContainEqual({ rotulo: 'Sin categoría', importe: d('1000') })
+    // El balde sintético cae a la SEGUNDA candidata, distinta de la rama
+    // real, con el importe de lo genuinamente sin categorizar.
+    expect(r).toContainEqual({ rotulo: CANDIDATOS_SIN_CATEGORIA[1], importe: d('500') })
   })
 })
 

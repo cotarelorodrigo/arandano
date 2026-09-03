@@ -41,6 +41,21 @@ describe('la moneda elegida decide qué columna se suma', () => {
     expect(agregarPorDia(mixta, '2026-08-21', 'ars')[11].monto).toBe('1000')
     expect(agregarPorDia(mixta, '2026-08-21', 'usd')[11].monto).toBe('300')
   })
+
+  // Bug real (review final de rama): `casilla.ventas` sumaba TODAS las
+  // ventas del día sin mirar si tocaron la moneda elegida, así que en modo
+  // US$ el pie podía decir "…US$ 300,00 en 14 ventas" con trece de esas
+  // catorce ventas sin un solo dólar adentro. El conteo tiene que seguir el
+  // MISMO filtro que el monto.
+  it('el conteo de ventas sigue la moneda elegida, no cuenta todo lo del día', () => {
+    const delDia = [
+      v('2026-08-19', '1000', '0'), // sólo pesos
+      v('2026-08-19', '2000', '0'), // sólo pesos
+      v('2026-08-19', '500', '300'), // mixta: pesos Y dólares
+    ]
+    expect(agregarPorDia(delDia, '2026-08-21', 'ars')[11].ventas).toBe(3)
+    expect(agregarPorDia(delDia, '2026-08-21', 'usd')[11].ventas).toBe(1)
+  })
 })
 
 describe('el mejor día', () => {

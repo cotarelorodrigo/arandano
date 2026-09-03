@@ -1907,6 +1907,8 @@ julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
 - Ver **"Margen"**, sólo si la sesión tiene el permiso `COSTOS` — el mismo que
   ya protege el costo y el margen en `/inventario/[id]`.
 - Entrar a `/vender` desde el botón del Topbar (o la ranura del teléfono).
+- Entrar a `/inventario` desde "Ver inventario →", en el encabezado del panel
+  "Lo que más se vendió".
 - Bajar un CSV con las ventas del período elegido (`?rango`) desde "Exportar
   CSV" —el Topbar en escritorio, un ícono de 38 px en el teléfono—: número,
   fecha, hora, cliente, medios, vendido y cobrado por separado en cada moneda,
@@ -1959,6 +1961,18 @@ julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
   dashboard, no un reporte de rentabilidad. Es una decisión de PRODUCTO, no
   una limitación técnica: `exportarVentas` (`./acciones.ts`) ni siquiera
   consulta `costoUnitario`.
+- **"Exportar CSV" no tiene techo de filas, y ese "sin techo" es un límite
+  conocido y escrito, no forzado en código** (review final de rama).
+  `?rango=esteanio` en un local con mucho movimiento son decenas de miles de
+  ventas —cada una con sus pagos— materializadas ENTERAS en memoria antes de
+  convertirse en el string final, adentro del mismo contenedor de 3200 MiB
+  que sirve a todos los tenants de producción (ver CLAUDE.md, "Convivencia
+  sobre 2 vCPU"). A propósito SIN un cap silencioso: un CSV recortado sin
+  decirlo miente sobre el período que dice exportar. El disparador para
+  ponerle un techo de verdad (paginado, streaming a un archivo, o un job de
+  background) es que esto empiece a doler en la práctica —un timeout de
+  request, un local grande que tarda en serio, o un OOM real—, no un número
+  elegido de antemano. Ver el docblock de `exportarVentas`.
 - **`exportarVentas` vive SOLA en `app/(app)/dashboard/acciones.ts`, con
   `'use server'` de MÓDULO — como en toda pantalla del repo, sin excepción.**
   La primera versión de este ciclo invertía esto (la acción afuera, lo puro
