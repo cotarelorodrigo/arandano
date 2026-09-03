@@ -601,10 +601,23 @@ El `imeiCapturado` se normaliza con `normalizarImei` **antes** de la
 transacción, junto al resto de las validaciones de dominio de los ítems, para
 que un valor vacío falle temprano y no a mitad de la venta.
 
-El choque contra el índice sale como `P2002`; `traducirErrorDeBase` de
-`lib/ventas/errores.ts` **no lo traduce hoy**, así que hay que sumarlo ahí con
-`UNIDAD_NO_DISPONIBLE` y un mensaje que diga que ese IMEI ya está en stock —
-mismo criterio que `anularVenta` ya aplica para su propio P2002.
+El choque contra el índice sale como `P2002`, y **la traducción va envolviendo
+ese `updateMany`, NO en `traducirErrorDeBase`** de `lib/ventas/errores.ts`.
+
+Esto es importante y es la lección que el ciclo anterior pagó con el hallazgo I2
+de su review de rama: ahí un `P2002` genérico terminó clasificado como "SKU
+repetido", quemando números de SKU y mintiendo el mensaje, porque el handler daba
+por sentado que en esa transacción sólo existía un constraint único. Acá pasa lo
+mismo: dentro de `crearVenta` un `P2002` puede venir del IMEI, de
+`claveIdempotencia` o del correlativo `(tenantId, numero)`. Traducirlo genérico
+haría que un choque de correlativo le diga a quien cobra que el IMEI ya está en
+stock.
+
+Bajo el rol con RLS, `fields` viene indefinido, así que el error no se puede
+distinguir después: hay que atraparlo donde se sabe qué se estaba escribiendo.
+El catch sólo relanza —la violación aborta la transacción, así que no puede
+consultar nada— con `UNIDAD_NO_DISPONIBLE` y un mensaje que diga que ese IMEI ya
+está en stock.
 
 En `lib/ventas/buscar.ts`, la búsqueda por IMEI exacto suma `imei: { not: null }`
 al `where`. Sin eso, `buscarArticulosVendibles(tenant, '')` no matchea nada
@@ -725,20 +738,36 @@ inicial es el que manda. `stockInicial` deja de estar prohibido junto a
 `llevaSerie` — pasa a ser el número que gobierna, y sin él la cantidad es la
 longitud de la lista.
 
-- [ ] **Step 5: El alta postea las dos cosas**
+- [ ] **Step 5: `MoverStock` e `ingresarMercaderia` ofrecen las dos formas**
+
+Es de ESTA task aunque el engine lo habilite la Task 3: es acá donde la pantalla
+empieza a postear la forma nueva, y partirlo dejaría a `MoverStock` posteando a
+un action que no la entiende. Es exactamente el hueco que el pre-flight del ciclo
+anterior encontró con `ingresarMercaderia`, repetido un nivel más adelante.
+
+Con `llevaSerie`, la card "Ingresar mercadería" muestra el campo de cantidad
+**y** la lista progresiva de IMEIs, con la leyenda de que escanear es opcional.
+
+En `ingresarMercaderia`, la rama actual decide por `datos.has('imeis')`, y eso
+deja de alcanzar: con las dos cosas en el formulario, `imeis` viene SIEMPRE
+presente (aunque vacío). Pasa a decidir por la lista ya filtrada — si quedó al
+menos un IMEI se manda `imeis`, si no se manda `cantidad`. Nunca las dos, porque
+el motor las rechaza juntas a propósito.
+
+- [ ] **Step 6: El alta postea las dos cosas**
 
 `altaArticulo` deja de excluir `stockInicial` cuando `llevaSerie`, y sigue
 leyendo `imeis` con `getAll`. El formulario muestra, con el switch prendido, el
 campo de cantidad **y** la lista progresiva, con la leyenda de que lo que no se
 escanee ahora se puede cargar después.
 
-- [ ] **Step 6: Correr — tienen que pasar**
+- [ ] **Step 7: Correr — tienen que pasar**
 
 ```bash
 npx vitest run "app/(app)/inventario" test/responsive.test.ts
 ```
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add "app/(app)/inventario" lib/inventario/articulos.ts
