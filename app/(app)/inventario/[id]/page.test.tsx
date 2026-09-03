@@ -349,12 +349,33 @@ describe('el grupo de tiles se apila en el teléfono (Task 7 del ciclo móvil)',
   })
 })
 
-describe('MoverStock y el historial se ordenan junto a Datos/Gráfico en el teléfono (Task 7)', () => {
-  it('MoverStock lleva order-3, entre las tiles (order-1) y el historial (order-5)', () => {
+describe('MoverStock, Unidades y el historial se ordenan junto a Datos/Gráfico en el teléfono (Task 7)', () => {
+  it('MoverStock lleva order-3, entre las tiles (order-1) y Unidades (order-4)', () => {
     expect(FUENTE).toContain('<div className="order-3 lg:order-none">')
   })
 
-  it('el historial lleva order-5, el último de los cinco bloques', () => {
-    expect(FUENTE).toContain('<div className="order-5 lg:order-none">')
+  // La card "Unidades" pasó a la columna izquierda el 2026-09-03
+  // (design/arandano.pen, nodo `TbqWn`, 804 px de ancho): en el teléfono
+  // conserva la posición que le da el frame `T5gME` —después de "Ingresar
+  // mercadería"/"Corregir por conteo" y antes de "Cómo se movió"—, que es lo
+  // que este order-4 sostiene.
+  it('Unidades lleva order-4, entre MoverStock y "Cómo se movió" (order-5)', () => {
+    expect(FUENTE).toContain('<div className="order-4 lg:order-none">')
+    expect(FUENTE).toContain('<CardDeUnidades articuloId={articulo.id} unidades={unidades} />')
+  })
+
+  it('el historial lleva order-6, el último de los bloques', () => {
+    expect(FUENTE).toContain('<div className="order-6 lg:order-none">')
+  })
+
+  // La consecuencia de haberla movido: la columna de 324 px ya no la arma.
+  // Un test por FUENTE porque este page.tsx es un Server Component async —
+  // mismo recurso que `test/permisos-en-las-dos-copias.test.ts`.
+  it('la card ya NO cuelga de columnaDerechaExtra, que es la columna de 324 px', () => {
+    const derecha = FUENTE.slice(
+      FUENTE.indexOf('const columnaDerechaExtra'),
+      FUENTE.indexOf('const filasHistorial'),
+    )
+    expect(derecha).not.toContain('CardDeUnidades')
   })
 })

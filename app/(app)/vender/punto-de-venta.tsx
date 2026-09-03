@@ -243,7 +243,7 @@ export function UnidadesDelSelector({
         <button
           key={u.id}
           type="button"
-          className="flex flex-col gap-0.5 rounded-[9px] border border-input px-3 py-2 text-left hover:bg-muted"
+          className="flex flex-col gap-0.5 rounded-[9px] border border-input bg-card px-3 py-[9px] text-left hover:bg-muted"
           onClick={() => onElegir(u)}
         >
           <span className="text-sm font-semibold text-foreground">{u.imei}</span>
@@ -264,7 +264,14 @@ export function UnidadesDelSelector({
         <button
           key={proxima.id}
           type="button"
-          className="flex flex-col gap-0.5 rounded-[9px] border border-dashed border-input px-3 py-2 text-left hover:bg-muted"
+          // Fondo hundido y borde SÓLIDO, no punteado (design/arandano.pen,
+          // nodo `uqoI4`: `$ar-sunken` con el mismo `$ar-line-strong` que las
+          // filas de arriba). El punteado que tenía hasta el 2026-09-03 era
+          // una derivada del código —la maqueta no dibujaba este diálogo— y
+          // leía como "provisorio" o "deshabilitado": esta fila no es ninguna
+          // de las dos cosas, es una opción tan elegible como las otras. Lo
+          // que la distingue es el fondo, no un borde de menos.
+          className="flex flex-col gap-0.5 rounded-[9px] border border-input bg-muted px-3 py-[9px] text-left hover:bg-muted/70"
           onClick={() => onElegir(proxima)}
         >
           <span className="text-sm font-semibold text-foreground">
@@ -2554,7 +2561,15 @@ export function PuntoDeVenta({
           if (!abierto) setSelectorUnidad(null)
         }}
       >
-        <DialogContent>
+        {/* 512 px, radio 16 y padding 24: las tres medidas salen del nodo
+            `ulG0c` de la maqueta (frame `App / Vender · Elegir equipo`). Van
+            acá y no en `components/ui/dialog.tsx` a propósito — el default de
+            shadcn (`sm:max-w-sm`, o sea 384, con `p-4` y `rounded-xl`) sigue
+            gobernando al resto de los diálogos del producto, empezando por el
+            de permisos de `/usuarios`, que no tiene ningún frame que diga otra
+            cosa. Un IMEI son quince dígitos y la fila lo muestra junto a su
+            fecha: en 384 px la lista se apretaba. */}
+        <DialogContent className="gap-4 rounded-2xl p-6 sm:max-w-[512px]">
           <DialogHeader>
             <DialogTitle>{selectorUnidad?.articulo.nombre}</DialogTitle>
             <DialogDescription>Elegí qué equipo sale.</DialogDescription>

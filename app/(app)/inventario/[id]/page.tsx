@@ -367,20 +367,18 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   // filtrarlas acá volvería a esconderlas. El ternario que obligaba al `as
   // UnidadLibre[]` de la consulta se fue con la condición de arriba.
 
+  // La card "Unidades" se muestra con el switch prendido siempre; y también
+  // con el switch APAGADO si quedaron unidades cargadas, que es la salida al
+  // caso huérfano (Task 6): sin este `||`, esas unidades no se verían en
+  // ningún lado ni habría forma de darlas de baja. Un servicio nunca tiene
+  // ninguna de las dos cosas, así que no hace falta sumar `esProducto`.
+  const hayUnidades = articulo.llevaSerie || unidades.length > 0
+
   const columnaDerechaExtra =
-    hayPanelPrecios || esProducto || articulo.llevaSerie || unidades.length > 0 ? (
+    hayPanelPrecios || esProducto ? (
       <>
         {hayPanelPrecios && (
           <PanelPreciosPorFormaDePago precio={articulo.precio} moneda={articulo.moneda} planes={planes} />
-        )}
-        {/* La card "Unidades". Con el switch prendido siempre; y también con
-            el switch APAGADO si quedaron unidades cargadas, que es la salida
-            al caso huérfano (Task 6): sin este `||`, esas unidades no se
-            verían en ningún lado ni habría forma de darlas de baja. Un
-            servicio nunca tiene ninguna de las dos cosas, así que no hace
-            falta sumar `esProducto`. */}
-        {(articulo.llevaSerie || unidades.length > 0) && (
-          <CardDeUnidades articuloId={articulo.id} unidades={unidades} />
         )}
         {esProducto && <GraficoDeRotacion meses={meses} />}
       </>
@@ -466,10 +464,28 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
         </div>
       )}
 
+      {/* La card "Unidades", en la columna IZQUIERDA y no en la de 324 px
+          (design/arandano.pen, frame `y4tEb`, nodo `TbqWn`: 804 px de ancho,
+          entre "Mover stock" y el historial). Hasta el 2026-09-03 vivía en
+          `columnaDerechaExtra`, y ahí no entraba: la fila de cada unidad
+          declara 200 px para el IMEI más 220 para el motivo, más dos botones
+          —420 px de campos dentro de una columna de 324—. La fila ya estaba
+          escrita para el ancho que la maqueta confirma; lo que estaba mal era
+          de qué lado colgaba.
+
+          En el teléfono conserva su posición relativa de la maqueta (frame
+          `T5gME`): después de "Ingresar mercadería"/"Corregir por conteo"
+          (order-3) y antes de "Cómo se movió" (order-5). */}
+      {hayUnidades && (
+        <div className="order-4 lg:order-none">
+          <CardDeUnidades articuloId={articulo.id} unidades={unidades} />
+        </div>
+      )}
+
       {/* El bloque que responde "por qué tengo 3 y no 5", que es la pregunta
           que un dueño hace cuando el inventario no le cierra. Es para lo que la
           tabla es append-only. */}
-      <div className="order-5 lg:order-none">
+      <div className="order-6 lg:order-none">
         <HistorialDeMovimientos
           filas={filasHistorial}
           limiteAlcanzado={movimientos.length === MOVIMIENTOS_VISIBLES}

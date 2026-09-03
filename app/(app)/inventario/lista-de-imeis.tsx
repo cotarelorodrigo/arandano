@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -65,9 +65,30 @@ export function ListaDeImeis({
           )}
         </div>
       ))}
-      <Button type="button" variant="outline" onClick={() => setValores((v) => [...v, ''])}>
+      {/* Ancho completo, 38 de alto y con el `plus` de la maqueta (frame
+          `B4O7t`, nodo `DPjDh`): es el control que sostiene la carga de a
+          muchos, así que ocupa la fila entera en vez de quedar como un botón
+          suelto a la izquierda. */}
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => setValores((v) => [...v, ''])}
+        className="h-[38px] w-full rounded-[9px]"
+      >
+        <Plus aria-hidden="true" className="size-[15px]" />
         Agregar otro
       </Button>
+      {/* La nota vive ACÁ y no en cada pantalla que instancia la lista. Hasta
+          el 2026-09-03 estaba escrita dos veces —el alta y el ingreso de
+          mercadería, en formularios.tsx— con el mismo texto copiado, que es
+          exactamente la forma en que el alta y la ficha se desincronizaron
+          con la categoría (ciclo del 2026-08-28: "una sola fuente, no dos que
+          haya que acordarse de sincronizar"). Texto de la maqueta, nodo
+          `afXki`. */}
+      <p className="text-[11px] leading-[1.4] text-muted-foreground">
+        Cargá los que tengas a mano. El resto entra sin identificar y se completa desde la ficha
+        cuando aparezca cada equipo.
+      </p>
     </div>
   )
 }

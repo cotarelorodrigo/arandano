@@ -1,7 +1,7 @@
 'use client'
 
 import { useActionState, useEffect, useRef, useState } from 'react'
-import { Search } from 'lucide-react'
+import { ScanBarcode, Search, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -199,7 +199,12 @@ function BloqueDeCaptura({
   const [estado, accion, enviando] = useActionState(identificarUnidadAccion, INICIAL)
 
   return (
-    <div className="flex flex-col gap-2 rounded-[10px] border bg-muted/40 p-3">
+    // `bg-muted` sólido y no `bg-muted/40`: el nodo `ex9i1` de la maqueta
+    // (frame `y4tEb`) pinta `$ar-sunken` entero, que es exactamente `--muted`
+    // (#EEEBF4). El 40 % lo dejaba casi indistinguible de la card que lo
+    // contiene, que es lo contrario de lo que un bloque hundido tiene que
+    // hacer.
+    <div className="flex flex-col gap-2 rounded-[10px] border bg-muted p-3">
       <form action={accion} className="flex items-center gap-2">
         <input type="hidden" name="articuloId" value={articuloId} />
         <input type="hidden" name="unidadId" value={proxima.id} />
@@ -208,9 +213,13 @@ function BloqueDeCaptura({
           autoFocus
           aria-label="IMEI o número de serie"
           placeholder="Escaneá o tipeá el IMEI"
-          className="h-10 rounded-[9px]"
+          className="h-10 rounded-[9px] bg-card"
         />
-        <Button type="submit" size="sm" disabled={enviando} className="shrink-0">
+        {/* El ícono lo pide la maqueta (nodo `qOcAR`, `scan-barcode` 15 px):
+            es el que nombra el gesto real —pasar el lector por la caja— y no
+            "guardar". */}
+        <Button type="submit" size="sm" disabled={enviando} className="h-10 shrink-0">
+          <ScanBarcode aria-hidden="true" className="size-[15px]" />
           {enviando ? 'Cargando…' : 'Cargar'}
         </Button>
       </form>
@@ -272,7 +281,23 @@ export function CardDeUnidades({
       : identificadas.filter((u) => u.imei.toLowerCase().includes(filtro.trim().toLowerCase()))
 
   return (
-    <CardDelFormulario id="unidades" titulo="Unidades">
+    <CardDelFormulario
+      id="unidades"
+      titulo="Unidades"
+      icono={<Smartphone aria-hidden="true" className="size-4 text-primary" />}
+      // El contador del encabezado (design/arandano.pen, frame `y4tEb`, nodo
+      // `O9XY8`: "30 libres · 27 sin identificar"). La segunda mitad sólo
+      // aparece cuando queda alguna sin número: con todas identificadas, "27
+      // sin identificar" sería un cero que no dice nada, y el principio de
+      // este producto es que un local que no tiene el caso no ve el control.
+      meta={
+        unidades.length > 0
+          ? `${unidades.length} ${unidades.length === 1 ? 'libre' : 'libres'}${
+              sinIdentificar.length > 0 ? ` · ${sinIdentificar.length} sin identificar` : ''
+            }`
+          : undefined
+      }
+    >
       {proxima !== undefined && (
         <BloqueDeCaptura
           key={proxima.id}
@@ -406,7 +431,13 @@ export function SwitchDeSerie({
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-[10px] border bg-card p-3">
+    // El mismo tratamiento de card que el resto de la ficha, y no un recuadro
+    // propio: la maqueta (frame `y4tEb`, nodo `Voydz`) lo dibuja con radio 16
+    // y padding [14,18] en escritorio, y su gemelo móvil (`q1JENW`) con
+    // [12,14] — mismo mobile-first que `CardDelFormulario`. Antes era
+    // `rounded-[10px] p-3`, que lo dejaba visiblemente más chico que la card
+    // de al lado.
+    <div className="flex items-center justify-between gap-3 rounded-2xl border bg-card px-[14px] py-3 lg:gap-4 lg:px-[18px] lg:py-[14px]">
       <div className="flex flex-col gap-0.5">
         <Label htmlFor="lleva-serie">Lleva IMEI o número de serie</Label>
         <p className="text-[11px] text-muted-foreground">

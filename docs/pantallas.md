@@ -632,12 +632,23 @@ Es la pantalla que más cambia del ciclo, y la única que se parte en dos frames
   dólares—: ni el selector `Cubre`, ni la banda de dos líneas, ni el segundo
   chip de faltante. Anotado en `docs/correcciones-pendientes-del-pen.md`,
   entrada 23.
-- **Tampoco dibuja nada de las unidades por IMEI** —es anterior también a ese
-  ciclo—: ni el selector de unidad del carrito, ni la línea sin stepper, ni la
-  fila "Una sin identificar" ni el campo de captura que sumó el ciclo
-  "unidades sin identificar" (entradas 27 y 28 de
-  `docs/correcciones-pendientes-del-pen.md`).
-  Anotado en `docs/correcciones-pendientes-del-pen.md`, entrada 27.
+- **El selector de unidad SÍ tiene frame desde el 2026-09-03** (`App / Vender ·
+  Elegir equipo` y `Móvil / Vender · Elegir equipo`), y de ahí salen sus tres
+  medidas propias: 512 px de ancho, radio 16 y padding 24, pasadas por
+  `className` en el uso y **no** en `components/ui/dialog.tsx` — el default de
+  shadcn (384 px) sigue gobernando al resto de los diálogos del producto, que
+  no tienen frame que diga otra cosa. Un IMEI son quince dígitos y la fila lo
+  muestra junto a su fecha: en 384 px la lista se apretaba.
+- **La fila "Una sin identificar" es sólida, no punteada.** El `border-dashed`
+  que tuvo hasta el 2026-09-03 era una derivada del código, de cuando la
+  maqueta no dibujaba este diálogo, y leía como "provisorio" o
+  "deshabilitado": esa fila no es ninguna de las dos cosas, es una opción tan
+  elegible como las otras. Lo que la distingue es el fondo hundido
+  (`bg-muted`, el `$ar-sunken` del nodo `uqoI4`), no un borde de menos.
+- **La línea del carrito y su campo de captura ya coinciden con el frame**
+  (`App / Vender`, nodos `k3dm9` y `v6bcUR`): el IMEI junto al SKU en la línea
+  de meta, la cantidad sin stepper, y para una unidad sin número el campo de
+  140×28 al lado del SKU con la leyenda debajo.
 
 ## `/ventas`
 
@@ -1270,14 +1281,16 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   ya haya, y crea la diferencia SIN identificar. El artículo queda cuadrado al
   instante, sin un paso de "vaciar y volver a cargar" que ensuciaría el
   historial con movimientos que nunca pasaron.
-- Ver la card **"Unidades"**, con dos partes: arriba, el **bloque de captura**
-  —un campo enfocado, con "Quedan N sin identificar", que le pone el número a
-  la unidad sin identificar más vieja y se vacía solo para el escaneo
-  siguiente—; abajo, la lista de las que ya tienen IMEI, con cuándo entró cada
-  una, **"Corregir"** (el mismo camino de servidor, con el número actual
-  prellenado) y **"Dar de baja"** con su nota (se rompió, se robó, garantía).
-  Con más de 8 unidades identificadas, un filtro por IMEI dentro de la misma
-  card.
+- Ver la card **"Unidades"**, en la **columna izquierda** (la ancha, 804 px —
+  ver *Decisiones*), con su ícono `smartphone` y el contador **"N libres · M
+  sin identificar"** a la derecha del encabezado, y dos partes: arriba, el
+  **bloque de captura** —un campo enfocado sobre fondo hundido, con "Quedan N
+  sin identificar", que le pone el número a la unidad sin identificar más
+  vieja y se vacía solo para el escaneo siguiente—; abajo, la lista de las que
+  ya tienen IMEI, con cuándo entró cada una, **"Corregir"** (el mismo camino
+  de servidor, con el número actual prellenado) y **"Dar de baja"** con su
+  nota (se rompió, se robó, garantía). Con más de 8 unidades identificadas, un
+  filtro por IMEI dentro de la misma card.
 
 **Decisiones**
 
@@ -1288,6 +1301,21 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   separado (`puedeConSesion(sesion, 'ARTICULOS_EDITAR')` y
   `puedeConSesion(sesion, 'COSTOS')`) y los reparte a `FichaDeArticulo` y a
   `MoverStock` como props booleanas independientes.
+- **La card "Unidades" vive en la columna IZQUIERDA, no en la de 324 px**
+  (2026-09-03, contra `design/arandano.pen`, frame `y4tEb`, nodo `TbqWn`: 804
+  px de ancho, entre "Mover stock" y el historial). Hasta ese día colgaba de
+  `columnaDerechaExtra`, y ahí no entraba: la fila de cada unidad declara 200
+  px para el IMEI más 220 para el motivo, más los botones "Corregir" y "Dar de
+  baja" — 420 px de campos dentro de una columna de 324. **La fila ya estaba
+  escrita para el ancho que la maqueta después confirmó**; lo que estaba mal
+  era de qué lado colgaba. En el teléfono conserva su posición del frame
+  `T5gME` (`order-4`: después de "Ingresar mercadería"/"Corregir por conteo",
+  antes de "Cómo se movió"), así que el cambio no se nota a 390 px.
+- **El contador del encabezado responde al catálogo, no al filtro.** Cuenta
+  todas las unidades libres del artículo, y la segunda mitad ("M sin
+  identificar") sólo aparece cuando queda alguna: con todas cargadas, un "0
+  sin identificar" es un cero que no le sirve a nadie. Mismo criterio que ya
+  rige el conteo del árbol de categorías del listado.
 - **El diálogo de N campos se borró, y ése es el ciclo entero** (ciclo
   "unidades sin identificar"). Hasta el 2026-09-02, prender el switch con stock
   cargado abría un `Dialog` que pedía exactamente esa cantidad de IMEI antes de
@@ -1552,14 +1580,13 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   `more-vertical`: las dos acciones principales ya están al pie y las
   secundarias en el cuerpo, así que ese menú no tendría qué contener sin
   inventarlo. Ver `docs/correcciones-pendientes-del-pen.md`, entrada 13.
-- **El switch, la card "Unidades" y su diálogo de prender no llevan tratamiento
-  propio del teléfono**: usan las mismas clases responsive de siempre
-  (`flex-col lg:flex-row`, el `Dialog` de shadcn, que ya centra y ajusta su
-  ancho solo). Sin frame en `design/arandano.pen` para ninguno de los tres —es
-  anterior a esta feature—, así que no hay una maqueta contra la que confirmar
-  que se ven bien apretados a 390 px; anotado en
-  `docs/correcciones-pendientes-del-pen.md`, entrada 27, y queda en la
-  verificación manual pendiente (ver CLAUDE.md).
+- **El switch y la card "Unidades" usan las mismas clases responsive de
+  siempre** (`flex-col lg:flex-row`), sin tratamiento propio del teléfono.
+  Desde el 2026-09-03 el frame `T5gME` **sí los dibuja**, y de ahí salen las
+  medidas del switch (radio 16, padding `[12,14]` en el teléfono contra
+  `[14,18]` en escritorio) y la posición de la card entre "Corregir por
+  conteo" y "Cómo se movió". Lo que sigue sin frame es el diálogo de prender,
+  que ya no existe.
 
 ## `/servicio-tecnico`
 

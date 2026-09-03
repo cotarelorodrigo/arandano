@@ -8,9 +8,14 @@ está en el archivo es lo que se construyó o lo que se descartó.
 
 ## Qué hay adentro
 
-Las trece pantallas que el producto tiene hoy, **dos veces**: una en la maqueta
-de escritorio de 1440 px y otra en la del teléfono de 390 px. La lista de lo que
+Las pantallas que el producto tiene hoy, **dos veces**: una en la maqueta de
+escritorio de 1440 px y otra en la del teléfono de 390 px. La lista de lo que
 hace cada una vive en `docs/pantallas.md`, no acá.
+
+**Sin contador**, y a propósito: las tablas de abajo son la lista, y un número
+escrito a mano al lado de una lista es un número que se desincroniza de ella. Es
+la misma regla con la que CLAUDE.md se niega a contar las pantallas rediseñadas
+y con la que el `version` de `package.json` no duplica al tag de git.
 
 ### Escritorio — 1440 px
 
@@ -22,6 +27,7 @@ hace cada una vive en `docs/pantallas.md`, no acá.
 | `App / Inventario` | `/inventario` |
 | `App / Artículo nuevo` | `/inventario/nuevo` |
 | `App / Artículo ficha` | `/inventario/[id]` |
+| `App / Vender · Elegir equipo` | `/vender`, con el selector de unidad abierto |
 | `App / Servicio Técnico` | `/servicio-tecnico` |
 | `App / Recibir equipo` | `/servicio-tecnico/nuevo` |
 | `App / Orden ficha` | `/servicio-tecnico/[id]` |
@@ -32,16 +38,17 @@ hace cada una vive en `docs/pantallas.md`, no acá.
 
 ### Teléfono — 390 px
 
-Quince frames, y son quince y no trece por dos razones que conviene leer antes
-de buscar la que falta: `/vender` se parte en dos porque en el teléfono el cobro
-es **pantalla propia**, y el drawer de navegación **no tiene ruta** — es un
-estado del shell que en escritorio no existe, porque ahí el sidebar está
-siempre a la vista.
+Hay más frames que rutas, y conviene leer por qué antes de buscar la que falta:
+`/vender` se parte en tres porque en el teléfono el cobro es **pantalla propia**
+y el selector de unidad se dibuja abierto sobre el velo, y el drawer de
+navegación **no tiene ruta** — es un estado del shell que en escritorio no
+existe, porque ahí el sidebar está siempre a la vista.
 
 | Frame | Ruta |
 |---|---|
 | `Móvil / Vender` | `/vender` |
 | `Móvil / Vender · Cobro` | `/vender`, con el paso en cobro (`?paso=cobro`) |
+| `Móvil / Vender · Elegir equipo` | `/vender`, con el selector de unidad abierto |
 | `Móvil / Ventas` | `/ventas` |
 | `Móvil / Venta detalle` | `/ventas/[id]` |
 | `Móvil / Inventario` | `/inventario` |

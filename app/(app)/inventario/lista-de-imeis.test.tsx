@@ -46,6 +46,22 @@ describe('ListaDeImeis: estructura (render estático)', () => {
     const html = renderToStaticMarkup(<ListaDeImeis etiqueta="Número de serie" />)
     expect(html).toContain('aria-label="Número de serie 1"')
   })
+
+  // La nota vive en el componente y no en cada pantalla que lo instancia
+  // (design/arandano.pen, frame `B4O7t`, nodo `afXki`). Hasta el 2026-09-03
+  // estaba escrita dos veces en formularios.tsx —el alta y el ingreso de
+  // mercadería—, que es la forma exacta en que el alta y la ficha se
+  // desincronizaron con la categoría en el ciclo del 2026-08-28.
+  it('la nota de "cargá los que tengas a mano" viaja adentro del componente', () => {
+    const html = renderToStaticMarkup(<ListaDeImeis />)
+    expect(html).toContain('Cargá los que tengas a mano')
+    expect(html).toContain('se completa desde la ficha cuando aparezca cada equipo')
+  })
+
+  it('la nota aparece UNA sola vez', () => {
+    const html = renderToStaticMarkup(<ListaDeImeis />)
+    expect(html.split('Cargá los que tengas a mano').length - 1).toBe(1)
+  })
 })
 
 describe('ListaDeImeis: comportamiento (cableado, no ejercitable sin DOM)', () => {

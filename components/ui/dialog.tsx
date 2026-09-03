@@ -39,7 +39,16 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        // `bg-foreground/65` sin desenfoque, y no el `bg-black/10` +
+        // `backdrop-blur-xs` que trae el registry. La maqueta lo dibuja por
+        // primera vez en `Móvil / Vender · Elegir equipo` (nodo `Velo`):
+        // `#171221A6`, que es exactamente `--foreground` al 65 %. Es además el
+        // MISMO velo que ya usan los `Sheet` del teléfono, así que cierra la
+        // inconsistencia que CLAUDE.md tenía anotada desde el ciclo móvil —
+        // "dos velos distintos conviviendo" —, y por eso el cambio va acá y no
+        // en el diálogo que lo estrenó: un velo es una superficie compartida,
+        // y tener dos era el problema.
+        "fixed inset-0 isolate z-50 bg-foreground/65 duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}

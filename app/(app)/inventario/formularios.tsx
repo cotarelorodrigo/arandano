@@ -62,10 +62,20 @@ function Resultado({ estado }: { estado: EstadoInventario }) {
 export function CardDelFormulario({
   id,
   titulo,
+  icono,
+  meta,
   children,
 }: {
   id?: string
   titulo: string
+  /** El ícono del encabezado, a la izquierda del título (16 px, `--primary`).
+   *  Opcional: la maqueta se lo da a "Unidades" (`smartphone`) pero no a
+   *  "Datos" ni a las cards del alta. */
+  icono?: ReactNode
+  /** El dato de la derecha del encabezado, alineado a la derecha y en el
+   *  tratamiento de meta (11 px, muted). Hoy lo usa "Unidades" para el
+   *  contador de libres y sin identificar. */
+  meta?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -75,8 +85,13 @@ export function CardDelFormulario({
           los [13,18] de escritorio, sin cambios) — mismo patrón que ya usan
           las cards de `/ventas` (app/(app)/ventas/[id]/page.tsx, "Qué se
           vendió"). */}
-      <div className="border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
+      <div className="flex items-center gap-2 border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
+        {icono}
         <h2 className={`${estilos.tituloDeCard} text-foreground`}>{titulo}</h2>
+        {/* `flex-1` + `text-right`: el nodo `O9XY8` de la maqueta es
+            `fill_container` con `textAlign: right`, o sea empuja contra el
+            borde derecho del encabezado en vez de quedar pegado al título. */}
+        {meta && <span className="flex-1 text-right text-[11px] text-muted-foreground">{meta}</span>}
       </div>
       <div className="flex flex-col gap-3 p-[14px] lg:gap-[14px] lg:p-[18px]">{children}</div>
     </div>
@@ -309,10 +324,6 @@ export function FormularioDeAlta({
                 <div className="flex flex-col gap-2">
                   <Label>IMEI o número de serie</Label>
                   <ListaDeImeis />
-                  <p className="text-[11px] text-muted-foreground">
-                    Escanear es opcional: lo que no cargues ahora lo podés completar después,
-                    desde la ficha del artículo.
-                  </p>
                 </div>
               )}
               {/* Sin el permiso COSTOS, el campo no se dibuja. El
@@ -526,9 +537,9 @@ export function FichaDeArticulo({
             hermanos planos del `flex-col` de más afuera— y vuelve a ser una
             columna real (`lg:flex`) en escritorio, donde `lg:order-none`
             restaura el orden natural del DOM. Los tres pedazos de
-            `columnaIzquierda` (tiles, MoverStock, historial) llevan su
-            `order-N` en `[id]/page.tsx`, que es donde se arman; acá sólo se
-            ordenan "Datos" (order-2) y `columnaDerechaExtra` (order-4). */}
+            `columnaIzquierda` (tiles, MoverStock, Unidades, historial) llevan
+            su `order-N` en `[id]/page.tsx`, que es donde se arman; acá sólo se
+            ordenan "Datos" (order-2) y `columnaDerechaExtra` (order-5). */}
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-4">
           <div className="contents lg:flex lg:flex-1 lg:flex-col lg:gap-4">{columnaIzquierda}</div>
           {/* Sin la columna entera —no sólo su contenido— cuando no hay nada
@@ -591,7 +602,7 @@ export function FichaDeArticulo({
                 // antes del merge colgaban directo de la columna, heredando su
                 // gap. Envueltas en un bloque sin gap propio quedaban con los
                 // bordes pegados, en los dos anchos.
-                <div className="order-4 flex flex-col gap-3 lg:order-none lg:gap-4">
+                <div className="order-5 flex flex-col gap-3 lg:order-none lg:gap-4">
                   {columnaDerechaExtra}
                 </div>
               )}
@@ -717,10 +728,6 @@ export function MoverStock({
               <div className="flex flex-col gap-2">
                 <Label>IMEI o número de serie</Label>
                 <ListaDeImeis />
-                <p className="text-[11px] text-muted-foreground">
-                  Escanear es opcional: lo que no cargues ahora lo podés completar después,
-                  desde la ficha del artículo.
-                </p>
               </div>
             )}
             {/* Sin el permiso COSTOS, el campo no se dibuja. El blindaje

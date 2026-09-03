@@ -887,7 +887,42 @@ operable en los dos anchos desde el primer commit.
 
 ---
 
-## 27. La maqueta no dibuja nada de las unidades por IMEI — ningún ancho, ninguna de las tres pantallas
+## 27. ~~La maqueta no dibuja nada de las unidades por IMEI~~ — DIBUJADA EN EL DOCUMENTO VIVO, FALTA COMMITEARLO
+
+**Cierra las entradas 27, 28 y 29 de una**, y con una salvedad que hay que leer
+antes de darlas por muertas.
+
+**El 2026-09-03 la maqueta dibujó la feature entera.** Dos frames nuevos —`App
+/ Vender · Elegir equipo` (`p8xTy`) y `Móvil / Vender · Elegir equipo`
+(`S5RiGU`)— y nodos nuevos en cuatro frames que ya existían: la card "Serie"
+(`Voydz`) y la card "Unidades" (`TbqWn`) en `App / Artículo ficha`, sus gemelos
+en `Móvil / Artículo ficha`, el bloque de IMEI del alta (`X6lcjF`) en `App /
+Artículo nuevo`, y las dos líneas de carrito —con IMEI (`k3dm9`) y sin
+identificar (`v6bcUR`)— en `App / Vender`. Los cuatro controles que las
+entradas de abajo listaban como derivados sin frame **ya tienen contra qué
+compararse**, y de esa comparación salieron nueve correcciones al código, que
+están aplicadas (ver `docs/pantallas.md`, secciones `/inventario/[id]` y
+`/vender`).
+
+**La salvedad: nada de eso está en `design/arandano.pen`.** Los nodos viven en
+el documento abierto en Pencil; el archivo del repo sigue byte a byte igual que
+en `823377f`, sin ninguno de esos ids. Es el mismo modo de falla que la entrada
+30 registra para `/dashboard` y que la cabecera de este documento explica: el
+MCP lee el documento vivo y no persiste. **Mientras el archivo no se guarde y
+se commitee, el `.pen` del repo contradice al código** —y por la regla de este
+proyecto, aplicada al pie, eso ordenaría revertir las nueve correcciones—.
+Hasta entonces esta entrada no es "resuelta" sino "resuelta contra un archivo
+que git no tiene".
+
+Lo que resta hacer es de una persona, no de acá: abrir Pencil, guardar
+`design/arandano.pen` y commitearlo. `design/LEEME.md` ya quedó actualizado con
+los dos frames nuevos.
+
+**El texto original queda abajo**, sin editar, porque es el registro de qué se
+derivó sin frame y con qué criterio — que es justamente lo que el
+`git log` no cuenta.
+
+---
 
 - **Frames**: ninguno. `design/arandano.pen` es anterior al ciclo de unidades
   por IMEI (2026-09-02) — que a su vez es posterior al del precio en dólares,
@@ -940,7 +975,10 @@ Detectado al construir el ciclo de unidades por IMEI (2026-09-02). Ver
 `docs/superpowers/specs/2026-09-02-unidades-por-imei-design.md`, sección *Lo
 que la maqueta no dibuja*.
 
-## 28. La maqueta tampoco dibuja la captura progresiva del IMEI, y el único control que sí se había derivado ya no existe
+## 28. ~~La maqueta tampoco dibuja la captura progresiva del IMEI~~ — CUBIERTA POR LA 27
+
+**Ver la entrada 27**: la maqueta del 2026-09-03 dibuja también lo de esta
+entrada, con la misma salvedad de que el archivo del repo todavía no lo tiene.
 
 - **Frames**: ninguno, otra vez. `design/arandano.pen` es anterior también al
   ciclo "unidades sin identificar" (2026-09-03).
@@ -991,7 +1029,10 @@ cierto esa mañana. Ver la entrada 29.
 Detectado al construir el ciclo "unidades sin identificar" (2026-09-03). Ver
 `docs/superpowers/specs/2026-09-03-unidades-sin-identificar-design.md`.
 
-## 29. El IMEI ocupaba el lugar del stepper, y ese lugar tenía un encabezado que decía CANTIDAD
+## 29. ~~El IMEI ocupaba el lugar del stepper, y ese lugar tenía un encabezado que decía CANTIDAD~~ — CUBIERTA POR LA 27
+
+**Ver la entrada 27**: la maqueta del 2026-09-03 dibuja también lo de esta
+entrada, con la misma salvedad de que el archivo del repo todavía no lo tiene.
 
 - **Frames**: ninguno, todavía. `design/arandano.pen` sigue siendo anterior a
   todo el ciclo de unidades por IMEI (entradas 27 y 28).

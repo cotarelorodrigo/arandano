@@ -97,6 +97,49 @@ describe('CardDeUnidades', () => {
  * captura contra la unidad sin identificar más vieja; abajo, la lista de las
  * identificadas.
  */
+describe('CardDeUnidades: el contador del encabezado', () => {
+  // design/arandano.pen, frame `y4tEb`, nodo `O9XY8`: "30 libres · 27 sin
+  // identificar". Es el dato que contesta, sin scrollear la lista, cuánto
+  // falta para que el stock y la vitrina digan lo mismo.
+  it('el encabezado cuenta las libres y las que faltan identificar', async () => {
+    const html = await renderCard([
+      { id: 'u1', imei: '355000000000001', ingresadaEn: new Date('2026-09-01T12:00:00Z') },
+      { id: 'u2', imei: null, ingresadaEn: new Date('2026-09-01T12:00:00Z') },
+      { id: 'u3', imei: null, ingresadaEn: new Date('2026-09-01T12:00:00Z') },
+    ])
+    expect(html).toContain('3 libres · 2 sin identificar')
+  })
+
+  // La segunda mitad sólo aparece cuando hay algo que decir: "0 sin
+  // identificar" es un cero que no le sirve a nadie, y este producto no le
+  // muestra a un local un control para un caso que no tiene.
+  it('con todas identificadas, el encabezado no habla de las que faltan', async () => {
+    const html = await renderCard([
+      { id: 'u1', imei: '355000000000001', ingresadaEn: new Date('2026-09-01T12:00:00Z') },
+      { id: 'u2', imei: '355000000000018', ingresadaEn: new Date('2026-09-01T12:00:00Z') },
+    ])
+    expect(html).toContain('2 libres')
+    expect(html).not.toContain('sin identificar')
+  })
+
+  it('una sola unidad dice "1 libre", no "1 libres"', async () => {
+    const html = await renderCard([
+      { id: 'u1', imei: '355000000000001', ingresadaEn: new Date('2026-09-01T12:00:00Z') },
+    ])
+    expect(html).toContain('1 libre')
+    expect(html).not.toContain('1 libres')
+  })
+
+  // Sin ninguna unidad la card ya dice qué hacer en su cuerpo (caso de más
+  // arriba); un "0 libres" en el encabezado sería ruido que contradice ese
+  // texto.
+  it('sin unidades no hay contador', async () => {
+    const html = await renderCard([])
+    expect(html).not.toContain('libres')
+    expect(html).not.toContain('0 libre')
+  })
+})
+
 describe('CardDeUnidades: el bloque de captura', () => {
   it('la card muestra el bloque de captura con el contador', async () => {
     const html = await renderCard([
