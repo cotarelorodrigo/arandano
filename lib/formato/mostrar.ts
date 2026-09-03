@@ -143,3 +143,38 @@ export function formatearFechaCorta(v: Date): string {
 export function montoSinSigno(formateado: string): string {
   return formateado.replace(/^\D+/, '')
 }
+
+/**
+ * Un importe ABREVIADO, para el centro de un anillo.
+ *
+ * `design/arandano.pen` escribe ahí "$ 8,41 M" y no el número completo, y el
+ * motivo se ve apenas el local factura de verdad: el hueco de un anillo de 132
+ * px mide 82 px de ancho, y "$ 1.339.150,00" a 19 px mide bastante más — el
+ * número se desborda por encima de los gajos y queda ilegible sobre el
+ * violeta. La maqueta ya lo había resuelto; esta función es lo que faltaba
+ * para seguirla.
+ *
+ * **La escala del millón sale del `.pen`; la del mil es derivada.** La maqueta
+ * sólo dibuja el caso "M", así que "925 mil" es una decisión de este código y
+ * no del diseño — anotada en docs/correcciones-pendientes-del-pen.md. Se
+ * prefirió "mil" sobre "K" por lo mismo que el resto del producto habla en
+ * castellano y no en abreviaturas de planilla.
+ *
+ * Por debajo de mil no abrevia: ahí el número entero entra y redondearlo
+ * escondería centavos que el local puede estar buscando.
+ */
+export function abreviarImporte(v: string, moneda: 'ARS' | 'USD' = 'ARS'): string {
+  const n = Number(v)
+  const signo = moneda === 'USD' ? 'US$' : '$'
+  const abs = Math.abs(n)
+  if (abs >= 1_000_000) {
+    // Dos decimales y coma, como el resto de la plata del producto.
+    return `${signo} ${(n / 1_000_000).toFixed(2).replace('.', ',')} M`
+  }
+  if (abs >= 10_000) {
+    // Desde diez mil: por debajo, "9 mil" perdería demasiada precisión para
+    // lo que un mostrador mira.
+    return `${signo} ${Math.round(n / 1000)} mil`
+  }
+  return moneda === 'USD' ? formatearDolares(v) : formatearPrecio(v)
+}

@@ -12,6 +12,7 @@
 import Link from 'next/link'
 import { Anillo, COLORES_DEL_ANILLO, type Gajo } from '@/components/anillo'
 import { porcentajesQueSuman100 } from '@/lib/ventas/porcentajes'
+import { abreviarImporte } from '@/lib/formato/mostrar'
 import { ROTULO_MEDIO, formateadorDe, type Composicion, type MonedaElegida } from '@/lib/ventas/medios'
 import type { BarraDeDia } from '@/lib/dashboard/tendencia'
 import type { FilaDeTop } from '@/lib/dashboard/composicion'
@@ -184,7 +185,10 @@ export function AnilloDeMedios({
           <>
             <AnilloResponsivo
               gajos={gajos}
-              centro={{ valor: formatear(total), rotulo: 'cobrado' }}
+              // Abreviado, como la maqueta (nodo `UeW8u`: "$ 8,41 M"): el
+              // número completo no entra en el hueco del anillo y se desborda
+              // sobre los gajos.
+              centro={{ valor: abreviarImporte(total, moneda === 'usd' ? 'USD' : 'ARS'), rotulo: 'cobrado' }}
               movil={148}
               escritorio={132}
             />
@@ -246,7 +250,11 @@ export function VentasPorCategoria({
           <>
             <AnilloResponsivo
               gajos={gajos}
-              centro={{ valor: formatear(mayor.importe), rotulo: mayor.rotulo }}
+              // El PORCENTAJE y no el importe: es lo que dibuja la maqueta
+              // (nodo `HPuw5`: "44%" sobre el rótulo "Celulares"), y además es
+              // lo único que entra siempre en el hueco. El importe de esa rama
+              // ya está en la leyenda, a un renglón de distancia.
+              centro={{ valor: `${gajos[0]?.porcentaje ?? 0}%`, rotulo: mayor.rotulo }}
               movil={140}
               escritorio={128}
             />

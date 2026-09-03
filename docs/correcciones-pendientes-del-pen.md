@@ -947,6 +947,32 @@ de Pencil:
   cobrado por venta" que se pueda ORDENAR en la base sin traer el período
   entero — no una fecha.
 
+### 28. La escala del "mil" en el centro de un anillo, derivada
+
+`design/arandano.pen` escribe el centro del anillo de medios como **"$ 8,41 M"**
+(nodo `UeW8u`) — abreviado, no el número completo. `abreviarImporte()`
+(`lib/formato/mostrar.ts`) sigue esa escala para los millones al pie de la
+letra, pero la maqueta **sólo dibuja ese caso**: no hay ningún frame con un
+local que haya cobrado, digamos, $925.000 en el período.
+
+Así que el escalón de los miles —`$ 925 mil`— es una decisión de este código y
+no del diseño. Se eligió "mil" y no "K" porque el resto del producto habla en
+castellano y no en abreviaturas de planilla, y el umbral se puso en diez mil
+porque por debajo el número entero entra en el hueco y redondearlo escondería
+centavos que alguien puede estar buscando.
+
+**Cómo se llegó acá**: el código mostraba el importe COMPLETO en los dos
+centros, y con un local facturando de verdad (`$ 1.339.150,00`) el número se
+desbordaba por encima de los gajos y quedaba ilegible sobre el violeta. La
+maqueta ya lo había resuelto abreviando; lo que faltaba era seguirla.
+
+**Y de paso se corrigió el otro centro**, que no es una deuda sino un error que
+ya está arreglado: el anillo de categorías mostraba el importe de la rama más
+grande cuando la maqueta pide el **porcentaje** sobre el nombre de la rama
+(nodo `HPuw5`: "44%" / "Celulares"). El importe ya vive en la leyenda, a un
+renglón de distancia, así que estaba dicho dos veces — y la copia de más era
+justo la que no entraba.
+
 ---
 
 ## Cómo agregar una entrada

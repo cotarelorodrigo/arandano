@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   formatearPrecio, formatearDolares, formatearCantidad, formatearFecha, formatearHora,
-  formatearFechaCorta, montoSinSigno, formatearPorcentaje, precioEnSuMoneda,
-} from './mostrar'
+  formatearFechaCorta, montoSinSigno, formatearPorcentaje, precioEnSuMoneda, abreviarImporte } from './mostrar'
 
 // Puro: sin Docker, sin base. `Intl` alcanza y corre en cualquier Node.
 
@@ -151,5 +150,32 @@ describe('formatearPorcentaje', () => {
   // Sin ceros de relleno: un `40,000 %` sería ruido en una celda que se escanea.
   it('un entero no lleva decimales de relleno', () => {
     expect(formatearPorcentaje('40')).not.toContain(',')
+  })
+})
+
+describe('abreviarImporte: el centro de un anillo', () => {
+  // El caso de la maqueta (nodo `UeW8u`): "$ 8,41 M".
+  it('los millones van con dos decimales y coma, como dibuja el .pen', () => {
+    expect(abreviarImporte('8412900')).toBe('$ 8,41 M')
+    expect(abreviarImporte('1339150')).toBe('$ 1,34 M')
+  })
+
+  it('las decenas de miles se dicen en castellano, no en K', () => {
+    expect(abreviarImporte('925000')).toBe('$ 925 mil')
+  })
+
+  // Por debajo de diez mil entra entero, y redondear escondería centavos que
+  // alguien puede estar buscando.
+  it('por debajo del umbral no abrevia', () => {
+    expect(abreviarImporte('4500')).toBe(formatearPrecio('4500'))
+  })
+
+  it('los dólares llevan su propio signo', () => {
+    expect(abreviarImporte('4120000', 'USD')).toBe('US$ 4,12 M')
+  })
+
+  // El caso que motivó la función: el número completo no entra en el hueco.
+  it('lo abreviado es más corto que lo completo, que es todo el punto', () => {
+    expect(abreviarImporte('1339150').length).toBeLessThan(formatearPrecio('1339150').length)
   })
 })
