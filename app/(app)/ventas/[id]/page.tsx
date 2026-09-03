@@ -330,19 +330,31 @@ export type ItemVendido = {
  * el spec descartó acá arriba).
  *
  * Un artículo sin ninguna unidad en esta venta —la inmensa mayoría— no
- * aparece en el resultado.
+ * aparece en el resultado. Y desde el ciclo "unidades sin identificar", la
+ * cola de un artículo puede tener MENOS IMEI que líneas: una unidad que se
+ * vendió sin que nadie escaneara su número no le presta nada a ninguna línea,
+ * y esa línea no muestra IMEI. Es lo correcto — sin dato no hay nada que
+ * decir— y se ve exactamente igual que una venta de un local que no usa la
+ * feature.
  */
 export function imeisPorItem(
   items: { id: string; articuloId: string }[],
-  // `imei` nullable (Task 1, ciclo "unidades sin identificar"): una unidad
-  // libre puede no tener IMEI todavía. Acá no cambia nada más — `if (imei)`
-  // más abajo ya descarta el `null` igual que descartaba `undefined`, así que
-  // una unidad sin identificar simplemente no le presta ningún IMEI a su
-  // línea, que es el comportamiento correcto sin tocar una palabra de lógica.
   unidades: { articuloId: string; imei: string | null }[],
 ): Map<string, string> {
-  const porArticulo = new Map<string, (string | null)[]>()
+  // Las unidades SIN identificar se descartan ANTES de armar la cola (ciclo
+  // "unidades sin identificar", Task 8), y no al consumirla. El resultado que
+  // ve el usuario es el mismo de las dos formas —un `null` en la cola tampoco
+  // producía ningún IMEI—, así que esto no arregla ningún defecto: lo que
+  // cambia es que la cola pasa a contener sólo IMEI reales, y por lo tanto
+  // puede tener MENOS elementos que líneas de ese artículo. Filtrando acá, un
+  // `null` no ocupa el turno de una línea; sin filtrar, el turno se lo comía y
+  // el IMEI que sí existía caía en la línea siguiente. Las dos describen la
+  // venta igual de bien —las líneas del mismo artículo son indistinguibles,
+  // ver el docblock— pero sólo una de las dos se puede explicar sin hablar del
+  // orden en que Postgres devolvió las filas.
+  const porArticulo = new Map<string, string[]>()
   for (const u of unidades) {
+    if (u.imei === null) continue
     porArticulo.set(u.articuloId, [...(porArticulo.get(u.articuloId) ?? []), u.imei])
   }
   const resultado = new Map<string, string>()

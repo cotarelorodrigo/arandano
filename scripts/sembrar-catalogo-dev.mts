@@ -17,11 +17,11 @@
  * recetas de `sembrar-ventas-dev.mts`. Los dos archivos están acoplados por ese
  * literal, y está bien que lo estén: sembrar el catálogo con otros códigos
  * dejaría el sembrador de ventas roto de una forma que sólo se ve al correrlo.
- * `A-0008`, `A-0009` y `A-0010` son las excepciones y por eso van últimos:
- * existen para el árbol de categorías, el precio en dólares y las unidades por
- * IMEI respectivamente, ninguna venta los nombra, y agregarlos no le toca nada
- * al otro sembrador — pero un `A-0011` que SÍ quiera venderse hay que darlo de
- * alta en los dos lados.
+ * `A-0008` a `A-0011` son las excepciones y por eso van últimos: existen para
+ * el árbol de categorías, el precio en dólares, las unidades por IMEI y las
+ * unidades SIN identificar respectivamente, ninguna venta los nombra, y
+ * agregarlos no le toca nada al otro sembrador — pero un `A-0012` que SÍ
+ * quiera venderse hay que darlo de alta en los dos lados.
  *
  * Importes de distinta cantidad de dígitos a propósito —de $ 990 a $ 899.999—
  * porque con montos parejos no se puede ver si las columnas de números bailan.
@@ -69,9 +69,19 @@
  * entre sí. Es el mismo criterio que ya justificó a `A-0009`: sin un artículo
  * con `llevaSerie` la card "Unidades" de `/inventario/[id]`, el escaneo exacto
  * de `/vender` y la línea del carrito sin stepper quedan invisibles en dev.
- * `stockInicial` va `null` a propósito —`crearArticulo` RECHAZA un stock
- * suelto junto con el switch prendido (`SERIE_REQUIERE_IMEIS`): el stock nace
- * del largo de la lista de IMEI, no de un número aparte.
+ * `stockInicial` va `null`: sin él, el stock nace del largo de la lista de
+ * IMEI. (Hasta el ciclo "unidades sin identificar" mandarlo era un error
+ * —`SERIE_REQUIERE_IMEIS`—; desde la Task 5 de ese ciclo `stockInicial`
+ * GOBIERNA el total y los IMEI son los que se tienen a mano. `A-0011`, abajo,
+ * es el que usa esa forma.)
+ *
+ * **Y uno con la mayoría SIN identificar** (`A-0011`, ciclo "unidades sin
+ * identificar", 2026-09-03): **30 unidades y sólo 3 con IMEI**. Es el caso
+ * exacto que originó el ciclo —el diálogo que pedía los 30 números de una
+ * sentada no entraba en la pantalla— y contra el que se hace la verificación
+ * visual: la card tiene que abrir con "quedan 27 sin identificar", la lista
+ * tiene que scrollear dentro de su tope de alto, y el selector de `/vender`
+ * tiene que mostrar tres filas con IMEI más UNA sola para las 27 restantes.
  */
 import { Prisma } from '@/generated/prisma/client'
 import { crearArticulo } from '@/lib/inventario/articulos'
@@ -110,9 +120,11 @@ type Receta = {
    *  Ausente vale `false`, igual que en `crearArticulo` — es una sola receta
    *  de nueve la que lo necesita. */
   llevaSerie?: boolean
-  /** Los IMEI de las unidades, sólo junto con `llevaSerie: true`. Reemplaza a
-   *  `stockInicial`, que queda en `null`: el stock nace del largo de esta
-   *  lista, no de un número aparte. */
+  /** Los IMEI que se tienen a mano, sólo junto con `llevaSerie: true`. Con
+   *  `stockInicial` en `null` el stock nace del largo de esta lista; con
+   *  `stockInicial` presente, ÉSE gobierna el total y la diferencia se crea
+   *  como unidades sin identificar (Task 5 del ciclo "unidades sin
+   *  identificar"). Las dos formas están sembradas, `A-0010` y `A-0011`. */
   imeis?: string[]
 }
 
@@ -250,6 +262,27 @@ const RECETAS: Receta[] = [
     // con `llevaSerie` (`SERIE_REQUIERE_IMEIS`) — el stock nace de `imeis`.
     stockInicial: null,
     costoUnitario: '700000',
+  },
+  {
+    // El undécimo, y el caso que originó el ciclo "unidades sin identificar":
+    // treinta cajas en el depósito y sólo tres números anotados. Con el
+    // diseño anterior, prender el switch acá abría un diálogo de treinta
+    // campos que no entraba en la pantalla — y exigía tener los treinta
+    // equipos a mano en ese mismo momento.
+    sku: 'A-0011',
+    categoria: 'Celulares · Samsung',
+    nombre: 'Galaxy A55 128 GB',
+    tipo: 'PRODUCTO',
+    precio: '520000',
+    llevaSerie: true,
+    // Tres IMEI contra treinta unidades: `stockInicial` GOBIERNA el total y
+    // `crearArticulo` crea las 27 restantes SIN identificar (Task 5). Es la
+    // forma inversa a la de `A-0010`, que deja que el stock nazca de la
+    // lista, y las dos tienen que estar sembradas: son los dos caminos de
+    // alta que la pantalla ofrece.
+    imeis: ['351987654321001', '351987654321002', '351987654321003'],
+    stockInicial: '30',
+    costoUnitario: '390000',
   },
 ]
 

@@ -521,6 +521,27 @@ describe('imeisPorItem', () => {
     expect(resultado.size).toBe(2)
   })
 
+  // Ciclo "unidades sin identificar": una unidad que se vendió sin número no
+  // le presta nada a ninguna línea, y —lo que importa— tampoco le come el
+  // turno a la que sí lo tiene. Con la unidad sin identificar PRIMERA en la
+  // lista, que es el orden que rompería un reparto que la consumiera.
+  it('una unidad sin identificar no ocupa el turno de la que sí tiene IMEI', () => {
+    const resultado = imeisPorItem(
+      [{ id: 'i1', articuloId: 'a1' }, { id: 'i2', articuloId: 'a1' }],
+      [{ articuloId: 'a1', imei: null }, { articuloId: 'a1', imei: 'A1' }],
+    )
+    expect(resultado.size).toBe(1)
+    expect(resultado.get('i1')).toBe('A1')
+  })
+
+  it('con todas sin identificar, ningún ítem tiene IMEI', () => {
+    const resultado = imeisPorItem(
+      [{ id: 'i1', articuloId: 'a1' }],
+      [{ articuloId: 'a1', imei: null }],
+    )
+    expect(resultado.size).toBe(0)
+  })
+
   it('un artículo sin unidades en esta venta no aparece en el resultado', () => {
     const resultado = imeisPorItem(
       [{ id: 'i1', articuloId: 'sin-serie' }],

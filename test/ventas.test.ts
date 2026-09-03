@@ -1578,7 +1578,14 @@ describe('el detalle de venta muestra los IMEI (Task 10)', () => {
   // Firma propia, igual que `crearArticulo` de los describes de arriba
   // (dólares, IMEI): no hace falta pasar por `lib/inventario/articulos.ts`
   // para armar un artículo de una línea.
-  async function crearArticuloConSerie(nombre: string, imeis: string[], precio: string) {
+  async function crearArticuloConSerie(
+    nombre: string,
+    // `(string | null)[]` desde el ciclo "unidades sin identificar": una
+    // unidad puede nacer sin número, y este describe necesita armar
+    // exactamente ese caso para probar qué muestra el detalle.
+    imeis: (string | null)[],
+    precio: string,
+  ) {
     const articulo = await enTransaccionDeTenant(tenantId, (tx) =>
       tx.articulo.create({
         data: {
@@ -1661,6 +1668,54 @@ describe('el detalle de venta muestra los IMEI (Task 10)', () => {
     // El principio del ciclo: un local que no usa esto no ve ninguna diferencia.
     const html = await renderDetalle(ventaComun)
     expect(html).not.toContain('IMEI')
+  })
+
+  /** Una venta que se llevó una unidad que entró SIN número y que nadie
+   *  escaneó al cobrar — el caso que estrena el ciclo "unidades sin
+   *  identificar" y que antes de él ni siquiera podía existir. */
+  async function ventaConUnidadSinIdentificar(): Promise<string> {
+    const a = await crearArticuloConSerie('iPhone sin identificar', [null], '500000')
+    const [u1] = await unidadesLibres(tenantId, a.id)
+    const venta = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: u1.id }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+    })
+    return venta.id
+  }
+
+  // Ni un rótulo vacío ni la frase "sin identificar": sin dato no hay nada que
+  // decir. Que la línea no diga nada es exactamente lo mismo que ve un local
+  // que no usa la feature, y es lo correcto — el detalle de una venta cuenta
+  // lo que pasó, y "no sabemos cuál equipo era" no es información que le sirva
+  // a nadie para reconstruir una operación.
+  it('una venta que se llevó una unidad sin identificar no muestra nada para esa línea', async () => {
+    const html = await renderDetalle(ventaConUnidadSinIdentificar)
+    expect(html).not.toContain('IMEI')
+  })
+
+  // La MEZCLA, que es el caso que el reparto puede arruinar de verdad: dos
+  // líneas del mismo artículo, una unidad con número y otra sin. El IMEI que
+  // existe tiene que aparecer —una unidad sin identificar no puede consumir el
+  // turno de la que sí lo tiene— y tiene que aparecer UNA sola vez.
+  it('con una identificada y otra sin identificar, el IMEI que hay se muestra una vez', async () => {
+    const html = await renderDetalle(async () => {
+      const a = await crearArticuloConSerie('iPhone mixto', [null, '355000000000777'], '500000')
+      const libres = await unidadesLibres(tenantId, a.id)
+      const venta = await crearVenta({
+        tenantId,
+        usuarioId,
+        items: [
+          { articuloId: a.id, cantidad: d('1'), unidadId: libres[0].id },
+          { articuloId: a.id, cantidad: d('1'), unidadId: libres[1].id },
+        ],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000000'), cotizacion: d('1') }],
+      })
+      return venta.id
+    })
+    expect(html.split('355000000000777').length - 1).toBe(1)
+    expect(html.split('IMEI ').length - 1).toBe(1)
   })
 })
 
