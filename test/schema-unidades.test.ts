@@ -8,6 +8,7 @@ import { crearTenant, crearUsuario } from './datos'
 // construye su Pool de pg AL IMPORTARSE leyendo DATABASE_URL — no seteada
 // globalmente en el repo. Mismo patrón que test/schema-usd.test.ts.
 let enTransaccionDeTenant: typeof import('@/lib/tenant/transaccion').enTransaccionDeTenant
+let unidadesLibres: typeof import('@/lib/inventario/unidades').unidadesLibres
 
 let owner: Client
 let tenantId: string
@@ -16,6 +17,7 @@ let usuarioId: string
 beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
+  ;({ unidadesLibres } = await import('@/lib/inventario/unidades'))
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
   tenantId = await crearTenant(owner, `unidades-schema-${Date.now()}`)
@@ -96,5 +98,37 @@ describe('schema de unidades', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0].indexdef).toContain('venta_id IS NULL')
     expect(rows[0].indexdef).toContain('baja_en IS NULL')
+  })
+
+  it('una unidad puede nacer sin IMEI', async () => {
+    const a = await crearArticulo('iPhone sin identificar')
+    const u = await enTransaccionDeTenant(tenantId, (tx) =>
+      tx.unidadDeArticulo.create({
+        data: { tenantId, articuloId: a.id, ingresadaPorId: usuarioId },
+      }),
+    )
+    expect(u.imei).toBeNull()
+  })
+
+  it('MUCHAS unidades sin identificar conviven: los NULL no chocan entre sí', async () => {
+    // Es la propiedad de la que depende todo el ciclo. Si alguien "arreglara" el
+    // índice agregándole AND imei IS NOT NULL creyendo que hace falta, este caso
+    // seguiría pasando — por eso abajo va también la mitad que sí discrimina.
+    const a = await crearArticulo('iPhone 13 lote')
+    for (let i = 0; i < 5; i++) {
+      await enTransaccionDeTenant(tenantId, (tx) =>
+        tx.unidadDeArticulo.create({
+          data: { tenantId, articuloId: a.id, ingresadaPorId: usuarioId },
+        }),
+      )
+    }
+    expect(await unidadesLibres(tenantId, a.id)).toHaveLength(5)
+  })
+
+  it('y el índice SIGUE frenando dos libres con el mismo IMEI real', async () => {
+    const a = await crearArticulo('iPhone 14 lote')
+    const imei = `IMEI-${crypto.randomUUID()}`
+    await crearUnidad(a.id, imei)
+    await expect(crearUnidad(a.id, imei)).rejects.toThrow()
   })
 })
