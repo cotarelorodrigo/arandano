@@ -96,6 +96,22 @@ imeis.length` que la review de rama del ciclo anterior tuvo que endurecer
 (hallazgo C1): ya no hay una igualdad que sostener contra una lista tipeada,
 sólo una diferencia que crear.
 
+### El ingreso de mercadería acepta las dos formas
+
+`ingresarStock` sobre un artículo con serie hoy **rechaza** `cantidad` y exige
+`imeis`. Eso deja el mismo callejón que este ciclo viene a sacar, movido de
+lugar: un local que recibe diez teléfonos y no quiere escanearlos en ese momento
+no tendría forma de subir el stock.
+
+Pasa a aceptar **cualquiera de las dos**: con `imeis`, la cantidad es la longitud
+de la lista y las unidades nacen identificadas; con `cantidad`, nacen sin
+identificar. Lo que sigue prohibido es mandar las dos juntas, por lo mismo de
+siempre — que una pantalla desactualizada no pueda subir stock por dos vías a la
+vez.
+
+La regla general que queda, y que vale para los tres escritores: **decir cuántos
+entran es obligatorio; decir cuáles son, no.**
+
 ### `apagarSerie` no cambia
 
 Sigue rechazando mientras haya unidades libres, y **una unidad sin identificar
