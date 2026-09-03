@@ -131,6 +131,19 @@ async function renderConCarrito(lineas: Partial<Linea>[]) {
 }
 
 /**
+ * Las cinco celdas de la ÚNICA fila del carrito, en orden: artículo,
+ * cantidad, precio, subtotal y quitar.
+ *
+ * Parte el HTML por `role="cell"` —el encabezado usa `columnheader`, así que
+ * no se cuela— y devuelve un trozo por celda. Existe porque afirmar sobre el
+ * HTML entero no puede distinguir DÓNDE aparece algo, que es exactamente el
+ * defecto que los casos del IMEI prueban.
+ */
+function celdasDeLaLinea(html: string): string[] {
+  return html.split('role="cell"').slice(1)
+}
+
+/**
  * Renderiza la lista del selector de unidad con esas unidades.
  *
  * Es el CUERPO del diálogo y no el diálogo entero: abrirlo de verdad exige un
@@ -208,19 +221,32 @@ describe('el punto de venta', () => {
   // `lineasDelPieDeCobro`, no de tres bloques escritos a mano—. Y de 9 a 10 al
   // mergear con el ciclo del teléfono, con el renglón "A cobrar $X" de cada
   // fila de pago (ver el arreglo del vuelto, más abajo).
+  // Y de 10 a 11 al mudar el IMEI a la celda del artículo (2026-09-03): la
+  // celda de cantidad de una línea con serie muestra un 1 fijo, y paga el
+  // mismo rol que el valor del stepper que reemplaza — es el mismo dato en el
+  // mismo lugar, sin poder editarse.
+  //
+  // El número vive en UNA sola constante y no dos veces: el mensaje de arriba
+  // registra que ya quedó desactualizado dos veces, y encima estaba diciendo
+  // "aparecer 9" mientras el caso asertaba 10. Es el mismo peaje que este repo
+  // ya pagó con `CLAVES_DE_PERMISO.length` y con el `version` de package.json
+  // contra el tag de git: un número en dos lugares es un número que se
+  // desincroniza.
   it('el rol importe cubre las columnas de plata y los campos de monto', () => {
+    const ESPERADAS = 11
     const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8').replace(/\s+/g, '')
     const apariciones = [...fuente.matchAll(/estilos\.importe\}/g)].length
     expect(
       apariciones,
       `estilos.importe} aparece ${apariciones} veces en el fuente y tiene que ` +
-        `aparecer 9: el precio de la lista de resultados del buscador, las ` +
-        `columnas Precio y Subtotal de la tabla, el valor del stepper de ` +
-        `cantidad, la definición de \`CampoMonto\` (una sola, compartida por ` +
-        `Monto, Cotización y Recibido de FilaDePago), el chip de Vuelto, el ` +
-        `chip de Faltante/Sobrante, el renglón "Entran $X", el renglón ` +
-        `"A cobrar $X", y el monto de cada línea del pie del cobro.`,
-    ).toBe(10)
+        `aparecer ${ESPERADAS}: el precio de la lista de resultados del ` +
+        `buscador, las columnas Precio y Subtotal de la tabla, el valor del ` +
+        `stepper de cantidad, el 1 fijo de una línea con serie, la definición ` +
+        `de \`CampoMonto\` (una sola, compartida por Monto, Cotización y ` +
+        `Recibido de FilaDePago), el chip de Vuelto, el chip de ` +
+        `Faltante/Sobrante, el renglón "Entran $X", el renglón "A cobrar $X", ` +
+        `y el monto de cada línea del pie del cobro.`,
+    ).toBe(ESPERADAS)
   })
 
   // Una sola vez en pantalla. Antes estaba dos veces —la card de cobro y el
@@ -386,6 +412,74 @@ describe('el punto de venta', () => {
       },
     ])
     expect(html).toContain('aria-label="Quitar iPhone 13"')
+  })
+
+  // --- El defecto que reportó el dueño del local (2026-09-03) ---
+  //
+  // El IMEI se dibujaba DENTRO de la celda de la columna "Cantidad" —ocupaba
+  // el lugar del stepper, que es donde vivía—, así que en escritorio la fila
+  // se leía "Cantidad: 355000000000001". Nunca fue un problema de plata: una
+  // línea con serie no tiene campo de cantidad y siempre manda '1' (ver
+  // `itemsParaCobrar`, más abajo). Era de ubicación, y ninguno de los casos
+  // de arriba lo veía: los tres afirman sobre el HTML ENTERO, así que el IMEI
+  // "aparece" igual esté en la celda que esté.
+  //
+  // El IMEI es identidad, no cantidad, y esta pantalla ya tiene un lugar para
+  // identidad: la línea de meta bajo el nombre, donde vive el SKU. Los casos
+  // se afirman POR CELDA y en las dos direcciones —está en la del artículo y
+  // NO está en la de cantidad—: uno solo de los dos lados pasaría igual con
+  // el IMEI dibujado en los dos lugares.
+  it('el IMEI de una unidad identificada vive en la celda del artículo, no en la de cantidad', async () => {
+    const [articulo, cantidad] = celdasDeLaLinea(
+      await renderConCarrito([
+        {
+          articuloId: 'a1', descripcion: 'iPhone 13', llevaSerie: true,
+          unidadId: 'u1', imei: '355000000000001',
+        },
+      ]),
+    )
+    expect(articulo).toContain('355000000000001')
+    expect(cantidad).not.toContain('355000000000001')
+  })
+
+  it('y la celda de cantidad de esa línea dice 1', async () => {
+    const [, cantidad] = celdasDeLaLinea(
+      await renderConCarrito([
+        {
+          articuloId: 'a1', descripcion: 'iPhone 13', llevaSerie: true,
+          unidadId: 'u1', imei: '355000000000001',
+        },
+      ]),
+    )
+    expect(cantidad).toMatch(/>\s*1\s*</)
+  })
+
+  // El campo para escanear se muda al mismo lugar que el número ya cargado:
+  // son la misma cosa —cuál equipo es esta línea—, y dejar uno en cada celda
+  // sería volver a poner un IMEI bajo el rótulo "Cantidad".
+  it('el campo para escanear el IMEI también vive en la celda del artículo', async () => {
+    const [articulo, cantidad] = celdasDeLaLinea(
+      await renderConCarrito([
+        {
+          articuloId: 'a1', descripcion: 'iPhone 13', llevaSerie: true,
+          unidadId: 'u1', imei: null,
+        },
+      ]),
+    )
+    expect(articulo).toContain('name="imeiCapturado"')
+    expect(cantidad).not.toContain('name="imeiCapturado"')
+  })
+
+  // La otra dirección de la regla que gobierna todo esto: un local que no
+  // vende con IMEI no ve ninguna diferencia. El stepper sigue en su celda.
+  it('una línea SIN serie conserva su stepper en la celda de cantidad', async () => {
+    const [articulo, cantidad] = celdasDeLaLinea(
+      await renderConCarrito([
+        { articuloId: 'a2', descripcion: 'Funda', llevaSerie: false, cantidad: '2' },
+      ]),
+    )
+    expect(cantidad).toContain('aria-label="Cantidad de Funda"')
+    expect(articulo).not.toContain('aria-label="Cantidad de Funda"')
   })
 
   // El hallazgo de la review de esta task: nada probaba que el `unidadId` de

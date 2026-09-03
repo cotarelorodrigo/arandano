@@ -232,16 +232,17 @@ campo de cotización, ver *Decisiones*.
   **Las unidades sin identificar entran en UNA sola fila** ("Una sin
   identificar — quedan N"), que se lleva la más vieja.
 - **Escanear el IMEI al cobrar, sobre una unidad que entró sin número** (ciclo
-  "unidades sin identificar"): esa línea del carrito muestra un campo en el
-  lugar del stepper, con la leyenda "IMEI opcional: podés dejarlo en blanco y
-  cargarlo después". Lo que se escanee ahí queda como el IMEI de esa unidad al
-  cobrar; lo que se deje en blanco no frena nada.
+  "unidades sin identificar"): esa línea del carrito muestra un campo en la
+  línea de meta, junto al SKU, con la leyenda "IMEI opcional: podés dejarlo en
+  blanco y cargarlo después" al lado. Lo que se escanee ahí queda como el IMEI
+  de esa unidad al cobrar; lo que se deje en blanco no frena nada.
 - Cambiar cantidades con un stepper `[−] [valor] [+]` —el valor del medio
   sigue siendo editable a mano, no sólo con los botones— y quitar ítems.
-  **Un artículo con serie no tiene stepper**: su línea muestra el IMEI en ese
-  lugar —o el campo para capturarlo, si la unidad entró sin número—, porque su
-  cantidad es siempre 1 y no se puede tocar — dos equipos son dos líneas, nunca
-  una con cantidad 2.
+  **Un artículo con serie no tiene stepper**: su columna Cantidad muestra un
+  `1` fijo, porque su cantidad es siempre 1 y no se puede tocar — dos equipos
+  son dos líneas, nunca una con cantidad 2. **El IMEI —o el campo para
+  capturarlo, si la unidad entró sin número— vive en la línea de meta, junto al
+  SKU**, y no en esa columna: ver *Decisiones*.
 - Cobrar con **pagos partidos**, en pesos y en dólares, cada uno con su medio
   (efectivo, transferencia, débito, crédito) y su cotización. Un pago en
   dólares muestra cuántos pesos representa (`Entran $X` — `Base en pesos $X`
@@ -354,10 +355,37 @@ campo de cotización, ver *Decisiones*.
   venta por eso sería exactamente la fricción que este ciclo vino a sacar. El
   campo vacío vale lo mismo que no mandarlo: `itemsParaCobrar` descarta el
   blanco para que el JSON no afirme un escaneo que no pasó, y el motor trata la
-  cadena vacía como ausencia igual. La leyenda va en la línea de meta, junto al
-  SKU, y no dentro del campo: en los 104 px de la columna "Cant." no entra una
-  frase, y un placeholder se va apenas se escribe la primera cifra — justo
-  cuando alguien podría dudar de si es obligatorio.
+  cadena vacía como ausencia igual. La leyenda va junto al campo, y no dentro
+  de él: un placeholder se va apenas se escribe la primera cifra — justo cuando
+  alguien podría dudar de si es obligatorio.
+- **El IMEI vive en la línea de meta, junto al SKU, y NO en la columna
+  "Cantidad"** (2026-09-03, reporte del dueño de un local: *"cuando estoy en
+  /vender y selecciono el artículo y el IMEI, después aparece el número de IMEI
+  en el campo cantidad"*). Hasta ese día el IMEI —y el campo para escanearlo—
+  ocupaban el lugar del stepper, o sea la celda cuyo `columnheader` dice
+  CANTIDAD, así que en escritorio la fila se leía "Cantidad:
+  355000000000001". **Nunca fue un problema de plata**: una línea con serie no
+  tiene campo de cantidad, siempre manda `'1'` y el motor rechaza cualquier
+  otra cosa con `CANTIDAD_CON_SERIE`. Era de ubicación, y el IMEI es
+  **identidad** —cuál equipo es esta línea—, exactamente lo mismo que el SKU
+  que ya vive ahí. La celda de Cantidad muestra ahora un `1` fijo, con el mismo
+  rol tipográfico que el valor del stepper que reemplaza.
+
+  Se descartaron las otras dos salidas: una **columna propia** para el IMEI
+  queda vacía en todo local que no venda con serie y aprieta al resto de las
+  columnas en escritorio —contra el principio de que un local que no usa esto
+  no ve ninguna diferencia—, y **adaptar el encabezado** ("Cantidad / IMEI"
+  cuando el carrito tiene alguna línea con serie) deja un rótulo de columna que
+  cambia según las filas.
+
+  **Lo que este defecto deja como lección sobre los tests**: los tres casos que
+  la Task 9 escribió para la línea con serie afirman sobre el **HTML entero**
+  (`expect(html).toContain('355000000000001')`), así que el IMEI "aparecía"
+  igual estuviera en la celda que estuviera — ninguno podía ver el defecto. Los
+  casos nuevos se afirman **por celda** (`celdasDeLaLinea`, que parte el HTML
+  por `role="cell"`) y **en las dos direcciones**: está en la del artículo y no
+  está en la de cantidad. Uno solo de los dos lados pasaría igual con el IMEI
+  dibujado en los dos lugares.
 - **`imeiCapturado` se valida sin `esUuid`, pero se valida.** Es texto libre a
   propósito (el mismo campo es el número de serie de una notebook), así que no
   hay forma que verificar; lo que sí se rechaza es lo que NO es texto, porque
@@ -560,11 +588,13 @@ Es la pantalla que más cambia del ciclo, y la única que se parte en dos frames
   desincronizar.
 - **La fila del carrito se apila**: nombre y "Quitar" arriba, stepper y
   subtotal debajo, y el precio unitario fundido en la línea de meta. Mismo
-  patrón `lg:contents` que los cuatro listados. **La línea sin stepper de un
-  artículo con serie usa la MISMA celda** —no hay una versión de teléfono
-  distinta—: el recuadro con el IMEI ocupa el lugar de `[−] [valor] [+]` en
-  los dos anchos, porque en el teléfono es donde más se va a usar (el lector
-  de código de barras es la cámara). El selector de unidad y el toast de
+  patrón `lg:contents` que los cuatro listados. **La línea de un artículo con
+  serie usa las MISMAS celdas** —no hay una versión de teléfono distinta—: el
+  IMEI (o su campo) va en la línea de meta y el `1` en la celda del stepper, en
+  los dos anchos, porque en el teléfono es donde más se va a usar (el lector de
+  código de barras es la cámara). La línea de meta lleva `flex-wrap`: a 390 px
+  el SKU, el campo del IMEI y su leyenda no entran en un solo renglón, y sin
+  eso el carrito arrastraba la página al scroll horizontal. El selector de unidad y el toast de
   "equipo repetido" tampoco llevan tratamiento propio: el `Dialog` de shadcn
   ya se adapta solo, y sonner apila sus toasts arriba de cualquier ancho.
 
@@ -2240,7 +2270,7 @@ julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
   dólares cuando está invertido—, nunca una cruzada con la otra.
 - **"Ticket promedio" no lleva pie, y antes iba a llevar la mediana.** Se sacó
   en la review de esta task, con el motivo completo y el disparador para
-  traerla de vuelta en `docs/correcciones-pendientes-del-pen.md`, entrada 29.
+  traerla de vuelta en `docs/correcciones-pendientes-del-pen.md`, entrada 30.
 - **El margen va detrás de `COSTOS` y el tile no se renderea sin el
   permiso** — no se pone en "—": ese guión afirmaría que ninguna venta cargó
   costo, que es una afirmación distinta y falsa cuando lo que pasa es que a
@@ -2259,7 +2289,7 @@ julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
   tiene — es el mismo caso que ya dejó anotado el ciclo del cobrado por
   moneda: el archivo vivo sólo se ve por MCP mientras está abierto en Pencil,
   y guardarlo y commitearlo lo hace una persona. Ver
-  `docs/correcciones-pendientes-del-pen.md`, entrada 29.
+  `docs/correcciones-pendientes-del-pen.md`, entrada 30.
 - **Queda para la próxima task de este ciclo (los cuatro paneles)**: "Cuánto
   se vendió por día" con su ventana FIJA de catorce días —no responde al
   segmentado de arriba, porque con el rango en Hoy sería una sola barra—,

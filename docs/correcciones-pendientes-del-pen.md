@@ -925,7 +925,10 @@ operable en los dos anchos desde el primer commit.
    mismo borde `border-input`, mismo radio `rounded-[9px]`) para que la fila
    no salte de alto ni de ancho según lleve serie o no — es el mismo
    principio que ya aplicó el chip `Cubre` de la entrada 23: un control nuevo
-   ocupa el lugar del que reemplaza, no inventa uno propio.
+   ocupa el lugar del que reemplaza, no inventa uno propio. **Este control
+   también resultó ser un defecto** (2026-09-03, reporte de un dueño): ese
+   lugar era la celda de la columna "Cantidad", así que la fila se leía
+   "Cantidad: 355000000000001". Ver la entrada 29.
 
 **Qué NO hizo el código: inventar un tratamiento nuevo.** Los cuatro controles
 salen de patrones que esta pantalla, o una vecina, ya tenía dibujados —la
@@ -951,6 +954,12 @@ equipos a mano en ese momento. Vale como dato sobre el método, no sólo sobre
 este control: **derivar un control sin frame salió bien tres veces y mal una**,
 y la que salió mal no se descubrió con un test sino usándolo contra un
 inventario real.
+
+**Ese conteo duró un día.** El 2026-09-03, más tarde, un dueño reportó que el
+punto 4 de la entrada 27 —el recuadro del IMEI en el lugar del stepper— también
+estaba mal, por un motivo distinto y no por su geometría. La cuenta real de ese
+ciclo es **dos de cuatro**, y este párrafo queda como registro de lo que era
+cierto esa mañana. Ver la entrada 29.
 
 **Qué falta dibujar, hoy:**
 
@@ -982,9 +991,42 @@ inventario real.
 Detectado al construir el ciclo "unidades sin identificar" (2026-09-03). Ver
 `docs/superpowers/specs/2026-09-03-unidades-sin-identificar-design.md`.
 
+## 29. El IMEI ocupaba el lugar del stepper, y ese lugar tenía un encabezado que decía CANTIDAD
+
+- **Frames**: ninguno, todavía. `design/arandano.pen` sigue siendo anterior a
+  todo el ciclo de unidades por IMEI (entradas 27 y 28).
+
+Esta entrada no agrega nada nuevo que la maqueta deba dibujar: **corrige un
+control que las entradas 27 y 28 ya habían anotado como derivado**, el punto 4
+de la 27 y el punto 5 de la 28. El IMEI de la línea del carrito —y el campo
+para escanearlo— se dibujaban dentro de la celda de `/vender` cuyo
+`columnheader` dice CANTIDAD, así que en escritorio la fila se leía "Cantidad:
+355000000000001". Lo reportó el dueño de un local, no un test.
+
+**La lección es sobre el principio con el que se derivaron, no sobre el
+tamaño.** Las dos entradas justifican el control diciendo que "ocupa el lugar
+del que reemplaza, no inventa uno propio", y como criterio de **geometría** eso
+funcionó: la fila no salta de alto ni de ancho según lleve serie o no. Lo que
+ese criterio no mira es el **significado** del lugar que se ocupa. Una celda de
+una tabla no es sólo un rectángulo: es un rectángulo con un rótulo arriba, y
+ese rótulo pasó a mentir. Dicho como regla para el próximo control derivado sin
+frame: **heredar el lugar de otro control es heredar también lo que ese lugar
+promete.** Donde el lugar tiene un rótulo —una columna, un `fieldset`, una
+card con título—, "ocupa el mismo lugar" deja de alcanzar como justificación.
+
+**Dónde quedó cada cosa**: el IMEI y su campo de captura viven ahora en la
+línea de meta de la celda del artículo, junto al SKU —que es el otro dato de
+identidad de la línea, y donde la leyenda "IMEI opcional…" ya vivía desde la
+entrada 28—, y la celda de Cantidad muestra un `1` fijo con el mismo rol
+tipográfico que el valor del stepper que reemplaza. Sigue sin haber frame para
+nada de esto; lo que cambió es cuál derivación está vigente.
+
+Detectado usando `/vender` contra un inventario real (2026-09-03). Ver
+`docs/pantallas.md`, sección `/vender`, *Decisiones*.
+
 ---
 
-## 29. `/dashboard`: el `.pen` versionado todavía no tiene los dos frames, y cinco piezas se derivaron sin poder mirarlos en git
+## 30. `/dashboard`: el `.pen` versionado todavía no tiene los dos frames, y cinco piezas se derivaron sin poder mirarlos en git
 
 **Frames**: `App / Dashboard` (nodo raíz `A2Hffo`) y `Móvil / Dashboard`
 (`OWGzI`). Existen y se consultaron por MCP mientras el documento estaba
@@ -1046,7 +1088,7 @@ de Pencil:
 
 ---
 
-## 30. La escala del "mil" en el centro de un anillo, derivada
+## 31. La escala del "mil" en el centro de un anillo, derivada
 
 `design/arandano.pen` escribe el centro del anillo de medios como **"$ 8,41 M"**
 (nodo `UeW8u`) — abreviado, no el número completo. `abreviarImporte()`
