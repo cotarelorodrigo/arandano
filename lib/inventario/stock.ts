@@ -146,11 +146,16 @@ export async function ajustarStock(entrada: {
 /**
  * Recibir mercadería. Es el único camino que escribe `costoUnitario`.
  *
- * `cantidad` e `imeis` son mutuamente excluyentes, y cuál corresponde lo
- * decide el ARTÍCULO, no el llamador: aceptar las dos y elegir una dejaría que
- * una pantalla desactualizada suba stock sin identidad en un artículo que se
- * maneja por IMEI — el stock diría 6 con 5 unidades cargadas, que es
- * justamente la ambigüedad que el switch existe para no tener.
+ * En un artículo con serie, decir CUÁNTOS entran es obligatorio; decir
+ * CUÁLES son, no. Por eso acepta `cantidad` o `imeis`, nunca las dos juntas:
+ * con la lista las unidades nacen identificadas, con la cantidad nacen sin
+ * identificar y se completan después —cuando aparezca la caja, o al
+ * venderlas, que es cuando el equipo está en la mano—. Aceptar las dos a la
+ * vez y elegir una dejaría que una pantalla desactualizada suba stock por dos
+ * caminos a la vez, que es justo la ambigüedad que este chequeo evita.
+ *
+ * En un artículo SIN serie, `imeis` directamente no tiene sentido: esa regla
+ * no cambia.
  */
 export async function ingresarStock(entrada: {
   tenantId: string
@@ -170,22 +175,15 @@ export async function ingresarStock(entrada: {
       await exigirUsuario(tx, usuarioId)
       const articulo = await exigirArticuloConStock(tx, articuloId)
 
-      // Exactamente una de las dos formas, y cuál corresponde lo decide el
-      // artículo, no el llamador. Aceptar las dos y elegir una sería dejar que
-      // una pantalla desactualizada suba stock sin identidad en un artículo que
-      // se maneja por IMEI — el stock diría 6 con 5 unidades cargadas, que es
-      // justo la ambigüedad que el switch existe para no tener.
+      // Decir CUÁNTOS entran es obligatorio; decir CUÁLES son, no. Con la
+      // lista nacen identificadas; con la cantidad, sin identificar y se
+      // completan cuando aparezcan las cajas —o al venderlas, que es cuando
+      // el equipo está en la mano.
       if (articulo.llevaSerie) {
-        if (imeis === undefined) {
+        if (imeis !== undefined && cantidad !== undefined) {
           throw new ErrorDeInventario(
             'SERIE_REQUIERE_IMEIS',
-            `${articulo.nombre} se maneja por IMEI: cargá el IMEI de cada unidad que entra`,
-          )
-        }
-        if (cantidad !== undefined) {
-          throw new ErrorDeInventario(
-            'SERIE_REQUIERE_IMEIS',
-            `${articulo.nombre} se maneja por IMEI: la cantidad sale de la lista, no se tipea`,
+            `${articulo.nombre}: mandá la lista de IMEI o la cantidad, no las dos`,
           )
         }
       } else if (imeis !== undefined) {
@@ -233,6 +231,13 @@ export async function ingresarStock(entrada: {
       if (listaNormalizada) {
         await crearUnidadesEnTx(tx, {
           tenantId, articuloId, imeis: listaNormalizada, usuarioId,
+        })
+      } else if (articulo.llevaSerie) {
+        // Vino la cantidad, no la lista: las unidades nacen sin identificar,
+        // una por cada una que entra.
+        await crearUnidadesEnTx(tx, {
+          tenantId, articuloId, usuarioId,
+          imeis: Array.from({ length: cantidadEfectiva.toNumber() }, () => null),
         })
       }
 
