@@ -18,7 +18,8 @@
     "predev": "npm run generate",
     "pretest": "npm run generate",
     "prebuild": "npm run generate",
-    "bot:probar": "tsx scripts/probar-bot.mts"
+    "bot:probar": "tsx scripts/probar-bot.mts",
+    "dashboard:sembrar": "tsx scripts/sembrar-dashboard-dev.mts"
   },
   "dependencies": {
     "@langchain/anthropic": "^1.5.8",

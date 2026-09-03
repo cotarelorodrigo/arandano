@@ -12,7 +12,29 @@
 import estilos from './anillo.module.css'
 
 /** El radio que hace que la circunferencia mida exactamente 100. */
-const RADIO = 100 / (2 * Math.PI)
+export const RADIO = 100 / (2 * Math.PI)
+
+/**
+ * El grosor del trazo, despejado del hueco que pide la maqueta.
+ *
+ * `innerRadius: 0.62` (design/arandano.pen) es el hueco como fracción del
+ * radio EXTERIOR, y un trazo centrado en `RADIO` reparte su grosor hacia
+ * adentro y hacia afuera: interior = R − g/2, exterior = R + g/2. Igualar
+ * (R − g/2)/(R + g/2) = 0.62 despeja g = 0.38·R/0.81.
+ *
+ * Estuvo mal escrito como `RADIO * 2 * 0.38`, que daba un hueco de 0.45 y —lo
+ * que se veía a simple vista— un trazo cuyo borde exterior quedaba a 21.96 de
+ * un centro que sólo tenía 16 de margen: el anillo se dibujaba fuera del
+ * viewBox y el navegador lo recortaba, así que en pantalla era un CUADRADO con
+ * un agujero redondo. Ningún test lo vio porque todos afirman sobre los arcos
+ * (largo y offset), que estaban bien — lo que estaba mal era la caja.
+ */
+export const GROSOR = (0.38 * RADIO) / 0.81
+
+/** El lado del viewBox: el diámetro exterior del trazo, con una unidad de
+ *  aire para que el borde no quede pegado al recorte. */
+export const LADO = Math.ceil(2 * (RADIO + GROSOR / 2)) + 1
+const CENTRO = LADO / 2
 
 export type Gajo = { rotulo: string; monto: string; porcentaje: number }
 
@@ -61,18 +83,16 @@ export function Anillo({
           que es donde SVG pone el ángulo 0. */}
       <svg
         aria-hidden="true"
-        viewBox="0 0 32 32"
+        viewBox={`0 0 ${LADO} ${LADO}`}
         className="size-full -rotate-90"
       >
         {arcos.map((a, i) => (
           <circle
             key={i}
-            cx="16" cy="16" r={RADIO}
+            cx={CENTRO} cy={CENTRO} r={RADIO}
             fill="none"
             stroke={a.color}
-            // 0.38 del diámetro es el grosor que deja `innerRadius: 0.62` en
-            // el .pen: el hueco del medio ocupa el 62 % del radio.
-            strokeWidth={RADIO * 2 * 0.38}
+            strokeWidth={GROSOR}
             strokeDasharray={`${a.largo} ${100 - a.largo}`}
             strokeDashoffset={-a.offset}
           />
