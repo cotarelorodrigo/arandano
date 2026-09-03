@@ -344,7 +344,13 @@ export function SwitchDeSerie({
             action={confirmarDialogo}
             className="flex flex-col gap-3"
           >
-            <ListaDeImeis filasFijas={stockNum} />
+            {/* `filasFijas` ya no existe (Task 5 del ciclo "unidades sin
+                identificar"): este diálogo entero es UI vieja que la Task 6
+                reemplaza por la card sin diálogo, y lo que se escanee acá ya
+                lo ignora `prenderSerieAccion` (ver su comentario en
+                acciones.ts) — este ajuste es sólo para que compile mientras
+                tanto, no un rediseño de este diálogo. */}
+            <ListaDeImeis />
           </form>
           {/* DENTRO del `DialogContent`, que es lo único que el usuario está
               mirando mientras el diálogo está abierto. */}

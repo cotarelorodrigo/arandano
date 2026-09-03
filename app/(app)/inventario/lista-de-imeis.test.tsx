@@ -18,42 +18,33 @@ import { ListaDeImeis } from './lista-de-imeis'
  * leyendo el FUENTE, mismo patrón que ya usa `formularios.test.tsx` para
  * "ocultar el stock inicial al elegir Servicio": vitest corre en entorno
  * "node", sin DOM, y este repo no suma jsdom sólo para esto.
+ *
+ * **Task 5 del ciclo "unidades sin identificar" le sacó `filasFijas`.** El
+ * modo de N campos de una —pensado para el diálogo de prender el switch— es
+ * justo lo que este ciclo vino a borrar: la carga progresiva reemplaza a la
+ * exigencia de escanear todo de una sentada. Con él se fue `avanzarFoco`, el
+ * ref `contenedor` y el indexado por `querySelectorAll('input')[i + 1]`, que
+ * sólo funcionaba porque una fila tenía exactamente un input.
  */
 describe('ListaDeImeis: estructura (render estático)', () => {
-  it('sin filasFijas arranca con una sola fila, vacía', () => {
+  it('arranca con una sola fila, vacía', () => {
     const html = renderToStaticMarkup(<ListaDeImeis />)
     expect([...html.matchAll(/name="imeis"/g)]).toHaveLength(1)
   })
 
-  it('con filasFijas arranca con exactamente esa cantidad de filas', () => {
-    const html = renderToStaticMarkup(<ListaDeImeis filasFijas={4} />)
-    expect([...html.matchAll(/name="imeis"/g)]).toHaveLength(4)
-  })
-
-  it('con filasFijas no hay botón "Agregar otro": la cantidad la fija el stock', () => {
-    const html = renderToStaticMarkup(<ListaDeImeis filasFijas={2} />)
-    expect(html).not.toContain('Agregar otro')
-  })
-
-  it('sin filasFijas SÍ hay botón "Agregar otro"', () => {
+  it('hay botón "Agregar otro"', () => {
     const html = renderToStaticMarkup(<ListaDeImeis />)
     expect(html).toContain('Agregar otro')
   })
 
-  it('con una sola fila y sin filasFijas, no hay botón para quitarla', () => {
+  it('con una sola fila, no hay botón para quitarla', () => {
     const html = renderToStaticMarkup(<ListaDeImeis />)
     expect(html).not.toMatch(/aria-label="Quitar/)
   })
 
-  it('con filasFijas nunca hay botón para quitar una fila: la cantidad es fija', () => {
-    const html = renderToStaticMarkup(<ListaDeImeis filasFijas={3} />)
-    expect(html).not.toMatch(/aria-label="Quitar/)
-  })
-
-  it('la etiqueta custom se usa en el aria-label de cada fila', () => {
-    const html = renderToStaticMarkup(<ListaDeImeis filasFijas={2} etiqueta="Número de serie" />)
+  it('la etiqueta custom se usa en el aria-label de la fila', () => {
+    const html = renderToStaticMarkup(<ListaDeImeis etiqueta="Número de serie" />)
     expect(html).toContain('aria-label="Número de serie 1"')
-    expect(html).toContain('aria-label="Número de serie 2"')
   })
 })
 
@@ -62,21 +53,6 @@ describe('ListaDeImeis: comportamiento (cableado, no ejercitable sin DOM)', () =
 
   it('Enter previene el submit del form antes que cualquier otra cosa', () => {
     expect(FUENTE).toMatch(/if \(e\.key !== 'Enter'\) return\s*\n\s*e\.preventDefault\(\)/)
-  })
-
-  it('con filasFijas, Enter no agrega ninguna fila: avanza el foco en cambio', () => {
-    expect(FUENTE).toMatch(/if \(filasFijas !== undefined\) \{\s*\n\s*avanzarFoco\(i\)\s*\n\s*return\s*\n\s*\}/)
-  })
-
-  // Finding 3 de la review de Task 8: con `filasFijas` (el diálogo de prender
-  // el switch), el ref `ultimo` sólo apunta a la ÚLTIMA fila — sin esto, Enter
-  // no movía el foco a la fila siguiente, y escanear N equipos dejaba todo
-  // apilado en el primer campo.
-  it('avanzarFoco enfoca el input de la fila siguiente, por índice', () => {
-    expect(FUENTE).toMatch(
-      /contenedor\.current\?\.querySelectorAll\('input'\)\[i \+ 1\]/,
-    )
-    expect(FUENTE).toContain('siguiente?.focus()')
   })
 
   it('Enter en la última fila agrega una fila nueva', () => {
@@ -95,5 +71,13 @@ describe('ListaDeImeis: comportamiento (cableado, no ejercitable sin DOM)', () =
 
   it('"Agregar otro" agrega una fila igual que Enter', () => {
     expect(FUENTE).toMatch(/onClick=\{\(\) => setValores\(\(v\) => \[\.\.\.v, ''\]\)\}/)
+  })
+
+  it('no queda ningún rastro del modo de filas fijas', () => {
+    // Lo borró el ciclo de unidades sin identificar: ya no hay ningún lugar del
+    // producto donde se pidan N campos de una. Con él se fue el avance de foco
+    // por índice, que dependía de que la fila tuviera exactamente un input.
+    expect(FUENTE).not.toContain('filasFijas')
+    expect(FUENTE).not.toContain('querySelectorAll')
   })
 })

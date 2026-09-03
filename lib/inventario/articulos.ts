@@ -57,9 +57,12 @@ export type EntradaCrearArticulo = {
   /** Si el artículo se maneja por unidad identificada. Sólo PRODUCTO. */
   llevaSerie?: boolean
   /**
-   * Los IMEI de las unidades con las que nace. Con `llevaSerie`, el stock
-   * inicial es su longitud y `stockInicial` se rechaza — un artículo con serie
-   * no tiene un stock que se tipee, tiene unidades que se cargan.
+   * Los IMEI escaneados con los que nace, una parte —o todo, o nada— del
+   * total. Con `llevaSerie` y `stockInicial` presente, éste último GOBIERNA
+   * la cantidad; lo que la lista no cubre nace sin identificar, y una lista
+   * más larga que el stock se rechaza (no se pueden identificar equipos que
+   * no entraron). Sin `stockInicial`, la cantidad es la longitud de la
+   * lista, que es el comportamiento de siempre.
    */
   imeis?: string[]
 }
@@ -249,17 +252,17 @@ export async function crearArticulo(
   // tiene unidades que cargar. `normalizarLista` corre acá, no adentro de la
   // transacción de más abajo — un IMEI repetido falla sin siquiera pedir un
   // SKU.
+  //
+  // **`stockInicial` YA NO se prohíbe junto a `llevaSerie`** (Task 5 del
+  // ciclo "unidades sin identificar"): pasa a ser el número que gobierna la
+  // carga PROGRESIVA — el principio de este ciclo es que el IMEI se captura
+  // cuando el equipo está en la mano, así que escanear menos que el stock es
+  // el caso normal, no un error.
   if (llevaSerie) {
     if (tipo === 'SERVICIO') {
       throw new ErrorDeInventario(
         'SERVICIO_SIN_STOCK',
         'un servicio no puede llevar IMEI: no tiene stock que identificar',
-      )
-    }
-    if (stockInicial !== null && stockInicial !== undefined) {
-      throw new ErrorDeInventario(
-        'SERIE_REQUIERE_IMEIS',
-        'un artículo con IMEI no tiene un stock que se tipee: el stock nace de la lista de unidades',
       )
     }
   } else if (entrada.imeis !== undefined) {
@@ -288,6 +291,14 @@ export async function crearArticulo(
         `el stock inicial tiene a lo sumo ${ESCALA_CANTIDAD} decimales`,
       )
     }
+    // Con serie, el stock inicial es una cantidad de UNIDADES: mismo chequeo
+    // que ya hace `ingresarStock` cuando llega la cantidad sin lista.
+    if (llevaSerie && !stockInicial.equals(stockInicial.toDecimalPlaces(0))) {
+      throw new ErrorDeInventario(
+        'SERIE_STOCK_NO_ENTERO',
+        'un artículo con IMEI necesita un stock inicial entero: es una cantidad de unidades',
+      )
+    }
   }
   if (costoUnitario !== null && costoUnitario !== undefined) {
     if (costoUnitario.lessThan(0)) {
@@ -298,6 +309,32 @@ export async function crearArticulo(
         'ESCALA_EXCEDIDA',
         `el costo tiene a lo sumo ${ESCALA_DINERO} decimales`,
       )
+    }
+  }
+
+  /**
+   * Cuántas unidades nacen, con serie. El stock inicial —cuando llega— es el
+   * que MANDA: gobierna el total, y los IMEI escaneados identifican una parte
+   * de él (o todos, o ninguno). Sin `stockInicial`, la cantidad es la
+   * longitud de la lista, que es el comportamiento de siempre.
+   *
+   * Más IMEI que stock inicial se rechaza: no se pueden identificar equipos
+   * que no entraron.
+   */
+  let cantidadUnidades: Decimal | undefined
+  if (llevaSerie) {
+    const cantidadImeis = new Prisma.Decimal(listaImeis!.length)
+    if (stockInicial !== null && stockInicial !== undefined) {
+      if (cantidadImeis.greaterThan(stockInicial)) {
+        throw new ErrorDeInventario(
+          'SERIE_CONTEO_NO_COINCIDE',
+          `el stock inicial es ${stockInicial} y llegaron ${listaImeis!.length} IMEI: el stock ` +
+            'inicial es el que manda, y no se pueden identificar equipos que no entraron',
+        )
+      }
+      cantidadUnidades = stockInicial
+    } else {
+      cantidadUnidades = cantidadImeis
     }
   }
 
@@ -339,24 +376,30 @@ export async function crearArticulo(
         // que lo explique es justo la pregunta que la tabla append-only existe
         // para poder responder.
         //
-        // Con `llevaSerie`, el stock nace de la LISTA: `listaImeis.length`
-        // reemplaza a `stockInicial`, que la validación de arriba ya rechazó
-        // si vino junto con el switch prendido. Con la lista vacía —el caso
-        // normal: se carga el modelo antes de que llegue la mercadería— no
-        // hay nada que mover, ni unidades ni movimiento. **El bug conocido que
-        // NO se arregla acá**: igual que con `stockInicial`, un costo cargado
-        // sin ninguna unidad se pierde en silencio, porque sin movimiento no
-        // hay dónde guardarlo.
-        if (listaImeis && listaImeis.length > 0) {
+        // Con `llevaSerie`, el stock nace de `cantidadUnidades` (arriba): el
+        // stock inicial si llegó, o la longitud de la lista si no. Las
+        // unidades que no llegaron identificadas nacen SIN IMEI —se completan
+        // después, cuando el equipo está en la mano—, rellenando con `null`
+        // hasta completar el total. Con cantidad cero —el caso normal: se
+        // carga el modelo antes de que llegue la mercadería— no hay nada que
+        // mover, ni unidades ni movimiento. **El bug conocido que NO se
+        // arregla acá**: igual que con `stockInicial` sin serie, un costo
+        // cargado sin ninguna unidad se pierde en silencio, porque sin
+        // movimiento no hay dónde guardarlo.
+        if (cantidadUnidades && cantidadUnidades.greaterThan(0)) {
+          const faltan = cantidadUnidades.toNumber() - listaImeis!.length
+          const imeisCompletos: (string | null)[] = [
+            ...listaImeis!,
+            ...Array.from({ length: faltan }, () => null),
+          ]
           await crearUnidadesEnTx(tx, {
-            tenantId, articuloId: articulo.id, imeis: listaImeis, usuarioId,
+            tenantId, articuloId: articulo.id, imeis: imeisCompletos, usuarioId,
           })
-          const cantidad = new Prisma.Decimal(listaImeis.length)
           await tx.movimientoStock.create({
             data: {
               tenantId,
               articuloId: articulo.id,
-              delta: cantidad,
+              delta: cantidadUnidades,
               motivo: 'INGRESO',
               usuarioId,
               costoUnitario: costoUnitario ?? null,
@@ -365,9 +408,9 @@ export async function crearArticulo(
           })
           await tx.articulo.update({
             where: { id: articulo.id },
-            data: { stock: { increment: cantidad } },
+            data: { stock: { increment: cantidadUnidades } },
           })
-        } else if (stockInicial && stockInicial.greaterThan(0)) {
+        } else if (!llevaSerie && stockInicial && stockInicial.greaterThan(0)) {
           await tx.movimientoStock.create({
             data: {
               tenantId,

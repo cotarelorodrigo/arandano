@@ -140,11 +140,13 @@ export async function altaArticulo(
         imeis: llevaSerie ? imeis : undefined,
         // Un servicio no lleva stock, y sin JavaScript los campos se ven
         // igual: se ignoran acá en vez de rechazar el alta por algo que la
-        // persona no eligió mandar. Con el switch de IMEI prendido tampoco se
-        // manda: el stock nace de la lista de unidades, no de un número
-        // tipeado — `crearArticulo` rechaza recibir los dos juntos.
+        // persona no eligió mandar. Con el switch de IMEI prendido TAMBIÉN se
+        // manda (Task 5 del ciclo "unidades sin identificar"): ya no se
+        // excluye, porque pasa a ser el número que gobierna la carga
+        // progresiva — `crearArticulo` completa la diferencia con unidades
+        // sin identificar, o rechaza si llegaron más IMEI que stock.
         stockInicial:
-          tipo === 'PRODUCTO' && !llevaSerie
+          tipo === 'PRODUCTO'
             ? aDecimalOpcional(texto(datos, 'stockInicial'), 'el stock inicial')
             : null,
         // El costo se descarta si esta persona no puede cargarlo: el campo no
@@ -245,9 +247,19 @@ export async function reactivarArticuloAccion(
 /**
  * Recibir mercadería. Task 8 del ciclo de unidades por IMEI: aprende a leer
  * `imeis` — el motor (`ingresarStock`) ya los acepta desde la Task 3, pero
- * hasta esta task nada en el medio se los pasaba. Es acá, y no en la Task 3 ni
- * en la 7, porque es acá donde `MoverStock` empieza a postearlos: sin este
- * cambio la pantalla manda a una acción que los ignora en silencio.
+ * hasta esa task nada en el medio se los pasaba. Es acá, y no en la Task 3 ni
+ * en la 7, porque es acá donde `MoverStock` empieza a postearlos: sin ese
+ * cambio la pantalla mandaba a una acción que los ignoraba en silencio.
+ *
+ * **Task 5 del ciclo "unidades sin identificar" cambió la señal.** Antes,
+ * `MoverStock` dibujaba UNA de las dos ramas (cantidad o lista) y `has('imeis')`
+ * alcanzaba para saber cuál. Ahora la card "Ingresar mercadería" ofrece las
+ * DOS a la vez —cantidad y la lista progresiva, escanear es opcional—, así que
+ * el campo `imeis` viaja SIEMPRE que esa card se dibuje, vacío o no: la
+ * presencia del campo dejó de decir nada. La señal pasa a ser la lista YA
+ * FILTRADA — si quedó al menos un IMEI real se manda esa lista, si no se
+ * manda la cantidad tipeada. Nunca las dos juntas: el motor (`ingresarStock`)
+ * las rechaza a propósito, así que acá no se manda ninguna "por las dudas".
  */
 export async function ingresarMercaderia(
   _e: EstadoInventario,
@@ -260,22 +272,13 @@ export async function ingresarMercaderia(
     // llamador sin sesión reciba un error de formato en vez del redirect al
     // login. El guard no puede depender de que lo que mandaron sea válido.
     const cantidadIngresada = await conSesion(async (tenantId, usuarioId) => {
-      // `has` y no "la lista filtrada tiene longitud > 0": un artículo con
-      // serie manda el campo `imeis` SIEMPRE que MoverStock dibuje esa rama
-      // (ListaDeImeis arranca con una fila, vacía o no), así que "mandó el
-      // campo" es la señal de qué pantalla lo llenó — no cuántos IMEI quedaron
-      // después de filtrar los vacíos. Decidir por longitud metería un
-      // `aDecimal('')` a ciegas contra un campo `cantidad` que esa rama nunca
-      // dibuja. Mismo parseo que `altaArticulo`: `getAll` y no `get`, con los
-      // vacíos descartados.
-      const tieneImeis = datos.has('imeis')
-      const imeis = tieneImeis
-        ? datos.getAll('imeis').map(String).filter((i) => i.trim() !== '')
-        : undefined
-      // Exactamente uno de los dos, nunca los dos: el motor rechaza recibir
-      // `cantidad` e `imeis` juntos, así que acá no se manda ninguno "por las
-      // dudas" — cuál corresponde lo decide la pantalla, no esta acción.
-      const cantidad = tieneImeis ? undefined : aDecimal(texto(datos, 'cantidad'), 'la cantidad')
+      // Mismo parseo que `altaArticulo`: `getAll` y no `get`, con los vacíos
+      // descartados. Con la lista sin nada escaneado (todo vacío, o el campo
+      // ni siquiera presente porque `llevaSerie` es falso) `imeisFiltrados`
+      // queda `[]` y se manda la cantidad.
+      const imeisFiltrados = datos.getAll('imeis').map(String).filter((i) => i.trim() !== '')
+      const imeis = imeisFiltrados.length > 0 ? imeisFiltrados : undefined
+      const cantidad = imeis ? undefined : aDecimal(texto(datos, 'cantidad'), 'la cantidad')
       await ingresarStock({
         tenantId,
         articuloId,
