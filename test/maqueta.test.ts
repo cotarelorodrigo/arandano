@@ -60,6 +60,42 @@ const EQUIVALENCIAS: Record<string, string[]> = {
 }
 
 /**
+ * Las veintiocho variables que el documento de Pencil arrastra de su plantilla.
+ *
+ * `design/arandano.pen` se creó a partir del template `pencil-shadcn` y quedó
+ * con la paleta de shadcn adentro, al lado de la nuestra. **No son colores de
+ * Arándano**: la paleta del producto es la de las variables `ar-*`, que son las
+ * que EQUIVALENCIAS mapea y las únicas que el diseño usa para pintar algo.
+ *
+ * **El detalle que confunde y hay que leer con cuidado**: varias se llaman
+ * IGUAL que un token del CSS y valen otra cosa — el `--primary` del `.pen` es
+ * el `#171717` de shadcn, y el `--primary` de app/globals.css es el `#4A2AA5`
+ * del arándano. No se contradicen porque son variables de archivos distintos
+ * que casualmente comparten nombre: lo que ata nuestro `--primary` a la maqueta
+ * es `ar-primary`, no éste. Anotarlas acá dice exactamente eso — que existen y
+ * que no describen al producto.
+ *
+ * **Cuándo borrar esta lista**: cuando alguien limpie el documento en Pencil y
+ * saque las variables de la plantilla. El caso `no hay excepciones de más`
+ * avisa solo — empieza a fallar nombrando las que ya no estén.
+ */
+const VARIABLES_DEL_TEMPLATE_DE_SHADCN: Record<string, string> = Object.fromEntries(
+  [
+    '--sidebar', '--sidebar-foreground', '--sidebar-primary', '--sidebar-primary-foreground',
+    '--sidebar-border', '--sidebar-accent', '--sidebar-accent-foreground', '--sidebar-ring',
+    '--background', '--foreground', '--card', '--card-foreground', '--popover',
+    '--popover-foreground', '--primary', '--primary-foreground', '--secondary',
+    '--secondary-foreground', '--muted', '--muted-foreground', '--accent',
+    '--accent-foreground', '--destructive', '--border', '--input', '--ring',
+    '--white', '--black',
+  ].map((v) => [
+    v,
+    'viene de la plantilla `pencil-shadcn` con la que se creó el documento, no de ' +
+      'la paleta de Arándano — ver el comentario de VARIABLES_DEL_TEMPLATE_DE_SHADCN.',
+  ]),
+)
+
+/**
  * Las variables del `.pen` que NO tienen token equivalente, cada una con su
  * razón. Mismo patrón que RUTAS_SIN_SMOKE en scripts/lib/rutas-comun.sh y
  * SIN_TENANT_ID en test/rls-cobertura.test.ts: una excepción es una decisión
@@ -73,8 +109,8 @@ const SIN_TOKEN: Record<string, string> = {
   'ar-display':
     'la cara de display (Archivo). La emite next/font sobre el <html> como ' +
     '--font-archivo, no el bloque :root. Mismo motivo que ar-font.',
+  ...VARIABLES_DEL_TEMPLATE_DE_SHADCN,
 }
-
 /**
  * Los tokens del CSS que ninguna variable de la maqueta reproduce, con su razón.
  *
