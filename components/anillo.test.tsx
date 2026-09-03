@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { Anillo, arcosDe, RADIO, GROSOR, LADO } from './anillo'
+import { Anillo, arcosDe, RADIO, GROSOR } from './anillo'
 
 describe('los arcos del anillo', () => {
   it('el primero arranca arriba y van en sentido horario', () => {
