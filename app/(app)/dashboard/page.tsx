@@ -450,13 +450,16 @@ export default async function Dashboard({
             {/* Wireado en la Task 12 ("Exportar CSV"): `buttonVariants` y no
                 el `<Button>` de shadcn directo, porque `BotonDeExportar` es
                 un `<button>` pelado —no puede envolver a `Button` sin perder
-                el control del contenido que `children(exportando)` necesita
+                el control del contenido que `reposo`/`enCurso` necesitan
                 (el mismo componente sirve a esta copia y a la del teléfono,
                 ver su docblock en ./exportar.tsx)—, así que recibe la MISMA
                 clase que `Button` calcularía para "outline"/"sm". */}
-            <BotonDeExportar rango={rango} className={buttonVariants({ variant: 'outline', size: 'sm' })}>
-              {(exportando) => (exportando ? 'Exportando…' : 'Exportar CSV')}
-            </BotonDeExportar>
+            <BotonDeExportar
+              rango={rango}
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              reposo="Exportar CSV"
+              enCurso="Exportando…"
+            />
             <Button asChild size="sm">
               <Link href="/vender">
                 <ShoppingCart aria-hidden="true" />
@@ -476,18 +479,22 @@ export default async function Dashboard({
         // `sr-only` —el ícono solo no tiene nombre accesible— en vez de
         // reemplazar al ícono, que desbordaría los 38 px de la caja.
         controlMovil={
-          <BotonDeExportar rango={rango} className={`${CLASES_RANURA_MOVIL} bg-muted text-foreground`}>
-            {(exportando) => (
+          <BotonDeExportar
+            rango={rango}
+            className={`${CLASES_RANURA_MOVIL} bg-muted text-foreground`}
+            reposo={
               <>
-                {exportando ? (
-                  <Loader2 aria-hidden="true" className="size-[19px] animate-spin" />
-                ) : (
-                  <Download aria-hidden="true" className="size-[19px]" />
-                )}
-                <span className="sr-only">{exportando ? 'Exportando…' : 'Exportar CSV'}</span>
+                <Download aria-hidden="true" className="size-[19px]" />
+                <span className="sr-only">Exportar CSV</span>
               </>
-            )}
-          </BotonDeExportar>
+            }
+            enCurso={
+              <>
+                <Loader2 aria-hidden="true" className="size-[19px] animate-spin" />
+                <span className="sr-only">Exportando…</span>
+              </>
+            }
+          />
         }
       />
       <div className="flex flex-col gap-3 p-[14px] lg:gap-4 lg:p-6">

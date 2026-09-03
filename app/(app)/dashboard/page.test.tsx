@@ -154,6 +154,32 @@ describe('/dashboard: "Exportar CSV" existe dos veces —Topbar y ranura del tel
   // exactamente la clase de divergencia silenciosa que ya rompió "Anular
   // orden" en el merge del ciclo móvil (CLAUDE.md).
   it('las dos reciben rango={rango}', () => {
-    expect([...FUENTE.matchAll(/<BotonDeExportar rango=\{rango\}/g)]).toHaveLength(2)
+    // `\s+` y no un espacio literal: QA (2026-09-02) reformateó los
+    // call sites a un atributo por línea al arreglar el bug de abajo, y un
+    // espacio fijo hubiera dejado este caso en rojo por un cambio de
+    // formato, no por una divergencia real.
+    expect([...FUENTE.matchAll(/<BotonDeExportar\s+rango=\{rango\}/g)]).toHaveLength(2)
+  })
+
+  // QA (2026-09-02, Critical): `BotonDeExportar` pedía `children: (exportando)
+  // => ReactNode` —un render prop—, y esta pantalla se lo pasaba en las DOS
+  // copias: `page.tsx` es un Server Component `async`, y un Server
+  // Component NO puede pasarle una función a un Client Component — sólo
+  // elementos, que se serializan. React tira "Functions are not valid as a
+  // child of Client Components" en TODO render, así que `/dashboard` daba
+  // 500 siempre. Ninguno de los tres casos de arriba lo veía —miran
+  // presencia y atributos, no la FORMA de `children`—, y tampoco `npm test`
+  // en general, `tsc`, `lint` ni `npm run build`: recién lo vio abrir la
+  // pantalla. La red general —que barre TODA `app/`, no sólo esta
+  // pantalla— vive en test/servidor-llama-a-cliente.test.ts; este caso es
+  // la instancia mínima atada a la fuente concreta que rompió.
+  it('ninguna copia le pasa una función como children (el bug real: children era un render prop)', () => {
+    // El componente pasó a ser autocerrado (`reposo`/`enCurso` como props),
+    // así que ninguna apertura de <BotonDeExportar debería tener, como
+    // primer hijo, una función de flecha — el patrón exacto que tiraba el
+    // 500: `{(exportando) => ...}`. `[^>]*` (no `[^]*?`) a propósito: no
+    // cruza un `>` literal, así que no se escapa de ESTA apertura hacia
+    // contenido de otro componente más abajo en el archivo.
+    expect(FUENTE).not.toMatch(/<BotonDeExportar\b[^>]*>\s*\{\s*\([^)]*\)\s*=>/)
   })
 })

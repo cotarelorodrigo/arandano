@@ -13,14 +13,30 @@ import type { Rango } from '@/lib/dashboard/rango'
  * SIN navegación —un `accionMovil` con `href="#"` habría consumido la única
  * entrada de historial del Topbar del teléfono sin bajar ningún archivo—.
  *
- * `children` es una FUNCIÓN de `exportando`, no un nodo fijo, y ésa es la
- * única forma de que el mismo componente sirva a las dos copias sin que este
- * archivo tenga que saber si lo está dibujando el escritorio o el teléfono:
- * el Topbar quiere texto ("Exportar CSV" → "Exportando…", el mismo patrón que
- * ya usa `BotonExportarCsv` en `app/(app)/inventario/formularios.tsx:697`); la
+ * `reposo` y `enCurso` son DOS nodos, no una función de `exportando` —y esto
+ * NO es una preferencia de estilo: `page.tsx` es un Server Component
+ * `async`, y un Server Component no puede pasarle una FUNCIÓN a un
+ * Client Component. Los elementos de React cruzan el límite RSC porque se
+ * serializan; una función, no. La versión anterior de este componente pedía
+ * `children: (exportando: boolean) => ReactNode`, y `page.tsx` le pasaba
+ * `{(exportando) => (...)}` en las dos copias — eso tira, en tiempo de
+ * ejecución y en TODO render, "Functions are not valid as a child of Client
+ * Components". `/dashboard` daba 500 siempre: ni `npm test`, ni `tsc`, ni
+ * `lint`, ni `npm run build` lo ven —ninguno ejecuta el árbol de React del
+ * lado del servidor—, y trece tasks revisadas más la review de rama entera
+ * pasaron con esto adentro. Lo único que lo vio fue abrir la pantalla.
+ *
+ * La restricción real —"el llamador tiene que poder mostrar contenido
+ * distinto en reposo y mientras exporta, sin que este archivo sepa si lo
+ * dibuja el escritorio o el teléfono"— sigue intacta y resuelta igual, sólo
+ * que con dos elementos ya armados en vez de una función: el Topbar pasa
+ * texto ("Exportar CSV" → "Exportando…", el mismo patrón que ya usa
+ * `BotonExportarCsv` en `app/(app)/inventario/formularios.tsx:697`); la
  * ranura de 38 px sólo tiene lugar para un ícono, así que ahí el llamador
- * elige mostrar un spinner en vez de reemplazar el ícono por texto que
- * desbordaría la caja.
+ * arma un spinner en vez de reemplazar el ícono por texto que desbordaría la
+ * caja. El componente sólo decide CUÁL de los dos mostrar, con su propio
+ * estado (`exportando`) — la decisión de qué es cada uno queda del lado de
+ * quien ya sabe si está dibujando el escritorio o el teléfono.
  *
  * `className` en vez de un `variant`/`movil` propios: el llamador ya sabe
  * exactamente qué clase necesita en cada copia (`buttonVariants({...})` para
@@ -36,11 +52,13 @@ import type { Rango } from '@/lib/dashboard/rango'
 export function BotonDeExportar({
   rango,
   className,
-  children,
+  reposo,
+  enCurso,
 }: {
   rango: Rango
   className?: string
-  children: (exportando: boolean) => ReactNode
+  reposo: ReactNode
+  enCurso: ReactNode
 }) {
   const [exportando, setExportando] = useState(false)
 
@@ -86,7 +104,7 @@ export function BotonDeExportar({
 
   return (
     <button type="button" onClick={exportar} disabled={exportando} className={className}>
-      {children(exportando)}
+      {exportando ? enCurso : reposo}
     </button>
   )
 }
