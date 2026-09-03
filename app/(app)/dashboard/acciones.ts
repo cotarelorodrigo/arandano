@@ -1,6 +1,6 @@
 'use server'
 
-import { exigirSesion } from '@/lib/auth/sesion'
+import { exigirDuenio } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { hoyEnArgentina } from '@/lib/formato/fechas'
 import { rangoValido, periodoDeRango, filtroDe } from '@/lib/dashboard/rango'
@@ -31,12 +31,16 @@ import { ENCABEZADO_CSV, filaDeVenta } from './csv'
  * test lo vea: importa código que declara `'use server'` sí mismo, y ahí el
  * test se frena.
  *
- * **`exigirSesion()` adentro y SIN exigir ningún permiso**: una action es un
+ * **`exigirDuenio()` adentro, y no `exigirSesion()`**: una action es un
  * endpoint y se invoca sin pasar por la pantalla, así que necesita su propio
- * guard de sesión — pero exportar es de sólo lectura sobre datos que
- * `/dashboard` ya le muestra a CUALQUIER sesión (los cuatro paneles no están
- * detrás de ningún permiso salvo el tile de Margen, que este CSV ni siquiera
- * incluye).
+ * guard — y desde que `/dashboard` es sólo del dueño (2026-09-03), dejarlo en
+ * `exigirSesion()` habría sido la puerta de atrás del cambio entero: un
+ * empleado que no puede ABRIR el tablero se llevaría igual, en un CSV, las
+ * ventas del período que el tablero resume.
+ *
+ * **Y no un permiso delegable**: no hay ninguno que otorgar, porque el tablero
+ * no se reparte. Ver el comentario de la pestaña en `components/navegacion.tsx`
+ * para el porqué; ésta es la tercera de sus tres puertas.
  *
  * `rango` es `string`, no `Rango`: cruza el límite de un server action como
  * dato serializable, y `rangoValido()` (mismo helper que usa `page.tsx`) hace
@@ -64,7 +68,7 @@ import { ENCABEZADO_CSV, filaDeVenta } from './csv'
  * párrafo: escrito y conocido, no impuesto.
  */
 export async function exportarVentas(rango: string): Promise<string> {
-  const sesion = await exigirSesion()
+  const sesion = await exigirDuenio()
   const periodo = periodoDeRango(rangoValido(rango), hoyEnArgentina())
   const prisma = prismaParaTenant(sesion.tenant.id)
 

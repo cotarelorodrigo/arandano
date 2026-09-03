@@ -183,3 +183,26 @@ describe('/dashboard: "Exportar CSV" existe dos veces —Topbar y ranura del tel
     expect(FUENTE).not.toMatch(/<BotonDeExportar\b[^>]*>\s*\{\s*\([^)]*\)\s*=>/)
   })
 })
+
+// `Dashboard` (el default export) es un Server Component `async` que abre
+// sesión y consulta Prisma, así que no se puede montar acá — el caso mira el
+// FUENTE, mismo patrón que el bloque de "Exportar CSV" de arriba y que
+// app/(app)/usuarios/page.test.tsx.
+//
+// La pestaña escondida no es una defensa: `/dashboard` se alcanza tipeando la
+// URL, y el layout del grupo sólo exige SESIÓN, no rol. Sin esta mitad, el
+// cambio sería cosmético.
+describe('/dashboard es sólo del dueño', () => {
+  const FUENTE = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+
+  it('la página abre sesión con exigirDuenio', () => {
+    expect(FUENTE).toContain('await exigirDuenio()')
+  })
+
+  // Las dos direcciones: sin esto, un `exigirSesion()` que quedara al lado del
+  // `exigirDuenio()` —o en su lugar tras un refactor— pasaría el caso de
+  // arriba en verde y dejaría entrar a cualquier sesión.
+  it('y no queda ningún exigirSesion en la pantalla', () => {
+    expect(FUENTE).not.toContain('exigirSesion')
+  })
+})

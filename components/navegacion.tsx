@@ -40,7 +40,13 @@ export const PESTANAS: Pestana[] = [
   // Shell/Sidebar. El ítem de /bot NO se mueve ni se saca aunque la maqueta no
   // lo dibuje — ese frame es anterior al ciclo del bot, y el silencio de un
   // frame no es una instrucción de borrar.
-  { href: '/dashboard', texto: 'Dashboard', icono: LayoutDashboard },
+  // `soloDueno` y no un permiso delegable: el tablero agrega la facturación
+  // del local en una pantalla, y el dueño del producto decidió (2026-09-03)
+  // que eso no se reparte — así que no hay switch que otorgar en /usuarios.
+  // Esconder la pestaña es sólo una de las tres puertas: la página y
+  // `exportarVentas` re-exigen por su cuenta, porque la URL se tipea y una
+  // server action es un endpoint.
+  { href: '/dashboard', texto: 'Dashboard', icono: LayoutDashboard, soloDueno: true },
   { href: '/inventario', texto: 'Inventario', icono: Package },
   // Fija y visible en TODO tenant, incluido el que no hace servicio técnico.
   // Es deuda consciente y está escrita en el spec con su vencimiento: cuando

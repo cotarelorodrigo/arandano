@@ -4,7 +4,7 @@ import {
 } from 'lucide-react'
 import { Prisma } from '@/generated/prisma/client'
 import { Encabezado, CLASES_RANURA_MOVIL } from '@/components/shell/encabezado'
-import { exigirSesion } from '@/lib/auth/sesion'
+import { exigirDuenio } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { puedeConSesion } from '@/lib/permisos/guarda'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -248,7 +248,7 @@ export default async function Dashboard({
 }: {
   searchParams: Promise<{ rango?: string; moneda?: string }>
 }) {
-  const sesion = await exigirSesion()
+  const sesion = await exigirDuenio()
   const { rango: rangoParam, moneda: monedaParam } = await searchParams
   const rango = rangoValido(rangoParam)
   const moneda = monedaValida(monedaParam)
@@ -546,7 +546,15 @@ export default async function Dashboard({
             />
             {/* Detrás de COSTOS: es el mismo permiso que ya protege el costo y
                 el margen en /inventario/[id] — mostrarlo acá sin el permiso
-                sería no protegerlo en absoluto. */}
+                sería no protegerlo en absoluto.
+
+                Desde que la pantalla es `exigirDuenio()` (2026-09-03) este
+                chequeo da SIEMPRE verdadero, porque un dueño tiene todo el
+                catálogo sin fila en usuario_permisos (lib/permisos/guarda.ts).
+                Se queda igual a propósito: es la condición correcta, no una
+                redundante, y el día que el tablero se delegue con un permiso
+                vuelve a decidir algo. Sacarlo ataría este tile a que la
+                pantalla siga siendo del dueño. */}
             {puedeCostos && (
               <Tile
                 rotulo="Margen"

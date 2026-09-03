@@ -120,14 +120,31 @@ describe('Navegacion', () => {
     expect(html).not.toContain('href="/usuarios"')
   })
 
-  it('están las cinco pestañas que ve cualquiera', async () => {
+  it('están las cuatro pestañas que ve cualquiera', async () => {
     // Sin ningún permiso otorgado: son las que no dependen de ninguno.
     const html = await render('EMPLEADO', '/vender', [])
-    // Vender, Ventas, Dashboard, Inventario y Servicio Técnico. Usuarios no:
-    // es del dueño. Formas de pago tampoco: pide PLANES_PAGO.
-    for (const href of ['/vender', '/ventas', '/dashboard', '/inventario', '/servicio-tecnico']) {
+    // Vender, Ventas, Inventario y Servicio Técnico. Usuarios y Dashboard no:
+    // son del dueño. Formas de pago tampoco: pide PLANES_PAGO.
+    for (const href of ['/vender', '/ventas', '/inventario', '/servicio-tecnico']) {
       expect(html).toContain(`href="${href}"`)
     }
+  })
+
+  // Las dos direcciones, igual que Usuarios: sin el caso positivo, una pestaña
+  // borrada de PESTANAS pasaría el negativo en verde.
+  //
+  // No se delega con un permiso, se cierra con `soloDueno`: el tablero agrega
+  // la facturación del local, y el dueño del producto decidió (2026-09-03) que
+  // eso no se reparte. La otra mitad del gate va en la página y en su acción
+  // de exportar — esconder la pestaña no defiende de tipear la URL.
+  it('un dueño ve Dashboard', async () => {
+    const html = await render('DUENO', '/vender')
+    expect(html).toContain('href="/dashboard"')
+  })
+
+  it('un empleado no ve Dashboard', async () => {
+    const html = await render('EMPLEADO', '/vender')
+    expect(html).not.toContain('href="/dashboard"')
   })
 
   // Las dos direcciones de la pestaña delegable. Sin el caso positivo, un

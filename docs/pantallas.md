@@ -2281,9 +2281,22 @@ julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
   task) la moneda de los paneles son `?rango`/`?moneda`, escritos sólo cuando
   no son el default — mismo criterio que ya usan `/ventas` y
   `/formas-de-pago`.
-- **Sin `permiso` ni `soloDueno` en la pestaña**: la ve cualquier sesión,
-  igual que `/ventas`. Un dueño y un empleado sin ningún permiso ven el mismo
-  dashboard, salvo el tile de margen.
+- **`soloDueno`, y en las TRES puertas** (2026-09-03): la pestaña
+  (`components/navegacion.tsx`), la página (`exigirDuenio()`) y
+  `exportarVentas`. Esconder la pestaña sola habría sido cosmético — la URL se
+  tipea, el layout del grupo exige sesión y no rol, y una server action es un
+  endpoint que se invoca sin pasar por la pantalla. Es la misma lección de las
+  cinco puertas del bot.
+- **No se delega con un permiso**, así que no hay switch en `/usuarios`: el
+  tablero agrega la facturación del local en una pantalla, y el dueño del
+  producto decidió que eso no se reparte. `lib/permisos/catalogo.ts` no crece.
+- **El gate queda incompleto a propósito, y conviene tenerlo escrito**:
+  `/ventas` sigue abierta a cualquier sesión, y ahí un empleado lee el mismo
+  agregado poniendo el rango en Este mes (tile "Total del período"). Cerrar el
+  tablero no cierra el dato — cierra esta pantalla. La decisión de hasta dónde
+  llegar se tomó mirando justamente eso, y se eligió sólo `/dashboard`. **El
+  disparador para revisarlo**: que a un dueño le moleste que su empleado lea la
+  facturación del mes desde `/ventas`.
 - **`design/arandano.pen` dibuja esta pantalla** (frames `App / Dashboard` y
   `Móvil / Dashboard`), pero el `.pen` versionado del repo todavía no los
   tiene — es el mismo caso que ya dejó anotado el ciclo del cobrado por
