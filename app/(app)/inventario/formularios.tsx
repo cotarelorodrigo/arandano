@@ -294,20 +294,25 @@ export function FormularioDeAlta({
         <div className="flex flex-col gap-3 lg:w-[420px] lg:shrink-0 lg:gap-4">
           {tipo === 'PRODUCTO' && (
             <CardDelFormulario titulo="Stock inicial">
-              {/* Prendido el switch, la Cantidad se reemplaza por la lista de
-                  IMEI: el stock deja de ser un número que se tipea y pasa a
-                  ser cuántas unidades hay en la lista. El costo unitario se
-                  mantiene en los dos casos, así que va en su propia fila y no
-                  adentro de este condicional. */}
-              {llevaSerie ? (
+              {/* Task 5 del ciclo "unidades sin identificar": la Cantidad ya
+                  NO se reemplaza por la lista de IMEI, se completa con ella —
+                  el principio de este ciclo es que el IMEI se captura cuando
+                  el equipo está en la mano, así que escanear una parte (o
+                  ninguna) es el caso normal. La cantidad es el stock que
+                  gobierna; lo que no se escanea nace sin identificar y se
+                  completa después, desde la ficha. */}
+              <div className="flex w-[220px] flex-col gap-2">
+                <Label htmlFor="stockInicial">Cantidad (opcional)</Label>
+                <Input id="stockInicial" name="stockInicial" inputMode="decimal" className="h-10 rounded-[9px]" />
+              </div>
+              {llevaSerie && (
                 <div className="flex flex-col gap-2">
                   <Label>IMEI o número de serie</Label>
                   <ListaDeImeis />
-                </div>
-              ) : (
-                <div className="flex w-[220px] flex-col gap-2">
-                  <Label htmlFor="stockInicial">Cantidad (opcional)</Label>
-                  <Input id="stockInicial" name="stockInicial" inputMode="decimal" className="h-10 rounded-[9px]" />
+                  <p className="text-[11px] text-muted-foreground">
+                    Escanear es opcional: lo que no cargues ahora lo podés completar después,
+                    desde la ficha del artículo.
+                  </p>
                 </div>
               )}
               {/* Sin el permiso COSTOS, el campo no se dibuja. El
@@ -652,13 +657,19 @@ export function FichaDeArticulo({
  * minuto y una venta de antigüedad.
  *
  * **Task 8 del ciclo de unidades por IMEI: `llevaSerie` cambia las dos
- * cards.** En "Ingresar mercadería" el campo "Cantidad que entra" se
- * reemplaza por la lista de IMEI —la cantidad sale de cuántos hay ahí, no se
- * tipea (mismo componente que el alta, `ListaDeImeis`)—. "Corregir por
- * conteo" queda DESHABILITADA y EXPLICADA, no escondida: sus dos campos y su
- * botón se deshabilitan, y aparece el texto que dice por qué y manda a la
- * card "Unidades" (`#unidades`, en `[id]/page.tsx`) — desaparecer un control
- * sin decir nada es lo que este repo trata como defecto.
+ * cards.** "Corregir por conteo" queda DESHABILITADA y EXPLICADA, no
+ * escondida: sus dos campos y su botón se deshabilitan, y aparece el texto
+ * que dice por qué y manda a la card "Unidades" (`#unidades`, en
+ * `[id]/page.tsx`) — desaparecer un control sin decir nada es lo que este
+ * repo trata como defecto.
+ *
+ * **Task 5 del ciclo "unidades sin identificar" cambió "Ingresar
+ * mercadería".** El campo "Cantidad que entra" ya NO se reemplaza por la
+ * lista de IMEI: las dos conviven, con la leyenda de que escanear es
+ * opcional (mismo componente que el alta, `ListaDeImeis`). El servidor
+ * (`ingresarMercaderia`, acciones.ts) decide cuál de las dos mandar por la
+ * lista YA FILTRADA — con algo escaneado va la lista, si no la cantidad,
+ * nunca las dos.
  */
 export function MoverStock({
   articuloId,
@@ -686,19 +697,30 @@ export function MoverStock({
         <CardContent>
           <form action={accionIngreso} className="flex flex-col gap-4">
             <input type="hidden" name="articuloId" value={articuloId} />
-            {/* `ingresarMercaderia` (acciones.ts) decide por la PRESENCIA del
-                campo `imeis` en el FormData, no por su longitud: una lista
-                vacía sigue siendo "mandó imeis". Por eso acá el campo
-                `cantidad` directamente no se dibuja cuando llevaSerie. */}
-            {llevaSerie ? (
+            {/* Task 5 del ciclo "unidades sin identificar": las dos formas
+                conviven. `required={!llevaSerie}`: sin serie sigue siendo
+                obligatoria, como siempre; con serie es opcional —se puede
+                entrar sólo escaneando, sin tipear ningún número—.
+                `ingresarMercaderia` (acciones.ts) decide cuál de las dos
+                mandar por la lista YA FILTRADA, nunca las dos juntas. */}
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="i-cantidad">Cantidad que entra</Label>
+              <Input
+                id="i-cantidad"
+                name="cantidad"
+                inputMode="decimal"
+                required={!llevaSerie}
+                className="h-10 rounded-[9px]"
+              />
+            </div>
+            {llevaSerie && (
               <div className="flex flex-col gap-2">
                 <Label>IMEI o número de serie</Label>
                 <ListaDeImeis />
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="i-cantidad">Cantidad que entra</Label>
-                <Input id="i-cantidad" name="cantidad" inputMode="decimal" required className="h-10 rounded-[9px]" />
+                <p className="text-[11px] text-muted-foreground">
+                  Escanear es opcional: lo que no cargues ahora lo podés completar después,
+                  desde la ficha del artículo.
+                </p>
               </div>
             )}
             {/* Sin el permiso COSTOS, el campo no se dibuja. El blindaje

@@ -235,7 +235,7 @@ erDiagram
     uuid id PK
     uuid tenant_id FK
     uuid articulo_id FK
-    text imei
+    text imei "opcional"
     timestamptz(3) ingresada_en
     uuid ingresada_por_id FK
     uuid venta_id FK "opcional"

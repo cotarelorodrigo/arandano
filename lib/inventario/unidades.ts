@@ -3,7 +3,7 @@ import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import { exigirUsuario } from '@/lib/ventas/pertenencia'
 import { ErrorDeInventario, traducirErrorDeBase } from './errores'
 
-export type UnidadLibre = { id: string; imei: string; ingresadaEn: Date }
+export type UnidadLibre = { id: string; imei: string | null; ingresadaEn: Date }
 
 /**
  * El IMEI tal como se guarda.
@@ -112,17 +112,30 @@ export async function unidadesLibres(
  * escaneó) y el índice sigue siendo la defensa real de la carrera exacta (dos
  * cajas cargando el mismo IMEI a la vez), igual que con la idempotencia del
  * cobro.
+ *
+ * `imeis` acepta `null` por elemento: es lo que usa `prenderSerie` para crear
+ * unidades SIN identificar. Un `null` nunca puede "estar repetido" —en
+ * Postgres los `NULL` no chocan entre sí, ver el índice parcial— así que el
+ * chequeo previo se hace sólo contra los IMEI reales de la lista: el cliente
+ * de Prisma ni siquiera acepta un `null` dentro de un filtro `in` (lo rechaza
+ * en la capa de validación, antes de llegar a la base), y da igual, porque un
+ * `null` nunca podría chocar contra nada.
  */
 export async function crearUnidadesEnTx(
   tx: ClienteTx,
-  datos: { tenantId: string; articuloId: string; imeis: string[]; usuarioId: string },
+  datos: { tenantId: string; articuloId: string; imeis: (string | null)[]; usuarioId: string },
 ): Promise<void> {
+  const imeisReales = datos.imeis.filter((imei): imei is string => imei !== null)
+
   // SIN filtrar por `articuloId`, a propósito: el índice parcial es por
   // `(tenant_id, imei)`, así que el mismo IMEI libre colgado de OTRO artículo
   // choca igual — y ése es justo el caso que más confunde si el mensaje no lo
   // nombra.
-  const yaLibres = await tx.unidadDeArticulo.findMany({
-    where: { imei: { in: datos.imeis }, ventaId: null, bajaEn: null },
+  //
+  // Con la lista vacía (todo `null`, el caso de `prenderSerie` sin IMEIs) ni
+  // siquiera hace falta consultar: no hay ningún IMEI real que pueda chocar.
+  const yaLibres = imeisReales.length === 0 ? [] : await tx.unidadDeArticulo.findMany({
+    where: { imei: { in: imeisReales }, ventaId: null, bajaEn: null },
     select: { imei: true },
   })
   if (yaLibres.length > 0) {
@@ -165,11 +178,9 @@ export async function crearUnidadesEnTx(
 export async function prenderSerie(entrada: {
   tenantId: string
   articuloId: string
-  imeis: string[]
   usuarioId: string
 }): Promise<void> {
   const { tenantId, articuloId, usuarioId } = entrada
-  const imeis = normalizarLista(entrada.imeis)
 
   try {
     await enTransaccionDeTenant(tenantId, async (tx) => {
@@ -196,47 +207,42 @@ export async function prenderSerie(entrada: {
             'tiene que ser un número entero de unidades, y no negativo',
         )
       }
-      // Las unidades libres que YA existen se CUENTAN y se REUSAN tal cual:
-      // el conteo que se exige es `stock === libres + imeis.length`, no
-      // `stock === imeis.length`.
+
+      // Ya NO se pide ningún IMEI acá: el principio de este ciclo es que se
+      // capturan cuando el equipo está en la mano, no antes. Prender crea
+      // `stock - libresExistentes` unidades SIN identificar y listo.
       //
       // Cómo puede existir una unidad libre en un artículo cuyo switch está
-      // APAGADO, que es lo que suena imposible y es el agujero que esto
-      // tapa: `apagarSerie` sólo mira las LIBRES, y una unidad atada a una
-      // venta viva no lo es. Vendidas todas —libres 0, stock 0—, el switch se
-      // apaga sin protestar; si después el cliente devuelve el equipo y se
-      // anula la venta, `anularVenta` la devuelve a la vitrina (`ventaId =
-      // null`) y sube el stock. El artículo queda sin serie y con una unidad
-      // libre. Sin contarla acá, prender de nuevo con 1 IMEI tipeado pasaba
-      // el `stock (1) === imeis.length (1)` y CREABA una segunda fila: stock
-      // 1 con 2 unidades libres, la card de Unidades listando más filas que
-      // el tile "En stock", y el stock en −1 al vender las dos. Nada lo
-      // detectaba y no había forma de arreglarlo sin SQL.
+      // APAGADO, que es lo que suena imposible: `apagarSerie` sólo mira las
+      // LIBRES, y una unidad atada a una venta viva no lo es. Vendidas todas
+      // —libres 0, stock 0—, el switch se apaga sin protestar; si después el
+      // cliente devuelve el equipo y se anula la venta, `anularVenta` la
+      // devuelve a la vitrina (`ventaId = null`) y sube el stock. El artículo
+      // queda sin serie y con una unidad libre (hallazgo C1 de la review de
+      // rama del ciclo anterior). Contarla acá es lo que evita crear una
+      // segunda fila para el mismo equipo.
       //
-      // Se arregla ACÁ y no en `apagarSerie` —prohibiendo apagar mientras
-      // alguna unidad esté atada a una venta viva, que es lo más cercano al
-      // razonamiento del spec— porque una unidad vendida queda atada a su
-      // venta PARA SIEMPRE: esa regla dejaría el switch irreversible para
-      // todo local que haya vendido un solo teléfono, que es peor producto
-      // que el bug.
-      //
-      // Y se reusan en vez de pedir sus IMEI de nuevo: el sistema ya los
-      // tiene, así que volver a pedirlos sería inventarle trabajo al dueño
-      // para terminar con dos filas del mismo equipo.
+      // Si `stock < libresExistentes` —el mismo estado huérfano, pero con el
+      // stock bajado por una vía que no es serie mientras tanto— no hay
+      // ninguna cantidad no negativa que crear: se rechaza, y la salida es dar
+      // de baja las unidades sobrantes desde la card, que ahora se muestra
+      // aunque el switch esté apagado.
       const libresExistentes = await tx.unidadDeArticulo.count({
         where: { articuloId, ventaId: null, bajaEn: null },
       })
-      if (!stock.equals(libresExistentes + imeis.length)) {
+      const faltan = stock.minus(libresExistentes)
+      if (faltan.lessThan(0)) {
         throw new ErrorDeInventario(
           'SERIE_CONTEO_NO_COINCIDE',
-          libresExistentes > 0
-            ? `hay ${stock} en stock y ${libresExistentes} equipos ya cargados de antes, así ` +
-              `que faltan ${stock.minus(libresExistentes)} IMEI y llegaron ${imeis.length}`
-            : `hay ${stock} en stock y llegaron ${imeis.length} IMEI: tienen que ser los mismos`,
+          `${articulo.nombre} tiene ${libresExistentes} unidades cargadas y sólo ` +
+            `${stock} en stock: da de baja las que sobran antes de manejarlo por IMEI`,
         )
       }
 
-      await crearUnidadesEnTx(tx, { tenantId, articuloId, imeis, usuarioId })
+      await crearUnidadesEnTx(tx, {
+        tenantId, articuloId, usuarioId,
+        imeis: Array.from({ length: faltan.toNumber() }, () => null),
+      })
       await tx.articulo.update({ where: { id: articuloId }, data: { llevaSerie: true } })
     })
   } catch (e) {
@@ -272,6 +278,70 @@ export async function apagarSerie(entrada: {
       await tx.articulo.update({ where: { id: articuloId }, data: { llevaSerie: false } })
     })
   } catch (e) {
+    throw traducirErrorDeBase(e)
+  }
+}
+
+/**
+ * Carga o CORRIGE el IMEI de una unidad libre — el otro camino de captura,
+ * oportunista: se completa cuando el equipo aparece, no antes.
+ *
+ * Sólo mientras esté LIBRE. Una vez vendida o dada de baja el IMEI queda
+ * congelado, por lo mismo que `VentaItem` congela descripción y precio: la
+ * venta de marzo tiene que seguir diciendo qué equipo salió, aunque alguien
+ * corrija un typo en otro lado después.
+ *
+ * La condición va DENTRO del `updateMany` y no en un `if` sobre un
+ * `findUnique`: leer y después decidir deja una ventana entre las dos
+ * sentencias, y bajo READ COMMITTED la unidad se puede vender en el medio.
+ * Mismo recurso que `darDeBajaUnidad`.
+ *
+ * **El choque contra el índice** al escribir un IMEI que ya tiene otra unidad
+ * libre sale como `P2002` desde este mismo `updateMany`, así que necesita su
+ * propia traducción a `IMEI_REPETIDO` — la de `crearUnidadesEnTx` no lo cubre,
+ * porque esta función no pasa por ahí. El `catch` sólo relanza, nunca
+ * consulta: la violación aborta la transacción, igual que documenta
+ * `crearUnidadesEnTx` acá arriba.
+ */
+export async function identificarUnidad(entrada: {
+  tenantId: string
+  unidadId: string
+  imei: string
+  usuarioId: string
+}): Promise<void> {
+  const { tenantId, unidadId, usuarioId } = entrada
+  const imei = normalizarImei(entrada.imei)
+
+  try {
+    await enTransaccionDeTenant(tenantId, async (tx) => {
+      await exigirUsuario(tx, usuarioId)
+
+      const tocadas = await tx.unidadDeArticulo.updateMany({
+        where: { id: unidadId, ventaId: null, bajaEn: null },
+        data: { imei },
+      })
+      if (tocadas.count !== 1) {
+        const existe = await tx.unidadDeArticulo.findUnique({ where: { id: unidadId } })
+        if (!existe) {
+          throw new ErrorDeInventario(
+            'UNIDAD_INEXISTENTE',
+            `la unidad ${unidadId} no existe en este tenant`,
+          )
+        }
+        throw new ErrorDeInventario(
+          'UNIDAD_NO_DISPONIBLE',
+          'ese equipo ya salió del stock: su IMEI no se puede cambiar',
+        )
+      }
+    })
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      throw new ErrorDeInventario(
+        'IMEI_REPETIDO',
+        `el IMEI ${imei} ya está en el stock: si es otro equipo revisá el número, y si es el ` +
+          'mismo ya lo tenés cargado',
+      )
+    }
     throw traducirErrorDeBase(e)
   }
 }

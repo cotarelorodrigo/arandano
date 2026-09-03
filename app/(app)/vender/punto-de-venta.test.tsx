@@ -130,6 +130,22 @@ async function renderConCarrito(lineas: Partial<Linea>[]) {
   )
 }
 
+/**
+ * Renderiza la lista del selector de unidad con esas unidades.
+ *
+ * Es el CUERPO del diálogo y no el diálogo entero: abrirlo de verdad exige un
+ * click sobre un resultado del buscador y una respuesta de `unidadesDeArticulo`
+ * —dos cosas que `renderToStaticMarkup` no puede hacer—, así que el
+ * agrupamiento (que es lo que la Task 7 decide) vive en un componente
+ * exportado que se renderiza solo. Mismo criterio que `itemsParaCobrar`:
+ * sacar a una función/componente puro lo que no se puede afirmar a través de
+ * la pantalla completa.
+ */
+async function renderSelector(unidades: { id: string; imei: string | null; ingresadaEn: Date }[]) {
+  const { UnidadesDelSelector } = await import('./punto-de-venta')
+  return renderToStaticMarkup(<UnidadesDelSelector unidades={unidades} onElegir={() => {}} />)
+}
+
 describe('el punto de venta', () => {
   it('renderiza con el carrito vacío', async () => {
     expect(await render()).toContain('Buscar artículo')
@@ -397,6 +413,97 @@ describe('el punto de venta', () => {
   // `unidadId` de ningún valor (ni `null` ni `''`) — `JSON.stringify`
   // descarta las propiedades `undefined`, que es justo lo que `cobrar`
   // (acciones.ts) espera para "sin unidad" (ver su guard de `esUuid`).
+  // Task 7 del ciclo "unidades sin identificar".
+  it('el selector muestra UNA sola fila para las sin identificar, con cuántas quedan', async () => {
+    // Listar treinta filas idénticas es pedirle a alguien que elija entre
+    // cosas indistinguibles: no hay ninguna decisión que tomar ahí. Una sola
+    // fila, con el contador, y el motor se lleva la más vieja.
+    const html = await renderSelector([
+      { id: 'u1', imei: null, ingresadaEn: new Date('2026-09-01T12:00:00Z') },
+      { id: 'u2', imei: null, ingresadaEn: new Date('2026-09-01T12:00:00Z') },
+      { id: 'u3', imei: '355000000000001', ingresadaEn: new Date('2026-09-01T12:00:00Z') },
+    ])
+    expect(html.split('sin identificar').length - 1).toBe(1)
+    expect(html).toContain('2')
+    expect(html).toContain('355000000000001')
+  })
+
+  it('con una sola sin identificar, la fila sigue siendo una', async () => {
+    const html = await renderSelector([
+      { id: 'u1', imei: null, ingresadaEn: new Date('2026-09-01T12:00:00Z') },
+    ])
+    expect(html.split('sin identificar').length - 1).toBe(1)
+  })
+
+  it('sin ninguna sin identificar, el selector no nombra el caso', async () => {
+    const html = await renderSelector([
+      { id: 'u1', imei: '355000000000001', ingresadaEn: new Date('2026-09-01T12:00:00Z') },
+    ])
+    expect(html).not.toContain('sin identificar')
+  })
+
+  it('itemsParaCobrar manda el imeiCapturado cuando se escaneó al vender', async () => {
+    const { itemsParaCobrar } = await import('./punto-de-venta')
+    const items = itemsParaCobrar([
+      {
+        articuloId: 'a1', sku: 'A-1', descripcion: 'iPhone', precio: '1000', moneda: 'ARS',
+        stock: '1', esProducto: true, cantidad: '1',
+        llevaSerie: true, unidadId: 'u1', imei: null, imeiCapturado: '355000000000009',
+      },
+    ])
+    expect(items[0].imeiCapturado).toBe('355000000000009')
+  })
+
+  // `undefined` y no `''`: `JSON.stringify` descarta la clave entera, así que
+  // el servidor recibe un ítem sin el campo — que es exactamente "no se
+  // escaneó nada", el camino por defecto de este ciclo.
+  it('y lo omite cuando no se escaneó nada', async () => {
+    const { itemsParaCobrar } = await import('./punto-de-venta')
+    const items = itemsParaCobrar([
+      {
+        articuloId: 'a1', sku: 'A-1', descripcion: 'iPhone', precio: '1000', moneda: 'ARS',
+        stock: '1', esProducto: true, cantidad: '1',
+        llevaSerie: true, unidadId: 'u1', imei: null,
+      },
+    ])
+    expect(items[0].imeiCapturado).toBeUndefined()
+    expect(JSON.stringify(items)).not.toContain('imeiCapturado')
+  })
+
+  // La línea del carrito: con la unidad ya identificada muestra su IMEI (el
+  // caso que ya existía, más arriba); sin identificar, ofrece capturarlo.
+  it('una línea con la unidad sin identificar ofrece escanear el IMEI', async () => {
+    const html = await renderConCarrito([
+      { llevaSerie: true, unidadId: 'u1', imei: null, descripcion: 'iPhone 13' },
+    ])
+    expect(html).toContain('name="imeiCapturado"')
+  })
+
+  // La leyenda EXACTA, y no un `/opcional/i` suelto: la primera versión de
+  // este caso pasaba con la feature sin construir, porque la palabra ya
+  // aparecía en otro lado de la pantalla. Un caso que pasa antes de existir lo
+  // que prueba no prueba nada.
+  it('y avisa que se puede dejar en blanco: el IMEI se ofrece, no se exige', async () => {
+    const html = await renderConCarrito([
+      { llevaSerie: true, unidadId: 'u1', imei: null, descripcion: 'iPhone 13' },
+    ])
+    expect(html).toContain('IMEI opcional: podés dejarlo en blanco y cargarlo después')
+  })
+
+  it('y esa leyenda NO aparece en una línea con la unidad ya identificada', async () => {
+    const html = await renderConCarrito([
+      { llevaSerie: true, unidadId: 'u1', imei: '355000000000001', descripcion: 'iPhone 13' },
+    ])
+    expect(html).not.toContain('IMEI opcional')
+  })
+
+  it('una línea con la unidad YA identificada no ofrece capturar nada', async () => {
+    const html = await renderConCarrito([
+      { llevaSerie: true, unidadId: 'u1', imei: '355000000000001', descripcion: 'iPhone 13' },
+    ])
+    expect(html).not.toContain('name="imeiCapturado"')
+  })
+
   it('itemsParaCobrar no manda unidadId para una línea sin serie', async () => {
     const { itemsParaCobrar } = await import('./punto-de-venta')
     const items = itemsParaCobrar([

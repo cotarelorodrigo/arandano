@@ -394,7 +394,17 @@ model UnidadDeArticulo {
   id             String    @id @default(uuid(7)) @db.Uuid
   tenantId       String    @map("tenant_id") @db.Uuid
   articuloId     String    @map("articulo_id") @db.Uuid
-  imei           String
+  /// NULL significa "acá hay un teléfono, todavía no sabemos cuál". No rompe el
+  /// invariante: cada teléfono físico sigue siendo una fila y `stock` sigue
+  /// siendo la cantidad de filas libres — lo único que puede faltar es el
+  /// identificador.
+  ///
+  /// El índice único parcial NO necesita excluirlos: en Postgres los NULL no
+  /// chocan entre sí en un índice único, así que treinta unidades sin
+  /// identificar conviven mientras se sigue prohibiendo que haya dos libres con
+  /// el mismo IMEI real. Es la misma propiedad de `NULL <> NULL` que en el
+  /// árbol de categorías fue el problema; acá es exactamente lo que se quiere.
+  imei           String?
   ingresadaEn    DateTime  @default(now()) @map("ingresada_en") @db.Timestamptz(3)
   ingresadaPorId String    @map("ingresada_por_id") @db.Uuid
   /// La venta que se la llevó. NULL mientras esté en la vitrina.

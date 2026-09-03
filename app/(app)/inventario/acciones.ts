@@ -19,7 +19,7 @@ import {
   borrarCategoria,
 } from '@/lib/inventario/categorias'
 import { ingresarStock, corregirStock, darDeBajaUnidad } from '@/lib/inventario/stock'
-import { prenderSerie, apagarSerie } from '@/lib/inventario/unidades'
+import { prenderSerie, apagarSerie, identificarUnidad } from '@/lib/inventario/unidades'
 import { ErrorDeInventario } from '@/lib/inventario/errores'
 import { aDecimal, aDecimalOpcional, ErrorDeFormato } from '@/lib/formato/numeros'
 import { esUuid } from '@/lib/uuid'
@@ -140,11 +140,13 @@ export async function altaArticulo(
         imeis: llevaSerie ? imeis : undefined,
         // Un servicio no lleva stock, y sin JavaScript los campos se ven
         // igual: se ignoran acá en vez de rechazar el alta por algo que la
-        // persona no eligió mandar. Con el switch de IMEI prendido tampoco se
-        // manda: el stock nace de la lista de unidades, no de un número
-        // tipeado — `crearArticulo` rechaza recibir los dos juntos.
+        // persona no eligió mandar. Con el switch de IMEI prendido TAMBIÉN se
+        // manda (Task 5 del ciclo "unidades sin identificar"): ya no se
+        // excluye, porque pasa a ser el número que gobierna la carga
+        // progresiva — `crearArticulo` completa la diferencia con unidades
+        // sin identificar, o rechaza si llegaron más IMEI que stock.
         stockInicial:
-          tipo === 'PRODUCTO' && !llevaSerie
+          tipo === 'PRODUCTO'
             ? aDecimalOpcional(texto(datos, 'stockInicial'), 'el stock inicial')
             : null,
         // El costo se descarta si esta persona no puede cargarlo: el campo no
@@ -245,9 +247,19 @@ export async function reactivarArticuloAccion(
 /**
  * Recibir mercadería. Task 8 del ciclo de unidades por IMEI: aprende a leer
  * `imeis` — el motor (`ingresarStock`) ya los acepta desde la Task 3, pero
- * hasta esta task nada en el medio se los pasaba. Es acá, y no en la Task 3 ni
- * en la 7, porque es acá donde `MoverStock` empieza a postearlos: sin este
- * cambio la pantalla manda a una acción que los ignora en silencio.
+ * hasta esa task nada en el medio se los pasaba. Es acá, y no en la Task 3 ni
+ * en la 7, porque es acá donde `MoverStock` empieza a postearlos: sin ese
+ * cambio la pantalla mandaba a una acción que los ignoraba en silencio.
+ *
+ * **Task 5 del ciclo "unidades sin identificar" cambió la señal.** Antes,
+ * `MoverStock` dibujaba UNA de las dos ramas (cantidad o lista) y `has('imeis')`
+ * alcanzaba para saber cuál. Ahora la card "Ingresar mercadería" ofrece las
+ * DOS a la vez —cantidad y la lista progresiva, escanear es opcional—, así que
+ * el campo `imeis` viaja SIEMPRE que esa card se dibuje, vacío o no: la
+ * presencia del campo dejó de decir nada. La señal pasa a ser la lista YA
+ * FILTRADA — si quedó al menos un IMEI real se manda esa lista, si no se
+ * manda la cantidad tipeada. Nunca las dos juntas: el motor (`ingresarStock`)
+ * las rechaza a propósito, así que acá no se manda ninguna "por las dudas".
  */
 export async function ingresarMercaderia(
   _e: EstadoInventario,
@@ -260,22 +272,13 @@ export async function ingresarMercaderia(
     // llamador sin sesión reciba un error de formato en vez del redirect al
     // login. El guard no puede depender de que lo que mandaron sea válido.
     const cantidadIngresada = await conSesion(async (tenantId, usuarioId) => {
-      // `has` y no "la lista filtrada tiene longitud > 0": un artículo con
-      // serie manda el campo `imeis` SIEMPRE que MoverStock dibuje esa rama
-      // (ListaDeImeis arranca con una fila, vacía o no), así que "mandó el
-      // campo" es la señal de qué pantalla lo llenó — no cuántos IMEI quedaron
-      // después de filtrar los vacíos. Decidir por longitud metería un
-      // `aDecimal('')` a ciegas contra un campo `cantidad` que esa rama nunca
-      // dibuja. Mismo parseo que `altaArticulo`: `getAll` y no `get`, con los
-      // vacíos descartados.
-      const tieneImeis = datos.has('imeis')
-      const imeis = tieneImeis
-        ? datos.getAll('imeis').map(String).filter((i) => i.trim() !== '')
-        : undefined
-      // Exactamente uno de los dos, nunca los dos: el motor rechaza recibir
-      // `cantidad` e `imeis` juntos, así que acá no se manda ninguno "por las
-      // dudas" — cuál corresponde lo decide la pantalla, no esta acción.
-      const cantidad = tieneImeis ? undefined : aDecimal(texto(datos, 'cantidad'), 'la cantidad')
+      // Mismo parseo que `altaArticulo`: `getAll` y no `get`, con los vacíos
+      // descartados. Con la lista sin nada escaneado (todo vacío, o el campo
+      // ni siquiera presente porque `llevaSerie` es falso) `imeisFiltrados`
+      // queda `[]` y se manda la cantidad.
+      const imeisFiltrados = datos.getAll('imeis').map(String).filter((i) => i.trim() !== '')
+      const imeis = imeisFiltrados.length > 0 ? imeisFiltrados : undefined
+      const cantidad = imeis ? undefined : aDecimal(texto(datos, 'cantidad'), 'la cantidad')
       await ingresarStock({
         tenantId,
         articuloId,
@@ -339,13 +342,15 @@ export async function prenderSerieAccion(
 ): Promise<EstadoInventario> {
   try {
     const articuloId = texto(datos, 'articuloId')
-    await comoPuede('ARTICULOS_EDITAR', async (tenantId, usuarioId) => {
-      // getAll y no get: el diálogo postea un campo por unidad que ya hay
-      // (ListaDeImeis con `filasFijas`), y los vacíos se descartan igual que
-      // en altaArticulo.
-      const imeis = datos.getAll('imeis').map(String).filter((i) => i.trim() !== '')
-      await prenderSerie({ tenantId, articuloId, imeis, usuarioId })
-    })
+    // `prenderSerie` ya no acepta IMEIs (ciclo "unidades sin identificar",
+    // Task 2): cuenta el stock y las unidades libres que ya haya, y crea la
+    // diferencia sin identificar. Desde la Task 6 la pantalla tampoco los
+    // manda —el diálogo que pedía N IMEI de una sentada se borró—, pero la
+    // acción sigue sin leerlos a propósito: un `<form>` es un endpoint, y que
+    // la pantalla haya dejado de dibujar un campo no impide que llegue.
+    await comoPuede('ARTICULOS_EDITAR', (tenantId, usuarioId) =>
+      prenderSerie({ tenantId, articuloId, usuarioId }),
+    )
     revalidatePath('/inventario')
     revalidatePath(`/inventario/${articuloId}`)
     return { error: null, aviso: 'Este artículo ahora se maneja por IMEI.' }
@@ -386,6 +391,43 @@ export async function darDeBajaUnidadAccion(
     revalidatePath('/inventario')
     revalidatePath(`/inventario/${articuloId}`)
     return { error: null, aviso: 'Unidad dada de baja.' }
+  } catch (e) {
+    return traducir(e)
+  }
+}
+
+/**
+ * Cargar el IMEI de una unidad que entró sin él, o corregir uno mal tipeado
+ * (Task 6 del ciclo "unidades sin identificar").
+ *
+ * **Detrás de `conSesion` y no de `comoPuede`**, igual que `ingresarMercaderia`,
+ * `corregirPorConteo` y la baja: ponerle el número a la caja que acaba de
+ * aparecer es operación del día, la hace quien está atendiendo, y queda
+ * firmada con su `usuarioId`. Un permiso propio dejaría al local sin poder
+ * cuadrar el stock hasta que llegue el dueño — que es exactamente la fricción
+ * que este ciclo vino a sacar.
+ *
+ * El IMEI vacío no necesita guarda acá: `normalizarImei` tira `IMEI_VACIO` y
+ * `traducir()` lo convierte en cartel. Sin eso la unidad quedaría "cargada"
+ * con la cadena vacía — ni identificada ni sin identificar.
+ */
+export async function identificarUnidadAccion(
+  _e: EstadoInventario,
+  datos: FormData,
+): Promise<EstadoInventario> {
+  try {
+    const articuloId = texto(datos, 'articuloId')
+    await conSesion((tenantId, usuarioId) =>
+      identificarUnidad({
+        tenantId,
+        unidadId: texto(datos, 'unidadId'),
+        imei: texto(datos, 'imei'),
+        usuarioId,
+      }),
+    )
+    revalidatePath('/inventario')
+    revalidatePath(`/inventario/${articuloId}`)
+    return { error: null, aviso: 'IMEI cargado.' }
   } catch (e) {
     return traducir(e)
   }

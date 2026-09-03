@@ -2353,6 +2353,93 @@ Y del producto:
   la lista de unidades libres; y que un artículo SIN serie se vea exactamente
   como antes — sin switch prendido, sin card de Unidades, con su stepper y su
   corrección por conteo de siempre.
+- ~~Que el IMEI se pueda cargar cuando el equipo aparece, y no todo de una al
+  prender el switch.~~ **Hecho** (2026-09-03). Sale de **usar** lo que el ciclo
+  anterior construyó contra un inventario real, no de teorizar: prender el
+  switch en un artículo con treinta unidades abría un diálogo modal con treinta
+  campos que no entraba en la pantalla, y —peor que el modal— exigía tener los
+  treinta equipos delante en ese mismo momento. Un depósito no funciona así. Ver
+  `docs/superpowers/specs/2026-09-03-unidades-sin-identificar-design.md`.
+
+  **Es una reversión explícita de la decisión 2 del ciclo del 2026-09-02**, la
+  que decía *"con el switch prendido no hay excepciones: TODA unidad se carga al
+  ingresar"* y descartaba el mixto porque *"deja el stock con dos verdades
+  posibles (dice 5 y hay 3 IMEI)"*. La entrada de ese ciclo **no se reescribe**:
+  queda como registro de lo que era cierto ese día, y ésta apunta a ella.
+
+  **Lo que la hace legítima es que el invariante que aquella decisión protegía
+  sigue intacto.** El miedo era que el stock dijera 5 y hubiera 3 IMEI, o sea
+  que el número dejara de significar algo. Eso no pasa: **cada teléfono sigue
+  siendo una fila** de `UnidadDeArticulo`, y `stock = unidades libres` se
+  mantiene exactamente igual. Lo que cambia es qué se sabe DE cada fila — el
+  IMEI pasa de "obligatorio al nacer" a "nullable, y se completa cuando el
+  equipo aparece". Nunca hay dos verdades: hay treinta unidades, y de tres se
+  sabe cuáles son. "Quedan 27 sin identificar" es un dato preciso, no una
+  ambigüedad.
+
+  **Lo que cambia, en las tres pantallas:**
+
+  - **Prender el switch no pide nada.** `prenderSerie` cuenta el stock y las
+    unidades libres que ya haya, y crea la diferencia sin identificar. El
+    `Dialog` de N campos se borró entero.
+  - **El alta y el ingreso de mercadería aceptan cantidad Y lista.** Se declara
+    cuántas entraron y se escanean las que se tengan a mano; el resto nacen sin
+    número. Más IMEI que cantidad se rechaza —no se pueden identificar equipos
+    que no entraron—, y sin cantidad el stock sigue naciendo del largo de la
+    lista, así que el camino del ciclo anterior sigue funcionando igual.
+  - **La card "Unidades" pasa a ser el lugar donde se carga**, no sólo donde se
+    mira: un campo enfocado que le pone el número a la más vieja y se vacía solo
+    para el escaneo siguiente, más "Corregir" en cada fila ya identificada.
+  - **Al vender se puede escanear, y es opcional.** El selector muestra una sola
+    fila para todas las sin identificar —treinta filas idénticas no son una
+    decisión— y la línea del carrito ofrece capturar el número, con la leyenda
+    de que se puede dejar en blanco.
+
+  **La regla de producto que este ciclo deja escrita, y que vale más que la
+  feature: un dato que sólo se puede cargar todo junto y por adelantado es un
+  dato que no se carga.** El diseño anterior no era incorrecto en el modelo —el
+  esquema aguantaba— sino en CUÁNDO exigía la información. Es la misma familia
+  de error que este documento ya registró con el formulario de cinco campos de
+  la landing y con el prefill de la cotización: pedir de más en el momento
+  equivocado no produce datos mejores, produce que nadie use la feature.
+
+  **Y la lección sobre el método, que es incómoda y por eso se escribe: el ciclo
+  anterior pasó el gate entero.** 2.409 tests en verde, `tsc` limpio, lint
+  limpio, y el modal no entraba en la pantalla. Ningún test puede contestar
+  "esto entra en 900 px de alto" ni "quién tiene treinta cajas delante". Lo
+  encontró usarlo. Es exactamente lo que la sección *Cómo se manejan los
+  cambios* viene diciendo del healthcheck y los smoke tests —son una red, no una
+  prueba de que la feature sirva—, y acá se cobró.
+
+  **Y una que vale para el `.pen`**: de los cuatro controles que el ciclo
+  anterior derivó sin frame, **tres salieron bien y uno era justamente el
+  defecto**. Derivar del código cuando la maqueta no dibuja no es gratis, y el
+  que salió mal no se descubrió con un test. Anotado en
+  `docs/correcciones-pendientes-del-pen.md`, entrada 28.
+
+  **Sin permiso nuevo y sin migración de datos.** El catálogo de
+  `lib/permisos/catalogo.ts` no crece: `identificarUnidadAccion` va detrás de
+  `conSesion`, donde ya están ingresar mercadería y corregir por conteo. La
+  migración es `imei` de `NOT NULL` a nullable más el índice único parcial
+  reescrito para ignorar los `NULL` — aditiva en el sentido que importa: toda
+  fila ya escrita sigue siendo válida y la imagen anterior la lee sin
+  enterarse.
+
+  **Queda pendiente la verificación manual, y esta vez SE PUEDE hacer**:
+  `arandano-dev` sirve `main`, así que el obstáculo de los últimos cinco ciclos
+  desaparece en cuanto esto se mergee. `scripts/sembrar-catalogo-dev.mts` siembra
+  `A-0011` (un Galaxy con **30 unidades y sólo 3 identificadas**) exactamente
+  para eso. Lo que hay que mirar, a 1440 y a 390 px: que prender el switch en ese
+  artículo sea instantáneo y la card quede en "quedan 27 sin identificar"; que
+  tres escaneos seguidos bajen el contador a 24 sin recargar y sin tocar el
+  mouse; que al volver a entrar siga en 24 —que es lo que el diseño anterior no
+  podía dar—; que la lista scrollee dentro de su tope en vez de empujar la
+  página; que corregir un IMEI ya cargado funcione y deje de ofrecerse una vez
+  vendido; que el selector de `/vender` muestre las identificadas más UNA fila
+  para el resto; que vender una sin escanear nada no frene la venta y vender otra
+  escaneando la deje identificada; y que un artículo sin serie se vea exactamente
+  como siempre.
+
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

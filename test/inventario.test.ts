@@ -323,13 +323,53 @@ describe('ingresarStock', () => {
     expect((await unidadesLibres(tenantId, a.id)).map((u) => u.imei)).toEqual(['I1', 'I2', 'I3'])
   })
 
-  it('un artículo con serie rechaza una cantidad suelta', async () => {
-    const a = await crearArticuloConSerie('iPhone 14', [])
-    await expect(
-      ingresarStock({ tenantId, articuloId: a.id, cantidad: d('2'), usuarioId }),
-    ).rejects.toThrow(expect.objectContaining({ codigo: 'SERIE_REQUIERE_IMEIS' }))
+  // El cambio de este ciclo: decir CUÁNTOS entran es obligatorio, decir
+  // CUÁLES son, no. Reemplaza al test que antes rechazaba esta misma llamada.
+  it('un artículo con serie acepta una cantidad suelta: nacen sin identificar', async () => {
+    const a = await crearArticuloConSerie('iPhone 13', ['355000000000001'])
+    await ingresarStock({ tenantId, articuloId: a.id, cantidad: d('10'), usuarioId })
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('11')
+    const libres = await unidadesLibres(tenantId, a.id)
+    expect(libres).toHaveLength(11)
+    expect(libres.filter((u) => u.imei === null)).toHaveLength(10)
   })
 
+  it('y sigue aceptando la lista, con las unidades identificadas', async () => {
+    const a = await crearArticuloConSerie('iPhone 14', [])
+    await ingresarStock({ tenantId, articuloId: a.id, imeis: ['A1', 'A2'], usuarioId })
+    expect((await unidadesLibres(tenantId, a.id)).map((u) => u.imei).sort()).toEqual(['A1', 'A2'])
+  })
+
+  it('pero NO las dos juntas', async () => {
+    const a = await crearArticuloConSerie('iPhone 15', [])
+    const promesa = ingresarStock({
+      tenantId, articuloId: a.id, cantidad: d('2'), imeis: ['B1'], usuarioId,
+    })
+    await expect(promesa).rejects.toThrow(
+      expect.objectContaining({ codigo: 'SERIE_REQUIERE_IMEIS' }),
+    )
+    // Ni el stock ni ninguna unidad quedaron a medias.
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('0')
+    expect(await unidadesLibres(tenantId, a.id)).toHaveLength(0)
+  })
+
+  // Sin este chequeo, `Array.from({ length: 2.5 })` trunca a 2 unidades
+  // mientras el movimiento suma 2.5 al stock: la invariante (stock = unidades
+  // libres) queda rota en silencio y para siempre. El `toHaveLength(0)` es el
+  // punto del test, no el `rejects` — probar sólo que tira sin mirar el
+  // estado dejaría pasar justo la divergencia que hace peligroso el bug.
+  it('un artículo con serie rechaza una cantidad no entera: media unidad no existe', async () => {
+    const a = await crearArticuloConSerie('iPhone 16', [])
+    await expect(
+      ingresarStock({ tenantId, articuloId: a.id, cantidad: d('2.5'), usuarioId }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'SERIE_STOCK_NO_ENTERO' }))
+    expect((await leerArticulo(a.id)).stock.toString()).toBe('0')
+    expect(await unidadesLibres(tenantId, a.id)).toHaveLength(0)
+  })
+
+  // Sigue cubierto por el test de abajo ("un artículo SIN serie rechaza que
+  // le manden IMEIs"): esta rama no cambia con esta task, y duplicarlo con
+  // `crearArticulo` no agrega nada que esa cobertura no tuviera ya.
   it('un artículo SIN serie rechaza que le manden IMEIs', async () => {
     const a = await owner.query(
       `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, creado_en, actualizado_en)

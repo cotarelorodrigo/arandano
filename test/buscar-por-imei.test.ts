@@ -11,8 +11,11 @@ import { crearTenant, crearUsuario } from './datos'
 let buscarArticulosVendibles: typeof import('@/lib/ventas/buscar').buscarArticulosVendibles
 let enTransaccionDeTenant: typeof import('@/lib/tenant/transaccion').enTransaccionDeTenant
 let unidadesLibres: typeof import('@/lib/inventario/unidades').unidadesLibres
-let prenderSerie: typeof import('@/lib/inventario/unidades').prenderSerie
+let crearUnidadesEnTx: typeof import('@/lib/inventario/unidades').crearUnidadesEnTx
 let desactivarArticulo: typeof import('@/lib/inventario/articulos').desactivarArticulo
+// Task 4: para dejar unidades SIN identificar por el camino real —prender el
+// switch, que hoy sólo crea unidades sin IMEI.
+let prenderSerie: typeof import('@/lib/inventario/unidades').prenderSerie
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -28,7 +31,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   ;({ buscarArticulosVendibles } = await import('@/lib/ventas/buscar'))
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
-  ;({ unidadesLibres, prenderSerie } = await import('@/lib/inventario/unidades'))
+  ;({ unidadesLibres, crearUnidadesEnTx, prenderSerie } = await import('@/lib/inventario/unidades'))
   ;({ desactivarArticulo } = await import('@/lib/inventario/articulos'))
 
   owner = new Client({ connectionString: urlOwner() })
@@ -60,13 +63,19 @@ async function crearArticulo(nombre: string, stock: string, precio: string) {
   )
 }
 
-/** Un artículo que YA lleva serie, con una unidad libre por cada IMEI de la
- *  lista. Pasa por el camino real (`prenderSerie`) y no por SQL a mano: así
- *  además de fixture confirma que ese camino deja el artículo en el estado que
- *  estos tests dan por sentado. */
+/** Un artículo que YA lleva serie, con una unidad libre IDENTIFICADA por cada
+ *  IMEI de la lista. Ya NO pasa por `prenderSerie` —que desde el ciclo
+ *  "unidades sin identificar" no acepta ningún IMEI puntual, sólo crea
+ *  unidades sin identificar—, así que arma el mismo estado con la pieza que
+ *  `prenderSerie` usa por dentro: `crearUnidadesEnTx` más el
+ *  `llevaSerie: true` que dejaría el switch. Mismo patrón que
+ *  test/unidades.test.ts. */
 async function crearArticuloConSerie(nombre: string, imeis: string[], precio: string) {
   const a = await crearArticulo(nombre, imeis.length.toString(), precio)
-  await prenderSerie({ tenantId, articuloId: a.id, imeis, usuarioId })
+  await enTransaccionDeTenant(tenantId, async (tx) => {
+    await crearUnidadesEnTx(tx, { tenantId, articuloId: a.id, imeis, usuarioId })
+    await tx.articulo.update({ where: { id: a.id }, data: { llevaSerie: true } })
+  })
   return a
 }
 
@@ -150,5 +159,25 @@ describe('buscarArticulosVendibles: búsqueda por IMEI', () => {
     expect(
       await buscarArticulosVendibles(tenantId, '123456789012345', { porPalabras: true }),
     ).toHaveLength(0)
+  })
+
+  // Task 4: crea el artículo, le prende la serie con `prenderSerie` —el
+  // camino real por el que hoy nacen unidades sin identificar— y deja
+  // `cuantas` libres y sin IMEI.
+  async function crearArticuloConStockSinIdentificar(
+    nombre: string,
+    cuantas: number,
+    precio: string,
+  ) {
+    const a = await crearArticulo(nombre, cuantas.toString(), precio)
+    await prenderSerie({ tenantId, articuloId: a.id, usuarioId })
+    return a
+  }
+
+  it('el buscador por IMEI ignora las unidades sin identificar', async () => {
+    // Escanear no puede traer una unidad cuyo IMEI no conocemos, y buscar por
+    // cadena vacía tampoco.
+    await crearArticuloConStockSinIdentificar('iPhone 12', 3, '500000')
+    expect(await buscarArticulosVendibles(tenantId, '')).toHaveLength(0)
   })
 })

@@ -21,7 +21,13 @@ export type ArticuloVendible = {
   // Presente sólo cuando la búsqueda entró por un IMEI exacto: es la unidad
   // que el escaneo identificó, y es lo que le permite al carrito agregar la
   // línea con la unidad ya elegida.
-  unidad?: { id: string; imei: string }
+  //
+  // `imei` es `string | null` sólo porque `UnidadDeArticulo.imei` lo es desde
+  // el ciclo "unidades sin identificar" (Task 1) — acá nunca puede ser `null`
+  // de verdad: la búsqueda de más abajo filtra `imei: busqueda`, un valor
+  // concreto no vacío, así que la unidad que encuentra siempre tiene IMEI. El
+  // tipo se ensancha para que compile, no porque el caso exista.
+  unidad?: { id: string; imei: string | null }
   // Para que el carrito sepa que tiene que pedir una unidad cuando el
   // artículo se agregó por nombre y no por escaneo.
   llevaSerie: boolean
@@ -238,7 +244,13 @@ export async function buscarArticulosVendibles(
     // que no exista el camino, no que el prompt lo prohíba.
     const unidad = await prisma.unidadDeArticulo.findFirst({
       where: {
-        imei: busqueda,
+        // `not: null` no cambia qué matchea: `busqueda` nunca es `''` acá —el
+        // guard de más arriba ya cortó ese caso— así que un `equals` contra un
+        // valor concreto nunca podría matchear un `NULL` de todos modos. Se
+        // deja igual, EXPLÍCITO, para que quede escrito a propósito lo que hoy
+        // es una consecuencia accidental: una unidad cuyo IMEI no conocemos NO
+        // es alcanzable por escaneo.
+        imei: { equals: busqueda, not: null },
         ventaId: null,
         bajaEn: null,
         articulo: { desactivadoEn: null },

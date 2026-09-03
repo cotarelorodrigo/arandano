@@ -45,6 +45,8 @@ let exportarHistorialCsv: typeof import('./acciones').exportarHistorialCsv
 let prenderSerieAccion: typeof import('./acciones').prenderSerieAccion
 let apagarSerieAccion: typeof import('./acciones').apagarSerieAccion
 let darDeBajaUnidadAccion: typeof import('./acciones').darDeBajaUnidadAccion
+// Task 6 del ciclo "unidades sin identificar": cargar el IMEI cuando aparece.
+let identificarUnidadAccion: typeof import('./acciones').identificarUnidadAccion
 let authParaTenant: typeof import('@/lib/auth/para-tenant').authParaTenant
 let origenDelRequest: typeof import('@/lib/auth/origen').origenDelRequest
 // Dinámico y no estático, como el resto de este archivo: `lib/inventario/
@@ -91,6 +93,7 @@ beforeAll(async () => {
     altaArticulo, guardarArticulo, bajaArticulo,
     reactivarArticuloAccion, ingresarMercaderia, corregirPorConteo,
     exportarHistorialCsv, prenderSerieAccion, apagarSerieAccion, darDeBajaUnidadAccion,
+    identificarUnidadAccion,
   } = await import('./acciones'))
   ;({ authParaTenant } = await import('@/lib/auth/para-tenant'))
   ;({ origenDelRequest } = await import('@/lib/auth/origen'))
@@ -1108,6 +1111,54 @@ describe('altaArticulo con unidades por IMEI', () => {
     expect(estadoAlta.error).not.toBeNull()
     await expect(buscarPorNombre('iPhone 15 repetido')).resolves.toBeNull()
   })
+
+  // Task 5 del ciclo "unidades sin identificar": la carga progresiva. El alta
+  // manda `stockInicial` Y `imeis` a la vez —el stock es el que manda, y lo que
+  // no se escaneó nace sin identificar.
+  it('el alta con serie y MENOS IMEIs que stock completa con unidades sin identificar', async () => {
+    estado.cookie = cookieDuenio
+    const datos = new FormData()
+    datos.set('nombre', 'iPhone 13 lote')
+    datos.set('precio', '500000')
+    datos.set('tipo', 'PRODUCTO')
+    datos.set('moneda', 'ARS')
+    datos.set('llevaSerie', 'on')
+    datos.set('stockInicial', '10')
+    datos.append('imeis', '355900000000001')
+    datos.append('imeis', '355900000000002')
+
+    const estadoAlta = await altaArticulo(INICIAL, datos)
+    expect(estadoAlta.error).toBeNull()
+
+    const a = await buscarPorNombre('iPhone 13 lote')
+    expect(a, 'no se encontró el artículo recién creado').not.toBeNull()
+    expect(a!.stock.toString()).toBe('10')
+    const libres = await unidadesLibres(estado.tenantId, a!.id)
+    expect(libres).toHaveLength(10)
+    expect(libres.filter((u) => u.imei !== null).map((u) => u.imei).sort()).toEqual([
+      '355900000000001',
+      '355900000000002',
+    ])
+  })
+
+  it('el alta con serie y MÁS IMEIs que stock se rechaza', async () => {
+    // El stock inicial es el que manda: no se pueden identificar equipos que
+    // no entraron.
+    estado.cookie = cookieDuenio
+    const datos = new FormData()
+    datos.set('nombre', 'iPhone 14 lote')
+    datos.set('precio', '500000')
+    datos.set('tipo', 'PRODUCTO')
+    datos.set('moneda', 'ARS')
+    datos.set('llevaSerie', 'on')
+    datos.set('stockInicial', '1')
+    datos.append('imeis', '355000000000003')
+    datos.append('imeis', '355000000000004')
+
+    const estadoAlta = await altaArticulo(INICIAL, datos)
+    expect(estadoAlta.error).not.toBeNull()
+    await expect(buscarPorNombre('iPhone 14 lote')).resolves.toBeNull()
+  })
 })
 
 // Task 8 del ciclo de unidades por IMEI: la ficha administra las unidades. Las
@@ -1116,7 +1167,12 @@ describe('las acciones de unidades por IMEI', () => {
   let articuloConStock: { id: string }
   let articuloConStock3: { id: string }
   let conSerie: { id: string }
-  let unidadLibre: { id: string; imei: string }
+  let unidadLibre: { id: string; imei: string | null }
+  // Propio, y no reusando `unidadLibre`: a esa la da de baja el caso de la
+  // baja, más abajo en este mismo describe, y reusarla dejaría este caso
+  // dependiendo del orden de ejecución.
+  let unidadSinIdentificar: { id: string; imei: string | null }
+  let paraIdentificar: { id: string }
 
   beforeAll(async () => {
     articuloConStock = {
@@ -1131,13 +1187,23 @@ describe('las acciones de unidades por IMEI', () => {
     // prueba es la acción de BAJA, no el alta de la serie, y pasar por
     // `prenderSerieAccion` exigiría además una sesión con permiso sólo para
     // preparar el fixture.
-    await prenderSerie({
-      tenantId: estado.tenantId, articuloId: idConSerie, imeis: ['355900000000001'],
-      usuarioId: empleadoId,
-    })
+    // `prenderSerie` ya no acepta `imeis` (Task 2 del ciclo "unidades sin
+    // identificar"): con stock 1 y ninguna unidad libre todavía, crea 1 sin
+    // identificar — alcanza igual para lo que este describe necesita, una
+    // unidad libre a la que darle de baja.
+    await prenderSerie({ tenantId: estado.tenantId, articuloId: idConSerie, usuarioId: empleadoId })
     conSerie = { id: idConSerie }
     const libres = await unidadesLibres(estado.tenantId, idConSerie)
     unidadLibre = libres[0]
+
+    const idParaIdentificar = await crearArticuloDePrueba('Con serie, para identificar después', '2')
+    await prenderSerie({
+      tenantId: estado.tenantId,
+      articuloId: idParaIdentificar,
+      usuarioId: empleadoId,
+    })
+    unidadSinIdentificar = (await unidadesLibres(estado.tenantId, idParaIdentificar))[0]
+    paraIdentificar = { id: idParaIdentificar }
   })
 
   it('prenderSerieAccion exige ARTICULOS_EDITAR', async () => {
@@ -1179,28 +1245,85 @@ describe('las acciones de unidades por IMEI', () => {
     })
   })
 
-  it('prenderSerieAccion con menos IMEI que stock devuelve el error, no un 500', async () => {
+  it('identificarUnidadAccion la puede hacer cualquiera con sesión', async () => {
+    // Mismo lugar que ingresarMercaderia, corregirPorConteo y la baja: cargar
+    // el IMEI de una caja que acaba de aparecer es operación del día, la hace
+    // quien está atendiendo, y queda firmada con su usuarioId. Un permiso
+    // propio dejaría al local sin poder cuadrar el stock hasta que llegue el
+    // dueño, que es exactamente lo que este ciclo vino a destrabar.
+    await comoEmpleadoSinPermisos(async () => {
+      const datos = new FormData()
+      datos.set('articuloId', paraIdentificar.id)
+      datos.set('unidadId', unidadSinIdentificar.id)
+      datos.set('imei', '355000000000123')
+      const estadoResultado = await identificarUnidadAccion(INICIAL, datos)
+      expect(estadoResultado.error).toBeNull()
+
+      // No alcanza con que no haya error: lo que fija el caso es que el IMEI
+      // quedó escrito en ESA unidad.
+      const { rows } = await owner.query(
+        `SELECT imei FROM unidades_articulo WHERE id = $1`,
+        [unidadSinIdentificar.id],
+      )
+      expect(rows[0].imei).toBe('355000000000123')
+    })
+  })
+
+  it('identificarUnidadAccion con el IMEI vacío devuelve el error, no lo escribe', async () => {
+    // `normalizarImei` tira IMEI_VACIO, y `traducir()` lo convierte en cartel.
+    // Sin esto, un submit con el campo en blanco dejaría la unidad "cargada"
+    // con la cadena vacía: ni identificada ni sin identificar.
+    estado.cookie = cookieDuenio
+    const libres = await unidadesLibres(estado.tenantId, paraIdentificar.id)
+    const pendiente = libres.find((u) => u.imei === null)
+    expect(pendiente).toBeDefined()
+
+    const datos = new FormData()
+    datos.set('articuloId', paraIdentificar.id)
+    datos.set('unidadId', pendiente!.id)
+    datos.set('imei', '   ')
+    const estadoResultado = await identificarUnidadAccion(INICIAL, datos)
+    expect(estadoResultado.error).not.toBeNull()
+
+    const { rows } = await owner.query(
+      `SELECT imei FROM unidades_articulo WHERE id = $1`,
+      [pendiente!.id],
+    )
+    expect(rows[0].imei).toBeNull()
+  })
+
+  // Este test cubría el conteo estricto que `prenderSerie` exigía ANTES del
+  // ciclo "unidades sin identificar" (menos IMEI tipeados que stock era un
+  // error). Con la Task 2 de ese ciclo, `prenderSerieAccion` ya no lee
+  // `imeis` en absoluto y `prenderSerie` crea sola la diferencia sin
+  // identificar, así que este conteo ya no puede fallar — es exactamente el
+  // comportamiento nuevo, no una regresión.
+  //
+  // La Task 6 borró el diálogo que posteaba esos campos, así que hoy nadie
+  // los manda; el caso se queda igual **a propósito**, porque lo que fija es
+  // que la acción los ignore si alguien vuelve a mandarlos — un `<form>` es
+  // un endpoint, y que la pantalla haya dejado de dibujar un campo no impide
+  // que llegue. El permiso lo cubre el primer caso de este describe.
+  it('prenderSerieAccion ya no lee imeis: los ignora y crea las unidades sin identificar', async () => {
     estado.cookie = cookieDuenio
     const datos = new FormData()
     datos.set('articuloId', articuloConStock3.id)
     datos.append('imeis', 'AB1')
     const estadoResultado = await prenderSerieAccion(INICIAL, datos)
-    expect(estadoResultado.error).toContain('tienen que ser los mismos')
-  })
-
-  it('prenderSerieAccion con el conteo exacto prende el switch y crea las unidades', async () => {
-    estado.cookie = cookieDuenio
-    const idParaPrender = await crearArticuloDePrueba('Para prender bien', '2')
-    const datos = new FormData()
-    datos.set('articuloId', idParaPrender)
-    datos.append('imeis', '355800000000001')
-    datos.append('imeis', '355800000000002')
-    const estadoResultado = await prenderSerieAccion(INICIAL, datos)
     expect(estadoResultado.error).toBeNull()
+
+    // No alcanza con que no haya error: si la acción volviera a leer `imeis`
+    // este caso pasaría igual con 1 unidad identificada 'AB1' en vez de 3 sin
+    // identificar. Lo que fija el caso es justamente que el IMEI tipeado se
+    // ignoró — 3 unidades (el stock), ninguna con ese ni ningún otro IMEI —,
+    // y que el switch quedó prendido de verdad.
+    const libres = await unidadesLibres(estado.tenantId, articuloConStock3.id)
+    expect(libres).toHaveLength(3)
+    expect(libres.every((u) => u.imei === null)).toBe(true)
 
     const { rows } = await owner.query(
       `SELECT lleva_serie AS "llevaSerie" FROM articulos WHERE id = $1`,
-      [idParaPrender],
+      [articuloConStock3.id],
     )
     expect(rows[0].llevaSerie).toBe(true)
   })
@@ -1211,10 +1334,10 @@ describe('las acciones de unidades por IMEI', () => {
     // reusarlo dejaría este caso dependiendo del orden de ejecución.
     estado.cookie = cookieDuenio
     const idConLibres = await crearArticuloDePrueba('Con serie y unidades libres, para apagar', '1')
-    await prenderSerie({
-      tenantId: estado.tenantId, articuloId: idConLibres, imeis: ['355600000000001'],
-      usuarioId: empleadoId,
-    })
+    // Ídem: sin `imeis`, crea la unidad libre sin identificar — sigue siendo
+    // una unidad libre, que es lo único que `apagarSerieAccion` necesita para
+    // rechazar.
+    await prenderSerie({ tenantId: estado.tenantId, articuloId: idConLibres, usuarioId: empleadoId })
     const datos = new FormData()
     datos.set('articuloId', idConLibres)
     const estadoResultado = await apagarSerieAccion(INICIAL, datos)
@@ -1227,9 +1350,7 @@ describe('las acciones de unidades por IMEI', () => {
   it('ingresarMercaderia con imeis carga las unidades en vez de una cantidad suelta', async () => {
     estado.cookie = cookieDuenio
     const idConSerie2 = await crearArticuloDePrueba('Con serie, para ingresar mercadería', '0')
-    await prenderSerie({
-      tenantId: estado.tenantId, articuloId: idConSerie2, imeis: [], usuarioId: empleadoId,
-    })
+    await prenderSerie({ tenantId: estado.tenantId, articuloId: idConSerie2, usuarioId: empleadoId })
 
     const datos = new FormData()
     datos.set('articuloId', idConSerie2)
@@ -1243,5 +1364,49 @@ describe('las acciones de unidades por IMEI', () => {
 
     const { rows } = await owner.query(`SELECT stock FROM articulos WHERE id = $1`, [idConSerie2])
     expect(new Prisma.Decimal(rows[0].stock).toString()).toBe('2')
+  })
+
+  // Task 5: la card de "Ingresar mercadería" ofrece las dos formas a la vez
+  // (cantidad Y la lista progresiva), así que el campo `imeis` viaja SIEMPRE
+  // que la pantalla lo dibuje — vacío o no. La acción decide por la lista YA
+  // FILTRADA: si quedó algo escaneado, se manda esa lista y la cantidad
+  // tipeada se ignora — el motor rechaza recibir las dos juntas a propósito.
+  it('ingresarMercaderia con imeis escaneados ignora la cantidad tipeada al lado', async () => {
+    estado.cookie = cookieDuenio
+    const idConSerie3 = await crearArticuloDePrueba('Con serie, cantidad e imeis a la vez', '0')
+    await prenderSerie({ tenantId: estado.tenantId, articuloId: idConSerie3, usuarioId: empleadoId })
+
+    const datos = new FormData()
+    datos.set('articuloId', idConSerie3)
+    datos.set('cantidad', '50')
+    datos.append('imeis', '355800000000001')
+    const estadoResultado = await ingresarMercaderia(INICIAL, datos)
+    expect(estadoResultado.error).toBeNull()
+
+    const libres = await unidadesLibres(estado.tenantId, idConSerie3)
+    expect(libres.map((u) => u.imei)).toEqual(['355800000000001'])
+
+    const { rows } = await owner.query(`SELECT stock FROM articulos WHERE id = $1`, [idConSerie3])
+    expect(new Prisma.Decimal(rows[0].stock).toString()).toBe('1')
+  })
+
+  // El caso simétrico: con la lista vacía (todas las filas sin llenar, que es
+  // como arranca `ListaDeImeis`) el campo `imeis` viaja igual, presente pero
+  // filtrado a nada — tiene que caer en la cantidad, no rechazarse.
+  it('ingresarMercaderia con la lista de imeis vacía usa la cantidad tipeada', async () => {
+    estado.cookie = cookieDuenio
+    const idConSerie4 = await crearArticuloDePrueba('Con serie, sólo cantidad', '0')
+    await prenderSerie({ tenantId: estado.tenantId, articuloId: idConSerie4, usuarioId: empleadoId })
+
+    const datos = new FormData()
+    datos.set('articuloId', idConSerie4)
+    datos.set('cantidad', '4')
+    datos.append('imeis', '')
+    const estadoResultado = await ingresarMercaderia(INICIAL, datos)
+    expect(estadoResultado.error).toBeNull()
+
+    const libres = await unidadesLibres(estado.tenantId, idConSerie4)
+    expect(libres).toHaveLength(4)
+    expect(libres.every((u) => u.imei === null)).toBe(true)
   })
 })

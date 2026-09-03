@@ -221,11 +221,19 @@ campo de cotización, ver *Decisiones*.
   diálogo con la lista de IMEI libres de ese artículo (con "Buscando
   equipos…" mientras llega y "No quedan equipos disponibles" si la vitrina
   está vacía), y tocar uno lo agrega igual que si se hubiera escaneado.
+  **Las unidades sin identificar entran en UNA sola fila** ("Una sin
+  identificar — quedan N"), que se lleva la más vieja.
+- **Escanear el IMEI al cobrar, sobre una unidad que entró sin número** (ciclo
+  "unidades sin identificar"): esa línea del carrito muestra un campo en el
+  lugar del stepper, con la leyenda "IMEI opcional: podés dejarlo en blanco y
+  cargarlo después". Lo que se escanee ahí queda como el IMEI de esa unidad al
+  cobrar; lo que se deje en blanco no frena nada.
 - Cambiar cantidades con un stepper `[−] [valor] [+]` —el valor del medio
   sigue siendo editable a mano, no sólo con los botones— y quitar ítems.
   **Un artículo con serie no tiene stepper**: su línea muestra el IMEI en ese
-  lugar, porque su cantidad es siempre 1 y no se puede tocar — dos equipos son
-  dos líneas, nunca una con cantidad 2.
+  lugar —o el campo para capturarlo, si la unidad entró sin número—, porque su
+  cantidad es siempre 1 y no se puede tocar — dos equipos son dos líneas, nunca
+  una con cantidad 2.
 - Cobrar con **pagos partidos**, en pesos y en dólares, cada uno con su medio
   (efectivo, transferencia, débito, crédito) y su cotización. Un pago en
   dólares muestra cuántos pesos representa (`Entran $X` — `Base en pesos $X`
@@ -323,6 +331,31 @@ campo de cotización, ver *Decisiones*.
   stock negativo está permitido en este producto —el mostrador manda—, así que
   es "hay que mirar", no "esto impide seguir"; el rojo queda para lo que sí
   bloquea (una cantidad ilegible, que sí apaga "Cobrar").
+- **El selector muestra UNA sola fila para todas las unidades sin identificar**
+  (ciclo "unidades sin identificar"), con el contador de cuántas quedan, y esa
+  fila se lleva la MÁS VIEJA — que la pantalla conoce sin consultar nada,
+  porque `unidadesLibres` ya viene ordenada así. Listar treinta filas idénticas
+  —mismo artículo, sin número, misma fecha— sería pedir que se elija entre
+  cosas indistinguibles: no hay ninguna decisión que tomar ahí. El
+  agrupamiento vive en `UnidadesDelSelector`, **exportado**, porque abrir el
+  diálogo de verdad exige un click y una respuesta de `unidadesDeArticulo`, y
+  este archivo se prueba con `renderToStaticMarkup`: sin extraerlo, el
+  agrupamiento no se podía afirmar. Mismo criterio que `itemsParaCobrar`.
+- **El IMEI al vender se OFRECE y no se exige.** Quien cobra puede no tener la
+  caja a mano —el equipo está en el depósito, o la caja se tiró—, y frenar una
+  venta por eso sería exactamente la fricción que este ciclo vino a sacar. El
+  campo vacío vale lo mismo que no mandarlo: `itemsParaCobrar` descarta el
+  blanco para que el JSON no afirme un escaneo que no pasó, y el motor trata la
+  cadena vacía como ausencia igual. La leyenda va en la línea de meta, junto al
+  SKU, y no dentro del campo: en los 104 px de la columna "Cant." no entra una
+  frase, y un placeholder se va apenas se escribe la primera cifra — justo
+  cuando alguien podría dudar de si es obligatorio.
+- **`imeiCapturado` se valida sin `esUuid`, pero se valida.** Es texto libre a
+  propósito (el mismo campo es el número de serie de una notebook), así que no
+  hay forma que verificar; lo que sí se rechaza es lo que NO es texto, porque
+  `String({})` es `"[object Object]"` y el motor lo grabaría como el número de
+  serie de un equipo real. Sale como cartel del mostrador, no como IMEI
+  inventado ni como 500.
 - **El match del IMEI es EXACTO y sólo entre unidades LIBRES, al revés que el
   `contains` de nombre y SKU** (ciclo de unidades por IMEI, `buscarArticulosVendibles`
   en `lib/ventas/buscar.ts`). Un IMEI son quince dígitos que se escanean
@@ -562,7 +595,10 @@ Es la pantalla que más cambia del ciclo, y la única que se parte en dos frames
   chip de faltante. Anotado en `docs/correcciones-pendientes-del-pen.md`,
   entrada 23.
 - **Tampoco dibuja nada de las unidades por IMEI** —es anterior también a ese
-  ciclo—: ni el selector de unidad del carrito, ni la línea sin stepper.
+  ciclo—: ni el selector de unidad del carrito, ni la línea sin stepper, ni la
+  fila "Una sin identificar" ni el campo de captura que sumó el ciclo
+  "unidades sin identificar" (entradas 27 y 28 de
+  `docs/correcciones-pendientes-del-pen.md`).
   Anotado en `docs/correcciones-pendientes-del-pen.md`, entrada 27.
 
 ## `/ventas`
@@ -849,6 +885,16 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
   dato que después haya que probar que dicen lo mismo (la lección que dejó el
   merge del ciclo móvil sobre las guardas de permiso duplicadas, aplicada acá
   a un dato en vez de a un botón).
+- **Una unidad que se vendió SIN número no muestra nada para su línea** (ciclo
+  "unidades sin identificar"): ni un rótulo vacío ni la frase "sin
+  identificar". Sin dato no hay nada que decir — el detalle de una venta se
+  mira para reconstruir una operación, y "no sabemos cuál equipo era" no ayuda
+  a nadie a hacerlo. `imeisPorItem` descarta las unidades sin IMEI **antes** de
+  armar la cola, así que la cola de un artículo puede tener menos elementos que
+  líneas. Que un `null` no ocupe el turno de la línea siguiente no cambia lo
+  que se ve —las líneas del mismo artículo son indistinguibles, ver la decisión
+  de arriba— pero es la única de las dos formas que se puede explicar sin
+  hablar del orden en que Postgres devolvió las filas.
 - **Sin ninguna unidad identificada, la pantalla no dibuja NADA nuevo — ni la
   línea, ni el rótulo "IMEI" en ningún lado del documento.** Es el principio
   del ciclo entero: un local que no usa esto no ve ninguna diferencia. Probado
@@ -1016,11 +1062,18 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
 - Cargar stock inicial y, con el permiso `COSTOS`, su costo unitario, que nace
   como movimiento y no como un número suelto.
 - **Prender "Lleva IMEI o número de serie"** (ciclo de unidades por IMEI,
-  2026-09-02): el par "Cantidad / Costo unitario" cambia y "Cantidad" se
-  reemplaza por una lista donde se escanea o tipea un IMEI por línea —Enter
-  agrega una fila y la enfoca, así que un lector de código de barras carga
-  varias unidades sin ningún click—. El costo unitario se mantiene. Sólo tiene
-  sentido con Producto: con Servicio el switch se apaga y se deshabilita.
+  2026-09-02): junto a "Cantidad" aparece una lista donde se escanea o tipea un
+  IMEI por línea —Enter agrega una fila y la enfoca, así que un lector de
+  código de barras carga varias unidades sin ningún click—. El costo unitario
+  se mantiene. Sólo tiene sentido con Producto: con Servicio el switch se apaga
+  y se deshabilita.
+- **Cargar la cantidad y sólo algunos IMEI** (ciclo "unidades sin
+  identificar", 2026-09-03): "Cantidad" **no** desaparece con el switch
+  prendido. Se declara cuántas unidades entraron y se escanean las que se
+  tengan a mano; el resto nacen sin identificar y se completan después, desde
+  la ficha. Escanear más IMEI que la cantidad declarada se rechaza
+  (`SERIE_CONTEO_NO_COINCIDE`): no se pueden identificar equipos que no
+  entraron.
 
 **Decisiones**
 
@@ -1053,12 +1106,18 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
   teléfono.
 - El stock inicial entra como `MovimientoStock`, así que el historial del
   artículo arranca explicando de dónde salió cada unidad.
-- **Con el switch de serie prendido, el stock nace de la lista y no de un
-  número tipeado**: `stockInicial` se rechaza si viene junto con `llevaSerie`.
-  Que la pantalla deshabilite el switch con Servicio o esconda "Cantidad" no
-  es la guarda — `crearArticulo` rechaza la combinación igual del lado del
-  servidor. Sin frame en `design/arandano.pen`: es anterior a esta feature
-  (`docs/superpowers/specs/2026-09-02-unidades-por-imei-design.md`).
+- **Con el switch de serie prendido, la CANTIDAD gobierna el total y los IMEI
+  son los que se tengan a mano** (ciclo "unidades sin identificar"). Hasta el
+  2026-09-02 era al revés: `stockInicial` se RECHAZABA junto con `llevaSerie` y
+  el stock nacía del largo de la lista, lo que obligaba a tener los treinta
+  equipos delante para poder dar de alta treinta. Ahora `crearArticulo`
+  completa la diferencia con unidades sin identificar; sin cantidad tipeada, el
+  stock sigue naciendo del largo de la lista, así que el camino viejo sigue
+  funcionando igual. Lo único que se rechaza es más IMEI que cantidad. Que la
+  pantalla deshabilite el switch con Servicio no es la guarda — el servidor
+  rechaza la combinación igual. Sin frame en `design/arandano.pen`: es anterior
+  a estas dos features
+  (`docs/superpowers/specs/2026-09-03-unidades-sin-identificar-design.md`).
 - **La categoría se elige, no se tipea**, y eso **quita una capacidad que
   existía**: hasta el 2026-08-24 el campo era texto libre y escribir
   "Fundas · Samsung" creaba las dos ramas al vuelo. Ahora se elige de lo que
@@ -1164,18 +1223,19 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
 - **Prender o apagar "Lleva IMEI o número de serie"** (ciclo de unidades por
   IMEI), sólo para un producto activo — un servicio no tiene stock que
   identificar y un artículo desactivado no se ofrece para operaciones nuevas.
-  Con stock en cero, prender postea directo; con stock cargado abre un diálogo
-  que pide los IMEI que faltan antes de confirmar — el artículo queda cuadrado
-  al instante, sin un paso de "vaciar y volver a cargar" que ensuciaría el
-  historial con movimientos que nunca pasaron. "Los que faltan" y no "tantos
-  como stock": `prenderSerie` cuenta las unidades libres que YA existen y las
-  reusa (ver la decisión de abajo), así que en el caso normal —ninguna— son las
-  dos mismas cantidades. El servidor es el que manda: el diálogo dibuja tantas
-  filas como stock, y las que sobren se dejan vacías.
-- Con el switch prendido, ver la card **"Unidades"**: la lista de IMEI libres,
-  cuándo entró cada uno, y **darlos de baja** uno por uno, con una nota
-  (se rompió, se robó, garantía). Con más de 8 unidades libres, un filtro por
-  IMEI dentro de la misma card.
+  **Prende siempre directo, sin ningún diálogo** (ciclo "unidades sin
+  identificar", 2026-09-03): el motor cuenta el stock y las unidades libres que
+  ya haya, y crea la diferencia SIN identificar. El artículo queda cuadrado al
+  instante, sin un paso de "vaciar y volver a cargar" que ensuciaría el
+  historial con movimientos que nunca pasaron.
+- Ver la card **"Unidades"**, con dos partes: arriba, el **bloque de captura**
+  —un campo enfocado, con "Quedan N sin identificar", que le pone el número a
+  la unidad sin identificar más vieja y se vacía solo para el escaneo
+  siguiente—; abajo, la lista de las que ya tienen IMEI, con cuándo entró cada
+  una, **"Corregir"** (el mismo camino de servidor, con el número actual
+  prellenado) y **"Dar de baja"** con su nota (se rompió, se robó, garantía).
+  Con más de 8 unidades identificadas, un filtro por IMEI dentro de la misma
+  card.
 
 **Decisiones**
 
@@ -1186,6 +1246,44 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   separado (`puedeConSesion(sesion, 'ARTICULOS_EDITAR')` y
   `puedeConSesion(sesion, 'COSTOS')`) y los reparte a `FichaDeArticulo` y a
   `MoverStock` como props booleanas independientes.
+- **El diálogo de N campos se borró, y ése es el ciclo entero** (ciclo
+  "unidades sin identificar"). Hasta el 2026-09-02, prender el switch con stock
+  cargado abría un `Dialog` que pedía exactamente esa cantidad de IMEI antes de
+  confirmar. Con treinta unidades el modal no entraba en la pantalla, y encima
+  exigía tener los treinta equipos a mano en ese mismo momento — que es lo que
+  un depósito no tiene nunca. **La respuesta no fue ponerle scroll al modal,
+  fue sacarlo**: prender es instantáneo y los números se cargan de a uno,
+  cuando cada caja aparece. El tope de alto de la lista (`max-h-[420px]
+  overflow-y-auto`, unas ocho filas) es lo que queda del síntoma original,
+  ahora que la causa no está.
+- **La unidad que recibe el IMEI capturado no la elige nadie**: el bloque
+  postea contra la más vieja, que la card conoce sin consultar nada porque
+  `unidadesLibres` ya viene ordenada así. Entre unidades sin identificar no hay
+  ninguna diferencia que alguien pueda ver, así que pedir que elijan sería
+  pedir una decisión que no existe.
+- **Después de cada carga el campo se vacía y vuelve a enfocarse**, que es lo
+  que permite escanear una caja tras otra sin tocar el mouse. El mecanismo es
+  `key={proxima.id}` sobre el bloque: cargado un IMEI, `revalidatePath` trae la
+  ficha de nuevo, la próxima unidad cambia y con ella la key, así que React
+  remonta el bloque —input vacío, `autoFocus` de nuevo—. Si la acción FALLA la
+  próxima unidad es la misma, la key no cambia, y lo tipeado se queda donde
+  está para poder corregirlo: exactamente lo que hace falta cuando el número
+  chocó contra otro.
+- **"Corregir" es el mismo `identificarUnidadAccion`, no una acción aparte**, y
+  el motor sólo lo permite mientras la unidad esté LIBRE: una vendida congela
+  su número, por lo mismo que `VentaItem` congela descripción y precio.
+- **`identificarUnidadAccion` va detrás de `conSesion` y no de un permiso**,
+  donde ya están `ingresarMercaderia` y `corregirPorConteo`: ponerle el número
+  a la caja que acaba de llegar es operación del día, la hace quien está
+  atendiendo, y queda firmada con su `usuarioId`. Un permiso propio dejaría al
+  local sin poder cuadrar el stock hasta que llegue el dueño — la fricción que
+  este ciclo vino a sacar.
+- **La card se muestra aunque el switch esté APAGADO, si quedaron unidades
+  cargadas**, y la consulta de `unidadesLibres` dejó de estar condicionada a
+  `llevaSerie`. Es la salida al caso huérfano: con la condición, un artículo con
+  unidades y el switch apagado no las mostraba en ningún lado ni había forma de
+  darlas de baja. El costo es una consulta más, dentro del mismo `Promise.all`
+  que ya dispara otras seis — o sea en paralelo, no un round-trip en serie.
 - En la corrección por conteo **el delta lo calcula el servidor, adentro de la
   transacción, contra el stock del momento**. Si lo calculara el navegador, una
   venta ocurrida entre que se abrió la pantalla y se apretó el botón quedaría

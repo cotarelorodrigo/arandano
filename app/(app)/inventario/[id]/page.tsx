@@ -331,10 +331,16 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
     // único. Sólo se consulta si esta persona puede editar: sin
     // `ARTICULOS_EDITAR` la card "Datos" no se renderiza y el árbol no se usa.
     puedeEditar ? arbolDeCategorias(sesion.tenant.id, { verInactivos: true }) : [],
-    // Task 8 del ciclo de unidades por IMEI: sólo se consulta cuando el
-    // artículo lleva serie — pagar esta ida a Postgres por cada artículo del
-    // catálogo, cuando la inmensa mayoría no la usa, no tiene sentido.
-    articulo.llevaSerie ? unidadesLibres(sesion.tenant.id, articulo.id) : [],
+    // Task 6 del ciclo "unidades sin identificar": ya NO va condicionada a
+    // `articulo.llevaSerie`. El ciclo anterior la condicionaba para no pagar
+    // una ida a Postgres por cada artículo del catálogo, y el precio de eso
+    // era el caso huérfano que su review dejó parked: un artículo con
+    // unidades cargadas y el switch apagado no mostraba las unidades EN
+    // NINGÚN LADO — invisibles, sin forma de darlas de baja ni de saber que
+    // están. La consulta corre dentro del mismo `Promise.all` que ya dispara
+    // otras seis, así que el costo real es una consulta en paralelo, no un
+    // round-trip extra en serie.
+    unidadesLibres(sesion.tenant.id, articulo.id),
   ])
 
   const ultimoCosto = ultimoConCosto?.costoUnitario ?? null
@@ -355,16 +361,27 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   // de 324 px reservando un hueco sin contenido (ver el comentario de
   // `FichaDeArticulo` en `../formularios.tsx`).
   const hayPanelPrecios = planes.length > 0
+  // `CardDeUnidades` recibe las unidades TAL COMO vienen, con su `imei`
+  // nullable: desde la Task 6 la card es la que sabe qué hacer con las que
+  // todavía no tienen número —el bloque de captura de arriba—, así que
+  // filtrarlas acá volvería a esconderlas. El ternario que obligaba al `as
+  // UnidadLibre[]` de la consulta se fue con la condición de arriba.
+
   const columnaDerechaExtra =
-    hayPanelPrecios || esProducto || articulo.llevaSerie ? (
+    hayPanelPrecios || esProducto || articulo.llevaSerie || unidades.length > 0 ? (
       <>
         {hayPanelPrecios && (
           <PanelPreciosPorFormaDePago precio={articulo.precio} moneda={articulo.moneda} planes={planes} />
         )}
-        {/* Task 8 del ciclo de unidades por IMEI: la card "Unidades", sólo
-            para artículos que llevan serie — un servicio nunca puede, así
-            que `articulo.llevaSerie` alcanza sin sumar `esProducto` acá. */}
-        {articulo.llevaSerie && <CardDeUnidades articuloId={articulo.id} unidades={unidades} />}
+        {/* La card "Unidades". Con el switch prendido siempre; y también con
+            el switch APAGADO si quedaron unidades cargadas, que es la salida
+            al caso huérfano (Task 6): sin este `||`, esas unidades no se
+            verían en ningún lado ni habría forma de darlas de baja. Un
+            servicio nunca tiene ninguna de las dos cosas, así que no hace
+            falta sumar `esProducto`. */}
+        {(articulo.llevaSerie || unidades.length > 0) && (
+          <CardDeUnidades articuloId={articulo.id} unidades={unidades} />
+        )}
         {esProducto && <GraficoDeRotacion meses={meses} />}
       </>
     ) : undefined
@@ -498,7 +515,6 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
         <SwitchDeSerie
           articuloId={articulo.id}
           llevaSerie={articulo.llevaSerie}
-          stock={articulo.stock.toString()}
           puedeEditar={puedeEditar}
         />
       )}

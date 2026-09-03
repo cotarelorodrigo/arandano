@@ -90,12 +90,17 @@ describe('FormularioDeAlta', () => {
     expect(html).toContain('Lleva IMEI o número de serie')
   })
 
-  it('con el switch prendido, el campo de cantidad se reemplaza por la lista de IMEI', async () => {
-    // El switch es interactivo y este test renderiza estático, así que se
-    // afirma sobre lo que el marcado declara: los dos bloques existen y el que
-    // corresponde se muestra según el estado inicial (apagado).
+  // Task 5 del ciclo "unidades sin identificar": la carga progresiva
+  // reemplaza al "todo de una". El campo de cantidad YA NO se reemplaza por
+  // la lista de IMEI: las dos formas conviven, y el stock es el que manda.
+  it('el campo de cantidad sigue estando aunque el switch esté prendido: la carga es progresiva', async () => {
     const html = await renderAlta()
     expect(html).toContain('name="stockInicial"')
+
+    const FUENTE = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')
+    // La lista de IMEI se agrega, no reemplaza: no puede vivir en la misma
+    // rama `llevaSerie ? A : B` que "Cantidad (opcional)".
+    expect(FUENTE).toMatch(/\{llevaSerie && \([\s\S]{0,200}<ListaDeImeis/)
   })
 
   it('Producto y Servicio son tarjetas seleccionables (radio), no un <select>', async () => {
@@ -353,17 +358,20 @@ describe('MoverStock', () => {
     }
   })
 
-  // Task 8 del ciclo de unidades por IMEI.
+  // Task 8 del ciclo de unidades por IMEI. Actualizado por la Task 5 del
+  // ciclo "unidades sin identificar": ya no reemplaza, ofrece las dos formas.
   describe('con llevaSerie', () => {
-    it('reemplaza "Cantidad que entra" por la lista de IMEI', async () => {
+    it('ofrece la cantidad Y la lista de IMEI, con la leyenda de que escanear es opcional', async () => {
       const html = await renderMoverStock(true, true)
-      expect(html).not.toContain('Cantidad que entra')
+      expect(html).toContain('Cantidad que entra')
       expect(html).toContain('IMEI o número de serie')
+      expect(html).toMatch(/opcional/i)
     })
 
-    it('sin llevaSerie sigue pidiendo la cantidad, como siempre', async () => {
+    it('sin llevaSerie sigue pidiendo sólo la cantidad, sin la lista de IMEI', async () => {
       const html = await renderMoverStock(true, false)
       expect(html).toContain('Cantidad que entra')
+      expect(html).not.toContain('IMEI o número de serie')
     })
 
     // El atributo REAL, no la clase utilitaria `disabled:pointer-events-none`

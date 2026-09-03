@@ -168,11 +168,24 @@ async function crearUnidadLibre(): Promise<{ id: string; imei: string }> {
   return { id: r.rows[0].id, imei }
 }
 
+/** Una unidad libre SIN IMEI todavía — el caso que estrena el ciclo
+ *  "unidades sin identificar": la caja entró, el número aparece después (o
+ *  al vender, si quien cobra la tiene en la mano). */
+async function crearUnidadLibreSinImei(): Promise<{ id: string }> {
+  const r = await owner.query(
+    `INSERT INTO unidades_articulo (id, tenant_id, articulo_id, imei, ingresada_por_id, creado_en)
+     VALUES (gen_random_uuid(), $1, $2, NULL, $3, now())
+     RETURNING id`,
+    [estado.tenantId, articuloSerieId, duenioId],
+  )
+  return { id: r.rows[0].id }
+}
+
 /** El `venta_id` de una unidad tal como quedó en la base, para afirmar a
  *  quién se la llevó (o que sigue libre). */
-async function leerUnidad(unidadId: string): Promise<{ ventaId: string | null }> {
+async function leerUnidad(unidadId: string): Promise<{ ventaId: string | null; imei: string | null }> {
   const r = await owner.query(
-    `SELECT venta_id AS "ventaId" FROM unidades_articulo WHERE id = $1`,
+    `SELECT venta_id AS "ventaId", imei FROM unidades_articulo WHERE id = $1`,
     [unidadId],
   )
   return r.rows[0]
@@ -379,6 +392,80 @@ describe('cobrar', () => {
     estado.cookie = cookieEmpleado
     const r = await cobrar(INICIAL, datosConUnidad(u.id, `segunda-caja-${crypto.randomUUID()}`))
     expect(r.error).toContain('se acaba de vender')
+  })
+})
+
+// Task 7 del ciclo "unidades sin identificar": el IMEI se puede capturar en el
+// momento de vender, y es OPCIONAL — quien cobra sin la caja en la mano no
+// tiene que frenar la venta por eso.
+describe('cobrar con el IMEI capturado al vender', () => {
+  function datosConCaptura(unidadId: string, imeiCapturado: unknown, clave: string): FormData {
+    const datos = new FormData()
+    datos.set(
+      'items',
+      JSON.stringify([{ articuloId: articuloSerieId, cantidad: '1', unidadId, imeiCapturado }]),
+    )
+    datos.set('pagos', JSON.stringify([
+      { medio: 'EFECTIVO', moneda: 'ARS', base: precioArticuloSerie, cotizacion: '1' },
+    ]))
+    datos.set('clave', clave)
+    return datos
+  }
+
+  it('cobrar pasa el imeiCapturado al motor y la unidad queda identificada', async () => {
+    estado.cookie = cookieEmpleado
+    const u = await crearUnidadLibreSinImei()
+    const imei = `imei-capturado-${crypto.randomUUID()}`
+    const r = await cobrar(INICIAL, datosConCaptura(u.id, imei, `captura-${crypto.randomUUID()}`))
+    expect(r.error).toBeNull()
+
+    // Las DOS mitades: se la llevó esta venta Y quedó con el número. Sin la
+    // segunda, el caso pasaría igual con el campo perdido en el camino.
+    const guardada = await leerUnidad(u.id)
+    expect(guardada.ventaId).toBe(r.venta!.id)
+    expect(guardada.imei).toBe(imei)
+  })
+
+  it('sin escanear nada, la venta sale igual y la unidad queda sin IMEI', async () => {
+    // El camino POR DEFECTO del ciclo, y el que no puede frenarse: el equipo
+    // sale del stock aunque nadie haya tenido la caja a mano.
+    estado.cookie = cookieEmpleado
+    const u = await crearUnidadLibreSinImei()
+    const r = await cobrar(INICIAL, datosConUnidad(u.id, `sin-captura-${crypto.randomUUID()}`))
+    expect(r.error).toBeNull()
+
+    const guardada = await leerUnidad(u.id)
+    expect(guardada.ventaId).toBe(r.venta!.id)
+    expect(guardada.imei).toBeNull()
+  })
+
+  it('un imeiCapturado en blanco vale lo mismo que no mandarlo', async () => {
+    // Un `<input>` vacío manda la cadena vacía, no ausencia: si eso fuera un
+    // error, el camino normal —cobrar sin escanear— sería el que falla.
+    estado.cookie = cookieEmpleado
+    const u = await crearUnidadLibreSinImei()
+    const r = await cobrar(INICIAL, datosConCaptura(u.id, '   ', `blanco-${crypto.randomUUID()}`))
+    expect(r.error).toBeNull()
+    expect((await leerUnidad(u.id)).imei).toBeNull()
+  })
+
+  // Mismo criterio que el guard del unidadId, con otra forma: acá no hay
+  // `esUuid` que valga —el IMEI es texto libre a propósito, para que sirva de
+  // número de serie de una notebook—, pero `String({})` es "[object Object]",
+  // que el motor aceptaría y grabaría como el número de serie de un equipo
+  // real. Sale como cartel del mostrador, no como IMEI inventado ni como 500.
+  it('un imeiCapturado que no es texto da error de dominio y no un IMEI inventado', async () => {
+    estado.cookie = cookieEmpleado
+    const u = await crearUnidadLibreSinImei()
+    const r = await cobrar(
+      INICIAL,
+      datosConCaptura(u.id, { a: 1 }, `basura-${crypto.randomUUID()}`),
+    )
+    expect(r.error).not.toBeNull()
+
+    const guardada = await leerUnidad(u.id)
+    expect(guardada.imei).toBeNull()
+    expect(guardada.ventaId).toBeNull()
   })
 })
 
