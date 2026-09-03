@@ -82,7 +82,13 @@ export type Linea = {
   // con serie sin unidad no se puede cobrar, y el motor la rechaza con
   // UNIDAD_REQUERIDA.
   unidadId?: string
-  imei?: string
+  // `string | null` y no sólo `string | undefined` desde el ciclo "unidades
+  // sin identificar" (Task 2 de ese ciclo, que amplía `UnidadLibre.imei` en
+  // lib/inventario/unidades.ts): el selector de unidades puede ahora traer
+  // una unidad sin IMEI todavía. Mostrarla sin identificador es lo que hace
+  // ESTE archivo sin decidir nada nuevo — capturarlo en el momento de vender
+  // es la Task 7 de ese ciclo, no ésta.
+  imei?: string | null
 }
 
 type Pago = {
@@ -1226,7 +1232,7 @@ export function PuntoDeVenta({
   // buscador y el foco atrapado del diálogo ya serializan los escaneos—, pero
   // es una construcción más débil para el mismo error de plata, y no hace
   // falta pagarla: `estaEnElCarrito` cuesta lo mismo llamada desde acá.
-  function agregarUnidad(a: ArticuloVendible, unidad: { id: string; imei: string }) {
+  function agregarUnidad(a: ArticuloVendible, unidad: { id: string; imei: string | null }) {
     let repetida = false
     actualizarCarrito((previas) => {
       if (estaEnElCarrito(previas, unidad.id)) {
@@ -1941,7 +1947,7 @@ export function PuntoDeVenta({
                             // equipo es esta línea.
                             <div
                               className="flex h-9 w-[104px] items-center justify-center overflow-hidden rounded-[9px] border border-input px-1"
-                              title={l.imei}
+                              title={l.imei ?? undefined}
                             >
                               <span className="truncate text-[11px] font-semibold text-foreground">
                                 {l.imei}

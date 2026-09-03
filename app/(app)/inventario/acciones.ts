@@ -339,13 +339,15 @@ export async function prenderSerieAccion(
 ): Promise<EstadoInventario> {
   try {
     const articuloId = texto(datos, 'articuloId')
-    await comoPuede('ARTICULOS_EDITAR', async (tenantId, usuarioId) => {
-      // getAll y no get: el diálogo postea un campo por unidad que ya hay
-      // (ListaDeImeis con `filasFijas`), y los vacíos se descartan igual que
-      // en altaArticulo.
-      const imeis = datos.getAll('imeis').map(String).filter((i) => i.trim() !== '')
-      await prenderSerie({ tenantId, articuloId, imeis, usuarioId })
-    })
+    // `prenderSerie` ya no acepta IMEIs (ciclo "unidades sin identificar",
+    // Task 2): cuenta el stock y las unidades libres que ya haya, y crea la
+    // diferencia sin identificar. El diálogo que sigue posteando un campo
+    // `imeis` por unidad es UI vieja, todavía sin tocar — Task 6 la
+    // reemplaza por la card sin diálogo; hasta entonces, esos campos llegan
+    // y simplemente no se leen.
+    await comoPuede('ARTICULOS_EDITAR', (tenantId, usuarioId) =>
+      prenderSerie({ tenantId, articuloId, usuarioId }),
+    )
     revalidatePath('/inventario')
     revalidatePath(`/inventario/${articuloId}`)
     return { error: null, aviso: 'Este artículo ahora se maneja por IMEI.' }

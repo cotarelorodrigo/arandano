@@ -12,7 +12,7 @@ import { formatearPrecio, formatearCantidad, precioEnSuMoneda } from '@/lib/form
 import { esUuid } from '@/lib/uuid'
 import { planesDelTenant, type PlanVisible } from '@/lib/planes/consultar'
 import { arbolDeCategorias } from '@/lib/inventario/categorias'
-import { unidadesLibres } from '@/lib/inventario/unidades'
+import { unidadesLibres, type UnidadLibre } from '@/lib/inventario/unidades'
 import { precioConPlan } from '@/lib/planes/precio'
 import { ROTULO_MEDIO } from '@/lib/ventas/medios'
 import estilos from '../tipografia.module.css'
@@ -334,7 +334,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
     // Task 8 del ciclo de unidades por IMEI: sólo se consulta cuando el
     // artículo lleva serie — pagar esta ida a Postgres por cada artículo del
     // catálogo, cuando la inmensa mayoría no la usa, no tiene sentido.
-    articulo.llevaSerie ? unidadesLibres(sesion.tenant.id, articulo.id) : [],
+    articulo.llevaSerie ? unidadesLibres(sesion.tenant.id, articulo.id) : ([] as UnidadLibre[]),
   ])
 
   const ultimoCosto = ultimoConCosto?.costoUnitario ?? null
@@ -355,6 +355,24 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   // de 324 px reservando un hueco sin contenido (ver el comentario de
   // `FichaDeArticulo` en `../formularios.tsx`).
   const hayPanelPrecios = planes.length > 0
+  // `CardDeUnidades` todavía declara `imei: string` (no nullable): es la card
+  // previa al ciclo "unidades sin identificar", y reconstruirla para mostrar y
+  // capturar las unidades sin IMEI es la Task 6 de ese ciclo, no ésta.
+  // Filtrar acá las sin identificar evita mentirle al tipo y no le inventa
+  // ningún tratamiento a la card — hasta que esa task aterrice, una unidad
+  // recién creada sin IMEI simplemente no aparece en esta lista todavía.
+  //
+  // El `as UnidadLibre[]` del `Promise.all` de arriba no es cosmético: sin
+  // él, `unidades` queda tipado `UnidadLibre[] | never[]` (por el `: []` del
+  // otro lado del ternario), y el `.filter()` con predicado de tipo de acá
+  // abajo DEJA DE NARROWEAR sobre una unión de arrays —TS resuelve la
+  // sobrecarga contra cada rama por separado, y la rama `never[]` la tira
+  // abajo—, devolviendo `UnidadLibre[]` en vez del tipo angosto. Verificado
+  // en aislado antes de escribir el cast.
+  const unidadesIdentificadas = unidades.filter(
+    (u): u is { id: string; imei: string; ingresadaEn: Date } => u.imei !== null,
+  )
+
   const columnaDerechaExtra =
     hayPanelPrecios || esProducto || articulo.llevaSerie ? (
       <>
@@ -364,7 +382,9 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
         {/* Task 8 del ciclo de unidades por IMEI: la card "Unidades", sólo
             para artículos que llevan serie — un servicio nunca puede, así
             que `articulo.llevaSerie` alcanza sin sumar `esProducto` acá. */}
-        {articulo.llevaSerie && <CardDeUnidades articuloId={articulo.id} unidades={unidades} />}
+        {articulo.llevaSerie && (
+          <CardDeUnidades articuloId={articulo.id} unidades={unidadesIdentificadas} />
+        )}
         {esProducto && <GraficoDeRotacion meses={meses} />}
       </>
     ) : undefined

@@ -36,7 +36,7 @@ let crearArticulo: typeof import('@/lib/inventario/articulos').crearArticulo
 // que el resto — `lib/inventario/unidades.ts` arrastra `enTransaccionDeTenant`
 // y con él `lib/db.ts`.
 let unidadesLibres: typeof import('@/lib/inventario/unidades').unidadesLibres
-let prenderSerie: typeof import('@/lib/inventario/unidades').prenderSerie
+let crearUnidadesEnTx: typeof import('@/lib/inventario/unidades').crearUnidadesEnTx
 let crearPlan: typeof import('@/lib/planes/administrar').crearPlan
 let desactivarPlan: typeof import('@/lib/planes/administrar').desactivarPlan
 // De app/(app)/ventas/page.tsx, no de lib/: es la regla de negocio que arma
@@ -138,7 +138,7 @@ beforeAll(async () => {
   ;({ buscarArticulosVendibles } = await import('@/lib/ventas/buscar'))
   ;({ prismaParaTenant } = await import('@/lib/tenant/prisma'))
   ;({ crearArticulo } = await import('@/lib/inventario/articulos'))
-  ;({ unidadesLibres, prenderSerie } = await import('@/lib/inventario/unidades'))
+  ;({ unidadesLibres, crearUnidadesEnTx } = await import('@/lib/inventario/unidades'))
   ;({ crearPlan, desactivarPlan } = await import('@/lib/planes/administrar'))
   ;({ totalDelPeriodo, pagosDelPeriodo } = await import('@/app/(app)/ventas/page'))
   ;({ datosDelDetalle, Detalle } = await import('@/app/(app)/ventas/[id]/page'))
@@ -988,13 +988,18 @@ describe('crearVenta con unidades identificadas (IMEI)', () => {
     )
   }
 
-  /** Un artículo que YA lleva serie, con una unidad libre por cada IMEI de la
-   *  lista. Pasa por el camino real (`prenderSerie`) y no por SQL a mano: así
-   *  además de fixture confirma que ese camino deja el artículo en el estado
-   *  que estos tests dan por sentado. */
+  /** Un artículo que YA lleva serie, con una unidad libre IDENTIFICADA por
+   *  cada IMEI de la lista. Ya NO pasa por `prenderSerie` —que desde el ciclo
+   *  "unidades sin identificar" no acepta ningún IMEI puntual, sólo crea
+   *  unidades sin identificar—, así que arma el mismo estado con la pieza que
+   *  `prenderSerie` usa por dentro: `crearUnidadesEnTx` más el
+   *  `llevaSerie: true` que dejaría el switch. */
   async function crearArticuloConSerie(nombre: string, imeis: string[], precio: string) {
     const a = await crearArticulo(nombre, imeis.length.toString(), precio)
-    await prenderSerie({ tenantId, articuloId: a.id, imeis, usuarioId })
+    await enTransaccionDeTenant(tenantId, async (tx) => {
+      await crearUnidadesEnTx(tx, { tenantId, articuloId: a.id, imeis, usuarioId })
+      await tx.articulo.update({ where: { id: a.id }, data: { llevaSerie: true } })
+    })
     return a
   }
 
@@ -1398,7 +1403,12 @@ describe('el detalle de venta muestra los IMEI (Task 10)', () => {
         },
       }),
     )
-    await prenderSerie({ tenantId, articuloId: articulo.id, imeis, usuarioId })
+    // `prenderSerie` ya no acepta IMEIs (ciclo "unidades sin identificar"):
+    // arma el mismo estado con la pieza que usa por dentro.
+    await enTransaccionDeTenant(tenantId, async (tx) => {
+      await crearUnidadesEnTx(tx, { tenantId, articuloId: articulo.id, imeis, usuarioId })
+      await tx.articulo.update({ where: { id: articulo.id }, data: { llevaSerie: true } })
+    })
     return articulo
   }
 

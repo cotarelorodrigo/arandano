@@ -21,7 +21,13 @@ export type ArticuloVendible = {
   // Presente sólo cuando la búsqueda entró por un IMEI exacto: es la unidad
   // que el escaneo identificó, y es lo que le permite al carrito agregar la
   // línea con la unidad ya elegida.
-  unidad?: { id: string; imei: string }
+  //
+  // `imei` es `string | null` sólo porque `UnidadDeArticulo.imei` lo es desde
+  // el ciclo "unidades sin identificar" (Task 1) — acá nunca puede ser `null`
+  // de verdad: la búsqueda de más abajo filtra `imei: busqueda`, un valor
+  // concreto no vacío, así que la unidad que encuentra siempre tiene IMEI. El
+  // tipo se ensancha para que compile, no porque el caso exista.
+  unidad?: { id: string; imei: string | null }
   // Para que el carrito sepa que tiene que pedir una unidad cuando el
   // artículo se agregó por nombre y no por escaneo.
   llevaSerie: boolean

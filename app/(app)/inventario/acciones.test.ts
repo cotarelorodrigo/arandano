@@ -1116,7 +1116,7 @@ describe('las acciones de unidades por IMEI', () => {
   let articuloConStock: { id: string }
   let articuloConStock3: { id: string }
   let conSerie: { id: string }
-  let unidadLibre: { id: string; imei: string }
+  let unidadLibre: { id: string; imei: string | null }
 
   beforeAll(async () => {
     articuloConStock = {
@@ -1131,10 +1131,11 @@ describe('las acciones de unidades por IMEI', () => {
     // prueba es la acción de BAJA, no el alta de la serie, y pasar por
     // `prenderSerieAccion` exigiría además una sesión con permiso sólo para
     // preparar el fixture.
-    await prenderSerie({
-      tenantId: estado.tenantId, articuloId: idConSerie, imeis: ['355900000000001'],
-      usuarioId: empleadoId,
-    })
+    // `prenderSerie` ya no acepta `imeis` (Task 2 del ciclo "unidades sin
+    // identificar"): con stock 1 y ninguna unidad libre todavía, crea 1 sin
+    // identificar — alcanza igual para lo que este describe necesita, una
+    // unidad libre a la que darle de baja.
+    await prenderSerie({ tenantId: estado.tenantId, articuloId: idConSerie, usuarioId: empleadoId })
     conSerie = { id: idConSerie }
     const libres = await unidadesLibres(estado.tenantId, idConSerie)
     unidadLibre = libres[0]
@@ -1179,13 +1180,22 @@ describe('las acciones de unidades por IMEI', () => {
     })
   })
 
-  it('prenderSerieAccion con menos IMEI que stock devuelve el error, no un 500', async () => {
+  // Este test cubría el conteo estricto que `prenderSerie` exigía ANTES del
+  // ciclo "unidades sin identificar" (menos IMEI tipeados que stock era un
+  // error). Con la Task 2 de ese ciclo, `prenderSerieAccion` ya no lee
+  // `imeis` en absoluto (ver el comentario de la propia acción, en
+  // `acciones.ts`) y `prenderSerie` crea sola la diferencia sin identificar,
+  // así que este conteo ya no puede fallar — es exactamente el
+  // comportamiento nuevo, no una regresión. Ajustado para decir eso; la
+  // Task 6 de ese ciclo trae su propio caso equivalente
+  // ("prenderSerieAccion ya no lee imeis...").
+  it('prenderSerieAccion ya no exige que las IMEI tipeadas coincidan con el stock', async () => {
     estado.cookie = cookieDuenio
     const datos = new FormData()
     datos.set('articuloId', articuloConStock3.id)
     datos.append('imeis', 'AB1')
     const estadoResultado = await prenderSerieAccion(INICIAL, datos)
-    expect(estadoResultado.error).toContain('tienen que ser los mismos')
+    expect(estadoResultado.error).toBeNull()
   })
 
   it('prenderSerieAccion con el conteo exacto prende el switch y crea las unidades', async () => {
@@ -1211,10 +1221,10 @@ describe('las acciones de unidades por IMEI', () => {
     // reusarlo dejaría este caso dependiendo del orden de ejecución.
     estado.cookie = cookieDuenio
     const idConLibres = await crearArticuloDePrueba('Con serie y unidades libres, para apagar', '1')
-    await prenderSerie({
-      tenantId: estado.tenantId, articuloId: idConLibres, imeis: ['355600000000001'],
-      usuarioId: empleadoId,
-    })
+    // Ídem: sin `imeis`, crea la unidad libre sin identificar — sigue siendo
+    // una unidad libre, que es lo único que `apagarSerieAccion` necesita para
+    // rechazar.
+    await prenderSerie({ tenantId: estado.tenantId, articuloId: idConLibres, usuarioId: empleadoId })
     const datos = new FormData()
     datos.set('articuloId', idConLibres)
     const estadoResultado = await apagarSerieAccion(INICIAL, datos)
@@ -1227,9 +1237,7 @@ describe('las acciones de unidades por IMEI', () => {
   it('ingresarMercaderia con imeis carga las unidades en vez de una cantidad suelta', async () => {
     estado.cookie = cookieDuenio
     const idConSerie2 = await crearArticuloDePrueba('Con serie, para ingresar mercadería', '0')
-    await prenderSerie({
-      tenantId: estado.tenantId, articuloId: idConSerie2, imeis: [], usuarioId: empleadoId,
-    })
+    await prenderSerie({ tenantId: estado.tenantId, articuloId: idConSerie2, usuarioId: empleadoId })
 
     const datos = new FormData()
     datos.set('articuloId', idConSerie2)
