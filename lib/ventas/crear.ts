@@ -116,6 +116,20 @@ export async function crearVenta(
     if (recortado === '') return undefined
     return normalizarImei(i.imeiCapturado)
   })
+  // Un `imeiCapturado` SIN `unidadId` no tiene a qué unidad atarse: el bucle
+  // que toma unidades más abajo saltea cualquier ítem sin `unidadId` (`if
+  // (l.unidadId === undefined) continue`), así que sin este chequeo el
+  // escaneo desaparecería en silencio, sin aviso — la misma familia de error
+  // que "IMEI ya cargado en otra unidad": se rechaza en vez de ignorarse.
+  items.forEach((i, idx) => {
+    if (imeisCapturados[idx] !== undefined && i.unidadId === undefined) {
+      throw new ErrorDeVenta(
+        'UNIDAD_REQUERIDA',
+        `capturaste un IMEI para el artículo ${i.articuloId} sin elegir la unidad: elegí qué ` +
+          'equipo es',
+      )
+    }
+  })
   // Dos líneas nombrando la misma unidad es malformado sin necesidad de
   // consultar nada: no hace falta la base para saber que el mismo equipo no
   // puede salir dos veces en el mismo carrito.
@@ -503,6 +517,42 @@ export async function crearVenta(
         // el contrapeso es un escritor administrativo ocasional, no el
         // camino caliente del mostrador.
         if (l.imeiCapturado !== undefined) {
+          // Primero, ¿la unidad que se está vendiendo YA tenía un IMEI
+          // DISTINTO cargado? Si lo tiene, esto no es una identificación: es
+          // una CORRECCIÓN, y las correcciones son trabajo de
+          // `identificarUnidad` (lib/inventario/unidades.ts), a propósito, y
+          // sólo sobre una unidad LIBRE — la captura al cobrar existe para
+          // unidades que todavía no conocemos, no para pisar una identidad ya
+          // asentada. Que el IMEI escaneado no coincida con el que la unidad
+          // ya tenía es una señal de que algo está mal —se escaneó la caja
+          // equivocada, o la unidad elegida en pantalla no es la que se tiene
+          // en la mano— y tiene que frenar la venta para que una persona lo
+          // mire, no resolverse en silencio a favor de lo último que llegó.
+          // Es el mismo criterio que ya aplica el guard de `a.llevaSerie` más
+          // arriba: un `unidadId` que no corresponde se RECHAZA, no se
+          // ignora, para que la distinción quede diagnosticable.
+          //
+          // Escribir el MISMO IMEI que la unidad ya tenía NO es un conflicto:
+          // es un no-op (`!== l.imeiCapturado`, no una comparación de
+          // presencia), y una unidad ya identificada tiene que poder venderse
+          // volviendo a escanear el mismo código sin que eso frene nada.
+          const unidadObjetivo = await tx.unidadDeArticulo.findUnique({
+            where: { id: l.unidadId },
+            select: { imei: true },
+          })
+          if (
+            unidadObjetivo &&
+            unidadObjetivo.imei !== null &&
+            unidadObjetivo.imei !== l.imeiCapturado
+          ) {
+            throw new ErrorDeVenta(
+              'UNIDAD_NO_CORRESPONDE',
+              `el IMEI escaneado (${l.imeiCapturado}) no es el que esta unidad ya tenía cargado ` +
+                `(${unidadObjetivo.imei}): fijate qué equipo tenés en la mano antes de cobrar.`,
+            )
+          }
+
+          // Segundo, ¿otra unidad libre distinta ya tiene este IMEI?
           const otraLibreConEseImei = await tx.unidadDeArticulo.findFirst({
             where: {
               imei: l.imeiCapturado,

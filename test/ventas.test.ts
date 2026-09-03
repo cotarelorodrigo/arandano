@@ -1473,7 +1473,7 @@ describe('crearVenta con unidades identificadas (IMEI)', () => {
         items: [{ articuloId: a.id, cantidad: d('1'), unidadId: sinId.id, imeiCapturado: '355777777777777' }],
         pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
       }),
-    ).rejects.toThrow()
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_NO_DISPONIBLE' }))
     expect((await leerArticulo(a.id)).stock.toString()).toBe(stockAntes)
     // Y la unidad que se intentó vender sigue LIBRE y SIN identificar: el
     // rechazo no la tocó, ni de la mitad del `updateMany` combinado (que
@@ -1482,6 +1482,89 @@ describe('crearVenta con unidades identificadas (IMEI)', () => {
     const sinIdDespues = await leerUnidad(sinId.id)
     expect(sinIdDespues.ventaId).toBeNull()
     expect(sinIdDespues.imei).toBeNull()
+  })
+
+  // Important 2 de la review: un `imeiCapturado` que no coincide con el IMEI
+  // que la unidad YA tenía no es una identificación, es una corrección — y
+  // las correcciones son trabajo de `identificarUnidad`, sobre una unidad
+  // LIBRE, a propósito. Se rechaza en vez de resolverse en silencio a favor
+  // de lo último que llegó.
+  it('un imeiCapturado que no coincide con el que la unidad ya tenía rechaza la venta (no es una corrección)', async () => {
+    const a = await crearArticuloConSerie('iPhone 16 Pro', ['355444444444444'], '500000')
+    const [u] = await unidadesLibres(tenantId, a.id)
+    await expect(
+      crearVenta({
+        tenantId, usuarioId,
+        items: [{ articuloId: a.id, cantidad: d('1'), unidadId: u.id, imeiCapturado: '355555555555555' }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_NO_CORRESPONDE' }))
+    // No se tocó nada: ni se vendió, ni se le pisó el IMEI que ya tenía.
+    const despues = await leerUnidad(u.id)
+    expect(despues.ventaId).toBeNull()
+    expect(despues.imei).toBe('355444444444444')
+  })
+
+  // Escribir el MISMO IMEI que la unidad ya tenía es un no-op, no un
+  // conflicto: una unidad ya identificada se tiene que poder vender volviendo
+  // a escanear el mismo código sin que eso frene la venta.
+  it('capturar el MISMO IMEI que la unidad ya tenía no es un conflicto: la venta funciona', async () => {
+    const a = await crearArticuloConSerie('iPhone 16', ['355666666666666'], '500000')
+    const [u] = await unidadesLibres(tenantId, a.id)
+    const venta = await crearVenta({
+      tenantId, usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: u.id, imeiCapturado: '355666666666666' }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+    })
+    const despues = await leerUnidad(u.id)
+    expect(despues.ventaId).toBe(venta.id)
+    expect(despues.imei).toBe('355666666666666')
+  })
+
+  // Minor 1 de la review: pinnea que el IMEI se escribe EN EL MISMO
+  // `updateMany` que toma la unidad, y no en una sentencia aparte. Vender con
+  // `imeiCapturado` una unidad YA VENDIDA hace que el `updateMany` combinado
+  // no matchee ninguna fila (el WHERE exige `ventaId: null`): si alguien
+  // moviera la escritura del IMEI a una sentencia separada sin esa
+  // condición, esta unidad terminaría con el IMEI escrito a pesar de no
+  // estar disponible, y este test lo vería (dejaría de estar en `null`).
+  it('un imeiCapturado sobre una unidad YA VENDIDA no le escribe el IMEI (pin del UPDATE combinado)', async () => {
+    const a = await crearArticuloConStockSinIdentificar('iPhone 13 Pro Max 2', 1, '500000')
+    const [u] = await unidadesLibres(tenantId, a.id)
+    const pagos = [
+      { medio: 'EFECTIVO' as const, moneda: 'ARS' as const, base: d('500000'), cotizacion: d('1') },
+    ]
+    await crearVenta({
+      tenantId, usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: u.id }],
+      pagos,
+    })
+    await expect(
+      crearVenta({
+        tenantId, usuarioId,
+        items: [{ articuloId: a.id, cantidad: d('1'), unidadId: u.id, imeiCapturado: '355222222222222' }],
+        pagos,
+      }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_NO_DISPONIBLE' }))
+    expect((await leerUnidad(u.id)).imei).toBeNull()
+  })
+
+  // Minor 2 de la review: un `imeiCapturado` SIN `unidadId` no tiene a qué
+  // unidad atarse. Antes del fix, el bucle que toma unidades lo salteaba en
+  // silencio (`if (l.unidadId === undefined) continue`) y el escaneo
+  // desaparecía sin aviso. Se rechaza ANTES de la transacción, así que ni
+  // siquiera toca el stock.
+  it('un imeiCapturado sin unidadId se rechaza en vez de descartarse en silencio', async () => {
+    const a = await crearArticulo('Funda con imei suelto', '5', '10000')
+    const stockAntes = (await leerArticulo(a.id)).stock.toString()
+    await expect(
+      crearVenta({
+        tenantId, usuarioId,
+        items: [{ articuloId: a.id, cantidad: d('1'), imeiCapturado: '355000000000001' }],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('10000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_REQUERIDA' }))
+    expect((await leerArticulo(a.id)).stock.toString()).toBe(stockAntes)
   })
 })
 
