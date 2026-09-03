@@ -334,9 +334,14 @@ export type ItemVendido = {
  */
 export function imeisPorItem(
   items: { id: string; articuloId: string }[],
-  unidades: { articuloId: string; imei: string }[],
+  // `imei` nullable (Task 1, ciclo "unidades sin identificar"): una unidad
+  // libre puede no tener IMEI todavía. Acá no cambia nada más — `if (imei)`
+  // más abajo ya descarta el `null` igual que descartaba `undefined`, así que
+  // una unidad sin identificar simplemente no le presta ningún IMEI a su
+  // línea, que es el comportamiento correcto sin tocar una palabra de lógica.
+  unidades: { articuloId: string; imei: string | null }[],
 ): Map<string, string> {
-  const porArticulo = new Map<string, string[]>()
+  const porArticulo = new Map<string, (string | null)[]>()
   for (const u of unidades) {
     porArticulo.set(u.articuloId, [...(porArticulo.get(u.articuloId) ?? []), u.imei])
   }
