@@ -9,6 +9,7 @@ import { crearTenant, crearUsuario } from './datos'
 // globalmente en el repo. Mismo patrón que test/schema-unidades.test.ts.
 let enTransaccionDeTenant: typeof import('@/lib/tenant/transaccion').enTransaccionDeTenant
 let normalizarImei: typeof import('@/lib/inventario/unidades').normalizarImei
+let normalizarLista: typeof import('@/lib/inventario/unidades').normalizarLista
 let unidadesLibres: typeof import('@/lib/inventario/unidades').unidadesLibres
 let prenderSerie: typeof import('@/lib/inventario/unidades').prenderSerie
 let apagarSerie: typeof import('@/lib/inventario/unidades').apagarSerie
@@ -41,7 +42,8 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
   ;({
-    normalizarImei, unidadesLibres, prenderSerie, apagarSerie, crearUnidadesEnTx, identificarUnidad,
+    normalizarImei, normalizarLista, unidadesLibres, prenderSerie, apagarSerie, crearUnidadesEnTx,
+    identificarUnidad,
   } = await import('@/lib/inventario/unidades'))
   ;({ darDeBajaUnidad, ingresarStock } = await import('@/lib/inventario/stock'))
   ;({ crearVenta: crearVentaDelMotor } = await import('@/lib/ventas/crear'))
@@ -221,6 +223,29 @@ describe('normalizarImei', () => {
     expect(() => normalizarImei('   ')).toThrow(
       expect.objectContaining({ codigo: 'IMEI_VACIO' }),
     )
+  })
+})
+
+describe('normalizarLista', () => {
+  // `prenderSerie` ya no la llama (dejó de recibir `imeis` en este mismo
+  // ciclo), así que sin este caso la rama de repetidos de `normalizarLista`
+  // se queda sin ningún test que la ejercite: sus otros dos llamadores
+  // (`crearArticulo` en lib/inventario/articulos.ts, `ingresarStock` en
+  // lib/inventario/stock.ts) no tienen ninguno que pase una lista con un
+  // repetido. Restaurado acá, sobre la función directamente, en vez de sobre
+  // uno de esos dos llamadores: es donde vive la regla y donde menos
+  // maquinaria hace falta para probarla.
+  it('rechaza dos IMEI iguales en la misma lista', () => {
+    expect(() => normalizarLista(['E1', 'E1'])).toThrow(
+      expect.objectContaining({ codigo: 'IMEI_REPETIDO' }),
+    )
+  })
+
+  it('normaliza cada elemento igual que normalizarImei', () => {
+    expect(normalizarLista(['  355123456789012  ', 'SN-A45-9931'])).toEqual([
+      '355123456789012',
+      'SN-A45-9931',
+    ])
   })
 })
 

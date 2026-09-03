@@ -1196,21 +1196,19 @@ describe('las acciones de unidades por IMEI', () => {
     datos.append('imeis', 'AB1')
     const estadoResultado = await prenderSerieAccion(INICIAL, datos)
     expect(estadoResultado.error).toBeNull()
-  })
 
-  it('prenderSerieAccion con el conteo exacto prende el switch y crea las unidades', async () => {
-    estado.cookie = cookieDuenio
-    const idParaPrender = await crearArticuloDePrueba('Para prender bien', '2')
-    const datos = new FormData()
-    datos.set('articuloId', idParaPrender)
-    datos.append('imeis', '355800000000001')
-    datos.append('imeis', '355800000000002')
-    const estadoResultado = await prenderSerieAccion(INICIAL, datos)
-    expect(estadoResultado.error).toBeNull()
+    // No alcanza con que no haya error: si la acción volviera a leer `imeis`
+    // este caso pasaría igual con 1 unidad identificada 'AB1' en vez de 3 sin
+    // identificar. Lo que fija el caso es justamente que el IMEI tipeado se
+    // ignoró — 3 unidades (el stock), ninguna con ese ni ningún otro IMEI —,
+    // y que el switch quedó prendido de verdad.
+    const libres = await unidadesLibres(estado.tenantId, articuloConStock3.id)
+    expect(libres).toHaveLength(3)
+    expect(libres.every((u) => u.imei === null)).toBe(true)
 
     const { rows } = await owner.query(
       `SELECT lleva_serie AS "llevaSerie" FROM articulos WHERE id = $1`,
-      [idParaPrender],
+      [articuloConStock3.id],
     )
     expect(rows[0].llevaSerie).toBe(true)
   })

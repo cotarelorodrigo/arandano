@@ -235,7 +235,7 @@ export async function prenderSerie(entrada: {
         throw new ErrorDeInventario(
           'SERIE_CONTEO_NO_COINCIDE',
           `${articulo.nombre} tiene ${libresExistentes} unidades cargadas y sólo ` +
-            `${stock} en stock: dá de baja las que sobran antes de manejarlo por IMEI`,
+            `${stock} en stock: da de baja las que sobran antes de manejarlo por IMEI`,
         )
       }
 
