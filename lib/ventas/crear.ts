@@ -13,6 +13,7 @@ import {
 } from './totales'
 import { exigirCliente, exigirUsuario } from './pertenencia'
 import { ErrorDeVenta, traducirErrorDeBase } from './errores'
+import { normalizarImei } from '@/lib/inventario/unidades'
 
 export type ItemDeVenta = {
   articuloId: string
@@ -25,6 +26,13 @@ export type ItemDeVenta = {
    * distinción que hace falta para diagnosticar.
    */
   unidadId?: string
+  /**
+   * El IMEI que quien cobra escaneó al vender una unidad sin identificar. Es
+   * OPCIONAL a propósito: exigirlo convertiría cada venta en un trámite con el
+   * cliente esperando, que es la fricción que este ciclo existe para sacar.
+   * Sin él, la venta dice honestamente que no se sabe qué equipo salió.
+   */
+  imeiCapturado?: string
 }
 export type PagoDeVenta = {
   medio: MedioPago
@@ -89,6 +97,16 @@ export async function crearVenta(
       )
     }
   }
+  // Normalizado ACÁ, antes de abrir la transacción, junto al resto de las
+  // validaciones de dominio de los ítems: un `imeiCapturado` vacío ("   ") es
+  // un error de carga, y `normalizarImei` lo rechaza con `IMEI_VACIO` — mejor
+  // que falle temprano y no a mitad de una venta que ya tomó locks.
+  //
+  // Alineado por ÍNDICE con `items` y no incrustado en el objeto: `items` es
+  // la entrada del llamador y no se muta.
+  const imeisCapturados = items.map((i) =>
+    i.imeiCapturado !== undefined ? normalizarImei(i.imeiCapturado) : undefined,
+  )
   // Dos líneas nombrando la misma unidad es malformado sin necesidad de
   // consultar nada: no hace falta la base para saber que el mismo equipo no
   // puede salir dos veces en el mismo carrito.
@@ -234,7 +252,7 @@ export async function crearVenta(
 
       // Congelar precio y descripción ACÁ. El artículo puede renombrarse o cambiar
       // de precio mañana; esta venta tiene que seguir diciendo lo de hoy.
-      const lineas = items.map((i) => {
+      const lineas = items.map((i, idx) => {
         const a = porId.get(i.articuloId)
         if (!a) {
           throw new ErrorDeVenta(
@@ -279,6 +297,7 @@ export async function crearVenta(
           moneda: a.moneda,
           esProducto: a.tipo === 'PRODUCTO',
           unidadId: i.unidadId,
+          imeiCapturado: imeisCapturados[idx],
         }
       })
 
@@ -426,6 +445,51 @@ export async function crearVenta(
         // los locks de unidad se toman en un orden derivado del mismo orden
         // total que usa todo el motor.
         if (l.unidadId === undefined) continue
+        // Si quien cobra escaneó un IMEI, se chequea ANTES de tomar la unidad
+        // que ningún OTRO equipo libre lo tenga ya.
+        //
+        // Esto NO se puede dejar en manos del índice parcial
+        // (`unidades_articulo_imei_libre`, `WHERE venta_id IS NULL AND
+        // baja_en IS NULL`) como hace `identificarUnidad`
+        // (lib/inventario/unidades.ts): ese índice sólo cubre unidades
+        // LIBRES, y el UPDATE de acá pone `ventaId` en la MISMA sentencia que
+        // el `imei` — la fila resultante queda con `venta_id` NOT NULL, o sea
+        // FUERA del índice, antes de que Postgres tenga oportunidad de
+        // comparar el IMEI contra nada. Verificado a mano contra la base: el
+        // UPDATE combinado corre limpio (sin ningún `P2002`) aun cuando el
+        // IMEI ya está en otra unidad libre — al revés de lo que un chequeo
+        // por `catch` asumiría. Por eso el chequeo va ACÁ, antes de escribir,
+        // y no envolviendo el `updateMany`.
+        //
+        // Sin ventana de carrera: `proximoNumero`, más arriba, ya tomó el
+        // lock exclusivo de la fila del tenant y lo retiene hasta el commit,
+        // así que ninguna otra `crearVenta` de este tenant puede colarse
+        // entre este SELECT y el UPDATE de abajo.
+        if (l.imeiCapturado !== undefined) {
+          const otraLibreConEseImei = await tx.unidadDeArticulo.findFirst({
+            where: {
+              imei: l.imeiCapturado,
+              ventaId: null,
+              bajaEn: null,
+              id: { not: l.unidadId },
+            },
+            select: { id: true },
+          })
+          if (otraLibreConEseImei) {
+            throw new ErrorDeVenta(
+              'UNIDAD_NO_DISPONIBLE',
+              `el IMEI ${l.imeiCapturado} ya está en otro equipo del stock`,
+            )
+          }
+        }
+
+        // El IMEI, si quien cobra lo escaneó, se escribe EN ESTE MISMO
+        // `updateMany` — no en una sentencia aparte: es la misma fila, la
+        // misma transacción y el mismo lock, y partirlo abriría una ventana
+        // entre tomar la unidad e identificarla. `!== undefined` porque una
+        // venta sin `imeiCapturado` no tiene que tocar el IMEI que la unidad
+        // ya tuviera (una unidad identificada se puede vender sin volver a
+        // escanearla).
         const tomada = await tx.unidadDeArticulo.updateMany({
           where: {
             id: l.unidadId,
@@ -433,7 +497,10 @@ export async function crearVenta(
             ventaId: null,
             bajaEn: null,
           },
-          data: { ventaId: venta.id },
+          data: {
+            ventaId: venta.id,
+            ...(l.imeiCapturado !== undefined ? { imei: l.imeiCapturado } : {}),
+          },
         })
         if (tomada.count !== 1) {
           // Cero filas tiene dos causas que el mostrador vive distinto: la

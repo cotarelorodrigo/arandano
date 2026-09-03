@@ -13,6 +13,9 @@ let enTransaccionDeTenant: typeof import('@/lib/tenant/transaccion').enTransacci
 let unidadesLibres: typeof import('@/lib/inventario/unidades').unidadesLibres
 let crearUnidadesEnTx: typeof import('@/lib/inventario/unidades').crearUnidadesEnTx
 let desactivarArticulo: typeof import('@/lib/inventario/articulos').desactivarArticulo
+// Task 4: para dejar unidades SIN identificar por el camino real —prender el
+// switch, que hoy sólo crea unidades sin IMEI.
+let prenderSerie: typeof import('@/lib/inventario/unidades').prenderSerie
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -28,7 +31,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   ;({ buscarArticulosVendibles } = await import('@/lib/ventas/buscar'))
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
-  ;({ unidadesLibres, crearUnidadesEnTx } = await import('@/lib/inventario/unidades'))
+  ;({ unidadesLibres, crearUnidadesEnTx, prenderSerie } = await import('@/lib/inventario/unidades'))
   ;({ desactivarArticulo } = await import('@/lib/inventario/articulos'))
 
   owner = new Client({ connectionString: urlOwner() })
@@ -156,5 +159,25 @@ describe('buscarArticulosVendibles: búsqueda por IMEI', () => {
     expect(
       await buscarArticulosVendibles(tenantId, '123456789012345', { porPalabras: true }),
     ).toHaveLength(0)
+  })
+
+  // Task 4: crea el artículo, le prende la serie con `prenderSerie` —el
+  // camino real por el que hoy nacen unidades sin identificar— y deja
+  // `cuantas` libres y sin IMEI.
+  async function crearArticuloConStockSinIdentificar(
+    nombre: string,
+    cuantas: number,
+    precio: string,
+  ) {
+    const a = await crearArticulo(nombre, cuantas.toString(), precio)
+    await prenderSerie({ tenantId, articuloId: a.id, usuarioId })
+    return a
+  }
+
+  it('el buscador por IMEI ignora las unidades sin identificar', async () => {
+    // Escanear no puede traer una unidad cuyo IMEI no conocemos, y buscar por
+    // cadena vacía tampoco.
+    await crearArticuloConStockSinIdentificar('iPhone 12', 3, '500000')
+    expect(await buscarArticulosVendibles(tenantId, '')).toHaveLength(0)
   })
 })

@@ -244,7 +244,13 @@ export async function buscarArticulosVendibles(
     // que no exista el camino, no que el prompt lo prohíba.
     const unidad = await prisma.unidadDeArticulo.findFirst({
       where: {
-        imei: busqueda,
+        // `not: null` no cambia qué matchea: `busqueda` nunca es `''` acá —el
+        // guard de más arriba ya cortó ese caso— así que un `equals` contra un
+        // valor concreto nunca podría matchear un `NULL` de todos modos. Se
+        // deja igual, EXPLÍCITO, para que quede escrito a propósito lo que hoy
+        // es una consecuencia accidental: una unidad cuyo IMEI no conocemos NO
+        // es alcanzable por escaneo.
+        imei: { equals: busqueda, not: null },
         ventaId: null,
         bajaEn: null,
         articulo: { desactivadoEn: null },
