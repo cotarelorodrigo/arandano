@@ -17,9 +17,12 @@ vi.mock('./acciones', () => ({
   prenderSerieAccion: vi.fn(),
   apagarSerieAccion: vi.fn(),
   darDeBajaUnidadAccion: vi.fn(),
+  identificarUnidadAccion: vi.fn(),
 }))
 
-type Unidad = { id: string; imei: string; ingresadaEn: Date }
+// `imei` nullable desde la Task 1 del ciclo "unidades sin identificar": una
+// unidad existe desde que entró la caja, y el número aparece después.
+type Unidad = { id: string; imei: string | null; ingresadaEn: Date }
 
 async function renderCard(unidades: Unidad[]) {
   const { CardDeUnidades } = await import('./unidades')
@@ -88,6 +91,62 @@ describe('CardDeUnidades', () => {
   })
 })
 
+/**
+ * Task 6 del ciclo "unidades sin identificar": la card deja de ser una lista
+ * de lo ya cargado y pasa a ser el lugar donde se carga. Arriba, el bloque de
+ * captura contra la unidad sin identificar más vieja; abajo, la lista de las
+ * identificadas.
+ */
+describe('CardDeUnidades: el bloque de captura', () => {
+  it('la card muestra el bloque de captura con el contador', async () => {
+    const html = await renderCard([
+      { id: 'u1', imei: null, ingresadaEn: new Date('2026-09-01T12:00:00Z') },
+      { id: 'u2', imei: null, ingresadaEn: new Date('2026-09-01T12:00:00Z') },
+      { id: 'u3', imei: '355000000000001', ingresadaEn: new Date('2026-09-01T12:00:00Z') },
+    ])
+    expect(html).toContain('2') // el contador
+    expect(html).toContain('sin identificar')
+    expect(html).toContain('355000000000001')
+  })
+
+  it('sin unidades sin identificar, el bloque de captura no se dibuja', async () => {
+    const html = await renderCard([{ id: 'u1', imei: 'A', ingresadaEn: new Date() }])
+    expect(html).not.toContain('sin identificar')
+  })
+
+  // La unidad se fija en un hidden y no la elige nadie: entre unidades sin
+  // identificar no hay ninguna diferencia que alguien pueda ver. Y es la MÁS
+  // VIEJA, que la card conoce sin consultar nada porque `unidadesLibres` ya
+  // viene ordenada.
+  it('el bloque postea contra la unidad sin identificar más vieja', async () => {
+    const html = await renderCard([
+      { id: 'vieja', imei: null, ingresadaEn: new Date('2026-09-01T12:00:00Z') },
+      { id: 'nueva', imei: null, ingresadaEn: new Date('2026-09-02T12:00:00Z') },
+    ])
+    expect(html).toContain('value="vieja"')
+    expect(html).not.toContain('value="nueva"')
+  })
+
+  it('cada unidad identificada ofrece corregir', async () => {
+    const html = await renderCard([{ id: 'u1', imei: 'A', ingresadaEn: new Date() }])
+    expect(html).toContain('Corregir')
+  })
+
+  it('la lista tiene tope de alto y scrollea dentro de la card', async () => {
+    // Con 30 unidades la card no puede empujar la página entera. Es la
+    // respuesta correcta al síntoma que originó el ciclo, ahora que la causa
+    // —el diálogo modal con N campos— ya no está.
+    const html = await renderCard(
+      Array.from({ length: 30 }, (_, i) => ({
+        id: `u${i}`,
+        imei: `IMEI-${i}`,
+        ingresadaEn: new Date(),
+      })),
+    )
+    expect(html).toMatch(/overflow-y-auto/)
+  })
+})
+
 describe('SwitchDeSerie', () => {
   async function renderSwitch(extra: Partial<{ llevaSerie: boolean; puedeEditar: boolean }> = {}) {
     const { SwitchDeSerie } = await import('./unidades')
@@ -95,7 +154,6 @@ describe('SwitchDeSerie', () => {
       <SwitchDeSerie
         articuloId="a1"
         llevaSerie={extra.llevaSerie ?? false}
-        stock="3"
         puedeEditar={extra.puedeEditar ?? true}
       />,
     )
@@ -173,52 +231,39 @@ describe('FilaDeUnidad: la baja en dos pasos (cableado, no ejercitable sin DOM)'
 })
 
 /**
- * Hallazgo I4 de la review de rama. `confirmarDialogo` seteaba el error y
- * dejaba el diálogo abierto, pero el único `<p>` que lo pintaba vivía en la
- * FILA — o sea detrás del velo de pantalla completa de `DialogContent`, con el
- * foco atrapado adentro. Los tres errores más probables de este camino
- * (`SERIE_CONTEO_NO_COINCIDE`, `IMEI_REPETIDO`, `SERIE_STOCK_NO_ENTERO`) no le
- * mostraban NADA a quien apretaba "Prender": el rótulo volvía y el switch
- * quedaba apagado sin explicación, en la única pantalla que un local tiene que
- * atravesar para adoptar la feature.
+ * Hallazgo I4 de la review de rama, y lo que la Task 6 hizo con él.
  *
- * Y `enCurso` se liberaba sólo en el camino de retorno, así que una acción que
- * TIRA dejaba el botón congelado en "Prendiendo…" y el switch deshabilitado
- * hasta recargar.
+ * El diálogo pedía N IMEI de una sentada, y con 30 unidades no entraba en la
+ * pantalla: ése es el defecto que originó este ciclo. La respuesta no fue
+ * ponerle scroll al modal, fue **sacarlo** — prender el switch postea directo
+ * y los IMEI se cargan de a uno en la card, cuando el equipo aparece.
  *
- * Por fuente, igual que la baja en dos pasos de arriba: sin DOM no se puede
- * abrir el diálogo ni hacer fallar una acción.
+ * Con el diálogo se fue la mitad del I4: ya no hay un velo de pantalla
+ * completa detrás del cual pueda esconderse un error, así que el `<p>` de la
+ * fila lo pinta siempre. Lo que NO se fue es la otra mitad —`enCurso`
+ * liberado en un `finally`—, y por eso el conteo baja de tres a dos en vez de
+ * desaparecer: una acción que TIRA sin ese `finally` deja el switch
+ * deshabilitado hasta recargar la pantalla.
  */
-describe('SwitchDeSerie: el error visible y el enCurso liberado (cableado)', () => {
+describe('SwitchDeSerie: sin diálogo, con el error y el enCurso a la vista', () => {
   const FUENTE = readFileSync('app/(app)/inventario/unidades.tsx', 'utf8')
 
-  it('el error se pinta DENTRO del DialogContent, antes del footer', () => {
-    const cuerpo = FUENTE.slice(FUENTE.indexOf('<DialogContent>'))
-    const alerta = cuerpo.indexOf('role="alert"')
-    const footer = cuerpo.indexOf('<DialogFooter>')
-    expect(alerta).toBeGreaterThan(-1)
-    expect(alerta).toBeLessThan(footer)
-    expect(cuerpo.slice(alerta, footer)).toContain('{error}')
+  it('el switch ya no abre ningún diálogo', () => {
+    expect(FUENTE).not.toContain('DialogContent')
   })
 
-  it('y el de la fila NO se pinta con el diálogo abierto: quedaría detrás del velo', () => {
-    expect(FUENTE).toContain('{error && !dialogoAbierto && <p')
+  it('el error se pinta en la fila, sin ninguna condición de diálogo', () => {
+    expect(FUENTE).toContain('{error && <p')
+    expect(FUENTE).not.toContain('dialogoAbierto')
   })
 
-  it('cerrar el diálogo limpia su error en vez de mudarlo a la fila', () => {
-    expect(FUENTE).toMatch(
-      /function cambiarDialogo\(abierto: boolean\) \{\s*\n\s*setDialogoAbierto\(abierto\)\s*\n\s*if \(!abierto\) setError\(null\)/,
-    )
-    expect(FUENTE).toContain('onOpenChange={cambiarDialogo}')
-  })
-
-  // Las TRES: apagar, prender sin diálogo y confirmar el diálogo. Contadas,
-  // porque una sola que quede afuera es un switch congelado hasta recargar.
-  it('las TRES llamadas liberan enCurso en un finally', () => {
+  // Las DOS: apagar y prender. Contadas, porque una sola que quede afuera es
+  // un switch congelado hasta recargar.
+  it('las DOS llamadas liberan enCurso en un finally', () => {
     const enFinally = FUENTE.match(/\} finally \{\s*\n\s*setEnCurso\(false\)\s*\n\s*\}/g) ?? []
-    expect(enFinally).toHaveLength(3)
-    // Y ninguna suelta: una cuarta aparición fuera de un `finally` sería
+    expect(enFinally).toHaveLength(2)
+    // Y ninguna suelta: una tercera aparición fuera de un `finally` sería
     // justamente el camino que se olvida de liberarlo cuando la acción tira.
-    expect(FUENTE.split('setEnCurso(false)').length - 1).toBe(3)
+    expect(FUENTE.split('setEnCurso(false)').length - 1).toBe(2)
   })
 })

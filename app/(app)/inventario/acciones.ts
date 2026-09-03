@@ -19,7 +19,7 @@ import {
   borrarCategoria,
 } from '@/lib/inventario/categorias'
 import { ingresarStock, corregirStock, darDeBajaUnidad } from '@/lib/inventario/stock'
-import { prenderSerie, apagarSerie } from '@/lib/inventario/unidades'
+import { prenderSerie, apagarSerie, identificarUnidad } from '@/lib/inventario/unidades'
 import { ErrorDeInventario } from '@/lib/inventario/errores'
 import { aDecimal, aDecimalOpcional, ErrorDeFormato } from '@/lib/formato/numeros'
 import { esUuid } from '@/lib/uuid'
@@ -344,10 +344,10 @@ export async function prenderSerieAccion(
     const articuloId = texto(datos, 'articuloId')
     // `prenderSerie` ya no acepta IMEIs (ciclo "unidades sin identificar",
     // Task 2): cuenta el stock y las unidades libres que ya haya, y crea la
-    // diferencia sin identificar. El diálogo que sigue posteando un campo
-    // `imeis` por unidad es UI vieja, todavía sin tocar — Task 6 la
-    // reemplaza por la card sin diálogo; hasta entonces, esos campos llegan
-    // y simplemente no se leen.
+    // diferencia sin identificar. Desde la Task 6 la pantalla tampoco los
+    // manda —el diálogo que pedía N IMEI de una sentada se borró—, pero la
+    // acción sigue sin leerlos a propósito: un `<form>` es un endpoint, y que
+    // la pantalla haya dejado de dibujar un campo no impide que llegue.
     await comoPuede('ARTICULOS_EDITAR', (tenantId, usuarioId) =>
       prenderSerie({ tenantId, articuloId, usuarioId }),
     )
@@ -391,6 +391,43 @@ export async function darDeBajaUnidadAccion(
     revalidatePath('/inventario')
     revalidatePath(`/inventario/${articuloId}`)
     return { error: null, aviso: 'Unidad dada de baja.' }
+  } catch (e) {
+    return traducir(e)
+  }
+}
+
+/**
+ * Cargar el IMEI de una unidad que entró sin él, o corregir uno mal tipeado
+ * (Task 6 del ciclo "unidades sin identificar").
+ *
+ * **Detrás de `conSesion` y no de `comoPuede`**, igual que `ingresarMercaderia`,
+ * `corregirPorConteo` y la baja: ponerle el número a la caja que acaba de
+ * aparecer es operación del día, la hace quien está atendiendo, y queda
+ * firmada con su `usuarioId`. Un permiso propio dejaría al local sin poder
+ * cuadrar el stock hasta que llegue el dueño — que es exactamente la fricción
+ * que este ciclo vino a sacar.
+ *
+ * El IMEI vacío no necesita guarda acá: `normalizarImei` tira `IMEI_VACIO` y
+ * `traducir()` lo convierte en cartel. Sin eso la unidad quedaría "cargada"
+ * con la cadena vacía — ni identificada ni sin identificar.
+ */
+export async function identificarUnidadAccion(
+  _e: EstadoInventario,
+  datos: FormData,
+): Promise<EstadoInventario> {
+  try {
+    const articuloId = texto(datos, 'articuloId')
+    await conSesion((tenantId, usuarioId) =>
+      identificarUnidad({
+        tenantId,
+        unidadId: texto(datos, 'unidadId'),
+        imei: texto(datos, 'imei'),
+        usuarioId,
+      }),
+    )
+    revalidatePath('/inventario')
+    revalidatePath(`/inventario/${articuloId}`)
+    return { error: null, aviso: 'IMEI cargado.' }
   } catch (e) {
     return traducir(e)
   }

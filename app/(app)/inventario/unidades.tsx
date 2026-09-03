@@ -6,13 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog'
 import { CardDelFormulario } from './formularios'
-import { ListaDeImeis } from './lista-de-imeis'
 import {
-  prenderSerieAccion, apagarSerieAccion, darDeBajaUnidadAccion, type EstadoInventario,
+  prenderSerieAccion, apagarSerieAccion, darDeBajaUnidadAccion, identificarUnidadAccion,
+  type EstadoInventario,
 } from './acciones'
 import { formatearFechaCorta } from '@/lib/formato/mostrar'
 
@@ -20,15 +17,29 @@ import { formatearFechaCorta } from '@/lib/formato/mostrar'
 // 'use server' y sólo puede exportar funciones async.
 const INICIAL: EstadoInventario = { error: null, aviso: null }
 
-/** A partir de cuántas unidades libres aparece el filtro dentro de la card. */
+/** A partir de cuántas unidades identificadas aparece el filtro dentro de la card. */
 const UMBRAL_FILTRO = 8
 
+/** Una unidad libre tal como la produce `unidadesLibres`
+ *  (lib/inventario/unidades.ts). `imei` es nullable desde la Task 1 del ciclo
+ *  "unidades sin identificar": la unidad existe desde que entró la caja, y el
+ *  número aparece cuando aparece. Las fechas llegan como `Date` desde el
+ *  Server Component; se formatean con `formatearFechaCorta`, la misma que ya
+ *  usa el historial. */
+type Unidad = { id: string; imei: string | null; ingresadaEn: Date }
+
 /**
- * Una fila de la lista de unidades, con la baja en dos pasos sobre el MISMO
+ * Una fila de la lista de unidades YA identificadas: su IMEI —editable, para
+ * corregir un typo—, cuándo entró, y la baja en dos pasos sobre el MISMO
  * botón (mismo mecanismo que `AnularVenta` y el doble `Esc` del carrito de
  * /vender: "irreversible pero frecuente"). El primer toque arma la
  * confirmación —cambia el rótulo a "Confirmar baja" y programa el desarme a
  * los 3 segundos—; el segundo confirma de verdad.
+ *
+ * **Dos formularios escondidos y los controles atados por `form=`**, y no un
+ * `<form>` envolviendo a la fila: dos formularios anidados son HTML inválido,
+ * y acá hacen falta los dos —corregir el IMEI y dar de baja— sobre la misma
+ * fila. Es el mismo recurso que la fila ya usaba para la baja sola.
  *
  * **UN SOLO árbol, no dos presentaciones.** La primera versión duplicaba el
  * IMEI y la fecha en dos `<div>` —uno `lg:hidden`, otro `hidden lg:flex`— para
@@ -40,20 +51,27 @@ const UMBRAL_FILTRO = 8
  * dos veces en el DOM, y el dueño del producto eligió explícitamente lo
  * contrario"). Acá alcanza con un `<div>` interno `flex-col lg:flex-row` para
  * el par IMEI/fecha: el mismo `flex-col`/`lg:flex-row` que ya gobierna el
- * contenedor de afuera, sin duplicar nada. El botón y la nota viven una sola
- * vez cada uno.
+ * contenedor de afuera, sin duplicar nada. Cada botón y cada campo viven una
+ * sola vez.
  */
 function FilaDeUnidad({
   articuloId,
   unidad,
 }: {
   articuloId: string
+  // Ya identificada: la lista de abajo sólo recibe éstas, y las que todavía no
+  // tienen número las atiende el bloque de captura de arriba.
   unidad: { id: string; imei: string; ingresadaEn: Date }
 }) {
   const [estado, accion, enviando] = useActionState(darDeBajaUnidadAccion, INICIAL)
+  const [estadoCorregir, accionCorregir, corrigiendo] = useActionState(
+    identificarUnidadAccion,
+    INICIAL,
+  )
   const [armado, setArmado] = useState(false)
   const desarmar = useRef<ReturnType<typeof setTimeout> | null>(null)
   const formId = `form-baja-${unidad.id}`
+  const formCorregirId = `form-corregir-${unidad.id}`
 
   useEffect(() => () => {
     if (desarmar.current) clearTimeout(desarmar.current)
@@ -77,18 +95,43 @@ function FilaDeUnidad({
 
   return (
     <div className="flex flex-col gap-2 border-b py-2 last:border-b-0 lg:flex-row lg:items-center lg:gap-3 lg:py-[9px]">
-      {/* Sin campos visibles propios, salvo la nota y el botón (`form=`, más
-          abajo): sólo dispara la acción con `articuloId`/`unidadId` ya
+      {/* Sin campos visibles propios (los controles se atan con `form=`, más
+          abajo): sólo disparan la acción con `articuloId`/`unidadId` ya
           conocidos. */}
       <form id={formId} action={accion} className="hidden" aria-hidden="true">
         <input type="hidden" name="articuloId" value={articuloId} />
         <input type="hidden" name="unidadId" value={unidad.id} />
       </form>
+      <form id={formCorregirId} action={accionCorregir} className="hidden" aria-hidden="true">
+        <input type="hidden" name="articuloId" value={articuloId} />
+        <input type="hidden" name="unidadId" value={unidad.id} />
+      </form>
 
       {/* IMEI y fecha: columna en el teléfono, fila en escritorio — el MISMO
-          `<span>` de cada uno, nunca dos. */}
-      <div className="flex flex-col gap-0.5 lg:flex-1 lg:flex-row lg:items-center lg:gap-3">
-        <span className="text-[13px] font-medium text-foreground">{unidad.imei}</span>
+          control de cada uno, nunca dos. */}
+      <div className="flex flex-col gap-1.5 lg:flex-1 lg:flex-row lg:items-center lg:gap-3">
+        {/* Editable y prellenado con el IMEI actual: corregir un typo es el
+            mismo `identificarUnidadAccion` sobre esa unidad, no una acción
+            aparte — el motor sólo lo permite mientras la unidad esté LIBRE
+            (una vendida congela su número, igual que `VentaItem` congela
+            descripción y precio). */}
+        <Input
+          form={formCorregirId}
+          name="imei"
+          defaultValue={unidad.imei}
+          aria-label={`IMEI de la unidad que ingresó el ${formatearFechaCorta(unidad.ingresadaEn)}`}
+          className="h-9 rounded-[9px] text-[13px] font-medium lg:w-[200px]"
+        />
+        <Button
+          type="submit"
+          form={formCorregirId}
+          variant="ghost"
+          size="sm"
+          disabled={corrigiendo}
+          className="shrink-0 self-start lg:self-auto"
+        >
+          {corrigiendo ? 'Corrigiendo…' : 'Corregir'}
+        </Button>
         <span className="text-[11px] text-muted-foreground">
           Ingresó el {formatearFechaCorta(unidad.ingresadaEn)}
         </span>
@@ -117,14 +160,79 @@ function FilaDeUnidad({
       {estado.error && (
         <p className="text-[11px] text-destructive">{estado.error}</p>
       )}
+      {estadoCorregir.error && (
+        <p className="text-[11px] text-destructive">{estadoCorregir.error}</p>
+      )}
     </div>
   )
 }
 
 /**
- * La card "Unidades" de la ficha de un artículo con serie: la lista de IMEI
- * libres, cuándo entró cada uno, y "Dar de baja" con su nota (Task 8 del ciclo
- * de unidades por IMEI).
+ * El bloque de captura: UN campo, enfocado, que le pone el IMEI a la unidad
+ * sin identificar más vieja. Vive arriba de la lista y sólo existe mientras
+ * quede alguna sin número.
+ *
+ * **La unidad se fija en un hidden y no la elige nadie** (Task 6 del ciclo
+ * "unidades sin identificar"): entre unidades sin identificar no hay ninguna
+ * diferencia que alguien pueda ver, así que pedir que elijan sería pedir una
+ * decisión que no existe. Y es la MÁS VIEJA, que la card conoce sin consultar
+ * nada porque `unidadesLibres` ya viene ordenada de más vieja a más nueva —
+ * el mismo criterio con el que se vende en un mostrador.
+ *
+ * **`key={proxima.id}` sobre el bloque es lo que permite escanear una caja
+ * tras otra sin tocar el mouse.** Cargado un IMEI, `revalidatePath` trae la
+ * ficha de nuevo, la próxima unidad cambia y con ella la key: React remonta el
+ * bloque, así que el input —no controlado— nace vacío y el `autoFocus` vuelve
+ * a dispararse. Si en cambio la acción FALLA, la próxima unidad es la misma,
+ * la key no cambia, y lo tipeado se queda donde está para poder corregirlo,
+ * que es exactamente lo que hace falta cuando el número chocó contra otro.
+ */
+function BloqueDeCaptura({
+  articuloId,
+  proxima,
+  cuantasFaltan,
+}: {
+  articuloId: string
+  proxima: Unidad
+  cuantasFaltan: number
+}) {
+  const [estado, accion, enviando] = useActionState(identificarUnidadAccion, INICIAL)
+
+  return (
+    <div className="flex flex-col gap-2 rounded-[10px] border bg-muted/40 p-3">
+      <form action={accion} className="flex items-center gap-2">
+        <input type="hidden" name="articuloId" value={articuloId} />
+        <input type="hidden" name="unidadId" value={proxima.id} />
+        <Input
+          name="imei"
+          autoFocus
+          aria-label="IMEI o número de serie"
+          placeholder="Escaneá o tipeá el IMEI"
+          className="h-10 rounded-[9px]"
+        />
+        <Button type="submit" size="sm" disabled={enviando} className="shrink-0">
+          {enviando ? 'Cargando…' : 'Cargar'}
+        </Button>
+      </form>
+      <p className="text-[11px] text-muted-foreground">
+        {/* El contador es el que dice cuánto falta para que el stock y la
+            vitrina digan lo mismo. */}
+        Quedan {cuantasFaltan} sin identificar. Entró el{' '}
+        {formatearFechaCorta(proxima.ingresadaEn)}.
+      </p>
+      {estado.error && (
+        <p role="alert" className="text-[12px] leading-[1.5] text-destructive">
+          {estado.error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * La card "Unidades" de la ficha de un artículo con serie: arriba el bloque de
+ * captura, abajo la lista de IMEI libres con su fecha de ingreso, "Corregir" y
+ * "Dar de baja" con su nota.
  *
  * **Archivo propio y no adentro de `formularios.tsx`**: ese archivo ya tenía
  * 734 líneas antes de esta task y esto es una responsabilidad distinta.
@@ -132,27 +240,48 @@ function FilaDeUnidad({
  * Sin frame en `design/arandano.pen` — es anterior a esta feature —, así que
  * se deriva del resto de la pantalla: la misma `CardDelFormulario` que usan
  * el alta y la ficha.
+ *
+ * **La lista lleva `max-h-[420px] overflow-y-auto`, y ése es el arreglo del
+ * síntoma que originó el ciclo entero**: con 30 unidades, el diálogo modal que
+ * pedía los 30 IMEI de una sentada no entraba en la pantalla. La respuesta no
+ * fue ponerle scroll al modal sino sacarlo (ver `SwitchDeSerie`); el tope de
+ * acá es lo que impide que la lista, ahora que vive en la página, empuje todo
+ * lo demás para abajo. Los 420 px son unas ocho filas: suficiente para que se
+ * vea que hay lista, poco para que se coma la pantalla. Sin prefijo `lg:`
+ * porque el tope aplica igual en los dos anchos, y `test/responsive.test.ts`
+ * no lo marca: es un `max-h`, y un máximo nunca puede desbordar.
  */
 export function CardDeUnidades({
   articuloId,
   unidades,
 }: {
   articuloId: string
-  // El tipo lo produce `unidadesLibres` (lib/inventario/unidades.ts). Las
-  // fechas llegan como `Date` desde el Server Component; se formatean con
-  // `formatearFechaCorta`, la misma que ya usa el historial.
-  unidades: { id: string; imei: string; ingresadaEn: Date }[]
+  unidades: Unidad[]
 }) {
   const [filtro, setFiltro] = useState('')
 
+  const sinIdentificar = unidades.filter((u) => u.imei === null)
+  const identificadas = unidades.filter(
+    (u): u is { id: string; imei: string; ingresadaEn: Date } => u.imei !== null,
+  )
+  const proxima = sinIdentificar[0]
+
   const visibles =
     filtro.trim() === ''
-      ? unidades
-      : unidades.filter((u) => u.imei.toLowerCase().includes(filtro.trim().toLowerCase()))
+      ? identificadas
+      : identificadas.filter((u) => u.imei.toLowerCase().includes(filtro.trim().toLowerCase()))
 
   return (
     <CardDelFormulario id="unidades" titulo="Unidades">
-      {unidades.length > UMBRAL_FILTRO && (
+      {proxima !== undefined && (
+        <BloqueDeCaptura
+          key={proxima.id}
+          articuloId={articuloId}
+          proxima={proxima}
+          cuantasFaltan={sinIdentificar.length}
+        />
+      )}
+      {identificadas.length > UMBRAL_FILTRO && (
         <div className="relative">
           <Search
             aria-hidden="true"
@@ -173,27 +302,35 @@ export function CardDeUnidades({
           o ingresá mercadería cargando el IMEI de cada equipo.
         </p>
       ) : (
-        <>
-          <div className="flex flex-col">
-            {visibles.map((u) => (
-              <FilaDeUnidad key={u.id} articuloId={articuloId} unidad={u} />
-            ))}
-          </div>
-          {visibles.length === 0 && (
-            <p className="text-[12px] text-muted-foreground">Ningún IMEI coincide con el filtro.</p>
-          )}
-        </>
+        identificadas.length > 0 && (
+          <>
+            <div className="flex max-h-[420px] flex-col overflow-y-auto">
+              {visibles.map((u) => (
+                <FilaDeUnidad key={u.id} articuloId={articuloId} unidad={u} />
+              ))}
+            </div>
+            {visibles.length === 0 && (
+              <p className="text-[12px] text-muted-foreground">Ningún IMEI coincide con el filtro.</p>
+            )}
+          </>
+        )
       )}
     </CardDelFormulario>
   )
 }
 
 /**
- * El switch "Lleva IMEI o número de serie" de la ficha (Task 8). Prender con
- * stock en cero postea directo; con stock cargado abre un `Dialog` que pide
- * exactamente esa cantidad de IMEI (decisión 4 del spec) antes de confirmar.
- * Apagar siempre postea directo — el motor (`apagarSerie`) es quien rechaza
- * si quedan unidades libres.
+ * El switch "Lleva IMEI o número de serie" de la ficha. Prender y apagar
+ * postean directo, siempre: el motor (`prenderSerie`) cuenta el stock y las
+ * unidades libres que ya haya y crea la diferencia SIN identificar, y
+ * (`apagarSerie`) rechaza si quedan unidades libres.
+ *
+ * **Sin diálogo, y ése es el ciclo entero** (Task 6 de "unidades sin
+ * identificar"). Hasta acá, prender con stock cargado abría un `Dialog` que
+ * pedía exactamente esa cantidad de IMEI antes de confirmar: con 30 unidades
+ * no entraba en la pantalla, y encima obligaba a tener los 30 equipos a mano
+ * en ese mismo momento. Ahora se prende de una y los números se cargan de a
+ * uno en la card de abajo, cuando cada equipo aparece.
  *
  * **Optimista con rollback**, mismo patrón que `Interruptor` de
  * `app/(app)/bot/formularios.tsx`: el switch cambia al toque y vuelve atrás si
@@ -203,32 +340,23 @@ export function CardDeUnidades({
 export function SwitchDeSerie({
   articuloId,
   llevaSerie,
-  stock,
   puedeEditar,
 }: {
   articuloId: string
   llevaSerie: boolean
-  // Como STRING y no `Prisma.Decimal`: esto lo consume un componente
-  // cliente, y un Decimal no cruza ese borde sin perder el tipo. Mismo
-  // criterio que `ArticuloVendible`.
-  stock: string
   puedeEditar: boolean
 }) {
   const [activo, setActivo] = useState(llevaSerie)
-  const [dialogoAbierto, setDialogoAbierto] = useState(false)
   const [enCurso, setEnCurso] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const stockNum = Number(stock)
-
-  // `try/finally` en las tres, y el `finally` es lo que importa: si la acción
-  // TIRA en vez de devolver `{ error }` —y desde que `crearUnidadesEnTx`
-  // traduce el choque de IMEI eso es menos probable, pero cualquier error no
-  // de dominio sigue relanzándose por `traducir()`—, sin él `enCurso` quedaba
-  // en `true` para siempre: el botón congelado en "Prendiendo…" y el switch
-  // deshabilitado hasta recargar la pantalla. El `catch` devuelve el switch
-  // optimista a donde estaba y relanza: tragar el error lo dejaría fuera del
-  // log y de Sentry, que es justo lo que `traducir()` evita del otro lado.
+  // `try/finally` en las dos, y el `finally` es lo que importa: si la acción
+  // TIRA en vez de devolver `{ error }` —cualquier error que no sea de
+  // dominio se relanza por `traducir()`—, sin él `enCurso` quedaba en `true`
+  // para siempre, con el switch deshabilitado hasta recargar la pantalla. El
+  // `catch` devuelve el switch optimista a donde estaba y relanza: tragar el
+  // error lo dejaría fuera del log y de Sentry, que es justo lo que
+  // `traducir()` evita del otro lado.
   async function apagar() {
     setActivo(false)
     setError(null)
@@ -249,7 +377,7 @@ export function SwitchDeSerie({
     }
   }
 
-  async function prenderSinDialogo() {
+  async function prender() {
     setActivo(true)
     setError(null)
     setEnCurso(true)
@@ -270,39 +398,11 @@ export function SwitchDeSerie({
   }
 
   function alCambiar(valor: boolean) {
-    if (!valor) {
-      void apagar()
+    if (valor) {
+      void prender()
       return
     }
-    if (stockNum > 0) {
-      cambiarDialogo(true)
-      return
-    }
-    void prenderSinDialogo()
-  }
-
-  /** El error del diálogo muere con el diálogo: dejarlo vivo lo haría
-   *  reaparecer en la fila, ya desconectado del formulario que lo produjo. */
-  function cambiarDialogo(abierto: boolean) {
-    setDialogoAbierto(abierto)
-    if (!abierto) setError(null)
-  }
-
-  async function confirmarDialogo(datos: FormData) {
-    datos.set('articuloId', articuloId)
-    setError(null)
-    setEnCurso(true)
-    try {
-      const r = await prenderSerieAccion(INICIAL, datos)
-      if (r.error) {
-        setError(r.error)
-        return
-      }
-      setActivo(true)
-      setDialogoAbierto(false)
-    } finally {
-      setEnCurso(false)
-    }
+    void apagar()
   }
 
   return (
@@ -312,16 +412,11 @@ export function SwitchDeSerie({
         <p className="text-[11px] text-muted-foreground">
           Cada unidad se identifica y se vende por separado
         </p>
-        {/* El error de los dos caminos SIN diálogo (apagar, y prender con
-            stock en cero). Con el diálogo abierto no se pinta acá: la fila
-            queda DETRÁS del velo de pantalla completa de `DialogContent`, con
-            el foco atrapado adentro, así que un cartel en este `<div>` no lo
-            ve nadie — que es exactamente cómo se perdían
-            `SERIE_CONTEO_NO_COINCIDE`, `IMEI_REPETIDO` y
-            `SERIE_STOCK_NO_ENTERO`, los tres errores más probables de esta
-            pantalla, que es LA que hay que atravesar para adoptar la
-            feature. */}
-        {error && !dialogoAbierto && <p className="text-[11px] text-destructive">{error}</p>}
+        {/* Sin condición de diálogo: ya no hay ningún velo de pantalla
+            completa detrás del cual pueda esconderse este cartel, que es la
+            mitad del hallazgo I4 que la Task 6 resolvió sacando el modal en
+            vez de mudando el mensaje. */}
+        {error && <p className="text-[11px] text-destructive">{error}</p>}
       </div>
       <Switch
         id="lleva-serie"
@@ -329,46 +424,6 @@ export function SwitchDeSerie({
         disabled={!puedeEditar || enCurso}
         onCheckedChange={alCambiar}
       />
-
-      <Dialog open={dialogoAbierto} onOpenChange={cambiarDialogo}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cargá el IMEI de cada unidad</DialogTitle>
-            <DialogDescription>
-              Hay {stock} en stock: hacen falta {stock} IMEI, uno por unidad, para prender el
-              switch.
-            </DialogDescription>
-          </DialogHeader>
-          <form
-            id="form-prender-serie"
-            action={confirmarDialogo}
-            className="flex flex-col gap-3"
-          >
-            {/* `filasFijas` ya no existe (Task 5 del ciclo "unidades sin
-                identificar"): este diálogo entero es UI vieja que la Task 6
-                reemplaza por la card sin diálogo, y lo que se escanee acá ya
-                lo ignora `prenderSerieAccion` (ver su comentario en
-                acciones.ts) — este ajuste es sólo para que compile mientras
-                tanto, no un rediseño de este diálogo. */}
-            <ListaDeImeis />
-          </form>
-          {/* DENTRO del `DialogContent`, que es lo único que el usuario está
-              mirando mientras el diálogo está abierto. */}
-          {error && (
-            <p role="alert" className="text-[12px] leading-[1.5] text-destructive">
-              {error}
-            </p>
-          )}
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => cambiarDialogo(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" form="form-prender-serie" disabled={enCurso}>
-              {enCurso ? 'Prendiendo…' : 'Prender'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

@@ -45,6 +45,8 @@ let exportarHistorialCsv: typeof import('./acciones').exportarHistorialCsv
 let prenderSerieAccion: typeof import('./acciones').prenderSerieAccion
 let apagarSerieAccion: typeof import('./acciones').apagarSerieAccion
 let darDeBajaUnidadAccion: typeof import('./acciones').darDeBajaUnidadAccion
+// Task 6 del ciclo "unidades sin identificar": cargar el IMEI cuando aparece.
+let identificarUnidadAccion: typeof import('./acciones').identificarUnidadAccion
 let authParaTenant: typeof import('@/lib/auth/para-tenant').authParaTenant
 let origenDelRequest: typeof import('@/lib/auth/origen').origenDelRequest
 // Dinámico y no estático, como el resto de este archivo: `lib/inventario/
@@ -91,6 +93,7 @@ beforeAll(async () => {
     altaArticulo, guardarArticulo, bajaArticulo,
     reactivarArticuloAccion, ingresarMercaderia, corregirPorConteo,
     exportarHistorialCsv, prenderSerieAccion, apagarSerieAccion, darDeBajaUnidadAccion,
+    identificarUnidadAccion,
   } = await import('./acciones'))
   ;({ authParaTenant } = await import('@/lib/auth/para-tenant'))
   ;({ origenDelRequest } = await import('@/lib/auth/origen'))
@@ -1165,6 +1168,11 @@ describe('las acciones de unidades por IMEI', () => {
   let articuloConStock3: { id: string }
   let conSerie: { id: string }
   let unidadLibre: { id: string; imei: string | null }
+  // Propio, y no reusando `unidadLibre`: a esa la da de baja el caso de la
+  // baja, más abajo en este mismo describe, y reusarla dejaría este caso
+  // dependiendo del orden de ejecución.
+  let unidadSinIdentificar: { id: string; imei: string | null }
+  let paraIdentificar: { id: string }
 
   beforeAll(async () => {
     articuloConStock = {
@@ -1187,6 +1195,15 @@ describe('las acciones de unidades por IMEI', () => {
     conSerie = { id: idConSerie }
     const libres = await unidadesLibres(estado.tenantId, idConSerie)
     unidadLibre = libres[0]
+
+    const idParaIdentificar = await crearArticuloDePrueba('Con serie, para identificar después', '2')
+    await prenderSerie({
+      tenantId: estado.tenantId,
+      articuloId: idParaIdentificar,
+      usuarioId: empleadoId,
+    })
+    unidadSinIdentificar = (await unidadesLibres(estado.tenantId, idParaIdentificar))[0]
+    paraIdentificar = { id: idParaIdentificar }
   })
 
   it('prenderSerieAccion exige ARTICULOS_EDITAR', async () => {
@@ -1228,16 +1245,66 @@ describe('las acciones de unidades por IMEI', () => {
     })
   })
 
+  it('identificarUnidadAccion la puede hacer cualquiera con sesión', async () => {
+    // Mismo lugar que ingresarMercaderia, corregirPorConteo y la baja: cargar
+    // el IMEI de una caja que acaba de aparecer es operación del día, la hace
+    // quien está atendiendo, y queda firmada con su usuarioId. Un permiso
+    // propio dejaría al local sin poder cuadrar el stock hasta que llegue el
+    // dueño, que es exactamente lo que este ciclo vino a destrabar.
+    await comoEmpleadoSinPermisos(async () => {
+      const datos = new FormData()
+      datos.set('articuloId', paraIdentificar.id)
+      datos.set('unidadId', unidadSinIdentificar.id)
+      datos.set('imei', '355000000000123')
+      const estadoResultado = await identificarUnidadAccion(INICIAL, datos)
+      expect(estadoResultado.error).toBeNull()
+
+      // No alcanza con que no haya error: lo que fija el caso es que el IMEI
+      // quedó escrito en ESA unidad.
+      const { rows } = await owner.query(
+        `SELECT imei FROM unidades_articulo WHERE id = $1`,
+        [unidadSinIdentificar.id],
+      )
+      expect(rows[0].imei).toBe('355000000000123')
+    })
+  })
+
+  it('identificarUnidadAccion con el IMEI vacío devuelve el error, no lo escribe', async () => {
+    // `normalizarImei` tira IMEI_VACIO, y `traducir()` lo convierte en cartel.
+    // Sin esto, un submit con el campo en blanco dejaría la unidad "cargada"
+    // con la cadena vacía: ni identificada ni sin identificar.
+    estado.cookie = cookieDuenio
+    const libres = await unidadesLibres(estado.tenantId, paraIdentificar.id)
+    const pendiente = libres.find((u) => u.imei === null)
+    expect(pendiente).toBeDefined()
+
+    const datos = new FormData()
+    datos.set('articuloId', paraIdentificar.id)
+    datos.set('unidadId', pendiente!.id)
+    datos.set('imei', '   ')
+    const estadoResultado = await identificarUnidadAccion(INICIAL, datos)
+    expect(estadoResultado.error).not.toBeNull()
+
+    const { rows } = await owner.query(
+      `SELECT imei FROM unidades_articulo WHERE id = $1`,
+      [pendiente!.id],
+    )
+    expect(rows[0].imei).toBeNull()
+  })
+
   // Este test cubría el conteo estricto que `prenderSerie` exigía ANTES del
   // ciclo "unidades sin identificar" (menos IMEI tipeados que stock era un
   // error). Con la Task 2 de ese ciclo, `prenderSerieAccion` ya no lee
-  // `imeis` en absoluto (ver el comentario de la propia acción, en
-  // `acciones.ts`) y `prenderSerie` crea sola la diferencia sin identificar,
-  // así que este conteo ya no puede fallar — es exactamente el
-  // comportamiento nuevo, no una regresión. Ajustado para decir eso; la
-  // Task 6 de ese ciclo trae su propio caso equivalente
-  // ("prenderSerieAccion ya no lee imeis...").
-  it('prenderSerieAccion ya no exige que las IMEI tipeadas coincidan con el stock', async () => {
+  // `imeis` en absoluto y `prenderSerie` crea sola la diferencia sin
+  // identificar, así que este conteo ya no puede fallar — es exactamente el
+  // comportamiento nuevo, no una regresión.
+  //
+  // La Task 6 borró el diálogo que posteaba esos campos, así que hoy nadie
+  // los manda; el caso se queda igual **a propósito**, porque lo que fija es
+  // que la acción los ignore si alguien vuelve a mandarlos — un `<form>` es
+  // un endpoint, y que la pantalla haya dejado de dibujar un campo no impide
+  // que llegue. El permiso lo cubre el primer caso de este describe.
+  it('prenderSerieAccion ya no lee imeis: los ignora y crea las unidades sin identificar', async () => {
     estado.cookie = cookieDuenio
     const datos = new FormData()
     datos.set('articuloId', articuloConStock3.id)
