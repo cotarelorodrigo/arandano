@@ -234,7 +234,19 @@ export async function ingresarStock(entrada: {
         })
       } else if (articulo.llevaSerie) {
         // Vino la cantidad, no la lista: las unidades nacen sin identificar,
-        // una por cada una que entra.
+        // una por cada una que entra. La lista no necesita este chequeo —su
+        // cantidad de elementos ya es un entero por construcción—, pero acá
+        // no hay ninguna lista que contar: sin esto, `Array.from({ length: 2.5
+        // })` trunca a 2 unidades mientras el movimiento de abajo suma 2.5 al
+        // stock, y la invariante (stock = unidades libres) queda rota en
+        // silencio y para siempre, sin más reparo que un UPDATE a mano.
+        if (!cantidadEfectiva.equals(cantidadEfectiva.toDecimalPlaces(0))) {
+          throw new ErrorDeInventario(
+            'SERIE_STOCK_NO_ENTERO',
+            `${articulo.nombre} se maneja por IMEI: la cantidad que entra tiene que ser un ` +
+              'número entero de unidades',
+          )
+        }
         await crearUnidadesEnTx(tx, {
           tenantId, articuloId, usuarioId,
           imeis: Array.from({ length: cantidadEfectiva.toNumber() }, () => null),
