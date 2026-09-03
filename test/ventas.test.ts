@@ -1424,6 +1424,43 @@ describe('crearVenta con unidades identificadas (IMEI)', () => {
     expect((await leerUnidad(u.id)).imei).toBe('355000000000009')
   })
 
+  // Un `imeiCapturado` vacío o de puros espacios NO es un error: es la
+  // ausencia de escaneo, y tiene que valer lo mismo que no mandar el campo.
+  it('un imeiCapturado vacío o de sólo espacios se trata como AUSENTE, no como error', async () => {
+    const a = await crearArticuloConStockSinIdentificar('iPhone 14 Plus', 1, '500000')
+    const [u] = await unidadesLibres(tenantId, a.id)
+    const venta = await crearVenta({
+      tenantId, usuarioId,
+      items: [{ articuloId: a.id, cantidad: d('1'), unidadId: u.id, imeiCapturado: '   ' }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('500000'), cotizacion: d('1') }],
+    })
+    expect((await leerUnidad(u.id)).ventaId).toBe(venta.id)
+    expect((await leerUnidad(u.id)).imei).toBeNull()
+  })
+
+  // Dos unidades DISTINTAS del mismo carrito, capturando el MISMO IMEI: es un
+  // error de carga (escanear la misma caja dos veces) que se detecta ANTES de
+  // la transacción, sin consultar la base — mismo momento y mismo código que
+  // el chequeo gemelo sobre `unidadId` repetido.
+  it('el mismo IMEI capturado dos veces en el carrito se rechaza sin tocar la base', async () => {
+    const a = await crearArticuloConStockSinIdentificar('iPhone 14 Pro', 2, '500000')
+    const [u1, u2] = await unidadesLibres(tenantId, a.id)
+    await expect(
+      crearVenta({
+        tenantId, usuarioId,
+        items: [
+          { articuloId: a.id, cantidad: d('1'), unidadId: u1.id, imeiCapturado: '355111111111111' },
+          { articuloId: a.id, cantidad: d('1'), unidadId: u2.id, imeiCapturado: '355111111111111' },
+        ],
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toThrow(expect.objectContaining({ codigo: 'UNIDAD_REPETIDA' }))
+    // Ninguna de las dos se tocó: el chequeo corrió antes de abrir la
+    // transacción.
+    expect((await leerUnidad(u1.id)).ventaId).toBeNull()
+    expect((await leerUnidad(u2.id)).ventaId).toBeNull()
+  })
+
   it('un imeiCapturado que ya tiene otra unidad libre rechaza la venta entera', async () => {
     // Y no deja media venta: el stock no se movió.
     const a = await crearArticuloConSerie('iPhone 15', ['355777777777777'], '500000')

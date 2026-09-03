@@ -98,15 +98,24 @@ export async function crearVenta(
     }
   }
   // Normalizado ACÁ, antes de abrir la transacción, junto al resto de las
-  // validaciones de dominio de los ítems: un `imeiCapturado` vacío ("   ") es
-  // un error de carga, y `normalizarImei` lo rechaza con `IMEI_VACIO` — mejor
-  // que falle temprano y no a mitad de una venta que ya tomó locks.
+  // validaciones de dominio de los ítems, y alineado por ÍNDICE con `items`
+  // (sin mutar la entrada del llamador: `items` es del llamador).
   //
-  // Alineado por ÍNDICE con `items` y no incrustado en el objeto: `items` es
-  // la entrada del llamador y no se muta.
-  const imeisCapturados = items.map((i) =>
-    i.imeiCapturado !== undefined ? normalizarImei(i.imeiCapturado) : undefined,
-  )
+  // Un valor vacío o sólo espacios NO es un error: es la AUSENCIA de
+  // escaneo, y vale exactamente lo mismo que no mandar el campo. El
+  // principio del ciclo es que el IMEI es opcional — quien cobra sin la caja
+  // en la mano manda (o el formulario manda por él) un campo vacío, y ESE es
+  // el caso por defecto, no uno malformado. Tratarlo como `IMEI_VACIO` sería
+  // convertir el camino normal en un error, y además dejaría escapar un
+  // `ErrorDeInventario` (el código de `normalizarImei`) por una función que
+  // en todos los demás casos sólo tira `ErrorDeVenta` — que es justo lo que
+  // `/vender` filtra en su `catch`.
+  const imeisCapturados = items.map((i) => {
+    if (i.imeiCapturado === undefined) return undefined
+    const recortado = i.imeiCapturado.trim()
+    if (recortado === '') return undefined
+    return normalizarImei(i.imeiCapturado)
+  })
   // Dos líneas nombrando la misma unidad es malformado sin necesidad de
   // consultar nada: no hace falta la base para saber que el mismo equipo no
   // puede salir dos veces en el mismo carrito.
@@ -120,6 +129,22 @@ export async function crearVenta(
     throw new ErrorDeVenta(
       'UNIDAD_REPETIDA',
       'el mismo equipo está dos veces en el carrito',
+    )
+  }
+  // Mismo chequeo, ahora sobre el IMEI escaneado: dos ítems de unidades
+  // DISTINTAS capturando el mismo IMEI son la misma clase de error que el
+  // chequeo de arriba —el mismo equipo físico no puede salir dos veces—, sólo
+  // que acá el duplicado se ve en el IMEI y no en el `unidadId`. Es un error
+  // de carga (escanear la misma caja dos veces) y no necesita la base para
+  // detectarse, así que va ACÁ, antes de la transacción, y no como un
+  // `SELECT` más adelante. Reusa `UNIDAD_REPETIDA` y no un código nuevo: es
+  // el mismo hecho de fondo —dos líneas del carrito reclamando el mismo
+  // equipo— visto por el otro identificador.
+  const imeisCapturadosPresentes = imeisCapturados.flatMap((im) => (im !== undefined ? [im] : []))
+  if (new Set(imeisCapturadosPresentes).size !== imeisCapturadosPresentes.length) {
+    throw new ErrorDeVenta(
+      'UNIDAD_REPETIDA',
+      'el mismo IMEI está dos veces en el carrito',
     )
   }
   // Normalizado ACÁ, una sola vez: `cubre` ausente vale `ARS`, que es lo que
@@ -461,10 +486,22 @@ export async function crearVenta(
         // por `catch` asumiría. Por eso el chequeo va ACÁ, antes de escribir,
         // y no envolviendo el `updateMany`.
         //
-        // Sin ventana de carrera: `proximoNumero`, más arriba, ya tomó el
-        // lock exclusivo de la fila del tenant y lo retiene hasta el commit,
-        // así que ninguna otra `crearVenta` de este tenant puede colarse
-        // entre este SELECT y el UPDATE de abajo.
+        // La ventana de carrera acá es REAL, y hay que decirlo tal cual:
+        // `proximoNumero`, más arriba, sólo serializa dos `crearVenta` DEL
+        // MISMO tenant entre sí — ninguna otra puede colarse entre este
+        // SELECT y el UPDATE de abajo. Pero `identificarUnidad` e
+        // `ingresarStock` (lib/inventario/unidades.ts y
+        // lib/inventario/stock.ts) también escriben IMEIs y NINGUNO de los
+        // dos pasa por ese lock. Si uno de ellos identifica OTRA unidad
+        // libre con este mismo IMEI justo en el instante entre este SELECT y
+        // el UPDATE de abajo, el SELECT no lo ve (todavía no comiteó) y el
+        // UPDATE sigue de largo: el resultado es una unidad VENDIDA y una
+        // unidad LIBRE reclamando el mismo IMEI a la vez — exactamente el
+        // estado que este chequeo existe para evitar. No se cierra en este
+        // ciclo a propósito: hacerlo bien exigiría que `identificarUnidad` e
+        // `ingresarStock` tomaran el mismo lock de tenant que `crearVenta`, y
+        // el contrapeso es un escritor administrativo ocasional, no el
+        // camino caliente del mostrador.
         if (l.imeiCapturado !== undefined) {
           const otraLibreConEseImei = await tx.unidadDeArticulo.findFirst({
             where: {
