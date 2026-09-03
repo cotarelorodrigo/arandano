@@ -1941,7 +1941,15 @@ export function PuntoDeVenta({
                           espaciado más apretado. */}
                       <div className="flex flex-col gap-2 lg:gap-0.5">
                         <span className="text-sm font-medium text-foreground">{l.descripcion}</span>
-                        <div className="flex items-center gap-2">
+                        {/* `flex-wrap`: esta línea de meta pasó a poder
+                            llevar el IMEI —o el campo para escanearlo, que es
+                            un ancho fijo que no encoge— además del SKU y de
+                            los dos avisos, y a 390 px eso no entra en una
+                            sola línea. Sin esto el carrito arrastraba la
+                            página al scroll horizontal, que es justo el modo
+                            de falla que vigila test/responsive.test.ts (y que
+                            no puede ver acá: 140 px no supera su umbral). */}
+                        <div className="flex flex-wrap items-center gap-2">
                           {/* El SKU bajo el nombre: antes sólo se veía en el
                               buscador. Un servicio no tiene SKU de stock, así
                               que muestra "Servicio" en su lugar — mismo
@@ -1962,6 +1970,43 @@ export function PuntoDeVenta({
                                 distingue. */}
                             <span className="lg:hidden"> · {precioEnSuMoneda(l.precio, l.moneda)} c/u</span>
                           </span>
+                          {/* El IMEI, en la MISMA línea de meta que el SKU
+                              y con el mismo tratamiento: es identidad —cuál
+                              equipo es esta línea—, no cantidad. Hasta el
+                              2026-09-03 vivía en la celda de la columna
+                              "Cantidad", ocupando el lugar del stepper, y ahí
+                              la fila se leía "Cantidad: 355000000000001"
+                              (reporte del dueño de un local). Nunca fue un
+                              problema de plata —la cantidad de una línea con
+                              serie es siempre '1' y así viaja, ver
+                              `itemsParaCobrar`—, era de ubicación.
+                              Un artículo sin serie no dibuja nada acá.
+                              `name` sólo por convención y para que se lea qué
+                              es: el carrito vive FUERA del `<form>` de cobro,
+                              y lo que viaja al servidor es el JSON escondido
+                              que arma `itemsParaCobrar`, no este input. */}
+                          {l.llevaSerie &&
+                            (l.imei !== null && l.imei !== undefined ? (
+                              <span className="text-[11px] text-muted-foreground" title={l.imei}>
+                                IMEI{' '}
+                                <span className="font-semibold text-foreground">{l.imei}</span>
+                              </span>
+                            ) : (
+                              <Input
+                                name="imeiCapturado"
+                                value={l.imeiCapturado ?? ''}
+                                onChange={(e) =>
+                                  actualizarCarrito((p) =>
+                                    p.map((x, j) =>
+                                      j === i ? { ...x, imeiCapturado: e.target.value } : x,
+                                    ),
+                                  )
+                                }
+                                placeholder="IMEI"
+                                aria-label={`IMEI de ${l.descripcion}, opcional`}
+                                className="h-7 w-[140px] rounded-[7px] px-2 text-[11px] font-semibold"
+                              />
+                            ))}
                           {/* Antes que el aviso de stock: una cantidad que no
                               se entiende ni siquiera se puede evaluar contra
                               el stock (`quedaria` también sería NaN). Ésta sí
@@ -2041,45 +2086,21 @@ export function PuntoDeVenta({
                               para que el foco se vea en el stepper entero, no en
                               un rectángulo que ignora los botones [-]/[+]. */}
                           {l.llevaSerie ? (
-                            // Con serie: el IMEI en el lugar del stepper. Su
-                            // cantidad es siempre 1 y no se puede tocar — dos
-                            // equipos son dos líneas, nunca una con cantidad 2
-                            // — así que acá no hay ni botones ni campo
-                            // editable, sólo el dato que identifica cuál
-                            // equipo es esta línea.
+                            // Con serie la cantidad es siempre 1 y no se
+                            // puede tocar: dos equipos son dos líneas, nunca
+                            // una con cantidad 2 —`crearVenta` la rechaza con
+                            // CANTIDAD_CON_SERIE—, así que acá no hay ni
+                            // botones ni campo editable.
                             //
-                            // Salvo que la unidad haya entrado SIN número
-                            // (Task 7): ahí el mismo lugar es un campo para
-                            // escanearlo, opcional. `name` sólo por
-                            // convención y para que se lea qué es: el carrito
-                            // vive FUERA del `<form>` de cobro, y lo que
-                            // viaja al servidor es el JSON escondido que arma
-                            // `itemsParaCobrar`, no este input.
-                            l.imei !== null && l.imei !== undefined ? (
+                            // Y es SÓLO el número: cuál equipo es esta línea
+                            // lo dice el IMEI, arriba, en la celda del
+                            // artículo junto al SKU. Ver el comentario de
+                            // allá para por qué se mudó.
                             <div
-                              className="flex h-9 w-[104px] items-center justify-center overflow-hidden rounded-[9px] border border-input px-1"
-                              title={l.imei ?? undefined}
+                              className={`flex h-9 w-[104px] items-center justify-center font-semibold text-foreground ${estilos.importe}`}
                             >
-                              <span className="truncate text-[11px] font-semibold text-foreground">
-                                {l.imei}
-                              </span>
+                              1
                             </div>
-                            ) : (
-                              <Input
-                                name="imeiCapturado"
-                                value={l.imeiCapturado ?? ''}
-                                onChange={(e) =>
-                                  actualizarCarrito((p) =>
-                                    p.map((x, j) =>
-                                      j === i ? { ...x, imeiCapturado: e.target.value } : x,
-                                    ),
-                                  )
-                                }
-                                placeholder="IMEI"
-                                aria-label={`IMEI de ${l.descripcion}, opcional`}
-                                className="h-9 w-[104px] rounded-[9px] px-2 text-center text-[11px] font-semibold"
-                              />
-                            )
                           ) : (
                             <div className="flex h-9 w-[104px] items-center rounded-[9px] border border-input focus-within:ring-3 focus-within:ring-ring/50">
                               {PASOS_STEPPER.map(({ verbo, delta, Icono }) => (
