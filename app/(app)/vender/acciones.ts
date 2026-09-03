@@ -5,6 +5,7 @@ import { exigirSesion } from '@/lib/auth/sesion'
 import { crearVenta } from '@/lib/ventas/crear'
 import { ErrorDeVenta } from '@/lib/ventas/errores'
 import { buscarArticulosVendibles, type ArticuloVendible } from '@/lib/ventas/buscar'
+import { unidadesLibres, type UnidadLibre } from '@/lib/inventario/unidades'
 import { abrirCaja, cerrarCaja } from '@/lib/caja/abrir-cerrar'
 import { ErrorDeCaja } from '@/lib/caja/errores'
 import { aDecimal, ErrorDeFormato } from '@/lib/formato/numeros'
@@ -56,7 +57,12 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
     const sesion = await exigirSesion()
 
     const items = listaDeJson(datos, 'items').map((crudo) => {
-      const i = crudo as { articuloId?: unknown; cantidad?: unknown }
+      const i = crudo as {
+        articuloId?: unknown
+        cantidad?: unknown
+        unidadId?: unknown
+        imeiCapturado?: unknown
+      }
       const articuloId = String(i.articuloId ?? '')
       // El mismo guard que el detalle de venta y el de artículo. Desde la
       // pantalla no llega otra cosa —los ids salen del buscador—, pero un POST
@@ -67,9 +73,44 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
       if (!esUuid(articuloId)) {
         throw new ErrorDeVenta('ARTICULO_INEXISTENTE', `no existe el artículo ${articuloId}`)
       }
+      // `undefined` es "sin unidad" (artículo sin serie); cualquier otra cosa
+      // tiene que ser un uuid. Mismo guard que el articuloId de arriba: sin
+      // él, un POST armado a mano con basura acá llega a Prisma y sale como
+      // error sin `codigo`, o sea un 500 donde correspondía un cartel del
+      // mostrador.
+      const unidadId = i.unidadId === undefined ? undefined : String(i.unidadId)
+      if (unidadId !== undefined && !esUuid(unidadId)) {
+        throw new ErrorDeVenta('UNIDAD_INEXISTENTE', 'ese equipo no existe')
+      }
+      // El IMEI escaneado en el mostrador (Task 7 del ciclo "unidades sin
+      // identificar"). Acá NO hay `esUuid` que valga: es texto libre a
+      // propósito, porque el mismo campo es el número de serie de una
+      // notebook o de un electrodoméstico (ver `normalizarImei`,
+      // lib/inventario/unidades.ts). Lo que sí hace falta es que un valor que
+      // no es texto no se convierta en un IMEI inventado: `String({})` es
+      // "[object Object]", que el motor aceptaría y GRABARÍA como el número
+      // de serie de un equipo real. Ausente o `null` valen lo mismo —no se
+      // escaneó nada—, y el motor trata la cadena vacía igual (ver
+      // `imeisCapturados` en lib/ventas/crear.ts), que es lo que manda un
+      // `<input>` en blanco: el camino por defecto de este ciclo no puede ser
+      // un error.
+      const crudoImei = i.imeiCapturado
+      if (
+        crudoImei !== undefined &&
+        crudoImei !== null &&
+        typeof crudoImei !== 'string' &&
+        typeof crudoImei !== 'number'
+      ) {
+        throw new ErrorDeVenta('SIN_ITEMS', 'no se entendió el IMEI que llegó')
+      }
+      const imeiCapturado =
+        crudoImei === undefined || crudoImei === null ? undefined : String(crudoImei)
+
       return {
         articuloId,
         cantidad: aDecimal(String(i.cantidad ?? ''), 'la cantidad'),
+        unidadId,
+        imeiCapturado,
       }
     })
 
@@ -169,6 +210,18 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
 export async function buscarArticulos(texto: string): Promise<ArticuloVendible[]> {
   const sesion = await exigirSesion()
   return buscarArticulosVendibles(sesion.tenant.id, texto)
+}
+
+/**
+ * Las unidades libres de un artículo con serie, para el selector del carrito.
+ *
+ * Se llama cuando el artículo se agregó por nombre y no por escaneo: ahí el
+ * carrito no tiene ya elegida una unidad (a diferencia de `a.unidad`, que sólo
+ * viene con un IMEI exacto) y hay que ofrecer de cuáles hay.
+ */
+export async function unidadesDeArticulo(articuloId: string): Promise<UnidadLibre[]> {
+  const sesion = await exigirSesion()
+  return unidadesLibres(sesion.tenant.id, articuloId)
 }
 
 export type EstadoCaja = { error: string | null }

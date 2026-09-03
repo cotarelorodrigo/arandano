@@ -295,6 +295,78 @@ export type ItemVendido = {
   cantidadFormateada: string
   precioFormateado: string
   subtotalFormateado: string
+  /** El IMEI/número de serie de la unidad que se llevó ESTA línea (Task 10),
+   *  o `null` sin unidad identificada — que es todo artículo sin
+   *  `llevaSerie`, o sea la inmensa mayoría de las ventas. `null` no dibuja
+   *  nada, ni el rótulo: es el principio del ciclo entero, "un local que no
+   *  usa esto no ve ninguna diferencia". Resuelto por `imeisPorItem`. */
+  imei: string | null
+}
+
+/**
+ * Reparte los IMEI de una venta entre sus ítems, agrupados por artículo.
+ *
+ * `VentaItem` no lleva `unidadId` — el spec de este ciclo lo descarta a
+ * propósito ("Lo que NO se agrega"): con `Unidad.ventaId` alcanza, porque la
+ * línea de un artículo con serie es siempre UNA unidad con cantidad 1 (la
+ * regla `CANTIDAD_CON_SERIE` de `crearVenta` lo garantiza), y dos líneas del
+ * mismo artículo —dos iPhones del mismo modelo— dicen exactamente lo mismo:
+ * misma descripción, mismo precio, ambos congelados. A cuál de las dos le
+ * toca cuál IMEI es irrelevante, así que el reparto es por ARTÍCULO y no por
+ * ítem: se agrupan los IMEI de la venta por `articuloId` y se consumen de a
+ * uno por línea de ese artículo, en el orden en que Prisma los devuelva.
+ *
+ * **El emparejamiento es FIFO por orden de inserción cuando hay más de una
+ * línea del mismo artículo** (`cola.shift()`, más abajo): la primera línea de
+ * ese artículo en `items` se lleva el primer IMEI de la lista de esa venta, la
+ * segunda el segundo, y así — sin ordenar por nada más. Es una asignación
+ * arbitraria y ESO es lo que la hace segura: como las dos líneas ya son
+ * idénticas (mismo `articuloId`, misma descripción, mismo precio congelados),
+ * cualquier IMEI que le toque a cualquiera de las dos describe la venta
+ * igual de bien. Si algún día una línea con serie dejara de ser
+ * indistinguible de otra del mismo artículo —por ejemplo, si el ciclo del
+ * costo por unidad le sumara un precio propio a la unidad—, este supuesto
+ * dejaría de valer y haría falta volver a `VentaItem.unidadId` (la opción que
+ * el spec descartó acá arriba).
+ *
+ * Un artículo sin ninguna unidad en esta venta —la inmensa mayoría— no
+ * aparece en el resultado. Y desde el ciclo "unidades sin identificar", la
+ * cola de un artículo puede tener MENOS IMEI que líneas: una unidad que se
+ * vendió sin que nadie escaneara su número no le presta nada a ninguna línea,
+ * y esa línea no muestra IMEI. Es lo correcto — sin dato no hay nada que
+ * decir— y se ve exactamente igual que una venta de un local que no usa la
+ * feature.
+ */
+export function imeisPorItem(
+  items: { id: string; articuloId: string }[],
+  unidades: { articuloId: string; imei: string | null }[],
+): Map<string, string> {
+  // Las unidades SIN identificar se descartan ANTES de armar la cola (ciclo
+  // "unidades sin identificar", Task 8), y no al consumirla. El resultado que
+  // ve el usuario es el mismo de las dos formas —un `null` en la cola tampoco
+  // producía ningún IMEI—, así que esto no arregla ningún defecto: lo que
+  // cambia es que la cola pasa a contener sólo IMEI reales, y por lo tanto
+  // puede tener MENOS elementos que líneas de ese artículo. Filtrando acá, un
+  // `null` no ocupa el turno de una línea; sin filtrar, el turno se lo comía y
+  // el IMEI que sí existía caía en la línea siguiente. Las dos describen la
+  // venta igual de bien —las líneas del mismo artículo son indistinguibles,
+  // ver el docblock— pero sólo una de las dos se puede explicar sin hablar del
+  // orden en que Postgres devolvió las filas.
+  const porArticulo = new Map<string, string[]>()
+  for (const u of unidades) {
+    if (u.imei === null) continue
+    porArticulo.set(u.articuloId, [...(porArticulo.get(u.articuloId) ?? []), u.imei])
+  }
+  const resultado = new Map<string, string>()
+  for (const item of items) {
+    const cola = porArticulo.get(item.articuloId)
+    // FIFO: la primera línea de este artículo se lleva el primer IMEI que
+    // quedó en la cola. Ver el docblock de la función para por qué el orden
+    // no importa.
+    const imei = cola?.shift()
+    if (imei) resultado.set(item.id, imei)
+  }
+  return resultado
 }
 
 /** Un pago recibido, ya resuelto a texto. `esUsd` decide si el teléfono suma
@@ -477,6 +549,18 @@ export function Detalle({
                     <div className="flex flex-col gap-0.5 whitespace-normal">
                       <span className="text-[14px] font-medium text-foreground lg:text-sm">{i.nombre}</span>
                       <span className="hidden text-[11px] text-muted-foreground lg:block">{i.subtitulo}</span>
+                      {/* El IMEI de la unidad que se llevó esta línea (Task
+                          10) — UNA sola vez, en un `<div>` sin `hidden`, así
+                          que se ve en los dos anchos sin duplicar el árbol
+                          (mismo criterio que "un solo árbol, no dos
+                          presentaciones" del ciclo móvil). Sin unidad, `i.imei`
+                          es `null` y no se dibuja nada: ni esta línea ni
+                          ningún rótulo "IMEI" — es lo que deja a una venta sin
+                          unidades verse exactamente como antes de este
+                          ciclo. */}
+                      {i.imei && (
+                        <span className="text-[11px] text-muted-foreground">IMEI {i.imei}</span>
+                      )}
                     </div>
                   </div>
 
@@ -758,16 +842,46 @@ export function Detalle({
   )
 }
 
-export default async function DetalleDeVenta({ params }: { params: Promise<{ id: string }> }) {
-  const sesion = await exigirSesion()
-  const { id } = await params
-  // Mismo guard que el detalle de artículo y por el mismo motivo: `/ventas/foo`
-  // es algo que alguien escribe en la barra de direcciones, y sin esto Prisma
-  // rechaza el valor con P2007 y la pantalla se cae con un 500.
-  if (!esUuid(id)) notFound()
+/** Lo que `datosDelDetalle` resuelve: todo lo que `Detalle` necesita, ya en
+ *  texto, más lo que el Server Component necesita ADEMÁS de `Detalle`
+ *  (`numero` para el título del Encabezado, `anuladaEn` crudo para
+ *  `seOfreceAnular`, que también depende del permiso — algo que esta función
+ *  no puede resolver porque no abre sesión). */
+export type DatosDelDetalle = {
+  numero: number
+  anuladaEn: Date | null
+  resumen: ResumenTexto
+  anulada: boolean
+  notaDeAnulacionTexto: string | null
+  items: ItemVendido[]
+  totalFormateado: string
+  lineasDeTotal: { rotulo: string; montoFormateado: string; destacada: boolean }[] | null
+  pagos: PagoRecibido[]
+}
 
-  const venta = await prismaParaTenant(sesion.tenant.id).venta.findUnique({
-    where: { id },
+/**
+ * La consulta y el armado de props del detalle de una venta, separados del
+ * Server Component por el mismo motivo que ya separó `totalDelPeriodo` y
+ * `pagosDelPeriodo` de `app/(app)/ventas/page.tsx`: page.test.tsx (colocado
+ * con la pantalla) sólo puede probar funciones que no abren sesión ni tocan
+ * Prisma, y sin esta función el `select` de Task 10 —el que trae
+ * `venta.unidades` para mostrar los IMEI— sólo se podía verificar abriendo la
+ * pantalla en un navegador. Con ella, `test/ventas.test.ts` arma una venta
+ * real (con y sin unidades) y ejercita la MISMA consulta que corre en
+ * producción.
+ *
+ * No recibe la sesión ni resuelve `ofreceAnular`: ese permiso (`VENTAS_ANULAR`)
+ * depende de quién pide la pantalla, y esta función es sólo la mitad que no
+ * depende de eso — el llamador combina `anuladaEn` con el permiso vía
+ * `seOfreceAnular`.
+ *
+ * `null` cuando la venta no existe o es de otro tenant (RLS ya filtró): el
+ * llamador lo traduce a `notFound()`, sin distinguir los dos casos —
+ * distinguirlos filtraría qué ids existen.
+ */
+export async function datosDelDetalle(tenantId: string, ventaId: string): Promise<DatosDelDetalle | null> {
+  const venta = await prismaParaTenant(tenantId).venta.findUnique({
+    where: { id: ventaId },
     select: {
       // `recargo` para el pie de "Qué se vendió" (Task 8): `lineasDeRecargo`
       // decide con este número, junto con `total`/`totalUsd` y los pagos, si
@@ -791,6 +905,10 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
           // igual que `descripcion`/`precioUnitario` — el precio se muestra
           // en SU moneda, sin convertir.
           moneda: true,
+          // `articuloId` (Task 10): es por donde `imeisPorItem` empareja cada
+          // línea con el IMEI que le toca — `VentaItem` no lleva `unidadId`
+          // (ver su docblock), así que el reparto es por artículo.
+          articuloId: true,
           articulo: { select: { sku: true, tipo: true } },
         },
       },
@@ -810,21 +928,24 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
           plan: { select: { nombre: true, cuotas: true } },
         },
       },
+      // Los equipos que se llevó la venta (Task 10): sólo existe una fila acá
+      // para un artículo con `llevaSerie` — la inmensa mayoría de las ventas
+      // no trae ninguna, y `imeisPorItem` con la lista vacía no le agrega
+      // nada a ningún ítem.
+      unidades: { select: { articuloId: true, imei: true } },
     },
   })
-  // RLS ya filtró por tenant: "no existe" y "es de otro negocio" son el mismo
-  // 404, y tienen que serlo — distinguirlos filtraría qué ids existen.
-  if (!venta) notFound()
+  if (!venta) return null
 
   const resumen = filasDeResumen(venta)
   const anulada = venta.anuladaEn !== null
-  const puedeAnularVenta = await puedeConSesion(sesion, 'VENTAS_ANULAR')
   // `null` cuando no hace falta desglosar —la regla exacta la fija
   // `hayQueDesglosar` (lib/ventas/cobrado.ts), no "sin recargo": una venta en
   // dólares pagada en dólares también cae en `null`, y una sin recargo pero
   // que cruza monedas SÍ desglosa—. Ahí el pie de "Qué se vendió" cae al
   // renglón único "Total" de siempre, más abajo.
   const lineasDeTotal = lineasDeRecargo(venta)
+  const imeis = imeisPorItem(venta.items, venta.unidades)
 
   const items: ItemVendido[] = venta.items.map((i) => {
     const subtitulo = subtituloDeItem(i.articulo)
@@ -841,6 +962,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
       // convertirlos a pesos.
       precioFormateado: precioEnSuMoneda(precioUnitario, i.moneda),
       subtotalFormateado: precioEnSuMoneda(subtotalItem(i.cantidad, i.precioUnitario).toString(), i.moneda),
+      imei: imeis.get(i.id) ?? null,
     }
   })
 
@@ -868,26 +990,53 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
     }
   })
 
+  return {
+    numero: venta.numero,
+    anuladaEn: venta.anuladaEn,
+    resumen,
+    anulada,
+    notaDeAnulacionTexto: venta.anuladaEn ? notaDeAnulacion({ anuladaEn: venta.anuladaEn, anuladaPor: venta.anuladaPor }) : null,
+    items,
+    // `cobrado` y no `vendido`, aunque den el mismo número en este renglón
+    // único: es la plata que entró, convención de `lineasDeImporte`
+    // (lib/ventas/cobrado.ts).
+    totalFormateado: formatearTotales(cobradoDePagos(venta.pagos)),
+    lineasDeTotal:
+      lineasDeTotal?.map(({ rotulo, valor, destacada }) => ({
+        rotulo, montoFormateado: valor, destacada,
+      })) ?? null,
+    pagos,
+  }
+}
+
+export default async function DetalleDeVenta({ params }: { params: Promise<{ id: string }> }) {
+  const sesion = await exigirSesion()
+  const { id } = await params
+  // Mismo guard que el detalle de artículo y por el mismo motivo: `/ventas/foo`
+  // es algo que alguien escribe en la barra de direcciones, y sin esto Prisma
+  // rechaza el valor con P2007 y la pantalla se cae con un 500.
+  if (!esUuid(id)) notFound()
+
+  const datos = await datosDelDetalle(sesion.tenant.id, id)
+  // RLS ya filtró por tenant: "no existe" y "es de otro negocio" son el mismo
+  // 404, y tienen que serlo — distinguirlos filtraría qué ids existen.
+  if (!datos) notFound()
+
+  const puedeAnularVenta = await puedeConSesion(sesion, 'VENTAS_ANULAR')
+
   return (
     <>
-      <Encabezado titulo={`Venta #${venta.numero}`} atras="/ventas" />
+      <Encabezado titulo={`Venta #${datos.numero}`} atras="/ventas" />
       <Detalle
-        resumen={resumen}
-        anulada={anulada}
-        notaDeAnulacionTexto={venta.anuladaEn ? notaDeAnulacion({ anuladaEn: venta.anuladaEn, anuladaPor: venta.anuladaPor }) : null}
-        items={items}
-        // `cobrado` y no `vendido`, aunque den el mismo número en este
-        // renglón único: es la plata que entró, convención de
-        // `lineasDeImporte` (lib/ventas/cobrado.ts).
-        totalFormateado={formatearTotales(cobradoDePagos(venta.pagos))}
-        lineasDeTotal={
-          lineasDeTotal?.map(({ rotulo, valor, destacada }) => ({
-            rotulo, montoFormateado: valor, destacada,
-          })) ?? null
-        }
-        pagos={pagos}
-        ofreceAnular={seOfreceAnular(puedeAnularVenta, venta.anuladaEn)}
-        ventaId={venta.id}
+        resumen={datos.resumen}
+        anulada={datos.anulada}
+        notaDeAnulacionTexto={datos.notaDeAnulacionTexto}
+        items={datos.items}
+        totalFormateado={datos.totalFormateado}
+        lineasDeTotal={datos.lineasDeTotal}
+        pagos={datos.pagos}
+        ofreceAnular={seOfreceAnular(puedeAnularVenta, datos.anuladaEn)}
+        ventaId={id}
       />
     </>
   )

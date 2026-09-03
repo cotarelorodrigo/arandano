@@ -18,7 +18,8 @@ import {
   moverCategoria,
   borrarCategoria,
 } from '@/lib/inventario/categorias'
-import { ingresarStock, corregirStock } from '@/lib/inventario/stock'
+import { ingresarStock, corregirStock, darDeBajaUnidad } from '@/lib/inventario/stock'
+import { prenderSerie, apagarSerie, identificarUnidad } from '@/lib/inventario/unidades'
 import { ErrorDeInventario } from '@/lib/inventario/errores'
 import { aDecimal, aDecimalOpcional, ErrorDeFormato } from '@/lib/formato/numeros'
 import { esUuid } from '@/lib/uuid'
@@ -114,6 +115,11 @@ export async function altaArticulo(
 ): Promise<EstadoInventario> {
   try {
     const tipo = datos.get('tipo') === 'SERVICIO' ? 'SERVICIO' : 'PRODUCTO'
+    const llevaSerie = datos.get('llevaSerie') === 'on'
+    // `getAll` y no `get`: el formulario postea un campo por línea, todos con
+    // el mismo name. Los vacíos se descartan acá —la lista arranca con una
+    // fila en blanco y quien no la usa no debería recibir un IMEI_VACIO.
+    const imeis = datos.getAll('imeis').map(String).filter((i) => i.trim() !== '')
     const creado = await comoPuede('ARTICULOS_CREAR', async (tenantId, usuarioId) =>
       crearArticulo({
         tenantId,
@@ -128,11 +134,22 @@ export async function altaArticulo(
         // solo, el artículo cuelga del rubro, que es un caso válido.
         categoriaId: texto(datos, 'marcaId') || texto(datos, 'categoriaId') || null,
         facturaProveedor: texto(datos, 'facturaProveedor') || null,
+        // El switch viaja tal cual llegó, sin filtrar por tipo: un SERVICIO
+        // con el switch prendido tiene que rechazarse con SERVICIO_SIN_STOCK
+        // adentro de `crearArticulo`, no perderse en silencio acá.
+        llevaSerie,
+        imeis: llevaSerie ? imeis : undefined,
         // Un servicio no lleva stock, y sin JavaScript los campos se ven
         // igual: se ignoran acá en vez de rechazar el alta por algo que la
-        // persona no eligió mandar.
+        // persona no eligió mandar. Con el switch de IMEI prendido TAMBIÉN se
+        // manda (Task 5 del ciclo "unidades sin identificar"): ya no se
+        // excluye, porque pasa a ser el número que gobierna la carga
+        // progresiva — `crearArticulo` completa la diferencia con unidades
+        // sin identificar, o rechaza si llegaron más IMEI que stock.
         stockInicial:
-          tipo === 'PRODUCTO' ? aDecimalOpcional(texto(datos, 'stockInicial'), 'el stock inicial') : null,
+          tipo === 'PRODUCTO'
+            ? aDecimalOpcional(texto(datos, 'stockInicial'), 'el stock inicial')
+            : null,
         // El costo se descarta si esta persona no puede cargarlo: el campo no
         // se le dibuja, pero el <input> viaja igual si alguien arma el POST a
         // mano. La UI esconde; esto es lo que autoriza.
@@ -228,6 +245,23 @@ export async function reactivarArticuloAccion(
   }
 }
 
+/**
+ * Recibir mercadería. Task 8 del ciclo de unidades por IMEI: aprende a leer
+ * `imeis` — el motor (`ingresarStock`) ya los acepta desde la Task 3, pero
+ * hasta esa task nada en el medio se los pasaba. Es acá, y no en la Task 3 ni
+ * en la 7, porque es acá donde `MoverStock` empieza a postearlos: sin ese
+ * cambio la pantalla mandaba a una acción que los ignoraba en silencio.
+ *
+ * **Task 5 del ciclo "unidades sin identificar" cambió la señal.** Antes,
+ * `MoverStock` dibujaba UNA de las dos ramas (cantidad o lista) y `has('imeis')`
+ * alcanzaba para saber cuál. Ahora la card "Ingresar mercadería" ofrece las
+ * DOS a la vez —cantidad y la lista progresiva, escanear es opcional—, así que
+ * el campo `imeis` viaja SIEMPRE que esa card se dibuje, vacío o no: la
+ * presencia del campo dejó de decir nada. La señal pasa a ser la lista YA
+ * FILTRADA — si quedó al menos un IMEI real se manda esa lista, si no se
+ * manda la cantidad tipeada. Nunca las dos juntas: el motor (`ingresarStock`)
+ * las rechaza a propósito, así que acá no se manda ninguna "por las dudas".
+ */
 export async function ingresarMercaderia(
   _e: EstadoInventario,
   datos: FormData,
@@ -238,12 +272,19 @@ export async function ingresarMercaderia(
     // dispara `exigirSesion()`, y un `aDecimal` que tire primero haría que un
     // llamador sin sesión reciba un error de formato en vez del redirect al
     // login. El guard no puede depender de que lo que mandaron sea válido.
-    const cantidad = await conSesion(async (tenantId, usuarioId) => {
-      const cantidad = aDecimal(texto(datos, 'cantidad'), 'la cantidad')
+    const cantidadIngresada = await conSesion(async (tenantId, usuarioId) => {
+      // Mismo parseo que `altaArticulo`: `getAll` y no `get`, con los vacíos
+      // descartados. Con la lista sin nada escaneado (todo vacío, o el campo
+      // ni siquiera presente porque `llevaSerie` es falso) `imeisFiltrados`
+      // queda `[]` y se manda la cantidad.
+      const imeisFiltrados = datos.getAll('imeis').map(String).filter((i) => i.trim() !== '')
+      const imeis = imeisFiltrados.length > 0 ? imeisFiltrados : undefined
+      const cantidad = imeis ? undefined : aDecimal(texto(datos, 'cantidad'), 'la cantidad')
       await ingresarStock({
         tenantId,
         articuloId,
         cantidad,
+        imeis,
         usuarioId,
         // Mismo criterio que en `altaArticulo`: el servidor es quien decide
         // si el costo se guarda, no la pantalla que lo dibuja o no.
@@ -252,11 +293,11 @@ export async function ingresarMercaderia(
           : null,
         nota: texto(datos, 'nota') || undefined,
       })
-      return cantidad
+      return imeis ? imeis.length.toString() : cantidad!.toString()
     })
     revalidatePath('/inventario')
     revalidatePath(`/inventario/${articuloId}`)
-    return { error: null, aviso: `Ingresaron ${cantidad.toString()} unidades.` }
+    return { error: null, aviso: `Ingresaron ${cantidadIngresada} unidades.` }
   } catch (e) {
     return traducir(e)
   }
@@ -284,6 +325,110 @@ export async function corregirPorConteo(
     revalidatePath('/inventario')
     revalidatePath(`/inventario/${articuloId}`)
     return { error: null, aviso: `El stock quedó en ${stockContado.toString()}.` }
+  } catch (e) {
+    return traducir(e)
+  }
+}
+
+/**
+ * Las tres acciones de unidades por IMEI (Task 8). El switch mueve UN
+ * artículo, igual que su precio y su moneda —así que viaja con
+ * `ARTICULOS_EDITAR`, ningún permiso nuevo—; dar de baja una unidad queda
+ * donde ya están `ingresarMercaderia` y `corregirPorConteo`: operación del
+ * día, firmada con el `usuarioId` de quien la hace.
+ */
+export async function prenderSerieAccion(
+  _e: EstadoInventario,
+  datos: FormData,
+): Promise<EstadoInventario> {
+  try {
+    const articuloId = texto(datos, 'articuloId')
+    // `prenderSerie` ya no acepta IMEIs (ciclo "unidades sin identificar",
+    // Task 2): cuenta el stock y las unidades libres que ya haya, y crea la
+    // diferencia sin identificar. Desde la Task 6 la pantalla tampoco los
+    // manda —el diálogo que pedía N IMEI de una sentada se borró—, pero la
+    // acción sigue sin leerlos a propósito: un `<form>` es un endpoint, y que
+    // la pantalla haya dejado de dibujar un campo no impide que llegue.
+    await comoPuede('ARTICULOS_EDITAR', (tenantId, usuarioId) =>
+      prenderSerie({ tenantId, articuloId, usuarioId }),
+    )
+    revalidatePath('/inventario')
+    revalidatePath(`/inventario/${articuloId}`)
+    return { error: null, aviso: 'Este artículo ahora se maneja por IMEI.' }
+  } catch (e) {
+    return traducir(e)
+  }
+}
+
+export async function apagarSerieAccion(
+  _e: EstadoInventario,
+  datos: FormData,
+): Promise<EstadoInventario> {
+  try {
+    const articuloId = texto(datos, 'articuloId')
+    await comoPuede('ARTICULOS_EDITAR', (tenantId) => apagarSerie({ tenantId, articuloId }))
+    revalidatePath('/inventario')
+    revalidatePath(`/inventario/${articuloId}`)
+    return { error: null, aviso: 'Este artículo ya no se maneja por IMEI.' }
+  } catch (e) {
+    return traducir(e)
+  }
+}
+
+export async function darDeBajaUnidadAccion(
+  _e: EstadoInventario,
+  datos: FormData,
+): Promise<EstadoInventario> {
+  try {
+    const articuloId = texto(datos, 'articuloId')
+    await conSesion((tenantId, usuarioId) =>
+      darDeBajaUnidad({
+        tenantId,
+        unidadId: texto(datos, 'unidadId'),
+        usuarioId,
+        nota: texto(datos, 'nota') || undefined,
+      }),
+    )
+    revalidatePath('/inventario')
+    revalidatePath(`/inventario/${articuloId}`)
+    return { error: null, aviso: 'Unidad dada de baja.' }
+  } catch (e) {
+    return traducir(e)
+  }
+}
+
+/**
+ * Cargar el IMEI de una unidad que entró sin él, o corregir uno mal tipeado
+ * (Task 6 del ciclo "unidades sin identificar").
+ *
+ * **Detrás de `conSesion` y no de `comoPuede`**, igual que `ingresarMercaderia`,
+ * `corregirPorConteo` y la baja: ponerle el número a la caja que acaba de
+ * aparecer es operación del día, la hace quien está atendiendo, y queda
+ * firmada con su `usuarioId`. Un permiso propio dejaría al local sin poder
+ * cuadrar el stock hasta que llegue el dueño — que es exactamente la fricción
+ * que este ciclo vino a sacar.
+ *
+ * El IMEI vacío no necesita guarda acá: `normalizarImei` tira `IMEI_VACIO` y
+ * `traducir()` lo convierte en cartel. Sin eso la unidad quedaría "cargada"
+ * con la cadena vacía — ni identificada ni sin identificar.
+ */
+export async function identificarUnidadAccion(
+  _e: EstadoInventario,
+  datos: FormData,
+): Promise<EstadoInventario> {
+  try {
+    const articuloId = texto(datos, 'articuloId')
+    await conSesion((tenantId, usuarioId) =>
+      identificarUnidad({
+        tenantId,
+        unidadId: texto(datos, 'unidadId'),
+        imei: texto(datos, 'imei'),
+        usuarioId,
+      }),
+    )
+    revalidatePath('/inventario')
+    revalidatePath(`/inventario/${articuloId}`)
+    return { error: null, aviso: 'IMEI cargado.' }
   } catch (e) {
     return traducir(e)
   }

@@ -2,6 +2,7 @@ import { Prisma } from '@/generated/prisma/client'
 import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import { excedeEscala, ESCALA_CANTIDAD, ESCALA_DINERO } from '@/lib/ventas/totales'
 import { exigirUsuario } from '@/lib/ventas/pertenencia'
+import { crearUnidadesEnTx, normalizarLista } from './unidades'
 import { ErrorDeInventario, traducirErrorDeBase } from './errores'
 
 type Decimal = Prisma.Decimal
@@ -59,6 +60,7 @@ async function aplicarMovimiento(
     usuarioId: string
     nota?: string
     costoUnitario?: Decimal | null
+    unidadId?: string
   },
 ): Promise<void> {
   await tx.movimientoStock.create({
@@ -70,6 +72,7 @@ async function aplicarMovimiento(
       usuarioId: datos.usuarioId,
       nota: datos.nota,
       costoUnitario: datos.costoUnitario ?? null,
+      unidadId: datos.unidadId,
     },
   })
   await tx.articulo.update({
@@ -140,37 +143,124 @@ export async function ajustarStock(entrada: {
   }
 }
 
-/** Recibir mercadería. Es el único camino que escribe `costoUnitario`. */
+/**
+ * Recibir mercadería. Es el único camino que escribe `costoUnitario`.
+ *
+ * En un artículo con serie, decir CUÁNTOS entran es obligatorio; decir
+ * CUÁLES son, no. Por eso acepta `cantidad` o `imeis`, nunca las dos juntas:
+ * con la lista las unidades nacen identificadas, con la cantidad nacen sin
+ * identificar y se completan después —cuando aparezca la caja, o al
+ * venderlas, que es cuando el equipo está en la mano—. Aceptar las dos a la
+ * vez y elegir una dejaría que una pantalla desactualizada suba stock por dos
+ * caminos a la vez, que es justo la ambigüedad que este chequeo evita.
+ *
+ * En un artículo SIN serie, `imeis` directamente no tiene sentido: esa regla
+ * no cambia.
+ */
 export async function ingresarStock(entrada: {
   tenantId: string
   articuloId: string
-  cantidad: Decimal
+  cantidad?: Decimal
+  imeis?: string[]
   usuarioId: string
   costoUnitario?: Decimal | null
   nota?: string
 }): Promise<void> {
-  const { tenantId, articuloId, cantidad, usuarioId, costoUnitario, nota } = entrada
+  const { tenantId, articuloId, cantidad, imeis, usuarioId, costoUnitario, nota } = entrada
 
-  if (cantidad.lessThanOrEqualTo(0)) {
-    throw new ErrorDeInventario(
-      'CANTIDAD_INVALIDA',
-      'la cantidad que ingresa tiene que ser mayor que cero',
-    )
-  }
-  if (excedeEscala(cantidad, ESCALA_CANTIDAD)) {
-    throw new ErrorDeInventario(
-      'ESCALA_EXCEDIDA',
-      `la cantidad tiene a lo sumo ${ESCALA_CANTIDAD} decimales`,
-    )
-  }
   validarCosto(costoUnitario)
 
   try {
     await enTransaccionDeTenant(tenantId, async (tx) => {
       await exigirUsuario(tx, usuarioId)
-      await exigirArticuloConStock(tx, articuloId)
+      const articulo = await exigirArticuloConStock(tx, articuloId)
+
+      // Decir CUÁNTOS entran es obligatorio; decir CUÁLES son, no. Con la
+      // lista nacen identificadas; con la cantidad, sin identificar y se
+      // completan cuando aparezcan las cajas —o al venderlas, que es cuando
+      // el equipo está en la mano.
+      if (articulo.llevaSerie) {
+        if (imeis !== undefined && cantidad !== undefined) {
+          throw new ErrorDeInventario(
+            'SERIE_REQUIERE_IMEIS',
+            `${articulo.nombre}: mandá la lista de IMEI o la cantidad, no las dos`,
+          )
+        }
+      } else if (imeis !== undefined) {
+        throw new ErrorDeInventario(
+          'IMEIS_SIN_SERIE',
+          `${articulo.nombre} no se maneja por IMEI`,
+        )
+      }
+
+      const listaNormalizada = imeis ? normalizarLista(imeis) : undefined
+
+      // Un artículo sin serie no exige `imeis` (ver el `else if` de arriba), pero
+      // eso deja pasar el llamador que no manda NINGUNO de los dos campos —el
+      // tipo lo permite, porque los dos son opcionales de forma independiente,
+      // y este chequeo es precisamente para el llamador que TypeScript no ve:
+      // un body JSON armado a mano. Sin esto, `cantidadEfectiva` queda
+      // `undefined` y el `.lessThanOrEqualTo` de abajo revienta con un
+      // `TypeError` crudo, sin código, en una función donde toda otra entrada
+      // inválida sale como `ErrorDeInventario`. Mismo espíritu que el
+      // `filas.length === 0` de `proximoNumero` en `lib/ventas/crear.ts`.
+      if (listaNormalizada === undefined && cantidad === undefined) {
+        throw new ErrorDeInventario(
+          'CANTIDAD_INVALIDA',
+          'hay que decir cuántas unidades entran',
+        )
+      }
+
+      const cantidadEfectiva = listaNormalizada
+        ? new Prisma.Decimal(listaNormalizada.length)
+        : (cantidad as Decimal)
+
+      if (cantidadEfectiva.lessThanOrEqualTo(0)) {
+        throw new ErrorDeInventario(
+          'CANTIDAD_INVALIDA',
+          'la cantidad que ingresa tiene que ser mayor que cero',
+        )
+      }
+      if (excedeEscala(cantidadEfectiva, ESCALA_CANTIDAD)) {
+        throw new ErrorDeInventario(
+          'ESCALA_EXCEDIDA',
+          `la cantidad tiene a lo sumo ${ESCALA_CANTIDAD} decimales`,
+        )
+      }
+
+      if (listaNormalizada) {
+        await crearUnidadesEnTx(tx, {
+          tenantId, articuloId, imeis: listaNormalizada, usuarioId,
+        })
+      } else if (articulo.llevaSerie) {
+        // Vino la cantidad, no la lista: las unidades nacen sin identificar,
+        // una por cada una que entra. La lista no necesita este chequeo —su
+        // cantidad de elementos ya es un entero por construcción—, pero acá
+        // no hay ninguna lista que contar: sin esto, `Array.from({ length: 2.5
+        // })` trunca a 2 unidades mientras el movimiento de abajo suma 2.5 al
+        // stock, y la invariante (stock = unidades libres) queda rota en
+        // silencio y para siempre, sin más reparo que un UPDATE a mano.
+        if (!cantidadEfectiva.equals(cantidadEfectiva.toDecimalPlaces(0))) {
+          throw new ErrorDeInventario(
+            'SERIE_STOCK_NO_ENTERO',
+            `${articulo.nombre} se maneja por IMEI: la cantidad que entra tiene que ser un ` +
+              'número entero de unidades',
+          )
+        }
+        await crearUnidadesEnTx(tx, {
+          tenantId, articuloId, usuarioId,
+          imeis: Array.from({ length: cantidadEfectiva.toNumber() }, () => null),
+        })
+      }
+
       await aplicarMovimiento(tx, {
-        tenantId, articuloId, delta: cantidad, motivo: 'INGRESO', usuarioId, nota, costoUnitario,
+        tenantId,
+        articuloId,
+        delta: cantidadEfectiva,
+        motivo: 'INGRESO',
+        usuarioId,
+        nota,
+        costoUnitario,
       })
     })
   } catch (e) {
@@ -214,6 +304,14 @@ export async function corregirStock(entrada: {
       await exigirUsuario(tx, usuarioId)
       const articulo = await exigirArticuloConStock(tx, articuloId)
 
+      if (articulo.llevaSerie) {
+        throw new ErrorDeInventario(
+          'SERIE_SIN_CONTEO',
+          `${articulo.nombre} se maneja por IMEI: no alcanza con decir cuántos quedan, hay ` +
+            'que dar de baja las unidades que faltan desde la ficha del artículo',
+        )
+      }
+
       const delta = stockContado.minus(articulo.stock)
       // Un conteo que confirma lo que ya había no es un evento del inventario.
       // Escribir un movimiento de delta cero ensuciaría el historial que este
@@ -222,6 +320,67 @@ export async function corregirStock(entrada: {
 
       await aplicarMovimiento(tx, {
         tenantId, articuloId, delta, motivo: 'AJUSTE', usuarioId, nota,
+      })
+    })
+  } catch (e) {
+    throw traducirErrorDeBase(e)
+  }
+}
+
+/**
+ * Una unidad que sale sin venderse: se robó, se rompió, fue a garantía, estaba
+ * mal cargada.
+ *
+ * Reemplaza a la corrección por conteo para artículos con serie: ahí no alcanza
+ * con decir "quedan 4", hay que decir CUÁL se fue.
+ *
+ * La condición viaja DENTRO del UPDATE, no en un `if` sobre lo que devolvió un
+ * `findUnique`: leer y después decidir deja una ventana entre las dos
+ * sentencias, y bajo READ COMMITTED dos bajas simultáneas de la misma unidad la
+ * leen libre las dos y las dos descuentan. Es el mismo recurso que usa
+ * `anularVenta` contra su propia carrera.
+ */
+export async function darDeBajaUnidad(entrada: {
+  tenantId: string
+  unidadId: string
+  usuarioId: string
+  nota?: string
+}): Promise<void> {
+  const { tenantId, unidadId, usuarioId, nota } = entrada
+
+  try {
+    await enTransaccionDeTenant(tenantId, async (tx) => {
+      await exigirUsuario(tx, usuarioId)
+
+      const unidad = await tx.unidadDeArticulo.findUnique({ where: { id: unidadId } })
+      if (!unidad) {
+        throw new ErrorDeInventario(
+          'UNIDAD_INEXISTENTE',
+          `la unidad ${unidadId} no existe en este tenant`,
+        )
+      }
+
+      const bajadas = await tx.unidadDeArticulo.updateMany({
+        where: { id: unidadId, ventaId: null, bajaEn: null },
+        data: { bajaEn: new Date(), bajaNota: nota ?? null, bajaPorId: usuarioId },
+      })
+      if (bajadas.count !== 1) {
+        // Cero filas significa que la unidad ya salió: por una venta o por otra
+        // baja. Las dos son "ya no está en la vitrina" y se resuelven igual.
+        throw new ErrorDeInventario(
+          'UNIDAD_NO_DISPONIBLE',
+          `el equipo ${unidad.imei} ya no está en stock`,
+        )
+      }
+
+      await aplicarMovimiento(tx, {
+        tenantId,
+        articuloId: unidad.articuloId,
+        delta: new Prisma.Decimal(-1),
+        motivo: 'AJUSTE',
+        usuarioId,
+        nota,
+        unidadId,
       })
     })
   } catch (e) {

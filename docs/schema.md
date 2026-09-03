@@ -54,6 +54,7 @@ erDiagram
     uuid categoria_id FK "opcional"
     decimal(12,2) precio
     moneda moneda
+    boolean lleva_serie
     decimal(12,3) stock
     timestamptz(3) desactivado_en "opcional"
     timestamptz(3) creado_en
@@ -149,6 +150,7 @@ erDiagram
     decimal(12,2) costo_unitario "opcional"
     motivo_movimiento motivo
     uuid venta_id FK "opcional"
+    uuid unidad_id FK "opcional"
     uuid usuario_id FK
     text nota "opcional"
     timestamptz(3) creado_en
@@ -229,6 +231,19 @@ erDiagram
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
+  unidades_articulo {
+    uuid id PK
+    uuid tenant_id FK
+    uuid articulo_id FK
+    text imei "opcional"
+    timestamptz(3) ingresada_en
+    uuid ingresada_por_id FK
+    uuid venta_id FK "opcional"
+    timestamptz(3) baja_en "opcional"
+    text baja_nota "opcional"
+    uuid baja_por_id FK "opcional"
+    timestamptz(3) creado_en
+  }
   users {
     uuid id PK
     uuid tenant_id FK "único junto a email"
@@ -284,6 +299,7 @@ erDiagram
     timestamptz(3) actualizado_en
   }
   articulos ||--o{ movimientos_stock : "ON DELETE RESTRICT"
+  articulos ||--o{ unidades_articulo : "ON DELETE RESTRICT"
   articulos ||--o{ venta_items : "ON DELETE RESTRICT"
   categorias |o--o{ articulos : "ON DELETE RESTRICT"
   categorias |o--o{ categorias : "ON DELETE RESTRICT"
@@ -306,14 +322,17 @@ erDiagram
   tenants ||--o{ planes_de_pago : "ON DELETE CASCADE"
   tenants ||--o{ sessions : "ON DELETE CASCADE"
   tenants ||--o{ tenant_modules : "ON DELETE CASCADE"
+  tenants ||--o{ unidades_articulo : "ON DELETE CASCADE"
   tenants ||--o{ users : "ON DELETE CASCADE"
   tenants ||--o{ usuario_permisos : "ON DELETE CASCADE"
   tenants ||--o{ venta_items : "ON DELETE CASCADE"
   tenants ||--o{ ventas : "ON DELETE CASCADE"
   tenants ||--o{ verifications : "ON DELETE CASCADE"
   tenants ||--o| bots_de_whatsapp : "ON DELETE CASCADE"
+  unidades_articulo |o--o{ movimientos_stock : "ON DELETE RESTRICT"
   users |o--o{ cajas : "ON DELETE RESTRICT"
   users |o--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
+  users |o--o{ unidades_articulo : "ON DELETE RESTRICT"
   users |o--o{ ventas : "ON DELETE RESTRICT"
   users ||--o{ accounts : "ON DELETE CASCADE"
   users ||--o{ cajas : "ON DELETE RESTRICT"
@@ -321,9 +340,11 @@ erDiagram
   users ||--o{ movimientos_stock : "ON DELETE RESTRICT"
   users ||--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
   users ||--o{ sessions : "ON DELETE CASCADE"
+  users ||--o{ unidades_articulo : "ON DELETE RESTRICT"
   users ||--o{ usuario_permisos : "ON DELETE CASCADE"
   users ||--o{ ventas : "ON DELETE RESTRICT"
   ventas |o--o{ movimientos_stock : "ON DELETE RESTRICT"
+  ventas |o--o{ unidades_articulo : "ON DELETE RESTRICT"
   ventas ||--o{ pagos : "ON DELETE CASCADE"
   ventas ||--o{ venta_items : "ON DELETE CASCADE"
 ```
@@ -361,6 +382,8 @@ erDiagram
 - **pagos**: `pagos_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
 - **planes_de_pago**: `planes_de_pago_tenant_id_medio_idx` sobre (`tenant_id`, `medio`)
 - **sessions**: `sessions_tenant_id_user_id_idx` sobre (`tenant_id`, `user_id`)
+- **unidades_articulo**: `unidades_articulo_tenant_id_articulo_id_idx` sobre (`tenant_id`, `articulo_id`)
+- **unidades_articulo**: `unidades_articulo_tenant_id_imei_idx` sobre (`tenant_id`, `imei`)
 - **venta_items**: `venta_items_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
 - **ventas**: `ventas_tenant_id_creado_en_idx` sobre (`tenant_id`, `creado_en`)
 - **verifications**: `verifications_tenant_id_identifier_idx` sobre (`tenant_id`, `identifier`)

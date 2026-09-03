@@ -20,9 +20,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Switch } from '@/components/ui/switch'
 import type { RamaConHijas } from '@/lib/inventario/categorias'
 import { SelectorDeCategoria } from './selector-categoria'
 import { SelectorDeMoneda } from '@/components/selector-de-moneda'
+import { ListaDeImeis } from './lista-de-imeis'
 import estilos from './tipografia.module.css'
 
 // Acá y no en acciones.ts: aquel archivo es 'use server' y sólo puede exportar
@@ -54,9 +56,20 @@ function Resultado({ estado }: { estado: EstadoInventario }) {
  * de este archivo, porque acá el encabezado necesita su propio borde
  * inferior y la cara de display, y son tres cards idénticas en estructura.
  */
-function CardDelFormulario({ titulo, children }: { titulo: string; children: ReactNode }) {
+// Exportada (Task 8 del ciclo de unidades por IMEI): `unidades.tsx` es un
+// archivo propio y no una segunda card parecida — usa la MISMA, para que las
+// dos no se desincronicen como ya pasó una vez con `ListaDeImeis` (Task 7).
+export function CardDelFormulario({
+  id,
+  titulo,
+  children,
+}: {
+  id?: string
+  titulo: string
+  children: ReactNode
+}) {
   return (
-    <div className="flex flex-col overflow-hidden rounded-2xl border bg-card">
+    <div id={id} className="flex flex-col overflow-hidden rounded-2xl border bg-card">
       {/* Mobile-first (Task 7 del ciclo móvil, design/arandano.pen: los
           Encabezado de card de `m34Naf`/`T5gME` miden padding [12,14], contra
           los [13,18] de escritorio, sin cambios) — mismo patrón que ya usan
@@ -121,6 +134,11 @@ export function FormularioDeAlta({
 }) {
   const [estado, accion, pendiente] = useActionState(altaArticulo, INICIAL)
   const [tipo, setTipo] = useState<'PRODUCTO' | 'SERVICIO'>('PRODUCTO')
+  // Apagado por default: la mayoría de los artículos no llevan IMEI. Un
+  // SERVICIO no puede llevar serie — el switch se deshabilita al elegirlo, y
+  // el servidor lo rechaza igual (crearArticulo), porque una pantalla que
+  // esconde un control no es la guarda, sólo el servidor lo es.
+  const [llevaSerie, setLlevaSerie] = useState(false)
 
   return (
     <form action={accion} className="contents">
@@ -180,7 +198,14 @@ export function FormularioDeAlta({
                   name="tipo"
                   value="SERVICIO"
                   className="sr-only"
-                  onChange={() => setTipo('SERVICIO')}
+                  // Un servicio no lleva stock, así que tampoco puede llevar
+                  // serie: apagar el switch acá evita que quede prendido y
+                  // deshabilitado a la vez, mandando `llevaSerie=on` con un
+                  // <Switch disabled> que ya no se puede destildar.
+                  onChange={() => {
+                    setTipo('SERVICIO')
+                    setLlevaSerie(false)
+                  }}
                 />
                 <Wrench aria-hidden="true" className={ICONO_TARJETA_TIPO} />
                 <div className="flex flex-col gap-[3px]">
@@ -190,6 +215,29 @@ export function FormularioDeAlta({
                   </span>
                 </div>
               </label>
+            </div>
+            {/* Sin frame en design/arandano.pen: es anterior a esta feature
+                (docs/superpowers/specs/2026-09-02-unidades-por-imei-design.md).
+                Al lado del selector de tipo, en la misma card, porque sólo
+                tiene sentido con PRODUCTO — deshabilitado y apagado con
+                SERVICIO, misma razón por la que un servicio no lleva stock. El
+                servidor (`crearArticulo`) rechaza igual la combinación: que
+                la pantalla esconda o deshabilite un control nunca es la
+                guarda, sólo lo es el servidor. */}
+            <div className="flex items-center justify-between gap-3 rounded-[10px] bg-background p-3">
+              <div className="flex flex-col gap-0.5">
+                <Label htmlFor="llevaSerie">Lleva IMEI o número de serie</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Cada unidad se identifica y se vende por separado
+                </p>
+              </div>
+              <Switch
+                id="llevaSerie"
+                name="llevaSerie"
+                checked={llevaSerie}
+                disabled={tipo === 'SERVICIO'}
+                onCheckedChange={setLlevaSerie}
+              />
             </div>
           </CardDelFormulario>
 
@@ -246,26 +294,41 @@ export function FormularioDeAlta({
         <div className="flex flex-col gap-3 lg:w-[420px] lg:shrink-0 lg:gap-4">
           {tipo === 'PRODUCTO' && (
             <CardDelFormulario titulo="Stock inicial">
-              <div className="flex gap-3">
-                <div className="flex w-[220px] flex-col gap-2">
-                  <Label htmlFor="stockInicial">Cantidad (opcional)</Label>
-                  <Input id="stockInicial" name="stockInicial" inputMode="decimal" className="h-10 rounded-[9px]" />
-                </div>
-                {/* Sin el permiso COSTOS, el campo no se dibuja. El
-                    blindaje real está en el servidor (altaArticulo,
-                    acciones.ts): esconderlo acá es sólo la UI. */}
-                {puedeCostos && (
-                  <div className="flex flex-1 flex-col gap-2">
-                    <Label htmlFor="costoUnitario">Costo unitario (opcional)</Label>
-                    <Input
-                      id="costoUnitario"
-                      name="costoUnitario"
-                      inputMode="decimal"
-                      className="h-10 rounded-[9px]"
-                    />
-                  </div>
-                )}
+              {/* Task 5 del ciclo "unidades sin identificar": la Cantidad ya
+                  NO se reemplaza por la lista de IMEI, se completa con ella —
+                  el principio de este ciclo es que el IMEI se captura cuando
+                  el equipo está en la mano, así que escanear una parte (o
+                  ninguna) es el caso normal. La cantidad es el stock que
+                  gobierna; lo que no se escanea nace sin identificar y se
+                  completa después, desde la ficha. */}
+              <div className="flex w-[220px] flex-col gap-2">
+                <Label htmlFor="stockInicial">Cantidad (opcional)</Label>
+                <Input id="stockInicial" name="stockInicial" inputMode="decimal" className="h-10 rounded-[9px]" />
               </div>
+              {llevaSerie && (
+                <div className="flex flex-col gap-2">
+                  <Label>IMEI o número de serie</Label>
+                  <ListaDeImeis />
+                  <p className="text-[11px] text-muted-foreground">
+                    Escanear es opcional: lo que no cargues ahora lo podés completar después,
+                    desde la ficha del artículo.
+                  </p>
+                </div>
+              )}
+              {/* Sin el permiso COSTOS, el campo no se dibuja. El
+                  blindaje real está en el servidor (altaArticulo,
+                  acciones.ts): esconderlo acá es sólo la UI. */}
+              {puedeCostos && (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="costoUnitario">Costo unitario (opcional)</Label>
+                  <Input
+                    id="costoUnitario"
+                    name="costoUnitario"
+                    inputMode="decimal"
+                    className="h-10 rounded-[9px]"
+                  />
+                </div>
+              )}
               {/* El tercer campo que la maqueta dibuja en esta card
                   (design/arandano.pen, frame `B4O7t`). **No es una columna
                   nueva**: va como nota del movimiento de stock inicial, que es
@@ -592,13 +655,30 @@ export function FichaDeArticulo({
  * adentro de la transacción, contra el stock de ese momento. Pedirlo acá
  * obligaría a restar en el navegador contra un número que puede tener un
  * minuto y una venta de antigüedad.
+ *
+ * **Task 8 del ciclo de unidades por IMEI: `llevaSerie` cambia las dos
+ * cards.** "Corregir por conteo" queda DESHABILITADA y EXPLICADA, no
+ * escondida: sus dos campos y su botón se deshabilitan, y aparece el texto
+ * que dice por qué y manda a la card "Unidades" (`#unidades`, en
+ * `[id]/page.tsx`) — desaparecer un control sin decir nada es lo que este
+ * repo trata como defecto.
+ *
+ * **Task 5 del ciclo "unidades sin identificar" cambió "Ingresar
+ * mercadería".** El campo "Cantidad que entra" ya NO se reemplaza por la
+ * lista de IMEI: las dos conviven, con la leyenda de que escanear es
+ * opcional (mismo componente que el alta, `ListaDeImeis`). El servidor
+ * (`ingresarMercaderia`, acciones.ts) decide cuál de las dos mandar por la
+ * lista YA FILTRADA — con algo escaneado va la lista, si no la cantidad,
+ * nunca las dos.
  */
 export function MoverStock({
   articuloId,
   puedeCostos,
+  llevaSerie,
 }: {
   articuloId: string
   puedeCostos: boolean
+  llevaSerie: boolean
 }) {
   const [ingreso, accionIngreso, ingresando] = useActionState(ingresarMercaderia, INICIAL)
   const [conteo, accionConteo, contando] = useActionState(corregirPorConteo, INICIAL)
@@ -617,10 +697,32 @@ export function MoverStock({
         <CardContent>
           <form action={accionIngreso} className="flex flex-col gap-4">
             <input type="hidden" name="articuloId" value={articuloId} />
+            {/* Task 5 del ciclo "unidades sin identificar": las dos formas
+                conviven. `required={!llevaSerie}`: sin serie sigue siendo
+                obligatoria, como siempre; con serie es opcional —se puede
+                entrar sólo escaneando, sin tipear ningún número—.
+                `ingresarMercaderia` (acciones.ts) decide cuál de las dos
+                mandar por la lista YA FILTRADA, nunca las dos juntas. */}
             <div className="flex flex-col gap-2">
               <Label htmlFor="i-cantidad">Cantidad que entra</Label>
-              <Input id="i-cantidad" name="cantidad" inputMode="decimal" required className="h-10 rounded-[9px]" />
+              <Input
+                id="i-cantidad"
+                name="cantidad"
+                inputMode="decimal"
+                required={!llevaSerie}
+                className="h-10 rounded-[9px]"
+              />
             </div>
+            {llevaSerie && (
+              <div className="flex flex-col gap-2">
+                <Label>IMEI o número de serie</Label>
+                <ListaDeImeis />
+                <p className="text-[11px] text-muted-foreground">
+                  Escanear es opcional: lo que no cargues ahora lo podés completar después,
+                  desde la ficha del artículo.
+                </p>
+              </div>
+            )}
             {/* Sin el permiso COSTOS, el campo no se dibuja. El blindaje
                 real está en el servidor (ingresarMercaderia, acciones.ts):
                 esconderlo acá es sólo la UI. */}
@@ -651,14 +753,39 @@ export function MoverStock({
             <input type="hidden" name="articuloId" value={articuloId} />
             <div className="flex flex-col gap-2">
               <Label htmlFor="c-contado">Cuánto hay realmente</Label>
-              <Input id="c-contado" name="stockContado" inputMode="decimal" required className="h-10 rounded-[9px]" />
+              <Input
+                id="c-contado"
+                name="stockContado"
+                inputMode="decimal"
+                required={!llevaSerie}
+                disabled={llevaSerie}
+                className="h-10 rounded-[9px]"
+              />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="c-nota">Nota (opcional)</Label>
-              <Input id="c-nota" name="nota" placeholder="Conteo del lunes…" className="h-10 rounded-[9px]" />
+              <Input
+                id="c-nota"
+                name="nota"
+                placeholder="Conteo del lunes…"
+                disabled={llevaSerie}
+                className="h-10 rounded-[9px]"
+              />
             </div>
+            {llevaSerie && (
+              <div className="flex items-start gap-[9px] rounded-[10px] bg-background p-3">
+                <Info aria-hidden="true" className="mt-0.5 size-[15px] shrink-0 text-muted-foreground" />
+                <p className="text-[11px] leading-[1.45] text-muted-foreground">
+                  Este artículo se maneja por IMEI: para sacar una unidad, dala de baja desde{' '}
+                  <a href="#unidades" className="font-medium text-foreground underline">
+                    Unidades
+                  </a>
+                  .
+                </p>
+              </div>
+            )}
             <Resultado estado={conteo} />
-            <Button type="submit" variant="secondary" disabled={contando}>
+            <Button type="submit" variant="secondary" disabled={contando || llevaSerie}>
               {contando ? 'Corrigiendo…' : 'Corregir'}
             </Button>
           </form>

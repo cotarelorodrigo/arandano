@@ -5,12 +5,14 @@ import { exigirSesion } from '@/lib/auth/sesion'
 import { puedeConSesion } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { FichaDeArticulo, MoverStock, BotonExportarCsv } from '../formularios'
+import { CardDeUnidades, SwitchDeSerie } from '../unidades'
 import { calcularSaldos, filaDeMovimiento, HistorialDeMovimientos } from '../historial'
 import { GraficoDeRotacion, agregarVentasPorMes } from '../rotacion'
 import { formatearPrecio, formatearCantidad, precioEnSuMoneda } from '@/lib/formato/mostrar'
 import { esUuid } from '@/lib/uuid'
 import { planesDelTenant, type PlanVisible } from '@/lib/planes/consultar'
 import { arbolDeCategorias } from '@/lib/inventario/categorias'
+import { unidadesLibres } from '@/lib/inventario/unidades'
 import { precioConPlan } from '@/lib/planes/precio'
 import { ROTULO_MEDIO } from '@/lib/ventas/medios'
 import estilos from '../tipografia.module.css'
@@ -262,7 +264,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   const SIETE_MESES_ATRAS = new Date()
   SIETE_MESES_ATRAS.setUTCMonth(SIETE_MESES_ATRAS.getUTCMonth() - 7)
 
-  const [movimientos, ultimoConCosto, ventasPorMes, planes, arbol] = await Promise.all([
+  const [movimientos, ultimoConCosto, ventasPorMes, planes, arbol, unidades] = await Promise.all([
     prisma.movimientoStock.findMany({
       where: { articuloId: id },
       // `id` como segundo criterio, no sólo `creadoEn`: `creado_en` es la
@@ -329,6 +331,16 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
     // único. Sólo se consulta si esta persona puede editar: sin
     // `ARTICULOS_EDITAR` la card "Datos" no se renderiza y el árbol no se usa.
     puedeEditar ? arbolDeCategorias(sesion.tenant.id, { verInactivos: true }) : [],
+    // Task 6 del ciclo "unidades sin identificar": ya NO va condicionada a
+    // `articulo.llevaSerie`. El ciclo anterior la condicionaba para no pagar
+    // una ida a Postgres por cada artículo del catálogo, y el precio de eso
+    // era el caso huérfano que su review dejó parked: un artículo con
+    // unidades cargadas y el switch apagado no mostraba las unidades EN
+    // NINGÚN LADO — invisibles, sin forma de darlas de baja ni de saber que
+    // están. La consulta corre dentro del mismo `Promise.all` que ya dispara
+    // otras seis, así que el costo real es una consulta en paralelo, no un
+    // round-trip extra en serie.
+    unidadesLibres(sesion.tenant.id, articulo.id),
   ])
 
   const ultimoCosto = ultimoConCosto?.costoUnitario ?? null
@@ -349,11 +361,26 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   // de 324 px reservando un hueco sin contenido (ver el comentario de
   // `FichaDeArticulo` en `../formularios.tsx`).
   const hayPanelPrecios = planes.length > 0
+  // `CardDeUnidades` recibe las unidades TAL COMO vienen, con su `imei`
+  // nullable: desde la Task 6 la card es la que sabe qué hacer con las que
+  // todavía no tienen número —el bloque de captura de arriba—, así que
+  // filtrarlas acá volvería a esconderlas. El ternario que obligaba al `as
+  // UnidadLibre[]` de la consulta se fue con la condición de arriba.
+
   const columnaDerechaExtra =
-    hayPanelPrecios || esProducto ? (
+    hayPanelPrecios || esProducto || articulo.llevaSerie || unidades.length > 0 ? (
       <>
         {hayPanelPrecios && (
           <PanelPreciosPorFormaDePago precio={articulo.precio} moneda={articulo.moneda} planes={planes} />
+        )}
+        {/* La card "Unidades". Con el switch prendido siempre; y también con
+            el switch APAGADO si quedaron unidades cargadas, que es la salida
+            al caso huérfano (Task 6): sin este `||`, esas unidades no se
+            verían en ningún lado ni habría forma de darlas de baja. Un
+            servicio nunca tiene ninguna de las dos cosas, así que no hace
+            falta sumar `esProducto`. */}
+        {(articulo.llevaSerie || unidades.length > 0) && (
+          <CardDeUnidades articuloId={articulo.id} unidades={unidades} />
         )}
         {esProducto && <GraficoDeRotacion meses={meses} />}
       </>
@@ -431,7 +458,11 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
 
       {esProducto && !articulo.desactivadoEn && (
         <div className="order-3 lg:order-none">
-          <MoverStock articuloId={articulo.id} puedeCostos={puedeCostos} />
+          <MoverStock
+            articuloId={articulo.id}
+            puedeCostos={puedeCostos}
+            llevaSerie={articulo.llevaSerie}
+          />
         </div>
       )}
 
@@ -475,6 +506,18 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
       columnaIzquierda={columnaIzquierda}
       columnaDerechaExtra={columnaDerechaExtra}
     >
+      {/* Task 8 del ciclo de unidades por IMEI: el switch, en `children` y no
+          en ninguna de las dos columnas — es ancho completo, como el
+          `<Alert>` de desactivado que ya vive acá. Sólo para productos
+          activos: un servicio no puede llevar serie, y un artículo
+          desactivado no se ofrece para operaciones nuevas. */}
+      {esProducto && !articulo.desactivadoEn && (
+        <SwitchDeSerie
+          articuloId={articulo.id}
+          llevaSerie={articulo.llevaSerie}
+          puedeEditar={puedeEditar}
+        />
+      )}
       {articulo.desactivadoEn && (
         <Alert>
           <AlertDescription>

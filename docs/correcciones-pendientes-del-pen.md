@@ -887,7 +887,104 @@ operable en los dos anchos desde el primer commit.
 
 ---
 
-## 27. `/dashboard`: el `.pen` versionado todavía no tiene los dos frames, y cinco piezas se derivaron sin poder mirarlos en git
+## 27. La maqueta no dibuja nada de las unidades por IMEI — ningún ancho, ninguna de las tres pantallas
+
+- **Frames**: ninguno. `design/arandano.pen` es anterior al ciclo de unidades
+  por IMEI (2026-09-02) — que a su vez es posterior al del precio en dólares,
+  entrada 23 — y no tiene ni un frame de escritorio ni un `Móvil / …` que
+  dibuje algo de esto.
+
+**Qué falta.** Cuatro controles nuevos, en tres pantallas, en ningún ancho:
+
+1. **El switch "Lleva IMEI o número de serie"** de `/inventario/nuevo` y de
+   `/inventario/[id]`, con su diálogo que pide los N IMEI cuando el artículo
+   ya tiene stock. El código lo derivó del mismo tratamiento de card que ya
+   usan `SwitchDeSerie` y sus vecinos —borde, fondo `bg-card`, `Label` más
+   texto de ayuda a la izquierda, control a la derecha—, mismo patrón que la
+   entrada 26 (`/bot`) ya usó para su propio switch cuando tampoco tenía
+   frame. **El diálogo ya no existe** (ciclo "unidades sin identificar",
+   2026-09-03): pedía los treinta números de una sentada y no entraba en la
+   pantalla, así que el switch prende directo y la captura se mudó a la card
+   de Unidades — ver la entrada 28. El switch en sí sigue sin frame.
+2. **La card "Unidades"** de `/inventario/[id]`: la lista de IMEI libres, la
+   fecha de ingreso de cada uno, el filtro que aparece recién con más de 8, y
+   "Dar de baja" con su nota. Se construyó con la misma `CardDelFormulario`
+   que arman el resto de las cards de esa pantalla —mismo título, mismo
+   borde, mismo padding—, y la fila de cada unidad copia el tratamiento
+   `flex-col lg:flex-row` que ya usan las filas de otras listas de este
+   producto (mismo criterio de "un solo árbol, no dos presentaciones" que
+   dejó escrito el ciclo móvil).
+3. **El selector de unidad del carrito**, en `/vender`: el `Dialog` que se
+   abre al agregar por nombre un artículo con serie, con la lista de IMEI
+   libres para tocar. Es el mismo `Dialog` de shadcn que ya usa el diálogo de
+   prender el switch (punto 1) y el de permisos de `/usuarios` — ningún
+   tratamiento nuevo, sólo su contenido.
+4. **La línea del carrito sin stepper**, también en `/vender`: el recuadro
+   con el IMEI que reemplaza a `[−] [valor] [+]` en la línea de un artículo
+   con serie. Mide lo mismo que el stepper que reemplaza (`h-9 w-[104px]`,
+   mismo borde `border-input`, mismo radio `rounded-[9px]`) para que la fila
+   no salte de alto ni de ancho según lleve serie o no — es el mismo
+   principio que ya aplicó el chip `Cubre` de la entrada 23: un control nuevo
+   ocupa el lugar del que reemplaza, no inventa uno propio.
+
+**Qué NO hizo el código: inventar un tratamiento nuevo.** Los cuatro controles
+salen de patrones que esta pantalla, o una vecina, ya tenía dibujados —la
+card, el `Dialog`, el switch de card, la fila `flex-col lg:flex-row`—, mismo
+precedente que las entradas 19 a 22 y 26: la maqueta no **contradice** al
+código acá, sencillamente todavía no llegó a ver la feature.
+
+Detectado al construir el ciclo de unidades por IMEI (2026-09-02). Ver
+`docs/superpowers/specs/2026-09-02-unidades-por-imei-design.md`, sección *Lo
+que la maqueta no dibuja*.
+
+## 28. La maqueta tampoco dibuja la captura progresiva del IMEI, y el único control que sí se había derivado ya no existe
+
+- **Frames**: ninguno, otra vez. `design/arandano.pen` es anterior también al
+  ciclo "unidades sin identificar" (2026-09-03).
+
+Esta entrada es la continuación de la 27 y no la reemplaza, porque cuenta algo
+distinto: **el ciclo anterior derivó un control que este ciclo BORRÓ.** El
+diálogo de N campos del punto 1 de la entrada 27 —derivado sin frame, con el
+`Dialog` de shadcn que ya usaba `/usuarios`— resultó ser justamente el defecto:
+con treinta unidades no entraba en la pantalla, y exigía tener los treinta
+equipos a mano en ese momento. Vale como dato sobre el método, no sólo sobre
+este control: **derivar un control sin frame salió bien tres veces y mal una**,
+y la que salió mal no se descubrió con un test sino usándolo contra un
+inventario real.
+
+**Qué falta dibujar, hoy:**
+
+1. **El bloque de captura de la card "Unidades"** (`/inventario/[id]`): un
+   campo enfocado, con el contador de cuántas quedan sin identificar, que le
+   pone el número a la más vieja y se vacía solo para el escaneo siguiente. Se
+   derivó del mismo `Input` de shadcn que usa el resto de la pantalla, dentro
+   de un recuadro `bg-muted/40` — el mismo tratamiento de "bloque destacado
+   adentro de una card" que ya usa el aviso de clave generada de `/usuarios`.
+2. **"Corregir" en cada fila de unidad identificada**: el IMEI pasa de ser un
+   `<span>` a ser un `<input>` prellenado con su valor actual, con un botón
+   `ghost` al lado. Mismo tratamiento de botón secundario que "Dar de baja",
+   que ya vive en esa fila.
+3. **El tope de alto de la lista de unidades** (`max-h-[420px]
+   overflow-y-auto`). El número se derivó —unas ocho filas— y no sale de
+   ningún frame: es la respuesta al síntoma que originó el ciclo, ahora que la
+   causa (el modal) no está.
+4. **La fila "Una sin identificar — quedan N"** del selector de `/vender`: una
+   sola fila para todas las que no tienen número, con borde punteado
+   (`border-dashed`) para distinguirla de las que sí lo tienen. El punteado es
+   lo único verdaderamente nuevo de esta entrada: el resto copia el botón de
+   unidad que la entrada 27 ya describe.
+5. **El campo de captura en la línea del carrito** (`/vender`), que ocupa el
+   mismo lugar y las mismas medidas (`h-9 w-[104px]`) que el recuadro del IMEI
+   del punto 4 de la entrada 27 — mismo principio de "un control nuevo ocupa el
+   lugar del que reemplaza"—, más la leyenda "IMEI opcional: podés dejarlo en
+   blanco y cargarlo después" en la línea de meta, junto al SKU.
+
+Detectado al construir el ciclo "unidades sin identificar" (2026-09-03). Ver
+`docs/superpowers/specs/2026-09-03-unidades-sin-identificar-design.md`.
+
+---
+
+## 29. `/dashboard`: el `.pen` versionado todavía no tiene los dos frames, y cinco piezas se derivaron sin poder mirarlos en git
 
 **Frames**: `App / Dashboard` (nodo raíz `A2Hffo`) y `Móvil / Dashboard`
 (`OWGzI`). Existen y se consultaron por MCP mientras el documento estaba
@@ -947,7 +1044,9 @@ de Pencil:
   cobrado por venta" que se pueda ORDENAR en la base sin traer el período
   entero — no una fecha.
 
-### 28. La escala del "mil" en el centro de un anillo, derivada
+---
+
+## 30. La escala del "mil" en el centro de un anillo, derivada
 
 `design/arandano.pen` escribe el centro del anillo de medios como **"$ 8,41 M"**
 (nodo `UeW8u`) — abreviado, no el número completo. `abreviarImporte()`
