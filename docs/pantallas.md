@@ -183,8 +183,12 @@ marco), `hero.tsx`, `secciones.tsx` (Módulos, Rubros, Planes, Cierre) y
 - **`WHATSAPP_CONTACTO` sin valor deja la página coherente, no rota.** Los links
   a `wa.me` no se dibujan y el Cierre deja de prometer soporte por WhatsApp.
   Hasta este ciclo la letra chica lo prometía igual: `docker/compose.prod.yml`
-  lo declara en `""`, así que en producción la página quedó con un solo camino
-  de contacto sin que nada avisara. La variable está ahora en `.env.example`.
+  lo declaraba vacío, así que en producción la página quedó con un solo camino
+  de contacto sin que nada avisara. Ahora el número está en los dos compose que
+  sirven la landing, la variable quedó en `.env.example`, y
+  `test/whatsapp-contacto.test.ts` exige que producción lo tenga y que esté en
+  dígitos pelados — `wa.me` no acepta `+` ni espacios, y un link mal formado se
+  dibuja igual.
 
 - **El formulario de captura pierde su marco** abajo de 1024. El borde, el fondo
   y el radio de 14 px que envuelven al campo y al botón son una pieza sólo de

@@ -2461,10 +2461,24 @@ Y del producto:
   suprime el link a `wa.me` cuando está vacío: en producción la salida directa
   por WhatsApp no existía ni en el formulario, ni en la pantalla de gracias, ni
   como respaldo del mensaje de error — mientras la letra chica del Cierre
-  prometía "soporte por WhatsApp" igual. **La variable sigue sin valor**: no hay
-  número en ningún `.env` del repo. Lo que este ciclo sí cerró es el modo de
-  falla silencioso — la variable está ahora en `.env.example` con su porqué, y
-  el Cierre dejó de prometer un canal que no muestra.
+  prometía "soporte por WhatsApp" igual. **Cerrado**: el número está en los dos
+  compose versionados, la variable quedó documentada en `.env.example`, y el
+  Cierre dejó de prometer el canal cuando no hay número — así que el fallo, si
+  vuelve, ya no es silencioso.
+
+  **Y ahora lo vigila `test/whatsapp-contacto.test.ts`**, que existe por el modo
+  de falla y no por el valor: la variable falla ABIERTO —sin número la página no
+  rompe, se queda con un camino de contacto menos y nadie se entera—, así que el
+  test exige que producción tenga número y que esté escrito como lo quiere
+  `wa.me`, en dígitos pelados. `+54 9 11 …` produce un link roto que se dibuja
+  igual, que es peor que no dibujarlo. Stage y ensayo no la declaran a propósito:
+  el barrido de `scripts/smoke.sh` corre contra stage y no tiene por qué depender
+  de un número real.
+
+  **Ojo con el gate al deployar**: `deploy.sh` compara el `docker-compose.yml`
+  del objetivo contra el `docker/compose.<objetivo>.yml` del repo, así que el
+  archivo hay que copiarlo a `/srv/arandano/prod` a mano. Es el mismo modo de
+  falla que ya documentó `BOT_HABILITADO_EN`.
 
   **"Quedó vieja" iba en las dos direcciones**: prometía "el alta es
   instantánea", "en dos minutos tenés tu local cargado" y "elegís el rubro"
