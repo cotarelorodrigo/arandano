@@ -139,7 +139,7 @@ export function Instalar() {
         <ol className="flex flex-col gap-3 text-[13px]">
           <li className="flex items-center gap-2">
             <Share aria-hidden="true" className="size-4 shrink-0" />
-            Tocá Compartir, abajo de la pantalla.
+            Tocá Compartir.
           </li>
           <li>Elegí &quot;Agregar a inicio&quot;.</li>
           <li>Confirmá con Agregar, arriba a la derecha.</li>

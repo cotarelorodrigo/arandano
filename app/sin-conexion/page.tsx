@@ -28,7 +28,15 @@ export default function SinConexion() {
   return (
     <main
       style={{
-        minHeight: '100vh',
+        // fixed + inset en vez de minHeight: '100vh' porque esta página se
+        // sirve sin el stylesheet (el SW cachea el HTML, no el CSS con hash),
+        // así que no corre el preflight de Tailwind y vuelve el margin: 8px
+        // del navegador — con minHeight eso deja una barra de scroll vertical
+        // y un marco blanco alrededor del fondo, en el único momento en que
+        // esta pantalla existe para atender.
+        position: 'fixed',
+        inset: 0,
+        overflow: 'auto',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',

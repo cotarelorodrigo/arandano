@@ -47,6 +47,13 @@ describe('el ícono del local', () => {
     // Y no se quedó además con una validación propia al lado.
     expect(fuente).not.toContain('Number(tamano)')
   })
+
+  // Un local suspendido no tiene ícono: si no, queda instalable y su inicial
+  // —el dato que las otras seis guardas del repo dejan de mostrar sin
+  // sesión— sigue dibujándose. Mismo corte que app/manifest.ts.
+  it('corta ante un tenant suspendido', () => {
+    expect(fuente).toContain("resolucion.tenant.estado === 'SUSPENDIDO') notFound()")
+  })
 })
 
 // Los dos archivos tienen que decir lo mismo en las DOS direcciones: un tamaño

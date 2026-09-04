@@ -28,6 +28,12 @@ export async function GET(
   const resolucion = await tenantDelRequest()
   if (resolucion.tipo !== 'tenant') notFound()
 
+  // Un local suspendido tampoco tiene ícono: si no, el nombre del local queda
+  // legible sin sesión (Satori dibuja su inicial) y el local queda
+  // instalable, para caer en un 403 sin barra de direcciones que lo explique.
+  // notFound() y no forbidden(), mismo motivo que en app/manifest.ts.
+  if (resolucion.tenant.estado === 'SUSPENDIDO') notFound()
+
   return new ImageResponse(
     (
       <div

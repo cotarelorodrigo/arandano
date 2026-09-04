@@ -2571,6 +2571,7 @@ Y del producto:
   que fuera de un tenant da 404 — ambos cubiertos ahora también por
   `scripts/smoke.sh` (`caso_manifest_del_tenant`,
   `caso_manifest_no_existe_en_apex`).
+
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

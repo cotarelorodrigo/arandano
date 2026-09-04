@@ -494,7 +494,8 @@ self.addEventListener('activate', (evento) => {
   evento.waitUntil(
     caches
       .keys()
-      .then((nombres) => Promise.all(nombres.map((n) => caches.delete(n))))
+      .then((nombres) => nombres.filter((n) => n.startsWith('arandano-')))
+      .then((propias) => Promise.all(propias.map((n) => caches.delete(n))))
       .then(() => self.registration.unregister())
       .then(() => self.clients.claim()),
   )

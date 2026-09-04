@@ -64,5 +64,11 @@ describe('el service worker no puede guardar datos de ningún local', () => {
 
   it('borra las cachés de las versiones anteriores', () => {
     expect(fuente).toContain('caches.delete')
+    // Y sólo las propias: sin este filtro, `caches.keys()` trae CUALQUIER
+    // caché del origen, incluidas las que arme el propio navegador o una
+    // extensión, y este archivo es el que no se revierte revirtiendo la
+    // imagen — un borrado sin acotar viviría en el celular del dueño mucho
+    // después de que el bug se corrija.
+    expect(fuente).toContain("startsWith('arandano-')")
   })
 })

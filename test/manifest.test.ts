@@ -63,6 +63,23 @@ describe('el manifest es del local, no del producto', () => {
     expect(m.background_color).toBe(hexDelToken('--background'))
   })
 
+  // Sin este caso, borrar la entrada 'maskable' —una decisión con media
+  // página de spec detrás, para que Android no recorte la inicial contra el
+  // círculo del ícono adaptativo— no pone nada en rojo: los otros casos de
+  // este archivo no miran `icons` en absoluto.
+  it('declara los tres íconos, con su tamaño y su purpose', async () => {
+    const m = await manifestPara({
+      tipo: 'tenant',
+      tenant: { id: 't1', nombre: 'Flor', estado: 'ACTIVO' },
+      subdominio: 'flor',
+    })
+    expect(m.icons).toEqual([
+      { src: '/icono/192', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icono/512', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icono/512', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ])
+  })
+
   // La otra mitad, y la que pasa desapercibida: un manifest que devuelve 200
   // siempre parece que anda. Las cuatro ramas que no son tenant tienen que
   // cortar — si no, la página de ventas del producto queda instalable como si
@@ -74,5 +91,19 @@ describe('el manifest es del local, no del producto', () => {
     ['un host ajeno', { tipo: 'ajeno' }],
   ])('%s no tiene manifest', async (_nombre, resolucion) => {
     await expect(manifestPara(resolucion)).rejects.toThrow('NEXT_NOT_FOUND')
+  })
+
+  // Caso aparte del it.each de arriba: acá SÍ es tipo 'tenant', así que el
+  // corte tiene que mirar el estado y no alcanza con `tipo !== 'tenant'`. Sin
+  // esto, un local suspendido queda instalable y su nombre queda legible sin
+  // sesión — justo el dato que las otras seis guardas del repo dejan de dar.
+  it('un tenant suspendido tampoco tiene manifest', async () => {
+    await expect(
+      manifestPara({
+        tipo: 'tenant',
+        tenant: { id: 't1', nombre: 'Flor', estado: 'SUSPENDIDO' },
+        subdominio: 'flor',
+      }),
+    ).rejects.toThrow('NEXT_NOT_FOUND')
   })
 })

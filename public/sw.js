@@ -30,7 +30,12 @@ self.addEventListener('install', (evento) => {
   evento.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => cache.add(SIN_CONEXION))
+      // Si este fetch falla (un hipo de red justo en la instalación), un
+      // reject acá tira TODO el waitUntil abajo y el service worker no llega
+      // a instalarse — se pierden también beforeinstallprompt y el botón,
+      // hasta la visita siguiente. Mejor un SW sin pantalla offline que
+      // ningún SW: el catch deja seguir sin la caché de /sin-conexion.
+      .then((cache) => cache.add(SIN_CONEXION).catch(() => {}))
       .then(() => self.skipWaiting()),
   )
 })

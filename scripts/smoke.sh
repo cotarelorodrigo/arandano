@@ -208,6 +208,18 @@ caso_manifest_del_tenant() {
   jq -e --arg n "$NOMBRE_CANARIO" '.name == $n and .start_url == "/"' <<<"$cuerpo" >/dev/null 2>&1
 }
 
+# El manifest DECLARA /icono/192, pero nada más lo trae: si Satori se rompe
+# (una actualización de Next, un cambio en la firma de params), el gate entero
+# pasaba en verde con la feature muerta en silencio, porque Chrome exige un
+# ícono de verdad —descargable y decodificable— para considerar instalable,
+# y ese requisito no lo verifica nadie mirando sólo el JSON del manifest.
+caso_icono_192_del_tenant() {
+  local codigo tipo
+  read -r codigo tipo < <(curl -s -o /dev/null --max-time 10 -w '%{http_code} %{content_type}' \
+    -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/icono/192")
+  [[ "$codigo" == "200" && "$tipo" == "image/png" ]]
+}
+
 # La otra mitad, y la que pasa desapercibida: un manifest que devuelve 200
 # siempre parece que anda. Sin este caso, dejar la landing instalable como si
 # fuera el producto no rompe nada.
@@ -482,6 +494,7 @@ for caso in \
   caso_home_exige_sesion \
   caso_tenant_resuelve \
   caso_manifest_del_tenant \
+  caso_icono_192_del_tenant \
   caso_manifest_no_existe_en_apex \
   caso_login_no_existe_en_apex \
   caso_subdominio_inexistente_404 \

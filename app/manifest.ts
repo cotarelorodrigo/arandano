@@ -29,6 +29,15 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
   // la landing se comparte por link, no se instala.
   if (resolucion.tipo !== 'tenant') notFound()
 
+  // Un local suspendido no tiene manifest: si no, queda instalable (el dueño
+  // toca el ícono y cae en un 403 sin barra de direcciones que le explique
+  // qué pasó) y el nombre del local queda legible sin sesión, justo el dato
+  // que las otras seis guardas del repo dejan de dar ante un suspendido.
+  // notFound() y no forbidden(): el spec de este ciclo dice "fuera de un
+  // tenant, 404", y acá no hay que inventar qué significa un 403 en un
+  // manifest.
+  if (resolucion.tenant.estado === 'SUSPENDIDO') notFound()
+
   const nombre = resolucion.tenant.nombre
 
   return {

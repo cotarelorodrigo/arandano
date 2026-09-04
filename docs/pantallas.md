@@ -200,9 +200,11 @@ Los campos y el botón crecen: 50 px de alto en el teléfono contra 44 (inputs) 
 
 ## `/sin-conexion`
 
-El cartel que ve el dueño cuando abre la app instalada y no hay internet. No es
-una pantalla que alguien navegue: la sirve el service worker desde su caché
-cuando falla una navegación.
+El cartel que ve el dueño cuando abre la app instalada y no hay internet. No
+está pensada para que alguien la navegue —de hecho responde 200 sin sesión, en
+cualquier tenant y también en el ápex, como cualquier otra ruta estática—: en
+el uso real la sirve el service worker desde su caché cuando falla una
+navegación, sin que nadie escriba `/sin-conexion` a mano.
 
 **Acciones**: ninguna.
 
