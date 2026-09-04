@@ -25,9 +25,24 @@ describe('la pantalla sin conexión', () => {
     expect(fuente).not.toContain('className')
   })
 
-  it('sus colores son los tokens reales', () => {
-    expect(fuente).toContain(hexDelToken('--background'))
-    expect(fuente).toContain(hexDelToken('--foreground'))
+  it('sus colores son los tokens reales, y no hay ninguno suelto', () => {
+    const esperados = {
+      '--background': hexDelToken('--background'),
+      '--foreground': hexDelToken('--foreground'),
+      '--marca': hexDelToken('--marca'),
+      '--foreground-soft': hexDelToken('--foreground-soft'),
+    }
+
+    for (const [token, hex] of Object.entries(esperados)) {
+      expect(fuente, `${token} tiene que aparecer como ${hex} en ${FUENTE}`).toContain(hex)
+    }
+
+    // La otra dirección, que es la que impide que este hueco se vuelva a abrir:
+    // sin ella, agregar mañana un quinto hex suelto no rompe nada y la pantalla
+    // queda con un color que ningún token de la paleta respalda. Este archivo
+    // ya se abrió una vez por atar sólo un subconjunto.
+    const usados = [...new Set(fuente.match(/#[0-9a-f]{6}/g) ?? [])]
+    expect(usados.sort()).toEqual(Object.values(esperados).sort())
   })
 
   it('dice qué pasó y no menciona ningún local', () => {
