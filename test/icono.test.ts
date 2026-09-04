@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { hexDelToken } from '@/scripts/tokens.mts'
-import { TAMANOS } from '@/lib/marca/tamanos-de-icono'
+import { TAMANOS, tamanoDeIconoValido } from '@/lib/marca/tamanos-de-icono'
 
 const ICONO = 'app/icono/[tamano]/route.tsx'
 
@@ -22,8 +22,17 @@ describe('el ícono del local', () => {
   // Un endpoint que genera una imagen del tamaño que le pidan es trabajo de
   // CPU gratis para cualquiera que lo descubra, sobre una caja de 2 vCPU
   // compartida con producción. Lista blanca, no rango.
-  it('sólo genera los dos tamaños que declara el manifest', () => {
-    expect([...TAMANOS]).toEqual([192, 512])
+  it('rechaza tamaños no declarados', () => {
+    // Los dos válidos
+    expect(tamanoDeIconoValido('192')).toBe(192)
+    expect(tamanoDeIconoValido('512')).toBe(512)
+    // Los inválidos
+    expect(tamanoDeIconoValido('300')).toBeNull()
+    expect(tamanoDeIconoValido('abc')).toBeNull()
+    expect(tamanoDeIconoValido('')).toBeNull()
+    expect(tamanoDeIconoValido('192.5')).toBeNull()
+    expect(tamanoDeIconoValido('0192')).toBeNull()
+    expect(tamanoDeIconoValido('-192')).toBeNull()
   })
 })
 

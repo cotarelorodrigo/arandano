@@ -2,7 +2,7 @@ import { ImageResponse } from 'next/og'
 import { notFound } from 'next/navigation'
 import { tenantDelRequest } from '@/lib/tenant/desde-request'
 import { inicialDe } from '@/lib/marca/inicial'
-import { TAMANOS } from '@/lib/marca/tamanos-de-icono'
+import { tamanoDeIconoValido } from '@/lib/marca/tamanos-de-icono'
 
 /**
  * El ícono que el dueño ve en la pantalla de inicio de su celular: la inicial
@@ -22,8 +22,8 @@ export async function GET(
   { params }: { params: Promise<{ tamano: string }> },
 ) {
   const { tamano } = await params
-  const lado = Number(tamano)
-  if (!TAMANOS.includes(lado as (typeof TAMANOS)[number])) notFound()
+  const lado = tamanoDeIconoValido(tamano)
+  if (lado === null) notFound()
 
   const resolucion = await tenantDelRequest()
   if (resolucion.tipo !== 'tenant') notFound()

@@ -2,12 +2,15 @@
  * La primera letra del nombre de un local, para el ícono y el avatar.
  *
  * Con spread y no con charAt(0): charAt parte al medio un carácter fuera del
- * plano básico —un emoji, por ejemplo— y devuelve media unidad de código.
+ * plano básico y devuelve media unidad de código.
  */
 export function inicialDe(nombre: string): string {
-  const limpio = nombre.trim()
-  // 'A' de Arándano: un local sin nombre no existe hoy, pero un ícono vacío
-  // sería un cuadrado violeta sin nada adentro, y eso es peor que una letra
-  // que no es la suya.
-  return [...limpio][0]?.toUpperCase() ?? 'A'
+  // El spread y no charAt(0): charAt parte al medio un carácter fuera del
+  // plano básico y devuelve media unidad de código.
+  const primero = [...nombre.trim()][0]
+  // Y sólo letra o dígito. Un emoji acá haría que ImageResponse (emoji:
+  // 'twemoji' por default) salga a buscar el glifo a un CDN externo en cada
+  // request de un endpoint público. Un local "24 Horas" sigue mostrando su "2".
+  if (!primero || !/\p{L}|\p{N}/u.test(primero)) return 'A'
+  return primero.toUpperCase()
 }
