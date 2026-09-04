@@ -1165,9 +1165,10 @@ pasos de iOS, `/sin-conexion`, ni el ícono del local.
 
 Los cuatro se derivaron de patrones que ya existen —la geometría del pie del
 sidebar, el `Dialog` de shadcn, el paño de marca del opengraph—, que es lo que
-el ciclo del 2026-09-02 hizo con cuatro controles de los que **tres salieron
-bien y uno era justamente el defecto** que el ciclo siguiente tuvo que
-rehacer (entrada 28). O sea que derivar no es gratis y esto no está confirmado.
+el ciclo del 2026-09-02 hizo con cuatro controles, y ahí **dos de los cuatro
+salieron mal** (entradas 28 y 29): uno lo destapó el ciclo siguiente y el otro
+lo reportó un dueño usándolo. O sea que derivar no es gratis, y esto no está
+confirmado.
 
 El que más se beneficiaría de un frame es el diálogo de iOS: es la única
 pantalla del producto que le explica al dueño cómo usar su propio sistema
