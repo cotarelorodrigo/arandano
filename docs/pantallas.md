@@ -202,7 +202,7 @@ Los campos y el botón crecen: 50 px de alto en el teléfono contra 44 (inputs) 
 
 El cartel que ve el dueño cuando abre la app instalada y no hay internet. No
 está pensada para que alguien la navegue —de hecho responde 200 sin sesión, en
-cualquier tenant y también en el ápex, como cualquier otra ruta estática—: en
+cualquier tenant y también en el ápex, como cualquier otra ruta pública—: en
 el uso real la sirve el service worker desde su caché cuando falla una
 navegación, sin que nadie escriba `/sin-conexion` a mano.
 
@@ -222,6 +222,16 @@ navegación, sin que nadie escriba `/sin-conexion` a mano.
 - **No nombra al local, y eso es load-bearing.** El service worker la cachea; si
   resolviera tenant, lo que quedaría guardado en el celular sería el nombre de
   un negocio. El costo es que dice "Arándano" y no el nombre del local.
+
+- **Se renderiza por request, aunque no dependa de nada.** Nació `force-static`,
+  que era lo natural, y así volteó el build de producción: `app/not-found.tsx`
+  es el boundary de 404 de toda ruta y necesita `DOMINIO_BASE`, que en build
+  time no existe a propósito, así que prerenderizar esta página lo arrastraba al
+  build. El `force-dynamic` de ese archivo lo cubre cuando `/_not-found` es la
+  página, no cuando el boundary cuelga del árbol de otra. La regla —ninguna
+  página se prerenderiza mientras `not-found.tsx` sea dinámica— vive atada en
+  `test/prerender.test.ts`. Cuesta un render por install del service worker, o
+  sea uno por dispositivo.
 
 - **Se pinta con estilo inline y no con clases.** El service worker cachea este
   HTML, no las hojas de estilo, que llevan hash en el nombre y cambian en cada

@@ -2519,10 +2519,44 @@ Y del producto:
     que se pueda cachear en `install` y siga siendo válida después del deploy
     siguiente. Servida sin conexión, esa página encontraría su
     `<link rel="stylesheet">` inalcanzable y se vería sin estilos — algo que
-    nadie descubriría en dev, donde la red siempre anda. Es estática de
-    verdad, sin `headers()`, sin sesión y **sin el nombre del local**: si lo
-    nombrara sería dinámica, y el SW estaría cacheando un dato de tenant, que
-    es la única línea que este diseño no cruza.
+    nadie descubriría en dev, donde la red siempre anda. No lee `headers()`,
+    no abre sesión y **no nombra al local**: el SW estaría cacheando un dato de
+    tenant, que es la única línea que este diseño no cruza.
+
+    **Y sin embargo se renderiza por request, que es lo contrario de lo que el
+    spec de este ciclo pedía.** Nació `force-static` —era lo natural, no
+    depende de nada— y así **volteó el build de producción**, en el paso 7 del
+    gate y con tests, typecheck y lint en verde: `app/not-found.tsx` es el
+    boundary de 404 de **toda** ruta, llama a `piezasDeOrigen()` y ésa tira sin
+    `DOMINIO_BASE`, que en build time no existe **a propósito** —hornear el
+    valor daría el dominio del entorno equivocado, porque la imagen se buildea
+    una vez y se promueve de stage a prod—. El `force-dynamic` que ese archivo
+    ya declaraba lo cubre cuando `/_not-found` **es** la página, y no cuando el
+    boundary cuelga del árbol de otra ruta: ese config gobierna al segmento, no
+    al boundary heredado. `/sin-conexion` era la **única** página estática del
+    repo, así que fue la primera en arrastrarlo.
+
+    **Lo que cede es la preferencia, no el requisito**, y por eso el fix va de
+    este lado: que `not-found.tsx` sea dinámica es corrección documentada; que
+    `/sin-conexion` fuera estática era comodidad. Lo load-bearing de esta
+    pantalla nunca fue el modo de render sino que no nombre al local, y eso lo
+    atan por fuente los tres primeros casos de `app/sin-conexion/page.test.tsx`.
+    Cuesta un render de React por install del service worker —uno por
+    dispositivo, sin ninguna consulta a Postgres—, que es menos que el que este
+    mismo ciclo ya aceptó para `/_not-found`.
+
+    **La regla quedó atada en `test/prerender.test.ts`**: ninguna página
+    declara otra cosa que `force-dynamic` mientras `not-found.tsx` sea
+    dinámica, con `app/forbidden.tsx` como única excepción escrita a mano. Es a
+    propósito **más** que el precedente de `not-found.tsx`, que para su propio
+    caso había decidido que "el build ES el test": ahí el archivo protegido era
+    uno solo, y acá la regla alcanza a toda página futura — el build la atrapa
+    recién en el paso 7, después de frenar `arandano-dev`, y con un mensaje que
+    no nombra a `not-found.tsx` en ningún lado. El caso nuevo falla en el paso 4
+    y dice qué hacer. El test **caduca solo**: uno de sus casos exige que
+    `not-found.tsx` siga siendo dinámica, así que el día que deje de necesitar
+    `DOMINIO_BASE` este archivo avisa en vez de seguir prohibiendo algo que ya
+    no hace daño.
   - **El botón "Instalar" vive en el `SidebarFooter`**, una sola copia para
     los dos anchos porque el `Sheet` del teléfono y el riel de escritorio ya
     renderizan el mismo `{children}`. Tres estados: no dibuja nada si ya está

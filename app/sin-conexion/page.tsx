@@ -7,9 +7,23 @@ import type { Metadata } from 'next'
  * navegador se lee como que la aplicación se rompió. Esto es un cartel, no una
  * capacidad: el producto sigue sin funcionar sin conexión.
  *
- * ESTÁTICA A PROPÓSITO, y es load-bearing: el service worker la cachea, así
- * que si resolviera tenant lo que quedaría guardado en el celular sería el
+ * SIN NADA DE TENANT, y ESO es lo load-bearing: el service worker la cachea,
+ * así que si resolviera tenant lo que quedaría guardado en el celular sería el
  * nombre de un local. No lee headers, no abre sesión y no nombra al negocio.
+ * Lo atan por fuente los tres primeros casos de page.test.tsx, que es donde
+ * vive la garantía — no en el modo de render.
+ *
+ * Y SIN EMBARGO SE RENDERIZA POR REQUEST, que es lo contrario de lo que este
+ * archivo pedía al nacer. `force-static` era lo natural —no depende de nada— y
+ * volteó el build de producción: `not-found.tsx` es el boundary de 404 de TODA
+ * ruta, llama a piezasDeOrigen() y ésa tira sin DOMINIO_BASE, que en build time
+ * no existe a propósito. Su propio `force-dynamic` la protege cuando
+ * `/_not-found` ES la página y no cuando el boundary cuelga del árbol de otra
+ * ruta, así que prerenderizar ESTA lo arrastraba al build: "Export encountered
+ * an error on /sin-conexion/page", con tests, typecheck y lint en verde. La
+ * regla y su porqué viven en test/prerender.test.ts. Lo que cuesta es un render
+ * de React por cada install del service worker, o sea uno por dispositivo: no
+ * hay consulta a Postgres acá, y la caché del SW es la que atiende después.
  *
  * Y SE PINTA SOLA. El service worker cachea este HTML, no las hojas de estilo
  * —que llevan hash en el nombre y cambian en cada build, así que no hay lista
@@ -17,7 +31,7 @@ import type { Metadata } from 'next'
  * de Tailwind, servida desde la caché se vería como HTML pelado. Los hex están
  * copiados de app/globals.css y atados por page.test.tsx.
  */
-export const dynamic = 'force-static'
+export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Sin conexión — Arándano',

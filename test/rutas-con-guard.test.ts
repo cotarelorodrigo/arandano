@@ -15,7 +15,7 @@ const FUERA_DEL_GRUPO: Record<string, string> = {
   'app/sin-conexion/page.tsx':
     'la cachea el service worker y se sirve a alguien SIN conexión: exigir sesión ' +
     'sería exigir un viaje a la base justo cuando no hay red. No muestra ningún ' +
-    'dato: es un cartel estático que no nombra al local',
+    'dato: es un cartel que no nombra al local',
 }
 
 // Las cuatro extensiones que Next resuelve, no sólo .tsx: una página escrita
