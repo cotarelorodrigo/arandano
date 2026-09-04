@@ -1,18 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-// La misma conversión que lee la paleta, no una copia: dos implementaciones de
-// color → sRGB se desincronizan, y el día que pase, este test compararía contra
-// un color que la aplicación no pinta.
-import { tokensDelCss, aRgb } from '@/scripts/tokens.mts'
+import { hexDelToken } from '@/scripts/tokens.mts'
 
 const OG = 'app/opengraph-image.tsx'
-
-/** El token, como los seis dígitos hex que Satori necesita. */
-function hexDelToken(nombre: string): string {
-  const valor = tokensDelCss().get(nombre)
-  if (!valor) throw new Error(`app/globals.css no define ${nombre}`)
-  return '#' + aRgb(valor).map((b) => b.toString(16).padStart(2, '0')).join('')
-}
 
 describe('la tarjeta social no se desincroniza de la paleta', () => {
   const fuente = readFileSync(OG, 'utf8')

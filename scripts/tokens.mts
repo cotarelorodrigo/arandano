@@ -116,3 +116,17 @@ export function aRgb(valor: string): Rgb {
     aByte(-0.0041960863 * l - 0.7034186147 * mm + 1.707614701 * s),
   ]
 }
+
+/**
+ * Un token de la paleta, como los seis dígitos hex que necesitan Satori y
+ * cualquier estilo inline.
+ *
+ * Vive acá y no en un test porque tiene tres consumidores —la tarjeta social,
+ * los íconos de la PWA y la pantalla sin conexión—, y una copia por consumidor
+ * es exactamente el defecto que estos tests existen para impedir.
+ */
+export function hexDelToken(nombre: string): string {
+  const valor = tokensDelCss().get(nombre)
+  if (!valor) throw new Error(`app/globals.css no define ${nombre}`)
+  return '#' + aRgb(valor).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
