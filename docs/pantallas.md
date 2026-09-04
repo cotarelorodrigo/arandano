@@ -24,28 +24,33 @@ regla es: si cambiás lo que una pantalla hace, la sección va en el mismo commi
 La landing del ápex y, en un subdominio de tenant, el redirect a la aplicación.
 La misma ruta hace las dos cosas porque lo que la decide es el `Host`.
 
-Reescrita entera en las Tasks 3-5 del cierre del rediseño (2026-08-22) contra
-`design/arandano.pen`, frame `Sitio / Landing`. Antes tenía nueve piezas sin
-copy literal de la maqueta; ahora son las siete que la maqueta dibuja, en
-`app/sitio/secciones.tsx`.
+Rediseñada entera en el ciclo de la landing (2026-09-04). El ciclo anterior
+—el cierre del rediseño, 2026-08-22— la había reescrito contra
+`design/arandano.pen`, frame `Sitio / Landing`, con copy literal de la maqueta;
+éste se aparta de la maqueta a propósito y por decisión del dueño del producto
+(ver `docs/correcciones-pendientes-del-pen.md`, la primera entrada sobre la
+landing). El motivo son tres problemas nombrados: se veía genérica, no
+convertía, y describía un producto de hace un mes.
+
+Las siete secciones viven ahora en cuatro archivos —`app/sitio/nav.tsx` (el
+marco), `hero.tsx`, `secciones.tsx` (Módulos, Rubros, Planes, Cierre) y
+`base.tsx` (lo compartido)— y el contenido en `datos.ts`, aparte del marcado.
 
 **Qué se puede hacer**
 
 - En `arandano.app`: leer qué es el producto —siete secciones: Nav, Hero,
-  Módulos, Rubros, Planes, Cierre, Pie— y dejar un contacto (WhatsApp o mail,
-  un solo campo). "Entrar a mi local" (Nav) revela un campo de subdominio
-  para quien ya es cliente y se olvidó de su dirección (Minor 15 de la
-  review final: esta sección no lo mencionaba).
+  Módulos, Rubros, Planes, Cierre, Pie—, **operar el punto de venta del
+  héroe**, y dejar un contacto (WhatsApp o mail, un solo campo). "Entrar a mi
+  local" (Nav) revela un campo de subdominio para quien ya es cliente y se
+  olvidó de su dirección.
+- **Operar el carrito** quiere decir operarlo: subir y bajar cantidades, sacar
+  una línea, verlo avisar cuando la cantidad pedida supera el stock, y reponer
+  la venta para volver al estado inicial. El total se rehace con el mismo
+  formateo de plata que corre en `/vender`.
 - En `flor.arandano.app`: nada — redirige según el rol de la sesión (o a
   `/login` si no hay una): un `DUENO` a `/dashboard`, un `EMPLEADO` a
-  `/vender`. Cada uno abre donde trabaja — el dueño quiere ver cómo viene el
-  local, quien atiende el mostrador quiere cobrar. No es una restricción de
-  acceso: un empleado sigue llegando a `/dashboard` por el sidebar, sólo
-  cambia dónde aterriza al entrar. `destinoAlEntrar` (`lib/auth/destino.ts`)
-  es la única fuente de ese destino — la usan este redirect, el final del
-  server action de `/login`, y `/login` mismo cuando quien lo abre YA tiene
-  sesión (favorito, botón Atrás, "Entrar a mi local" del ápex): los tres
-  redirigen al mismo lugar y ninguno lo hardcodea por su cuenta.
+  `/vender`. `destinoAlEntrar` (`lib/auth/destino.ts`) es la única fuente de
+  ese destino.
 
 **Decisiones**
 
@@ -54,79 +59,138 @@ copy literal de la maqueta; ahora son las siete que la maqueta dibuja, en
   acá y no en un `robots.txt`, que sería el mismo archivo para el ápex y para
   todos los subdominios — justamente la distinción que hay que hacer.
   `test/indexacion.test.ts` lo fija.
-- **El retrato del carrito (Hero → Muestra) sigue al `/vender` real** —Task 3—.
-  Se había quedado atrás del rediseño del carrito (tabla pelada, sin stepper,
-  sin chip de stock, sin banda de total): ahora reconstruye el marcado nuevo
-  con los mismos componentes de shadcn y el mismo formateo de plata
-  (`lib/formato/mostrar.ts`), atado por test. **No** importa
-  `app/(app)/vender/punto-de-venta.tsx` directo: ese archivo lleva `'use
-  client'`, y un export de un módulo cliente le llega a un componente de
-  servidor como un proxy no invocable (mismo motivo por el que
-  `lib/formato/mostrar.ts` es el punto de encuentro). El cartel con el nombre
-  del local que mostraba antes se sacó: el `.pen` ya no lo dibuja adentro de
-  la card — se mudó a la barra de navegador que envuelve al retrato, con la
-  URL `flor.arandano.app/vender`.
-- **Módulos** (arquitectura núcleo + tres módulos) y **Rubros** (grilla de doce
-  rubros con qué módulos activa cada uno) reemplazan a las viejas "Lo que
-  hace" (seis filas numeradas) y "Rubros" (tres cards de módulo sin grilla).
-  El estado de cada módulo ("Disponible" para Órdenes de trabajo, "En camino"
-  para Turnos y Gastronomía) sale de un dato (`MODULOS`, con su campo
-  `estado`), no de tres bloques de JSX con el texto escrito a mano — el día
-  que Turnos se entregue, cambia en un solo lugar.
-- **Planes muestra precio real por primera vez** ($ 24.900 / $ 44.900 /
-  $ 79.900 / "A medida"), con el checklist de features de cada uno y el botón
-  "Hablemos" del Premium (los demás dicen "Probar 5 días").
-- **La sección `Direccion`** (la caja con la URL de ejemplo
-  `https://florcelulares.{dominio}`) **se eliminó** — decisión 3 del plan del
-  cierre: el `.pen` no la dibuja en ningún lado del frame, no es un silencio de
-  estado de reposo, es una sección entera que el rediseño no incluye.
-- **El formulario de captura pasó de cinco campos a uno** (decisión 1): "Tu
-  WhatsApp o tu mail". `enviarLead` clasifica el valor por su forma —con
-  arroba va a `email`, si no va a `whatsapp`— y `nombre`/`rubro` quedan en
-  NULL. El motivo no es sólo la maqueta: un trial de cinco días "con muchos
-  registros que no convierten" (CLAUDE.md) no se sostiene con cinco campos
-  delante. El mismo `<Formulario>` vive en el Hero (`textoBoton="Quiero
-  probarlo"`, variante clara) y en el Cierre (`textoBoton="Empezar"` default,
-  variante oscura sobre `--marca`) — un solo componente, dos invitaciones a
-  la acción, porque el `.pen` le pone un texto de botón distinto a cada una.
-- **La landing tiene tres superficies de `--marca`** (la card "Núcleo" en
-  Módulos, la card "Profesional" destacada en Planes, y la franja de Cierre),
-  no una — `docs/sistema-de-diseno.md` explica por qué eso no afloja la regla
-  de "una por pantalla": la unidad de cuenta para una página que se recorre
-  con scroll es la banda visible, no el documento entero.
-- Describe el producto completo, **incluido lo que todavía no está
-  construido** (caja, ARCA, catálogo, bot, Turnos, Gastronomía). Es una
-  decisión consciente.
-- `leads` es la primera tabla del schema **sin `tenant_id`**, así que no la
-  protege RLS sino el privilegio: `arandano_app` sólo inserta, y los leads se
-  leen con `npm run leads`. `nombre`, `email` y `rubro` son nullable desde la
-  migración `lead_de_un_campo` — un lead nuevo trae sólo el contacto que se
-  clasificó, un lead viejo (de los cinco campos) sigue trayendo todo.
 
-**En el teléfono**
+- **El héroe dejó de ser una captura y pasó a ser el producto.** Era un retrato
+  estático con un pie que decía "no es una captura", y la única forma de
+  comprobar esa frase era creerla. Ahora se toca. Es la apuesta entera del
+  ciclo: una landing de un punto de venta puede dar la prueba en cinco segundos
+  en vez de pedir que le crean.
 
-Es la pantalla que menos cambia, porque ya tenía tratamiento responsive antes
-del ciclo (frame `Móvil / Sitio · Landing`, `yz6Sr`). Lo que sí cambió:
+- **Un solo árbol para los dos anchos.** `Retrato` y `RetratoMovil` eran dos
+  componentes con el mismo dato renderizado dos veces en el DOM de cada
+  request; la sección `Muestra` existía sólo para alojar el segundo. Ahora es
+  uno. **No usa `lg:contents`**, que es el patrón del resto de la app, y el
+  motivo es concreto: un elemento con `display: contents` no tiene caja, y sin
+  caja no se puede animar su salida — que es justo lo que hace falta cuando se
+  saca una línea. Cada fila es una grilla propia con la misma plantilla de
+  columnas que el encabezado; como cuatro de las cinco columnas miden píxeles
+  fijos, la alineación entre filas está garantizada igual.
 
-- **Una sola columna.** El Hero deja de ser `grid-cols-[7fr_9fr]`: el título y
-  la bajada arriba, el retrato del carrito abajo. Las ocho secciones comparten
-  un solo margen lateral (`ANCHO`), 20 px en el teléfono contra 56 en
-  escritorio — un cambio en una constante cubre Nav, Hero, Muestra, Módulos,
-  Rubros, Planes, Cierre y Pie.
-- **El nav se guarda en un `Sheet`.** La maqueta dibuja sólo un ícono de menú
-  (nodo `K60WPs`), y los tres links de sección más "Entrar a mi local" **no
-  desaparecen**: los reagrupa la hoja. Es el mismo criterio que el resto del
-  ciclo — lo que la maqueta no dibuja hay que preguntarse qué pierde el
-  producto si se saca, y acá se perdía la navegación entera.
-- **Rubros va en dos columnas, no en una.** El nodo `dDugH` dibuja pares; la
-  prosa del plan decía "una columna" y mandó la maqueta.
-- **El formulario de captura pierde su marco.** El borde, el fondo y el radio
-  de 14 px que envuelven al campo y al botón son una pieza **sólo de
-  escritorio**: en el teléfono son dos cajas sueltas separadas por 9 px. Vive
-  en `app/sitio/formulario.module.css` y no en clases de Tailwind con `lg:`
-  porque el color de ese marco se fijaba con `style` inline, y a un estilo
-  inline no le gana ninguna clase por especificidad — ninguna media query lo
-  habría podido apagar.
+- **El aviso de stock es una regla, no un adorno.** Antes era un chip fijo
+  pegado a la funda. Ahora cada ítem declara su stock y el aviso aparece cuando
+  la cantidad pedida lo supera — la funda está en cero, así que avisa desde el
+  arranque (lo que la maqueta dibuja), y el cargador tiene tres, así que subir a
+  cuatro lo hace aparecer donde no estaba. Un servicio nunca avisa: no descuenta
+  stock, igual que en `/vender`.
+
+- **El movimiento tiene dos capas, y conviene no confundirlas.**
+
+  La del **carrito** (`app/sitio/retrato.tsx`) responde a lo que la persona
+  hace: la fila que colapsa al sacarla, el aviso de stock que aparece, el
+  resorte del stepper al apretarlo. Animar la salida de un nodo que React está
+  sacando del árbol es lo único que el CSS no puede hacer acá — una transición
+  necesita que el elemento exista, y cuando se saca la línea ya no existe. Más
+  una entrada escalonada al cargar que anima **sólo `transform`**, así que las
+  filas están pintadas desde el primer frame y el LCP no lo paga.
+
+  La de la **página** (`app/sitio/movimiento.tsx`) es decorativa: el titular
+  tipeado, los revelados por sección al scrollear, el hover de las tarjetas y
+  la barra de progreso. Se construyó por decisión del dueño del producto,
+  contra la recomendación, y la objeción vive escrita en el docblock de ese
+  archivo: el revelado por sección es el patrón más repetido de las landings
+  generadas y el titular tipeado empuja el LCP de la única página que el
+  producto indexa.
+
+  Tres defensas la hacen tolerable, y las tres tienen caso propio en
+  `app/sitio/movimiento.test.tsx`: **el texto del titular viaja completo en el
+  HTML** dentro de un `sr-only`, así que ningún buscador ve un H1 vacío; **la
+  caja del titular se reserva antes de tipear**, así que escribir no empuja el
+  layout; y **un `<noscript>` devuelve a la vista las cuatro secciones** que
+  salen del servidor en `opacity: 0` — sin ese seguro, un visitante sin
+  JavaScript vería cuatro de las siete secciones en blanco.
+
+  `prefers-reduced-motion` apaga las dos capas enteras, y apagadas la página
+  queda completa: el titular entero, las secciones visibles y sin barra de
+  progreso.
+
+- **El copy dice lo que el producto hace.** La página prometía "el alta es
+  instantánea" y "en dos minutos tenés tu local cargado", con el registro
+  público apagado a propósito (`lib/auth/opciones.ts`) y el alta hecha a mano
+  con `npm run tenant:crear`. También decía "elegís el rubro", con un
+  formulario de un campo que guarda `rubro: null`. Ahora promete lo que pasa:
+  dejás el contacto y alguien te escribe.
+
+- **Un verbo para navegar y uno para enviar.** Había tres —"Probar 5 días" ×4,
+  "Quiero probarlo", "Empezar"— para la misma acción. Los links dicen "Probar
+  5 días"; el botón dice "Que me escriban", que es exactamente lo que pasa al
+  apretarlo. La prop `textoBoton` de `Formulario` se fue para que no puedan
+  volver a divergir.
+
+- **Rubros es un índice filtrable, no doce tarjetas.** Nadie lee los doce
+  rubros: se busca el propio. Ahora además se filtra —Todos, Sólo núcleo, y uno
+  por módulo, con el conteo de cada uno— y las filas se reacomodan con FLIP en
+  vez de saltar, así que se ve qué se quedó. **Es lo único de la página que se
+  reordena, y la única razón por la que `ProveedorDeMovimiento` carga `domMax`
+  en vez de `domAnimation`**: la animación de layout no existe en el paquete
+  chico. Si el filtro alguna vez desaparece, hay que bajar las features también
+  o la página paga un bundle más grande por nada — `app/sitio/rubros.test.tsx`
+  ata las dos cosas.
+
+  Los filtros salen de `MODULOS`, no de una lista escrita a mano: el día que
+  exista un cuarto módulo, el filtro aparece solo. Sin JavaScript se ve la lista
+  completa —el estado arranca en "Todos"—, así que lo que se pierde es filtrar,
+  no leer.
+
+  Y arregla una contradicción que era visible para el cliente: cuatro rubros
+  anunciaban "Núcleo + Turnos" bajo un título que dice "Tu rubro ya está
+  adentro", mientras la sección de arriba decía que Turnos está En camino. El
+  texto se deriva ahora de `MODULOS` (`app/sitio/datos.ts`), y lo que falta se
+  dice: "Turnos, en camino".
+
+- **Dos superficies de `--marca`, no tres.** La card "Núcleo" y la card
+  "Profesional" dejaron de ser paños violetas; quedan la banda del Total del
+  carrito y la franja del Cierre, que no son secciones consecutivas. Es la
+  regla que `docs/sistema-de-diseno.md` ya tenía escrita y que Planes+Cierre
+  incumplían. Núcleo se distingue ahora por forma y Profesional por contorno.
+  `app/sitio/landing.test.tsx` lo cuenta y falla si vuelve un tercero.
+
+- **El titular usa el eje de ancho de Archivo.** `font-stretch: 78%`, el
+  registro del rótulo de un local. Es la tercera posición del eje que usa el
+  producto, después del cartel (112%) y el importe (85%), y cierra una
+  asimetría que estaba escrita hace tiempo en `components/importe.module.css`:
+  Archivo se eligió POR ese eje y la landing era el único lugar que lo usaba en
+  el 100% por default.
+
+- **La plata se escribe igual que adentro del producto.** Los precios de Planes
+  usan el rol `importe` —cara angosta, cifras tabulares— con el signo aparte.
+  Sin decimales, y no es una inconsistencia: una venta se cobra al centavo y
+  una lista de precios se cotiza en pesos enteros.
+
+- **Se fue el cromo de navegador falso** del héroe. Es de las marcas más
+  reconocibles de una landing de plantilla y peleaba con un carrito que ahora se
+  toca. El dato que vivía ahí —que cada local abre en su propia dirección— bajó
+  a una línea propia, donde se lee como el argumento de venta que es.
+
+- **Se fue el badge "Hecho para el mercado argentino"**: un rótulo flotando
+  sobre el titular que repetía lo que el contenido ya prueba — facturación ARCA
+  y caja en pesos y dólares no existen en ningún otro mercado.
+
+- **El pie no promete páginas que no existen.** "Términos · Privacidad · Estado
+  del servicio" eran tres textos planos, sin link, hacia tres documentos que no
+  existen. Vuelven cuando las páginas existan. En su lugar queda lo único que el
+  pie sí puede ofrecer: escribirle a alguien, y sólo si hay número.
+
+- **`WHATSAPP_CONTACTO` sin valor deja la página coherente, no rota.** Los links
+  a `wa.me` no se dibujan y el Cierre deja de prometer soporte por WhatsApp.
+  Hasta este ciclo la letra chica lo prometía igual: `docker/compose.prod.yml`
+  lo declara en `""`, así que en producción la página quedó con un solo camino
+  de contacto sin que nada avisara. La variable está ahora en `.env.example`.
+
+- **El formulario de captura pierde su marco** abajo de 1024. El borde, el fondo
+  y el radio de 14 px que envuelven al campo y al botón son una pieza sólo de
+  escritorio. Vive en `app/sitio/formulario.module.css` y no en clases con `lg:`
+  porque el color de ese marco se fija con `style` inline, y a un estilo inline
+  no le gana ninguna clase por especificidad.
 
 ## `/login`
 

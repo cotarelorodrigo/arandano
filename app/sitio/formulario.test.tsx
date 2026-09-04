@@ -8,13 +8,9 @@ import { Formulario, PantallaDeGracias } from './formulario'
 // que se rompe en silencio si alguien renombra el campo.
 vi.mock('./acciones', () => ({ enviarLead: vi.fn() }))
 
-function html(props: { whatsapp?: string; textoBoton?: string; variante?: 'clara' | 'oscura' } = {}) {
+function html(props: { whatsapp?: string; variante?: 'clara' | 'oscura' } = {}) {
   return renderToStaticMarkup(
-    <Formulario
-      whatsapp={props.whatsapp ?? '5491155555555'}
-      textoBoton={props.textoBoton}
-      variante={props.variante}
-    />,
+    <Formulario whatsapp={props.whatsapp ?? '5491155555555'} variante={props.variante} />,
   )
 }
 
@@ -80,18 +76,21 @@ describe('formulario de la landing', () => {
     expect(markup).toContain('autoComplete="off"')
   })
 
-  // El .pen pone un texto de botón DISTINTO en el Hero ("Quiero probarlo")
-  // y en el Cierre ("Empezar", el default de esta prop) — mismo campo, mismo
-  // action, invitación distinta según dónde aparece.
-  it('el botón dice "Empezar" por default', () => {
-    expect(html()).toContain('Empezar')
-    expect(html()).not.toContain('Quiero probarlo')
-  })
-
-  it('el botón dice lo que le pasen, cuando se lo pasan', () => {
-    const markup = html({ textoBoton: 'Quiero probarlo' })
-    expect(markup).toContain('Quiero probarlo')
-    expect(markup).not.toContain('>Empezar<')
+  /**
+   * UN SOLO TEXTO PARA LAS DOS INSTANCIAS. El `.pen` ponía uno distinto en
+   * cada lugar —"Quiero probarlo" en el Hero, "Empezar" en el Cierre— y este
+   * componente lo recibía por prop. La página terminaba con tres verbos para
+   * una acción sola (más "Probar 5 días" en el Nav y en los planes), y una
+   * interfaz que llama distinto a lo mismo obliga a averiguar si son lo mismo.
+   * La prop se fue para que no se pueda volver a divergir por descuido.
+   */
+  it('el botón dice qué pasa al apretarlo, y siempre lo mismo', () => {
+    const claro = html({ variante: 'clara' })
+    const oscuro = html({ variante: 'oscura' })
+    expect(claro).toContain('Que me escriban')
+    expect(oscuro).toContain('Que me escriban')
+    expect(claro).not.toContain('Quiero probarlo')
+    expect(claro).not.toContain('>Empezar<')
   })
 
   it('ofrece el WhatsApp como salida directa', () => {

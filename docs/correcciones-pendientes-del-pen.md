@@ -1157,6 +1157,65 @@ justo la que no entraba.
 
 ---
 
+## 32. `Sitio / Landing`: el rediseño de la landing se apartó de la maqueta entera, por decisión del dueño del producto
+
+- **Frames**: `vDLU8` (`Sitio / Landing`) y `Móvil / Sitio · Landing`
+
+**Es la primera entrada sobre la landing, y es distinta de todas las
+anteriores.** Las otras treinta y una dicen "acá el `.pen` se equivocó en un
+nodo puntual". Ésta dice que una pantalla entera se rediseñó **fuera** de la
+maqueta, a sabiendas, y que la maqueta hay que rehacerla contra el código y no
+al revés.
+
+**Por qué.** El dueño del producto marcó tres problemas a la vez —la página se
+veía genérica, no convertía, y describía un producto de hace un mes— y eligió
+explícitamente el camino de **código primero**, con la maqueta poniéndose al día
+después. La regla de este proyecto sigue siendo que el `.pen` manda; lo que
+cambia acá es cuál de los dos se escribió primero, y esta entrada existe para
+que eso quede registrado en vez de descubrirse dentro de seis meses como una
+divergencia sin explicación.
+
+**Qué tiene que redibujarse.** Lo que el código tiene hoy y la maqueta no:
+
+1. **El héroe ya no tiene cromo de navegador.** Se fueron los tres puntitos y
+   la barra de URL (nodo `gnbEL`). El dato de la dirección del local bajó a una
+   línea de texto propia debajo del carrito.
+2. **El carrito se opera.** El frame dibuja un estado de reposo; el código tiene
+   botones reales de cantidad y de quitar, un estado vacío con "Reponer la
+   venta", y un encabezado de card con "Carrito" y "Reponer". Una maqueta no
+   puede dibujar una interacción, pero sí los estados: hacen falta al menos el
+   de reposo, el vacío y el de un aviso de stock recién aparecido.
+3. **La sección `Muestra` del frame móvil ya no existe.** El carrito sirve los
+   dos anchos desde un solo árbol.
+4. **Se fue el badge "Hecho para el mercado argentino"** del héroe.
+5. **El H1 lleva `font-stretch: 78%`.** Ojo: esto **no se puede representar en
+   el schema del `.pen`** —ya está anotado como limitación en `CLAUDE.md`—, así
+   que el frame va a seguir mostrando la cara en 100% y la divergencia es
+   inevitable. Queda escrito acá para que nadie la "corrija" en el código.
+6. **Rubros es un índice de dos columnas con filas separadas por línea**, no la
+   grilla de doce tarjetas del nodo `dDugH`. Y cada fila puede llevar un aviso
+   de que a ese rubro le falta un módulo ("Turnos, en camino"), que la maqueta
+   no dibuja en ningún lado.
+7. **La card "Núcleo" (nodo `QeDxe`) y la card "Profesional" (nodo `riAck`) ya
+   no son paños de `$ar-primary-deep`.** Núcleo es una banda de papel a todo el
+   ancho con el título a la izquierda; Profesional es una card de papel con
+   contorno de `$ar-primary`. El motivo es la propia regla escrita en
+   `docs/sistema-de-diseno.md`: no puede haber dos superficies de marca en
+   secciones consecutivas, y Planes y Cierre lo son.
+8. **Los dos módulos "En camino" se ven distintos**, no sólo llevan un chip
+   distinto: van sobre `$ar-sunken` sin borde y con el texto un nivel más
+   apagado.
+9. **El precio de un plan es signo + monto separados**, con la cara angosta de
+   la plata (`$ar-display` a 85%), no un titular con el signo pegado.
+10. **El copy cambió en el héroe, el cierre, el botón del formulario y el pie.**
+    El H2 del Cierre dice ahora "Probalo con tu propio local"; el botón dice
+    "Que me escriban" en las dos instancias; el pie perdió "Términos ·
+    Privacidad · Estado del servicio".
+
+**Qué NO cambió y conviene no tocar al redibujar**: la grilla 7:9 del héroe, el
+alto del Nav, la geometría del botón del Nav, los anchos de sección, el marco
+del formulario y la franja del Cierre.
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

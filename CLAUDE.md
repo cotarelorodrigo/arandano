@@ -2440,6 +2440,151 @@ Y del producto:
   escaneando la deje identificada; y que un artículo sin serie se vea exactamente
   como siempre.
 
+- ~~Rediseñar la landing del ápex.~~ **Hecho** (2026-09-04). Sale del dueño del
+  producto, que marcó tres problemas a la vez: **se ve genérica, no convierte, y
+  quedó vieja**. Los tres tenían causa verificable. Ver
+  `docs/superpowers/specs/` no aplica — este ciclo no escribió spec: se
+  brainstormeó, se planificó y se ejecutó directo, con el registro en
+  `docs/decisiones-del-rediseno.md` y `docs/pantallas.md`.
+
+  **"Genérica" tenía dos causas nombrables.** La página era el kit de tarjetas
+  de SaaS —todo picado en cajas de `rounded-[18px]`, con el mismo radio para el
+  núcleo del producto, un rubro y un plan, así que la estructura no decía nada
+  sobre el contenido— y su puntuación dominante era la cadena de puntos medios
+  ("5 días gratis · sin tarjeta · el alta es instantánea", "Términos ·
+  Privacidad · Estado del servicio"). Ahora cada sección tiene la forma de lo
+  suyo: el núcleo una banda, los módulos tres paneles, los rubros un **índice**
+  y los planes cuatro columnas.
+
+  **"No convierte" empezaba por un agujero de configuración, no de diseño.**
+  `docker/compose.prod.yml` declara `WHATSAPP_CONTACTO: ""`, y `formulario.tsx`
+  suprime el link a `wa.me` cuando está vacío: en producción la salida directa
+  por WhatsApp no existía ni en el formulario, ni en la pantalla de gracias, ni
+  como respaldo del mensaje de error — mientras la letra chica del Cierre
+  prometía "soporte por WhatsApp" igual. **La variable sigue sin valor**: no hay
+  número en ningún `.env` del repo. Lo que este ciclo sí cerró es el modo de
+  falla silencioso — la variable está ahora en `.env.example` con su porqué, y
+  el Cierre dejó de prometer un canal que no muestra.
+
+  **"Quedó vieja" iba en las dos direcciones**: prometía "el alta es
+  instantánea", "en dos minutos tenés tu local cargado" y "elegís el rubro"
+  —las tres falsas, con el registro público apagado a propósito y un formulario
+  de un campo que guarda `rubro: null`—, y callaba lo construido. El copy pasa a
+  prometer lo que el producto hace: dejás el contacto y alguien te escribe.
+
+  **Las decisiones que valen para releer:**
+
+  - **El héroe dejó de ser una captura y pasó a ser el producto.** El carrito se
+    opera: cantidades, quitar una línea, reponer la venta, y el total se rehace
+    con el mismo formateo de plata que corre en `/vender`. La frase "no es una
+    captura" dejó de ser algo que había que creer.
+  - **El aviso de stock pasó de adorno a regla.** Cada ítem declara su stock y
+    el aviso aparece cuando la cantidad pedida lo supera — la funda está en cero
+    y avisa desde el arranque, el cargador tiene tres y avisa recién en cuatro.
+    Un servicio nunca avisa, igual que en `/vender`.
+  - **Un solo árbol para los dos anchos**, y **sin `lg:contents`**, que es el
+    patrón del resto de la app. El motivo es concreto y vale anotarlo porque es
+    la primera excepción: un elemento con `display: contents` no tiene caja, y
+    sin caja no se puede animar su salida. Cada fila es una grilla propia con la
+    misma plantilla de columnas que el encabezado.
+  - **`motion` entra al repo, con presupuesto escrito.** Es la primera
+    dependencia que sirve sólo a la presentación, en un repo que sacó `recharts`
+    entero y rechazó `next-themes`. El motivo acotado: animar la salida de un
+    nodo que React está sacando del árbol, que es lo único que el CSS no puede
+    hacer acá. Más la entrada escalonada de las filas al cargar, que anima
+    **sólo `transform`** —las filas están pintadas desde el primer frame, así
+    que el LCP no lo paga—. Costo medido: los chunks estáticos pasan de 1496 a
+    1676 KB sin comprimir (417 KB gzip), y el bundle de features se
+    carga **después** de la hidratación por `LazyMotion`.
+
+  - **Y una segunda capa de movimiento, decorativa, contra la recomendación.**
+    El dueño del producto pidió el paquete completo —titular tipeado, revelados
+    por sección al scrollear, hover en las tarjetas, barra de progreso— con la
+    objeción sobre la mesa: el revelado por sección es el patrón más repetido de
+    las landings generadas, así que "se ve moderna" y "se ve hecha con
+    plantilla" son acá la misma cosa; y el titular tipeado empuja el LCP de la
+    única página que el producto indexa, porque el H1 es justamente lo que esa
+    métrica mide. Vive aparte, en `app/sitio/movimiento.tsx`, con la objeción
+    escrita en su docblock para no rediscutirla.
+
+    **Las tres defensas que la hacen tolerable**, todas con caso propio: el
+    texto del titular viaja **completo en el HTML** dentro de un `sr-only`, así
+    que ningún buscador ni lector de pantalla ve un H1 vacío; la caja del
+    titular se reserva antes de tipear, así que escribir no empuja el layout; y
+    un **`<noscript>`** devuelve a la vista las cuatro secciones que salen del
+    servidor en `opacity: 0` — sin ese seguro, un visitante sin JavaScript vería
+    cuatro de las siete secciones en blanco. Las dos capas se apagan enteras con
+    `prefers-reduced-motion`, y apagadas la página queda completa.
+
+    **El carrito queda afuera del scroll a propósito**, y hay un caso que lo
+    fija: es el único lugar donde el movimiento responde a lo que la persona
+    hace, y mezclarlo con animaciones de scroll borraría esa distinción.
+  - **GSAP se evaluó y se descartó**: imperativo, le pelea al modelo de render de
+    React 19, y sus fuertes —ScrollTrigger, revelados por sección— son
+    exactamente la capa que hace que una landing se lea como generada.
+  - **El eje de ancho de Archivo, por fin en la landing.**
+    `components/importe.module.css` dice desde hace tiempo que la fuente se
+    eligió POR ese eje, y el producto lo usa en sus dos extremos —el cartel del
+    frente (112%) y el número de la registradora (85%)—; la landing tenía siete
+    roles y los siete en el 100% por default. El H1 pasa a `font-stretch: 78%`,
+    el registro del rótulo. Es la **única** decisión tipográfica expresiva del
+    ciclo. **No se puede atar a la maqueta**: `font-stretch` no es representable
+    en el schema del `.pen`.
+  - **Dos superficies de `--marca`, no tres**, y la corrección la disparó la
+    propia regla escrita. El ciclo del 2026-08-22 había sumado la card "Núcleo"
+    y la card "Profesional" con el argumento de que en una página con scroll la
+    unidad de cuenta es la banda visible; el argumento sigue valiendo, pero
+    Planes y Cierre son **consecutivas**, cosa que `docs/sistema-de-diseno.md`
+    admitía con todas las letras. Quedan la banda del Total del carrito y la
+    franja del Cierre. Núcleo se distingue ahora por forma y Profesional por
+    contorno. **Y ahora hay un test que lo cuenta**, así que la regla dejó de
+    depender de que alguien lea el documento.
+  - **Rubros es un índice filtrable, y es lo único de la página que se
+    reordena.** Nadie lee los doce rubros: se busca el propio. Los chips
+    —Todos, Sólo núcleo, y uno por módulo, con su conteo— salen de `MODULOS`,
+    así que un cuarto módulo agrega su filtro solo. Es la única parte que
+    justifica la animación de layout (FLIP), y por lo tanto el `domMax` que
+    ésta obliga a cargar en vez del paquete chico; `app/sitio/rubros.test.tsx`
+    ata las dos cosas, para que si el filtro desaparece las features bajen con
+    él. Sin JavaScript se ve la lista completa: lo que se pierde es filtrar, no
+    leer.
+  - **El texto de un rubro se deriva de sus módulos.** Cuatro rubros anunciaban
+    "Núcleo + Turnos" bajo un título que dice "Tu rubro ya está adentro",
+    mientras la sección de arriba decía que Turnos está En camino: un dueño de
+    peluquería leía que su rubro ya estaba y no estaba. La frase estaba escrita a
+    mano en un array y el estado en otro, sin nada que los atara.
+    `app/sitio/datos.test.ts` fija el invariante: ningún rubro puede presentarse
+    como completo si alguno de sus módulos está en camino.
+  - **Un verbo para navegar y uno para enviar.** Había tres para la misma acción.
+    La prop `textoBoton` se **eliminó** en vez de cambiarle el default: mientras
+    exista la prop, dos call sites pueden volver a divergir.
+
+  **Se apartó de la maqueta entera, y eso es lo más importante que este ciclo
+  deja anotado.** El dueño del producto eligió explícitamente **código primero**,
+  con la maqueta poniéndose al día después. La regla sigue siendo que el `.pen`
+  manda; lo que cambia acá es cuál de los dos se escribió primero. La deuda está
+  en `docs/correcciones-pendientes-del-pen.md`, entrada 32 — la primera sobre la
+  landing, y distinta de las treinta y una anteriores: las otras dicen "este
+  nodo se equivocó", ésta dice "esta pantalla hay que redibujarla contra el
+  código".
+
+  **Queda para los ciclos siguientes**: el alta self-service, que es lo que
+  haría cierta la promesa vieja y el candidato natural al próximo ciclo; las
+  páginas de Términos, Privacidad y Estado del servicio, que el pie dejó de
+  prometer hasta que existan; y el número de WhatsApp, que es un valor y no
+  código.
+
+  **Y queda pendiente la verificación manual**, que en este ciclo es la que
+  cierra el trabajo y no un trámite: ningún test puede juzgar si la página
+  todavía se ve genérica. El entorno local la sirve sin obstáculo (Postgres en
+  Docker y Next nativo en `:3001`). Hay que mirar, a 1440 y a 390 px, que el
+  carrito se toque y el total se mueva sin que bailen las columnas; que el
+  titular condensado se lea como rótulo y no como texto apretado; que el índice
+  de Rubros se recorra cómodo en una columna; que con el movimiento apagado en
+  el sistema la página quede correcta y no a medio construir; y —lo único que
+  ningún test contesta— leerla entera preguntándose si un dueño de local
+  entiende qué es esto y qué pasa si deja el WhatsApp.
+
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~
