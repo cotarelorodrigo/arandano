@@ -2440,6 +2440,137 @@ Y del producto:
   escaneando la deje identificada; y que un artículo sin serie se vea exactamente
   como siempre.
 
+- ~~Que un local pueda instalarse como app.~~ **Hecho** (2026-09-04). Sale de
+  una pregunta del dueño del producto: *"es posible que nuestros clientes
+  puedan instalar su negocio como pwa?"*. La respuesta es que sí, y que este
+  stack es un caso casi ideal por una decisión que se tomó por otro motivo:
+  **que cada tenant sea su propio origen** (`flor.arandano.app`, con TLS válido
+  desde el cutover del wildcard, 2026-08-10) es lo que hace esto barato — un
+  navegador ya trata cada subdominio como una aplicación distinta, así que cada
+  dueño instala **su** negocio, con el nombre y el ícono de su local, sin que
+  este ciclo haya tenido que resolver ningún aislamiento nuevo. Ver
+  `docs/superpowers/specs/2026-09-04-pwa-instalable-design.md`.
+
+  **El principio que gobierna todo el ciclo**: instalar no da ninguna
+  capacidad nueva, da un lugar donde entrar. No hay funcionamiento sin
+  internet, ni push, ni nada que cambie lo que el producto hace — sólo ícono
+  propio en la pantalla de inicio y una ventana sin la barra del navegador
+  encima.
+
+  **Las piezas y sus decisiones, cada una con la alternativa descartada:**
+
+  - **`app/manifest.ts` resuelve por `Host`, con `notFound()` fuera de un
+    tenant.** El ápex, los reservados, los inexistentes y los ajenos no tienen
+    manifest. Se descartó un manifest genérico "Arándano" para el ápex: habría
+    dejado la landing —que se comparte por link— instalable como si fuera el
+    producto.
+  - **`start_url` es `/`, no un destino por rol.** Un manifest es uno solo por
+    origen y no puede ramificar entre el dueño y quien atiende, pero no hace
+    falta que lo haga: `app/page.tsx` ya resuelve el tenant y redirige con
+    `destinoAlEntrar()` (`lib/auth/destino.ts`), que es la función que ya
+    centraliza los lugares que redirigen. El manifest apuntando a un cuarto
+    lugar propio es exactamente lo que esa función existe para evitar.
+  - **Los íconos se generan con `ImageResponse`** (`app/icono/[tamano]/route.tsx`),
+    no son archivos en `public/`, por la misma razón que ya vale para
+    `app/opengraph-image.tsx`: un binario a mano se desincroniza del color de
+    marca sin que nadie se entere. Sólo dos tamaños, 192 y 512, validados
+    contra una lista y no contra un rango — un endpoint que genera una imagen
+    del tamaño que le pidan es CPU gratis para cualquiera que lo descubra,
+    sobre una caja de 2 vCPU que dev, stage y producción comparten. **Y la
+    inicial se restringe a letra o dígito**: `ImageResponse` usa `emoji:
+    'twemoji'` por default, así que un nombre que empezara con emoji saldría a
+    buscar el glifo a un CDN externo en cada request sin caché; un local "24
+    Horas" muestra su "2", y cualquier cosa sin letra ni dígito cae al
+    fallback "A". **Y el tamaño se valida por texto canónico y no con
+    `Number()`**: `/icono/0192` y `/icono/192.5` daban el mismo ícono desde
+    URLs distintas antes de esa guarda, y ahora son 404. Se descartó que el
+    local suba su propio logo: no existe ningún camino de subida de archivos
+    en el producto todavía, y el disparador para construirlo es concreto —que
+    un dueño con logo hecho pida verlo ahí.
+  - **El service worker entra por descubribilidad, no por instalabilidad.**
+    Chrome ya no lo exige para instalar desde el menú (v108/v112); lo que
+    todavía lo exige es la heurística que dispara `beforeinstallprompt`, que es
+    el evento del que depende el botón "Instalar" propio. Se descartó
+    `next-pwa` y Serwist: traen Workbox y un repertorio de estrategias de
+    caché que es justo lo que este diseño no quiere, en un repo que sacó
+    `recharts` por menos. `public/sw.js` cachea una sola URL
+    (`/sin-conexion`) e interviene sólo en navegaciones `GET`; para todo lo
+    demás no llama a `respondWith`, así que `/api/*`, los server actions y los
+    assets pasan sin que lo toque.
+  - **El riesgo que contradice el modelo de rollback del proyecto**: todo lo
+    demás de este repo se revierte revirtiendo la imagen, pero un service
+    worker sobrevive al rollback automático del healthcheck, que es la única
+    red que este proyecto tiene por decisión escrita. Sus dos defensas son la
+    trivialidad del archivo —tan chico que se lee entero de una sentada, sin
+    cachear HTML ni assets— y un deploy de desactivación escrito de antemano en
+    la sección *Deploy y rollback* de `docs/runbook-stacks.md`, y no al
+    momento en que hiciera falta. **Ese deploy de desactivación tiene DOS
+    pasos, no uno**, algo que el spec no anticipaba: reemplazar `public/sw.js`
+    por el de emergencia hace que se desregistre, pero `<RegistrarServiceWorker
+    />` (`app/(app)/layout.tsx`) lo vuelve a instalar en cada visita, así que
+    para que el estado converja de verdad a "sin service worker" hay que sacar
+    también ese componente del layout — en el mismo deploy o en uno posterior,
+    porque dejar el de emergencia puesto sin sacar el registro no hace daño: es
+    un ciclo instalar→desregistrar que no hace nada.
+  - **La pantalla `/sin-conexion` se pinta con estilo inline**, sin ninguna
+    clase de Tailwind ni archivo externo. El SW cachea el HTML de esa página,
+    no los archivos que referencia — las hojas de estilo y los chunks de Next
+    llevan hash y cambian en cada build, así que no hay ninguna lista de URLs
+    que se pueda cachear en `install` y siga siendo válida después del deploy
+    siguiente. Servida sin conexión, esa página encontraría su
+    `<link rel="stylesheet">` inalcanzable y se vería sin estilos — algo que
+    nadie descubriría en dev, donde la red siempre anda. Es estática de
+    verdad, sin `headers()`, sin sesión y **sin el nombre del local**: si lo
+    nombrara sería dinámica, y el SW estaría cacheando un dato de tenant, que
+    es la única línea que este diseño no cruza.
+  - **El botón "Instalar" vive en el `SidebarFooter`**, una sola copia para
+    los dos anchos porque el `Sheet` del teléfono y el riel de escritorio ya
+    renderizan el mismo `{children}`. Tres estados: no dibuja nada si ya está
+    instalada (`display-mode: standalone`) ni en un navegador que no ofrece
+    ningún camino (Firefox de escritorio); dispara el prompt si el navegador
+    ofreció `beforeinstallprompt`; y en iOS abre un diálogo con los tres pasos
+    de *Compartir → Agregar a inicio*, porque Safari no tiene prompt propio y
+    nunca lo va a tener. Se descartó ignorar iOS: es la misma regla que el
+    ciclo del teléfono aplicó cinco veces —una capacidad que desaparece en un
+    dispositivo y no reaparece en ningún lado es un defecto—, y acá muerde
+    especialmente porque el primer vertical es celulares, así que el dueño
+    tiene bastantes chances de tener un iPhone en la mano.
+
+  **Sin permisos nuevos y sin migración.** Instalar es una preferencia del
+  dispositivo de quien está sentado ahí, no una capacidad que un dueño reparta
+  entre empleados — la misma forma de razonar que ya separó `PLANES_PAGO` de
+  `ARTICULOS_EDITAR`. `lib/permisos/catalogo.ts` no crece, y el ciclo entero se
+  revierte revirtiendo la imagen, con la única excepción del service worker de
+  arriba.
+
+  **Lo que este ciclo NO hace**: no funciona sin internet —la pantalla sin
+  conexión es un cartel, no una capacidad, y cobrar offline toca el punto de
+  venta, que es donde este proyecto menos quiere improvisar—; no manda
+  notificaciones push; no deja instalar el ápex; no permite subir un logo.
+
+  **La maqueta no dibuja nada de esto** —ni el botón, ni el diálogo de iOS, ni
+  `/sin-conexion`, ni el ícono—, anotado como entrada **32** de
+  `docs/correcciones-pendientes-del-pen.md`. El diálogo de iOS es el que más se
+  beneficiaría de un frame: es la única pantalla del producto que le explica al
+  dueño cómo usar su propio sistema operativo.
+
+  **Queda pendiente la verificación manual, y no se puede hacer en dev.**
+  Instalar exige HTTPS, y el wildcard `*.arandano.app` no cubre
+  `canario.dev.arandano.app` porque un wildcard de DNS es de una sola etiqueta
+  — `arandano-dev` se sirve por HTTP sobre Tailscale. Se hace contra el tenant
+  canario de producción, después del deploy, que es donde este proyecto ya dice
+  que se mira primero: que Chrome en Android ofrezca instalar con el ícono del
+  local y no el de Arándano; que la app abierta desde ese ícono no muestre
+  barra de direcciones y aterrice en `/dashboard` con un dueño y en `/vender`
+  con un empleado; que el botón desaparezca una vez instalada; que en un
+  iPhone muestre las instrucciones y que el camino que describen sea el que
+  Safari realmente tiene; que con el modo avión prendido se vea la pantalla
+  sin conexión pintada y no el error del navegador; y que el ícono maskable no
+  quede recortado en un Android con máscara circular. Lo que sí se pudo mirar
+  en dev: el manifest servido con el nombre del canario y `start_url: "/"`, y
+  que fuera de un tenant da 404 — ambos cubiertos ahora también por
+  `scripts/smoke.sh` (`caso_manifest_del_tenant`,
+  `caso_manifest_no_existe_en_apex`).
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

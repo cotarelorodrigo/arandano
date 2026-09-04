@@ -1157,6 +1157,28 @@ justo la que no entraba.
 
 ---
 
+## 32. La PWA entera se derivó sin frames: el botón del pie, el diálogo de iOS, la pantalla sin conexión y el ícono
+
+`design/arandano.pen` es anterior a este ciclo y no dibuja nada de lo que
+construye: el botón "Instalar" del `SidebarFooter`, el diálogo con los tres
+pasos de iOS, `/sin-conexion`, ni el ícono del local.
+
+Los cuatro se derivaron de patrones que ya existen —la geometría del pie del
+sidebar, el `Dialog` de shadcn, el paño de marca del opengraph—, que es lo que
+el ciclo del 2026-09-02 hizo con cuatro controles de los que **tres salieron
+bien y uno era justamente el defecto** que el ciclo siguiente tuvo que
+rehacer (entrada 28). O sea que derivar no es gratis y esto no está confirmado.
+
+El que más se beneficiaría de un frame es el diálogo de iOS: es la única
+pantalla del producto que le explica al dueño cómo usar su propio sistema
+operativo, y no hay ningún precedente en el `.pen` de cómo se ve una
+instrucción de tres pasos.
+
+Y sigue pendiente de antes que una persona guarde y commitee la maqueta viva
+desde Pencil: el MCP lee, no persiste.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el
