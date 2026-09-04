@@ -29,4 +29,12 @@ describe('la inicial del local', () => {
   it('rechaza símbolos y cae a la marca', () => {
     expect(inicialDe('·Punto')).toBe('A')
   })
+
+  // Una letra fuera del plano básico: con spread sale entera, con charAt(0)
+  // saldría medio surrogate, que no es \p{L} y caería al fallback. Es el único
+  // caso que distingue las dos implementaciones — sin él, volver a charAt(0)
+  // no rompe nada.
+  it('una letra fuera del plano básico sale entera', () => {
+    expect(inicialDe('𝐀curdia')).toBe('𝐀')
+  })
 })

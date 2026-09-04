@@ -34,6 +34,19 @@ describe('el ícono del local', () => {
     expect(tamanoDeIconoValido('0192')).toBeNull()
     expect(tamanoDeIconoValido('-192')).toBeNull()
   })
+
+  // `tamanoDeIconoValido` está probada arriba, pero nada verificaba que la
+  // route la USE. Sin este caso se puede volver a un Number(tamano) inline —o
+  // borrar el corte entero— y la suite queda verde: exactamente el hueco que
+  // la extracción vino a tapar, un nivel más abajo. Mecanismo por fuente, el
+  // mismo que usa test/permisos-en-las-dos-copias.test.ts para lo que no se
+  // puede renderizar.
+  it('la route usa esa función y corta cuando devuelve null', () => {
+    expect(fuente).toContain('tamanoDeIconoValido(tamano)')
+    expect(fuente).toContain('if (lado === null) notFound()')
+    // Y no se quedó además con una validación propia al lado.
+    expect(fuente).not.toContain('Number(tamano)')
+  })
 })
 
 // Los dos archivos tienen que decir lo mismo en las DOS direcciones: un tamaño
