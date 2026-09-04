@@ -41,7 +41,13 @@ describe('la pantalla sin conexión', () => {
     // sin ella, agregar mañana un quinto hex suelto no rompe nada y la pantalla
     // queda con un color que ningún token de la paleta respalda. Este archivo
     // ya se abrió una vez por atar sólo un subconjunto.
-    const usados = [...new Set(fuente.match(/#[0-9a-f]{6}/g) ?? [])]
+    // El rango incluye A-F a propósito: si sólo mirara minúsculas, un quinto
+    // color escrito #FF0000 no entraría acá y la comparación seguiría en verde
+    // —o sea que la mitad de los casos que este caso existe para atrapar se le
+    // escaparían—. De paso, un hex de la paleta escrito en mayúscula también
+    // rompe, y corresponde: la convención del ciclo es minúscula, porque es lo
+    // que devuelve hexDelToken.
+    const usados = [...new Set(fuente.match(/#[0-9a-fA-F]{6}/g) ?? [])]
     expect(usados.sort()).toEqual(Object.values(esperados).sort())
   })
 
