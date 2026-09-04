@@ -728,19 +728,12 @@ describe('el tile "Costo del stock" (ciclo del costo del stock)', () => {
     expect(FUENTE).toContain('valuacionDelTenant(prisma)')
   })
 
-  // El pie es load-bearing y no una aclaración: los otros cuatro tiles de la
-  // fila responden al selector de período y éste lo ignora. Sin el pie, tocar
-  // "Este mes" y ver el mismo número se lee como un bug.
-  it('el pie dice que es de hoy y no del período', () => {
-    expect(FUENTE).toContain('al día de hoy')
-  })
-
-  // Y cuando hay artículos sin costo, lo dice: el total es una suma PARCIAL y
-  // un número que parece completo sin serlo es exactamente lo que este repo
-  // penaliza. Concuerda en número.
-  it('el pie avisa cuántos artículos quedaron afuera, concordando en número', () => {
-    expect(FUENTE).toContain("artículo sin costo")
-    expect(FUENTE).toContain("artículos sin costo")
+  // El pie sale de `pieDelCostoDelStock` y no de un literal escrito acá: lo que
+  // dice, y que concuerde en número, lo afirma el describe de esa función más
+  // abajo, llamándola. Un caso que buscara los literales en el FUENTE fallaría
+  // siempre —la implementación los arma por interpolación— y diría menos.
+  it('el pie sale de pieDelCostoDelStock, no de un literal en el JSX', () => {
+    expect(FUENTE).toContain('pie={pieDelCostoDelStock(valuacion.sinCosto)}')
   })
 
   // Sin chip de variación: no hay período anterior contra el cual comparar una
@@ -753,13 +746,12 @@ describe('el tile "Costo del stock" (ciclo del costo del stock)', () => {
     expect(bloque).not.toContain('delta=')
   })
 
-  it('renderiza el valor y el pie que se le pasan, sin chip', () => {
+  it('renderiza el valor y el pie que se le pasan', () => {
     const html = renderToStaticMarkup(
       <Tile rotulo="COSTO DEL STOCK" valor="$ 2.480.000" pie="al día de hoy · 12 artículos sin costo" />,
     )
     expect(html).toContain('$ 2.480.000')
     expect(html).toContain('al día de hoy · 12 artículos sin costo')
-    expect(html).not.toContain('aria-hidden="true" class="size-[11px]"')
   })
 })
 ```
