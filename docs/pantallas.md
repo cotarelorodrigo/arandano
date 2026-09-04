@@ -198,6 +198,37 @@ sólo lo necesitaba `page.tsx`.
 Los campos y el botón crecen: 50 px de alto en el teléfono contra 44 (inputs) y
 48 (botón) en escritorio. Un dedo no apunta como un mouse.
 
+## `/sin-conexion`
+
+El cartel que ve el dueño cuando abre la app instalada y no hay internet. No
+está pensada para que alguien la navegue —de hecho responde 200 sin sesión, en
+cualquier tenant y también en el ápex, como cualquier otra ruta estática—: en
+el uso real la sirve el service worker desde su caché cuando falla una
+navegación, sin que nadie escriba `/sin-conexion` a mano.
+
+**Acciones**: ninguna.
+
+**Qué se puede hacer**
+
+- Leer que no hay conexión. Nada más — el producto no funciona sin internet, y
+  esto es un cartel, no una capacidad.
+
+**Decisiones**
+
+- **No lleva guard de sesión**, y está declarada con esa razón en
+  `test/rutas-con-guard.test.ts`. Se sirve a alguien sin red: validar una sesión
+  ahí es imposible por definición. No muestra ningún dato que proteger.
+
+- **No nombra al local, y eso es load-bearing.** El service worker la cachea; si
+  resolviera tenant, lo que quedaría guardado en el celular sería el nombre de
+  un negocio. El costo es que dice "Arándano" y no el nombre del local.
+
+- **Se pinta con estilo inline y no con clases.** El service worker cachea este
+  HTML, no las hojas de estilo, que llevan hash en el nombre y cambian en cada
+  build. Con clases de Tailwind, servida desde la caché se vería como HTML
+  pelado — y no se descubriría en dev, donde la red anda. Los hex están copiados
+  de `app/globals.css` y atados por `app/sin-conexion/page.test.tsx`.
+
 ## `/vender`
 
 El punto de venta. Es la pantalla más caliente del sistema, la única que se

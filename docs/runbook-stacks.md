@@ -479,6 +479,41 @@ repo. Se activa con `git config core.hooksPath .githooks`, que ya está en
 migraciones destructivas, no los otros chequeos del gate — y `deploy.sh`
 vuelve a chequear lo mismo porque `--no-verify` existe.
 
+### Desactivar el service worker
+
+El rollback automático revierte la imagen. **No desinstala el service worker**:
+ése ya está en el navegador del dueño y sobrevive a la vuelta atrás. Si hubiera
+que sacarlo, no hay rollback — hay un deploy hacia adelante, que pasa el mismo
+gate que cualquier otro.
+
+Reemplazar el cuerpo de `public/sw.js` por:
+
+```js
+self.addEventListener('install', () => self.skipWaiting())
+self.addEventListener('activate', (evento) => {
+  evento.waitUntil(
+    caches
+      .keys()
+      .then((nombres) => nombres.filter((n) => n.startsWith('arandano-')))
+      .then((propias) => Promise.all(propias.map((n) => caches.delete(n))))
+      .then(() => self.registration.unregister())
+      .then(() => self.clients.claim()),
+  )
+})
+```
+
+Cada navegador lo levanta en su visita siguiente, borra sus cachés y se da de
+baja solo. Está escrito de antemano a propósito: el momento de escribirlo no es
+cuando hace falta.
+
+El SW de emergencia se instala y se desregistra en cada visita, porque
+`<RegistrarServiceWorker />` (`app/(app)/layout.tsx`) sigue llamando a
+`register('/sw.js')`. El efecto ya es el que se busca —no cachea ni intercepta
+nada más—, pero para que el estado converja de verdad a "sin service worker"
+hay que sacar también ese componente del layout, en el mismo deploy o en uno
+posterior. Dejar el de emergencia puesto sin sacar el registro no es peligroso:
+es un ciclo instalar→desregistrar que no hace nada.
+
 ### Rotar el token del healthcheck
 
 `ARANDANO_SALUD_TOKEN` habilita el nivel detallado de `/api/health` — los

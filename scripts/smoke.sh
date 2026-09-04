@@ -198,6 +198,38 @@ caso_home_redirige_al_destino_del_rol() {
   [[ "$destino" == */dashboard ]]
 }
 
+# El manifest es lo único de este ciclo que el gate puede verificar contra un
+# stack corriendo: el prompt de instalación exige HTTPS y un navegador de
+# verdad, y ninguna de las dos cosas hay acá.
+caso_manifest_del_tenant() {
+  local cuerpo
+  cuerpo=$(curl -fsS --max-time 10 \
+    -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/manifest.webmanifest") || return 1
+  jq -e --arg n "$NOMBRE_CANARIO" '.name == $n and .start_url == "/"' <<<"$cuerpo" >/dev/null 2>&1
+}
+
+# El manifest DECLARA /icono/192, pero nada más lo trae: si Satori se rompe
+# (una actualización de Next, un cambio en la firma de params), el gate entero
+# pasaba en verde con la feature muerta en silencio, porque Chrome exige un
+# ícono de verdad —descargable y decodificable— para considerar instalable,
+# y ese requisito no lo verifica nadie mirando sólo el JSON del manifest.
+caso_icono_192_del_tenant() {
+  local codigo tipo
+  read -r codigo tipo < <(curl -s -o /dev/null --max-time 10 -w '%{http_code} %{content_type}' \
+    -H "Host: ${SUBDOMINIO_CANARIO}.${DOMINIO_BASE}" "$URL_BASE/icono/192")
+  [[ "$codigo" == "200" && "$tipo" == "image/png" ]]
+}
+
+# La otra mitad, y la que pasa desapercibida: un manifest que devuelve 200
+# siempre parece que anda. Sin este caso, dejar la landing instalable como si
+# fuera el producto no rompe nada.
+caso_manifest_no_existe_en_apex() {
+  local codigo
+  codigo=$(curl -s -o /dev/null --max-time 10 -w '%{http_code}' \
+    -H "Host: ${DOMINIO_BASE}" "$URL_BASE/manifest.webmanifest")
+  [[ "$codigo" == 404 ]]
+}
+
 # El ápex no tiene login, y no puede delatar nada distinto de una ruta que no
 # existe. CLAUDE.md ya tenía anotado que los casos de login entran acá cuando
 # exista el login; éste y el de arriba son los primeros.
@@ -461,6 +493,9 @@ for caso in \
   caso_home_responde \
   caso_home_exige_sesion \
   caso_tenant_resuelve \
+  caso_manifest_del_tenant \
+  caso_icono_192_del_tenant \
+  caso_manifest_no_existe_en_apex \
   caso_login_no_existe_en_apex \
   caso_subdominio_inexistente_404 \
   caso_host_ajeno_404 \
