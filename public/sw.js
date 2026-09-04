@@ -39,9 +39,13 @@ self.addEventListener('activate', (evento) => {
   evento.waitUntil(
     caches
       .keys()
-      .then((nombres) =>
-        Promise.all(nombres.filter((n) => n !== CACHE).map((n) => caches.delete(n))),
-      )
+      .then((nombres) => {
+        // Sólo las propias: filtrar por prefijo y no por "!= CACHE" evita que
+        // este SW borre la caché de algo que no escribió él, el día que este
+        // origen sume otro uso de la Cache API.
+        const propias = nombres.filter((n) => n.startsWith('arandano-') && n !== CACHE)
+        return Promise.all(propias.map((n) => caches.delete(n)))
+      })
       .then(() => self.clients.claim()),
   )
 })

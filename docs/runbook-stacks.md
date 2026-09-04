@@ -505,6 +505,14 @@ Cada navegador lo levanta en su visita siguiente, borra sus cachés y se da de
 baja solo. Está escrito de antemano a propósito: el momento de escribirlo no es
 cuando hace falta.
 
+El SW de emergencia se instala y se desregistra en cada visita, porque
+`<RegistrarServiceWorker />` (`app/(app)/layout.tsx`) sigue llamando a
+`register('/sw.js')`. El efecto ya es el que se busca —no cachea ni intercepta
+nada más—, pero para que el estado converja de verdad a "sin service worker"
+hay que sacar también ese componente del layout, en el mismo deploy o en uno
+posterior. Dejar el de emergencia puesto sin sacar el registro no es peligroso:
+es un ciclo instalar→desregistrar que no hace nada.
+
 ### Rotar el token del healthcheck
 
 `ARANDANO_SALUD_TOKEN` habilita el nivel detallado de `/api/health` — los

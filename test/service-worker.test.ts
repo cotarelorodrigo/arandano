@@ -54,11 +54,12 @@ describe('el service worker no puede guardar datos de ningún local', () => {
     expect(fuente).not.toContain('/api')
   })
 
-  // Un formulario enviado sin JavaScript es una navegación POST. Devolverle una
-  // página cacheada de GET es responder algo que no se pidió.
-  it('sólo interviene en navegaciones GET', () => {
-    expect(fuente).toContain("pedido.method !== 'GET'")
-    expect(fuente).toContain("pedido.mode !== 'navigate'")
+  // Las dos subcadenas por separado no alcanzan: cambiar el `||` por `&&` las
+  // deja intactas y el test en verde, e invierte la semántica —con AND, un POST
+  // de formulario (method≠GET pero mode SÍ navigate) deja de cortar temprano y
+  // cae en respondWith—, que es justo el bug que el comentario de sw.js nombra.
+  it('sólo interviene en navegaciones GET, y corta con O y no con Y', () => {
+    expect(fuente).toMatch(/pedido\.method !== 'GET' \|\| pedido\.mode !== 'navigate'/)
   })
 
   it('borra las cachés de las versiones anteriores', () => {
