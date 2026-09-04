@@ -5,6 +5,7 @@ import { permisosDe } from '@/lib/permisos/consultar'
 import { botHabilitadoEn } from '@/lib/bot/habilitado'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { SidebarArandano } from '@/components/shell/sidebar-arandano'
+import { RegistrarServiceWorker } from '@/components/service-worker'
 import { salir } from './acciones'
 
 // Todas las pantallas de adentro heredan este guard: una ruta nueva bajo (app)
@@ -70,6 +71,10 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
           page.tsx ya renderiza — así el control queda al lado del título en
           vez de flotando arriba de él. */}
       <SidebarInset>{children}</SidebarInset>
+      {/* No dibuja nada: registra el service worker. Acá y no en el layout
+          raíz, que también sirve el ápex — la landing no es una aplicación
+          instalable, y app/manifest.ts le devuelve 404 por lo mismo. */}
+      <RegistrarServiceWorker />
     </SidebarProvider>
   )
 }
