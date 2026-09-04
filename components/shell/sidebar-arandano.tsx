@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Navegacion } from '@/components/navegacion'
 import { Contexto } from '@/components/contexto'
 import { BotonCerrarDrawer } from '@/components/shell/boton-cerrar-drawer'
+import { Instalar } from '@/components/shell/instalar'
 import estilos from '@/components/cartel.module.css'
 
 /**
@@ -144,6 +145,12 @@ export function SidebarArandano({
             </Button>
           </form>
         </div>
+        {/* Sin permiso propio ni fila en la base: es una preferencia del
+            dispositivo de quien está sentado ahí, no una capacidad que un
+            dueño reparta entre sus empleados. Se esconde sola (estado
+            'oculto') donde no aplica — Chrome sin el evento aún disparado,
+            o la app ya instalada. */}
+        <Instalar />
         <Contexto className="text-[10px] text-muted-foreground" />
       </SidebarFooter>
     </Sidebar>
