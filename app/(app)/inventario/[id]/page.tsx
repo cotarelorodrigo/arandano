@@ -13,6 +13,7 @@ import { esUuid } from '@/lib/uuid'
 import { planesDelTenant, type PlanVisible } from '@/lib/planes/consultar'
 import { arbolDeCategorias } from '@/lib/inventario/categorias'
 import { unidadesLibres } from '@/lib/inventario/unidades'
+import { costoTotalDeArticulo } from '@/lib/inventario/valuacion'
 import { precioConPlan } from '@/lib/planes/precio'
 import { ROTULO_MEDIO } from '@/lib/ventas/medios'
 import estilos from '../tipografia.module.css'
@@ -344,6 +345,12 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   ])
 
   const ultimoCosto = ultimoConCosto?.costoUnitario ?? null
+  // Cero consultas nuevas: el stock y el último costo ya están en la mano. La
+  // cuenta —y el clamp del stock negativo— viven en lib/inventario/valuacion.ts,
+  // la misma función que suma el total del local en /dashboard: dos
+  // implementaciones de la misma regla es la forma en que un día una pantalla
+  // clampea y la otra no.
+  const costoTotal = costoTotalDeArticulo(articulo.stock, ultimoCosto)
   // La columna "Queda" (decisión ya tomada, historial.ts: calcularSaldos): se
   // RECONSTRUYE recorriendo los deltas hacia atrás desde el stock actual, no
   // se guarda en ninguna columna nueva.
@@ -400,10 +407,11 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
     <>
       {/* El grupo de tiles se apila en el teléfono (Task 7 del ciclo móvil,
           frame `T5gME`): "En stock" ocupa su propia fila completa (con su
-          propio quiebre de eje, ver el docblock de `Tile`), y "Precio de
-          venta"/"Último costo" comparten la fila siguiente — el envoltorio
-          interno es `contents` en escritorio para que sus dos Tile se sumen
-          a la fila de "En stock" y quede la misma fila de tres de siempre. */}
+          propio quiebre de eje, ver el docblock de `Tile`), y los tres tiles
+          sin marca cierran abajo una grilla de 2×2 con un hueco — una fila de
+          tres los dejaría en ~120 px cada uno. El envoltorio interno es
+          `contents` en escritorio, así que ahí los tres se suman a la fila de
+          "En stock" y queda la fila única de siempre. */}
       <div className="order-1 flex flex-col gap-3 lg:order-none lg:flex-row lg:gap-4">
         {esProducto && (
           <Tile
@@ -413,7 +421,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
             pie="unidades disponibles"
           />
         )}
-        <div className="flex gap-3 lg:contents">
+        <div className="grid grid-cols-2 gap-3 lg:contents [&>*:only-child]:col-span-2">
           <Tile
             rotulo="PRECIO DE VENTA"
             valor={precioEnSuMoneda(articulo.precio.toString(), articulo.moneda)}
@@ -424,9 +432,9 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
               una afirmación distinta y falsa cuando lo que pasa es que a esta
               persona no se le muestra.
 
-              En el teléfono eso deja a "Precio de venta" solo en su fila, y
-              está bien: los dos Tile son `flex-1`, así que el que queda ocupa
-              el ancho entero — el mismo resultado que ya se ve para un
+              En el teléfono eso deja a "Precio de venta" solo en la grilla,
+              y está bien: `[&>*:only-child]:col-span-2` le devuelve el ancho
+              entero al hijo único — el mismo resultado que ya se ve para un
               SERVICIO, que tampoco lleva "Último costo". */}
           {esProducto && puedeCostos && (
             <Tile
@@ -449,6 +457,29 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
                         : 'el precio no permite calcular el margen'))
                   : 'ningún ingreso cargó el costo todavía'
               }
+            />
+          )}
+          {/* La tercera condición NO es redundante con las dos de arriba:
+              `costoTotal` es null exactamente cuando no hay ningún costo
+              cargado, y ahí este tile no tiene nada que decir. Un "$ 0"
+              afirmaría que la mercadería no vale nada y un "—" que no hay
+              mercadería; las dos son falsas. El tile de al lado ya muestra su
+              propia raya, que dice todo lo que hay que decir.
+
+              El pie muestra la CUENTA, y no es decoración: es lo que ata este
+              número a los dos tiles de al lado. Sin él son tres importes sin
+              relación visible entre sí. `ultimoCosto` no puede ser null acá —
+              si lo fuera, `costoTotal` también lo sería— pero TypeScript no lo
+              sabe desde este scope, así que el `?? ''` es el que lo convence.
+
+              El "×" es el signo de multiplicación (U+00D7), no una equis. */}
+          {esProducto && puedeCostos && costoTotal !== null && (
+            <Tile
+              rotulo="COSTO TOTAL"
+              valor={formatearPrecio(costoTotal.toString())}
+              pie={`${formatearCantidad(articulo.stock.toString())} × ${
+                ultimoCosto ? formatearPrecio(ultimoCosto.toString()) : ''
+              }`}
             />
           )}
         </div>

@@ -2606,6 +2606,70 @@ Y del producto:
   `scripts/smoke.sh` (`caso_manifest_del_tenant`,
   `caso_manifest_no_existe_en_apex`).
 
+- ~~Ver cuánto costó la mercadería que queda.~~ **Hecho** (2026-09-04). Sale
+  del pedido del dueño del producto: el costo total de un artículo en su
+  ficha —30 unidades, cuánto costaron— y el del local entero en `/dashboard`.
+  Ver `docs/superpowers/specs/2026-09-04-costo-del-stock-design.md`.
+
+  **Una sola definición, en `lib/inventario/valuacion.ts`**: `max(stock, 0) ×
+  último costo conocido`, donde "último costo conocido" es **el mismo** que ya
+  leen el tile "Último costo" de la ficha y `crearVenta` al congelar
+  `Venta.costoArs`. Que sea literalmente la misma consulta es la decisión: un
+  cuarto criterio de costo sería un cuarto número en la misma pantalla que
+  alguien va a tener que explicar por qué difiere.
+
+  **Las dos alternativas descartadas**, cada una con su motivo: el **promedio
+  ponderado** de los ingresos es más fiel a lo que se pagó —con 20 a $7.000 y
+  10 a $9.000, el último costo valúa las 30 a $9.000 y se pasa— pero introduce
+  ese cuarto número; **FIFO** es el número contablemente correcto y el más
+  caro, porque exige reconstruir capas de ingreso sobre una tabla append-only
+  para todo el catálogo. **El disparador para reconsiderarlo**: que a un dueño
+  le moleste que su total suba solo porque el último ingreso vino más caro,
+  teniendo el depósito lleno de mercadería comprada a otro precio.
+
+  **`null` y cero son dos respuestas distintas, y esa distinción es la
+  función.** Sin ningún ingreso con costo no se sabe, así que el tile de la
+  ficha **no se dibuja** y el artículo no suma al total del local — pero sí se
+  **cuenta**: el pie del dashboard dice "12 artículos sin costo", porque un
+  total parcial que parece completo es lo que este repo ya rechazó cuando le
+  puso pie a `delta()` en vez de inventar un "+100 %". Cero, en cambio, se
+  afirma: con costo cargado y stock en cero o negativo, la mercadería que queda
+  no vale nada y eso es verdad. **El stock negativo cuenta como cero** y no
+  resta — es un error de carga, no plata negativa, y `/inventario` ya lo avisa
+  por su cuenta.
+
+  **El dólar no molesta acá, y conviene decirlo porque parece que debería.**
+  `textoDeMargen` devuelve `null` para un artículo en dólares, y la intuición
+  dice que esto haría lo mismo. No: aquel `null` es porque el margen compara el
+  costo **contra el precio**, que están en monedas distintas; acá el costo se
+  multiplica por una **cantidad**, y una cantidad no tiene moneda.
+  `costoUnitario` está en pesos para todos, así que el total es en pesos para
+  todos.
+
+  **Entran los productos activos.** Un servicio no tiene stock; un artículo
+  dado de baja con stock encima es plata que el dueño ya decidió no vender, y
+  sumarla mezcla "cuánto tengo invertido en lo que vendo" con "cuánto me quedé
+  colgado".
+
+  **Sin migración, sin columna y sin permiso nuevo.** El número se deriva de lo
+  que ya está guardado, así que el ciclo entero se revierte revirtiendo la
+  imagen. `lib/permisos/catalogo.ts` **no crece**: los dos tiles van detrás de
+  `COSTOS`, que es el permiso que ya tapa el costo unitario del que salen.
+
+  **Esto NO cierra la deuda del costo**, que sigue con su investigación escrita
+  más arriba en este documento: el costo sigue siendo un atributo del evento de
+  recepción y no del producto, sigue sin poder cargarse sin sumar stock y sigue
+  sin poder corregirse una vez escrito. Este ciclo suma un lector más de ese
+  dato. Si algo, **sube la presión para cerrarla**: el pie "12 artículos sin
+  costo" es la primera pantalla que le muestra al dueño el tamaño del agujero.
+
+  **Queda pendiente la verificación manual**, y es el riesgo específico de este
+  ciclo porque ningún test lo puede contestar: si **cinco** tiles en una fila de
+  116 px siguen siendo legibles en escritorio (el dashboard pasa de cuatro a
+  cinco y la ficha de tres a cuatro, achicando los que ya estaban), y si el pie
+  de dos partes —`al día de hoy · 12 artículos sin costo`— entra sin cortarse a
+  390 px. Anotado en `docs/correcciones-pendientes-del-pen.md`, entrada 33.
+
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

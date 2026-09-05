@@ -1289,10 +1289,19 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
 
 **Qué se puede hacer**
 
-- Ver tres tiles: **En stock** (pintado con `--marca`, el ancla de esta
+- Ver los tiles: **En stock** (pintado con `--marca`, el ancla de esta
   pantalla), **Precio de venta** (en su moneda, con hace cuánto se actualizó)
   y, con el permiso `COSTOS`, **Último costo** (siempre en pesos, con el margen
   contra el precio actual). Un servicio sólo muestra el de precio.
+- **Costo total** (con el permiso `COSTOS`): cuánto costó la mercadería que
+  queda, con la cuenta en el pie — `30 × $ 7.400`. Sale de
+  `costoTotalDeArticulo` (`lib/inventario/valuacion.ts`), la **misma** función
+  que suma el total del local en `/dashboard`, sobre el mismo "último costo"
+  que muestra el tile de al lado. Un stock negativo cuenta como **cero**: es un
+  error de carga, no mercadería que valga plata negativa. Sin ningún ingreso
+  con costo el tile **no se dibuja** — un "$ 0" afirmaría que la mercadería no
+  vale nada y un "—" que no hay mercadería, y las dos son falsas; el "—" de
+  "Último costo" ya dice lo único cierto, que es que nadie cargó el costo.
 - Editar nombre, precio, **la moneda del precio** y código desde la card
   "Datos", y **elegir** categoría y marca de los mismos dos selectores
   encadenados que usa el alta — con el permiso `ARTICULOS_EDITAR`; sin él la
@@ -1607,8 +1616,12 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
 
 - **Los tiles se apilan y "En stock" cambia de eje**: en escritorio es una
   columna (rótulo arriba, valor grande abajo); en el teléfono es una fila, con
-  el rótulo y el pie a la izquierda y el número a la derecha. "Precio de venta"
-  y "Último costo" comparten la fila siguiente.
+  el rótulo y el pie a la izquierda y el número a la derecha. Los tres tiles
+  sin marca ("Precio de venta", "Último costo" y "Costo total") cierran abajo
+  una **grilla de dos columnas**, así que quedan en un 2×2 con un hueco — una
+  fila de tres los dejaría en ~120 px cada uno. Cuando queda uno solo (un
+  servicio, o alguien sin `COSTOS`) recupera el ancho entero. En escritorio
+  `lg:contents` disuelve la grilla y los cuatro vuelven a la fila única.
 - **El cuerpo se reordena, no se apila.** La maqueta **intercala** "Datos" y
   "Cómo se movió" entre las piezas de la columna izquierda, así que apilar las
   dos columnas tal cual daba otro orden: los cinco bloques llevan `order-1` a
@@ -2317,6 +2330,26 @@ julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
 - Ver **"Ticket promedio"**: sólo el valor, **sin pie** (ver *Decisiones*).
 - Ver **"Margen"**, sólo si la sesión tiene el permiso `COSTOS` — el mismo que
   ya protege el costo y el margen en `/inventario/[id]`.
+- Ver **"Costo del stock"** (con el permiso `COSTOS`): cuánta plata hay parada
+  en mercadería — `Σ max(stock, 0) × último costo conocido` sobre los productos
+  activos, vía `valuacionDelTenant` (`lib/inventario/valuacion.ts`), la misma
+  función y la misma definición que el tile "Costo total" de
+  `/inventario/[id]`.
+
+  **Es el único tile de la fila que NO responde al selector de período**, y por
+  eso su pie dice `al día de hoy`: es una foto de ahora, no una métrica del
+  rango. Por lo mismo no lleva chip de variación — no hay período anterior
+  contra el cual comparar un stock.
+
+  Cuando hay artículos con mercadería y sin ningún costo cargado, el pie lo
+  dice (`al día de hoy · 12 artículos sin costo`): el total es una suma parcial
+  y un número que parece completo sin serlo es lo que este repo ya rechazó en
+  otros lados. El conteo cuenta **artículos con stock**, no movimientos: uno en
+  cero no distorsiona el total, así que contarlo inflaría el aviso.
+
+  **No entra al CSV** de esta pantalla: ese archivo exporta el período, y una
+  fila que ignora el rango dentro de una exportación rotulada por rango es un
+  dato que alguien va a leer mal.
 - Entrar a `/vender` desde el botón del Topbar (o la ranura del teléfono).
 - Entrar a `/inventario` desde "Ver inventario →", en el encabezado del panel
   "Lo que más se vendió".
@@ -2377,8 +2410,10 @@ julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
   "Cómo entró la plata" con su anillo, "Qué se vendió por categoría" y "Lo que
   más se vendió". El selector de moneda (`?moneda`, sólo se dibuja si el
   período tuvo pagos en las dos monedas) es de esos paneles, no de esta
-  pantalla: los cuatro tiles de acá no necesitan elegir moneda porque el tile
-  de marca ya resuelve la suya solo (ver "Este tile invierte", arriba).
+  pantalla: los tiles de acá no necesitan elegir moneda porque el tile de
+  marca ya resuelve la suya solo (ver "Este tile invierte", arriba) — y el de
+  "Costo del stock" es siempre en pesos, porque `MovimientoStock.costoUnitario`
+  no distingue moneda (deuda del costo, CLAUDE.md).
 - **"Exportar CSV" no lleva costo ni margen, aunque quien lo baje tenga el
   permiso `COSTOS`.** Un CSV sale del sistema y sigue circulando —se manda
   por mail, queda en una carpeta compartida—; el alcance de este ciclo es el
