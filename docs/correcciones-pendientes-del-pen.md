@@ -1180,6 +1180,31 @@ desde Pencil: el MCP lee, no persiste.
 
 ---
 
+## 33. Los dos tiles de costo se derivaron sin frame, y además le cambian la cuenta de tiles a dos filas que el `.pen` sí dibuja
+
+`design/arandano.pen` es anterior a este ciclo y no dibuja ninguno de los dos:
+ni "Costo total" en `App / Artículo ficha` (`y4tEb`) ni "Costo del stock" en
+`App / Dashboard` (`A2Hffo`), ni en sus frames móviles.
+
+Eso solo sería el caso de siempre —la maqueta calla, el código deriva, y el
+silencio no es una instrucción de borrar nada—. Lo que hace a esta entrada
+distinta es que **acá el `.pen` no calla**: dibuja las dos filas de tiles con
+una cantidad concreta de tiles, y este ciclo se la cambia. La ficha pasa de
+tres a cuatro, el dashboard de cuatro a cinco, y en los dos casos los tiles que
+ya estaban se achican para dar lugar al nuevo.
+
+En el teléfono el cambio mejora lo que había: las dos filas usan una grilla de
+dos columnas, así que pasan de dejar un tile huérfano a cerrar un 2×2 parejo.
+En escritorio no hay frame que diga si cinco tiles de 116 px de alto siguen
+siendo legibles, y eso **no está confirmado por nadie** — es lo primero que hay
+que mirar en la verificación manual.
+
+La alternativa era un bloque aparte, fuera de la fila de tiles, que no le
+tocaría la geometría a ningún frame. Se descartó en el diseño: el número es del
+mismo orden que los otros cuatro y sacarlo de la fila lo escondería.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el
