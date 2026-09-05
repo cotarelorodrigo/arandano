@@ -1289,10 +1289,19 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
 
 **Qué se puede hacer**
 
-- Ver tres tiles: **En stock** (pintado con `--marca`, el ancla de esta
+- Ver los tiles: **En stock** (pintado con `--marca`, el ancla de esta
   pantalla), **Precio de venta** (en su moneda, con hace cuánto se actualizó)
   y, con el permiso `COSTOS`, **Último costo** (siempre en pesos, con el margen
   contra el precio actual). Un servicio sólo muestra el de precio.
+- **Costo total** (con el permiso `COSTOS`): cuánto costó la mercadería que
+  queda, con la cuenta en el pie — `30 × $ 7.400`. Sale de
+  `costoTotalDeArticulo` (`lib/inventario/valuacion.ts`), la **misma** función
+  que suma el total del local en `/dashboard`, sobre el mismo "último costo"
+  que muestra el tile de al lado. Un stock negativo cuenta como **cero**: es un
+  error de carga, no mercadería que valga plata negativa. Sin ningún ingreso
+  con costo el tile **no se dibuja** — un "$ 0" afirmaría que la mercadería no
+  vale nada y un "—" que no hay mercadería, y las dos son falsas; el "—" de
+  "Último costo" ya dice lo único cierto, que es que nadie cargó el costo.
 - Editar nombre, precio, **la moneda del precio** y código desde la card
   "Datos", y **elegir** categoría y marca de los mismos dos selectores
   encadenados que usa el alta — con el permiso `ARTICULOS_EDITAR`; sin él la
@@ -1607,8 +1616,12 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
 
 - **Los tiles se apilan y "En stock" cambia de eje**: en escritorio es una
   columna (rótulo arriba, valor grande abajo); en el teléfono es una fila, con
-  el rótulo y el pie a la izquierda y el número a la derecha. "Precio de venta"
-  y "Último costo" comparten la fila siguiente.
+  el rótulo y el pie a la izquierda y el número a la derecha. Los tres tiles
+  sin marca ("Precio de venta", "Último costo" y "Costo total") cierran abajo
+  una **grilla de dos columnas**, así que quedan en un 2×2 con un hueco — una
+  fila de tres los dejaría en ~120 px cada uno. Cuando queda uno solo (un
+  servicio, o alguien sin `COSTOS`) recupera el ancho entero. En escritorio
+  `lg:contents` disuelve la grilla y los cuatro vuelven a la fila única.
 - **El cuerpo se reordena, no se apila.** La maqueta **intercala** "Datos" y
   "Cómo se movió" entre las piezas de la columna izquierda, así que apilar las
   dos columnas tal cual daba otro orden: los cinco bloques llevan `order-1` a

@@ -159,6 +159,56 @@ describe('los tiles de la ficha (Task 4 del rediseño)', () => {
   })
 })
 
+describe('el tile "Costo total" (ciclo del costo del stock)', () => {
+  // Las MISMAS tres condiciones que gobiernan al tile de al lado, más la del
+  // número que no existe. Sin costo cargado el tile no se dibuja: un "$ 0"
+  // afirmaría que la mercadería no vale nada, y un "—" afirmaría que no hay
+  // mercadería — las dos son falsas cuando lo que pasa es que nadie cargó el
+  // costo. El tile de "Último costo" de al lado ya dice eso con su propia raya.
+  it('está condicionado a esProducto, a COSTOS y a que el número exista', () => {
+    expect(FUENTE).toMatch(
+      /esProducto && puedeCostos && costoTotal !== null && \(\s*<Tile\s*\n\s*rotulo="COSTO TOTAL"/,
+    )
+  })
+
+  // El valor sale de la función compartida sobre el stock y el último costo de
+  // ESTA pantalla — no de una multiplicación escrita a mano acá, que es como
+  // el clamp del negativo terminaría existiendo dos veces con dos criterios.
+  it('el número sale de costoTotalDeArticulo, no de una multiplicación local', () => {
+    expect(FUENTE).toContain(
+      'const costoTotal = costoTotalDeArticulo(articulo.stock, ultimoCosto)',
+    )
+    expect(FUENTE).not.toMatch(/articulo\.stock\.mul\(/)
+  })
+
+  // El pie muestra la cuenta, que es lo que ata este número a los dos tiles de
+  // al lado: sin él, el dueño tiene tres tiles con plata y ninguna forma de
+  // saber de dónde sale el tercero.
+  it('el pie muestra la cuenta: stock por costo unitario', () => {
+    const desde = FUENTE.indexOf('rotulo="COSTO TOTAL"')
+    expect(desde).toBeGreaterThan(-1)
+    const bloque = FUENTE.slice(desde, desde + 600)
+    expect(bloque).toContain('formatearCantidad(articulo.stock.toString())')
+    expect(bloque).toContain('formatearPrecio(ultimoCosto.toString())')
+  })
+
+  // El envoltorio de los tiles sin marca pasa a grilla de dos columnas en el
+  // teléfono: con tres adentro, una fila los deja en ~120 px cada uno. En
+  // escritorio `lg:contents` lo sigue disolviendo y la fila es de cuatro.
+  it('en el teléfono los tres tiles sin marca van en una grilla de dos columnas', () => {
+    expect(FUENTE).toContain('grid grid-cols-2 gap-3 lg:contents')
+  })
+
+  it('renderiza el valor y la cuenta que se le pasan', () => {
+    const html = renderToStaticMarkup(
+      <Tile rotulo="COSTO TOTAL" valor="$ 222.000" pie="30 × $ 7.400" />,
+    )
+    expect(html).toContain('COSTO TOTAL')
+    expect(html).toContain('$ 222.000')
+    expect(html).toContain('30 × $ 7.400')
+  })
+})
+
 describe('el historial de la ficha (Task 5 del rediseño)', () => {
   // La columna "Queda" se reconstruye contra el STOCK ACTUAL del artículo,
   // no contra ningún número guardado — calcularSaldos ya lo prueba a fondo
@@ -337,15 +387,26 @@ describe('Tile (Task 7 del ciclo móvil)', () => {
 })
 
 describe('el grupo de tiles se apila en el teléfono (Task 7 del ciclo móvil)', () => {
-  // "En stock" ocupa su propia fila completa; Precio de venta/Último costo
-  // comparten la siguiente — el envoltorio de estos dos es `contents` en
-  // escritorio para que la fila de tres quede exactamente como antes.
+  // "En stock" ocupa su propia fila completa; los tiles sin marca cierran
+  // abajo una grilla de dos columnas —desde el ciclo del costo del stock son
+  // TRES, y una fila los dejaría en ~120 px cada uno— cuyo envoltorio es
+  // `contents` en escritorio para que la fila única quede como siempre.
   it('el envoltorio exterior es flex-col en el teléfono y flex-row en escritorio', () => {
     expect(FUENTE).toContain('className="order-1 flex flex-col gap-3 lg:order-none lg:flex-row lg:gap-4"')
   })
 
-  it('Precio de venta y Último costo comparten fila propia, que se disuelve en escritorio', () => {
-    expect(FUENTE).toContain('<div className="flex gap-3 lg:contents">')
+  it('los tiles sin marca comparten grilla propia, que se disuelve en escritorio', () => {
+    expect(FUENTE).toContain(
+      '<div className="grid grid-cols-2 gap-3 lg:contents [&>*:only-child]:col-span-2">',
+    )
+  })
+
+  // Un SERVICIO —o un empleado sin COSTOS— deja UN solo tile en la grilla, y
+  // sin esto quedaría a media pantalla con un hueco al lado: hasta el ciclo
+  // del costo del stock ese caso lo cubría el `flex-1` del Tile, que en una
+  // grilla no hace nada.
+  it('el hijo único de la grilla recupera el ancho entero en el teléfono', () => {
+    expect(FUENTE).toContain('[&>*:only-child]:col-span-2')
   })
 })
 
