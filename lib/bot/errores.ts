@@ -1,5 +1,6 @@
 export type CodigoErrorDeBot =
   | 'SIN_INTEGRACION'
+  | 'DEDICACION_LARGA'
   | 'INSTRUCCIONES_LARGAS'
   | 'NUMERO_AJENO'
   | 'SIN_NUMERO'

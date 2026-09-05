@@ -72,6 +72,7 @@ export async function POST(request: Request): Promise<Response> {
       numeroVisible: true,
       webhookSecreto: true,
       activo: true,
+      aQueSeDedica: true,
       instrucciones: true,
       topeMensual: true,
     },
@@ -107,6 +108,7 @@ export async function POST(request: Request): Promise<Response> {
       phoneNumberId: bot.phoneNumberId,
       numeroVisible: bot.numeroVisible,
       activo: bot.activo,
+      aQueSeDedica: bot.aQueSeDedica,
       instrucciones: bot.instrucciones,
       topeMensual: bot.topeMensual,
     })
@@ -121,6 +123,7 @@ type Local = {
   phoneNumberId: string
   numeroVisible: string | null
   activo: boolean
+  aQueSeDedica: string
   instrucciones: string
   topeMensual: number
 }
@@ -161,6 +164,7 @@ async function atender(entrante: MensajeEntrante, local: Local): Promise<void> {
     procesarMensaje({
       tenantId: local.tenantId,
       nombreLocal: local.nombreLocal,
+      aQueSeDedica: local.aQueSeDedica,
       instrucciones: local.instrucciones,
       phoneNumberId: local.phoneNumberId,
       conversacionId,

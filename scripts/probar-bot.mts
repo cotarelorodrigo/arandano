@@ -72,7 +72,7 @@ if (!tenant) {
 
 const bot = await prismaParaTenant(tenant.id).botDeWhatsapp.findUnique({
   where: { tenantId: tenant.id },
-  select: { instrucciones: true, activo: true },
+  select: { aQueSeDedica: true, instrucciones: true, activo: true },
 })
 
 // Un texto de ejemplo cuando el local todavía no cargó el suyo: sin esto, la
@@ -86,6 +86,12 @@ const DE_EJEMPLO = [
 
 const instrucciones = bot?.instrucciones?.trim() || DE_EJEMPLO
 
+// A qué se dedica el local NO se completa con un ejemplo: es justamente lo que
+// se está probando, así que inventarlo taparía el caso que importa —cómo
+// contesta un local que todavía no lo cargó— y mostraría una respuesta que
+// ningún cliente va a recibir.
+const aQueSeDedica = bot?.aQueSeDedica?.trim() ?? ''
+
 // Los mensajes vienen alternados empezando por el cliente, así que el último es
 // siempre suyo y los anteriores son el historial.
 const previos = parsed.mensajes.slice(0, -1)
@@ -97,6 +103,7 @@ const historial: TurnoDelHistorial[] = previos.map((texto, i) => ({
 
 console.log(`local:   ${tenant.nombre} (${parsed.subdominio})`)
 console.log(`modelo:  ${MODELO}`)
+console.log(`dedica:  ${aQueSeDedica || '(vacío: el bot va a decir sólo "un comercio")'}`)
 console.log(
   `info:    ${bot?.instrucciones?.trim() ? 'la que cargó el local' : 'de ejemplo (el local no cargó la suya)'}`,
 )
@@ -112,6 +119,7 @@ const arranque = Date.now()
 const respuesta = await responder({
   tenantId: tenant.id,
   nombreLocal: tenant.nombre,
+  aQueSeDedica,
   instrucciones,
   historial,
   mensaje,

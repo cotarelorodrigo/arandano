@@ -71,6 +71,7 @@ erDiagram
     text webhook_secreto "opcional"
     timestamptz(3) conectado_en "opcional"
     boolean activo
+    text a_que_se_dedica
     text instrucciones
     integer tope_mensual
     timestamptz(3) creado_en

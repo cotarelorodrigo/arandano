@@ -12,7 +12,7 @@ import {
   confirmarNumero,
   desconectar,
   generarEnlace,
-  guardarInstrucciones,
+  guardarInformacion,
 } from '@/lib/bot/administrar'
 
 /**
@@ -143,11 +143,14 @@ export async function prenderOApagar(activo: boolean): Promise<EstadoBot> {
   }
 }
 
-export async function guardarInformacionDelLocal(instrucciones: string): Promise<EstadoBot> {
+export async function guardarInformacionDelLocal(entrada: {
+  aQueSeDedica: string
+  instrucciones: string
+}): Promise<EstadoBot> {
   try {
     const sesion = await exigirPermiso('BOT')
     exigirBotHabilitado(sesion.subdominio)
-    await guardarInstrucciones(sesion.tenant.id, instrucciones)
+    await guardarInformacion(sesion.tenant.id, entrada)
     revalidatePath('/bot')
     return { error: null, aviso: 'Guardado.', enlace: null }
   } catch (e) {

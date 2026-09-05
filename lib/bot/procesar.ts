@@ -24,6 +24,7 @@ import { enviarTexto } from '@/lib/bot/kapso'
 export async function procesarMensaje(entrada: {
   tenantId: string
   nombreLocal: string
+  aQueSeDedica: string
   instrucciones: string
   phoneNumberId: string
   conversacionId: string
@@ -36,6 +37,7 @@ export async function procesarMensaje(entrada: {
     respuesta = await responder({
       tenantId: entrada.tenantId,
       nombreLocal: entrada.nombreLocal,
+      aQueSeDedica: entrada.aQueSeDedica,
       instrucciones: entrada.instrucciones,
       historial,
       mensaje: entrada.texto,

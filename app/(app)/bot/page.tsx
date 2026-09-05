@@ -67,6 +67,7 @@ export default async function PantallaDelBot() {
     // huso de Buenos Aires vive de este lado en todo el resto del producto.
     conectadoEn: bot.conectadoEn ? formatearFechaCorta(bot.conectadoEn) : null,
     activo: bot.activo,
+    aQueSeDedica: bot.aQueSeDedica,
     instrucciones: bot.instrucciones,
     respuestasDelMes: conectado ? await respuestasDelMes(sesion.tenant.id) : 0,
     topeMensual: bot.topeMensual,

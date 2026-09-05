@@ -15,13 +15,13 @@ const generarEnlace = vi.fn()
 const confirmarNumero = vi.fn()
 const desconectar = vi.fn()
 const alternarActivo = vi.fn()
-const guardarInstrucciones = vi.fn()
+const guardarInformacion = vi.fn()
 vi.mock('@/lib/bot/administrar', () => ({
   generarEnlace: (...a: unknown[]) => generarEnlace(...a),
   confirmarNumero: (...a: unknown[]) => confirmarNumero(...a),
   desconectar: (...a: unknown[]) => desconectar(...a),
   alternarActivo: (...a: unknown[]) => alternarActivo(...a),
-  guardarInstrucciones: (...a: unknown[]) => guardarInstrucciones(...a),
+  guardarInformacion: (...a: unknown[]) => guardarInformacion(...a),
 }))
 
 const SESION = {
@@ -62,7 +62,7 @@ describe('los guards de las acciones de /bot', () => {
 
   it.each([
     ['prenderOApagar', () => acciones.prenderOApagar(true)],
-    ['guardarInformacionDelLocal', () => acciones.guardarInformacionDelLocal('Abrimos 9 a 18')],
+    ['guardarInformacionDelLocal', () => acciones.guardarInformacionDelLocal({ aQueSeDedica: 'una waflería', instrucciones: 'Abrimos 9 a 18' })],
   ])('%s se delega con el permiso BOT', async (_nombre, correr) => {
     await correr()
     expect(exigirPermiso).toHaveBeenCalledWith('BOT')
@@ -96,6 +96,17 @@ describe('lo que las acciones devuelven', () => {
     )
   })
 
+  it('guarda los dos campos del local, no sólo el textarea', async () => {
+    await acciones.guardarInformacionDelLocal({
+      aQueSeDedica: 'una waflería',
+      instrucciones: 'Abrimos de 9 a 18.',
+    })
+    expect(guardarInformacion).toHaveBeenCalledWith('tenant-1', {
+      aQueSeDedica: 'una waflería',
+      instrucciones: 'Abrimos de 9 a 18.',
+    })
+  })
+
   it('el switch manda el booleano, no un texto', async () => {
     await acciones.prenderOApagar(false)
     expect(alternarActivo).toHaveBeenCalledWith('tenant-1', false)
@@ -107,11 +118,11 @@ describe('lo que las acciones devuelven', () => {
    */
   it('un error de negocio se muestra y uno inesperado se relanza', async () => {
     const { ErrorDeBot } = await import('@/lib/bot/errores')
-    guardarInstrucciones.mockRejectedValueOnce(new ErrorDeBot('INSTRUCCIONES_LARGAS', 'Muy largo.'))
-    expect((await acciones.guardarInformacionDelLocal('x')).error).toBe('Muy largo.')
+    guardarInformacion.mockRejectedValueOnce(new ErrorDeBot('INSTRUCCIONES_LARGAS', 'Muy largo.'))
+    expect((await acciones.guardarInformacionDelLocal({ aQueSeDedica: '', instrucciones: 'x' })).error).toBe('Muy largo.')
 
-    guardarInstrucciones.mockRejectedValueOnce(new TypeError('undefined is not a function'))
-    await expect(acciones.guardarInformacionDelLocal('x')).rejects.toThrow(TypeError)
+    guardarInformacion.mockRejectedValueOnce(new TypeError('undefined is not a function'))
+    await expect(acciones.guardarInformacionDelLocal({ aQueSeDedica: '', instrucciones: 'x' })).rejects.toThrow(TypeError)
   })
 })
 
@@ -136,8 +147,8 @@ describe('el gate del rollout alcanza a las cinco acciones', () => {
     ['prenderOApagar', () => acciones.prenderOApagar(true), alternarActivo],
     [
       'guardarInformacionDelLocal',
-      () => acciones.guardarInformacionDelLocal('Abrimos 9 a 18'),
-      guardarInstrucciones,
+      () => acciones.guardarInformacionDelLocal({ aQueSeDedica: 'una waflería', instrucciones: 'Abrimos 9 a 18' }),
+      guardarInformacion,
     ],
   ]
 

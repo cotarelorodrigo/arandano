@@ -62,6 +62,7 @@ const BOT_CONECTADO = {
   numeroVisible: '+5491166660000',
   webhookSecreto: SECRETO,
   activo: true,
+  aQueSeDedica: 'una waflería',
   instrucciones: 'Abrimos de 9 a 18.',
   topeMensual: 1000,
 }
@@ -87,6 +88,23 @@ describe('el webhook de WhatsApp', () => {
     expect(r.status).toBe(200)
     expect(registrarEntrante).toHaveBeenCalledTimes(1)
     expect(agendado).toHaveBeenCalledTimes(1)
+  })
+
+  /**
+   * El campo tiene que atravesar el circuito entero, y el modo de falla de que
+   * no lo haga es silencioso: el bot contestaría igual, sin ningún error, sólo
+   * que sin saber a qué se dedica el local — que es exactamente el defecto que
+   * el ciclo del 2026-09-05 vino a arreglar.
+   */
+  it('le pasa al agente a qué se dedica el local', async () => {
+    await POST(pedido())
+    // `after` está espiado y no ejecutado (ver el mock de arriba), así que el
+    // trabajo agendado se corre a mano: es la única forma de mirar CON QUÉ se
+    // llamó al agente sin meter el modelo adentro del test.
+    await (agendado.mock.calls[0]![0] as () => unknown)()
+    expect(procesarMensaje).toHaveBeenCalledWith(
+      expect.objectContaining({ aQueSeDedica: 'una waflería' }),
+    )
   })
 
   /**
