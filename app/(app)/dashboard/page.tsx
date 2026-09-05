@@ -16,6 +16,7 @@ import {
 } from '@/lib/dashboard/rango'
 import { metricasDelPeriodo, delta, soloEnDolares, type Delta } from '@/lib/dashboard/metricas'
 import { agregarPorDia, pieDeTendencia, ventasDeLaTendencia } from '@/lib/dashboard/tendencia'
+import { valuacionDelTenant } from '@/lib/inventario/valuacion'
 import {
   itemsDelPeriodo, ramaPorArticulo, agruparPorArticulo, sumarPorRama, repartirEnGajos, gajoMasGrande,
   topDeArticulos, TOP_DE_ARTICULOS,
@@ -47,6 +48,26 @@ function sinVentasEnPeriodoAnterior(rango: Rango, hoy: string): string {
   // "hoy" da "ayer": "sin ventas en ayer" suena traducido: el resto de los
   // rangos sí llevan "en" ("en julio", "en 2025", "en los 7 días previos").
   return rango === 'hoy' ? `sin ventas ${sufijo}` : `sin ventas en ${sufijo}`
+}
+
+/**
+ * El pie del tile "Costo del stock".
+ *
+ * `al día de hoy` NO es una aclaración de cortesía: los otros cuatro tiles de
+ * esa fila responden al selector de período y se comparan contra el período
+ * anterior, y éste ignora los chips por completo porque es una foto de ahora.
+ * Sin el pie, un dueño que toca "Este mes" y ve el mismo número que en "Hoy"
+ * tiene razón en pensar que algo está roto.
+ *
+ * Y el total es una suma PARCIAL cuando hay artículos sin costo cargado: un
+ * número que parece completo sin serlo es exactamente lo que este repo ya
+ * rechazó cuando le puso pie a `delta()` en vez de inventar un "+100 %".
+ * Concuerda en número — "1 artículo", "12 artículos".
+ */
+export function pieDelCostoDelStock(sinCosto: number): string {
+  if (sinCosto <= 0) return 'al día de hoy'
+  const plural = sinCosto === 1 ? 'artículo' : 'artículos'
+  return `al día de hoy · ${sinCosto} ${plural} sin costo`
 }
 
 const NUMERO_DELTA = new Intl.NumberFormat('es-AR', {
@@ -259,6 +280,7 @@ export default async function Dashboard({
   const prisma = prismaParaTenant(sesion.tenant.id)
   const [
     metricas, metricasPrevias, puedeCostos, ventasTendenciaCrudo, itemsPeriodo, pagosPorMedio,
+    valuacion,
   ] = await Promise.all([
     metricasDelPeriodo(prisma, periodo),
     metricasDelPeriodo(prisma, periodoPrevio),
@@ -274,6 +296,11 @@ export default async function Dashboard({
       where: { venta: { ...filtroDe(periodo), anuladaEn: null } },
       _count: true,
     }),
+    // La ÚNICA consulta de la pantalla que ignora el período: es una foto del
+    // stock de ahora, no una métrica del rango (ver `pieDelCostoDelStock`).
+    // Corre en paralelo con las de arriba, así que no suma un round-trip en
+    // serie.
+    valuacionDelTenant(prisma),
   ])
 
   const composicionMedios = componerPorMedio(pagosPorMedio)
@@ -514,11 +541,12 @@ export default async function Dashboard({
           <SegmentadoDeRango activo={rango} href={hrefRango} />
         </div>
 
-        {/* Tiles: en el teléfono el de marca va solo y los otros tres en una
-            grilla de dos columnas; en escritorio los cuatro vuelven a ser
-            hermanos de una sola fila gracias a `lg:contents` en el
-            envoltorio — mismo patrón que ya usa /ventas para su tile de
-            marca y los dos de al lado. */}
+        {/* Tiles: en el teléfono el de marca va solo y los otros en una
+            grilla de dos columnas —desde el ciclo del costo del stock son
+            cuatro, así que el 2×2 queda cerrado en vez de dejar uno
+            huérfano—; en escritorio todos vuelven a ser hermanos de una sola
+            fila gracias a `lg:contents` en el envoltorio — mismo patrón que
+            ya usa /ventas para su tile de marca y los dos de al lado. */}
         <div className="flex flex-col gap-3 lg:h-[116px] lg:flex-row lg:gap-4">
           <Tile
             marca
@@ -568,6 +596,23 @@ export default async function Dashboard({
                     ? `${formatearPrecio(metricas.margen.monto.toString())} de margen`
                     : 'sin ventas con costo cargado en el período'
                 }
+              />
+            )}
+            {/* Detrás de COSTOS, igual que "Margen" de arriba y por el mismo
+                motivo: es el permiso que ya tapa el costo unitario del que
+                sale este número.
+
+                SIN chip de variación, a propósito: no hay período anterior
+                contra el cual comparar una foto de ahora. Ya hay precedente en
+                esta misma fila ("Ticket promedio" y "Margen" tampoco lo
+                llevan). Lo que el pie sí dice, y es load-bearing, es que este
+                número no responde a los chips de período — ver
+                `pieDelCostoDelStock`. */}
+            {puedeCostos && (
+              <Tile
+                rotulo="Costo del stock"
+                valor={formatearPrecio(valuacion.total.toString())}
+                pie={pieDelCostoDelStock(valuacion.sinCosto)}
               />
             )}
           </div>

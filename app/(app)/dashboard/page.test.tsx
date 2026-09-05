@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { Tile, ChipDeDelta, SegmentadoDeRango, monedaEfectiva } from './page'
+import {
+  Tile, ChipDeDelta, SegmentadoDeRango, monedaEfectiva, pieDelCostoDelStock,
+} from './page'
 import { SelectorDeMonedaElegida } from '@/components/selector-de-moneda-elegida'
 
 // La decisión de invertir el tile —qué magnitud es "el número grande" cuando
@@ -192,6 +194,59 @@ describe('/dashboard: "Exportar CSV" existe dos veces —Topbar y ranura del tel
 // La pestaña escondida no es una defensa: `/dashboard` se alcanza tipeando la
 // URL, y el layout del grupo sólo exige SESIÓN, no rol. Sin esta mitad, el
 // cambio sería cosmético.
+describe('el tile "Costo del stock" (ciclo del costo del stock)', () => {
+  const FUENTE = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
+
+  // Detrás de COSTOS, igual que "Margen": es el mismo permiso que ya tapa el
+  // costo unitario del que sale este número.
+  it('está detrás del permiso COSTOS', () => {
+    expect(FUENTE).toMatch(/puedeCostos && \(\s*<Tile\s*\n\s*rotulo="Costo del stock"/)
+  })
+
+  // El número sale de la función compartida, no de una consulta escrita acá
+  // adentro del Server Component —que ningún test podría llamar—.
+  it('el número sale de valuacionDelTenant', () => {
+    expect(FUENTE).toContain('valuacionDelTenant(prisma)')
+  })
+
+  // El pie sale de `pieDelCostoDelStock` y no de un literal escrito acá: lo que
+  // dice, y que concuerde en número, lo afirma el describe de esa función más
+  // abajo, llamándola. Un caso que buscara los literales en el FUENTE fallaría
+  // siempre —la implementación los arma por interpolación— y diría menos.
+  it('el pie sale de pieDelCostoDelStock, no de un literal en el JSX', () => {
+    expect(FUENTE).toContain('pie={pieDelCostoDelStock(valuacion.sinCosto)}')
+  })
+
+  // Sin chip de variación: no hay período anterior contra el cual comparar una
+  // foto de ahora. Ya hay precedente en esta misma fila (Ticket promedio y
+  // Margen tampoco lo llevan).
+  it('no lleva chip de variación', () => {
+    const desde = FUENTE.indexOf('rotulo="Costo del stock"')
+    expect(desde).toBeGreaterThan(-1)
+    const bloque = FUENTE.slice(desde, desde + 400)
+    expect(bloque).not.toContain('delta=')
+  })
+
+  it('renderiza el valor y el pie que se le pasan', () => {
+    const html = renderToStaticMarkup(
+      <Tile rotulo="Costo del stock" valor="$ 2.480.000" pie="al día de hoy · 12 artículos sin costo" />,
+    )
+    expect(html).toContain('$ 2.480.000')
+    expect(html).toContain('al día de hoy · 12 artículos sin costo')
+  })
+})
+
+describe('pieDelCostoDelStock', () => {
+  it('sin faltantes, sólo dice de cuándo es el número', () => {
+    expect(pieDelCostoDelStock(0)).toBe('al día de hoy')
+  })
+
+  it('con faltantes, concuerda en número', () => {
+    expect(pieDelCostoDelStock(1)).toBe('al día de hoy · 1 artículo sin costo')
+    expect(pieDelCostoDelStock(12)).toBe('al día de hoy · 12 artículos sin costo')
+  })
+})
+
 describe('/dashboard es sólo del dueño', () => {
   const FUENTE = readFileSync('app/(app)/dashboard/page.tsx', 'utf8')
 
