@@ -114,6 +114,15 @@ describe('el system prompt del bot', () => {
       expect(p.split('\n')[0]).toBe('Sos el asistente de X, una waflería con café, en Argentina.')
     })
 
+    /** Se escribe en un campo, no en una oración, así que muchos van a
+     *  terminarlo con un punto — y la oración quedaría "…, una waflería., en
+     *  Argentina." */
+    it('le saca el punto final: lo que escribe el dueño va adentro de una oración', () => {
+      expect(prompt({ nombreLocal: 'X', aQueSeDedica: 'Una waflería.' }).split('\n')[0]).toBe(
+        'Sos el asistente de X, Una waflería, en Argentina.',
+      )
+    })
+
     it('recorta un texto más largo que el tope', () => {
       const largo = 'b'.repeat(TOPE_A_QUE_SE_DEDICA + 100)
       const p = prompt({ aQueSeDedica: largo })

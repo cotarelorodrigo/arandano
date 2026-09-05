@@ -315,7 +315,9 @@ function Informacion({ vista }: { vista: VistaDelBot }) {
           value={dedicacion}
           onChange={(e) => setDedicacion(e.target.value)}
           maxLength={TOPE_DEDICACION}
-          placeholder="Una waflería de waffles dulces y salados, café y jugos"
+          // En minúscula y sin punto: lo que se escribe acá se lee en medio de una
+          // oración ("Sos el asistente de X, <esto>, en Argentina").
+          placeholder="una waflería de waffles dulces y salados, café y jugos"
         />
         <p className={AYUDA}>
           Con esto el bot se presenta. Sin esto habla como un comercio cualquiera y puede confundir

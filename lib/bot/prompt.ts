@@ -39,9 +39,18 @@ function sanear(texto: string): string {
  * Y se colapsa todo espacio en blanco: el control de la pantalla es un `<input>`
  * que no admite saltos de línea, pero lo que llega a la server action es un
  * string del navegador y por lo tanto falsificable.
+ *
+ * El punto final también se va: se escribe en un campo pero se lee adentro de
+ * una oración, así que quien lo cierre con un punto —que van a ser muchos—
+ * dejaría "…, una waflería., en Argentina.".
  */
 function comoOracion(texto: string): string {
-  return sanear(texto).replace(/\s+/g, ' ').trim().slice(0, TOPE_A_QUE_SE_DEDICA).trim()
+  return sanear(texto)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, TOPE_A_QUE_SE_DEDICA)
+    .trim()
+    .replace(/[.,;:]+$/, '')
 }
 
 /**
