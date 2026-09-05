@@ -42,6 +42,7 @@ const SIN_CONECTAR: BotDelLocal = {
   numeroVisible: null,
   conectadoEn: null,
   activo: false,
+  aQueSeDedica: '',
   instrucciones: '',
   topeMensual: 1000,
 }
@@ -53,6 +54,7 @@ const CONECTADO: BotDelLocal = {
   numeroVisible: '+54 9 11 5555 0000',
   conectadoEn: new Date('2026-08-29T12:00:00Z'),
   activo: true,
+  aQueSeDedica: 'una waflería',
   instrucciones: 'Abrimos de 9 a 18.',
 }
 
@@ -102,6 +104,11 @@ describe('/bot', () => {
    * tirara sin la variable, TODO deploy haría rollback por una feature que
    * nadie está usando todavía.
    */
+  it('lleva a la pantalla a qué se dedica el local, para poder editarlo', async () => {
+    botDelLocal.mockResolvedValue(CONECTADO)
+    expect(await render()).toContain('una waflería')
+  })
+
   it('sin credenciales de Kapso renderiza igual y lo avisa', async () => {
     kapsoConfigurado.mockReturnValue(false)
     const html = await render()

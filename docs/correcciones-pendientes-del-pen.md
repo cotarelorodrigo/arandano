@@ -885,6 +885,18 @@ sin prefijo y el ancho fijo del lateral lleva `lg:`. No es rediseño de teléfon
 —no hay tabla que convertir en tarjetas— pero tampoco es deuda: la pantalla es
 operable en los dos anchos desde el primer commit.
 
+**Sumado el 2026-09-05**: la card de información pasó a tener DOS controles
+—el campo "¿A qué se dedica el local?" arriba del textarea, cada uno con su
+`<Label>` y su texto de ayuda, y un solo botón Guardar al pie para los dos—.
+Sigue sin haber frame de nada de esto. Lo que se derivó es cómo se apilan dos
+campos rotulados adentro de una card en la columna ancha: en el resto del
+producto los formularios con `<Label>` viven en `/inventario/nuevo` y en la
+ficha del artículo, que tienen cards mucho más anchas, así que el espaciado
+—`gap-1.5` entre rótulo, control y ayuda— es la primera vez que se usa acá.
+El riesgo concreto, que ningún test puede juzgar, es que a 390 px la card
+quede apretada con dos rótulos, dos ayudas, el textarea de siete filas y el
+contador.
+
 ---
 
 ## 27. ~~La maqueta no dibuja nada de las unidades por IMEI~~ — DIBUJADA EN EL DOCUMENTO VIVO, FALTA COMMITEARLO

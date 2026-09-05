@@ -166,17 +166,62 @@ describe('desconectar', () => {
 describe('la información del local', () => {
   it('rechaza un texto más largo que el tope y no escribe', async () => {
     await expect(
-      administrar.guardarInstrucciones(tenantId, 'a'.repeat(2001)),
+      administrar.guardarInformacion(tenantId, { aQueSeDedica: '', instrucciones: 'a'.repeat(2001) }),
     ).rejects.toMatchObject({ codigo: 'INSTRUCCIONES_LARGAS' })
   })
 
+  it('rechaza una dedicación más larga que el tope y no escribe', async () => {
+    await expect(
+      administrar.guardarInformacion(tenantId, { aQueSeDedica: 'b'.repeat(201), instrucciones: '' }),
+    ).rejects.toMatchObject({ codigo: 'DEDICACION_LARGA' })
+  })
+
   it('se puede escribir antes de conectar ningún número', async () => {
-    await administrar.guardarInstrucciones(tenantId, '  Abrimos de 9 a 18.  ')
+    await administrar.guardarInformacion(tenantId, {
+      aQueSeDedica: '  una waflería  ',
+      instrucciones: '  Abrimos de 9 a 18.  ',
+    })
     const { rows } = await owner.query(
-      'SELECT instrucciones FROM bots_de_whatsapp WHERE tenant_id = $1',
+      'SELECT a_que_se_dedica, instrucciones FROM bots_de_whatsapp WHERE tenant_id = $1',
       [tenantId],
     )
     expect(rows[0].instrucciones).toBe('Abrimos de 9 a 18.')
+    expect(rows[0].a_que_se_dedica).toBe('una waflería')
+  })
+
+  /**
+   * Los dos campos se escriben en la misma visita y con el mismo botón, así que
+   * los guarda una sola escritura: dos upserts dejarían la fila a medio guardar
+   * si el segundo falla.
+   */
+  it('guarda los dos campos juntos sobre una fila que ya existía', async () => {
+    await administrar.guardarInformacion(tenantId, {
+      aQueSeDedica: 'una waflería',
+      instrucciones: 'Abrimos de 9 a 18.',
+    })
+    await administrar.guardarInformacion(tenantId, {
+      aQueSeDedica: 'una waflería y cafetería',
+      instrucciones: 'Abrimos de 9 a 20.',
+    })
+    const { rows } = await owner.query(
+      'SELECT a_que_se_dedica, instrucciones FROM bots_de_whatsapp WHERE tenant_id = $1',
+      [tenantId],
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0].a_que_se_dedica).toBe('una waflería y cafetería')
+    expect(rows[0].instrucciones).toBe('Abrimos de 9 a 20.')
+  })
+
+  it('lo que la pantalla lee incluye a qué se dedica el local', async () => {
+    await administrar.guardarInformacion(tenantId, {
+      aQueSeDedica: 'una waflería',
+      instrucciones: '',
+    })
+    expect(await administrar.botDelLocal(tenantId)).toMatchObject({ aQueSeDedica: 'una waflería' })
+  })
+
+  it('el local que nunca tocó la pantalla no se dedica a nada declarado', async () => {
+    expect(await administrar.botDelLocal(tenantId)).toMatchObject({ aQueSeDedica: '' })
   })
 })
 

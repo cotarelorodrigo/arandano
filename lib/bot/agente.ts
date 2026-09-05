@@ -63,6 +63,7 @@ export type TurnoDelHistorial = { rol: 'cliente' | 'bot'; texto: string }
 export async function responder(entrada: {
   tenantId: string
   nombreLocal: string
+  aQueSeDedica: string
   instrucciones: string
   historial: TurnoDelHistorial[]
   mensaje: string
@@ -73,8 +74,9 @@ export async function responder(entrada: {
     {
       name: 'buscar_articulos',
       description:
-        'Busca en el catálogo del local, que incluye tanto PRODUCTOS como ' +
-        'SERVICIOS (reparaciones, mano de obra). Devuelve el nombre, el precio ya ' +
+        'Busca en el catálogo del local, que incluye tanto PRODUCTOS (lo que el ' +
+        'local vende) como SERVICIOS (lo que el local cobra por hacer). Devuelve ' +
+        'el nombre, el precio ya ' +
         'formateado y si hay disponibilidad. Usala ante cualquier pregunta sobre ' +
         'qué vende o qué hace el local, incluidas "¿tenés…?", "¿hacen…?" y ' +
         '"¿cuánto sale…?". Buscá con pocas palabras clave, no con la frase entera ' +
@@ -101,6 +103,7 @@ export async function responder(entrada: {
     tools: [buscarArticulos],
     systemPrompt: construirPrompt({
       nombreLocal: entrada.nombreLocal,
+      aQueSeDedica: entrada.aQueSeDedica,
       instrucciones: entrada.instrucciones,
     }),
   })

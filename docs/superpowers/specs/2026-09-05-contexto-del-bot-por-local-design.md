@@ -36,7 +36,7 @@ mirando ese vertical, y los ejemplos quedaron adentro de la parte compartida.
 El prompt sabe cómo hablar, qué puede y qué no puede hacer, y cómo consultar el
 catálogo. Qué vende el local lo dice el local.
 
-## Las cinco decisiones
+## Las seis decisiones
 
 ### 1. Un campo propio y corto, no el textarea que ya existe
 
@@ -102,6 +102,34 @@ llamadores el día que se agrega y cualquier día que aparezca uno nuevo.
 Es la misma decisión, por el mismo motivo, que la de `categoriaId` requerido en
 `editarArticulo` (ciclo del 2026-08-28): ahí un campo opcional habría dejado que
 un llamador distraído no tocara la categoría sin dar ningún error.
+
+### 6. Ante una intención de compra, el bot traspasa — no explica su límite
+
+Llegó probándolo, en la misma sesión: ante *"quiero encargar dos waffles"* el
+bot contestó *"no puedo tomar el pedido directamente por acá. Tenés que hacer tu
+compra en www.waffles-pro.com o escribir al local con los detalles"*. El defecto
+es del mismo tipo que el anterior —el modelo repite lo que el prompt le dice de
+sí mismo— y la regla que lo producía era esta línea de la lista NUNCA:
+
+> Tomes un pedido, cierres una venta ni pidas datos personales. **No podés
+> hacerlo: no tenés ninguna herramienta para eso.**
+
+Al cliente no le interesa qué herramientas tiene el bot, y mandarlo a otro canal
+es perder la venta **en el único momento en que ya dijo que quería comprar**.
+
+La regla pasa a ser un **traspaso**: confirmar lo que el cliente pidió y avisar,
+en una oración, que sigue una persona del local — sin explicar por qué el bot no
+puede, y sin mandarlo a ninguna página, número ni mail.
+
+**Lo que hace que el traspaso sea verdad y no una promesa vacía es la
+coexistencia**, que ya era una decisión del ciclo del bot: el bot contesta por
+API sobre el MISMO número que el dueño atiende desde la aplicación de WhatsApp
+Business en su celular. La conversación **ya está** en la bandeja del local, así
+que decir "sigue una persona" no depende de ninguna notificación que este
+producto todavía no manda.
+
+**Lo que sigue prohibido no cambia**: el bot no toma el pedido, no cierra la
+venta y no pide datos personales. Lo que cambia es que deja de contarlo.
 
 ## La cadena, que es de siete lugares
 
@@ -181,6 +209,12 @@ Los tests, en orden de escritura:
   cable, cargador, pantalla, módulo, teléfono—. Ese caso es la red contra que
   alguien vuelva a meter ejemplos de un rubro adentro del prompt compartido, que
   es literalmente el defecto de hoy.
+
+  Y los tres casos del traspaso (decisión 6), incluido el que prohíbe las dos
+  frases exactas que el modelo estaba repitiendo —"no tenés ninguna herramienta"
+  y "no podés hacerlo"—. Son tests sobre el TEXTO del prompt y no sobre lo que
+  el modelo contesta, que ningún test del gate puede llamar; lo que atrapan es
+  la regresión de volver a escribirle al bot una explicación de sus límites.
 - **`lib/bot/administrar.test.ts`** — que guarde los dos campos juntos, que
   recorte, que respete el tope y que el upsert funcione con la fila inexistente.
 - **`app/api/whatsapp/webhook/route.test.ts`** — que el campo llegue hasta el

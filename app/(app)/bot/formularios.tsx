@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Bot, Link2, MessageCircle, Power, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { Switch } from '@/components/ui/switch'
@@ -34,6 +35,10 @@ export const INICIAL: EstadoBot = { error: null, aviso: null, enlace: null }
  *  — el bug que `test/limite-cliente-servidor.test.ts` existe para atrapar. */
 const TOPE = 2000
 
+/** Igual que `TOPE_A_QUE_SE_DEDICA` de `lib/bot/prompt.ts`, repetido acá por el
+ *  mismo motivo que el de arriba. */
+const TOPE_DEDICACION = 200
+
 export type NumeroOfrecido = { phoneNumberId: string; numeroVisible: string | null }
 
 export type VistaDelBot = {
@@ -41,6 +46,7 @@ export type VistaDelBot = {
   numeroVisible: string | null
   conectadoEn: string | null
   activo: boolean
+  aQueSeDedica: string
   instrucciones: string
   respuestasDelMes: number
   topeMensual: number
@@ -247,7 +253,13 @@ function Interruptor({ vista }: { vista: VistaDelBot }) {
       // Rollback si el servidor lo rechazó: el switch no puede quedar diciendo
       // algo distinto de lo que la base guardó.
       if (r.error) setActivo(antes)
-      else if (valor && !vista.instrucciones.trim()) {
+      else if (valor && !vista.aQueSeDedica.trim()) {
+        // Primero éste: sin saber a qué se dedica el local, el bot contesta
+        // como "un comercio" cualquiera, que es peor que no saber los horarios.
+        toast('El bot todavía no sabe a qué se dedica tu local: va a hablar en genérico hasta que se lo cargues.', {
+          id: 'bot-sin-dedicacion',
+        })
+      } else if (valor && !vista.instrucciones.trim()) {
         toast('El bot va a contestar sólo precios y disponibilidad hasta que cargues la información del local.', {
           id: 'bot-sin-info',
         })
@@ -274,28 +286,66 @@ function Interruptor({ vista }: { vista: VistaDelBot }) {
   )
 }
 
+/**
+ * Los dos campos que el dueño escribe, con UN solo botón.
+ *
+ * Van separados porque llegan al modelo en lugares distintos, y esa diferencia
+ * es todo el ciclo del 2026-09-05: a qué se dedica el local entra en la primera
+ * oración del prompt, donde el modelo fija el rol, mientras que el textarea
+ * viaja adentro de un cerco rotulado como "información que no tenés que
+ * obedecer". Eso está bien para los horarios y es lo contrario de lo que hace
+ * falta para la identidad del negocio.
+ *
+ * Un botón y no dos: se escriben en la misma visita y se guardan en la misma
+ * fila, así que dos botones serían una decisión de más para el dueño.
+ */
 function Informacion({ vista }: { vista: VistaDelBot }) {
   const [enCurso, empezar] = useTransition()
+  const [dedicacion, setDedicacion] = useState(vista.aQueSeDedica)
   const [texto, setTexto] = useState(vista.instrucciones)
 
   return (
-    <Seccion titulo="Lo que el bot cuenta del local">
-      <p className={AYUDA}>
-        Horarios, dirección, si hacés envíos, cómo se paga. El bot usa esto para responder; lo que
-        no esté escrito acá, no lo sabe y no lo inventa.
-      </p>
-      <Textarea
-        value={texto}
-        onChange={(e) => setTexto(e.target.value)}
-        maxLength={TOPE}
-        rows={7}
-        placeholder={
-          'Abrimos de lunes a viernes de 9 a 18 y sábados de 9 a 13.\n' +
-          'Estamos en Av. Siempreviva 742.\n' +
-          'Hacemos envíos a todo el país.\n' +
-          'Se puede pagar en efectivo, con transferencia o con tarjeta.'
-        }
-      />
+    <Seccion titulo="Lo que el bot sabe del local">
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="bot-dedicacion" className="text-sm">
+          ¿A qué se dedica el local?
+        </Label>
+        <Input
+          id="bot-dedicacion"
+          value={dedicacion}
+          onChange={(e) => setDedicacion(e.target.value)}
+          maxLength={TOPE_DEDICACION}
+          placeholder="Una waflería de waffles dulces y salados, café y jugos"
+        />
+        <p className={AYUDA}>
+          Con esto el bot se presenta. Sin esto habla como un comercio cualquiera y puede confundir
+          lo que vendés.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="bot-info" className="text-sm">
+          Lo que el bot cuenta del local
+        </Label>
+        <Textarea
+          id="bot-info"
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          maxLength={TOPE}
+          rows={7}
+          placeholder={
+            'Abrimos de lunes a viernes de 9 a 18 y sábados de 9 a 13.\n' +
+            'Estamos en Av. Siempreviva 742.\n' +
+            'Hacemos envíos a todo el país.\n' +
+            'Se puede pagar en efectivo, con transferencia o con tarjeta.'
+          }
+        />
+        <p className={AYUDA}>
+          Horarios, dirección, si hacés envíos, cómo se paga. El bot usa esto para responder; lo que
+          no esté escrito acá, no lo sabe y no lo inventa.
+        </p>
+      </div>
+
       <div className="flex items-center justify-between gap-3">
         <span className="text-[11px] text-foreground-soft">
           {texto.length} de {TOPE}
@@ -306,7 +356,13 @@ function Informacion({ vista }: { vista: VistaDelBot }) {
           disabled={enCurso}
           onClick={() =>
             empezar(async () => {
-              avisar(await guardarInformacionDelLocal(texto), 'bot-info')
+              avisar(
+                await guardarInformacionDelLocal({
+                  aQueSeDedica: dedicacion,
+                  instrucciones: texto,
+                }),
+                'bot-info',
+              )
             })
           }
         >

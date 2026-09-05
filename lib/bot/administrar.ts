@@ -1,7 +1,7 @@
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { origenDelRequest } from '@/lib/auth/origen'
 import { ErrorDeBot } from '@/lib/bot/errores'
-import { TOPE_INSTRUCCIONES } from '@/lib/bot/prompt'
+import { TOPE_A_QUE_SE_DEDICA, TOPE_INSTRUCCIONES } from '@/lib/bot/prompt'
 import {
   borrarWebhook,
   crearCustomer,
@@ -39,6 +39,7 @@ export type BotDelLocal = {
   numeroVisible: string | null
   conectadoEn: Date | null
   activo: boolean
+  aQueSeDedica: string
   instrucciones: string
   topeMensual: number
 }
@@ -49,6 +50,7 @@ const VACIO: BotDelLocal = {
   numeroVisible: null,
   conectadoEn: null,
   activo: false,
+  aQueSeDedica: '',
   instrucciones: '',
   topeMensual: 1000,
 }
@@ -59,6 +61,7 @@ const CAMPOS = {
   numeroVisible: true,
   conectadoEn: true,
   activo: true,
+  aQueSeDedica: true,
   instrucciones: true,
   topeMensual: true,
 } as const
@@ -246,19 +249,42 @@ export async function alternarActivo(tenantId: string, activo: boolean): Promise
   await prisma.botDeWhatsapp.update({ where: { tenantId }, data: { activo } })
 }
 
-/** Lo que el bot cuenta del local. Se puede escribir antes de conectar: cargar
- *  los horarios mientras se espera el enlace es lo natural. */
-export async function guardarInstrucciones(tenantId: string, texto: string): Promise<void> {
-  const limpio = texto.trim()
-  if (limpio.length > TOPE_INSTRUCCIONES) {
+/**
+ * Lo que el bot sabe del local. Se puede escribir antes de conectar: cargar los
+ * horarios mientras se espera el enlace es lo natural.
+ *
+ * Los dos campos van juntos, en UNA escritura, porque se escriben en la misma
+ * visita y con el mismo botón: dos upserts dejarían la fila a medio guardar si
+ * el segundo falla.
+ */
+export async function guardarInformacion(
+  tenantId: string,
+  entrada: { aQueSeDedica: string; instrucciones: string },
+): Promise<void> {
+  // Colapsa el espacio en blanco por lo mismo que `comoOracion` en el prompt:
+  // el control es un `<input>`, pero lo que llega a la server action es un
+  // string del navegador. Acá se valida el tope sobre el texto ya colapsado,
+  // así que lo que se guarda es lo que el prompt va a usar tal cual.
+  const dedicacion = entrada.aQueSeDedica.replace(/\s+/g, ' ').trim()
+  const instrucciones = entrada.instrucciones.trim()
+
+  if (dedicacion.length > TOPE_A_QUE_SE_DEDICA) {
+    throw new ErrorDeBot(
+      'DEDICACION_LARGA',
+      `A qué se dedica el local no puede pasar de ${TOPE_A_QUE_SE_DEDICA} caracteres.`,
+    )
+  }
+  if (instrucciones.length > TOPE_INSTRUCCIONES) {
     throw new ErrorDeBot(
       'INSTRUCCIONES_LARGAS',
       `La información del local no puede pasar de ${TOPE_INSTRUCCIONES} caracteres.`,
     )
   }
+
+  const datos = { aQueSeDedica: dedicacion, instrucciones }
   await prismaParaTenant(tenantId).botDeWhatsapp.upsert({
     where: { tenantId },
-    create: { tenantId, instrucciones: limpio },
-    update: { instrucciones: limpio },
+    create: { tenantId, ...datos },
+    update: datos,
   })
 }
