@@ -38,4 +38,41 @@ describe('el umbral de las dos columnas', () => {
     const tema = GLOBALS.slice(GLOBALS.indexOf('@theme inline'))
     expect(tema.slice(0, tema.indexOf('\n}'))).toContain('--container-cobro')
   })
+
+  // El nombre es contrato del módulo, no un detalle: las variantes le apuntan
+  // por nombre (`@cobro/venta:`) justamente para no resolver contra el
+  // contenedor más cercano, que hoy podría ser el `@container/card-header` de
+  // components/ui/card.tsx.
+  it('el contenedor se llama venta', () => {
+    expect(NOMBRE_DEL_CONTENEDOR).toBe('venta')
+  })
+})
+
+const HOOK = readFileSync('hooks/use-dos-columnas.ts', 'utf8')
+
+describe('el hook que mide el contenedor', () => {
+  it('mide con ResizeObserver y no con el viewport', () => {
+    expect(HOOK).toContain('ResizeObserver')
+    expect(
+      HOOK,
+      'medir el viewport es exactamente lo que este hook existe para no hacer',
+    ).not.toMatch(/matchMedia|innerWidth/)
+  })
+
+  // Una sola definición del corte: el hook tiene que preguntarle a la función
+  // pura, no repetir la comparación. Con la comparación escrita dos veces,
+  // mover el `>=` a `>` en un lado deja el otro decidiendo distinto.
+  it('el hook decide con hayLugarParaDosColumnas y no con su propia comparación', () => {
+    const cuerpo = HOOK.slice(HOOK.indexOf('export function useDosColumnas'))
+    expect(cuerpo).toContain('hayLugarParaDosColumnas')
+    expect(cuerpo).not.toContain('ANCHO_MINIMO_DOS_COLUMNAS')
+  })
+
+  // El servidor no tiene ancho que medir. Arranca en "hay lugar" —o sea el
+  // layout ancho— que es EXACTAMENTE lo que hoy devuelve el
+  // `getServerSnapshot()` de useIsMobile (`false`, "no es mobile"). Es paridad
+  // con el comportamiento actual, no una decisión nueva.
+  it('sin medición todavía asume que hay lugar, igual que useIsMobile hoy', () => {
+    expect(HOOK).toMatch(/useState\(true\)/)
+  })
 })

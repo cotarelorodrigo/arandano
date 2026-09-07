@@ -1,3 +1,5 @@
+'use client'
+
 /**
  * ¿Entran las dos columnas de `/vender` —el carrito y el panel de cobro— en el
  * ancho que tiene el cuerpo de la pantalla?
@@ -11,6 +13,8 @@
  * saca 267 px al cuerpo. Ver
  * docs/superpowers/specs/2026-09-07-corte-por-contenedor-en-vender-design.md.
  */
+
+import * as React from 'react'
 
 /**
  * 48 del `p-6` del cuerpo + 392 (el mínimo del carrito que declara
@@ -39,4 +43,43 @@ export const NOMBRE_DEL_CONTENEDOR = 'venta'
 /** Con el ancho justo alcanza: es `>=`, igual que la variante de Tailwind. */
 export function hayLugarParaDosColumnas(ancho: number): boolean {
   return ancho >= ANCHO_MINIMO_DOS_COLUMNAS
+}
+
+/**
+ * Verdadero mientras el elemento referenciado tenga lugar para las dos
+ * columnas. Es la mitad JavaScript de la misma decisión que el CSS toma con
+ * `@cobro/venta:`, contra el mismo número.
+ *
+ * POR QUÉ HACE FALTA UNA MITAD JAVASCRIPT. Casi todo lo resuelve el CSS solo,
+ * y es mejor así. Lo que no puede son las cuatro props del `<Encabezado>` que
+ * dependen del paso —el título ("Vender" / "Cobro"), el subtítulo con el
+ * total, la flecha de volver y `controlMovil`—: son props, no clases, así que
+ * ahí hay que preguntar. Si esta pregunta se la hiciéramos al viewport
+ * mientras el CSS le pregunta al contenedor, los dos se desincronizarían justo
+ * en la banda que este ciclo arregla.
+ *
+ * `useState(true)` y no `false`: el servidor no tiene ancho que medir, y
+ * arrancar en el layout ancho es lo mismo que ya hace hoy el
+ * `getServerSnapshot()` de `useIsMobile`. La primera medición real llega en el
+ * layout effect, antes de que el navegador pinte.
+ */
+export function useDosColumnas(ref: React.RefObject<HTMLElement | null>): boolean {
+  const [hayLugar, setHayLugar] = React.useState(true)
+
+  React.useLayoutEffect(() => {
+    const elemento = ref.current
+    if (!elemento) return
+    const observador = new ResizeObserver(([entrada]) => {
+      // `contentBoxSize` y no `contentRect`: es el ancho sin padding ni borde,
+      // que es contra lo que compara un container query. El envoltorio no
+      // lleva padding (ver el spec, §6), así que hoy dan lo mismo — pero si
+      // alguien le pusiera uno, `contentRect` empezaría a mentir en silencio.
+      const ancho = entrada.contentBoxSize?.[0]?.inlineSize ?? entrada.contentRect.width
+      setHayLugar(hayLugarParaDosColumnas(ancho))
+    })
+    observador.observe(elemento)
+    return () => observador.disconnect()
+  }, [ref])
+
+  return hayLugar
 }
