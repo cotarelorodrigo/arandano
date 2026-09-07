@@ -5,6 +5,7 @@ import { formatearPrecio } from '@/lib/formato/mostrar'
 import type { PlanVisible } from '@/lib/planes/consultar'
 import type { Linea } from './punto-de-venta'
 import { SidebarProvider } from '@/components/ui/sidebar'
+import { NOMBRE_DEL_CONTENEDOR } from '@/hooks/use-dos-columnas'
 
 // Las funciones que el componente importa viven en un archivo 'use server'.
 // Su contrato ya lo fija app/(app)/vender/acciones.test.ts; acá sólo importa qué
@@ -2016,9 +2017,12 @@ describe('el punto de venta', () => {
 
 // --- El ciclo móvil: el cuerpo en un teléfono de 390 px ---
 //
-// Un solo árbol de marcado, mobile-first, con un único corte en `lg:` (1024,
-// hooks/use-mobile.ts). Frames `VaHod` (carrito) y `keRdN` (cobro) de
-// design/arandano.pen.
+// Un solo árbol de marcado, mobile-first, con un único corte —pero por
+// CONTENEDOR y no por viewport: `@cobro/venta:`, umbral en
+// hooks/use-dos-columnas.ts y app/globals.css. El viewport no puede contestar
+// "¿entran las dos columnas?", porque el sidebar le saca 248 px al cuerpo
+// justo al cruzar 1024 (ver el spec del 2026-09-07). Frames `VaHod` (carrito)
+// y `keRdN` (cobro) de design/arandano.pen.
 
 describe('el punto de venta en el teléfono', () => {
   // El carrito de una venta en curso vive en el estado de cliente de este
@@ -2053,11 +2057,21 @@ describe('el punto de venta en el teléfono', () => {
     expect(FUENTE, 'la flecha del cobro no puede ser un href').not.toMatch(/atras=/)
   })
 
-  // "En escritorio `paso` se ignora por completo" (spec §4): las dos columnas
-  // se ven siempre y el Topbar no cambia, aunque la URL traiga ?paso=cobro
-  // —por ejemplo al agrandar la ventana a mitad de un cobro—.
-  it('en escritorio el paso se ignora', () => {
-    expect(FUENTE).toMatch(/const pasoVisible = enTelefono \? paso : 'carrito'/)
+  // Con lugar para las dos columnas el paso se ignora POR COMPLETO: las dos se
+  // ven siempre y el Topbar no cambia, aunque la URL traiga ?paso=cobro —lo que
+  // pasa, por ejemplo, al agrandar la ventana a mitad de un cobro—.
+  it('con lugar para las dos columnas el paso se ignora', () => {
+    expect(FUENTE).toMatch(/const pasoVisible = dosColumnas \? 'carrito' : paso/)
+  })
+
+  // La pregunta del contenedor la contesta el hook del contenedor. Preguntarle
+  // al viewport acá, con el CSS preguntándole al contenedor, es la
+  // desincronización que este ciclo existe para cerrar.
+  it('el paso no lo decide el viewport', () => {
+    expect(FUENTE).toContain('useDosColumnas')
+    expect(FUENTE, 'useIsMobile contesta la pregunta del sidebar, no la de esta fila').not.toContain(
+      'useIsMobile',
+    )
   })
 
   it('los dos chips de estado se ven en el cuerpo del teléfono y en el header de escritorio', async () => {
@@ -2079,20 +2093,28 @@ describe('el punto de venta en el teléfono', () => {
     expect(FUENTE).toMatch(/controlMovil=\{[\s\S]{0,90}<ControlDeCaja/)
   })
 
-  it('la fila de columnas corta en lg, y no queda ningún md: en la pantalla', () => {
-    expect(FUENTE).toMatch(/flex flex-col gap-\[18px\] lg:flex-row/)
+  it('la fila corta por contenedor', () => {
+    expect(FUENTE).toMatch(/flex flex-col gap-\[18px\] @cobro\/venta:flex-row/)
+  })
+
+  it('el contenedor se declara con nombre', () => {
+    expect(FUENTE).toContain(`@container/${NOMBRE_DEL_CONTENEDOR}`)
+    // Sin nombre resolvería contra el contenedor más cercano, y
+    // components/ui/card.tsx ya establece uno (@container/card-header). Una
+    // variante sin nombre se escribe `@cobro:algo`; con nombre, `@cobro/venta:`
+    // —que no contiene la cadena `@cobro:` en ningún lado—.
     expect(
       SIN_COMENTARIOS,
-      'el único corte del ciclo móvil es lg: (1024) — ningún md:, sm: ni xl: nuevo',
-    ).not.toMatch(/\bmd:/)
+      'las variantes tienen que apuntar al contenedor por nombre',
+    ).not.toContain('@cobro:')
   })
 
   // Mobile-first y NO `max-lg:`: el valor del teléfono va sin prefijo y el de
   // escritorio con `lg:`. En `lg:` las dos columnas terminan en `flex`, sin
   // mirar el paso.
-  it('el paso esconde una columna y muestra la otra, sólo en el teléfono', () => {
-    expect(FUENTE).toMatch(/paso === 'cobro' \? 'hidden lg:flex' : 'flex'/)
-    expect(FUENTE).toMatch(/paso === 'cobro' \? 'flex' : 'hidden lg:flex'/)
+  it('el paso esconde una columna y muestra la otra, sólo en una columna', () => {
+    expect(FUENTE).toMatch(/paso === 'cobro' \? 'hidden @cobro\/venta:flex' : 'flex'/)
+    expect(FUENTE).toMatch(/paso === 'cobro' \? 'flex' : 'hidden @cobro\/venta:flex'/)
     expect(SIN_COMENTARIOS, 'la constraint del ciclo prohíbe max-lg:').not.toMatch(/max-lg:/)
   })
 
@@ -2113,10 +2135,10 @@ describe('el punto de venta en el teléfono', () => {
     expect(chip![1]).toContain('lg:inline-block')
   })
 
-  it('el panel de cobro ocupa todo el ancho del teléfono', async () => {
+  it('el panel de cobro ocupa todo el ancho cuando hay una sola columna', async () => {
     const html = await render()
     expect(html).toContain('w-full')
-    expect(html).toContain('lg:w-96')
+    expect(html).toContain('@cobro/venta:w-96')
   })
 
   it('el pie del teléfono repite el botón Cobrar de 54 px y no existe en escritorio', async () => {
@@ -2275,18 +2297,19 @@ describe('el punto de venta en el teléfono', () => {
     expect(FUENTE).toMatch(/paso === 'cobro' \? 'hidden lg:block' : 'block'/)
   })
 
-  // La constraint más frágil de la task: a 1024 o más, /vender tiene que verse
-  // exactamente como antes del ciclo móvil. El padding del cuerpo es la pieza
-  // que lo decide —se mudó de page.tsx a acá adentro— y no la fijaba ningún
-  // caso.
-  it('el cuerpo mide 12/14 en el teléfono y vuelve a p-6 en escritorio', async () => {
+  // La constraint más frágil de la task: con lugar para las dos columnas,
+  // /vender tiene que verse exactamente como antes del ciclo móvil. El
+  // padding del cuerpo es la pieza que lo decide —se mudó de page.tsx a acá
+  // adentro— y no la fijaba ningún caso. Ya no depende del viewport: depende
+  // de si el CONTENEDOR tiene lugar (`@cobro/venta:`).
+  it('el cuerpo mide 12/14 en una columna y vuelve a p-6 con las dos', async () => {
     const html = await render()
-    const cuerpo = html.match(/<div class="([^"]*lg:p-6[^"]*)"/)?.[1]
+    const cuerpo = html.match(/<div class="([^"]*@cobro\/venta:p-6[^"]*)"/)?.[1]
     expect(cuerpo, 'no se encontró el cuerpo').toBeTruthy()
     expect(cuerpo).toContain('px-[14px]')
     expect(cuerpo).toContain('py-3')
     expect(cuerpo).toContain('gap-3')
-    expect(cuerpo).toContain('lg:gap-[18px]')
+    expect(cuerpo).toContain('@cobro/venta:gap-[18px]')
   })
 
   // Los tres atajos de teclado se abstienen mientras haya un overlay de Radix
