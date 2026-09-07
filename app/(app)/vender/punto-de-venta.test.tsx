@@ -2136,6 +2136,75 @@ describe('el punto de venta en el teléfono', () => {
   // 850-897: el Topbar con la flecha de volver y las dos columnas a la vista.
   it('el ref que mide y el contenedor que consulta son el mismo elemento', () => {
     expect(FUENTE).toMatch(/ref=\{cuerpo\}\s+className="@container\/venta/)
+    // Y que `cuerpo` sea EL ref que mide, no un homónimo: sin esta segunda
+    // mitad, un segundo ref con otro nombre pasándole a `useDosColumnas`
+    // dejaría el caso en verde midiendo un elemento distinto del que consulta,
+    // que es exactamente el defecto que la primera mitad existe para impedir.
+    expect(FUENTE).toMatch(/useDosColumnas\(cuerpo\)/)
+  })
+
+  /**
+   * EL TERCER INVARIANTE DEL CICLO, y el que ya se cobró una vez: todo el que
+   * CONSULTA tiene que estar adentro del que DECLARA.
+   *
+   * Un container query CON NOMBRE resuelve contra el ancestro que declara ese
+   * contenedor; si no lo tiene entre sus ancestros, la regla no dispara nunca
+   * —no falla, no avisa, simplemente no aplica—. `<PieDeVenta>` vivió como
+   * HERMANO del `@container/venta` hasta el 2026-09-07, así que su
+   * `@cobro/venta:hidden` era letra muerta: a partir de los 850 px se veía el
+   * pie fijo del teléfono ADEMÁS de las dos columnas, duplicando el botón
+   * "Cobrar", el `PieDeTotales` y los chips de faltante en la pantalla más
+   * caliente del producto. Con `lg:hidden` no podía pasar, porque una media
+   * query no depende del árbol.
+   *
+   * Sobre el HTML RENDERIZADO y no sobre el fuente: lo que hay que afirmar es
+   * una relación de ANCESTRÍA, y el fuente no la tiene —un `</div>` de más o
+   * un componente movido cambia el árbol sin cambiar ninguna clase—. Se
+   * balancean `<div`/`</div>` desde la etiqueta que lleva el `@container/venta`
+   * hasta su cierre real, que es la misma técnica que
+   * app/(app)/vender/container-query.test.ts usa para las llaves del CSS y por
+   * el mismo motivo: cortar en el cierre de ESTE bloque y no en la próxima
+   * aparición de algo parecido.
+   */
+  it('todo lo que consulta el contenedor está adentro del contenedor', async () => {
+    const html = await render()
+
+    const inicioEtiqueta = html.indexOf(`@container/${NOMBRE_DEL_CONTENEDOR}`)
+    expect(inicioEtiqueta, 'no se encontró el @container/venta en el HTML').toBeGreaterThan(-1)
+    // El `<div` que abre la etiqueta que lleva la clase, no el que la contiene.
+    const apertura = html.lastIndexOf('<div', inicioEtiqueta)
+    expect(apertura, 'el @container/venta no está sobre un <div').toBeGreaterThan(-1)
+
+    // Balanceo de divs desde ahí hasta el cierre real del elemento. El HTML de
+    // renderToStaticMarkup está bien anidado y no tiene divs auto-cerrados, así
+    // que contar aperturas y cierres alcanza.
+    const etiquetas = [...html.matchAll(/<div\b|<\/div>/g)]
+    let profundidad = 0
+    let cierre = -1
+    for (const t of etiquetas) {
+      if (t.index! < apertura) continue
+      profundidad += t[0] === '</div>' ? -1 : 1
+      if (profundidad === 0) {
+        cierre = t.index! + t[0].length
+        break
+      }
+    }
+    expect(cierre, 'el @container/venta no cierra').toBeGreaterThan(apertura)
+
+    const afuera = [...html.matchAll(/@cobro\/venta:/g)].filter(
+      (m) => m.index! < apertura || m.index! > cierre,
+    )
+    expect(
+      afuera.length,
+      'hay clases @cobro/venta: fuera del elemento que declara el contenedor: ' +
+        'una consulta con nombre no dispara nunca desde afuera, así que esas ' +
+        'clases son letra muerta (le pasó a <PieDeVenta> el 2026-09-07)',
+    ).toBe(0)
+    // Y que el rango no esté vacío por un balanceo mal hecho: adentro tiene que
+    // haber varias, incluido el `@cobro/venta:hidden` del pie del teléfono.
+    const adentro = [...html.slice(apertura, cierre).matchAll(/@cobro\/venta:/g)]
+    expect(adentro.length).toBeGreaterThan(5)
+    expect(html.slice(apertura, cierre)).toContain('@cobro/venta:hidden')
   })
 
   // Mobile-first y NO al revés — "al revés" sería `@max-cobro/venta:`, el

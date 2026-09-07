@@ -2553,19 +2553,39 @@ export function PuntoDeVenta({
             </Card>
           </div>
         </div>
-      </div>
 
-      <PieDeVenta
-        paso={paso}
-        estado={estado}
-        ventaProcesada={ventaProcesada}
-        chipsDelFaltante={chipsDelFaltante}
-        hayCarrito={hayCarrito}
-        cierra={cierra}
-        cobrando={cobrando}
-        irACobro={irACobro}
-        lineasDelPie={lineasDelPie}
-      />
+        {/* ADENTRO del `@container/venta`, y no como hermano suyo. Su
+            `@cobro/venta:hidden` es un container query CON NOMBRE, y una
+            consulta con nombre sólo resuelve contra un ancestro que declare
+            ese contenedor: afuera —donde estuvo hasta el 2026-09-07— la regla
+            no dispara NUNCA, así que a partir de los 850 px el pie fijo del
+            teléfono se dibujaba ADEMÁS de las dos columnas (dos botones
+            "Cobrar" de 54 px, dos `PieDeTotales` y dos juegos de chips de
+            faltante en la misma pantalla). Con `lg:hidden` daba igual dónde
+            estuviera, porque una media query no depende del árbol; con un
+            container query sí, y ésa es la diferencia que este ciclo trae.
+            `punto-de-venta.test.tsx` lo ata sobre el HTML renderizado: toda
+            aparición de `@cobro/venta:` cae adentro de este elemento.
+
+            El apilado no cambia —el envoltorio ya es `flex flex-1 flex-col` y
+            el hijo padeado se lleva el `flex-1`—, y el `sticky bottom-0` del
+            pie sigue pegado abajo: `container-type: inline-size` aplica
+            contención de layout, estilo y tamaño en línea, pero NO crea un
+            contenedor de scroll, así que el pie se sigue resolviendo contra el
+            mismo scrollport de antes, clampeado por un elemento que ocupa el
+            mismo alto que ocupaba `<SidebarInset>`. */}
+        <PieDeVenta
+          paso={paso}
+          estado={estado}
+          ventaProcesada={ventaProcesada}
+          chipsDelFaltante={chipsDelFaltante}
+          hayCarrito={hayCarrito}
+          cierra={cierra}
+          cobrando={cobrando}
+          irACobro={irACobro}
+          lineasDelPie={lineasDelPie}
+        />
+      </div>
 
       {/* El selector de unidad: se abre al agregar por NOMBRE un artículo con
           serie. `Dialog` de Radix es un overlay más de los que
