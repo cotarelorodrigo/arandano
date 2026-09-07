@@ -70,10 +70,13 @@ export function useDosColumnas(ref: React.RefObject<HTMLElement | null>): boolea
     const elemento = ref.current
     if (!elemento) return
     const observador = new ResizeObserver(([entrada]) => {
-      // `contentBoxSize` y no `contentRect`: es el ancho sin padding ni borde,
-      // que es contra lo que compara un container query. El envoltorio no
-      // lleva padding (ver el spec, §6), así que hoy dan lo mismo — pero si
-      // alguien le pusiera uno, `contentRect` empezaría a mentir en silencio.
+      // `contentBoxSize` y no `contentRect`: los dos dan el content box —
+      // `contentRect` NO incluye padding ni borde, a pesar de lo que sugiere
+      // su nombre—, pero `inlineSize` es consciente del modo de escritura, que
+      // es exactamente la dimensión que consulta un container query
+      // `inline-size`. `contentRect` queda de fallback porque es la propiedad
+      // vieja y está en todos lados; en un documento horizontal las dos
+      // devuelven el mismo número.
       const ancho = entrada.contentBoxSize?.[0]?.inlineSize ?? entrada.contentRect.width
       setHayLugar(hayLugarParaDosColumnas(ancho))
     })
