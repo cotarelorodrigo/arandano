@@ -259,9 +259,14 @@ pantallas. Cada uno con su razón en la decisión 2.
   `@container` con el umbral. Es la única red contra una variante mal escrita.
 - **`components/shell/encabezado.test.tsx:199` sigue en verde sin tocarse**, y eso
   es parte de la afirmación del ciclo: la pregunta del viewport no se movió.
-- **`test/responsive.test.ts` sigue sirviendo sin cambios**: su regex ya tolera el
-  `@` en el prefijo de variante, así que un `@cobro/venta:w-96` cuenta como
-  prefijado y no como un ancho fijo suelto.
+- **`test/responsive.test.ts` sigue sirviendo sin cambios**, pero por un motivo
+  más angosto del que parece: ese caso sólo mira `w-[Npx]`, `min-w-[Npx]` y
+  `basis-[Npx]`, y ninguna de las clases que este ciclo convierte es de esa
+  familia. **Su punto ciego nuevo, que va anotado en el propio archivo**: la
+  clase de caracteres del prefijo de variante de su regex no incluye la `/`, así
+  que un `@cobro/venta:w-[400px]` futuro le resultaría invisible — ni prefijado
+  ni suelto. El día que se agregue un ancho fijo con esta variante, hay que
+  sumarle la `/` a ese regex.
 - **Documentación**: la sección `/vender` de `docs/pantallas.md`, y una entrada en
   CLAUDE.md que registre la revisión de la decisión "un solo corte, 1024 px" —
   con el porqué, para que no se lea como que la regla se abandonó.
