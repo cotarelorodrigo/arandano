@@ -2109,9 +2109,18 @@ describe('el punto de venta en el teléfono', () => {
     ).not.toContain('@cobro:')
   })
 
-  // Mobile-first y NO `max-lg:`: el valor del teléfono va sin prefijo y el de
-  // escritorio con `lg:`. En `lg:` las dos columnas terminan en `flex`, sin
-  // mirar el paso.
+  // EL INVARIANTE DEL CICLO, y el único que no se puede equivocar: el elemento
+  // que MIDE y el elemento que CONSULTA tienen que ser el mismo. Movido el
+  // `ref` al hijo padeado, el JavaScript mediría 48 px menos que el CSS
+  // (`@cobro/venta:p-6`) y las dos mitades decidirían distinto en la banda
+  // 850-897: el Topbar con la flecha de volver y las dos columnas a la vista.
+  it('el ref que mide y el contenedor que consulta son el mismo elemento', () => {
+    expect(FUENTE).toMatch(/ref=\{cuerpo\}\s+className="@container\/venta/)
+  })
+
+  // Mobile-first y NO `max-lg:`: el valor del teléfono va sin prefijo y el
+  // ancho con `@cobro/venta:`. Con lugar para las dos columnas, ambas
+  // terminan en `flex`, sin mirar el paso.
   it('el paso esconde una columna y muestra la otra, sólo en una columna', () => {
     expect(FUENTE).toMatch(/paso === 'cobro' \? 'hidden @cobro\/venta:flex' : 'flex'/)
     expect(FUENTE).toMatch(/paso === 'cobro' \? 'flex' : 'hidden @cobro\/venta:flex'/)
