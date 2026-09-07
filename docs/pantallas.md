@@ -690,6 +690,14 @@ Es la pantalla que más cambia del ciclo, y la única que se parte en dos frames
   (`App / Vender`, nodos `k3dm9` y `v6bcUR`): el IMEI junto al SKU en la línea
   de meta, la cantidad sin stepper, y para una unidad sin número el campo de
   140×28 al lado del SKU con la leyenda debajo.
+- **El corte de las dos columnas es por CONTENEDOR, no por viewport**
+  (`@cobro/venta:`, umbral `--container-cobro` en `app/globals.css` y
+  `ANCHO_MINIMO_DOS_COLUMNAS` en `hooks/use-dos-columnas.ts`). Es la única
+  pantalla del repo así, y tiene un motivo que no aplica a las demás: el
+  sidebar le saca 248 px al cuerpo justo al cruzar 1024, así que hay más lugar
+  a 1023 que a 1024 y ningún corte de viewport puede ser correcto. El Topbar y
+  el sidebar siguen en 1024 (`hooks/use-mobile.ts`) porque contestan la otra
+  pregunta. Colapsar el sidebar devuelve las dos columnas.
 
 ## `/ventas`
 

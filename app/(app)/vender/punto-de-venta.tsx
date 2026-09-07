@@ -12,7 +12,7 @@ import type { ArticuloVendible } from '@/lib/ventas/buscar'
 // `lib/inventario/unidades.ts` arrastra `lib/tenant/transaccion.ts`, y un
 // import de valor desde este archivo cliente arrastraría `pg` al bundle.
 import type { UnidadLibre } from '@/lib/inventario/unidades'
-import { useIsMobile } from '@/hooks/use-mobile'
+import { useDosColumnas } from '@/hooks/use-dos-columnas'
 import { Encabezado } from '@/components/shell/encabezado'
 import {
   aCentavos, aMilesimas, cantidadEnMilesimas, cotizacionEnDiezMilesimas, deCentavos,
@@ -1003,14 +1003,17 @@ export function PuntoDeVenta({
   // para el porqué (una navegación remontaría este componente con el carrito
   // de la venta en curso adentro).
   const { paso, irACobro, volverAlCarrito, descartarElCobro } = usePasoDeCobro()
-  const enTelefono = useIsMobile()
-  // En escritorio el paso se ignora POR COMPLETO: las dos columnas se ven
-  // siempre y el Topbar no cambia, aunque la URL traiga `?paso=cobro` —lo que
-  // pasa, por ejemplo, al agrandar la ventana a mitad de un cobro—. Las
-  // columnas resuelven lo suyo por CSS (`hidden lg:flex`, más abajo), que no
-  // necesita saber el ancho; el Topbar no puede, porque su título y su flecha
-  // son props y no clases, así que ahí sí hace falta preguntar.
-  const pasoVisible = enTelefono ? paso : 'carrito'
+  // El ancho del cuerpo, que es lo que decide si entran las dos columnas. Se
+  // mide sobre el mismo elemento que lleva el `@container/venta`, contra el
+  // mismo umbral: el CSS y esto no pueden decidir distinto.
+  const cuerpo = useRef<HTMLDivElement>(null)
+  const dosColumnas = useDosColumnas(cuerpo)
+  // Con las dos columnas a la vista el paso se ignora POR COMPLETO, aunque la
+  // URL traiga `?paso=cobro`. Las columnas resuelven lo suyo por CSS
+  // (`hidden @cobro/venta:flex`, más abajo); el Topbar no puede, porque su
+  // título y su flecha son props y no clases, así que ahí sí hace falta
+  // preguntar — y se le pregunta al contenedor, no al viewport.
+  const pasoVisible = dosColumnas ? 'carrito' : paso
   const [lineas, setLineas] = useState<Linea[]>(lineasIniciales ?? [])
   const [busqueda, setBusqueda] = useState('')
   const [resultados, setResultados] = useState<ArticuloVendible[]>([])
@@ -1243,7 +1246,7 @@ export function PuntoDeVenta({
   // ya cobrada y este mismo efecto la empujaba afuera otra vez.
   //
   // EL FOCO ESPERA A LA PASADA SIGUIENTE. Con el paso todavía en cobro el
-  // buscador está en `display:none` (ver su `hidden lg:block`, más abajo), y
+  // buscador está en `display:none` (ver su `hidden @cobro/venta:block`, más abajo), y
   // `focus()` sobre un elemento oculto no hace nada. `paso` está en las
   // dependencias justamente para eso: la vuelta corta esta pasada, el cambio
   // de paso vuelve a disparar el efecto, y ahí el buscador ya está visible.
@@ -1254,7 +1257,7 @@ export function PuntoDeVenta({
   //
   // EN ESCRITORIO LA RAMA DE LA VUELTA NO CORRE NUNCA, y no por un chequeo de
   // ancho: es estructural. Lo único que pone el paso en cobro es el botón del
-  // pie, que es `lg:hidden`.
+  // pie, que es `@cobro/venta:hidden`.
   useEffect(() => {
     if (!ventaProcesada) return
     if (paso === 'cobro') {
@@ -1678,7 +1681,7 @@ export function PuntoDeVenta({
           // y no una tercera hecha a mano — es la copia de ese dato para el
           // Topbar del teléfono, que reemplaza a la banda mientras dura el
           // paso de cobro (ver el comentario de la Card del carrito, más
-          // abajo: se esconde con `hidden lg:flex` en ese paso).
+          // abajo: se esconde con `hidden @cobro/venta:flex` en ese paso).
           pasoVisible === 'cobro' && !lineasTotal.some((l) => l.monto === '—')
             ? `Venta de ${lineasTotal.map((l) => `${l.signo} ${l.monto}`).join(' + ')}`
             : undefined
@@ -1701,852 +1704,888 @@ export function PuntoDeVenta({
           `flex-1` para que el pie del teléfono quede abajo de todo aunque la
           venta tenga dos artículos: en escritorio no se nota, porque no hay
           nada después del cuerpo. */}
-      <div className="flex flex-1 flex-col gap-3 px-[14px] py-3 lg:gap-[18px] lg:p-6">
-        {/* Los dos chips de estado, que en escritorio viven en el Topbar
-            (`acciones`, hidden lg:flex) y en el teléfono abren el cuerpo.
-            De sólo lectura: ver el comentario de ChipsDeEstado en caja.tsx. */}
-        <ChipsDeEstado caja={caja} cotizacionUsd={cotizacionUsd} />
+      {/* El envoltorio del contenedor: SIN padding, a propósito. Un container
+          query compara contra el content box, así que si este elemento
+          llevara el padding —que además cambia con la propia consulta— la
+          consulta dependería de su propio resultado. Con el padding en el hijo,
+          lo que se mide es el ancho del <SidebarInset>, que no depende de nada
+          que decidamos acá. El `ref` es el mismo que mide `useDosColumnas`:
+          una sola fuente para el CSS y para el JavaScript. */}
+      <div ref={cuerpo} className="@container/venta flex flex-1 flex-col">
+        <div className="flex flex-1 flex-col gap-3 px-[14px] py-3 @cobro/venta:gap-[18px] @cobro/venta:p-6">
+          {/* Los dos chips de estado, que en escritorio viven en el Topbar
+              (`acciones`, hidden lg:flex — de `<Encabezado>`, que sigue
+              contestando la pregunta del viewport) y en el teléfono abren el cuerpo.
+              De sólo lectura: ver el comentario de ChipsDeEstado en caja.tsx. */}
+          <ChipsDeEstado caja={caja} cotizacionUsd={cotizacionUsd} />
 
-        {/* El buscador: a todo el ancho del Cuerpo, ya no encajado en la
-            columna izquierda. El borde violeta de 2px es PERMANENTE —no sólo
-            en foco—: design/arandano.pen lo pide así porque en este mostrador
-            el cuadro es lo primero que se mira, y un borde que sólo aparece al
-            enfocar no ayuda a encontrarlo de entrada. El resplandor
-            (shadow-[...]) también sale del .pen: un halo de 4px con --primary
-            al 12% de opacidad, armado con color-mix() y NO con un rgba()/hex
-            inventado — docs/sistema-de-diseno.md (vía
-            app/login/persiana.module.css) es explícito: "el brillo y el surco
-            salen de tokens con color-mix, no de rgba() inventados". Con la
-            paleta ya repintada una vez (2026-08-21), un halo con el violeta
-            viejo hardcodeado quedaría huérfano la próxima vez y nadie se
-            enteraría; con color-mix(var(--primary)) sigue al token. */}
-        {/* El buscador no existe en el paso de cobro: `keRdN` no lo dibuja —su
-            Cuerpo es banda total, los pagos y el botón que suma uno— y es lo que
-            volvía silencioso el defecto que arregla el efecto de arriba, porque
-            era lo que permitía escanear desde una pantalla donde el carrito no
-            se ve. Mobile-first, igual que las dos columnas: en `lg:` está
-            siempre, sin mirar el paso. */}
-        <div className={`${paso === 'cobro' ? 'hidden lg:block' : 'block'} relative`}>
-          {/* focus-within y no el focus-visible del <Input>: el ring por
-              default aparecería sólo alrededor del campo de texto —que no
-              cubre ni el ícono ni el chip F2—, y se vería como un rectángulo
-              roto en medio de la barra. El <Input> de adentro apaga su propio
-              ring (ver más abajo) para que sea ESTE, el de la barra entera, el
-              que se vea al enfocar. */}
-          {/* 52 px en el teléfono (nodo `I5IuID` de VaHod), 58 en escritorio. */}
-          <div className="flex h-[52px] items-center gap-3 rounded-[14px] border-2 border-primary bg-card px-[18px] shadow-[0_0_0_4px_color-mix(in_srgb,var(--primary)_12%,transparent)] focus-within:ring-3 focus-within:ring-ring/50 lg:h-[58px]">
-            <ScanBarcode aria-hidden="true" className="size-[22px] shrink-0 text-primary" />
-            <Input
-              id="buscar"
-              ref={buscador}
-              autoFocus
-              autoComplete="off"
-              value={busqueda}
-              onChange={(e) => alCambiarBusqueda(e.target.value)}
-              onKeyDown={alTeclearEnBuscador}
-              placeholder="Escaneá un código o buscá por nombre…"
-              aria-label="Buscar artículo"
-              className="h-full flex-1 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
-            />
-            {/* El chip promete un atajo de teclado, y un teléfono no tiene
-                teclas de función: ahí es un cartel que no se puede cumplir.
-                `I5IuID` tampoco lo dibuja. Los tres atajos en sí no se tocan
-                —siguen enganchados a `window` en los dos anchos—: lo que se
-                oculta es la promesa, no el mecanismo. */}
-            <span className="hidden shrink-0 rounded-sm bg-secondary px-2 py-1 text-[11px] font-semibold text-foreground-soft lg:inline-block">
-              F2
-            </span>
-          </div>
-
-          {resultados.length > 0 && (
-            <ul className="absolute z-10 mt-2 w-full divide-y rounded-md border bg-card shadow-md">
-              {resultados.map((a) => (
-                <li key={a.id}>
-                  <button
-                    type="button"
-                    onClick={() => agregar(a)}
-                    className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent"
-                  >
-                    <span>
-                      {a.nombre} <span className="text-muted-foreground">· {a.sku}</span>
-                    </span>
-                    <span>
-                      {/* `precioEnSuMoneda` y no `formatearPrecio`: el precio
-                          del artículo está en SU moneda (`Articulo.moneda`), y
-                          un iPhone de lista US$ 300 mostrado como "$ 300,00"
-                          se lee tres órdenes de magnitud abajo. Es el primer
-                          número que ve quien busca el artículo, así que es
-                          donde más caro sale equivocarse. */}
-                      <span className={estilos.importe}>{precioEnSuMoneda(a.precio, a.moneda)}</span>
-                      {/* El stock no es plata, así que no lleva estilos.importe —
-                          pero sigue siendo una cifra que se compara de un
-                          vistazo, así que conserva tabular-nums. Un servicio
-                          muestra —, nunca 0: el motor no le descuenta stock, y
-                          un cero ahí se leería como faltante. */}
-                      <span className="ml-3 tabular-nums text-muted-foreground">
-                        {a.esProducto ? formatearCantidad(a.stock) : '—'}
-                      </span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {/* "Fila": las dos columnas — el carrito y el cobro. El corte pasó de
-            `md:` a `lg:` con el ciclo móvil: a 768 px al carrito le quedaban
-            136 px al lado del panel de 384 (ver hooks/use-mobile.ts, que hace
-            esa cuenta). */}
-        <div className="flex flex-col gap-[18px] lg:flex-row">
-          {/* El carrito entero vive dentro de una card con radius y borde
-              propios — antes era una <table> suelta. Se contiene con
-              max-w-3xl por la misma razón que antes: en un monitor de 22" una
-              card sin techo deja un hueco enorme entre el nombre del artículo y
-              su precio, que es más de lo que el ojo enlaza de una sola pasada.
-              `max-w-3xl` es un token de max-width de Tailwind, no un paso de la
-              escala de espaciado, así que no cae bajo la regla del
-              subconjunto.
-
-              En el teléfono el cobro es pantalla propia, así que el carrito se
-              esconde mientras dura (frames `VaHod` y `keRdN`). Se escribe
-              mobile-first —el valor del teléfono sin prefijo, el de escritorio
-              con `lg:`— y NO con `max-lg:`: arriba de 1024 las dos columnas
-              terminan en `flex` sin mirar el paso, que es la regla. */}
-          <Card
-            className={`${
-              paso === 'cobro' ? 'hidden lg:flex' : 'flex'
-            } max-w-3xl flex-1 gap-0 rounded-[16px] border py-0 ring-0`}
-          >
-            {/* El encabezado del carrito, SÓLO en el teléfono (nodo `L5UIo`):
-                padding [11,14], borde inferior, "Carrito" a la izquierda y
-                "Vaciar" a la derecha. En escritorio esa franja ya la ocupa la
-                fila de encabezados de la tabla, que en el teléfono no se ve
-                casi entera.
-
-                POR QUÉ EL BOTÓN NO ES OPCIONAL: en escritorio vaciar el
-                carrito lo da el doble Esc, y un teléfono no tiene Esc. Sin él,
-                deshacer una venta mal armada era borrar ítem por ítem con la
-                ✕. Comparte `vaciadoArmado` con el atajo (ver
-                `alternarVaciado`), así que los dos caminos no se pueden
-                desincronizar.
-
-                "Carrito" paga Archivo (14/600, `Y7AGpE`) vía el módulo de
-                Cobro: comparte familia y peso con el título de esa card y sólo
-                cambia el tamaño, que es exactamente cómo ese módulo está
-                pensado para usarse (ver su comentario). La fila "Cobro" de la
-                escala en docs/sistema-de-diseno.md dice hoy "16 px el título" y
-                pasa a tener dos tamaños — lo actualiza la task de
-                documentación del ciclo, que junta todos los roles que la
-                maqueta móvil achica. */}
-            <div className="flex items-center justify-between border-b px-[14px] py-[11px] lg:hidden">
-              <span className={`${estilosCobro.titulo} text-sm text-foreground`}>Carrito</span>
-              <button
-                type="button"
-                onClick={alternarVaciado}
-                disabled={lineas.length === 0}
-                className={`text-xs font-semibold disabled:opacity-40 ${
-                  vaciadoArmado ? 'text-destructive' : 'text-muted-foreground'
-                }`}
-              >
-                {vaciadoArmado ? 'Sí, vaciar' : 'Vaciar'}
-              </button>
-            </div>
-
-            {/* El carrito deja de ser una tabla HTML: sigue el patrón que
-                estrena `Listado` en app/(app)/ventas/page.tsx (líneas
-                337-366 de ese archivo) — grid + `display:contents`, con las
-                mismas 5 anchuras que declaraban las celdas de encabezado de
-                antes (Artículo sin ancho fijo → `1fr`, 104, 110, 130, 28 = w-7).
-
-                `VaHod` apila TRES líneas por ítem —nombre+✕ / meta /
-                stepper…subtotal— (nodos `UMJEA`/`IKwdw`/`rXeg5`/`mRrMW`), a
-                diferencia de `Listado`, donde el agrupador siempre junta
-                columnas ADYACENTES. Acá "Quitar" —la ÚLTIMA columna en
-                escritorio— tiene que convivir con el NOMBRE —la PRIMERA— en
-                la misma línea del teléfono, con Cantidad/Precio/Subtotal en
-                el medio: agruparlas no alcanza. Se resuelve dejando el DOM en
-                el mismo orden que las columnas de escritorio (ninguna
-                auto-colocación exótica hace falta: Artículo, [Cantidad,
-                Precio, Subtotal agrupadas], Quitar) y anclando "Quitar" con
-                `absolute` sólo en el teléfono — ver su comentario, más
-                abajo. */}
-            <div role="table" className="grid grid-cols-1 lg:grid-cols-[1fr_104px_110px_130px_28px]">
-              {/* Fila "hundida": fondo --muted, padding [12,18] y 14 de gap
-                  entre columnas. Sólo existe en escritorio —`hidden`
-                  la saca del todo en el teléfono, `lg:contents` la disuelve
-                  ahí para que sus 5 `columnheader` pasen a ser las celdas de
-                  la primera fila del grid—, igual que el encabezado de
-                  `Listado`. */}
-              <div role="row" className="hidden lg:contents">
-                <div role="columnheader" className="bg-muted px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                  Artículo
-                </div>
-                <div role="columnheader" className="bg-muted px-[7px] py-3 text-center text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                  Cantidad
-                </div>
-                {/* Vuelve a existir en escritorio: la Task 3 la había
-                    escondido del todo (sin reflow posible mientras esto
-                    seguía siendo una tabla HTML) como mitigación temporal.
-                    Con el reflow ya resuelto acá, no hay motivo para seguir
-                    sin ella en escritorio. */}
-                <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                  Precio
-                </div>
-                <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
-                  Subtotal
-                </div>
-                {/* La columna de "Quitar" queda vacía en el encabezado. */}
-                <div role="columnheader" className="bg-muted px-[7px] py-3 pr-[18px]" />
-              </div>
-
-              {lineas.map((l, i) => {
-                const cantidadMilesimas = cantidadEnMilesimas(l.cantidad)
-                const invalida = Number.isNaN(cantidadMilesimas)
-                const quedaria = aMilesimas(l.stock) - cantidadMilesimas
-                return (
-                  // `group` + `relative`: `group` es lo que restituye el
-                  // hover de fila de escritorio (ver `lg:group-hover:` en
-                  // cada celda, más abajo — mismo mecanismo que `Listado`).
-                  // `relative` es el ancla del botón "Quitar" en el
-                  // teléfono, y no le hace nada a escritorio: ahí la fila es
-                  // `lg:contents` y una caja sin caja no tiene `position`.
-                  //
-                  // El `border-b`/`last:border-b-0` de acá siguen sin
-                  // prefijo, y siguen sirviendo: en el teléfono la fila ES
-                  // una caja real (no es `display:contents` ahí), así que
-                  // ahí pintan. En escritorio no hacen nada — por eso cada
-                  // celda lleva su propio `lg:border-b`/`lg:group-last:
-                  // border-b-0` más abajo (Ronda de arreglos 1 sobre la
-                  // Task 4b; el principio completo, con el porqué del
-                  // envoltorio de centrado, vive en el docblock de
-                  // `Listado`, app/(app)/ventas/page.tsx).
-                  <div
-                    key={l.articuloId}
-                    role="row"
-                    className="group relative flex flex-col gap-2 border-b p-[11px] px-[14px] last:border-b-0 lg:contents"
-                  >
-                    {/* Artículo: nombre + meta (SKU/Servicio, el precio
-                        unitario sólo en el teléfono, el aviso de cantidad
-                        inválida y el de stock). `pr-9` en el teléfono
-                        reserva el lugar del botón "Quitar", que flota
-                        encima con `absolute` (ver más abajo) y no empuja
-                        este contenido con su propio ancho — a diferencia de
-                        `Listado`, acá no hay una celda de grid propia para
-                        "Quitar" al lado de ésta. Es la celda más alta de la
-                        fila (dos líneas siempre), así que no necesita el
-                        envoltorio de centrado que sí llevan las otras
-                        cuatro, más abajo: ya queda estirada de punta a
-                        punta. */}
-                    <div
-                      role="cell"
-                      className="pr-9 whitespace-normal lg:border-b lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
-                    >
-                      {/* `gap-2` (8px) en el teléfono —el mismo que separa
-                          los 3 bloques de `VaHod`— y `lg:gap-0.5` para no
-                          mover el aspecto de escritorio, que ya usaba ese
-                          espaciado más apretado. */}
-                      <div className="flex flex-col gap-2 lg:gap-0.5">
-                        <span className="text-sm font-medium text-foreground">{l.descripcion}</span>
-                        {/* `flex-wrap`: esta línea de meta pasó a poder
-                            llevar el IMEI —o el campo para escanearlo, que es
-                            un ancho fijo que no encoge— además del SKU y de
-                            los dos avisos, y a 390 px eso no entra en una
-                            sola línea. Sin esto el carrito arrastraba la
-                            página al scroll horizontal, que es justo el modo
-                            de falla que vigila test/responsive.test.ts (y que
-                            no puede ver acá: 140 px no supera su umbral). */}
-                        <div className="flex flex-wrap items-center gap-2">
-                          {/* El SKU bajo el nombre: antes sólo se veía en el
-                              buscador. Un servicio no tiene SKU de stock, así
-                              que muestra "Servicio" en su lugar — mismo
-                              criterio que ya usa la lista de resultados para
-                              el stock de un servicio (una raya, no un cero). */}
-                          <span className="text-[11px] text-muted-foreground">
-                            {l.esProducto ? `SKU ${l.sku}` : 'Servicio'}
-                            {/* El precio unitario, que en el teléfono no
-                                tiene columna propia (ver el columnheader de
-                                Precio, más arriba): la maqueta lo pone acá,
-                                pegado al SKU, con el mismo tratamiento de
-                                meta. En escritorio desaparece de esta línea,
-                                porque su columna vuelve. */}
-                            {/* En la moneda de la línea, igual que la columna
-                                "Precio" de escritorio: el carrito mixto tiene
-                                una línea en pesos y otra en dólares al mismo
-                                tiempo, así que el símbolo es lo único que las
-                                distingue. */}
-                            <span className="lg:hidden"> · {precioEnSuMoneda(l.precio, l.moneda)} c/u</span>
-                          </span>
-                          {/* El IMEI, en la MISMA línea de meta que el SKU
-                              y con el mismo tratamiento: es identidad —cuál
-                              equipo es esta línea—, no cantidad. Hasta el
-                              2026-09-03 vivía en la celda de la columna
-                              "Cantidad", ocupando el lugar del stepper, y ahí
-                              la fila se leía "Cantidad: 355000000000001"
-                              (reporte del dueño de un local). Nunca fue un
-                              problema de plata —la cantidad de una línea con
-                              serie es siempre '1' y así viaja, ver
-                              `itemsParaCobrar`—, era de ubicación.
-                              Un artículo sin serie no dibuja nada acá.
-                              `name` sólo por convención y para que se lea qué
-                              es: el carrito vive FUERA del `<form>` de cobro,
-                              y lo que viaja al servidor es el JSON escondido
-                              que arma `itemsParaCobrar`, no este input. */}
-                          {l.llevaSerie &&
-                            (l.imei !== null && l.imei !== undefined ? (
-                              <span className="text-[11px] text-muted-foreground" title={l.imei}>
-                                IMEI{' '}
-                                <span className="font-semibold text-foreground">{l.imei}</span>
-                              </span>
-                            ) : (
-                              <Input
-                                name="imeiCapturado"
-                                value={l.imeiCapturado ?? ''}
-                                onChange={(e) =>
-                                  actualizarCarrito((p) =>
-                                    p.map((x, j) =>
-                                      j === i ? { ...x, imeiCapturado: e.target.value } : x,
-                                    ),
-                                  )
-                                }
-                                placeholder="IMEI"
-                                aria-label={`IMEI de ${l.descripcion}, opcional`}
-                                className="h-7 w-[140px] rounded-[7px] px-2 text-[11px] font-semibold"
-                              />
-                            ))}
-                          {/* Antes que el aviso de stock: una cantidad que no
-                              se entiende ni siquiera se puede evaluar contra
-                              el stock (`quedaria` también sería NaN). Ésta sí
-                              queda en rojo: a diferencia del aviso de stock,
-                              una cantidad ilegible SÍ impide seguir —apaga
-                              Cobrar—, así que acá el rojo es el color
-                              correcto (docs/sistema-de-diseno.md: "el ámbar
-                              no es un rojo suave", el rojo es para lo que
-                              bloquea). */}
-                          {invalida && (
-                            <span className="text-[11px] font-semibold text-destructive">
-                              cantidad inválida
-                            </span>
-                          )}
-                          {/* Se advierte y NO se bloquea: el motor permite
-                              vender sin stock a propósito, y la pantalla no
-                              puede ser más estricta que el motor sin volverse
-                              mentirosa. Ámbar y no rojo: vender con stock
-                              negativo está PERMITIDO en este producto, así
-                              que esto es "hay que mirar", no "no se puede
-                              seguir" — el rojo queda para lo que sí bloquea
-                              (arriba). */}
-                          {!invalida && l.esProducto && quedaria < 0 && (
-                            <Badge
-                              variant="outline"
-                              className="h-auto gap-[5px] border-transparent bg-warn-soft px-[7px] py-[2px] text-[10px] font-semibold text-warn"
-                            >
-                              <TriangleAlert aria-hidden="true" />
-                              sin stock suficiente
-                            </Badge>
-                          )}
-                          {/* La leyenda del IMEI opcional, sólo para una
-                              línea cuya unidad todavía no tiene número
-                              (Task 7 del ciclo "unidades sin identificar").
-                              Va acá y no dentro del campo: en los 104 px de
-                              la columna "Cant." no entra una frase, y el
-                              placeholder se va apenas se escribe la primera
-                              cifra — justo cuando alguien podría dudar de si
-                              es obligatorio. Sin `Badge` ni color de aviso: no
-                              es algo que haya que mirar, es lo contrario —
-                              permiso explícito para seguir de largo. */}
-                          {l.llevaSerie && (l.imei === null || l.imei === undefined) && (
-                            <span className="text-[11px] text-muted-foreground">
-                              IMEI opcional: podés dejarlo en blanco y cargarlo después
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Agrupador: junta Cantidad, Precio (oculto acá) y
-                        Subtotal en una sola línea del teléfono; disuelto en
-                        escritorio, donde vuelven a ser 3 celdas separadas. */}
-                    <div className="flex items-center gap-[10px] lg:contents">
-                      <div role="cell" className="lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
-                        {/* Envoltorio de centrado (Ronda de arreglos 1,
-                            Importante 2): la CELDA se queda estirada (el
-                            default de Grid) para que su `border-b` quede a
-                            la altura del resto de la fila; quien centra el
-                            contenido, sólo en escritorio, es este `<div>`
-                            interno con `lg:h-full` (100% de la celda
-                            estirada) — ver el docblock de `Listado`,
-                            app/(app)/ventas/page.tsx. */}
-                        <div className="lg:flex lg:h-full lg:items-center">
-                          {/* El stepper [-] [valor] [+]: los botones cubren sumar
-                              y restar de a una unidad completa, pero el campo del
-                              medio sigue siendo editable a mano — el motor admite
-                              cantidades con hasta tres decimales a propósito
-                              (lib/formato/mostrar.ts: "Medio kilo de harina
-                              necesita los decimales"), y +1/-1 no alcanza para
-                              tipear "0,5". Los dos botones salen de
-                              `PASOS_STEPPER.map(...)` y no de dos <button>
-                              escritos a mano: ver el porqué en la definición del
-                              array, un poco más arriba. */}
-                          {/* focus-within por la misma razón que la barra del
-                              buscador: el <Input> del medio apaga su propio ring
-                              para que el foco se vea en el stepper entero, no en
-                              un rectángulo que ignora los botones [-]/[+]. */}
-                          {l.llevaSerie ? (
-                            // Con serie la cantidad es siempre 1 y no se
-                            // puede tocar: dos equipos son dos líneas, nunca
-                            // una con cantidad 2 —`crearVenta` la rechaza con
-                            // CANTIDAD_CON_SERIE—, así que acá no hay ni
-                            // botones ni campo editable.
-                            //
-                            // Y es SÓLO el número: cuál equipo es esta línea
-                            // lo dice el IMEI, arriba, en la celda del
-                            // artículo junto al SKU. Ver el comentario de
-                            // allá para por qué se mudó.
-                            <div
-                              className={`flex h-9 w-[104px] items-center justify-center font-semibold text-foreground ${estilos.importe}`}
-                            >
-                              1
-                            </div>
-                          ) : (
-                            <div className="flex h-9 w-[104px] items-center rounded-[9px] border border-input focus-within:ring-3 focus-within:ring-ring/50">
-                              {PASOS_STEPPER.map(({ verbo, delta, Icono }) => (
-                                <Fragment key={verbo}>
-                                  <button
-                                    type="button"
-                                    aria-label={`${verbo} una unidad a ${l.descripcion}`}
-                                    className="flex h-full w-8 items-center justify-center text-foreground-soft hover:bg-muted"
-                                    onClick={() =>
-                                      actualizarCarrito((p) =>
-                                        p.map((x, j) =>
-                                          j === i ? { ...x, cantidad: pasoDeCantidad(x.cantidad, delta) } : x,
-                                        ),
-                                      )
-                                    }
-                                  >
-                                    <Icono className="size-[13px]" />
-                                  </button>
-                                  {/* El valor editable va entre los dos botones:
-                                      se intercala acá, después del primero
-                                      (Restar), en vez de partir el .map en dos para
-                                      no perder el orden visual [-] [valor] [+]. */}
-                                  {delta === -1 && (
-                                    <Input
-                                      inputMode="decimal"
-                                      value={l.cantidad}
-                                      onChange={(e) =>
-                                        actualizarCarrito((p) =>
-                                          p.map((x, j) => (j === i ? { ...x, cantidad: e.target.value } : x)),
-                                        )
-                                      }
-                                      aria-label={`Cantidad de ${l.descripcion}`}
-                                      className={`h-full flex-1 border-0 bg-transparent px-0 py-0 text-center font-semibold text-foreground shadow-none focus-visible:ring-0 ${estilos.importe}`}
-                                    />
-                                  )}
-                                </Fragment>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      {/* Su columnheader ya explica por qué esta celda no se
-                          ve en el teléfono. */}
-                      <div
-                        role="cell"
-                        className={`hidden text-foreground-soft lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors ${estilos.importe}`}
-                      >
-                        <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
-                          {precioEnSuMoneda(l.precio, l.moneda)}
-                        </div>
-                      </div>
-                      {/* `ml-auto` empuja el subtotal a la derecha del
-                          agrupador en el teléfono —el "Espaciador" de la
-                          maqueta (nodo `WMA3r`)—; `lg:ml-0` lo apaga en
-                          escritorio, donde el envoltorio de centrado interno
-                          (más abajo) ya lo alinea a la derecha con
-                          `justify-end`, dentro de su propia columna de
-                          130px. */}
-                      <div
-                        role="cell"
-                        className={`ml-auto text-[15px] font-semibold text-foreground lg:ml-0 lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors ${estilos.importe}`}
-                      >
-                        <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
-                          {/* El subtotal hereda la moneda de su línea: es
-                              cantidad × precio, así que no puede estar en otra
-                              — y es el número que la banda de total suma a la
-                              pila de esa misma moneda. */}
-                          {invalida
-                            ? '—'
-                            : precioEnSuMoneda(
-                                deCentavos(subtotalEnCentavos(cantidadMilesimas, aCentavos(l.precio))),
-                                l.moneda,
-                              )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Quitar: en escritorio es la 5ª celda del grid, como
-                        siempre (`lg:static` la devuelve a celda de grid
-                        normal). En el teléfono NO se agrupa junto al nombre
-                        —quedan Cantidad, Precio y Subtotal de por medio en el
-                        DOM—, así que se ancla con `absolute` al padding del
-                        ítem (arriba a la derecha, nodo `hRb9c`), relativo a
-                        la fila (`relative`, más arriba), independiente de
-                        dónde cae en el flujo normal.
-
-                        EL COSTO, Y LA ALTERNATIVA, para quien vuelva acá: el
-                        botón queda visualmente junto al nombre pero en el DOM
-                        sigue siendo la QUINTA celda, así que por teclado se
-                        llega después del stepper y del subtotal. La maqueta lo
-                        modela como hermano del nombre. La salida conocida —que
-                        la ola final de la review dejó anotada en vez de
-                        aplicar, porque toca las cinco celdas de escritorio de
-                        una pantalla ya verificada a ojo— es **anidarlo junto
-                        al nombre en el DOM y darle a las CINCO celdas un
-                        `lg:col-start-N` explícito**: así el orden de lectura y
-                        el de tabulación pasan a ser el del teléfono, y la
-                        grilla de escritorio se reconstruye por posición
-                        declarada en vez de por orden del DOM. Es todo o nada:
-                        con `col-start` en una sola celda, las otras cuatro
-                        siguen fluyendo y se corren. */}
-                    <div
-                      role="cell"
-                      className="absolute top-[11px] right-[14px] lg:static lg:border-b lg:p-[11px] lg:pr-[18px] lg:pl-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
-                    >
-                      <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => actualizarCarrito((p) => p.filter((_, j) => j !== i))}
-                          aria-label={`Quitar ${l.descripcion}`}
-                          className="text-muted-foreground"
-                        >
-                          <X className="size-[15px]" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            {lineas.length === 0 && (
-              <p className="px-[18px] py-3 text-sm text-muted-foreground">
-                Buscá un artículo para empezar la venta.
-              </p>
-            )}
-
-            {/* Empuja la banda del total al fondo de la card cuando el panel
-                de Cobro de al lado es más alto que la cinta. */}
-            <div className="flex-1" />
-
-            {/* La banda del total: la ÚNICA superficie de --marca de esta
-                pantalla (design/arandano.pen, nodo `B7teV`), alrededor del dato
-                que /vender existe para mostrar — docs/sistema-de-diseno.md,
-                sección "Un ancla de contenido por pantalla". El avatar del pie
-                del sidebar también pinta con --marca, pero ancla la identidad
-                de quién está adentro del sistema en las diez pantallas, no el
-                dato de ÉSTA en particular: las dos conviven a propósito, según
-                ese mismo documento.
-
-                bg/color con var(--token) inline, y no una utilidad de
-                Tailwind: --marca y sus variantes no están en @theme (ver el
-                comentario en app/globals.css) porque nada más que este tipo de
-                superficie las consume, así que ninguna clase de Tailwind las
-                resuelve — mismo patrón que ya usa
-                components/shell/sidebar-arandano.tsx para el avatar.
-
-                Está siempre, incluso con el carrito vacío en $ 0,00 — un ancla
-                que aparece y desaparece no es un ancla. Con una cantidad a
-                medio tipear `totales` queda en NaN EN SU MONEDA, y esa línea
-                muestra "—", igual que ya hace la columna Subtotal de cada
-                línea inválida unas líneas más arriba.
-
-                UNA línea por moneda con algo que mostrar (Task 9,
-                `lineasTotal` = `lineasDeTotal(totales)`, arriba): con un solo
-                pago en pesos —el caso de siempre— es EXACTAMENTE el markup de
-                antes, un signo y un monto; las dos aparecen sólo con un
-                carrito mixto, que es la lectura de `design/arandano.pen` que
-                rige acá (ver el comentario de `lineasDeTotal`). */}
-            <div
-              className="flex items-center justify-between px-[22px] py-5"
-              style={{ backgroundColor: 'var(--marca)' }}
-            >
-              <div className="flex flex-col gap-0.5">
-                {/* letter-spacing 1.4 y no 0.8: es más ancho que el de los
-                    encabezados de columna de arriba, a propósito — el .pen no
-                    los iguala (ver docs/sistema-de-diseno.md). */}
-                <span
-                  className="text-[10px] font-bold tracking-[1.4px] uppercase"
-                  style={{ color: 'var(--marca-soft)' }}
-                >
-                  Total
-                </span>
-                {/* Rol "Meta" sobre la banda oscura: --marca-dim, no
-                    --marca-soft (docs/sistema-de-diseno.md, "Meta" en la
-                    escala) — de los dos tintes de marca la maqueta eligió el
-                    más apagado para el texto que acompaña sin competir. */}
-                <span className="text-xs" style={{ color: 'var(--marca-dim)' }}>
-                  {resumenDelCarrito(lineas.length, unidadesMilesimas)}
-                </span>
-              </div>
-              <div className="flex flex-col items-end gap-1">
-                {lineasTotal.map((l) => (
-                  <div key={l.moneda} className="flex items-center gap-2">
-                    <span className={estilos.signo} style={{ color: 'var(--marca-soft)' }}>
-                      {l.signo}
-                    </span>
-                    <span className={estilos.total} style={{ color: 'var(--marca-foreground)' }}>
-                      {/* El "$ "/"US$ " que formatearPrecio()/formatearDolares() ya
-                          anteponen se descartan con montoSinSigno()
-                          (lib/formato/mostrar.ts, dentro de `lineasDeTotal`): el
-                          signo es SU PROPIO elemento (arriba), no parte de esta
-                          cadena — es justo lo que separa esta banda del pie viejo. */}
-                      {l.monto}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Card>
-
-          {/* w-96 (384px) y no el w-80 (320px) de antes: design/arandano.pen,
-              nodo `Cyias`. gap-0/py-0/ring-0 por el mismo motivo que ya anota
-              la card del Carrito de arriba: las secciones de adentro (el
-              encabezado, el pie) traen su propio padding y su propio borde, y
-              el `Card` de shadcn por default suma los suyos.
-
-              En el teléfono el ancho fijo no cabe: ocupa el ancho del cuerpo, y
-              los 384 px vuelven en `lg:`. La visibilidad es el espejo exacto
-              del carrito de arriba — ver su comentario. */}
-          <Card
-            className={`${
-              paso === 'cobro' ? 'flex' : 'hidden lg:flex'
-            } w-full gap-0 rounded-[16px] border py-0 ring-0 lg:w-96`}
-          >
-            {/* El encabezado: título + contador de pagos en la MISMA fila
-                (design/arandano.pen, nodos `EszMA`/`NyUYT`) — no `CardHeader`
-                de shadcn, que arma una grilla pensada para título+acción con
-                ícono, no para dos textos en los extremos de una fila. */}
-            <div className="flex items-center justify-between border-b px-[18px] py-[14px]">
-              {/* "Cobro" y no "Cobrar": el botón de abajo dice Cobrar, y una
-                  acción tiene un solo nombre en todo el flujo. La card nombra
-                  la zona, el botón nombra lo que pasa al apretarlo. Archivo
-                  600 vía cobro.module.css — ver ese archivo para el porqué de
-                  un módulo nuevo. */}
-              <span className={`${estilosCobro.titulo} text-base text-foreground`}>Cobro</span>
-              <span className="text-xs text-muted-foreground">
-                {pagos.length === 1 ? '1 pago' : `${pagos.length} pagos`}
+          {/* El buscador: a todo el ancho del Cuerpo, ya no encajado en la
+              columna izquierda. El borde violeta de 2px es PERMANENTE —no sólo
+              en foco—: design/arandano.pen lo pide así porque en este mostrador
+              el cuadro es lo primero que se mira, y un borde que sólo aparece al
+              enfocar no ayuda a encontrarlo de entrada. El resplandor
+              (shadow-[...]) también sale del .pen: un halo de 4px con --primary
+              al 12% de opacidad, armado con color-mix() y NO con un rgba()/hex
+              inventado — docs/sistema-de-diseno.md (vía
+              app/login/persiana.module.css) es explícito: "el brillo y el surco
+              salen de tokens con color-mix, no de rgba() inventados". Con la
+              paleta ya repintada una vez (2026-08-21), un halo con el violeta
+              viejo hardcodeado quedaría huérfano la próxima vez y nadie se
+              enteraría; con color-mix(var(--primary)) sigue al token. */}
+          {/* El buscador no existe en el paso de cobro: `keRdN` no lo dibuja —su
+              Cuerpo es banda total, los pagos y el botón que suma uno— y es lo que
+              volvía silencioso el defecto que arregla el efecto de arriba, porque
+              era lo que permitía escanear desde una pantalla donde el carrito no
+              se ve. Mobile-first, igual que las dos columnas: en `@cobro/venta:` está
+              siempre, sin mirar el paso. */}
+          <div className={`${paso === 'cobro' ? 'hidden @cobro/venta:block' : 'block'} relative`}>
+            {/* focus-within y no el focus-visible del <Input>: el ring por
+                default aparecería sólo alrededor del campo de texto —que no
+                cubre ni el ícono ni el chip F2—, y se vería como un rectángulo
+                roto en medio de la barra. El <Input> de adentro apaga su propio
+                ring (ver más abajo) para que sea ESTE, el de la barra entera, el
+                que se vea al enfocar. */}
+            {/* 52 px en el teléfono (nodo `I5IuID` de VaHod), 58 en escritorio. */}
+            <div className="flex h-[52px] items-center gap-3 rounded-[14px] border-2 border-primary bg-card px-[18px] shadow-[0_0_0_4px_color-mix(in_srgb,var(--primary)_12%,transparent)] focus-within:ring-3 focus-within:ring-ring/50 @cobro/venta:h-[58px]">
+              <ScanBarcode aria-hidden="true" className="size-[22px] shrink-0 text-primary" />
+              <Input
+                id="buscar"
+                ref={buscador}
+                autoFocus
+                autoComplete="off"
+                value={busqueda}
+                onChange={(e) => alCambiarBusqueda(e.target.value)}
+                onKeyDown={alTeclearEnBuscador}
+                placeholder="Escaneá un código o buscá por nombre…"
+                aria-label="Buscar artículo"
+                className="h-full flex-1 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
+              />
+              {/* El chip promete un atajo de teclado, y un teléfono no tiene
+                  teclas de función: ahí es un cartel que no se puede cumplir.
+                  `I5IuID` tampoco lo dibuja. Los tres atajos en sí no se tocan
+                  —siguen enganchados a `window` en los dos anchos—: lo que se
+                  oculta es la promesa, no el mecanismo. */}
+              <span className="hidden shrink-0 rounded-sm bg-secondary px-2 py-1 text-[11px] font-semibold text-foreground-soft @cobro/venta:inline-block">
+                F2
               </span>
             </div>
 
-            {/* El `id` es lo que ata el botón del pie del teléfono —que vive
-                afuera de este <form>— vía el atributo HTML `form`. Ver
-                ID_FORMULARIO_DE_COBRO, arriba. */}
-            <form
-              ref={formularioCobro}
-              id={ID_FORMULARIO_DE_COBRO}
-              action={accion}
-              className="flex flex-1 flex-col"
+            {resultados.length > 0 && (
+              <ul className="absolute z-10 mt-2 w-full divide-y rounded-md border bg-card shadow-md">
+                {resultados.map((a) => (
+                  <li key={a.id}>
+                    <button
+                      type="button"
+                      onClick={() => agregar(a)}
+                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent"
+                    >
+                      <span>
+                        {a.nombre} <span className="text-muted-foreground">· {a.sku}</span>
+                      </span>
+                      <span>
+                        {/* `precioEnSuMoneda` y no `formatearPrecio`: el precio
+                            del artículo está en SU moneda (`Articulo.moneda`), y
+                            un iPhone de lista US$ 300 mostrado como "$ 300,00"
+                            se lee tres órdenes de magnitud abajo. Es el primer
+                            número que ve quien busca el artículo, así que es
+                            donde más caro sale equivocarse. */}
+                        <span className={estilos.importe}>{precioEnSuMoneda(a.precio, a.moneda)}</span>
+                        {/* El stock no es plata, así que no lleva estilos.importe —
+                            pero sigue siendo una cifra que se compara de un
+                            vistazo, así que conserva tabular-nums. Un servicio
+                            muestra —, nunca 0: el motor no le descuenta stock, y
+                            un cero ahí se leería como faltante. */}
+                        <span className="ml-3 tabular-nums text-muted-foreground">
+                          {a.esProducto ? formatearCantidad(a.stock) : '—'}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* "Fila": las dos columnas — el carrito y el cobro. El corte NO es de
+              viewport: es del ancho de este cuerpo (`@cobro/venta:`, cuyo
+              umbral es `--container-cobro` en app/globals.css; la copia para
+              JavaScript, la misma cifra, vive en
+              hooks/use-dos-columnas.ts). El viewport no lo puede contestar
+              porque el sidebar le saca 248 px al cuerpo justo al cruzar 1024,
+              así que hay MÁS lugar a 1023 que a 1024. Ver el spec del
+              2026-09-07. */}
+          <div className="flex flex-col gap-[18px] @cobro/venta:flex-row">
+            {/* El carrito entero vive dentro de una card con radius y borde
+                propios — antes era una <table> suelta. Se contiene con
+                max-w-3xl por la misma razón que antes: en un monitor de 22" una
+                card sin techo deja un hueco enorme entre el nombre del artículo y
+                su precio, que es más de lo que el ojo enlaza de una sola pasada.
+                `max-w-3xl` es un token de max-width de Tailwind, no un paso de la
+                escala de espaciado, así que no cae bajo la regla del
+                subconjunto.
+
+                En el teléfono el cobro es pantalla propia, así que el carrito se
+                esconde mientras dura (frames `VaHod` y `keRdN`). Se escribe
+                mobile-first —el valor del teléfono sin prefijo, el de escritorio
+                con `@cobro/venta:`— y NO con `@max-cobro/venta:` (el equivalente
+                invertido, que sólo aplicaría por debajo del umbral): con lugar
+                para las dos columnas la fila termina en `flex` sin mirar el
+                paso, que es la regla. */}
+            <Card
+              className={`${
+                paso === 'cobro' ? 'hidden @cobro/venta:flex' : 'flex'
+              } max-w-3xl flex-1 gap-0 rounded-[16px] border py-0 ring-0`}
             >
-              <input type="hidden" name="clave" value={clave} />
-              <input
-                type="hidden"
-                name="items"
-                value={JSON.stringify(itemsParaCobrar(lineas))}
-              />
-              <input
-                type="hidden"
-                name="pagos"
-                value={JSON.stringify(
-                  // `recibido` NO viaja: es una ayuda de pantalla para calcular
-                  // el vuelto, y lo que entra a la caja es el monto.
-                  pagos.map((p) => ({
-                    medio: p.medio,
-                    moneda: p.moneda,
-                    // Qué total cubre este pago. Va SIEMPRE, incluido el 'ARS'
-                    // del caso común: el servidor lo trata como opcional
-                    // (`PagoDeVenta.cubre`, ausente vale 'ARS'), pero mandarlo
-                    // sólo a veces sería un campo que aparece y desaparece
-                    // según el carrito, y eso es más difícil de leer en un log
-                    // que un campo que siempre está.
-                    cubre: p.cubre,
-                    base: p.base,
-                    // '1' cuando el pago NO cruza monedas, y nunca la cadena
-                    // vacía: ahí el servidor no usa la cotización para ninguna
-                    // cuenta pero la exige mayor que cero igual
-                    // (COTIZACION_INVALIDA). El estado ya guarda '1' en ese
-                    // caso (`cotizacionParaElCruce`); esto lo vuelve a decir
-                    // en el borde donde importa, que es el que ve el motor.
-                    cotizacion: p.moneda === p.cubre ? '1' : p.cotizacion,
-                    // `undefined` y no `null` cuando no hay plan: JSON.stringify
-                    // descarta la clave entera, así que un local sin planes manda
-                    // exactamente el mismo JSON que antes de que este campo
-                    // existiera.
-                    planId: p.planId ?? undefined,
-                  })),
-                )}
-              />
+              {/* El encabezado del carrito, SÓLO en el teléfono (nodo `L5UIo`):
+                  padding [11,14], borde inferior, "Carrito" a la izquierda y
+                  "Vaciar" a la derecha. En escritorio esa franja ya la ocupa la
+                  fila de encabezados de la tabla, que en el teléfono no se ve
+                  casi entera.
 
-              <div className="flex flex-col gap-3 p-4">
-                {pagos.map((p, i) => (
-                  <FilaDePago
-                    key={i}
-                    pago={p}
-                    indice={i}
-                    planes={planes}
-                    // El selector de `Cubre` sólo tiene sentido con los DOS
-                    // totales sobre la mesa: con una sola moneda no hay nada
-                    // que elegir y la fila queda idéntica a la de antes de
-                    // este ciclo.
-                    ofreceCubre={totales.ars > 0 && totales.usd > 0}
-                    hayFaltante={hayFaltante}
-                    onCambiar={(cambio) => cambiarPago(i, cambio)}
-                    onQuitar={() => setPagos((p2) => p2.filter((_, j) => j !== i))}
-                    puedeQuitar={pagos.length > 1}
-                  />
-                ))}
-                {/* outline y con ícono "+", ya no relleno gris (design/arandano.pen,
-                    nodo `RJII3`) — border-input y no el border-border del outline
-                    por default: la maqueta pinta este borde con el mismo
-                    $ar-line-strong que ya usan los selects y el stepper, no con
-                    el borde tenue genérico de una card. */}
-                <Button
+                  POR QUÉ EL BOTÓN NO ES OPCIONAL: en escritorio vaciar el
+                  carrito lo da el doble Esc, y un teléfono no tiene Esc. Sin él,
+                  deshacer una venta mal armada era borrar ítem por ítem con la
+                  ✕. Comparte `vaciadoArmado` con el atajo (ver
+                  `alternarVaciado`), así que los dos caminos no se pueden
+                  desincronizar.
+
+                  "Carrito" paga Archivo (14/600, `Y7AGpE`) vía el módulo de
+                  Cobro: comparte familia y peso con el título de esa card y sólo
+                  cambia el tamaño, que es exactamente cómo ese módulo está
+                  pensado para usarse (ver su comentario). La fila "Cobro" de la
+                  escala en docs/sistema-de-diseno.md dice hoy "16 px el título" y
+                  pasa a tener dos tamaños — lo actualiza la task de
+                  documentación del ciclo, que junta todos los roles que la
+                  maqueta móvil achica. */}
+              <div className="flex items-center justify-between border-b px-[14px] py-[11px] @cobro/venta:hidden">
+                <span className={`${estilosCobro.titulo} text-sm text-foreground`}>Carrito</span>
+                <button
                   type="button"
-                  variant="outline"
-                  className="h-[38px] gap-[7px] rounded-[9px] border-input text-[13px] font-semibold text-foreground-soft"
-                  onClick={() =>
-                    setPagos((p) => {
-                      // El pago nuevo va contra el total que TODAVÍA falta: con
-                      // los pesos ya cubiertos, el que queda es el de dólares.
-                      // Misma regla que el pago inicial, sobre el faltante en
-                      // vez de sobre el total.
-                      const cubre = cubrePorDefecto(faltan)
-                      const faltaEnEseTotal = cubre === 'ARS' ? faltan.ars : faltan.usd
-                      return [
-                        ...p,
-                        {
-                          medio: 'EFECTIVO',
-                          // Se entrega en la misma moneda que cubre, igual que
-                          // el pago inicial: así no arranca cruzando.
-                          moneda: cubre,
-                          cubre,
-                          // Vacío y no `deCentavos(NaN)` si una línea del carrito
-                          // está a medio tipear: `Math.max(0, NaN)` es NaN,
-                          // `deCentavos(NaN)` es el string literal "NaN.NaN", y el
-                          // campo Monto de la fila nueva arrancaba mostrando eso —
-                          // el mismo defecto preexistente que "Entran $X", acá del
-                          // otro lado del cálculo (el precargado, no el mostrado).
-                          base: Number.isNaN(faltaEnEseTotal)
-                            ? ''
-                            : deCentavos(Math.max(0, faltaEnEseTotal)),
-                          cotizacion: cotizacionParaElCruce(cubre, cubre),
-                          recibido: '',
-                          // A precio de lista: el pago nuevo arranca en efectivo, y
-                          // heredar el plan del pago de al lado sería cobrar un
-                          // recargo que nadie eligió para esta parte.
-                          planId: null,
-                        },
-                      ]
-                    })
-                  }
-                >
-                  <Plus className="size-[14px]" aria-hidden="true" />
-                  Agregar pago
-                </Button>
-              </div>
-
-              {/* Empuja el pie al fondo de la card cuando hay pocos pagos —
-                  mismo rol que el espaciador análogo del Carrito. */}
-              <div className="flex-1" />
-
-              {/* El pie de la card, SÓLO en escritorio: en el teléfono estas
-                  mismas tres piezas viven en `PieDeVenta`, el pie fijo de la
-                  pantalla (ver su comentario para el porqué de dos botones y
-                  no uno movido de lugar). */}
-              <div className="hidden flex-col gap-2.5 border-t p-4 lg:flex">
-                <AvisosDelCobro estado={estado} ventaProcesada={ventaProcesada} />
-
-                {/* Va DESPUÉS de los carteles de error/éxito y ANTES del chip
-                    de faltante: los carteles son transitorios y ya viven
-                    arriba del pie; estas tres líneas y el chip son lo que se
-                    lee de un vistazo justo antes de apretar Cobrar, así que
-                    quedan pegadas al botón. */}
-                <PieDeTotales lineas={lineasDelPie} />
-
-                {chipsDelFaltante.map((c) => (
-                  <ChipDeFaltante
-                    key={c.moneda}
-                    moneda={c.moneda}
-                    faltanCentavos={c.faltanCentavos}
-                    hayCarrito={hayCarrito}
-                  />
-                ))}
-
-                {/* 54px de alto, ícono arrow-right, texto en Archivo
-                    (design/arandano.pen, nodo `yJaPt`) — el orden texto-luego-
-                    ícono importa: es el orden de los hijos en el .pen, no un
-                    detalle visual libre. */}
-                <Button
-                  type="submit"
-                  disabled={!cierra || cobrando}
-                  className={`h-[54px] gap-[9px] rounded-[12px] text-[17px] ${estilosCobro.boton}`}
-                >
-                  {cobrando ? 'Cobrando…' : 'Cobrar'}
-                  <ArrowRight className="size-[18px]" aria-hidden="true" />
-                </Button>
-
-                {/* La leyenda de los atajos (design/arandano.pen, nodo
-                    `k1dDB`), que cambia de texto y de color mientras el Esc
-                    está armado: es la única señal de que hay una confirmación
-                    pendiente, y sin ella el primer Esc parecería no haber
-                    hecho nada.
-
-                    POR QUÉ DOS PASOS Y NO UN confirm() NI UN VACIADO
-                    DESHACIBLE. Esc es la tecla que este mismo atajo pone a un
-                    solo toque de distancia de vaciar un carrito de quince
-                    ítems sin red — la task lo pide explícito. Un `confirm()`
-                    del navegador bloquea el hilo y no se puede estilar; un
-                    diálogo (Sheet/Dialog) suma una capa de foco atrapado y
-                    Radix le pone su PROPIO manejo de Escape encima, que
-                    competiría con este mismo atajo por la misma tecla. Un
-                    vaciado "deshacible" (un toast con Deshacer) necesita una
-                    librería que este repo no tiene y un estado extra para
-                    guardar el carrito viejo mientras dura la ventana de
-                    deshacer. Confirmar con un SEGUNDO Esc, en cambio, reusa
-                    exactamente el mismo mecanismo que `AnularVenta`
-                    (app/(app)/ventas/formularios.tsx) ya eligió para "esto es
-                    irreversible pero frecuente": confirmación en dos pasos
-                    sobre la MISMA tecla/botón, sin diálogo y sin dependencia
-                    nueva. El desarme solo a los 3 segundos (o al tocar
-                    cualquier línea del carrito, ver `actualizarCarrito`) es lo
-                    que evita que un Esc de hace un rato "cargue" un vaciado
-                    que ya no tiene que ver con la intención actual. */}
-                <p
-                  className={`text-center text-[11px] ${
-                    vaciadoArmado ? 'font-semibold text-destructive' : 'text-muted-foreground'
+                  onClick={alternarVaciado}
+                  disabled={lineas.length === 0}
+                  className={`text-xs font-semibold disabled:opacity-40 ${
+                    vaciadoArmado ? 'text-destructive' : 'text-muted-foreground'
                   }`}
                 >
-                  {vaciadoArmado ? 'Esc de nuevo para vaciar el carrito' : 'Enter para cobrar · Esc para vaciar'}
-                </p>
+                  {vaciadoArmado ? 'Sí, vaciar' : 'Vaciar'}
+                </button>
               </div>
-            </form>
-          </Card>
-        </div>
-      </div>
 
-      <PieDeVenta
-        paso={paso}
-        estado={estado}
-        ventaProcesada={ventaProcesada}
-        chipsDelFaltante={chipsDelFaltante}
-        hayCarrito={hayCarrito}
-        cierra={cierra}
-        cobrando={cobrando}
-        irACobro={irACobro}
-        lineasDelPie={lineasDelPie}
-      />
+              {/* El carrito deja de ser una tabla HTML: sigue el patrón que
+                  estrena `Listado` en app/(app)/ventas/page.tsx (líneas
+                  337-366 de ese archivo) — grid + `display:contents`, con las
+                  mismas 5 anchuras que declaraban las celdas de encabezado de
+                  antes (Artículo sin ancho fijo → `1fr`, 104, 110, 130, 28 = w-7).
+
+                  `VaHod` apila TRES líneas por ítem —nombre+✕ / meta /
+                  stepper…subtotal— (nodos `UMJEA`/`IKwdw`/`rXeg5`/`mRrMW`), a
+                  diferencia de `Listado`, donde el agrupador siempre junta
+                  columnas ADYACENTES. Acá "Quitar" —la ÚLTIMA columna en
+                  escritorio— tiene que convivir con el NOMBRE —la PRIMERA— en
+                  la misma línea del teléfono, con Cantidad/Precio/Subtotal en
+                  el medio: agruparlas no alcanza. Se resuelve dejando el DOM en
+                  el mismo orden que las columnas de escritorio (ninguna
+                  auto-colocación exótica hace falta: Artículo, [Cantidad,
+                  Precio, Subtotal agrupadas], Quitar) y anclando "Quitar" con
+                  `absolute` sólo en el teléfono — ver su comentario, más
+                  abajo. */}
+              <div role="table" className="grid grid-cols-1 @cobro/venta:grid-cols-[1fr_104px_110px_130px_28px]">
+                {/* Fila "hundida": fondo --muted, padding [12,18] y 14 de gap
+                    entre columnas. Sólo existe en escritorio —`hidden`
+                    la saca del todo en el teléfono, `@cobro/venta:contents` la disuelve
+                    ahí para que sus 5 `columnheader` pasen a ser las celdas de
+                    la primera fila del grid—, igual que el encabezado de
+                    `Listado`. */}
+                <div role="row" className="hidden @cobro/venta:contents">
+                  <div role="columnheader" className="bg-muted px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                    Artículo
+                  </div>
+                  <div role="columnheader" className="bg-muted px-[7px] py-3 text-center text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                    Cantidad
+                  </div>
+                  {/* Vuelve a existir en escritorio: la Task 3 la había
+                      escondido del todo (sin reflow posible mientras esto
+                      seguía siendo una tabla HTML) como mitigación temporal.
+                      Con el reflow ya resuelto acá, no hay motivo para seguir
+                      sin ella en escritorio. */}
+                  <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                    Precio
+                  </div>
+                  <div role="columnheader" className="bg-muted px-[7px] py-3 text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
+                    Subtotal
+                  </div>
+                  {/* La columna de "Quitar" queda vacía en el encabezado. */}
+                  <div role="columnheader" className="bg-muted px-[7px] py-3 pr-[18px]" />
+                </div>
+
+                {lineas.map((l, i) => {
+                  const cantidadMilesimas = cantidadEnMilesimas(l.cantidad)
+                  const invalida = Number.isNaN(cantidadMilesimas)
+                  const quedaria = aMilesimas(l.stock) - cantidadMilesimas
+                  return (
+                    // `group` + `relative`: `group` es lo que restituye el
+                    // hover de fila de escritorio (ver `@cobro/venta:group-hover:` en
+                    // cada celda, más abajo — mismo mecanismo que `Listado`).
+                    // `relative` es el ancla del botón "Quitar" en el
+                    // teléfono, y no le hace nada a escritorio: ahí la fila es
+                    // `@cobro/venta:contents` y una caja sin caja no tiene `position`.
+                    //
+                    // El `border-b`/`last:border-b-0` de acá siguen sin
+                    // prefijo, y siguen sirviendo: en el teléfono la fila ES
+                    // una caja real (no es `display:contents` ahí), así que
+                    // ahí pintan. En escritorio no hacen nada — por eso cada
+                    // celda lleva su propio `@cobro/venta:border-b`/`@cobro/venta:group-last:
+                    // border-b-0` más abajo (Ronda de arreglos 1 sobre la
+                    // Task 4b; el principio completo, con el porqué del
+                    // envoltorio de centrado, vive en el docblock de
+                    // `Listado`, app/(app)/ventas/page.tsx).
+                    <div
+                      key={l.articuloId}
+                      role="row"
+                      className="group relative flex flex-col gap-2 border-b p-[11px] px-[14px] last:border-b-0 @cobro/venta:contents"
+                    >
+                      {/* Artículo: nombre + meta (SKU/Servicio, el precio
+                          unitario sólo en el teléfono, el aviso de cantidad
+                          inválida y el de stock). `pr-9` en el teléfono
+                          reserva el lugar del botón "Quitar", que flota
+                          encima con `absolute` (ver más abajo) y no empuja
+                          este contenido con su propio ancho — a diferencia de
+                          `Listado`, acá no hay una celda de grid propia para
+                          "Quitar" al lado de ésta. Es la celda más alta de la
+                          fila (dos líneas siempre), así que no necesita el
+                          envoltorio de centrado que sí llevan las otras
+                          cuatro, más abajo: ya queda estirada de punta a
+                          punta. */}
+                      <div
+                        role="cell"
+                        className="pr-9 whitespace-normal @cobro/venta:border-b @cobro/venta:p-[11px] @cobro/venta:px-[7px] @cobro/venta:pl-[18px] @cobro/venta:group-hover:bg-muted/50 @cobro/venta:group-last:border-b-0 @cobro/venta:transition-colors"
+                      >
+                        {/* `gap-2` (8px) en el teléfono —el mismo que separa
+                            los 3 bloques de `VaHod`— y `@cobro/venta:gap-0.5` para no
+                            mover el aspecto de escritorio, que ya usaba ese
+                            espaciado más apretado. */}
+                        <div className="flex flex-col gap-2 @cobro/venta:gap-0.5">
+                          <span className="text-sm font-medium text-foreground">{l.descripcion}</span>
+                          {/* `flex-wrap`: esta línea de meta pasó a poder
+                              llevar el IMEI —o el campo para escanearlo, que es
+                              un ancho fijo que no encoge— además del SKU y de
+                              los dos avisos, y a 390 px eso no entra en una
+                              sola línea. Sin esto el carrito arrastraba la
+                              página al scroll horizontal, que es justo el modo
+                              de falla que vigila test/responsive.test.ts (y que
+                              no puede ver acá: 140 px no supera su umbral). */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* El SKU bajo el nombre: antes sólo se veía en el
+                                buscador. Un servicio no tiene SKU de stock, así
+                                que muestra "Servicio" en su lugar — mismo
+                                criterio que ya usa la lista de resultados para
+                                el stock de un servicio (una raya, no un cero). */}
+                            <span className="text-[11px] text-muted-foreground">
+                              {l.esProducto ? `SKU ${l.sku}` : 'Servicio'}
+                              {/* El precio unitario, que en el teléfono no
+                                  tiene columna propia (ver el columnheader de
+                                  Precio, más arriba): la maqueta lo pone acá,
+                                  pegado al SKU, con el mismo tratamiento de
+                                  meta. En escritorio desaparece de esta línea,
+                                  porque su columna vuelve. */}
+                              {/* En la moneda de la línea, igual que la columna
+                                  "Precio" de escritorio: el carrito mixto tiene
+                                  una línea en pesos y otra en dólares al mismo
+                                  tiempo, así que el símbolo es lo único que las
+                                  distingue. */}
+                              <span className="@cobro/venta:hidden"> · {precioEnSuMoneda(l.precio, l.moneda)} c/u</span>
+                            </span>
+                            {/* El IMEI, en la MISMA línea de meta que el SKU
+                                y con el mismo tratamiento: es identidad —cuál
+                                equipo es esta línea—, no cantidad. Hasta el
+                                2026-09-03 vivía en la celda de la columna
+                                "Cantidad", ocupando el lugar del stepper, y ahí
+                                la fila se leía "Cantidad: 355000000000001"
+                                (reporte del dueño de un local). Nunca fue un
+                                problema de plata —la cantidad de una línea con
+                                serie es siempre '1' y así viaja, ver
+                                `itemsParaCobrar`—, era de ubicación.
+                                Un artículo sin serie no dibuja nada acá.
+                                `name` sólo por convención y para que se lea qué
+                                es: el carrito vive FUERA del `<form>` de cobro,
+                                y lo que viaja al servidor es el JSON escondido
+                                que arma `itemsParaCobrar`, no este input. */}
+                            {l.llevaSerie &&
+                              (l.imei !== null && l.imei !== undefined ? (
+                                <span className="text-[11px] text-muted-foreground" title={l.imei}>
+                                  IMEI{' '}
+                                  <span className="font-semibold text-foreground">{l.imei}</span>
+                                </span>
+                              ) : (
+                                <Input
+                                  name="imeiCapturado"
+                                  value={l.imeiCapturado ?? ''}
+                                  onChange={(e) =>
+                                    actualizarCarrito((p) =>
+                                      p.map((x, j) =>
+                                        j === i ? { ...x, imeiCapturado: e.target.value } : x,
+                                      ),
+                                    )
+                                  }
+                                  placeholder="IMEI"
+                                  aria-label={`IMEI de ${l.descripcion}, opcional`}
+                                  className="h-7 w-[140px] rounded-[7px] px-2 text-[11px] font-semibold"
+                                />
+                              ))}
+                            {/* Antes que el aviso de stock: una cantidad que no
+                                se entiende ni siquiera se puede evaluar contra
+                                el stock (`quedaria` también sería NaN). Ésta sí
+                                queda en rojo: a diferencia del aviso de stock,
+                                una cantidad ilegible SÍ impide seguir —apaga
+                                Cobrar—, así que acá el rojo es el color
+                                correcto (docs/sistema-de-diseno.md: "el ámbar
+                                no es un rojo suave", el rojo es para lo que
+                                bloquea). */}
+                            {invalida && (
+                              <span className="text-[11px] font-semibold text-destructive">
+                                cantidad inválida
+                              </span>
+                            )}
+                            {/* Se advierte y NO se bloquea: el motor permite
+                                vender sin stock a propósito, y la pantalla no
+                                puede ser más estricta que el motor sin volverse
+                                mentirosa. Ámbar y no rojo: vender con stock
+                                negativo está PERMITIDO en este producto, así
+                                que esto es "hay que mirar", no "no se puede
+                                seguir" — el rojo queda para lo que sí bloquea
+                                (arriba). */}
+                            {!invalida && l.esProducto && quedaria < 0 && (
+                              <Badge
+                                variant="outline"
+                                className="h-auto gap-[5px] border-transparent bg-warn-soft px-[7px] py-[2px] text-[10px] font-semibold text-warn"
+                              >
+                                <TriangleAlert aria-hidden="true" />
+                                sin stock suficiente
+                              </Badge>
+                            )}
+                            {/* La leyenda del IMEI opcional, sólo para una
+                                línea cuya unidad todavía no tiene número
+                                (Task 7 del ciclo "unidades sin identificar").
+                                Va acá y no dentro del campo: en los 104 px de
+                                la columna "Cant." no entra una frase, y el
+                                placeholder se va apenas se escribe la primera
+                                cifra — justo cuando alguien podría dudar de si
+                                es obligatorio. Sin `Badge` ni color de aviso: no
+                                es algo que haya que mirar, es lo contrario —
+                                permiso explícito para seguir de largo. */}
+                            {l.llevaSerie && (l.imei === null || l.imei === undefined) && (
+                              <span className="text-[11px] text-muted-foreground">
+                                IMEI opcional: podés dejarlo en blanco y cargarlo después
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Agrupador: junta Cantidad, Precio (oculto acá) y
+                          Subtotal en una sola línea del teléfono; disuelto en
+                          escritorio, donde vuelven a ser 3 celdas separadas. */}
+                      <div className="flex items-center gap-[10px] @cobro/venta:contents">
+                        <div role="cell" className="@cobro/venta:border-b @cobro/venta:p-[11px] @cobro/venta:px-[7px] @cobro/venta:group-hover:bg-muted/50 @cobro/venta:group-last:border-b-0 @cobro/venta:transition-colors">
+                          {/* Envoltorio de centrado (Ronda de arreglos 1,
+                              Importante 2): la CELDA se queda estirada (el
+                              default de Grid) para que su `border-b` quede a
+                              la altura del resto de la fila; quien centra el
+                              contenido, sólo en escritorio, es este `<div>`
+                              interno con `@cobro/venta:h-full` (100% de la celda
+                              estirada) — ver el docblock de `Listado`,
+                              app/(app)/ventas/page.tsx. */}
+                          <div className="@cobro/venta:flex @cobro/venta:h-full @cobro/venta:items-center">
+                            {/* El stepper [-] [valor] [+]: los botones cubren sumar
+                                y restar de a una unidad completa, pero el campo del
+                                medio sigue siendo editable a mano — el motor admite
+                                cantidades con hasta tres decimales a propósito
+                                (lib/formato/mostrar.ts: "Medio kilo de harina
+                                necesita los decimales"), y +1/-1 no alcanza para
+                                tipear "0,5". Los dos botones salen de
+                                `PASOS_STEPPER.map(...)` y no de dos <button>
+                                escritos a mano: ver el porqué en la definición del
+                                array, un poco más arriba. */}
+                            {/* focus-within por la misma razón que la barra del
+                                buscador: el <Input> del medio apaga su propio ring
+                                para que el foco se vea en el stepper entero, no en
+                                un rectángulo que ignora los botones [-]/[+]. */}
+                            {l.llevaSerie ? (
+                              // Con serie la cantidad es siempre 1 y no se
+                              // puede tocar: dos equipos son dos líneas, nunca
+                              // una con cantidad 2 —`crearVenta` la rechaza con
+                              // CANTIDAD_CON_SERIE—, así que acá no hay ni
+                              // botones ni campo editable.
+                              //
+                              // Y es SÓLO el número: cuál equipo es esta línea
+                              // lo dice el IMEI, arriba, en la celda del
+                              // artículo junto al SKU. Ver el comentario de
+                              // allá para por qué se mudó.
+                              <div
+                                className={`flex h-9 w-[104px] items-center justify-center font-semibold text-foreground ${estilos.importe}`}
+                              >
+                                1
+                              </div>
+                            ) : (
+                              <div className="flex h-9 w-[104px] items-center rounded-[9px] border border-input focus-within:ring-3 focus-within:ring-ring/50">
+                                {PASOS_STEPPER.map(({ verbo, delta, Icono }) => (
+                                  <Fragment key={verbo}>
+                                    <button
+                                      type="button"
+                                      aria-label={`${verbo} una unidad a ${l.descripcion}`}
+                                      className="flex h-full w-8 items-center justify-center text-foreground-soft hover:bg-muted"
+                                      onClick={() =>
+                                        actualizarCarrito((p) =>
+                                          p.map((x, j) =>
+                                            j === i ? { ...x, cantidad: pasoDeCantidad(x.cantidad, delta) } : x,
+                                          ),
+                                        )
+                                      }
+                                    >
+                                      <Icono className="size-[13px]" />
+                                    </button>
+                                    {/* El valor editable va entre los dos botones:
+                                        se intercala acá, después del primero
+                                        (Restar), en vez de partir el .map en dos para
+                                        no perder el orden visual [-] [valor] [+]. */}
+                                    {delta === -1 && (
+                                      <Input
+                                        inputMode="decimal"
+                                        value={l.cantidad}
+                                        onChange={(e) =>
+                                          actualizarCarrito((p) =>
+                                            p.map((x, j) => (j === i ? { ...x, cantidad: e.target.value } : x)),
+                                          )
+                                        }
+                                        aria-label={`Cantidad de ${l.descripcion}`}
+                                        className={`h-full flex-1 border-0 bg-transparent px-0 py-0 text-center font-semibold text-foreground shadow-none focus-visible:ring-0 ${estilos.importe}`}
+                                      />
+                                    )}
+                                  </Fragment>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {/* Su columnheader ya explica por qué esta celda no se
+                            ve en el teléfono. */}
+                        <div
+                          role="cell"
+                          className={`hidden text-foreground-soft @cobro/venta:block @cobro/venta:border-b @cobro/venta:p-[11px] @cobro/venta:px-[7px] @cobro/venta:group-hover:bg-muted/50 @cobro/venta:group-last:border-b-0 @cobro/venta:transition-colors ${estilos.importe}`}
+                        >
+                          <div className="@cobro/venta:flex @cobro/venta:h-full @cobro/venta:items-center @cobro/venta:justify-end">
+                            {precioEnSuMoneda(l.precio, l.moneda)}
+                          </div>
+                        </div>
+                        {/* `ml-auto` empuja el subtotal a la derecha del
+                            agrupador en el teléfono —el "Espaciador" de la
+                            maqueta (nodo `WMA3r`)—; `@cobro/venta:ml-0` lo apaga en
+                            escritorio, donde el envoltorio de centrado interno
+                            (más abajo) ya lo alinea a la derecha con
+                            `justify-end`, dentro de su propia columna de
+                            130px. */}
+                        <div
+                          role="cell"
+                          className={`ml-auto text-[15px] font-semibold text-foreground @cobro/venta:ml-0 @cobro/venta:border-b @cobro/venta:p-[11px] @cobro/venta:px-[7px] @cobro/venta:pr-[18px] @cobro/venta:group-hover:bg-muted/50 @cobro/venta:group-last:border-b-0 @cobro/venta:transition-colors ${estilos.importe}`}
+                        >
+                          <div className="@cobro/venta:flex @cobro/venta:h-full @cobro/venta:items-center @cobro/venta:justify-end">
+                            {/* El subtotal hereda la moneda de su línea: es
+                                cantidad × precio, así que no puede estar en otra
+                                — y es el número que la banda de total suma a la
+                                pila de esa misma moneda. */}
+                            {invalida
+                              ? '—'
+                              : precioEnSuMoneda(
+                                  deCentavos(subtotalEnCentavos(cantidadMilesimas, aCentavos(l.precio))),
+                                  l.moneda,
+                                )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Quitar: en escritorio es la 5ª celda del grid, como
+                          siempre (`@cobro/venta:static` la devuelve a celda de grid
+                          normal). En el teléfono NO se agrupa junto al nombre
+                          —quedan Cantidad, Precio y Subtotal de por medio en el
+                          DOM—, así que se ancla con `absolute` al padding del
+                          ítem (arriba a la derecha, nodo `hRb9c`), relativo a
+                          la fila (`relative`, más arriba), independiente de
+                          dónde cae en el flujo normal.
+
+                          EL COSTO, Y LA ALTERNATIVA, para quien vuelva acá: el
+                          botón queda visualmente junto al nombre pero en el DOM
+                          sigue siendo la QUINTA celda, así que por teclado se
+                          llega después del stepper y del subtotal. La maqueta lo
+                          modela como hermano del nombre. La salida conocida —que
+                          la ola final de la review dejó anotada en vez de
+                          aplicar, porque toca las cinco celdas de escritorio de
+                          una pantalla ya verificada a ojo— es **anidarlo junto
+                          al nombre en el DOM y darle a las CINCO celdas un
+                          `@cobro/venta:col-start-N` explícito**: así el orden de lectura y
+                          el de tabulación pasan a ser el del teléfono, y la
+                          grilla de escritorio se reconstruye por posición
+                          declarada en vez de por orden del DOM. Es todo o nada:
+                          con `col-start` en una sola celda, las otras cuatro
+                          siguen fluyendo y se corren. */}
+                      <div
+                        role="cell"
+                        className="absolute top-[11px] right-[14px] @cobro/venta:static @cobro/venta:border-b @cobro/venta:p-[11px] @cobro/venta:pr-[18px] @cobro/venta:pl-[7px] @cobro/venta:group-hover:bg-muted/50 @cobro/venta:group-last:border-b-0 @cobro/venta:transition-colors"
+                      >
+                        <div className="@cobro/venta:flex @cobro/venta:h-full @cobro/venta:items-center @cobro/venta:justify-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => actualizarCarrito((p) => p.filter((_, j) => j !== i))}
+                            aria-label={`Quitar ${l.descripcion}`}
+                            className="text-muted-foreground"
+                          >
+                            <X className="size-[15px]" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {lineas.length === 0 && (
+                <p className="px-[18px] py-3 text-sm text-muted-foreground">
+                  Buscá un artículo para empezar la venta.
+                </p>
+              )}
+
+              {/* Empuja la banda del total al fondo de la card cuando el panel
+                  de Cobro de al lado es más alto que la cinta. */}
+              <div className="flex-1" />
+
+              {/* La banda del total: la ÚNICA superficie de --marca de esta
+                  pantalla (design/arandano.pen, nodo `B7teV`), alrededor del dato
+                  que /vender existe para mostrar — docs/sistema-de-diseno.md,
+                  sección "Un ancla de contenido por pantalla". El avatar del pie
+                  del sidebar también pinta con --marca, pero ancla la identidad
+                  de quién está adentro del sistema en las diez pantallas, no el
+                  dato de ÉSTA en particular: las dos conviven a propósito, según
+                  ese mismo documento.
+
+                  bg/color con var(--token) inline, y no una utilidad de
+                  Tailwind: --marca y sus variantes no están en @theme (ver el
+                  comentario en app/globals.css) porque nada más que este tipo de
+                  superficie las consume, así que ninguna clase de Tailwind las
+                  resuelve — mismo patrón que ya usa
+                  components/shell/sidebar-arandano.tsx para el avatar.
+
+                  Está siempre, incluso con el carrito vacío en $ 0,00 — un ancla
+                  que aparece y desaparece no es un ancla. Con una cantidad a
+                  medio tipear `totales` queda en NaN EN SU MONEDA, y esa línea
+                  muestra "—", igual que ya hace la columna Subtotal de cada
+                  línea inválida unas líneas más arriba.
+
+                  UNA línea por moneda con algo que mostrar (Task 9,
+                  `lineasTotal` = `lineasDeTotal(totales)`, arriba): con un solo
+                  pago en pesos —el caso de siempre— es EXACTAMENTE el markup de
+                  antes, un signo y un monto; las dos aparecen sólo con un
+                  carrito mixto, que es la lectura de `design/arandano.pen` que
+                  rige acá (ver el comentario de `lineasDeTotal`). */}
+              <div
+                className="flex items-center justify-between px-[22px] py-5"
+                style={{ backgroundColor: 'var(--marca)' }}
+              >
+                <div className="flex flex-col gap-0.5">
+                  {/* letter-spacing 1.4 y no 0.8: es más ancho que el de los
+                      encabezados de columna de arriba, a propósito — el .pen no
+                      los iguala (ver docs/sistema-de-diseno.md). */}
+                  <span
+                    className="text-[10px] font-bold tracking-[1.4px] uppercase"
+                    style={{ color: 'var(--marca-soft)' }}
+                  >
+                    Total
+                  </span>
+                  {/* Rol "Meta" sobre la banda oscura: --marca-dim, no
+                      --marca-soft (docs/sistema-de-diseno.md, "Meta" en la
+                      escala) — de los dos tintes de marca la maqueta eligió el
+                      más apagado para el texto que acompaña sin competir. */}
+                  <span className="text-xs" style={{ color: 'var(--marca-dim)' }}>
+                    {resumenDelCarrito(lineas.length, unidadesMilesimas)}
+                  </span>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  {lineasTotal.map((l) => (
+                    <div key={l.moneda} className="flex items-center gap-2">
+                      <span className={estilos.signo} style={{ color: 'var(--marca-soft)' }}>
+                        {l.signo}
+                      </span>
+                      <span className={estilos.total} style={{ color: 'var(--marca-foreground)' }}>
+                        {/* El "$ "/"US$ " que formatearPrecio()/formatearDolares() ya
+                            anteponen se descartan con montoSinSigno()
+                            (lib/formato/mostrar.ts, dentro de `lineasDeTotal`): el
+                            signo es SU PROPIO elemento (arriba), no parte de esta
+                            cadena — es justo lo que separa esta banda del pie viejo. */}
+                        {l.monto}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Card>
+
+            {/* w-96 (384px) y no el w-80 (320px) de antes: design/arandano.pen,
+                nodo `Cyias`. gap-0/py-0/ring-0 por el mismo motivo que ya anota
+                la card del Carrito de arriba: las secciones de adentro (el
+                encabezado, el pie) traen su propio padding y su propio borde, y
+                el `Card` de shadcn por default suma los suyos.
+
+                En el teléfono el ancho fijo no cabe: ocupa el ancho del cuerpo, y
+                los 384 px vuelven en `@cobro/venta:`. La visibilidad es el espejo exacto
+                del carrito de arriba — ver su comentario. */}
+            <Card
+              className={`${
+                paso === 'cobro' ? 'flex' : 'hidden @cobro/venta:flex'
+              } w-full gap-0 rounded-[16px] border py-0 ring-0 @cobro/venta:w-96`}
+            >
+              {/* El encabezado: título + contador de pagos en la MISMA fila
+                  (design/arandano.pen, nodos `EszMA`/`NyUYT`) — no `CardHeader`
+                  de shadcn, que arma una grilla pensada para título+acción con
+                  ícono, no para dos textos en los extremos de una fila. */}
+              <div className="flex items-center justify-between border-b px-[18px] py-[14px]">
+                {/* "Cobro" y no "Cobrar": el botón de abajo dice Cobrar, y una
+                    acción tiene un solo nombre en todo el flujo. La card nombra
+                    la zona, el botón nombra lo que pasa al apretarlo. Archivo
+                    600 vía cobro.module.css — ver ese archivo para el porqué de
+                    un módulo nuevo. */}
+                <span className={`${estilosCobro.titulo} text-base text-foreground`}>Cobro</span>
+                <span className="text-xs text-muted-foreground">
+                  {pagos.length === 1 ? '1 pago' : `${pagos.length} pagos`}
+                </span>
+              </div>
+
+              {/* El `id` es lo que ata el botón del pie del teléfono —que vive
+                  afuera de este <form>— vía el atributo HTML `form`. Ver
+                  ID_FORMULARIO_DE_COBRO, arriba. */}
+              <form
+                ref={formularioCobro}
+                id={ID_FORMULARIO_DE_COBRO}
+                action={accion}
+                className="flex flex-1 flex-col"
+              >
+                <input type="hidden" name="clave" value={clave} />
+                <input
+                  type="hidden"
+                  name="items"
+                  value={JSON.stringify(itemsParaCobrar(lineas))}
+                />
+                <input
+                  type="hidden"
+                  name="pagos"
+                  value={JSON.stringify(
+                    // `recibido` NO viaja: es una ayuda de pantalla para calcular
+                    // el vuelto, y lo que entra a la caja es el monto.
+                    pagos.map((p) => ({
+                      medio: p.medio,
+                      moneda: p.moneda,
+                      // Qué total cubre este pago. Va SIEMPRE, incluido el 'ARS'
+                      // del caso común: el servidor lo trata como opcional
+                      // (`PagoDeVenta.cubre`, ausente vale 'ARS'), pero mandarlo
+                      // sólo a veces sería un campo que aparece y desaparece
+                      // según el carrito, y eso es más difícil de leer en un log
+                      // que un campo que siempre está.
+                      cubre: p.cubre,
+                      base: p.base,
+                      // '1' cuando el pago NO cruza monedas, y nunca la cadena
+                      // vacía: ahí el servidor no usa la cotización para ninguna
+                      // cuenta pero la exige mayor que cero igual
+                      // (COTIZACION_INVALIDA). El estado ya guarda '1' en ese
+                      // caso (`cotizacionParaElCruce`); esto lo vuelve a decir
+                      // en el borde donde importa, que es el que ve el motor.
+                      cotizacion: p.moneda === p.cubre ? '1' : p.cotizacion,
+                      // `undefined` y no `null` cuando no hay plan: JSON.stringify
+                      // descarta la clave entera, así que un local sin planes manda
+                      // exactamente el mismo JSON que antes de que este campo
+                      // existiera.
+                      planId: p.planId ?? undefined,
+                    })),
+                  )}
+                />
+
+                <div className="flex flex-col gap-3 p-4">
+                  {pagos.map((p, i) => (
+                    <FilaDePago
+                      key={i}
+                      pago={p}
+                      indice={i}
+                      planes={planes}
+                      // El selector de `Cubre` sólo tiene sentido con los DOS
+                      // totales sobre la mesa: con una sola moneda no hay nada
+                      // que elegir y la fila queda idéntica a la de antes de
+                      // este ciclo.
+                      ofreceCubre={totales.ars > 0 && totales.usd > 0}
+                      hayFaltante={hayFaltante}
+                      onCambiar={(cambio) => cambiarPago(i, cambio)}
+                      onQuitar={() => setPagos((p2) => p2.filter((_, j) => j !== i))}
+                      puedeQuitar={pagos.length > 1}
+                    />
+                  ))}
+                  {/* outline y con ícono "+", ya no relleno gris (design/arandano.pen,
+                      nodo `RJII3`) — border-input y no el border-border del outline
+                      por default: la maqueta pinta este borde con el mismo
+                      $ar-line-strong que ya usan los selects y el stepper, no con
+                      el borde tenue genérico de una card. */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-[38px] gap-[7px] rounded-[9px] border-input text-[13px] font-semibold text-foreground-soft"
+                    onClick={() =>
+                      setPagos((p) => {
+                        // El pago nuevo va contra el total que TODAVÍA falta: con
+                        // los pesos ya cubiertos, el que queda es el de dólares.
+                        // Misma regla que el pago inicial, sobre el faltante en
+                        // vez de sobre el total.
+                        const cubre = cubrePorDefecto(faltan)
+                        const faltaEnEseTotal = cubre === 'ARS' ? faltan.ars : faltan.usd
+                        return [
+                          ...p,
+                          {
+                            medio: 'EFECTIVO',
+                            // Se entrega en la misma moneda que cubre, igual que
+                            // el pago inicial: así no arranca cruzando.
+                            moneda: cubre,
+                            cubre,
+                            // Vacío y no `deCentavos(NaN)` si una línea del carrito
+                            // está a medio tipear: `Math.max(0, NaN)` es NaN,
+                            // `deCentavos(NaN)` es el string literal "NaN.NaN", y el
+                            // campo Monto de la fila nueva arrancaba mostrando eso —
+                            // el mismo defecto preexistente que "Entran $X", acá del
+                            // otro lado del cálculo (el precargado, no el mostrado).
+                            base: Number.isNaN(faltaEnEseTotal)
+                              ? ''
+                              : deCentavos(Math.max(0, faltaEnEseTotal)),
+                            cotizacion: cotizacionParaElCruce(cubre, cubre),
+                            recibido: '',
+                            // A precio de lista: el pago nuevo arranca en efectivo, y
+                            // heredar el plan del pago de al lado sería cobrar un
+                            // recargo que nadie eligió para esta parte.
+                            planId: null,
+                          },
+                        ]
+                      })
+                    }
+                  >
+                    <Plus className="size-[14px]" aria-hidden="true" />
+                    Agregar pago
+                  </Button>
+                </div>
+
+                {/* Empuja el pie al fondo de la card cuando hay pocos pagos —
+                    mismo rol que el espaciador análogo del Carrito. */}
+                <div className="flex-1" />
+
+                {/* El pie de la card, SÓLO en escritorio: en el teléfono estas
+                    mismas tres piezas viven en `PieDeVenta`, el pie fijo de la
+                    pantalla (ver su comentario para el porqué de dos botones y
+                    no uno movido de lugar). */}
+                <div className="hidden flex-col gap-2.5 border-t p-4 @cobro/venta:flex">
+                  <AvisosDelCobro estado={estado} ventaProcesada={ventaProcesada} />
+
+                  {/* Va DESPUÉS de los carteles de error/éxito y ANTES del chip
+                      de faltante: los carteles son transitorios y ya viven
+                      arriba del pie; estas tres líneas y el chip son lo que se
+                      lee de un vistazo justo antes de apretar Cobrar, así que
+                      quedan pegadas al botón. */}
+                  <PieDeTotales lineas={lineasDelPie} />
+
+                  {chipsDelFaltante.map((c) => (
+                    <ChipDeFaltante
+                      key={c.moneda}
+                      moneda={c.moneda}
+                      faltanCentavos={c.faltanCentavos}
+                      hayCarrito={hayCarrito}
+                    />
+                  ))}
+
+                  {/* 54px de alto, ícono arrow-right, texto en Archivo
+                      (design/arandano.pen, nodo `yJaPt`) — el orden texto-luego-
+                      ícono importa: es el orden de los hijos en el .pen, no un
+                      detalle visual libre. */}
+                  <Button
+                    type="submit"
+                    disabled={!cierra || cobrando}
+                    className={`h-[54px] gap-[9px] rounded-[12px] text-[17px] ${estilosCobro.boton}`}
+                  >
+                    {cobrando ? 'Cobrando…' : 'Cobrar'}
+                    <ArrowRight className="size-[18px]" aria-hidden="true" />
+                  </Button>
+
+                  {/* La leyenda de los atajos (design/arandano.pen, nodo
+                      `k1dDB`), que cambia de texto y de color mientras el Esc
+                      está armado: es la única señal de que hay una confirmación
+                      pendiente, y sin ella el primer Esc parecería no haber
+                      hecho nada.
+
+                      POR QUÉ DOS PASOS Y NO UN confirm() NI UN VACIADO
+                      DESHACIBLE. Esc es la tecla que este mismo atajo pone a un
+                      solo toque de distancia de vaciar un carrito de quince
+                      ítems sin red — la task lo pide explícito. Un `confirm()`
+                      del navegador bloquea el hilo y no se puede estilar; un
+                      diálogo (Sheet/Dialog) suma una capa de foco atrapado y
+                      Radix le pone su PROPIO manejo de Escape encima, que
+                      competiría con este mismo atajo por la misma tecla. Un
+                      vaciado "deshacible" (un toast con Deshacer) necesita una
+                      librería que este repo no tiene y un estado extra para
+                      guardar el carrito viejo mientras dura la ventana de
+                      deshacer. Confirmar con un SEGUNDO Esc, en cambio, reusa
+                      exactamente el mismo mecanismo que `AnularVenta`
+                      (app/(app)/ventas/formularios.tsx) ya eligió para "esto es
+                      irreversible pero frecuente": confirmación en dos pasos
+                      sobre la MISMA tecla/botón, sin diálogo y sin dependencia
+                      nueva. El desarme solo a los 3 segundos (o al tocar
+                      cualquier línea del carrito, ver `actualizarCarrito`) es lo
+                      que evita que un Esc de hace un rato "cargue" un vaciado
+                      que ya no tiene que ver con la intención actual. */}
+                  <p
+                    className={`text-center text-[11px] ${
+                      vaciadoArmado ? 'font-semibold text-destructive' : 'text-muted-foreground'
+                    }`}
+                  >
+                    {vaciadoArmado ? 'Esc de nuevo para vaciar el carrito' : 'Enter para cobrar · Esc para vaciar'}
+                  </p>
+                </div>
+              </form>
+            </Card>
+          </div>
+        </div>
+
+        {/* ADENTRO del `@container/venta`, y no como hermano suyo. Su
+            `@cobro/venta:hidden` es un container query CON NOMBRE, y una
+            consulta con nombre sólo resuelve contra un ancestro que declare
+            ese contenedor: afuera —donde estuvo hasta el 2026-09-07— la regla
+            no dispara NUNCA, así que a partir de los 850 px el pie fijo del
+            teléfono se dibujaba ADEMÁS de las dos columnas (dos botones
+            "Cobrar" de 54 px, dos `PieDeTotales` y dos juegos de chips de
+            faltante en la misma pantalla). Con `lg:hidden` daba igual dónde
+            estuviera, porque una media query no depende del árbol; con un
+            container query sí, y ésa es la diferencia que este ciclo trae.
+            `punto-de-venta.test.tsx` lo ata sobre el HTML renderizado: toda
+            aparición de `@cobro/venta:` cae adentro de este elemento.
+
+            El apilado no cambia —el envoltorio ya es `flex flex-1 flex-col` y
+            el hijo padeado se lleva el `flex-1`—, y el `sticky bottom-0` del
+            pie sigue pegado abajo: `container-type: inline-size` aplica
+            contención de layout, estilo y tamaño en línea, pero NO crea un
+            contenedor de scroll, así que el pie se sigue resolviendo contra el
+            mismo scrollport de antes, clampeado por un elemento que ocupa el
+            mismo alto que ocupaba `<SidebarInset>`. */}
+        <PieDeVenta
+          paso={paso}
+          estado={estado}
+          ventaProcesada={ventaProcesada}
+          chipsDelFaltante={chipsDelFaltante}
+          hayCarrito={hayCarrito}
+          cierra={cierra}
+          cobrando={cobrando}
+          irACobro={irACobro}
+          lineasDelPie={lineasDelPie}
+        />
+      </div>
 
       {/* El selector de unidad: se abre al agregar por NOMBRE un artículo con
           serie. `Dialog` de Radix es un overlay más de los que
@@ -2643,7 +2682,7 @@ function AvisosDelCobro({
  * un botón `Cobrar →` de 54 px, y en el paso de cobro además la banda de
  * faltante arriba.
  *
- * NO existe en escritorio (`lg:hidden`): ahí el mismo botón, el mismo chip y
+ * NO existe en escritorio (`@cobro/venta:hidden`): ahí el mismo botón, el mismo chip y
  * la leyenda de atajos siguen viviendo al pie de la card de Cobro, que es
  * donde los dibuja la maqueta de 1440. Son dos botones y no uno movido de
  * lugar —un elemento del DOM no puede estar en dos sitios—, atados al mismo
@@ -2749,7 +2788,7 @@ function PieDeVenta({
   return (
     // padding [10,14,14,14] y gap 9 (los dos frames `Pie` coinciden), fondo
     // --card con borde superior de 1.
-    <div className="sticky bottom-0 z-10 flex flex-col gap-[9px] border-t bg-card px-[14px] pt-[10px] pb-[14px] lg:hidden">
+    <div className="sticky bottom-0 z-10 flex flex-col gap-[9px] border-t bg-card px-[14px] pt-[10px] pb-[14px] @cobro/venta:hidden">
       {/* En los dos pasos, no sólo en el cobro: después de cobrar bien el
           carrito queda vacío y `PuntoDeVenta` sigue en el paso en que estaba,
           así que el cartel tiene que poder verse desde donde sea que quedó la

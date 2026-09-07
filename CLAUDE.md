@@ -1161,6 +1161,15 @@ Y del producto:
   —el valor del teléfono sin prefijo, el de escritorio con `lg:`—, que es la
   convención de Tailwind y la de `components/ui/*`.
 
+  **Esto se revisó el 2026-09-07**, y conviene leer por qué antes de creer que
+  la regla se abandonó: la aritmética de ese párrafo está incompleta —le faltan
+  el padding del cuerpo y el gap de la fila— y, peor, le descuenta los 248 px
+  del sidebar también abajo del corte, donde el sidebar es un `Sheet` y no ocupa
+  nada. Lo que se separó no son dos respuestas a una pregunta sino dos
+  preguntas: el sidebar y el Topbar siguen en 1024 (viewport), y `/vender`
+  decide por el ancho de su cuerpo. Ver la entrada del corte por contenedor,
+  más abajo.
+
   **Un solo árbol, no dos presentaciones: el patrón `lg:contents`.** Los cuatro
   listados (`/ventas`, `/inventario`, `/servicio-tecnico`, `/usuarios`) y el
   carrito de `/vender` dejaron de ser `<Table>` de shadcn: hoy son un `grid`
@@ -2772,6 +2781,101 @@ Y del producto:
   vacío. El gate entero estaba en verde mientras el bot decía que vendía
   cables. Más la card con dos controles a 1440 y a 390 px, que es donde el
   campo nuevo puede apretar.
+
+- ~~Que el panel de cobro no desaparezca según el tamaño de la ventana.~~
+  **Hecho** (2026-09-07). Sale del feedback textual del dueño del producto:
+  *"hay veces que si estas en /ventas depende el tamaño de la pamtalla la caja
+  de cobro donde seleccionas como paga el cliente no aparece o queda oculta"*.
+  La pantalla es `/vender`, y el ancho donde se ve es ~960 px: un monitor Full
+  HD con el navegador a media pantalla. Ver
+  `docs/superpowers/specs/2026-09-07-corte-por-contenedor-en-vender-design.md`.
+
+  **El panel no se rompía: abajo de 1024 px `/vender` sirve el layout de
+  teléfono, donde el cobro es un paso propio.** Lo que lo convierte en defecto
+  es por qué está puesto ahí ese número. El comentario de `hooks/use-mobile.ts`
+  lo justificaba con una cuenta que tiene **dos errores**: le faltan el
+  `lg:p-6` del cuerpo (48) y el `gap-[18px]` de la fila —así que a 1024 al
+  carrito le quedan 326 px y no los 392 que ese mismo comentario llama "el
+  mínimo que funciona"—, y le descuenta los 248 px del sidebar **también abajo
+  del corte**, donde el sidebar es un `Sheet` y no ocupa nada en el flujo.
+
+  **La consecuencia es que el corte quedó puesto justo donde el espacio
+  empeora**: un píxel más de ventana le sacaba 267 px al cuerpo. A 960 el
+  carrito tendría 530 px —más que a 1024 (326) y más que a 1200 (502)—, y es
+  exactamente ahí donde el panel se escondía. **Los cuatro números son los del
+  ANTES**, con el padding del cuerpo todavía atado al viewport
+  (`px-[14px]`/`lg:p-6`); con el corte por contenedor el padding también cambia
+  con la consulta, así que las mismas cuentas dan 247 y 510. Se dejan los
+  originales porque son los que describen el defecto que motivó el ciclo — la
+  aclaración está porque rehacer la cuenta con el código de hoy y encontrar
+  otro número es literalmente lo que originó este defecto: una cuenta plausible
+  que nadie volvió a verificar. Del otro lado, entre 1024 y
+  ~1090, las dos columnas se prendían con el carrito por debajo del mínimo
+  declarado. **Ningún corte sobre el viewport puede ser correcto acá**, porque
+  el sidebar parte la relación entre viewport y espacio disponible en dos
+  regímenes que no son monótonos.
+
+  **La decisión: son dos preguntas distintas, no una respondida dos veces.**
+  Es lo único que hace legítimo revisar el *"un solo corte, 1024 px"* del ciclo
+  móvil. *"¿El sidebar es un panel flotante?"* es del **viewport**, la sigue
+  contestando `useIsMobile()` en 1024, y de ella dependen el `Sheet` del
+  sidebar y la hamburguesa del Topbar — que abajo de ese ancho es el único
+  camino a la navegación. *"¿Entran las dos columnas?"* es del **espacio que
+  tiene el cuerpo**, y pasa a `hooks/use-dos-columnas.ts`.
+
+  **El mecanismo son container queries de Tailwind v4**, con el cuerpo de
+  `/vender` envuelto en `@container/venta` y sus clases en `@cobro/venta:`.
+  Tres cosas que valen para releer:
+
+  - **El contenedor va con NOMBRE.** Una consulta sin nombre resuelve contra el
+    contenedor más cercano, y `components/ui/card.tsx` ya establece uno
+    (`@container/card-header`). La pantalla no usa `CardHeader` hoy; el día que
+    lo use, un `@cobro:` adentro pasaría a preguntar por el ancho de un
+    encabezado de card, en silencio.
+  - **El envoltorio NO lleva padding.** Un container query compara contra el
+    content box, así que un contenedor que llevara el padding —que además
+    cambia con la propia consulta— dependería de su propio resultado.
+  - **El umbral es 850 y vive una sola vez**, como `--container-cobro` en
+    `app/globals.css`. Sale de constantes que el proyecto ya había fijado: 48
+    del `p-6` + 392 del carrito + 18 del gap + 384 del panel = 842. **No se lee
+    desde JavaScript, y el motivo no es que no se pueda**: Tailwind sí la emite
+    como custom property real dentro de `@layer theme` —verificado compilando
+    `app/globals.css`—, pero sólo **mientras alguna utilidad la use**, así que
+    un `getComputedStyle` en runtime costaría una lectura por montaje y se
+    apoyaría en algo que desaparece del CSS el día que la última clase
+    `@cobro/venta:` se borre. Por eso la constante de TypeScript existe aparte
+    y un caso ata las dos en las dos direcciones.
+
+    **`inline` no significa lo que parece**, y conviene dejarlo escrito porque
+    la versión anterior de esta viñeta decía lo contrario: lo que hace es que
+    las utilidades resuelvan el valor en vez de referenciar la variable — no
+    que la variable no se emita.
+
+  **La mitad JavaScript no es opcional, y ésa es la lección transferible.**
+  `punto-de-venta.tsx` ya leía el corte con `useIsMobile()` para cuatro props
+  del `<Encabezado>` que son props y no clases (el título, el subtítulo, la
+  flecha de volver y `controlMovil`). Mover sólo el CSS al contenedor los
+  habría desincronizado justo en la banda que el ciclo arregla — el mismo modo
+  de falla de las dos copias de "Anular orden", con todo el gate en verde.
+  Cuando una pantalla decide algo por CSS **y** por JavaScript, mover una mitad
+  es mover media decisión.
+
+  **Lo que este ciclo EMPEORA, dicho explícito**: entre 1024 y 1097 px de
+  ventana se pasa a ver el layout de una columna, donde antes había dos. Es la
+  respuesta correcta —ahí el carrito queda entre 326 y 399 px— pero es una
+  capacidad que estaba y deja de estar, con salida a mano: colapsar el sidebar
+  la devuelve, que es un caso que ninguna media query podía cubrir y éste sí.
+  Los últimos ocho píxeles de esa banda son el precio de redondear 842 a 850.
+
+  **Sin migración, sin columna y sin permiso nuevo.** Es presentación pura, así
+  que el ciclo entero se revierte revirtiendo la imagen.
+  `lib/permisos/catalogo.ts` no crece.
+
+  **Queda pendiente la verificación manual**, y acá el número depende de ella:
+  850 es defendible en papel, pero el `min-content` real del carrito no se
+  midió nunca en un navegador. El ancho que decide es **1098**, el borde exacto
+  donde el carrito queda en 400 px. Lo demás a mirar está en la sección
+  *Verificación* del spec.
 
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).

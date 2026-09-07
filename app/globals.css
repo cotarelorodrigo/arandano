@@ -19,6 +19,13 @@
 
 @theme inline {
   --font-heading: var(--font-sans);
+  /* El umbral de las dos columnas de /vender, que consultan las variantes
+     `@cobro/venta:` de app/(app)/vender/punto-de-venta.tsx. El mismo número
+     está en hooks/use-dos-columnas.ts, que es el que mide del lado de
+     JavaScript; use-dos-columnas.test.ts los ata en las dos direcciones.
+     Acá y no como valor arbitrario en cada clase: son noventa clases, y un
+     número escrito noventa veces es un número que se desincroniza. */
+  --container-cobro: 850px;
   /* No hay --font-display, --color-marca ni --color-chart-N acá, y es a
      propósito: los consumen módulos de CSS y el ChartConfig con var(--token)
      directo, así que ninguna utilidad de Tailwind los referenciaría. Un token

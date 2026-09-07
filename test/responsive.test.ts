@@ -40,8 +40,24 @@ const ANCHO = /^(?:[a-z0-9@[\]&>_-]+:)*(?:min-)?(?:w|basis)-\[(\d+)px\]$/
  * - **`grid-cols-[…px…]`**: una plantilla de grid con pistas fijas —
  *   `grid-cols-[150px_170px_1fr]`— suma un ancho mínimo mayor que cualquiera
  *   de sus números, y este caso no lee `grid-cols-` en absoluto. Es lo que
- *   hace que las tablas de este repo dependan de `lg:grid-cols-…` y de
- *   `grid-cols-1` sin prefijo, no de este test.
+ *   hace que las tablas de este repo dependan de `grid-cols-1` sin prefijo más
+ *   la plantilla prefijada, no de este test. El prefijo es `lg:` en todas
+ *   salvo en `/vender`, que desde el 2026-09-07 decide por CONTENEDOR
+ *   (`@cobro/venta:grid-cols-…`) — ver el punto ciego de acá abajo.
+ * - **Las variantes de container query**: la clase de caracteres del prefijo
+ *   de variante, en el regex de arriba, NO incluye la `/`, así que un
+ *   `@cobro/venta:w-[400px]` no matchea y se descarta en silencio: ni se marca
+ *   como suelto ni se reconoce como prefijado. Es el punto ciego que estrena
+ *   el ciclo del corte por contenedor de `/vender` (2026-09-07), la primera
+ *   pantalla que no escribe un solo `lg:`. Hoy no esconde ninguna regresión
+ *   —sus tres anchos fijos son `w-[92px]`, `w-[104px]` y `w-[140px]`, los tres
+ *   bajo el umbral y sin variante—, pero el día que alguien le ponga un ancho
+ *   grande detrás de `@cobro/venta:`, este caso no va a tener nada que decir.
+ *   Sumar la `/` a esa clase de caracteres lo cerraría a medias: haría
+ *   matchear el token, pero el filtro de abajo pregunta literalmente por
+ *   `lg:`, así que un ancho prefijado por contenedor pasaría a contarse como
+ *   culpable. Cerrarlo de verdad es decidir qué prefijos cuentan como "esto no
+ *   aplica en un teléfono", y eso es su propio ciclo.
  * - **Los anchos que viven dentro de un CSS Module**: el archivo `.module.css`
  *   ni se abre (`fuentes()` filtra `.tsx`), así que un `width: 420px` ahí es
  *   invisible.
