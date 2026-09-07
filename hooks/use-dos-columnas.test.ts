@@ -23,11 +23,15 @@ describe('el umbral de las dos columnas', () => {
   })
 
   // EN LAS DOS DIRECCIONES, y es el punto del caso: el número vive en dos
-  // lenguajes —TypeScript lo usa para medir, el CSS para consultar— y no hay
-  // forma de que uno lea al otro en runtime, porque `@theme inline` no emite
-  // la variable como custom property. Sin este caso, mover uno y olvidarse
-  // del otro deja la pantalla con el JavaScript decidiendo en un ancho y el
-  // CSS en otro, sin que nada falle.
+  // lenguajes —TypeScript lo usa para medir, el CSS para consultar— y ninguno
+  // lee al otro en runtime. No porque no se pueda: Tailwind emite
+  // `--container-cobro` como custom property real en `@layer theme`, pero sólo
+  // mientras alguna utilidad la use, así que leerla con `getComputedStyle`
+  // costaría una lectura por montaje y dependería de que la última clase
+  // `@cobro/venta:` no se borre nunca. Con las dos escritas a mano, mover una
+  // y olvidarse de la otra deja la pantalla con el JavaScript decidiendo en un
+  // ancho y el CSS en otro, sin que nada falle — este caso es lo que lo
+  // impide.
   it('el CSS declara exactamente el mismo número', () => {
     const declarada = GLOBALS.match(/--container-cobro:\s*(\d+)px\s*;/)
     expect(declarada, 'falta --container-cobro en app/globals.css').toBeTruthy()

@@ -22,10 +22,16 @@ import * as React from 'react'
  * 842, redondeado a 850.
  *
  * **El mismo número está en `app/globals.css` como `--container-cobro`**, que
- * es lo que consulta el CSS. No se puede leer de ahí en runtime: está en
- * `@theme inline`, y `inline` significa justamente que el valor se mete en las
- * utilidades en vez de emitirse como custom property. `hooks/use-dos-columnas.test.ts`
- * ata los dos en las dos direcciones.
+ * es lo que consulta el CSS. NO se lee de ahí en runtime, y el motivo no es
+ * que no se pueda: Tailwind sí la emite como custom property real —dentro de
+ * `@layer theme`, verificado compilando `app/globals.css` con el
+ * `@tailwindcss/postcss` del repo—, pero sólo **mientras alguna utilidad la
+ * use**. (`inline`, en `@theme inline`, hace que las utilidades resuelvan el
+ * valor en vez de referenciar la variable; no que la variable no se emita.)
+ * Leerla costaría un `getComputedStyle` por montaje y quedaría apoyada en algo
+ * que se va del CSS solo el día que se borre la última clase `@cobro/venta:`.
+ * Por eso la constante vive acá y `hooks/use-dos-columnas.test.ts` ata las dos
+ * en las dos direcciones.
  */
 export const ANCHO_MINIMO_DOS_COLUMNAS = 850
 

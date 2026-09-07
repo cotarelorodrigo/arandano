@@ -2800,9 +2800,16 @@ Y del producto:
   del corte**, donde el sidebar es un `Sheet` y no ocupa nada en el flujo.
 
   **La consecuencia es que el corte quedó puesto justo donde el espacio
-  empeora**: un píxel más de ventana le saca 267 px al cuerpo. A 960 el carrito
-  tendría 530 px —más que a 1024 (326) y más que a 1200 (502)—, y es
-  exactamente ahí donde el panel se escondía. Del otro lado, entre 1024 y
+  empeora**: un píxel más de ventana le sacaba 267 px al cuerpo. A 960 el
+  carrito tendría 530 px —más que a 1024 (326) y más que a 1200 (502)—, y es
+  exactamente ahí donde el panel se escondía. **Los cuatro números son los del
+  ANTES**, con el padding del cuerpo todavía atado al viewport
+  (`px-[14px]`/`lg:p-6`); con el corte por contenedor el padding también cambia
+  con la consulta, así que las mismas cuentas dan 247 y 510. Se dejan los
+  originales porque son los que describen el defecto que motivó el ciclo — la
+  aclaración está porque rehacer la cuenta con el código de hoy y encontrar
+  otro número es literalmente lo que originó este defecto: una cuenta plausible
+  que nadie volvió a verificar. Del otro lado, entre 1024 y
   ~1090, las dos columnas se prendían con el carrito por debajo del mínimo
   declarado. **Ningún corte sobre el viewport puede ser correcto acá**, porque
   el sidebar parte la relación entre viewport y espacio disponible en dos
@@ -2830,11 +2837,19 @@ Y del producto:
     cambia con la propia consulta— dependería de su propio resultado.
   - **El umbral es 850 y vive una sola vez**, como `--container-cobro` en
     `app/globals.css`. Sale de constantes que el proyecto ya había fijado: 48
-    del `p-6` + 392 del carrito + 18 del gap + 384 del panel = 842. **No se
-    puede leer desde JavaScript**: está en `@theme inline`, y `inline`
-    significa que el valor se mete en las utilidades en vez de emitirse como
-    custom property. Por eso la constante de TypeScript existe aparte y un caso
-    ata las dos en las dos direcciones.
+    del `p-6` + 392 del carrito + 18 del gap + 384 del panel = 842. **No se lee
+    desde JavaScript, y el motivo no es que no se pueda**: Tailwind sí la emite
+    como custom property real dentro de `@layer theme` —verificado compilando
+    `app/globals.css`—, pero sólo **mientras alguna utilidad la use**, así que
+    un `getComputedStyle` en runtime costaría una lectura por montaje y se
+    apoyaría en algo que desaparece del CSS el día que la última clase
+    `@cobro/venta:` se borre. Por eso la constante de TypeScript existe aparte
+    y un caso ata las dos en las dos direcciones.
+
+    **`inline` no significa lo que parece**, y conviene dejarlo escrito porque
+    la versión anterior de esta viñeta decía lo contrario: lo que hace es que
+    las utilidades resuelvan el valor en vez de referenciar la variable — no
+    que la variable no se emita.
 
   **La mitad JavaScript no es opcional, y ésa es la lección transferible.**
   `punto-de-venta.tsx` ya leía el corte con `useIsMobile()` para cuatro props

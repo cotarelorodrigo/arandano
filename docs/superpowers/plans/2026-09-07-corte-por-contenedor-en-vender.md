@@ -30,7 +30,9 @@ Sintaxis verificada contra Tailwind 4.3.3 real antes de escribir este plan:
 | `@cobro/venta:group-hover:bg-x` | anida bien dentro de `@media (hover: hover)` |
 | `@cobro/venta:contents` y `@cobro/venta:grid-cols-[…]` | emiten normalmente |
 
-`--container-cobro` declarada en `@theme inline` **no se emite como custom property** (eso es lo que significa `inline`), así que JavaScript no puede leerla en runtime. Por eso la constante de TypeScript existe y se ata al CSS por test, en vez de leerse del DOM.
+**Corregido en la review final (2026-09-07):** este plan afirmaba que `--container-cobro`, por estar en `@theme inline`, **no se emite como custom property** y que por eso JavaScript no podía leerla. **Es falso.** Compilando `app/globals.css` con el `@tailwindcss/postcss` del repo, el output contiene `--container-cobro: 850px;` dentro de `@layer theme { :root, :host { … } }` — una custom property real, legible con `getComputedStyle`. Lo que `inline` hace es que las **utilidades** resuelvan el valor en vez de referenciar la variable; no suprime la declaración.
+
+Lo que sí es cierto, y es el argumento correcto: Tailwind emite una variable de tema **sólo mientras alguna utilidad la use** (compilado con `source(none)` y sin fuentes, `--container-cobro` desaparece del output; con `@source` apuntando sólo a `punto-de-venta.tsx`, aparece). Leerla en runtime costaría un `getComputedStyle` por montaje y quedaría apoyada en algo que se va del CSS solo el día que se borre la última clase `@cobro/venta:`. Por eso la constante de TypeScript existe aparte y se ata al CSS por test, en vez de leerse del DOM — la decisión no cambia, el porqué sí. Los bloques de código citados más abajo conservan la redacción vieja porque son el registro de lo que este plan pidió escribir; la redacción vigente vive en `hooks/use-dos-columnas.ts`, `hooks/use-dos-columnas.test.ts` y `CLAUDE.md`.
 
 ---
 
