@@ -1714,7 +1714,8 @@ export function PuntoDeVenta({
       <div ref={cuerpo} className="@container/venta flex flex-1 flex-col">
         <div className="flex flex-1 flex-col gap-3 px-[14px] py-3 @cobro/venta:gap-[18px] @cobro/venta:p-6">
           {/* Los dos chips de estado, que en escritorio viven en el Topbar
-              (`acciones`, hidden @cobro/venta:flex) y en el teléfono abren el cuerpo.
+              (`acciones`, hidden lg:flex — de `<Encabezado>`, que sigue
+              contestando la pregunta del viewport) y en el teléfono abren el cuerpo.
               De sólo lectura: ver el comentario de ChipsDeEstado en caja.tsx. */}
           <ChipsDeEstado caja={caja} cotizacionUsd={cotizacionUsd} />
 
@@ -1806,7 +1807,9 @@ export function PuntoDeVenta({
           </div>
 
           {/* "Fila": las dos columnas — el carrito y el cobro. El corte NO es de
-              viewport: es del ancho de este cuerpo (`@cobro/venta:`, umbral en
+              viewport: es del ancho de este cuerpo (`@cobro/venta:`, cuyo
+              umbral es `--container-cobro` en app/globals.css; la copia para
+              JavaScript, la misma cifra, vive en
               hooks/use-dos-columnas.ts). El viewport no lo puede contestar
               porque el sidebar le saca 248 px al cuerpo justo al cruzar 1024,
               así que hay MÁS lugar a 1023 que a 1024. Ver el spec del
@@ -1824,9 +1827,10 @@ export function PuntoDeVenta({
                 En el teléfono el cobro es pantalla propia, así que el carrito se
                 esconde mientras dura (frames `VaHod` y `keRdN`). Se escribe
                 mobile-first —el valor del teléfono sin prefijo, el de escritorio
-                con `@cobro/venta:`— y NO al revés: con lugar para las dos
-                columnas la fila termina en `flex` sin mirar el paso, que es la
-                regla. */}
+                con `@cobro/venta:`— y NO con `@max-cobro/venta:` (el equivalente
+                invertido, que sólo aplicaría por debajo del umbral): con lugar
+                para las dos columnas la fila termina en `flex` sin mirar el
+                paso, que es la regla. */}
             <Card
               className={`${
                 paso === 'cobro' ? 'hidden @cobro/venta:flex' : 'flex'

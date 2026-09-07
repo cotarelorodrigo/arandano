@@ -2080,7 +2080,8 @@ describe('el punto de venta en el teléfono', () => {
     expect(
       veces,
       'el estado de la caja tiene que estar dos veces: el chip interactivo del ' +
-        'header (hidden @cobro/venta:flex) y el de sólo lectura del cuerpo (@cobro/venta:hidden)',
+        'header (hidden lg:flex, en encabezado.tsx) y el de sólo lectura del cuerpo ' +
+        '(lg:hidden, en caja.tsx) — los dos siguen siendo de viewport, esta task no los toca',
     ).toBe(2)
     expect(FUENTE).toContain('<ChipsDeEstado')
     expect(FUENTE).toContain('<ChipCaja')
@@ -2137,13 +2138,17 @@ describe('el punto de venta en el teléfono', () => {
     expect(FUENTE).toMatch(/ref=\{cuerpo\}\s+className="@container\/venta/)
   })
 
-  // Mobile-first y NO al revés: el valor del teléfono va sin prefijo y el
-  // ancho con `@cobro/venta:`. Con lugar para las dos columnas, ambas
-  // terminan en `flex`, sin mirar el paso.
+  // Mobile-first y NO al revés — "al revés" sería `@max-cobro/venta:`, el
+  // equivalente invertido que sólo aplicaría POR DEBAJO del umbral: el valor
+  // del teléfono va sin prefijo y el ancho con `@cobro/venta:`. Con lugar
+  // para las dos columnas, ambas terminan en `flex`, sin mirar el paso.
   it('el paso esconde una columna y muestra la otra, sólo en una columna', () => {
     expect(FUENTE).toMatch(/paso === 'cobro' \? 'hidden @cobro\/venta:flex' : 'flex'/)
     expect(FUENTE).toMatch(/paso === 'cobro' \? 'flex' : 'hidden @cobro\/venta:flex'/)
-    expect(SIN_COMENTARIOS, 'la constraint del ciclo prohíbe max-lg:').not.toMatch(/max-lg:/)
+    expect(
+      SIN_COMENTARIOS,
+      'la constraint del ciclo prohíbe @max-cobro/venta: (el equivalente invertido)',
+    ).not.toMatch(/@max-cobro\/venta:/)
   })
 
   it('el buscador mide 52 en el teléfono y 58 en escritorio', async () => {

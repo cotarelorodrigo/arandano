@@ -8,11 +8,33 @@ import { ANCHO_MINIMO_DOS_COLUMNAS, NOMBRE_DEL_CONTENEDOR } from '@/hooks/use-do
 /**
  * Compila el CSS real del proyecto contra las clases reales de la pantalla.
  *
- * POR QUÉ NO ALCANZA CON MIRAR EL FUENTE: una variante de Tailwind que no
- * existe no emite nada y no falla. Un `@cobro/ventas:` con una ese de más, o un
- * `--container-cobro` que quedó fuera del bloque `@theme`, dejan la pantalla en
- * una sola columna en TODOS los anchos, y ningún caso que lea el .tsx lo vería:
- * las clases estarían escritas igual.
+ * POR QUÉ NO ALCANZA CON MIRAR EL FUENTE: una variante de Tailwind mal
+ * escrita no necesariamente deja de emitir CSS — depende de CUÁL mitad está
+ * mal. Un `--container-cobro` que quedara fuera del bloque `@theme` sí deja a
+ * Tailwind sin tamaño que resolver y no emite la consulta. Pero un
+ * `@cobro/ventas:` con una ese de más en el NOMBRE del contenedor SÍ compila:
+ * Tailwind acepta cualquier nombre después de la `/` sin verificar que exista
+ * algún `@container/ventas` en el árbol, así que emite
+ * `@container ventas (width >= 850px) { .\@cobro\/ventas\:flex-row {…} }`
+ * contra un contenedor que nadie declara — la regla nunca dispara, porque
+ * ningún ancestro se llama así, y la pantalla queda en una sola columna en
+ * TODOS los anchos sin que nada avise. Los dos errores dejan la pantalla
+ * igual de rota; ningún caso que lea el .tsx ve la diferencia, porque las
+ * clases están escritas igual en el fuente.
+ *
+ * Y ESTE MISMO CASO tenía la versión anterior del error: comparaba con
+ * `css.split(header)` y afirmaba propiedades CSS sueltas (`flex-direction:
+ * row`) en vez de nombres de clase. Con el `ventas` de más, Tailwind emite
+ * el bloque `@container ventas (...)` INMEDIATAMENTE DESPUÉS del bloque
+ * `@container venta (...)` real (que queda vacío de la fila, porque la
+ * clase que la pone en `flex-row` ahora apunta al contenedor equivocado), y
+ * `split(header).slice(1).join('\n')` no corta en la llave de cierre: se
+ * lleva TODO lo que sigue en el archivo, `@container ventas` incluido. Ahí
+ * vuelve a aparecer `flex-direction: row`, y una propiedad suelta no sabe
+ * decir de qué contenedor vino. Por eso este archivo balancea llaves para
+ * cortar en el cierre real, y afirma el NOMBRE DE CLASE escapado
+ * (`.\@cobro\/venta\:flex-row`), que sí lleva el nombre del contenedor
+ * adentro — una propiedad no.
  *
  * `source(none)` + un `@source` puntual en vez del escaneo automático: sin eso
  * Tailwind recorre el repo entero y este caso pasaría a tardar segundos.
@@ -41,6 +63,40 @@ async function compilar(): Promise<string> {
   return resultado.css
 }
 
+/**
+ * Extrae el CONTENIDO de cada bloque `${header} { … }`, balanceando llaves
+ * desde la primera `{` que sigue al header hasta su cierre real — no hasta
+ * la próxima aparición del header ni hasta el final del archivo.
+ *
+ * Por qué hace falta esto y no `css.split(header)`: Tailwind puede emitir
+ * más de un `@container` con nombres parecidos uno detrás del otro (el caso
+ * real: `venta` y, si alguien escribe mal la variante, `ventas`), y un
+ * `split` no distingue "adentro de ESTE bloque" de "en cualquier lado del
+ * archivo después de este punto". Devuelve la concatenación de todos los
+ * bloques que matcheen el header exacto (hoy hay uno solo, pero no asume
+ * que siga siendo así).
+ */
+function contenidoDeBloques(css: string, header: string): string {
+  const partes: string[] = []
+  let desde = 0
+  for (;;) {
+    const inicioHeader = css.indexOf(header, desde)
+    if (inicioHeader === -1) break
+    const apertura = css.indexOf('{', inicioHeader + header.length)
+    if (apertura === -1) break
+    let profundidad = 1
+    let i = apertura + 1
+    while (i < css.length && profundidad > 0) {
+      if (css[i] === '{') profundidad++
+      else if (css[i] === '}') profundidad--
+      i++
+    }
+    partes.push(css.slice(apertura + 1, i - 1))
+    desde = i
+  }
+  return partes.join('\n')
+}
+
 describe('el container query de /vender llega al CSS', () => {
   it('emite la consulta contra el contenedor con nombre y el umbral declarado', async () => {
     const css = await compilar()
@@ -52,15 +108,21 @@ describe('el container query de /vender llega al CSS', () => {
 
   it('la fila y el panel están adentro de esa consulta', async () => {
     const css = await compilar()
-    const bloques = css.split(
+    const dentro = contenidoDeBloques(
+      css,
       `@container ${NOMBRE_DEL_CONTENEDOR} (width >= ${ANCHO_MINIMO_DOS_COLUMNAS}px)`,
     )
-    const dentro = bloques.slice(1).join('\n')
-    expect(dentro, 'la fila no pasa a flex-row en ningún ancho').toContain('flex-direction: row')
-    // `w-96` no resuelve a `var(--container-sm)` en esta versión (Tailwind
-    // 4.3.3 la emite como `calc(var(--spacing) * 96)`): se afirma la clase
-    // escapada, que es lo que de verdad importa — que la regla exista
-    // adentro del bloque del container query.
-    expect(dentro, 'el panel no recupera sus 384 px').toContain('.\\@cobro\\/venta\\:w-96')
+    // Nombres de CLASE escapados, no propiedades CSS sueltas: una propiedad
+    // como `flex-direction: row` no dice de qué contenedor vino y aparecería
+    // igual si la variante apuntara a `ventas` en vez de `venta` (ver el
+    // docblock). El nombre de clase escapado lleva el nombre del contenedor
+    // adentro (`\@cobro\/venta\:`), así que sólo matchea si la regla es la
+    // correcta.
+    expect(dentro, 'la fila no pasa a @cobro/venta:flex-row').toContain(
+      '.\\@cobro\\/venta\\:flex-row',
+    )
+    expect(dentro, 'el panel no recupera sus 384 px (@cobro/venta:w-96)').toContain(
+      '.\\@cobro\\/venta\\:w-96',
+    )
   })
 })
