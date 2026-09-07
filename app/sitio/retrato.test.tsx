@@ -153,10 +153,12 @@ describe('el retrato del punto de venta', () => {
   // real.
   //
   // La Task 4b del ciclo móvil movió /vender de <TableHead> a un grid con
-  // `lg:grid-cols-[1fr_Npx_Npx_Npx_Npx]` (display:contents, ver el docblock
-  // de `Listado` en app/(app)/ventas/page.tsx) — el retrato NO se tocó en esa
-  // task (no es una de las diez pantallas de aplicación, ver CLAUDE.md), así
-  // que sigue leyendo su propio <TableHead>. Cada lado lee el ancho con la
+  // `@cobro/venta:grid-cols-[1fr_Npx_Npx_Npx_Npx]` (display:contents, ver el
+  // docblock de `Listado` en app/(app)/ventas/page.tsx; la variante era
+  // `lg:grid-cols-[…]` hasta el corte por contenedor del 2026-09-07, ver
+  // CLAUDE.md) — el retrato NO se tocó en esa task (no es una de las diez
+  // pantallas de aplicación, ver CLAUDE.md), así que sigue leyendo su propio
+  // <TableHead>. Cada lado lee el ancho con la
   // sintaxis que de verdad usa: `anchosDeRetrato` el atributo `w-[…px]` de
   // cada celda, `anchosDeVender` los tres valores centrales del grid-cols
   // (el primero es `1fr`, de Artículo; el último es Quitar, 28px, que acá no
@@ -169,7 +171,7 @@ describe('el retrato del punto de venta', () => {
     const anchosDeRetrato = (src: string) =>
       [...src.matchAll(/<TableHead className="[^"]*\b(w-\[\d+px\])[^"]*"/g)].map((m) => m[1])
     const anchosDeVender = (src: string) => {
-      const m = src.match(/lg:grid-cols-\[1fr_(\d+)px_(\d+)px_(\d+)px_\d+px\]/)
+      const m = src.match(/@cobro\/venta:grid-cols-\[1fr_(\d+)px_(\d+)px_(\d+)px_\d+px\]/)
       expect(m, 'grid-cols de /vender no matchea 1fr_Npx_Npx_Npx_Npx').not.toBeNull()
       return [`w-[${m![1]}px]`, `w-[${m![2]}px]`, `w-[${m![3]}px]`]
     }

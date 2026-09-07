@@ -1246,7 +1246,7 @@ export function PuntoDeVenta({
   // ya cobrada y este mismo efecto la empujaba afuera otra vez.
   //
   // EL FOCO ESPERA A LA PASADA SIGUIENTE. Con el paso todavía en cobro el
-  // buscador está en `display:none` (ver su `hidden lg:block`, más abajo), y
+  // buscador está en `display:none` (ver su `hidden @cobro/venta:block`, más abajo), y
   // `focus()` sobre un elemento oculto no hace nada. `paso` está en las
   // dependencias justamente para eso: la vuelta corta esta pasada, el cambio
   // de paso vuelve a disparar el efecto, y ahí el buscador ya está visible.
@@ -1257,7 +1257,7 @@ export function PuntoDeVenta({
   //
   // EN ESCRITORIO LA RAMA DE LA VUELTA NO CORRE NUNCA, y no por un chequeo de
   // ancho: es estructural. Lo único que pone el paso en cobro es el botón del
-  // pie, que es `lg:hidden`.
+  // pie, que es `@cobro/venta:hidden`.
   useEffect(() => {
     if (!ventaProcesada) return
     if (paso === 'cobro') {
@@ -1681,7 +1681,7 @@ export function PuntoDeVenta({
           // y no una tercera hecha a mano — es la copia de ese dato para el
           // Topbar del teléfono, que reemplaza a la banda mientras dura el
           // paso de cobro (ver el comentario de la Card del carrito, más
-          // abajo: se esconde con `hidden lg:flex` en ese paso).
+          // abajo: se esconde con `hidden @cobro/venta:flex` en ese paso).
           pasoVisible === 'cobro' && !lineasTotal.some((l) => l.monto === '—')
             ? `Venta de ${lineasTotal.map((l) => `${l.signo} ${l.monto}`).join(' + ')}`
             : undefined
@@ -1714,7 +1714,7 @@ export function PuntoDeVenta({
       <div ref={cuerpo} className="@container/venta flex flex-1 flex-col">
         <div className="flex flex-1 flex-col gap-3 px-[14px] py-3 @cobro/venta:gap-[18px] @cobro/venta:p-6">
           {/* Los dos chips de estado, que en escritorio viven en el Topbar
-              (`acciones`, hidden lg:flex) y en el teléfono abren el cuerpo.
+              (`acciones`, hidden @cobro/venta:flex) y en el teléfono abren el cuerpo.
               De sólo lectura: ver el comentario de ChipsDeEstado en caja.tsx. */}
           <ChipsDeEstado caja={caja} cotizacionUsd={cotizacionUsd} />
 
@@ -1735,9 +1735,9 @@ export function PuntoDeVenta({
               Cuerpo es banda total, los pagos y el botón que suma uno— y es lo que
               volvía silencioso el defecto que arregla el efecto de arriba, porque
               era lo que permitía escanear desde una pantalla donde el carrito no
-              se ve. Mobile-first, igual que las dos columnas: en `lg:` está
+              se ve. Mobile-first, igual que las dos columnas: en `@cobro/venta:` está
               siempre, sin mirar el paso. */}
-          <div className={`${paso === 'cobro' ? 'hidden lg:block' : 'block'} relative`}>
+          <div className={`${paso === 'cobro' ? 'hidden @cobro/venta:block' : 'block'} relative`}>
             {/* focus-within y no el focus-visible del <Input>: el ring por
                 default aparecería sólo alrededor del campo de texto —que no
                 cubre ni el ícono ni el chip F2—, y se vería como un rectángulo
@@ -1745,7 +1745,7 @@ export function PuntoDeVenta({
                 ring (ver más abajo) para que sea ESTE, el de la barra entera, el
                 que se vea al enfocar. */}
             {/* 52 px en el teléfono (nodo `I5IuID` de VaHod), 58 en escritorio. */}
-            <div className="flex h-[52px] items-center gap-3 rounded-[14px] border-2 border-primary bg-card px-[18px] shadow-[0_0_0_4px_color-mix(in_srgb,var(--primary)_12%,transparent)] focus-within:ring-3 focus-within:ring-ring/50 lg:h-[58px]">
+            <div className="flex h-[52px] items-center gap-3 rounded-[14px] border-2 border-primary bg-card px-[18px] shadow-[0_0_0_4px_color-mix(in_srgb,var(--primary)_12%,transparent)] focus-within:ring-3 focus-within:ring-ring/50 @cobro/venta:h-[58px]">
               <ScanBarcode aria-hidden="true" className="size-[22px] shrink-0 text-primary" />
               <Input
                 id="buscar"
@@ -1764,7 +1764,7 @@ export function PuntoDeVenta({
                   `I5IuID` tampoco lo dibuja. Los tres atajos en sí no se tocan
                   —siguen enganchados a `window` en los dos anchos—: lo que se
                   oculta es la promesa, no el mecanismo. */}
-              <span className="hidden shrink-0 rounded-sm bg-secondary px-2 py-1 text-[11px] font-semibold text-foreground-soft lg:inline-block">
+              <span className="hidden shrink-0 rounded-sm bg-secondary px-2 py-1 text-[11px] font-semibold text-foreground-soft @cobro/venta:inline-block">
                 F2
               </span>
             </div>
@@ -1805,10 +1805,12 @@ export function PuntoDeVenta({
             )}
           </div>
 
-          {/* "Fila": las dos columnas — el carrito y el cobro. El corte pasó de
-              `md:` a `lg:` con el ciclo móvil: a 768 px al carrito le quedaban
-              136 px al lado del panel de 384 (ver hooks/use-mobile.ts, que hace
-              esa cuenta). */}
+          {/* "Fila": las dos columnas — el carrito y el cobro. El corte NO es de
+              viewport: es del ancho de este cuerpo (`@cobro/venta:`, umbral en
+              hooks/use-dos-columnas.ts). El viewport no lo puede contestar
+              porque el sidebar le saca 248 px al cuerpo justo al cruzar 1024,
+              así que hay MÁS lugar a 1023 que a 1024. Ver el spec del
+              2026-09-07. */}
           <div className="flex flex-col gap-[18px] @cobro/venta:flex-row">
             {/* El carrito entero vive dentro de una card con radius y borde
                 propios — antes era una <table> suelta. Se contiene con
@@ -1822,8 +1824,9 @@ export function PuntoDeVenta({
                 En el teléfono el cobro es pantalla propia, así que el carrito se
                 esconde mientras dura (frames `VaHod` y `keRdN`). Se escribe
                 mobile-first —el valor del teléfono sin prefijo, el de escritorio
-                con `lg:`— y NO con `max-lg:`: arriba de 1024 las dos columnas
-                terminan en `flex` sin mirar el paso, que es la regla. */}
+                con `@cobro/venta:`— y NO al revés: con lugar para las dos
+                columnas la fila termina en `flex` sin mirar el paso, que es la
+                regla. */}
             <Card
               className={`${
                 paso === 'cobro' ? 'hidden @cobro/venta:flex' : 'flex'
@@ -1850,7 +1853,7 @@ export function PuntoDeVenta({
                   pasa a tener dos tamaños — lo actualiza la task de
                   documentación del ciclo, que junta todos los roles que la
                   maqueta móvil achica. */}
-              <div className="flex items-center justify-between border-b px-[14px] py-[11px] lg:hidden">
+              <div className="flex items-center justify-between border-b px-[14px] py-[11px] @cobro/venta:hidden">
                 <span className={`${estilosCobro.titulo} text-sm text-foreground`}>Carrito</span>
                 <button
                   type="button"
@@ -1882,14 +1885,14 @@ export function PuntoDeVenta({
                   Precio, Subtotal agrupadas], Quitar) y anclando "Quitar" con
                   `absolute` sólo en el teléfono — ver su comentario, más
                   abajo. */}
-              <div role="table" className="grid grid-cols-1 lg:grid-cols-[1fr_104px_110px_130px_28px]">
+              <div role="table" className="grid grid-cols-1 @cobro/venta:grid-cols-[1fr_104px_110px_130px_28px]">
                 {/* Fila "hundida": fondo --muted, padding [12,18] y 14 de gap
                     entre columnas. Sólo existe en escritorio —`hidden`
-                    la saca del todo en el teléfono, `lg:contents` la disuelve
+                    la saca del todo en el teléfono, `@cobro/venta:contents` la disuelve
                     ahí para que sus 5 `columnheader` pasen a ser las celdas de
                     la primera fila del grid—, igual que el encabezado de
                     `Listado`. */}
-                <div role="row" className="hidden lg:contents">
+                <div role="row" className="hidden @cobro/venta:contents">
                   <div role="columnheader" className="bg-muted px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
                     Artículo
                   </div>
@@ -1917,17 +1920,17 @@ export function PuntoDeVenta({
                   const quedaria = aMilesimas(l.stock) - cantidadMilesimas
                   return (
                     // `group` + `relative`: `group` es lo que restituye el
-                    // hover de fila de escritorio (ver `lg:group-hover:` en
+                    // hover de fila de escritorio (ver `@cobro/venta:group-hover:` en
                     // cada celda, más abajo — mismo mecanismo que `Listado`).
                     // `relative` es el ancla del botón "Quitar" en el
                     // teléfono, y no le hace nada a escritorio: ahí la fila es
-                    // `lg:contents` y una caja sin caja no tiene `position`.
+                    // `@cobro/venta:contents` y una caja sin caja no tiene `position`.
                     //
                     // El `border-b`/`last:border-b-0` de acá siguen sin
                     // prefijo, y siguen sirviendo: en el teléfono la fila ES
                     // una caja real (no es `display:contents` ahí), así que
                     // ahí pintan. En escritorio no hacen nada — por eso cada
-                    // celda lleva su propio `lg:border-b`/`lg:group-last:
+                    // celda lleva su propio `@cobro/venta:border-b`/`@cobro/venta:group-last:
                     // border-b-0` más abajo (Ronda de arreglos 1 sobre la
                     // Task 4b; el principio completo, con el porqué del
                     // envoltorio de centrado, vive en el docblock de
@@ -1935,7 +1938,7 @@ export function PuntoDeVenta({
                     <div
                       key={l.articuloId}
                       role="row"
-                      className="group relative flex flex-col gap-2 border-b p-[11px] px-[14px] last:border-b-0 lg:contents"
+                      className="group relative flex flex-col gap-2 border-b p-[11px] px-[14px] last:border-b-0 @cobro/venta:contents"
                     >
                       {/* Artículo: nombre + meta (SKU/Servicio, el precio
                           unitario sólo en el teléfono, el aviso de cantidad
@@ -1951,13 +1954,13 @@ export function PuntoDeVenta({
                           punta. */}
                       <div
                         role="cell"
-                        className="pr-9 whitespace-normal lg:border-b lg:p-[11px] lg:px-[7px] lg:pl-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+                        className="pr-9 whitespace-normal @cobro/venta:border-b @cobro/venta:p-[11px] @cobro/venta:px-[7px] @cobro/venta:pl-[18px] @cobro/venta:group-hover:bg-muted/50 @cobro/venta:group-last:border-b-0 @cobro/venta:transition-colors"
                       >
                         {/* `gap-2` (8px) en el teléfono —el mismo que separa
-                            los 3 bloques de `VaHod`— y `lg:gap-0.5` para no
+                            los 3 bloques de `VaHod`— y `@cobro/venta:gap-0.5` para no
                             mover el aspecto de escritorio, que ya usaba ese
                             espaciado más apretado. */}
-                        <div className="flex flex-col gap-2 lg:gap-0.5">
+                        <div className="flex flex-col gap-2 @cobro/venta:gap-0.5">
                           <span className="text-sm font-medium text-foreground">{l.descripcion}</span>
                           {/* `flex-wrap`: esta línea de meta pasó a poder
                               llevar el IMEI —o el campo para escanearlo, que es
@@ -1986,7 +1989,7 @@ export function PuntoDeVenta({
                                   una línea en pesos y otra en dólares al mismo
                                   tiempo, así que el símbolo es lo único que las
                                   distingue. */}
-                              <span className="lg:hidden"> · {precioEnSuMoneda(l.precio, l.moneda)} c/u</span>
+                              <span className="@cobro/venta:hidden"> · {precioEnSuMoneda(l.precio, l.moneda)} c/u</span>
                             </span>
                             {/* El IMEI, en la MISMA línea de meta que el SKU
                                 y con el mismo tratamiento: es identidad —cuál
@@ -2078,17 +2081,17 @@ export function PuntoDeVenta({
                       {/* Agrupador: junta Cantidad, Precio (oculto acá) y
                           Subtotal en una sola línea del teléfono; disuelto en
                           escritorio, donde vuelven a ser 3 celdas separadas. */}
-                      <div className="flex items-center gap-[10px] lg:contents">
-                        <div role="cell" className="lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors">
+                      <div className="flex items-center gap-[10px] @cobro/venta:contents">
+                        <div role="cell" className="@cobro/venta:border-b @cobro/venta:p-[11px] @cobro/venta:px-[7px] @cobro/venta:group-hover:bg-muted/50 @cobro/venta:group-last:border-b-0 @cobro/venta:transition-colors">
                           {/* Envoltorio de centrado (Ronda de arreglos 1,
                               Importante 2): la CELDA se queda estirada (el
                               default de Grid) para que su `border-b` quede a
                               la altura del resto de la fila; quien centra el
                               contenido, sólo en escritorio, es este `<div>`
-                              interno con `lg:h-full` (100% de la celda
+                              interno con `@cobro/venta:h-full` (100% de la celda
                               estirada) — ver el docblock de `Listado`,
                               app/(app)/ventas/page.tsx. */}
-                          <div className="lg:flex lg:h-full lg:items-center">
+                          <div className="@cobro/venta:flex @cobro/venta:h-full @cobro/venta:items-center">
                             {/* El stepper [-] [valor] [+]: los botones cubren sumar
                                 y restar de a una unidad completa, pero el campo del
                                 medio sigue siendo editable a mano — el motor admite
@@ -2164,24 +2167,24 @@ export function PuntoDeVenta({
                             ve en el teléfono. */}
                         <div
                           role="cell"
-                          className={`hidden text-foreground-soft lg:block lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors ${estilos.importe}`}
+                          className={`hidden text-foreground-soft @cobro/venta:block @cobro/venta:border-b @cobro/venta:p-[11px] @cobro/venta:px-[7px] @cobro/venta:group-hover:bg-muted/50 @cobro/venta:group-last:border-b-0 @cobro/venta:transition-colors ${estilos.importe}`}
                         >
-                          <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
+                          <div className="@cobro/venta:flex @cobro/venta:h-full @cobro/venta:items-center @cobro/venta:justify-end">
                             {precioEnSuMoneda(l.precio, l.moneda)}
                           </div>
                         </div>
                         {/* `ml-auto` empuja el subtotal a la derecha del
                             agrupador en el teléfono —el "Espaciador" de la
-                            maqueta (nodo `WMA3r`)—; `lg:ml-0` lo apaga en
+                            maqueta (nodo `WMA3r`)—; `@cobro/venta:ml-0` lo apaga en
                             escritorio, donde el envoltorio de centrado interno
                             (más abajo) ya lo alinea a la derecha con
                             `justify-end`, dentro de su propia columna de
                             130px. */}
                         <div
                           role="cell"
-                          className={`ml-auto text-[15px] font-semibold text-foreground lg:ml-0 lg:border-b lg:p-[11px] lg:px-[7px] lg:pr-[18px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors ${estilos.importe}`}
+                          className={`ml-auto text-[15px] font-semibold text-foreground @cobro/venta:ml-0 @cobro/venta:border-b @cobro/venta:p-[11px] @cobro/venta:px-[7px] @cobro/venta:pr-[18px] @cobro/venta:group-hover:bg-muted/50 @cobro/venta:group-last:border-b-0 @cobro/venta:transition-colors ${estilos.importe}`}
                         >
-                          <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
+                          <div className="@cobro/venta:flex @cobro/venta:h-full @cobro/venta:items-center @cobro/venta:justify-end">
                             {/* El subtotal hereda la moneda de su línea: es
                                 cantidad × precio, así que no puede estar en otra
                                 — y es el número que la banda de total suma a la
@@ -2197,7 +2200,7 @@ export function PuntoDeVenta({
                       </div>
 
                       {/* Quitar: en escritorio es la 5ª celda del grid, como
-                          siempre (`lg:static` la devuelve a celda de grid
+                          siempre (`@cobro/venta:static` la devuelve a celda de grid
                           normal). En el teléfono NO se agrupa junto al nombre
                           —quedan Cantidad, Precio y Subtotal de por medio en el
                           DOM—, así que se ancla con `absolute` al padding del
@@ -2214,7 +2217,7 @@ export function PuntoDeVenta({
                           aplicar, porque toca las cinco celdas de escritorio de
                           una pantalla ya verificada a ojo— es **anidarlo junto
                           al nombre en el DOM y darle a las CINCO celdas un
-                          `lg:col-start-N` explícito**: así el orden de lectura y
+                          `@cobro/venta:col-start-N` explícito**: así el orden de lectura y
                           el de tabulación pasan a ser el del teléfono, y la
                           grilla de escritorio se reconstruye por posición
                           declarada en vez de por orden del DOM. Es todo o nada:
@@ -2222,9 +2225,9 @@ export function PuntoDeVenta({
                           siguen fluyendo y se corren. */}
                       <div
                         role="cell"
-                        className="absolute top-[11px] right-[14px] lg:static lg:border-b lg:p-[11px] lg:pr-[18px] lg:pl-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors"
+                        className="absolute top-[11px] right-[14px] @cobro/venta:static @cobro/venta:border-b @cobro/venta:p-[11px] @cobro/venta:pr-[18px] @cobro/venta:pl-[7px] @cobro/venta:group-hover:bg-muted/50 @cobro/venta:group-last:border-b-0 @cobro/venta:transition-colors"
                       >
-                        <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
+                        <div className="@cobro/venta:flex @cobro/venta:h-full @cobro/venta:items-center @cobro/venta:justify-end">
                           <Button
                             type="button"
                             variant="ghost"
@@ -2329,7 +2332,7 @@ export function PuntoDeVenta({
                 el `Card` de shadcn por default suma los suyos.
 
                 En el teléfono el ancho fijo no cabe: ocupa el ancho del cuerpo, y
-                los 384 px vuelven en `lg:`. La visibilidad es el espejo exacto
+                los 384 px vuelven en `@cobro/venta:`. La visibilidad es el espejo exacto
                 del carrito de arriba — ver su comentario. */}
             <Card
               className={`${
@@ -2476,7 +2479,7 @@ export function PuntoDeVenta({
                     mismas tres piezas viven en `PieDeVenta`, el pie fijo de la
                     pantalla (ver su comentario para el porqué de dos botones y
                     no uno movido de lugar). */}
-                <div className="hidden flex-col gap-2.5 border-t p-4 lg:flex">
+                <div className="hidden flex-col gap-2.5 border-t p-4 @cobro/venta:flex">
                   <AvisosDelCobro estado={estado} ventaProcesada={ventaProcesada} />
 
                   {/* Va DESPUÉS de los carteles de error/éxito y ANTES del chip
@@ -2655,7 +2658,7 @@ function AvisosDelCobro({
  * un botón `Cobrar →` de 54 px, y en el paso de cobro además la banda de
  * faltante arriba.
  *
- * NO existe en escritorio (`lg:hidden`): ahí el mismo botón, el mismo chip y
+ * NO existe en escritorio (`@cobro/venta:hidden`): ahí el mismo botón, el mismo chip y
  * la leyenda de atajos siguen viviendo al pie de la card de Cobro, que es
  * donde los dibuja la maqueta de 1440. Son dos botones y no uno movido de
  * lugar —un elemento del DOM no puede estar en dos sitios—, atados al mismo
@@ -2761,7 +2764,7 @@ function PieDeVenta({
   return (
     // padding [10,14,14,14] y gap 9 (los dos frames `Pie` coinciden), fondo
     // --card con borde superior de 1.
-    <div className="sticky bottom-0 z-10 flex flex-col gap-[9px] border-t bg-card px-[14px] pt-[10px] pb-[14px] lg:hidden">
+    <div className="sticky bottom-0 z-10 flex flex-col gap-[9px] border-t bg-card px-[14px] pt-[10px] pb-[14px] @cobro/venta:hidden">
       {/* En los dos pasos, no sólo en el cobro: después de cobrar bien el
           carrito queda vacío y `PuntoDeVenta` sigue en el paso en que estaba,
           así que el cartel tiene que poder verse desde donde sea que quedó la

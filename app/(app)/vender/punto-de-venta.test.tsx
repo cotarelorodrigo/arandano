@@ -793,7 +793,7 @@ describe('el punto de venta', () => {
 
   // La SEGUNDA copia del mismo total: el subtítulo del Encabezado en el paso
   // de cobro del teléfono, que reemplaza a la banda de --marca mientras esa
-  // banda queda oculta (`hidden lg:flex`). Antes de esta task mostraba sólo
+  // banda queda oculta (`hidden @cobro/venta:flex`). Antes de esta task mostraba sólo
   // pesos con su propia cuenta (`formatearPrecio(deCentavos(totalCentavos))`);
   // ahora arma la lista completa desde `lineasTotal`, la MISMA que pinta la
   // banda — sin este caso, esa segunda copia podía quedarse atrás de la
@@ -2080,7 +2080,7 @@ describe('el punto de venta en el teléfono', () => {
     expect(
       veces,
       'el estado de la caja tiene que estar dos veces: el chip interactivo del ' +
-        'header (hidden lg:flex) y el de sólo lectura del cuerpo (lg:hidden)',
+        'header (hidden @cobro/venta:flex) y el de sólo lectura del cuerpo (@cobro/venta:hidden)',
     ).toBe(2)
     expect(FUENTE).toContain('<ChipsDeEstado')
     expect(FUENTE).toContain('<ChipCaja')
@@ -2095,6 +2095,25 @@ describe('el punto de venta en el teléfono', () => {
 
   it('la fila corta por contenedor', () => {
     expect(FUENTE).toMatch(/flex flex-col gap-\[18px\] @cobro\/venta:flex-row/)
+  })
+
+  it('no queda ningún corte de viewport en la pantalla', () => {
+    // EN LA DIRECCIÓN INVERSA, que es la que atrapa de verdad: una clase que
+    // se quedara en `lg:` seguiría mirando el viewport y decidiría distinto
+    // que sus vecinas, con todo el gate en verde. Es el mismo modo de falla de
+    // las dos copias de "Anular orden" (CLAUDE.md, merge del ciclo móvil).
+    expect(
+      SIN_COMENTARIOS,
+      'esta pantalla decide por contenedor: no puede quedar ningún lg:',
+    ).not.toMatch(/\blg:/)
+    // Sólo `md:`, igual que antes de este ciclo: `sm:` NO se puede prohibir
+    // acá, porque el DialogContent del selector de unidad trae
+    // `sm:max-w-[512px]` del registry de shadcn.
+    expect(SIN_COMENTARIOS, 'ningún md: nuevo').not.toMatch(/\bmd:/)
+    // El píxel se escribe una vez, en app/globals.css, o no se escribe.
+    expect(SIN_COMENTARIOS, 'el umbral no se repite como valor arbitrario').not.toMatch(
+      /@min-\[\d+px\]/,
+    )
   })
 
   it('el contenedor se declara con nombre', () => {
@@ -2118,7 +2137,7 @@ describe('el punto de venta en el teléfono', () => {
     expect(FUENTE).toMatch(/ref=\{cuerpo\}\s+className="@container\/venta/)
   })
 
-  // Mobile-first y NO `max-lg:`: el valor del teléfono va sin prefijo y el
+  // Mobile-first y NO al revés: el valor del teléfono va sin prefijo y el
   // ancho con `@cobro/venta:`. Con lugar para las dos columnas, ambas
   // terminan en `flex`, sin mirar el paso.
   it('el paso esconde una columna y muestra la otra, sólo en una columna', () => {
@@ -2130,7 +2149,7 @@ describe('el punto de venta en el teléfono', () => {
   it('el buscador mide 52 en el teléfono y 58 en escritorio', async () => {
     const html = await render()
     expect(html).toContain('h-[52px]')
-    expect(html).toContain('lg:h-[58px]')
+    expect(html).toContain('@cobro/venta:h-[58px]')
   })
 
   // El chip "F2" promete un atajo de teclado, y un teléfono no tiene teclas de
@@ -2141,7 +2160,7 @@ describe('el punto de venta en el teléfono', () => {
     const chip = html.match(/<span class="([^"]*)"[^>]*>\s*F2\s*<\/span>/)
     expect(chip, 'no se encontró el chip F2').toBeTruthy()
     expect(chip![1]).toContain('hidden')
-    expect(chip![1]).toContain('lg:inline-block')
+    expect(chip![1]).toContain('@cobro/venta:inline-block')
   })
 
   it('el panel de cobro ocupa todo el ancho cuando hay una sola columna', async () => {
@@ -2155,14 +2174,14 @@ describe('el punto de venta en el teléfono', () => {
     const veces = [...html.matchAll(/h-\[54px\]/g)].length
     expect(
       veces,
-      'el botón de 54 px tiene que estar dos veces: el pie del teléfono (lg:hidden) ' +
-        'y el pie de la card de cobro (hidden lg:flex)',
+      'el botón de 54 px tiene que estar dos veces: el pie del teléfono (@cobro/venta:hidden) ' +
+        'y el pie de la card de cobro (hidden @cobro/venta:flex)',
     ).toBe(2)
 
     const posicion = FUENTE.indexOf('function PieDeVenta')
     expect(posicion, 'el pie del teléfono tiene que ser su propio componente').toBeGreaterThan(-1)
     const contexto = FUENTE.slice(posicion)
-    expect(contexto).toMatch(/lg:hidden/)
+    expect(contexto).toMatch(/@cobro\/venta:hidden/)
     expect(contexto).toMatch(/h-\[54px\]/)
     expect(contexto, 'radio 12, como el nodo f4EIb de VaHod').toMatch(/rounded-\[12px\]/)
   })
@@ -2207,7 +2226,7 @@ describe('el punto de venta en el teléfono', () => {
     const encabezado = html.match(/<div class="([^"]*)"[^>]*><span[^>]*>Carrito<\/span>/)
     expect(encabezado, 'no se encontró el encabezado del carrito').toBeTruthy()
     expect(encabezado![1], 'en escritorio manda la fila de encabezados de la tabla').toContain(
-      'lg:hidden',
+      '@cobro/venta:hidden',
     )
     // padding [11,14] y borde inferior (nodo `L5UIo`).
     expect(encabezado![1]).toContain('px-[14px]')
@@ -2303,7 +2322,7 @@ describe('el punto de venta en el teléfono', () => {
   // arriba — es lo que permite escanear desde una pantalla donde el carrito no
   // se ve.
   it('el buscador no se ve en el paso de cobro', () => {
-    expect(FUENTE).toMatch(/paso === 'cobro' \? 'hidden lg:block' : 'block'/)
+    expect(FUENTE).toMatch(/paso === 'cobro' \? 'hidden @cobro\/venta:block' : 'block'/)
   })
 
   // La constraint más frágil de la task: con lugar para las dos columnas,
@@ -2348,7 +2367,7 @@ describe('el punto de venta en el teléfono', () => {
   // El escritorio no puede cambiar de aspecto: el pie de la card de cobro
   // sigue con sus tres piezas, sólo que ahora oculto en el teléfono.
   it('el pie de la card de cobro sigue entero, y sólo se ve en escritorio', () => {
-    const inicio = FUENTE.search(/<div className="hidden flex-col[^"]*lg:flex">/)
+    const inicio = FUENTE.search(/<div className="hidden flex-col[^"]*@cobro\/venta:flex">/)
     expect(inicio, 'el pie de la card tiene que quedar oculto en el teléfono').toBeGreaterThan(-1)
     // Hasta el cierre del <form>, que es donde termina el pie: así el caso
     // afirma que las tres piezas siguen ADENTRO de este bloque y no que
@@ -2371,7 +2390,7 @@ describe('el punto de venta en el teléfono', () => {
     expect(FUENTE, 'sin <Table>: el nuevo contenedor es un <div role="table">').not.toMatch(/<Table[\s>]/)
     expect(FUENTE).not.toContain("from '@/components/ui/table'")
     expect(FUENTE).toMatch(
-      /role="table" className="grid grid-cols-1 lg:grid-cols-\[1fr_104px_110px_130px_28px\]"/,
+      /role="table" className="grid grid-cols-1 @cobro\/venta:grid-cols-\[1fr_104px_110px_130px_28px\]"/,
     )
   })
 
@@ -2380,12 +2399,12 @@ describe('el punto de venta en el teléfono', () => {
   // el <TableHead>). Con el reflow resuelto acá, tiene que volver.
   it('la columna "Precio" vuelve a existir en escritorio', () => {
     expect(FUENTE, 'lg:table-cell era la marca de la Table vieja').not.toMatch(/lg:table-cell/)
-    expect(FUENTE).toMatch(/hidden text-foreground-soft lg:block/)
+    expect(FUENTE).toMatch(/hidden text-foreground-soft @cobro\/venta:block/)
   })
 
-  it('la fila del carrito lleva role="row", lg:contents y group para el hover de escritorio', () => {
+  it('la fila del carrito lleva role="row", @cobro/venta:contents y group para el hover de escritorio', () => {
     expect(FUENTE).toContain(
-      'className="group relative flex flex-col gap-2 border-b p-[11px] px-[14px] last:border-b-0 lg:contents"',
+      'className="group relative flex flex-col gap-2 border-b p-[11px] px-[14px] last:border-b-0 @cobro/venta:contents"',
     )
   })
 
@@ -2398,20 +2417,20 @@ describe('el punto de venta en el teléfono', () => {
 
   // Mismo mecanismo que /ventas: `display:contents` no genera caja pero
   // sigue en la cadena de ancestros para :hover, así que `group` en la fila
-  // + `lg:group-hover:bg-muted/50` en cada celda restituye el resaltado que
+  // + `@cobro/venta:group-hover:bg-muted/50` en cada celda restituye el resaltado que
   // antes daba gratis `hover:bg-muted/50` de <TableRow>. Sin el prefijo
-  // `lg:` el resaltado se dispararía también en el teléfono.
-  it('el hover de escritorio: group-hover siempre con el prefijo lg:, una vez por celda', () => {
+  // `@cobro/venta:` el resaltado se dispararía también en el teléfono.
+  it('el hover de escritorio: group-hover siempre con el prefijo @cobro/venta:, una vez por celda', () => {
     const total = [...FUENTE.matchAll(/group-hover:bg-muted\/50/g)].length
-    const conPrefijo = [...FUENTE.matchAll(/lg:group-hover:bg-muted\/50/g)].length
+    const conPrefijo = [...FUENTE.matchAll(/@cobro\/venta:group-hover:bg-muted\/50/g)].length
     expect(total, 'una celda de datos por columna: Artículo, Cantidad, Precio, Subtotal, Quitar').toBe(5)
-    expect(conPrefijo, 'group-hover sin lg: dispararía el resaltado también en el teléfono').toBe(total)
+    expect(conPrefijo, 'group-hover sin @cobro/venta: dispararía el resaltado también en el teléfono').toBe(total)
   })
 
   // El agrupador que junta Cantidad, Precio (oculto ahí) y Subtotal en una
   // sola línea del teléfono; disuelto en escritorio.
   it('cantidad y subtotal se agrupan en una línea del teléfono, y se disuelven en escritorio', () => {
-    expect(FUENTE).toContain('className="flex items-center gap-[10px] lg:contents"')
+    expect(FUENTE).toContain('className="flex items-center gap-[10px] @cobro/venta:contents"')
   })
 
   // "Quitar" es la última columna en escritorio, pero en el teléfono tiene
@@ -2420,7 +2439,7 @@ describe('el punto de venta en el teléfono', () => {
   // agrupando (no son columnas adyacentes): se ancla con `absolute` al
   // padding del ítem, independiente de dónde cae en el flujo normal.
   it('"Quitar" se ancla arriba a la derecha en el teléfono, y es celda de grid normal en escritorio', () => {
-    expect(FUENTE).toMatch(/role="cell"\s+className="absolute top-\[11px\] right-\[14px\] lg:static/)
+    expect(FUENTE).toMatch(/role="cell"\s+className="absolute top-\[11px\] right-\[14px\] @cobro\/venta:static/)
   })
 
   // Ronda de arreglos 1 (Importante 2): sin esto, en escritorio el contenido
@@ -2429,31 +2448,31 @@ describe('el punto de venta en el teléfono', () => {
   // del artículo ocupa dos líneas — lo que antes daba gratis `align-middle`
   // de <TableCell>, que `display:contents` no tiene forma de heredar.
   //
-  // La primera versión de este arreglo usaba `lg:self-center` en la CELDA —
+  // La primera versión de este arreglo usaba `@cobro/venta:self-center` en la CELDA —
   // la review encontró que eso la achica a su contenido y la despega del
   // fondo real de la fila, así que su propio `border-b` (más abajo) quedaba
   // flotando a mitad de camino en vez de alinear con el de las demás. La
   // celda se queda estirada (el default de Grid); quien centra es un
-  // envoltorio interno con `lg:flex lg:h-full lg:items-center` — el
+  // envoltorio interno con `@cobro/venta:flex @cobro/venta:h-full @cobro/venta:items-center` — el
   // `h-full` resuelve al 100% de la celda estirada.
   it('las celdas más cortas se centran con un envoltorio interno, no achicando la celda', () => {
-    const envoltorios = [...FUENTE.matchAll(/lg:flex lg:h-full lg:items-center/g)].length
+    const envoltorios = [...FUENTE.matchAll(/@cobro\/venta:flex @cobro\/venta:h-full @cobro\/venta:items-center/g)].length
     expect(envoltorios, 'Cantidad, Precio, Subtotal y Quitar: las 4 celdas más cortas que Artículo').toBe(4)
     expect(FUENTE, 'self-center desalinearía el borde inferior del resto de la fila').not.toContain('self-center')
   })
 
   // Ronda de arreglos 1 (Importante 1): `border-b`/`last:border-b-0` en la
   // FILA no pintan nada en escritorio (`display:contents` no genera caja).
-  // Cada celda lleva su propio `lg:border-b`, y `lg:group-last:border-b-0`
+  // Cada celda lleva su propio `@cobro/venta:border-b`, y `@cobro/venta:group-last:border-b-0`
   // apaga el de la ÚLTIMA fila — la fila sigue en el DOM aunque no pinte,
   // así que el selector `:last-child` de `group-last` la sigue encontrando.
   it('el borde entre filas vive en cada celda, no sólo en la fila (escritorio)', () => {
     // SIN_COMENTARIOS y no FUENTE: el comentario de la fila (más arriba en
-    // el archivo) nombra `lg:border-b` en prosa para explicar la decisión, y
+    // el archivo) nombra `@cobro/venta:border-b` en prosa para explicar la decisión, y
     // eso también matchea la clase — mismo motivo que ya documenta
     // SIN_COMENTARIOS más arriba en este archivo.
-    const conBorde = [...SIN_COMENTARIOS.matchAll(/lg:border-b\b/g)].length
-    const conGroupLast = [...SIN_COMENTARIOS.matchAll(/lg:group-last:border-b-0/g)].length
+    const conBorde = [...SIN_COMENTARIOS.matchAll(/@cobro\/venta:border-b\b/g)].length
+    const conGroupLast = [...SIN_COMENTARIOS.matchAll(/@cobro\/venta:group-last:border-b-0/g)].length
     expect(conBorde, 'una por columna: Artículo, Cantidad, Precio, Subtotal, Quitar').toBe(5)
     expect(conGroupLast, 'las 5 celdas apagan su borde en la última fila').toBe(5)
   })
@@ -2463,7 +2482,7 @@ describe('el punto de venta en el teléfono', () => {
   // no la transición, así que el resaltado aparecía de golpe en vez de
   // fundirse.
   it('el hover funde el color: transition-colors en cada celda', () => {
-    const veces = [...FUENTE.matchAll(/lg:transition-colors/g)].length
+    const veces = [...FUENTE.matchAll(/@cobro\/venta:transition-colors/g)].length
     expect(veces, 'una por columna: Artículo, Cantidad, Precio, Subtotal, Quitar').toBe(5)
   })
 })
