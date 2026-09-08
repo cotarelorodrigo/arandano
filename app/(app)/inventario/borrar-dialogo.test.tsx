@@ -8,7 +8,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 
 async function render(
   resumen: { movimientos: number; unidades: number; ventas: number },
-  extra: Partial<{ desactivado: boolean; movil: boolean }> = {},
+  extra: Partial<{ desactivado: boolean; puedeEditar: boolean; className: string }> = {},
 ) {
   const { DialogoDeBorrado } = await import('./borrar-dialogo')
   return renderToStaticMarkup(
@@ -16,8 +16,9 @@ async function render(
       articuloId="a1"
       nombre="Vidrio templado 9H"
       desactivado={extra.desactivado ?? false}
+      puedeEditar={extra.puedeEditar ?? true}
       resumen={resumen}
-      movil={extra.movil ?? false}
+      className={extra.className}
     />,
   )
 }
@@ -31,10 +32,24 @@ describe('DialogoDeBorrado', () => {
     expect(await render({ movimientos: 0, unidades: 0, ventas: 0 })).toContain('Borrar')
   })
 
-  it('lo dibuja también en el teléfono', async () => {
-    expect(await render({ movimientos: 0, unidades: 0, ventas: 0 }, { movil: true })).toContain(
-      'Borrar',
+  // `className` es lo que reemplazó a `movil` (review de la Task 6): antes,
+  // `movil ? 'shrink-0' : undefined` era un no-op —`shrink-0` ya está en el
+  // string base de `buttonVariants`—, así que el caso anterior no afirmaba
+  // ninguna diferencia real entre las dos copias. Ahora sí la hay: la clase
+  // que le pasa el llamador (`CLASES_BOTON_PIE` del pie del teléfono, en
+  // `formularios.tsx`) tiene que llegar al `<button>`, y sin ella no tiene
+  // que estar.
+  it('la clase que le pasa el llamador llega al botón, y sin ella no aparece', async () => {
+    const conClase = await render(
+      { movimientos: 0, unidades: 0, ventas: 0 },
+      { className: 'shrink-0 h-[50px] rounded-[12px]' },
     )
+    expect(conClase).toContain('h-[50px]')
+    expect(conClase).toContain('rounded-[12px]')
+
+    const sinClase = await render({ movimientos: 0, unidades: 0, ventas: 0 })
+    expect(sinClase).not.toContain('h-[50px]')
+    expect(sinClase).not.toContain('rounded-[12px]')
   })
 })
 
@@ -63,13 +78,23 @@ describe('el texto de lo que se lleva', () => {
 describe('el motivo cuando no se puede', () => {
   it('nombra las ventas y ofrece desactivar', async () => {
     const { porQueNo } = await import('./borrar-dialogo')
-    expect(porQueNo(3, false)).toContain('se vendió 3 veces')
-    expect(porQueNo(3, false)).toContain('Podés desactivarlo')
+    expect(porQueNo(3, false, true)).toContain('se vendió 3 veces')
+    expect(porQueNo(3, false, true)).toContain('Podés desactivarlo')
   })
 
   it('no ofrece desactivar un artículo que ya está desactivado', async () => {
     const { porQueNo } = await import('./borrar-dialogo')
-    expect(porQueNo(1, true)).toContain('se vendió 1 vez')
-    expect(porQueNo(1, true)).not.toContain('desactivarlo')
+    expect(porQueNo(1, true, true)).toContain('se vendió 1 vez')
+    expect(porQueNo(1, true, true)).not.toContain('desactivarlo')
+  })
+
+  // Review de la Task 6: `ARTICULOS_BORRAR` y `ARTICULOS_EDITAR` son permisos
+  // independientes, así que alguien con el primero y sin el segundo no tiene
+  // el botón "Desactivar" en ninguna de las dos copias de la ficha — ofrecerle
+  // esa salida sería prometerle algo que no puede hacer.
+  it('no ofrece desactivar a quien no puede editar, aunque el artículo siga activo', async () => {
+    const { porQueNo } = await import('./borrar-dialogo')
+    expect(porQueNo(2, false, false)).toContain('se vendió 2 veces')
+    expect(porQueNo(2, false, false)).not.toContain('desactivarlo')
   })
 })

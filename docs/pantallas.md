@@ -1292,14 +1292,16 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   nota (se rompió, se robó, garantía). Con más de 8 unidades identificadas, un
   filtro por IMEI dentro de la misma card.
 - **Borrar el artículo**, que es otro acto que desactivarlo: es para el que se
-  cargó por error y nunca vendió nada. El botón se dibuja siempre —en el Topbar
-  y en el pie del teléfono, las dos copias con la misma guarda— y el diálogo
-  tiene dos caras: sin ventas dice qué se lleva puesto (el artículo, sus
-  movimientos de stock y sus unidades, con los números reales), y con ventas
-  explica por qué no se puede y ofrece desactivar. Detrás de `ARTICULOS_BORRAR`,
-  que es propio y no `ARTICULOS_EDITAR`: desactivar se deshace, esto no. La
-  regla la sostiene la base —`venta_items.articulo_id` es `Restrict`—, no el
-  conteo que el diálogo muestra.
+  cargó por error y nunca vendió nada. El botón se dibuja siempre, con o sin
+  ventas —en el Topbar y en el pie del teléfono, las dos copias con la misma
+  guarda— y el diálogo tiene dos caras: sin ventas dice qué se lleva puesto (el
+  artículo, sus movimientos de stock y sus unidades, con los números reales), y
+  con ventas explica por qué no se puede y ofrece desactivar (si además puede
+  editar: sin `ARTICULOS_EDITAR` no tiene el botón "Desactivar", así que el
+  diálogo no se lo ofrece). Detrás de `ARTICULOS_BORRAR`, que es propio y no
+  `ARTICULOS_EDITAR`: desactivar se deshace, esto no. La regla la sostiene la
+  base —`venta_items.articulo_id` es `Restrict`—, no el conteo que el diálogo
+  muestra.
 
 **Decisiones**
 

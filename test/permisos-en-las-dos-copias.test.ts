@@ -214,6 +214,17 @@ describe('/inventario/[id]: "Borrar" existe dos veces y las dos las gobierna ART
   it('ninguna copia se cuela con puedeEditar', () => {
     expect(FICHA).not.toMatch(/puedeEditar && <DialogoDeBorrado/)
   })
+
+  // `DialogContent` de Radix no se monta cerrado, así que un render estático
+  // no ve el resumen que le llega al diálogo: `resumen={resumenBorrado ?? …}`
+  // podría estar hardcodeado en ceros y los casos que SÍ renderizan seguirían
+  // verdes igual. Mismo estilo que los tres de arriba: cuenta apariciones por
+  // FUENTE, en las dos copias.
+  it('las dos copias le pasan el resumen real, no uno hardcodeado', () => {
+    expect([
+      ...FICHA.matchAll(/resumen=\{resumenBorrado \?\? \{ movimientos: 0, unidades: 0, ventas: 0 \}\}/g),
+    ]).toHaveLength(2)
+  })
 })
 
 describe('/bot: el disparador de conexión existe dos veces y las dos son sólo del dueño', () => {

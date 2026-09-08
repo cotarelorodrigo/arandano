@@ -487,6 +487,7 @@ export function FichaDeArticulo({
                 articuloId={articuloId}
                 nombre={nombre}
                 desactivado={desactivado}
+                puedeEditar={puedeEditar}
                 resumen={resumenBorrado ?? { movimientos: 0, unidades: 0, ventas: 0 }}
               />}
               {puedeEditar && (
@@ -646,8 +647,9 @@ export function FichaDeArticulo({
             articuloId={articuloId}
             nombre={nombre}
             desactivado={desactivado}
+            puedeEditar={puedeEditar}
             resumen={resumenBorrado ?? { movimientos: 0, unidades: 0, ventas: 0 }}
-            movil
+            className={`shrink-0 ${CLASES_BOTON_PIE}`}
           />}
           {puedeEditar && (
             <>

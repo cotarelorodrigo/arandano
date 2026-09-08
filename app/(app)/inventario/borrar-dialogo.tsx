@@ -48,13 +48,18 @@ export function queSeLleva(resumen: ResumenDeBorrado): string {
 
 /**
  * Por qué no se puede borrar. Ofrece desactivar sólo si hay algo que ofrecer:
- * en un artículo que YA está desactivado, esa salida no existe.
+ * en un artículo que YA está desactivado, esa salida no existe — y tampoco si
+ * la persona no tiene el botón "Desactivar" a mano: `ARTICULOS_BORRAR` y
+ * `ARTICULOS_EDITAR` son permisos independientes (Task 6), así que alguien con
+ * el primero y sin el segundo no puede aceptar la salida que este texto le
+ * ofrecería.
  */
-export function porQueNo(ventas: number, desactivado: boolean): string {
+export function porQueNo(ventas: number, desactivado: boolean, puedeEditar: boolean): string {
   const cuantas = ventas === 1 ? 'se vendió 1 vez' : `se vendió ${ventas} veces`
-  const salida = desactivado
-    ? ''
-    : ' Podés desactivarlo: deja de ofrecerse y su historial queda intacto.'
+  const salida =
+    desactivado || !puedeEditar
+      ? ''
+      : ' Podés desactivarlo: deja de ofrecerse y su historial queda intacto.'
   return `Este artículo ${cuantas}: borrarlo se llevaría esas ventas.${salida}`
 }
 
@@ -71,22 +76,33 @@ export function porQueNo(ventas: number, desactivado: boolean): string {
  * `useEffect`: es la lección del ABM de categorías. El componente Toaster vive
  * en el root layout, así que sobrevive a la navegación que sigue.
  *
- * `movil` elige el estilo del trigger, igual que `DialogoDePlan` de
- * `/formas-de-pago`: es UN componente instanciado dos veces, no dos
- * implementaciones que haya que acordarse de sincronizar.
+ * `className` llega al trigger y elige su geometría, igual que cualquier otro
+ * botón del pie del teléfono de `formularios.tsx` (`CLASES_BOTON_PIE`): es UN
+ * componente instanciado dos veces, no dos implementaciones que haya que
+ * acordarse de sincronizar. No es `movil` ni ningún otro booleano propio —
+ * `formularios.tsx` importa este archivo, así que importar `CLASES_BOTON_PIE`
+ * desde acá para armar la clase adentro sería un import circular; con
+ * `className` la única definición de esa geometría sigue viviendo en un solo
+ * lugar y este componente no necesita conocerla.
  */
 export function DialogoDeBorrado({
   articuloId,
   nombre,
   desactivado,
+  puedeEditar,
   resumen,
-  movil = false,
+  className,
 }: {
   articuloId: string
   nombre: string
   desactivado: boolean
+  /** Si el diálogo puede ofrecer "desactivalo" como salida: sin
+   *  `ARTICULOS_EDITAR` esa persona no tiene el botón "Desactivar" en
+   *  ninguna de las dos copias, así que ofrecérselo sería prometer algo que
+   *  no puede hacer. */
+  puedeEditar: boolean
   resumen: ResumenDeBorrado
-  movil?: boolean
+  className?: string
 }) {
   const [abierto, setAbierto] = useState(false)
   const [enCurso, empezar] = useTransition()
@@ -111,7 +127,7 @@ export function DialogoDeBorrado({
   return (
     <Dialog open={abierto} onOpenChange={setAbierto}>
       <DialogTrigger asChild>
-        <Button variant="destructive" className={movil ? 'shrink-0' : undefined}>
+        <Button variant="destructive" className={className}>
           <Trash2 aria-hidden="true" className="size-[15px]" />
           Borrar
         </Button>
@@ -122,7 +138,7 @@ export function DialogoDeBorrado({
             {sePuede ? `¿Borrar "${nombre}"?` : `No se puede borrar "${nombre}"`}
           </DialogTitle>
           <DialogDescription>
-            {sePuede ? queSeLleva(resumen) : porQueNo(resumen.ventas, desactivado)}
+            {sePuede ? queSeLleva(resumen) : porQueNo(resumen.ventas, desactivado, puedeEditar)}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
