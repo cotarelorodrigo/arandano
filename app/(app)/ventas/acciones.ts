@@ -49,12 +49,15 @@ export type EstadoDetalle = { error: string | null; aviso: string | null }
 /**
  * Guardar el detalle de una venta ya cobrada.
  *
- * **Es la primera escritura sobre una venta cerrada en todo el producto.** Lo
- * que la hace segura es su alcance: actualiza UNA columna, la de texto libre,
- * filtrada por id y por tenant, y no toca ninguna otra. Nada de lo que el motor
- * de ventas garantiza —que los pagos cierren contra los totales, que el stock
- * haya bajado, que la clave de idempotencia sea única— pasa por esta columna ni
- * puede cambiar por ella.
+ * **Hasta ahora, lo único que le pasaba a una venta después del cobro era
+ * anularse.** `anular` también escribe sobre una venta cerrada
+ * (`anuladaEn`/`anuladaPorId`), pero cambia su ESTADO — lo que esto estrena es
+ * distinto: es la primera vez que se EDITA el contenido de una venta ya
+ * cobrada. Lo que la hace segura es su alcance: actualiza UNA columna, la de
+ * texto libre, filtrada por id y por tenant, y no toca ninguna otra. Nada de lo
+ * que el motor de ventas garantiza —que los pagos cierren contra los totales,
+ * que el stock haya bajado, que la clave de idempotencia sea única— pasa por
+ * esta columna ni puede cambiar por ella.
  *
  * **Sin permiso propio**, detrás de `exigirSesion` como `ingresarMercaderia` y
  * `corregirPorConteo`. La regla de este repo es delegar por lo que la acción

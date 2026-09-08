@@ -982,14 +982,15 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 - **Detalles.** Card propia en la columna derecha, entre Resumen y Zona de
   riesgo, con un textarea y "Guardar detalles" (`guardarDetalle`). Se dibuja
   siempre, con o sin dato: es donde el detalle se carga cuando aparece después
-  del cobro. **Es la primera escritura sobre una venta ya cobrada** del
-  producto, y actualiza una sola columna filtrada por id y tenant — nada de lo
-  que el motor garantiza pasa por ahí. **Se puede editar también una venta
-  anulada**, a propósito: el detalle no es parte de lo que se cobró, y una venta
-  anulada es justamente sobre la que alguien quiere dejar escrito qué pasó.
-  Sin permiso propio (`exigirSesion`) y sin rastro de quién editó: es un campo,
-  no una tabla-libro. Aviso por toast, con clave estable, lanzado en el mismo
-  handler que ejecuta la acción.
+  del cobro. Hasta este ciclo lo único que le pasaba a una venta después del
+  cobro era anularse —cambiar su estado—; esto es **la primera vez que se
+  edita el contenido** de una venta ya cobrada, y actualiza una sola columna
+  filtrada por id y tenant — nada de lo que el motor garantiza pasa por ahí.
+  **Se puede editar también una venta anulada**, a propósito: el detalle no es
+  parte de lo que se cobró, y una venta anulada es justamente sobre la que
+  alguien quiere dejar escrito qué pasó. Sin permiso propio (`exigirSesion`) y
+  sin rastro de quién editó: es un campo, no una tabla-libro. Aviso por toast,
+  con clave estable, lanzado en el mismo handler que ejecuta la acción.
 
 **Decisiones**
 

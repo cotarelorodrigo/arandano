@@ -131,7 +131,7 @@ export function DetalleDeLaVenta({
         type="button"
         size="sm"
         disabled={guardando}
-        className="w-full lg:w-auto lg:self-end"
+        className="h-11 w-full lg:h-8 lg:w-auto lg:self-end"
         onClick={() =>
           empezar(async () => {
             const r: EstadoDetalle = await guardarDetalle({ ventaId, detalle: texto })

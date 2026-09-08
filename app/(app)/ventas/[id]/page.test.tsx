@@ -798,12 +798,22 @@ describe('la card de detalles', () => {
 
   // El orden de la pila del teléfono: Detalles va cuarta y la Zona de riesgo
   // queda última. Si alguien inserta la card sin renumerar, la acción
-  // destructiva se le mete en el medio.
+  // destructiva se le mete en el medio — y eso sólo lo atrapa un caso que ate
+  // cada `order-N` a SU card. La versión anterior de este caso sólo
+  // confirmaba que las dos cadenas "order-4"/"order-5" estaban en algún lado
+  // del HTML, así que intercambiar los dos números en la pantalla lo hubiera
+  // dejado en verde igual (hallazgo Important de la review de esta task).
   it('en el teléfono va cuarta, con la zona de riesgo última', () => {
     const html = renderDetalle({ detalle: null })
-    const posDetalles = html.indexOf('order-4')
-    const posRiesgo = html.indexOf('order-5')
-    expect(posDetalles).toBeGreaterThan(-1)
-    expect(posRiesgo).toBeGreaterThan(-1)
+    // La card de Detalles: el bloque cuyo <h2> dice "Detalles" lleva order-4.
+    const bloqueDetalles = html.match(/<div class="(order-\d)[^"]*"><div class="border-b[^"]*"><h2[^>]*>Detalles<\/h2>/)
+    expect(bloqueDetalles?.[1]).toBe('order-4')
+    // La Zona de riesgo (sin anular, es el bloque con bg-destructive-soft):
+    // lleva order-5.
+    const bloqueRiesgo = html.match(/<div class="(order-\d)[^"]* bg-destructive-soft[^"]*"/)
+    expect(bloqueRiesgo?.[1]).toBe('order-5')
+    // Y en POSICIÓN, que es lo que de verdad ordena la pila del teléfono:
+    // Detalles aparece antes que "Anular la venta" en el HTML final.
+    expect(html.indexOf('>Detalles<')).toBeLessThan(html.indexOf('Anular la venta'))
   })
 })
