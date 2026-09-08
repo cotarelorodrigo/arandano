@@ -36,6 +36,11 @@ export const PERMISOS = [
     ayuda: 'Cambiar el nombre y el precio de un artículo que ya existe, desactivarlo y reactivarlo.',
   },
   {
+    clave: 'ARTICULOS_BORRAR',
+    nombre: 'Borrar artículos',
+    ayuda: 'Borrar del todo un artículo cargado por error, con su historial de stock. Sólo si nunca se vendió.',
+  },
+  {
     clave: 'COSTOS',
     nombre: 'Ver y cargar costos',
     ayuda: 'Ver el costo de compra y el margen, y cargarlos al recibir mercadería.',

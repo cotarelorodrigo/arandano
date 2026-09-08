@@ -11,6 +11,7 @@ import {
   editarArticulo,
   desactivarArticulo,
   reactivarArticulo,
+  borrarArticulo,
 } from '@/lib/inventario/articulos'
 import {
   crearCategoria,
@@ -240,6 +241,32 @@ export async function reactivarArticuloAccion(
     revalidatePath('/inventario')
     revalidatePath(`/inventario/${articuloId}`)
     return { error: null, aviso: 'Artículo reactivado.' }
+  } catch (e) {
+    return traducir(e)
+  }
+}
+
+/**
+ * Borrar de verdad, no desactivar.
+ *
+ * **`ARTICULOS_BORRAR` y no `ARTICULOS_EDITAR`**, que es el que gobierna a las
+ * dos acciones de acá arriba: desactivar y reactivar mueven una columna y se
+ * deshacen con un click; esto no se deshace. Se delega por lo que la acción
+ * mueve, no por el sustantivo que la nombra.
+ *
+ * **No revalida `/inventario/[id]`**, a diferencia de sus vecinas: esa ruta
+ * deja de existir. Quien la llama navega a `/inventario`, que sí se revalida
+ * para que el listado no venga cacheado con el artículo todavía adentro.
+ */
+export async function borrarArticuloAccion(
+  _e: EstadoInventario,
+  datos: FormData,
+): Promise<EstadoInventario> {
+  try {
+    const articuloId = texto(datos, 'articuloId')
+    await comoPuede('ARTICULOS_BORRAR', (tenantId) => borrarArticulo({ tenantId, articuloId }))
+    revalidatePath('/inventario')
+    return { error: null, aviso: 'Artículo borrado.' }
   } catch (e) {
     return traducir(e)
   }

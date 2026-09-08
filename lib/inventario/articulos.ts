@@ -566,3 +566,127 @@ export async function reactivarArticulo(entrada: {
 }): Promise<void> {
   await marcarBaja(entrada.tenantId, entrada.articuloId, null)
 }
+
+export type ResumenDeBorrado = {
+  movimientos: number
+  unidades: number
+  ventas: number
+}
+
+/**
+ * Qué se lleva puesto el borrado, para que el diálogo diga números reales.
+ *
+ * `movimientos` y `unidades` salen de una sola consulta con `_count`
+ * anidado: son dos subconsultas sobre la misma fila. `ventas`, en cambio, NO
+ * puede salir de ahí como `_count.ventaItems` — eso cuenta LÍNEAS de venta, y
+ * con un artículo con serie dos unidades vendidas en la misma venta son
+ * siempre dos líneas (`crearVenta` exige cantidad 1 por línea con serie), así
+ * que ese número diría "se vendió 2 veces" de una venta que fue una sola. El
+ * diálogo necesita ventas DISTINTAS, y eso pide su propia consulta: un
+ * `findMany` de `venta_items` con `distinct: ['ventaId']`.
+ *
+ * **Puede quedar vieja** entre que la pantalla se renderiza y alguien aprieta
+ * Borrar, y está bien: la pantalla informa, la base decide. Ese reparto es lo
+ * que justifica que el guard sea la FK de `venta_items` y no este número.
+ */
+export async function resumenDeBorrado(
+  tenantId: string,
+  articuloId: string,
+): Promise<ResumenDeBorrado> {
+  return enTransaccionDeTenant(tenantId, async (tx) => {
+    const fila = await tx.articulo.findUnique({
+      where: { id: articuloId },
+      select: { _count: { select: { movimientos: true, unidades: true } } },
+    })
+    if (!fila) return { movimientos: 0, unidades: 0, ventas: 0 }
+    const ventas = await tx.ventaItem.findMany({
+      where: { articuloId },
+      distinct: ['ventaId'],
+      select: { ventaId: true },
+    })
+    return {
+      movimientos: fila._count.movimientos,
+      unidades: fila._count.unidades,
+      ventas: ventas.length,
+    }
+  })
+}
+
+/**
+ * El artículo desaparece, con su historial de stock y sus unidades.
+ *
+ * Es el acto opuesto a `desactivarArticulo`, no una versión más fuerte:
+ * desactivar es para el artículo que se deja de vender —su historia importa y
+ * queda—, y esto es para el que nunca debió existir, el duplicado cargado por
+ * error, que no tiene historia que preservar.
+ *
+ * **El conteo de ventas de acá abajo NO es la garantía**: es para poder
+ * escribir un mensaje que se entienda. La garantía es que
+ * `venta_items.articulo_id` sigue siendo `ON DELETE RESTRICT`, así que si
+ * alguien cobra el artículo entre el conteo y el DELETE, la base rechaza el
+ * borrado igual. Mismo criterio que la idempotencia del cobro (el índice
+ * único, no el `findFirst` previo) y que la carrera por una unidad (el
+ * `updateMany` condicional).
+ */
+export async function borrarArticulo(entrada: {
+  tenantId: string
+  articuloId: string
+}): Promise<void> {
+  const { tenantId, articuloId } = entrada
+  try {
+    await enTransaccionDeTenant(tenantId, async (tx) => {
+      // Ventas DISTINTAS, no líneas — mismo motivo que `resumenDeBorrado`
+      // (ver su docblock): con un artículo con serie, dos unidades vendidas
+      // en la misma venta son siempre dos líneas, así que `ventaItem.count`
+      // diría "se vendió 2 veces" de una venta que fue una sola. Antes de
+      // este ajuste (review de la rama) las dos funciones contaban distinto
+      // el mismo hecho, y el diálogo y el error del servidor se
+      // contradecían.
+      const ventas = await tx.ventaItem.findMany({
+        where: { articuloId },
+        distinct: ['ventaId'],
+        select: { ventaId: true },
+      })
+      if (ventas.length > 0) {
+        throw new ErrorDeInventario('ARTICULO_CON_VENTAS', mensajeDeVentas(ventas.length))
+      }
+
+      // `deleteMany` y no `delete`, por lo mismo que `marcarBaja` usa
+      // `updateMany`: un id de otro tenant no encuentra fila (RLS lo esconde) y
+      // devuelve `count: 0` en vez de tirar un error de Prisma que nadie
+      // atrapa. "No existe" y "no es tuyo" tienen que ser la misma respuesta.
+      const { count } = await tx.articulo.deleteMany({ where: { id: articuloId } })
+      if (count === 0) {
+        throw new ErrorDeInventario(
+          'ARTICULO_INEXISTENTE',
+          `el artículo ${articuloId} no existe en este tenant`,
+        )
+      }
+    })
+  } catch (e) {
+    // P2003 = FK violada. Se traduce ACÁ y no en `traducirErrorDeBase`, a
+    // propósito: ahí un P2003 puede venir de cualquier otra FK del módulo —la
+    // de categorías, por ejemplo— y significaría otra cosa. Un traductor que
+    // conteste "tiene ventas" ante cualquier FK violada manda a buscar donde
+    // no es. Acá, en cambio, la única FK Restrict que puede frenar este DELETE
+    // es la de venta_items.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') {
+      throw new ErrorDeInventario(
+        'ARTICULO_CON_VENTAS',
+        'este artículo se vendió: borrarlo se llevaría esas ventas.',
+      )
+    }
+    throw traducirErrorDeBase(e)
+  }
+}
+
+// Sin "Podés desactivarlo" (review de la rama, M2): el motor no sabe de
+// permisos, y esa salida sólo es válida con ARTICULOS_EDITAR y con el
+// artículo todavía activo — las mismas condiciones que decide `porQueNo` del
+// lado del diálogo, que sí las conoce. Meter esa lógica acá rompería la capa:
+// el mensaje del motor dice el hecho, no qué hacer con él.
+function mensajeDeVentas(ventas: number): string {
+  return ventas === 1
+    ? 'este artículo se vendió 1 vez: borrarlo se llevaría esa venta.'
+    : `este artículo se vendió ${ventas} veces: borrarlo se llevaría esas ventas.`
+}

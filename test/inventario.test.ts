@@ -16,7 +16,10 @@ let crearArticulo: typeof import('@/lib/inventario/articulos').crearArticulo
 let editarArticulo: typeof import('@/lib/inventario/articulos').editarArticulo
 let desactivarArticulo: typeof import('@/lib/inventario/articulos').desactivarArticulo
 let reactivarArticulo: typeof import('@/lib/inventario/articulos').reactivarArticulo
+let borrarArticulo: typeof import('@/lib/inventario/articulos').borrarArticulo
+let resumenDeBorrado: typeof import('@/lib/inventario/articulos').resumenDeBorrado
 let unidadesLibres: typeof import('@/lib/inventario/unidades').unidadesLibres
+let darDeBajaUnidad: typeof import('@/lib/inventario/stock').darDeBajaUnidad
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -109,10 +112,13 @@ async function crearArticuloConSerie(nombre: string, imeis: string[]) {
 beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   ;({ enTransaccionDeTenant } = await import('@/lib/tenant/transaccion'))
-  ;({ ajustarStock, ingresarStock, corregirStock } = await import('@/lib/inventario/stock'))
-  ;({ crearArticulo, editarArticulo, desactivarArticulo, reactivarArticulo } = await import(
-    '@/lib/inventario/articulos'
+  ;({ ajustarStock, ingresarStock, corregirStock, darDeBajaUnidad } = await import(
+    '@/lib/inventario/stock'
   ))
+  ;({
+    crearArticulo, editarArticulo, desactivarArticulo, reactivarArticulo,
+    borrarArticulo, resumenDeBorrado,
+  } = await import('@/lib/inventario/articulos'))
   ;({ unidadesLibres } = await import('@/lib/inventario/unidades'))
 
   owner = new Client({ connectionString: urlOwner() })
@@ -1269,5 +1275,238 @@ describe('la factura del proveedor en el alta', () => {
       stockInicial: d('10'), facturaProveedor: '   ',
     })
     expect(await notaDe(a.id)).toBe('stock inicial')
+  })
+})
+
+describe('borrar un artículo', () => {
+  /** Una venta con una línea del artículo, insertada crudo con el owner: lo
+   *  que importa acá es que exista la fila de venta_items que frena el
+   *  borrado, no ejercitar el motor de ventas —eso es test/ventas.test.ts. */
+  let proximoNumero = 9000
+  async function venderCrudo(articuloId: string, anulada = false) {
+    const v = await owner.query(
+      `INSERT INTO ventas (id, tenant_id, numero, usuario_id, total, anulada_en, creado_en)
+       VALUES (gen_random_uuid(), $1, $2, $3, 100.00, $4, now()) RETURNING id`,
+      [tenantId, proximoNumero++, usuarioId, anulada ? new Date() : null],
+    )
+    await owner.query(
+      `INSERT INTO venta_items
+         (id, tenant_id, venta_id, articulo_id, descripcion, cantidad, precio_unitario)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'Una línea', 1, 100.00)`,
+      [tenantId, v.rows[0].id, articuloId],
+    )
+  }
+
+  async function existe(articuloId: string) {
+    const { rows } = await owner.query(
+      `SELECT count(*)::int AS n FROM articulos WHERE id = $1`, [articuloId],
+    )
+    return rows[0].n === 1
+  }
+
+  it('borra el artículo y se lleva sus movimientos de stock', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Cargado dos veces', tipo: 'PRODUCTO',
+      precio: d('100'), stockInicial: d('2'),
+    })
+    await borrarArticulo({ tenantId, articuloId: a.id })
+
+    expect(await existe(a.id)).toBe(false)
+    const movs = await owner.query(
+      `SELECT count(*)::int AS n FROM movimientos_stock WHERE articulo_id = $1`, [a.id],
+    )
+    expect(movs.rows[0].n, 'el alta con stock inicial deja un movimiento y tiene que irse').toBe(0)
+  })
+
+  it('borra un artículo con serie y se lleva sus unidades', async () => {
+    const a = await crearArticuloConSerie('iPhone duplicado', ['111111111111111'])
+    await borrarArticulo({ tenantId, articuloId: a.id })
+
+    const unis = await owner.query(
+      `SELECT count(*)::int AS n FROM unidades_articulo WHERE articulo_id = $1`, [a.id],
+    )
+    expect(unis.rows[0].n).toBe(0)
+  })
+
+  // El caso que ejercita el NoAction de movimientos_stock.unidad_id por el
+  // camino real: dar de baja una unidad escribe un movimiento QUE LA NOMBRA, y
+  // las dos filas se van en la misma sentencia.
+  it('borra un artículo con una unidad dada de baja, que es el caso del movimiento que la nombra', async () => {
+    const a = await crearArticuloConSerie('Con baja', ['222222222222222'])
+    const [unidad] = await unidadesLibres(tenantId, a.id)
+    await darDeBajaUnidad({ tenantId, unidadId: unidad.id, usuarioId, nota: 'se rompió' })
+
+    await borrarArticulo({ tenantId, articuloId: a.id })
+    expect(await existe(a.id)).toBe(false)
+  })
+
+  it('un artículo desactivado se borra igual: lo único que decide es la venta', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'De baja y duplicado', tipo: 'PRODUCTO', precio: d('100'),
+    })
+    await desactivarArticulo({ tenantId, articuloId: a.id })
+    await borrarArticulo({ tenantId, articuloId: a.id })
+    expect(await existe(a.id)).toBe(false)
+  })
+
+  it('rechaza borrar un artículo vendido', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Vendido', tipo: 'PRODUCTO', precio: d('100'),
+    })
+    await venderCrudo(a.id)
+    await expect(borrarArticulo({ tenantId, articuloId: a.id })).rejects.toMatchObject({
+      codigo: 'ARTICULO_CON_VENTAS',
+    })
+    expect(await existe(a.id), 'la venta lo frenó, así que sigue estando').toBe(true)
+  })
+
+  // Anular es un UPDATE sobre `ventas`: el venta_item sigue en pie, y es
+  // correcto que frene. Una venta anulada es un hecho que pasó.
+  it('rechaza borrar un artículo cuya única venta está anulada', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Vendido y anulado', tipo: 'PRODUCTO', precio: d('100'),
+    })
+    await venderCrudo(a.id, true)
+    await expect(borrarArticulo({ tenantId, articuloId: a.id })).rejects.toMatchObject({
+      codigo: 'ARTICULO_CON_VENTAS',
+    })
+  })
+
+  // Dos unidades del mismo artículo vendidas de una son siempre dos LÍNEAS de
+  // la misma venta (con serie, `crearVenta` exige cantidad 1 por línea), y el
+  // mensaje tiene que contar la venta, no las líneas — mismo motivo, y mismo
+  // escenario, que el que fija `resumenDeBorrado` un poco más abajo. Antes del
+  // ajuste de la review de la rama, esta función contaba LÍNEAS
+  // (`ventaItem.count`) y el mensaje decía "se vendió 2 veces" de una venta
+  // que fue una sola.
+  it('una venta con dos líneas del mismo artículo cuenta como una sola venta en el mensaje', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Vendido dos veces en una venta', tipo: 'PRODUCTO',
+      precio: d('100'),
+    })
+    const v = await owner.query(
+      `INSERT INTO ventas (id, tenant_id, numero, usuario_id, total, creado_en)
+       VALUES (gen_random_uuid(), $1, $2, $3, 200.00, now()) RETURNING id`,
+      [tenantId, proximoNumero++, usuarioId],
+    )
+    await owner.query(
+      `INSERT INTO venta_items
+         (id, tenant_id, venta_id, articulo_id, descripcion, cantidad, precio_unitario)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'Línea 1', 1, 100.00),
+              (gen_random_uuid(), $1, $2, $3, 'Línea 2', 1, 100.00)`,
+      [tenantId, v.rows[0].id, a.id],
+    )
+
+    const error = await borrarArticulo({ tenantId, articuloId: a.id }).catch((e) => e)
+    expect(error.codigo).toBe('ARTICULO_CON_VENTAS')
+    expect(error.message).toContain('se vendió 1 vez')
+    expect(error.message).not.toContain('2 veces')
+  })
+
+  /**
+   * El camino del P2003: el conteo previo dice 0 y el DELETE falla igual.
+   *
+   * No se simula una carrera de reloj —eso no es determinista—, sino la MISMA
+   * situación por el otro lado: una línea de venta que RLS le esconde al
+   * conteo pero que la FK sí ve. Es posible porque las FK de Postgres saltean
+   * RLS y ninguna es compuesta con `tenant_id`, cosa que CLAUDE.md ya tiene
+   * anotada como hallazgo del ciclo de categorías.
+   *
+   * Prueba exactamente lo que la carrera real produciría: que el error de la
+   * base sale traducido y no como un P2003 crudo que nadie atrapa.
+   */
+  it('si el conteo no la ve pero la FK sí, sale traducido y no como un P2003 crudo', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Carrera', tipo: 'PRODUCTO', precio: d('100'),
+    })
+    // La venta es del OTRO tenant y apunta a nuestro artículo. El conteo de
+    // `borrarArticulo` corre con `arandano.tenant_id` en el nuestro, así que
+    // esta fila no existe para él.
+    const v = await owner.query(
+      `INSERT INTO ventas (id, tenant_id, numero, usuario_id, total, creado_en)
+       VALUES (gen_random_uuid(), $1, $2, $3, 100.00, now()) RETURNING id`,
+      [otroTenantId, proximoNumero++, usuarioAjeno],
+    )
+    await owner.query(
+      `INSERT INTO venta_items
+         (id, tenant_id, venta_id, articulo_id, descripcion, cantidad, precio_unitario)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'Ajena', 1, 100.00)`,
+      [otroTenantId, v.rows[0].id, a.id],
+    )
+
+    const e = await borrarArticulo({ tenantId, articuloId: a.id }).catch((x) => x)
+    expect(e, 'un P2003 crudo llegaría a la pantalla como 500').toBeInstanceOf(ErrorDeInventario)
+    expect(e.codigo).toBe('ARTICULO_CON_VENTAS')
+  })
+
+  it('rechaza un artículo que no existe en este tenant, y un id malformado', async () => {
+    await expect(
+      borrarArticulo({ tenantId, articuloId: '00000000-0000-7000-8000-000000000000' }),
+    ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
+    await expect(
+      borrarArticulo({ tenantId, articuloId: 'no-es-uuid' }),
+    ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
+  })
+
+  it('no borra el artículo de otro tenant', async () => {
+    const ajeno = await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'AJENO-B', 'Ajeno', 'PRODUCTO', 100.00, 0, now(), now())
+       RETURNING id`,
+      [otroTenantId],
+    )
+    await expect(
+      borrarArticulo({ tenantId, articuloId: ajeno.rows[0].id }),
+    ).rejects.toMatchObject({ codigo: 'ARTICULO_INEXISTENTE' })
+    expect(await existe(ajeno.rows[0].id)).toBe(true)
+  })
+})
+
+describe('resumenDeBorrado', () => {
+  it('cuenta los movimientos, las unidades y las ventas del artículo', async () => {
+    const a = await crearArticuloConSerie('Para el resumen', ['333333333333333', '444444444444444'])
+    // Sólo `imeis`, sin `cantidad`: con serie prendida, `ingresarStock` rechaza
+    // las dos juntas a propósito (SERIE_REQUIERE_IMEIS).
+    await ingresarStock({ tenantId, articuloId: a.id, usuarioId, imeis: ['555555555555555'] })
+
+    const r = await resumenDeBorrado(tenantId, a.id)
+    expect(r.unidades).toBe(3)
+    expect(r.movimientos).toBe(1)
+    expect(r.ventas).toBe(0)
+  })
+
+  it('no cuenta lo de otro artículo', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Vacío', tipo: 'PRODUCTO', precio: d('100'),
+    })
+    const r = await resumenDeBorrado(tenantId, a.id)
+    expect(r).toEqual({ movimientos: 0, unidades: 0, ventas: 0 })
+  })
+
+  // Dos unidades del mismo artículo vendidas de una son siempre dos LÍNEAS de
+  // la misma venta (con serie, `crearVenta` exige cantidad 1 por línea), y
+  // "ventas" tiene que contar la venta, no las líneas: si no, vender dos
+  // iPhones iguales de una sola vez diría "se vendió 2 veces".
+  let proximoNumero = 9500
+  it('una venta con dos líneas del mismo artículo cuenta como una sola venta', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Vendido dos veces en una venta', tipo: 'PRODUCTO',
+      precio: d('100'),
+    })
+    const v = await owner.query(
+      `INSERT INTO ventas (id, tenant_id, numero, usuario_id, total, creado_en)
+       VALUES (gen_random_uuid(), $1, $2, $3, 200.00, now()) RETURNING id`,
+      [tenantId, proximoNumero++, usuarioId],
+    )
+    await owner.query(
+      `INSERT INTO venta_items
+         (id, tenant_id, venta_id, articulo_id, descripcion, cantidad, precio_unitario)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'Línea 1', 1, 100.00),
+              (gen_random_uuid(), $1, $2, $3, 'Línea 2', 1, 100.00)`,
+      [tenantId, v.rows[0].id, a.id],
+    )
+
+    const r = await resumenDeBorrado(tenantId, a.id)
+    expect(r.ventas).toBe(1)
   })
 })

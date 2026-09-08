@@ -2449,7 +2449,6 @@ Y del producto:
   para el resto; que vender una sin escanear nada no frene la venta y vender otra
   escaneando la deje identificada; y que un artículo sin serie se vea exactamente
   como siempre.
-
 - ~~Que un local pueda instalarse como app.~~ **Hecho** (2026-09-04). Sale de
   una pregunta del dueño del producto: *"es posible que nuestros clientes
   puedan instalar su negocio como pwa?"*. La respuesta es que sí, y que este
@@ -2876,6 +2875,123 @@ Y del producto:
   midió nunca en un navegador. El ancho que decide es **1098**, el borde exacto
   donde el carrito queda en 400 px. Lo demás a mirar está en la sección
   *Verificación* del spec.
+
+- ~~Poder eliminar un producto del inventario, no sólo desactivarlo.~~
+  **Hecho** (2026-09-07). Sale del feedback textual de un cliente:
+  *"necesitamos agregar la feature de que se pueda eliminar un producto del
+  inventario (no sólo desactivarlo). Más que nada porque si se carga un
+  producto dos veces por algún error"*. Ver
+  `docs/superpowers/specs/2026-09-07-borrar-articulo-design.md`.
+
+  **Son dos actos distintos y el producto sólo tenía uno.** Desactivar es la
+  respuesta correcta para el artículo que se deja de vender: su historial y sus
+  ventas quedan. Es la respuesta equivocada para el que nunca debió existir —un
+  duplicado desactivado queda para siempre en el listado con su chip, y dentro
+  de seis meses nadie sabe por qué está.
+
+  **Revierte a medias un comentario del schema**, el de
+  `Articulo.desactivadoEn`, que afirmaba *"un artículo que se deja de vender NO
+  se borra"*. Lo que ese comentario mezclaba eran dos reglas: "no se borra lo
+  que se vendió", que **se mantiene y se endurece** —pasa de ser la ausencia de
+  un botón a ser una FK que Postgres hace cumplir—, y "no se borra nada nunca",
+  que era su efecto colateral.
+
+  **Las cinco decisiones, cada una con la alternativa que se descartó:**
+
+  - **Frena una sola cosa: que exista una línea de venta.** Las alternativas
+    eran "sólo si está impecable" (sin movimientos ni unidades), que dejaba
+    afuera el caso del feedback —cargar el duplicado con stock inicial ya le
+    crea un movimiento—, y "se borra siempre" con `VentaItem.articuloId`
+    nullable, que dejaba el historial hablando de algo que no existe.
+    **Las ventas anuladas también frenan**: anular es un `UPDATE` sobre
+    `ventas` y sus `venta_items` siguen en pie.
+  - **El guard es la base, no el chequeo.** `VentaItem.articuloId` se queda en
+    `Restrict` y `movimientos_stock`/`unidades_articulo` pasan a `Cascade`. La
+    aplicación cuenta las ventas antes de borrar **para poder escribir un
+    mensaje que se entienda**, no para garantizar nada: si alguien cobra el
+    artículo entre el conteo y el `DELETE`, la base lo rechaza igual. Mismo
+    criterio que la idempotencia del cobro (el índice único, no el `findFirst`
+    previo).
+  - **`ARTICULOS_BORRAR`, el noveno del catálogo**, y no plegado sobre
+    `ARTICULOS_EDITAR` ni reservado al dueño. Se delega por lo que la acción
+    **mueve**: desactivar mueve una columna y se deshace con un click; borrar
+    no se deshace y se lleva filas de dos tablas más. Es el mismo escalón que
+    ya separa `VENTAS_ANULAR` y `ORDENES_ANULAR` de la edición. La fuente sigue
+    siendo `lib/permisos/catalogo.ts`, no este párrafo.
+  - **Un diálogo que dice qué se lleva puesto**, con los números reales, contra
+    la confirmación en dos pasos sobre el mismo botón que ya usa `AnularVenta`.
+    Ese mecanismo se eligió allá para "irreversible pero **frecuente**", y
+    borrar un artículo no es frecuente: acá conviene que la persona vea el
+    tamaño de lo que está tirando antes de confirmarlo.
+  - **El botón se dibuja siempre**, con ventas o sin ellas, y es el diálogo el
+    que explica. Esconderlo deja a quien lo busca asumiendo que la feature no
+    existe; el diálogo es el único lugar donde la regla se puede enseñar en el
+    momento en que importa.
+
+  **El precio, dicho sin maquillar: el append-only de `movimientos_stock` queda
+  con una puerta.** `scripts/setup-db-roles.sh` le revoca `DELETE` al rol de la
+  app sobre esa tabla, y unas líneas más abajo revoca `DELETE` sobre
+  `ordenes_de_trabajo` **justamente para tapar la puerta de atrás de una
+  cascada**. Este ciclo abre esa puerta sobre `movimientos_stock`, acotada:
+  sólo la cruza un artículo que nunca produjo una venta. El argumento del
+  append-only —poder contestar *"por qué tengo 3 y no 5"*— no se pierde, porque
+  cuando el artículo entero desaparece no queda ningún stock que explicar.
+  Queda escrito en ese mismo bloque del script, no sólo en el spec, y
+  `test/setup-db-roles.test.ts` fija el par entero: el `DELETE` directo sigue
+  prohibido y la cascada sí se los lleva. **Depende de que ninguna tabla tenga
+  `FORCE ROW LEVEL SECURITY`**, que hoy es el caso.
+
+  **`MovimientoStock.unidadId` pasó de `Restrict` a `NoAction`**, y es el
+  detalle que más fácil se lee como arbitrario: al borrar un artículo con
+  serie, sus movimientos y sus unidades se van en la MISMA sentencia, y
+  `RESTRICT` se evalúa inmediato —sin esperar al final— así que abortaría el
+  borrado por una fila que se está yendo igual. `NoAction` es diferible y lo
+  tolera. No `Cascade`, porque fuera de este camino ninguna unidad se borra
+  nunca: darla de baja es una columna.
+
+  **La migración es inerte y viaja en el mismo deploy que la UI**, mismo
+  argumento que el ciclo del precio en USD: ninguna columna se borra ni se
+  renombra, y el código viejo no borra artículos por ningún camino, así que las
+  cascadas nuevas jamás se disparan. Lo que expand/contract exige no es "la
+  migración en un deploy aparte", es que el schema nuevo soporte la versión
+  anterior del código.
+
+  **Lo que se acepta: un artículo borrado no deja rastro de ningún tipo.** No
+  hay tabla de auditoría, así que después del borrado nadie puede saber que
+  existió, ni quién lo borró, ni cuándo. Es lo que se pidió, y es exactamente
+  la propiedad que lo separa de desactivar — la que hace que el permiso valga
+  la pena tenerlo aparte. Si algún día hace falta el rastro, la salida conocida
+  es una tabla-libro de borrados con su propia línea de `REVOKE`, y es aditiva:
+  nada de este ciclo habría que deshacer.
+
+  **Lo que este ciclo NO hace**: borrar desde el listado (el click accidental
+  cuesta más caro en una fila de tabla, y el flujo del duplicado pasa por la
+  ficha igual), borrado masivo, detección de duplicados, y papelera o deshacer
+  —un borrado con vuelta atrás es una baja lógica, que es justamente lo que ya
+  existía y lo que el pedido dice que no alcanza.
+
+  **`design/arandano.pen` no dibuja ni el botón ni el diálogo**, en ningún
+  ancho. Se derivaron con los patrones que ya existen: el `Dialog` de shadcn de
+  `/usuarios` y `/formas-de-pago`, y la segunda copia del botón al pie como el
+  resto de las acciones de esta ficha. Anotado en
+  `docs/correcciones-pendientes-del-pen.md`.
+
+  **Queda pendiente la verificación manual**, y a diferencia de los ciclos de
+  permisos, teléfono, planes y categoría en la ficha —que quedaron sin
+  confirmar porque `arandano-dev` bind-montea `/root/arandano` y no el
+  worktree— acá se puede hacer después del merge. Lo que hay que mirar: cargar
+  un duplicado con stock inicial y borrarlo desde la ficha, viendo que el
+  listado quede limpio; abrir el diálogo en un artículo vendido, leer el
+  mensaje y apretar el botón "Desactivar" que ahora dispara ahí mismo, viendo
+  que el diálogo se cierra y la ficha queda desactivada sin recargar a mano;
+  abrirlo en uno vendido **y ya desactivado**, donde no tiene que ofrecer
+  desactivar (ni la frase ni el botón); mirar el pie a 390 px con los TRES
+  botones —"Borrar",
+  "Desactivar" y "Guardar cambios"— en la misma fila, sin que el tercero se
+  corte (es el que puede no entrar: `min-w-0` + `truncate` lo dejan encoger de
+  verdad, y a ese ancho es donde hay que confirmar que se ve legible y no
+  desbordado); y que un empleado con `ARTICULOS_EDITAR` y sin
+  `ARTICULOS_BORRAR` vea "Guardar cambios" y no vea "Borrar".
 
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).

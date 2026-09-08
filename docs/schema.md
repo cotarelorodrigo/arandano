@@ -299,8 +299,8 @@ erDiagram
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
-  articulos ||--o{ movimientos_stock : "ON DELETE RESTRICT"
-  articulos ||--o{ unidades_articulo : "ON DELETE RESTRICT"
+  articulos ||--o{ movimientos_stock : "ON DELETE CASCADE"
+  articulos ||--o{ unidades_articulo : "ON DELETE CASCADE"
   articulos ||--o{ venta_items : "ON DELETE RESTRICT"
   categorias |o--o{ articulos : "ON DELETE RESTRICT"
   categorias |o--o{ categorias : "ON DELETE RESTRICT"
@@ -330,7 +330,7 @@ erDiagram
   tenants ||--o{ ventas : "ON DELETE CASCADE"
   tenants ||--o{ verifications : "ON DELETE CASCADE"
   tenants ||--o| bots_de_whatsapp : "ON DELETE CASCADE"
-  unidades_articulo |o--o{ movimientos_stock : "ON DELETE RESTRICT"
+  unidades_articulo |o--o{ movimientos_stock : "ON DELETE NO ACTION"
   users |o--o{ cajas : "ON DELETE RESTRICT"
   users |o--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
   users |o--o{ unidades_articulo : "ON DELETE RESTRICT"
@@ -360,7 +360,7 @@ erDiagram
 - **moneda**: `ARS`, `USD`
 - **motivo_movimiento**: `VENTA`, `ANULACION_VENTA`, `AJUSTE`, `INGRESO`
 - **motivo_sin_respuesta**: `BOT_APAGADO`, `TOPE_MENSUAL`, `TOPE_CONVERSACION`, `SIN_TEXTO`, `SIN_MODELO`
-- **permiso**: `ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`, `CATEGORIAS`, `VENTAS_ANULAR`, `ORDENES_ANULAR`, `PLANES_PAGO`, `BOT`
+- **permiso**: `ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`, `CATEGORIAS`, `VENTAS_ANULAR`, `ORDENES_ANULAR`, `PLANES_PAGO`, `BOT`, `ARTICULOS_BORRAR`
 - **rol_usuario**: `DUENO`, `EMPLEADO`
 - **tipo_articulo**: `PRODUCTO`, `SERVICIO`
 

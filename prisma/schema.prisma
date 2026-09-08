@@ -58,6 +58,13 @@ enum Permiso {
   // negocio, no lo que reparte poder.
   BOT
 
+  // Borrar un artículo del todo, con su historial de stock. Aparte de
+  // ARTICULOS_EDITAR —que ya cubre desactivar y reactivar— porque se delega
+  // por lo que la acción MUEVE: desactivar mueve una columna y se deshace con
+  // un click; borrar no se deshace y se lleva filas de dos tablas más. Es el
+  // mismo escalón que separa VENTAS_ANULAR y ORDENES_ANULAR de la edición.
+  ARTICULOS_BORRAR
+
   @@map("permiso")
 }
 
@@ -355,10 +362,14 @@ model Articulo {
   // actualiza con UPDATE relativo en la misma transacción que el movimiento, y
   // `test/ventas.test.ts` prueba que la suma cierra.
   stock         Decimal      @default(0) @db.Decimal(12, 3)
-  // Un artículo que se deja de vender NO se borra: la FK de movimientos_stock
-  // y la de venta_items son Restrict a propósito —borrarlo se llevaría la
-  // historia de lo que se vendió—, así que se desactiva. Mismo campo y mismo
-  // sentido que User.desactivadoEn, que ya sienta el precedente.
+  // Un artículo que se DEJA DE VENDER no se borra: se desactiva, y su historial
+  // y sus ventas quedan intactos. Mismo campo y mismo sentido que
+  // User.desactivadoEn, que ya sienta el precedente.
+  //
+  // Borrar existe y es otro acto (ciclo del 2026-09-07): es para el artículo
+  // cargado por error, que nunca vendió nada y no tiene historia que
+  // preservar. La regla la sostiene la base —venta_items.articulo_id sigue
+  // siendo Restrict—, no un chequeo de la aplicación.
   desactivadoEn DateTime?    @map("desactivado_en") @db.Timestamptz(3)
   creadoEn      DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
@@ -417,9 +428,10 @@ model UnidadDeArticulo {
   creadoEn       DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
 
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  // Restrict, como movimientos_stock y venta_items: borrar un artículo no puede
-  // borrar la historia de sus unidades.
-  articulo     Articulo @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+  // Cascade desde el ciclo del borrado (2026-09-07), por lo mismo que
+  // movimientos_stock: las unidades de un artículo que nunca se vendió se van
+  // con él. Un artículo CON ventas no llega acá — venta_items lo frena antes.
+  articulo     Articulo @relation(fields: [articuloId], references: [id], onDelete: Cascade)
   ingresadaPor User     @relation("UnidadesIngresadas", fields: [ingresadaPorId], references: [id], onDelete: Restrict)
   bajaPor      User?    @relation("UnidadesDadasDeBaja", fields: [bajaPorId], references: [id], onDelete: Restrict)
   venta        Venta?   @relation(fields: [ventaId], references: [id], onDelete: Restrict)
@@ -546,11 +558,21 @@ model MovimientoStock {
   creadoEn      DateTime         @default(now()) @map("creado_en") @db.Timestamptz(3)
 
   tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  // Restrict y no Cascade: borrar un artículo no puede borrar la historia de lo
-  // que se vendió. Si tiene movimientos, no se borra.
-  articulo Articulo          @relation(fields: [articuloId], references: [id], onDelete: Restrict)
+  // Cascade desde el ciclo del borrado (2026-09-07): el historial de stock es
+  // del artículo, así que se va con él. El guard de "no se borra lo que se
+  // vendió" NO vive acá —vive en venta_items, que sigue siendo Restrict—, y
+  // eso es a propósito: sólo puede llegar a esta cascada un artículo que nunca
+  // vendió nada.
+  articulo Articulo          @relation(fields: [articuloId], references: [id], onDelete: Cascade)
   venta    Venta?            @relation(fields: [ventaId], references: [id], onDelete: Restrict)
-  unidad   UnidadDeArticulo? @relation(fields: [unidadId], references: [id], onDelete: Restrict)
+  // NoAction y no Restrict: cuando se borra un artículo con serie, sus
+  // movimientos y sus unidades se van en la MISMA sentencia. RESTRICT se
+  // evalúa inmediato, sin esperar al final, así que abortaría el borrado por
+  // una fila que se está yendo igual; NO ACTION es diferible y lo tolera.
+  //
+  // Y no Cascade: fuera de ese camino ninguna unidad se borra nunca —darla de
+  // baja es una columna—, así que Cascade describiría un flujo que no existe.
+  unidad   UnidadDeArticulo? @relation(fields: [unidadId], references: [id], onDelete: NoAction)
   usuario  User              @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
 
   @@index([tenantId, articuloId])

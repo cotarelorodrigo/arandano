@@ -6,7 +6,22 @@ const ejecutar = promisify(execFile)
 export const CONTENEDOR = 'arandano-test-pg'
 export const BASE = 'arandano_test'
 export const SUPERUSUARIO = 'arandano_test_super'
-export const PUERTO = 55432
+/**
+ * El puerto donde el Postgres efímero se publica en el host.
+ *
+ * Configurable por `PUERTO_TEST_PG` con 55432 de default, y no es una
+ * generalización por las dudas: en macOS, Docker **bindea un puerto ya
+ * ocupado sin dar ningún error**, así que un túnel SSH vivo hacia el VPS
+ * (`ssh -L 55432:…`) se queda con las conexiones por haber llegado primero, y
+ * la suite entera corre contra la base de test del servidor —con los fixtures
+ * de todas las corridas anteriores acumulados— fallando con `duplicate key` y
+ * conteos que no cierran. Nada avisa, y se lee como bugs del código.
+ *
+ * Se detecta con `lsof -nP -iTCP:55432 -sTCP:LISTEN`: si aparece `ssh` y no
+ * `docker`, es esto. La salida es correr con otro puerto
+ * (`PUERTO_TEST_PG=55433 npm test`) en vez de matarle el túnel a alguien.
+ */
+export const PUERTO = Number(process.env.PUERTO_TEST_PG ?? 55432)
 
 const PASSWORD_SUPER = 'efimero-no-persiste'
 export const PASSWORD_OWNER = 'efimero-owner'

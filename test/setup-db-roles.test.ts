@@ -293,6 +293,27 @@ describe('setup-db-roles.sh', () => {
       }
     })
 
+    // La excepción documentada, en las dos direcciones: el DELETE directo
+    // sigue prohibido (arriba) y la cascada del artículo sí se los lleva. Sin
+    // este caso, alguien que "cierre la puerta" por prolijidad —volviendo la
+    // FK a Restrict— rompería el borrado de artículos sin que nada avise.
+    it('movimientos_stock: y sin embargo la cascada de un artículo sí se los lleva', async () => {
+      const owner = new Client({ connectionString: urlOwner() })
+      await owner.connect()
+      try {
+        const { rows } = await owner.query(
+          `SELECT confdeltype FROM pg_constraint
+            WHERE conname = 'movimientos_stock_articulo_id_fkey'`,
+        )
+        // 'c' = CASCADE. Se lee de pg_constraint y no borrando una fila: lo
+        // que este caso custodia es la DECISIÓN, y el efecto ya lo prueba
+        // test/schema.test.ts contra el rol de la app.
+        expect(rows[0].confdeltype).toBe('c')
+      } finally {
+        await owner.end()
+      }
+    })
+
     // La bitácora de las órdenes de trabajo, y la razón por la que el módulo
     // guarda el estado en una columna en vez de derivarlo: si la historia se
     // puede editar, "hace dos semanas que está acá, ¿qué pasó?" deja de tener

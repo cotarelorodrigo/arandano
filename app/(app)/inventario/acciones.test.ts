@@ -47,6 +47,8 @@ let apagarSerieAccion: typeof import('./acciones').apagarSerieAccion
 let darDeBajaUnidadAccion: typeof import('./acciones').darDeBajaUnidadAccion
 // Task 6 del ciclo "unidades sin identificar": cargar el IMEI cuando aparece.
 let identificarUnidadAccion: typeof import('./acciones').identificarUnidadAccion
+// Ciclo "borrar un artículo", Task 4.
+let borrarArticuloAccion: typeof import('./acciones').borrarArticuloAccion
 let authParaTenant: typeof import('@/lib/auth/para-tenant').authParaTenant
 let origenDelRequest: typeof import('@/lib/auth/origen').origenDelRequest
 // Dinámico y no estático, como el resto de este archivo: `lib/inventario/
@@ -93,7 +95,7 @@ beforeAll(async () => {
     altaArticulo, guardarArticulo, bajaArticulo,
     reactivarArticuloAccion, ingresarMercaderia, corregirPorConteo,
     exportarHistorialCsv, prenderSerieAccion, apagarSerieAccion, darDeBajaUnidadAccion,
-    identificarUnidadAccion,
+    identificarUnidadAccion, borrarArticuloAccion,
   } = await import('./acciones'))
   ;({ authParaTenant } = await import('@/lib/auth/para-tenant'))
   ;({ origenDelRequest } = await import('@/lib/auth/origen'))
@@ -1408,5 +1410,77 @@ describe('las acciones de unidades por IMEI', () => {
     const libres = await unidadesLibres(estado.tenantId, idConSerie4)
     expect(libres).toHaveLength(4)
     expect(libres.every((u) => u.imei === null)).toBe(true)
+  })
+})
+
+describe('borrarArticuloAccion', () => {
+  let proximoNumeroAcc = 7000
+  /** Una venta con una línea del artículo, cruda con el owner: lo que importa
+   *  es que exista la fila de venta_items que frena el borrado. */
+  async function venderCrudo(articuloId: string) {
+    const u = await owner.query(`SELECT id FROM users WHERE tenant_id = $1 LIMIT 1`, [
+      estado.tenantId,
+    ])
+    const v = await owner.query(
+      `INSERT INTO ventas (id, tenant_id, numero, usuario_id, total, creado_en)
+       VALUES (gen_random_uuid(), $1, $2, $3, 100.00, now()) RETURNING id`,
+      [estado.tenantId, proximoNumeroAcc++, u.rows[0].id],
+    )
+    await owner.query(
+      `INSERT INTO venta_items
+         (id, tenant_id, venta_id, articulo_id, descripcion, cantidad, precio_unitario)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'Una línea', 1, 100.00)`,
+      [estado.tenantId, v.rows[0].id, articuloId],
+    )
+  }
+
+  function formData(articuloId: string) {
+    const datos = new FormData()
+    datos.set('articuloId', articuloId)
+    return datos
+  }
+
+  it('un DUEÑO borra el artículo y la acción avisa', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Duplicado de la acción')
+    const r = await borrarArticuloAccion(INICIAL, formData(id))
+    expect(r).toEqual({ error: null, aviso: 'Artículo borrado.' })
+
+    const { rows } = await owner.query(`SELECT count(*)::int AS n FROM articulos WHERE id = $1`, [
+      id,
+    ])
+    expect(rows[0].n).toBe(0)
+  })
+
+  // El error de dominio vuelve como cartel y no como excepción: es lo que la
+  // persona puede resolver desactivando, así que tiene que verlo escrito.
+  it('un artículo vendido vuelve como error, no como 500', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Vendido de la acción')
+    await venderCrudo(id)
+    const r = await borrarArticuloAccion(INICIAL, formData(id))
+    expect(r.aviso).toBeNull()
+    expect(r.error).toMatch(/se vendió/)
+  })
+
+  // El permiso corta ANTES de tocar la base, igual que el resto de las
+  // acciones de este archivo. Y se comprueba el efecto, no sólo el throw: el
+  // artículo tiene que seguir estando.
+  it('un empleado sin ARTICULOS_BORRAR no llega a borrar nada', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Que el empleado no puede borrar')
+    await expect(
+      comoEmpleadoSinPermisos(() => borrarArticuloAccion(INICIAL, formData(id))),
+    ).rejects.toThrow('FORBIDDEN')
+
+    const { rows } = await owner.query(`SELECT count(*)::int AS n FROM articulos WHERE id = $1`, [
+      id,
+    ])
+    expect(rows[0].n).toBe(1)
+  })
+
+  // Y que sea ESE permiso y no el de editar: los dos son distintos a propósito.
+  it('exige ARTICULOS_BORRAR y no ARTICULOS_EDITAR', () => {
+    expect(FUENTE).toMatch(/borrarArticuloAccion[\s\S]{0,400}comoPuede\('ARTICULOS_BORRAR'/)
   })
 })

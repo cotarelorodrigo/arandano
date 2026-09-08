@@ -199,6 +199,34 @@ describe('/formas-de-pago: "Plan nuevo" existe dos veces y la pantalla entera la
   })
 })
 
+describe('/inventario/[id]: "Borrar" existe dos veces y las dos las gobierna ARTICULOS_BORRAR', () => {
+  const FICHA = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')
+  const PAGE = readFileSync('app/(app)/inventario/[id]/page.tsx', 'utf8')
+
+  it('la pantalla resuelve el permiso propio, no reusa ARTICULOS_EDITAR', () => {
+    expect(PAGE).toContain("puedeConSesion(sesion, 'ARTICULOS_BORRAR')")
+  })
+
+  it('las dos copias del diálogo se guardan con la MISMA expresión', () => {
+    expect([...FICHA.matchAll(/puedeBorrar && <DialogoDeBorrado/g)]).toHaveLength(2)
+  })
+
+  it('ninguna copia se cuela con puedeEditar', () => {
+    expect(FICHA).not.toMatch(/puedeEditar && <DialogoDeBorrado/)
+  })
+
+  // `DialogContent` de Radix no se monta cerrado, así que un render estático
+  // no ve el resumen que le llega al diálogo: `resumen={resumenBorrado ?? …}`
+  // podría estar hardcodeado en ceros y los casos que SÍ renderizan seguirían
+  // verdes igual. Mismo estilo que los tres de arriba: cuenta apariciones por
+  // FUENTE, en las dos copias.
+  it('las dos copias le pasan el resumen real, no uno hardcodeado', () => {
+    expect([
+      ...FICHA.matchAll(/resumen=\{resumenBorrado \?\? \{ movimientos: 0, unidades: 0, ventas: 0 \}\}/g),
+    ]).toHaveLength(2)
+  })
+})
+
 describe('/bot: el disparador de conexión existe dos veces y las dos son sólo del dueño', () => {
   const PAGINA = readFileSync('app/(app)/bot/page.tsx', 'utf8')
   const FORMULARIOS = readFileSync('app/(app)/bot/formularios.tsx', 'utf8')

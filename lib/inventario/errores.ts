@@ -2,6 +2,11 @@ import { Prisma } from '@/generated/prisma/client'
 
 export type CodigoErrorDeInventario =
   | 'ARTICULO_INEXISTENTE'
+  // Lo tira `borrarArticulo` por los DOS caminos: el conteo previo de
+  // venta_items, y la violación de la FK cuando el conteo pierde la carrera
+  // contra un cobro. Los dos dan el mismo código a propósito — para quien
+  // borra es el mismo hecho.
+  | 'ARTICULO_CON_VENTAS'
   // Lo tira `exigirUsuario` (lib/ventas/pertenencia.ts) y lo hace con
   // `ErrorDeVenta`, no con la clase de acá: la función se comparte con el motor
   // de ventas y duplicarla para cambiarle la clase al error sería tener dos
