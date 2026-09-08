@@ -635,9 +635,20 @@ export async function borrarArticulo(entrada: {
   const { tenantId, articuloId } = entrada
   try {
     await enTransaccionDeTenant(tenantId, async (tx) => {
-      const ventas = await tx.ventaItem.count({ where: { articuloId } })
-      if (ventas > 0) {
-        throw new ErrorDeInventario('ARTICULO_CON_VENTAS', mensajeDeVentas(ventas))
+      // Ventas DISTINTAS, no líneas — mismo motivo que `resumenDeBorrado`
+      // (ver su docblock): con un artículo con serie, dos unidades vendidas
+      // en la misma venta son siempre dos líneas, así que `ventaItem.count`
+      // diría "se vendió 2 veces" de una venta que fue una sola. Antes de
+      // este ajuste (review de la rama) las dos funciones contaban distinto
+      // el mismo hecho, y el diálogo y el error del servidor se
+      // contradecían.
+      const ventas = await tx.ventaItem.findMany({
+        where: { articuloId },
+        distinct: ['ventaId'],
+        select: { ventaId: true },
+      })
+      if (ventas.length > 0) {
+        throw new ErrorDeInventario('ARTICULO_CON_VENTAS', mensajeDeVentas(ventas.length))
       }
 
       // `deleteMany` y no `delete`, por lo mismo que `marcarBaja` usa
@@ -662,15 +673,20 @@ export async function borrarArticulo(entrada: {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') {
       throw new ErrorDeInventario(
         'ARTICULO_CON_VENTAS',
-        'este artículo se vendió: borrarlo se llevaría esas ventas. Podés desactivarlo.',
+        'este artículo se vendió: borrarlo se llevaría esas ventas.',
       )
     }
     throw traducirErrorDeBase(e)
   }
 }
 
+// Sin "Podés desactivarlo" (review de la rama, M2): el motor no sabe de
+// permisos, y esa salida sólo es válida con ARTICULOS_EDITAR y con el
+// artículo todavía activo — las mismas condiciones que decide `porQueNo` del
+// lado del diálogo, que sí las conoce. Meter esa lógica acá rompería la capa:
+// el mensaje del motor dice el hecho, no qué hacer con él.
 function mensajeDeVentas(ventas: number): string {
   return ventas === 1
-    ? 'este artículo se vendió 1 vez: borrarlo se llevaría esa venta. Podés desactivarlo.'
-    : `este artículo se vendió ${ventas} veces: borrarlo se llevaría esas ventas. Podés desactivarlo.`
+    ? 'este artículo se vendió 1 vez: borrarlo se llevaría esa venta.'
+    : `este artículo se vendió ${ventas} veces: borrarlo se llevaría esas ventas.`
 }

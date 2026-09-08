@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 // acciones.ts es 'use server' y su contrato ya lo prueba acciones.test.ts
 // contra una base real. Acá sólo importa qué renderiza el diálogo.
-vi.mock('./acciones', () => ({ borrarArticuloAccion: vi.fn() }))
+vi.mock('./acciones', () => ({ borrarArticuloAccion: vi.fn(), bajaArticulo: vi.fn() }))
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 
 async function render(
@@ -96,5 +96,34 @@ describe('el motivo cuando no se puede', () => {
     const { porQueNo } = await import('./borrar-dialogo')
     expect(porQueNo(2, false, false)).toContain('se vendió 2 veces')
     expect(porQueNo(2, false, false)).not.toContain('desactivarlo')
+  })
+})
+
+/**
+ * El botón "Desactivar" del diálogo (I1, review de la rama): las mismas tres
+ * condiciones que ya fija `porQueNo` arriba, ahora sobre la función que
+ * decide si el BOTÓN aparece. `DialogContent` no se monta con el diálogo
+ * cerrado, así que esto es lo único verificable sin abrirlo — el mismo motivo
+ * por el que `queSeLleva` y `porQueNo` ya son funciones puras exportadas.
+ */
+describe('si el diálogo ofrece el botón "Desactivar"', () => {
+  it('sí, con ventas, activo, y con permiso para editar', async () => {
+    const { ofreceDesactivar } = await import('./borrar-dialogo')
+    expect(ofreceDesactivar({ movimientos: 0, unidades: 0, ventas: 3 }, false, true)).toBe(true)
+  })
+
+  it('no, sin ventas — ahí la cara del diálogo es la permisiva, no ésta', async () => {
+    const { ofreceDesactivar } = await import('./borrar-dialogo')
+    expect(ofreceDesactivar({ movimientos: 0, unidades: 0, ventas: 0 }, false, true)).toBe(false)
+  })
+
+  it('no, si el artículo ya está desactivado', async () => {
+    const { ofreceDesactivar } = await import('./borrar-dialogo')
+    expect(ofreceDesactivar({ movimientos: 0, unidades: 0, ventas: 3 }, true, true)).toBe(false)
+  })
+
+  it('no, sin ARTICULOS_EDITAR', async () => {
+    const { ofreceDesactivar } = await import('./borrar-dialogo')
+    expect(ofreceDesactivar({ movimientos: 0, unidades: 0, ventas: 3 }, false, false)).toBe(false)
   })
 })

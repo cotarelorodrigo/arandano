@@ -16,7 +16,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import type { ResumenDeBorrado } from '@/lib/inventario/articulos'
-import { borrarArticuloAccion } from './acciones'
+import { borrarArticuloAccion, bajaArticulo } from './acciones'
 
 /**
  * Qué se lleva puesto el borrado, en una oración.
@@ -64,6 +64,25 @@ export function porQueNo(ventas: number, desactivado: boolean, puedeEditar: bool
 }
 
 /**
+ * Si el diálogo ofrece el botón "Desactivar", además de mencionarlo en la
+ * frase de `porQueNo` (I1, review de la rama). Las MISMAS tres condiciones:
+ * hay ventas (si no, la cara del diálogo es la permisiva y no ésta), el
+ * artículo no está desactivado todavía, y la persona tiene `ARTICULOS_EDITAR`
+ * — el botón y la frase tienen que aparecer y desaparecer juntos.
+ *
+ * Exportada y pura por la misma razón que `queSeLleva`/`porQueNo`: el botón
+ * vive dentro de `DialogContent`, que Radix no monta con el diálogo cerrado,
+ * así que un render estático no lo ve nunca.
+ */
+export function ofreceDesactivar(
+  resumen: ResumenDeBorrado,
+  desactivado: boolean,
+  puedeEditar: boolean,
+): boolean {
+  return resumen.ventas > 0 && !desactivado && puedeEditar
+}
+
+/**
  * El botón "Borrar" de la ficha, con su diálogo.
  *
  * **Se dibuja siempre**, con ventas o sin ellas: quien busca el botón y no lo
@@ -71,6 +90,17 @@ export function porQueNo(ventas: number, desactivado: boolean, puedeEditar: bool
  * donde la regla se puede explicar en el momento en que importa. Con ventas, el
  * botón de confirmar queda apagado y a la vista —no ausente—, que es lo que ata
  * el mensaje a la acción que la persona vino a hacer.
+ *
+ * **Con ventas, un tercer botón — "Desactivar" — dispara la salida que la
+ * frase de `porQueNo` ya menciona**, en vez de dejarla como algo que hay que
+ * ir a buscar afuera del diálogo. Aparece con las MISMAS tres condiciones que
+ * `porQueNo` usa para mencionarla (`ofreceDesactivar`): hay ventas, el
+ * artículo no está desactivado todavía, y la persona tiene `ARTICULOS_EDITAR`
+ * — el botón y la frase aparecen y desaparecen juntos. Dispara `bajaArticulo`
+ * —la misma acción del servidor que ya usan las dos copias del botón
+ * "Desactivar" de la ficha— con su propio `useTransition`, y cierra el
+ * diálogo al terminar: `revalidatePath` ya refresca esta misma ficha, así que
+ * no hace falta navegar a ningún lado.
  *
  * **El toast se lanza en el handler**, con el resultado en la mano, y NO en un
  * `useEffect`: es la lección del ABM de categorías. El componente Toaster vive
@@ -106,8 +136,10 @@ export function DialogoDeBorrado({
 }) {
   const [abierto, setAbierto] = useState(false)
   const [enCurso, empezar] = useTransition()
+  const [desactivando, empezarDesactivar] = useTransition()
   const router = useRouter()
   const sePuede = resumen.ventas === 0
+  const mostrarDesactivar = ofreceDesactivar(resumen, desactivado, puedeEditar)
 
   function borrar() {
     empezar(async () => {
@@ -115,12 +147,44 @@ export function DialogoDeBorrado({
       datos.set('articuloId', articuloId)
       const r = await borrarArticuloAccion({ error: null, aviso: null }, datos)
       if (r.error) {
+        // Se CIERRA, no se refresca (review de la rama, M3): quedarse abierto
+        // dejaba el diálogo diciendo "¿Borrar X? Se borran el artículo y sus
+        // 3 movimientos…" —la cara permisiva, calculada con el `resumen` de
+        // cuando se abrió— mientras el toast, con `duration: Infinity`,
+        // contaba lo contrario. Refrescar la cara pediría un segundo viaje al
+        // servidor (recalcular `resumenDeBorrado`) sólo para un camino que
+        // este mismo módulo ya trata como una carrera excepcional (ver el
+        // docblock de `borrarArticulo`, `lib/inventario/articulos.ts`): la
+        // base es la que de verdad decide, y el toast —que no se cierra
+        // solo— es lo que le queda a la persona para leer el motivo real.
+        setAbierto(false)
         toast.error(r.error, { id: `borrar-${articuloId}`, duration: Infinity })
         return
       }
       setAbierto(false)
       toast.success(`${nombre} se borró del inventario.`, { id: `borrar-${articuloId}` })
       router.push('/inventario')
+    })
+  }
+
+  // Mismo patrón que `borrar()`: `useTransition` propio —no comparte
+  // `enCurso`, porque son dos acciones distintas y disparar una no puede
+  // dejar la otra con un estado de "en curso" que no le corresponde— y el
+  // toast en el handler, con el resultado en la mano. `bajaArticulo` ya hace
+  // `revalidatePath` de esta misma ficha, así que alcanza con cerrar el
+  // diálogo: no hace falta navegar a ningún lado, el artículo se queda acá.
+  function desactivar() {
+    empezarDesactivar(async () => {
+      const datos = new FormData()
+      datos.set('articuloId', articuloId)
+      const r = await bajaArticulo({ error: null, aviso: null }, datos)
+      if (r.error) {
+        setAbierto(false)
+        toast.error(r.error, { id: `desactivar-${articuloId}`, duration: Infinity })
+        return
+      }
+      setAbierto(false)
+      toast.success(r.aviso ?? 'Artículo desactivado.', { id: `desactivar-${articuloId}` })
     })
   }
 
@@ -148,6 +212,15 @@ export function DialogoDeBorrado({
           <Button variant="destructive" disabled={!sePuede || enCurso} onClick={borrar}>
             {enCurso ? 'Borrando…' : 'Borrar'}
           </Button>
+          {/* La misma salida que `porQueNo` ofrece en prosa, ahora con un
+              botón real detrás (I1, review de la rama): antes había que
+              cancelar, buscar "Desactivar" en el Topbar o en el pie, y volver
+              a decidir. */}
+          {mostrarDesactivar && (
+            <Button variant="destructive" disabled={desactivando} onClick={desactivar}>
+              {desactivando ? 'Desactivando…' : 'Desactivar'}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

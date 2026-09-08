@@ -677,10 +677,18 @@ export function FichaDeArticulo({
                 type="submit"
                 form={FORM_EDITAR_ARTICULO}
                 disabled={editando}
-                className={`flex-1 ${CLASES_BOTON_PIE}`}
+                // `min-w-0` (I2, review de la rama): sin él, este botón —el
+                // único `flex-1` de los tres, ahora que "Borrar" se sumó al
+                // lado de "Desactivar"— no puede encogerse por debajo del
+                // ancho de su propio contenido (`min-width: auto` es el
+                // default de un ítem flex), y a 390 px los tres piden más
+                // ancho del que hay. `truncate` en el texto es lo que
+                // convierte ese encogimiento en algo legible («Guardar
+                // cambi…») en vez de un desborde silencioso.
+                className={`min-w-0 flex-1 ${CLASES_BOTON_PIE}`}
               >
                 <Check aria-hidden="true" className="size-[15px]" />
-                {editando ? 'Guardando…' : 'Guardar cambios'}
+                <span className="truncate">{editando ? 'Guardando…' : 'Guardar cambios'}</span>
               </Button>
             </>
           )}
