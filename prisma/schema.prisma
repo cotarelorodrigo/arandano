@@ -58,6 +58,13 @@ enum Permiso {
   // negocio, no lo que reparte poder.
   BOT
 
+  // Borrar un artículo del todo, con su historial de stock. Aparte de
+  // ARTICULOS_EDITAR —que ya cubre desactivar y reactivar— porque se delega
+  // por lo que la acción MUEVE: desactivar mueve una columna y se deshace con
+  // un click; borrar no se deshace y se lleva filas de dos tablas más. Es el
+  // mismo escalón que separa VENTAS_ANULAR y ORDENES_ANULAR de la edición.
+  ARTICULOS_BORRAR
+
   @@map("permiso")
 }
 
