@@ -177,9 +177,11 @@ rastro, la salida conocida es una tabla de ediciones con su propia línea en
 
 ### Lo que esto abre, dicho explícito
 
-Ésta es **la primera escritura sobre una venta ya cobrada** en todo el producto.
-Hasta hoy, una venta se creaba entera en una transacción y lo único que podía
-pasarle después era anularse.
+Ésta es **la primera edición del CONTENIDO de una venta ya cobrada** en todo el
+producto. La distinción importa: `anular` también escribe sobre una venta
+cerrada (`anuladaEn`, `anuladaPorId`), pero cambia su ESTADO. Hasta hoy una
+venta se creaba entera en una transacción y lo único que podía pasarle después
+era anularse; lo que esto estrena es editar lo que la venta DICE.
 
 Lo que la hace segura es su alcance: la acción hace un `update` de **una sola
 columna**, por `id` y filtrado por tenant, y no toca ninguna otra. Nada de lo
@@ -247,7 +249,14 @@ que sirve `main`.
 2. Editarlo desde la ficha y ver que persiste al recargar.
 3. Vaciarlo desde la ficha y ver que la card queda vacía y no con espacios.
 4. Editar el detalle de una venta **anulada**.
-5. A 390 px: que el textarea del panel de cobro no empuje el botón Cobrar fuera
-   de la vista. Es el único riesgo de presentación del ciclo y ningún test lo
-   contesta.
-6. Que una venta sin detalle se vea exactamente como antes en las dos pantallas.
+5. La altura del textarea del panel de cobro, que es el riesgo de presentación
+   del ciclo y el único punto que ningún test contesta — y que **no es el mismo
+   en los dos anchos**. En escritorio el botón Cobrar vive debajo del campo, al
+   pie de la card: ahí se mira que no le coma el aire a los totales ni al chip
+   de faltante. A 390 px ese botón NO puede quedar fuera de la vista —vive en
+   `PieDeVenta`, que es `sticky bottom-0`—, así que lo que hay que mirar es lo
+   inverso: si el pie tapa el textarea, y cuánto hay que scrollear el panel
+   para alcanzarlo.
+6. Que una venta sin detalle se vea exactamente como antes en `/vender`, y en
+   `/ventas/[id]` con la card "Detalles" vacía de más — se dibuja siempre, a
+   propósito.
