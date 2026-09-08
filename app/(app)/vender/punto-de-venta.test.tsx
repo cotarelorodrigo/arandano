@@ -2560,3 +2560,58 @@ describe('el punto de venta en el teléfono', () => {
     expect(veces, 'una por columna: Artículo, Cantidad, Precio, Subtotal, Quitar').toBe(5)
   })
 })
+
+describe('el detalle de la venta', () => {
+  it('el textarea existe, se rotula "Detalles" y viaja con el nombre que lee cobrar', async () => {
+    const html = await render()
+    expect(html).toContain('Detalles')
+    expect(html).toMatch(/<textarea[^>]*name="detalle"/)
+  })
+
+  // Adentro del <form> de cobro y no suelto en la card: si quedara afuera, el
+  // submit no lo llevaría y el campo no llegaría nunca al servidor — sin que
+  // nada fallara, porque `cobrar` lo trata como opcional.
+  it('vive DENTRO del <form> de cobro', async () => {
+    const html = await render()
+    const desdeElForm = html.slice(html.indexOf('<form'))
+    const hastaElCierre = desdeElForm.slice(0, desdeElForm.indexOf('</form>'))
+    expect(hastaElCierre).toMatch(/<textarea[^>]*name="detalle"/)
+  })
+
+  // El tope se lee del módulo compartido, no se escribe a mano acá: es el
+  // mismo número que corta el servidor, y dos copias son dos números que se
+  // desincronizan.
+  it('el maxLength es el tope del servidor', async () => {
+    const { TOPE_DETALLE } = await import('@/lib/ventas/detalle')
+    const html = await render()
+    expect(html).toMatch(new RegExp(`<textarea[^>]*maxlength="${TOPE_DETALLE}"`, 'i'))
+    expect(SIN_COMENTARIOS).toContain('TOPE_DETALLE')
+    expect(SIN_COMENTARIOS).not.toMatch(/maxLength=\{500\}/)
+  })
+
+  // Se limpia al cobrar, junto con el carrito y los pagos: sin esto, el detalle
+  // de la venta anterior quedaría pegado a la siguiente — un dato de entrega
+  // aplicado a la persona equivocada.
+  it('el reset tras cobrar lo vacía junto con el carrito', async () => {
+    expect(SIN_COMENTARIOS).toMatch(
+      /setVentaProcesada\(estado\.venta\.id\)[\s\S]*?setDetalle\(''\)[\s\S]*?\n\s*\}/,
+    )
+  })
+
+  // El caso `puedeDispararCobroDesdeFoco('TEXTAREA') === false` ya existe, tal
+  // cual, más arriba en este archivo (la allow-list del atajo global: sólo
+  // BODY o sin foco disparan Enter). Repetirlo acá sería la misma aserción dos
+  // veces. Lo que ese caso NO puede cubrir es que ESTE <Textarea> en
+  // particular no se salga de esa allow-list con un manejador de teclado
+  // propio —el modo de falla real que este repo ya pagó una vez con los
+  // Select de Radix, cuyo evento llegaba a `window` sin que la allow-list lo
+  // viera—. Sobre SIN_COMENTARIOS, y no sobre FUENTE, para que un comentario
+  // que algún día mencione "onKeyDown" en prosa no dispare el caso por la
+  // razón equivocada.
+  it('el <Textarea> del detalle no declara ningún manejador de teclado propio', () => {
+    const desdeElTextarea = SIN_COMENTARIOS.slice(SIN_COMENTARIOS.indexOf('<Textarea'))
+    const hastaElCierre = desdeElTextarea.slice(0, desdeElTextarea.indexOf('/>'))
+    expect(hastaElCierre).toContain('name="detalle"')
+    expect(hastaElCierre).not.toMatch(/onKey(Down|Up|Press)/)
+  })
+})

@@ -371,6 +371,14 @@ campo de cotización, ver *Decisiones*.
   entre sí. **El vuelto se calcula contra lo que hay que cobrar por esa fila,
   no contra su base**: con un plan de efectivo en pesos —el descuento por pago
   contado— los dos números no coinciden, y restar la base devolvía de menos.
+- **Detalles (opcional).** Un textarea de dos filas dentro del `<form>` de cobro,
+  entre los pagos y el pie. Texto libre para el dato de entrega —a quién se le
+  entregó, una dirección, un teléfono—: no participa de ningún total ni de
+  ningún chip, así que un local que no lo use no ve ninguna diferencia. Viaja
+  como el campo `detalle` del formulario; el saneo y el tope (500) los aplica el
+  motor, una sola vez, en `lib/ventas/detalle.ts`. Se limpia al cobrar junto con
+  el carrito: el detalle es de esa venta, no del turno. `Enter` con el foco acá
+  no cobra — la allow-list del atajo global sólo dispara con el foco en `<body>`.
 - Cobrar apretando `Enter` con el foco en `<body>` (sin nada en particular
   enfocado), y vaciar el carrito con `Esc`.
 - Ver el estado real de la caja del turno en un chip del header, y abrirla o
