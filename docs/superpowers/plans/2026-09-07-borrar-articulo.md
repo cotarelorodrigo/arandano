@@ -105,7 +105,7 @@ describe('el borrado de un artículo', () => {
   async function conMovimiento(e: { tenantId: string; usuarioId: string; articuloId: string }) {
     await cliente.query(
       `INSERT INTO movimientos_stock
-         (id, tenant_id, articulo_id, usuario_id, motivo, cantidad, creado_en)
+         (id, tenant_id, articulo_id, usuario_id, motivo, delta, creado_en)
        VALUES (gen_random_uuid(), $1, $2, $3, 'INGRESO', 1, now())`,
       [e.tenantId, e.articuloId, e.usuarioId],
     )
@@ -176,7 +176,7 @@ describe('el borrado de un artículo', () => {
     const unidadId = await conUnidad(e)
     await cliente.query(
       `INSERT INTO movimientos_stock
-         (id, tenant_id, articulo_id, unidad_id, usuario_id, motivo, cantidad, creado_en)
+         (id, tenant_id, articulo_id, unidad_id, usuario_id, motivo, delta, creado_en)
        VALUES (gen_random_uuid(), $1, $2, $3, $4, 'BAJA', -1, now())`,
       [e.tenantId, e.articuloId, unidadId, e.usuarioId],
     )

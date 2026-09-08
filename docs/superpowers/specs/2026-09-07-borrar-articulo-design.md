@@ -137,6 +137,26 @@ policy `tenant_aislamiento`, así que un artículo de otro tenant no se borra
 —es invisible— y sus movimientos no se pueden alcanzar por la cascada de un
 borrado que nunca ocurre.
 
+**Y hay una segunda pregunta, sobre las filas que la cascada SÍ alcanza**
+(hallazgo M6, review de la rama): el análisis de arriba mira sólo la fila
+`articulos` que se borra, no las de `movimientos_stock`/`unidades_articulo`
+que se van con ella. Como ninguna FK del schema es compuesta con `tenant_id`
+—el mismo hallazgo que ya deja anotado `CLAUDE.md` para las FK en general—,
+nada impide por estructura que una fila de esas dos tablas tenga un
+`tenant_id` propio y un `articulo_id` que apunte a un artículo de OTRO tenant.
+Antes de este ciclo, con `Restrict`, una fila así habría **bloqueado** el
+`DELETE` con una violación de FK (el mismo modo de falla que el test de la
+carrera ejercita contra `venta_items`, que se queda en `Restrict`). Con
+`Cascade`, esa misma fila mal-tenanteada **se borra en silencio** junto con el
+artículo ajeno, sin ningún error. **Hoy es inalcanzable**: ningún camino de la
+aplicación puede escribir una fila de `movimientos_stock`/`unidades_articulo`
+con un `tenant_id` que no coincida con el de su `articulo_id` — `enTransaccionDeTenant`
+fija el `tenant_id` de la sesión antes de cualquier INSERT, y todo escritor de
+estas dos tablas pasa por ahí. Pero la CONSECUENCIA sí cambió con este ciclo
+—de "bloquea" a "borra en silencio"— y valía la pena dejarla escrita, para
+que el día que alguien abra un camino de escritura nuevo sepa que esa garantía
+ya no está.
+
 ### La migración es inerte
 
 Dos migraciones, por separado como manda el precedente
@@ -187,8 +207,20 @@ El `catch` sigue delegando en `traducirErrorDeBase` para todo lo demás, como
 ### `resumenDeBorrado(tenantId, articuloId)`
 
 Devuelve `{ movimientos, unidades, ventas }` para que el diálogo diga números
-reales. **Una sola consulta**, con el `_count` anidado de Prisma sobre las tres
-relaciones, no tres `count` sueltos.
+reales. **`movimientos` y `unidades` salen de una sola consulta**, con el
+`_count` anidado de Prisma sobre esas dos relaciones — dos subconsultas sobre
+la misma fila.
+
+**`ventas`, en cambio, es una SEGUNDA consulta, y no un tercer `_count`
+anidado — a propósito, no por descuido.** `_count.ventaItems` cuenta LÍNEAS de
+venta, no ventas: con un artículo con serie, dos unidades vendidas en la misma
+venta son siempre dos líneas (`crearVenta` exige cantidad 1 por línea con
+serie), así que ese número diría "se vendió 2 veces" de una venta que fue una
+sola. Lo que el diálogo necesita son ventas DISTINTAS, y eso pide su propio
+`findMany` de `venta_items` con `distinct: ['ventaId']`. **Corregido durante la
+review de la rama** (hallazgo M1), después de que `borrarArticulo` —que en su
+primera versión sí contaba líneas, con `ventaItem.count`— y el diálogo
+mostraran dos números distintos para el mismo hecho.
 
 La lee el Server Component de `/inventario/[id]` y la pasa como props. Puede
 quedar vieja entre que la pantalla se renderiza y alguien aprieta Borrar, y
@@ -276,11 +308,16 @@ importa.
 ### Después de borrar
 
 La ficha deja de existir, así que la acción devuelve ok y **el cliente** hace
-`router.push('/inventario')` y lanza el toast de `sonner` ("Artículo
-borrado.") **en el mismo handler**, con el resultado en la mano — no desde un
-`useEffect` sobre `useActionState`, que es la lección que dejó escrita el ciclo
-de la UI de categorías. La acción hace `revalidatePath('/inventario')` para que
-el listado al que se navega no venga cacheado con el artículo todavía adentro.
+`router.push('/inventario')` y lanza el toast de `sonner` (`"${nombre} se
+borró del inventario."` — corregido en la review de la rama, hallazgo M7: la
+acción del servidor devuelve el aviso genérico "Artículo borrado.", pero el
+diálogo lo ignora y arma el suyo propio con el NOMBRE del artículo, que es
+más útil en una pantalla —`/inventario`, adonde se navega justo después— que
+lista varios a la vez) **en el mismo handler**, con el resultado en la mano —
+no desde un `useEffect` sobre `useActionState`, que es la lección que dejó
+escrita el ciclo de la UI de categorías. La acción hace
+`revalidatePath('/inventario')` para que el listado al que se navega no venga
+cacheado con el artículo todavía adentro.
 
 ### El teléfono
 

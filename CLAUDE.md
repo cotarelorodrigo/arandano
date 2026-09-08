@@ -2544,10 +2544,16 @@ Y del producto:
   confirmar porque `arandano-dev` bind-montea `/root/arandano` y no el
   worktree— acá se puede hacer después del merge. Lo que hay que mirar: cargar
   un duplicado con stock inicial y borrarlo desde la ficha, viendo que el
-  listado quede limpio; abrir el diálogo en un artículo vendido y leer el
-  mensaje; abrirlo en uno vendido **y ya desactivado**, donde no tiene que
-  ofrecer desactivar; mirar el pie a 390 px con "Borrar" y "Guardar cambios" en
-  la misma fila; y que un empleado con `ARTICULOS_EDITAR` y sin
+  listado quede limpio; abrir el diálogo en un artículo vendido, leer el
+  mensaje y apretar el botón "Desactivar" que ahora dispara ahí mismo, viendo
+  que el diálogo se cierra y la ficha queda desactivada sin recargar a mano;
+  abrirlo en uno vendido **y ya desactivado**, donde no tiene que ofrecer
+  desactivar (ni la frase ni el botón); mirar el pie a 390 px con los TRES
+  botones —"Borrar",
+  "Desactivar" y "Guardar cambios"— en la misma fila, sin que el tercero se
+  corte (es el que puede no entrar: `min-w-0` + `truncate` lo dejan encoger de
+  verdad, y a ese ancho es donde hay que confirmar que se ve legible y no
+  desbordado); y que un empleado con `ARTICULOS_EDITAR` y sin
   `ARTICULOS_BORRAR` vea "Guardar cambios" y no vea "Borrar".
 
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
