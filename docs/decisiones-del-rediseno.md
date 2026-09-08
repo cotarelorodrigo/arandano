@@ -270,3 +270,139 @@ archivo del repo**: un `Update` se confirma al releerlo dentro de la sesión y e
 archivo en disco no cambia. Las correcciones a la maqueta van a
 `docs/correcciones-pendientes-del-pen.md`, para que una persona las aplique en
 Pencil.
+
+## El rediseño de la landing (2026-09-04)
+
+Este ciclo es distinto de los nueve de arriba y conviene decirlo de entrada: no
+derivó de la maqueta, **se apartó de ella entera**, por decisión explícita del
+dueño del producto y con la deuda registrada en
+`docs/correcciones-pendientes-del-pen.md` (entrada 32). El disparador fueron tres
+problemas nombrados a la vez: la página se veía genérica, no convertía, y
+describía un producto de hace un mes.
+
+### "Genérica" tenía dos causas nombrables, no era una impresión
+
+La primera: la página era el kit de tarjetas de SaaS. Todo picado en cajas de
+`rounded-[18px]` — el núcleo del producto, un rubro y un plan con el mismo radio
+y la misma caja—, así que la estructura no decía nada sobre el contenido. La
+segunda: la puntuación dominante era la cadena de puntos medios ("5 días gratis
+· sin tarjeta · el alta es instantánea", "Términos · Privacidad · Estado del
+servicio", "por mes · IVA incluido").
+
+**Lo que se hizo**: cada sección tiene ahora la forma de lo suyo —el núcleo una
+banda, los módulos tres paneles, los rubros un índice, los planes cuatro
+columnas— y las cadenas de puntos medios quedaron sólo donde son una enumeración
+real (los rubros de un módulo, las piezas del núcleo).
+
+**Lo que cuesta si está mal**: es presentación, se revierte revirtiendo la
+imagen. No hay migración.
+
+### El héroe pasó de captura a producto
+
+Decisión del dueño del producto entre tres opciones. El retrato estático decía
+"no es una captura" y la única forma de comprobarlo era creerla.
+
+**Lo que se pierde**: el héroe dejó de ser server-only. `Retrato` es ahora un
+componente cliente y la página carga JavaScript que antes no cargaba.
+
+**Lo que lo hace tolerable**: `motion` se carga con `LazyMotion`, el carrito no
+tiene animación de entrada (protege el LCP de la única página indexable), y el
+marcado inicial sale del servidor completo — sin JavaScript se ve el carrito
+entero con sus cuatro líneas y su total, sólo que no se puede tocar.
+
+### `motion` entra al repo, y con condiciones
+
+Es la primera dependencia del repo que sirve sólo a la presentación, en un
+proyecto que sacó `recharts` entero y rechazó `next-themes` por no arrastrar una
+librería para caer en el mismo default.
+
+**El motivo, acotado**: animar la salida de un nodo que React está sacando del
+árbol. Una transición de CSS necesita que el elemento exista; cuando se saca una
+línea del carrito ya no existe. `AnimatePresence` lo mantiene montado mientras
+colapsa. Los dos usos son ésos: la fila que se va y el aviso de stock.
+
+**Lo que se descartó**: GSAP — imperativo, le pelea al modelo de render de
+React, y sus fuertes son justamente la capa de revelados por scroll.
+
+**Y lo que NO se descartó, contra la recomendación.** La capa de movimiento
+completa —titular tipeado, revelados por sección, hovers en tarjetas, barra de
+progreso— se propuso como la opción a evitar y el dueño del producto la eligió
+igual, con la objeción sobre la mesa. Vive en `app/sitio/movimiento.tsx` y la
+objeción queda escrita en su docblock en vez de discutirse de nuevo: el
+revelado por sección es el patrón más repetido de las landings generadas, y el
+titular tipeado empuja el LCP de la única página indexable del producto.
+
+**Lo que sí se hizo para que el costo no sea gratuito**: el texto del titular
+viaja completo en el HTML dentro de un `sr-only` —los buscadores y los lectores
+de pantalla nunca ven un H1 vacío—, la caja del titular se reserva antes de
+tipear para que no haya salto de layout, todo se apaga con
+`prefers-reduced-motion`, y un `<noscript>` devuelve a la vista las cuatro
+secciones que salen del servidor en `opacity: 0`. Sin ese último seguro, un
+visitante sin JavaScript vería cuatro de las siete secciones en blanco.
+
+**Lo que lo mantiene acotado**: `app/sitio/retrato.test.tsx` deja el CARRITO
+afuera del scroll (falla si aparece `whileInView` o `useScroll` ahí), exige
+`m.*` en vez de `motion.*` y `LazyMotion`; `app/sitio/movimiento.test.tsx` fija
+las tres defensas de arriba.
+
+### El copy dice lo que el producto hace, no lo que va a hacer
+
+La página prometía "el alta es instantánea", "en dos minutos tenés tu local
+cargado" y "elegís el rubro". Ninguna de las tres era cierta: el registro
+público está apagado a propósito, el alta se hace a mano y el formulario tiene
+un campo que guarda `rubro: null`.
+
+**La alternativa que se descartó**: construir el alta self-service para que la
+promesa fuera cierta. Es el ciclo más grande de los tres y no entraba acá; queda
+anotado como candidato siguiente.
+
+**El costo aceptado**: "te escribimos" convierte peor en el papel que "empezá en
+dos minutos". Lo que compra es no quemar al primer interesado que llegue
+esperando registrarse solo.
+
+### Un verbo para navegar y uno para enviar
+
+Había tres para la misma acción. La prop `textoBoton` de `Formulario` se
+eliminó, no se le cambió el default: mientras exista la prop, dos call sites
+pueden volver a divergir sin que nada avise.
+
+### El texto de un rubro se deriva de sus módulos
+
+Cuatro rubros anunciaban "Núcleo + Turnos" bajo un título que dice "Tu rubro ya
+está adentro", mientras la sección de arriba decía que Turnos está En camino. La
+frase estaba escrita a mano en `RUBROS` y el estado en `MODULOS`, sin nada que
+los atara.
+
+Ahora cada rubro declara **qué módulos activa**, como claves, y tanto el texto
+como el aviso de lo que falta se derivan de `MODULOS`. La contradicción dejó de
+ser posible de escribir. `app/sitio/datos.test.ts` la fija con un invariante:
+ningún rubro puede presentarse como completo si alguno de sus módulos está en
+camino.
+
+### El eje de ancho de Archivo, por fin en la landing
+
+`components/importe.module.css` dice desde hace tiempo que Archivo se eligió por
+su eje de ancho, y el producto lo usa en sus dos extremos: el cartel del frente
+del local (112%) y el número de la cinta de la registradora (85%). La landing
+tenía siete roles de Archivo y los siete en el 100% por default.
+
+El H1 pasa a `font-stretch: 78%`, el registro del rótulo. Es **la única**
+decisión tipográfica expresiva del ciclo: el resto de la página se mantiene
+disciplinado a propósito.
+
+**Lo que no se puede verificar**: `font-stretch` no es representable en el
+schema del `.pen`, así que ningún test puede atarlo a la maqueta en ninguna
+dirección. Sí lo ata `test/tipografia.test.ts` contra
+`docs/sistema-de-diseno.md`.
+
+### Dos superficies de marca, no tres
+
+El ciclo anterior había sumado la card "Núcleo" y la card "Profesional" a la
+franja del Cierre, con el argumento de que en una página con scroll la unidad de
+cuenta es la banda visible. El argumento sigue valiendo; el caso concreto no,
+porque Planes y Cierre son secciones consecutivas — cosa que el propio
+`docs/sistema-de-diseno.md` admitía con todas las letras.
+
+Quedan la banda del Total del carrito y la franja del Cierre, separadas por tres
+secciones. Y ahora hay un test que lo cuenta, así que la regla dejó de depender
+de que alguien se acuerde de leer el documento.

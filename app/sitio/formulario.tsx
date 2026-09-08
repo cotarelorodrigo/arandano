@@ -60,10 +60,15 @@ type Variante = 'clara' | 'oscura'
  * nodo `P2ZVg6`) y 'oscura' en el Cierre (sobre --marca, nodo `zruu5`) — el
  * campo y el contrato con `enviarLead` no cambian, sólo cómo se pinta.
  *
- * `textoBoton` porque el `.pen` pone un texto DISTINTO en cada lugar:
- * "Quiero probarlo" en el Hero, "Empezar" en el Cierre (default de esta
- * prop, porque el Cierre es donde más importa que un consumidor de esta
- * función no se olvide de pasarlo).
+ * UN SOLO TEXTO DE BOTÓN, desde el rediseño de la landing. El `.pen` ponía uno
+ * distinto en cada lugar ("Quiero probarlo" en el Hero, "Empezar" en el
+ * Cierre) y este componente lo recibía por prop. La página terminaba con tres
+ * verbos para una acción sola —más "Probar 5 días" en el Nav y en los planes—,
+ * y una interfaz que llama distinto a lo mismo obliga a la persona a
+ * averiguar si son lo mismo. Ahora los links que NAVEGAN dicen "Probar 5
+ * días" y el botón que ENVÍA dice "Que me escriban", que es exactamente lo que
+ * pasa al apretarlo: dejás tu contacto y alguien te escribe. La prop se fue
+ * para que no se pueda volver a divergir por descuido.
  *
  * Los `id` del campo y del honeypot salen de `useId()` y no están escritos a
  * mano (Critical C2 de la review final del cierre): landing.tsx renderiza
@@ -76,13 +81,15 @@ type Variante = 'clara' | 'oscura'
  * equivocado. `useId()` da un id único por instancia sin tocar el contrato con
  * `enviarLead`: `name="contacto"` y `name="sitio-web"` no cambian.
  */
+/** Lo que dice el botón que envía. Ver el docblock: uno solo para las dos
+ *  instancias, a propósito. */
+const TEXTO_DEL_BOTON = 'Que me escriban'
+
 export function Formulario({
   whatsapp,
-  textoBoton = 'Empezar',
   variante = 'clara',
 }: {
   whatsapp: string
-  textoBoton?: string
   variante?: Variante
 }) {
   const [estado, accion, enviando] = useActionState(enviarLead, INICIAL)
@@ -177,12 +184,12 @@ export function Formulario({
             className={`flex ${altura} items-center justify-center gap-2 rounded-[10px] px-5 text-sm font-bold disabled:opacity-60`}
             style={{ backgroundColor: 'var(--marca-soft)', color: 'var(--marca)' }}
           >
-            {enviando ? 'Enviando...' : textoBoton}
+            {enviando ? 'Enviando...' : TEXTO_DEL_BOTON}
             <ArrowRight aria-hidden="true" className="size-4" />
           </button>
         ) : (
           <Button type="submit" disabled={enviando} className={`${altura} gap-2 rounded-[10px] px-5`}>
-            {enviando ? 'Enviando...' : textoBoton}
+            {enviando ? 'Enviando...' : TEXTO_DEL_BOTON}
             <ArrowRight aria-hidden="true" className="size-4" />
           </Button>
         )}

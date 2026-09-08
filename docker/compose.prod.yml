@@ -37,7 +37,7 @@ services:
       # todavía — no existe el número real, y uno inventado manda a alguien al
       # WhatsApp de un desconocido. Completar antes del primer deploy con el
       # número real.
-      WHATSAPP_CONTACTO: ""
+      WHATSAPP_CONTACTO: "5491132672973"
       # La base de la API de Kapso, que es la capa de WhatsApp del bot. No es
       # secreta —la credencial es KAPSO_API_KEY y viaja por `env_file`—, así que
       # va inline: tenerla acá permite además apuntarla a un mock sin tocar el

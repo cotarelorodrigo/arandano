@@ -23,7 +23,27 @@
  * chip de servicio-tecnico: cada elemento ya trae tamaño y peso propios como
  * utilidades de Tailwind (`text-[Npx] font-bold tracking-[...]`), así que
  * sólo hace falta la familia.
+ *
+ * LA EXCEPCIÓN, DESDE EL REDISEÑO DE LA LANDING: el H1 del Hero sí le pide un
+ * ancho al eje. El motivo está escrito hace tiempo en
+ * `components/importe.module.css`: Archivo se eligió por ese eje, y el
+ * producto ya lo usa en sus dos extremos —el nombre del local pintado a lo
+ * ancho del frente (112%) y el número angosto de la cinta de la registradora
+ * (85%)—. La landing era el único lugar donde esa idea no se aplicaba: siete
+ * roles, los siete en el 100% por default, o sea la cara sin ninguna de las
+ * decisiones que motivaron elegirla.
+ *
+ * 78% es el registro del rótulo: la tipografía condensada de un cartel de
+ * local, que es lo que un titular de 62 px tiene que sonar. Y no es sólo
+ * expresivo — condensado, "Todo el local en un solo lugar" entra en dos
+ * renglones a 390 px en vez de tres, así que el Hero del teléfono empieza más
+ * arriba.
  */
 .archivo {
   font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+}
+
+.rotulo {
+  composes: archivo;
+  font-stretch: 78%;
 }

@@ -92,8 +92,7 @@ sistema— y no el dato que cada pantalla en particular existe para mostrar.
 | Tile "Total del período" en `/ventas` | Lo que entró en el período |
 | Bloque de stock en la ficha de un artículo | Cuánto hay |
 | Estado actual en la ficha de una orden | En qué anda el equipo |
-| Card "Núcleo" en la landing (`app/sitio/secciones.tsx`, sección Módulos) | El núcleo del producto — la landing no tiene un dato operativo que anclar |
-| Card "Profesional" en Planes, landing (`app/sitio/secciones.tsx`) | El plan recomendado |
+| Banda del total del carrito del héroe, landing (`app/sitio/retrato.tsx`) | El importe que se dice en voz alta, otra vez — es el mismo dato y el mismo rol que en `/vender` |
 
 **Y eso reescribe "no se usa dos veces en la misma vista", sin aflojarlo.** La
 regla sigue rigiendo entera entre las seis anclas de **contenido**: dos de
@@ -107,25 +106,33 @@ una regresión de esta regla: una ancla quién sos, la otra ancla qué estás
 mirando. `--marca` **sigue sin ser** un fondo de pantalla y **sigue sin**
 entrar en nada que no sea una identidad o un dato principal — eso no cambió.
 
-**Y la landing del ápex suma dos superficies más (Task 4 del cierre del
-rediseño, 2026-08-22), sin que la cuenta se rompa por otro motivo.** Antes de
-este ciclo la franja de Cierre era la única marca del sitio público; ahora
-`design/arandano.pen` (frame `Sitio / Landing`, consultado en vivo) dibuja
-además la card "Núcleo" —dentro de la sección Módulos— y la card
-"Profesional" —la destacada de Planes— con el mismo `$ar-primary-deep`, o sea
-`--marca`. Tres superficies en un solo documento HTML, y la regla de arriba
-sigue sin aflojarse: lo que cambia es la unidad de cuenta. Una pantalla de
-aplicación es un solo encuadre que se mira entero de una vez —por eso "dos
-anclas ahí" es sin remedio un problema de jerarquía—, pero la landing es una
-página que se recorre con scroll, banda por banda, y el Cierre nunca está a
-la vista al mismo tiempo que Módulos o Planes. La cuenta que importa —"¿hay
-dos cosas compitiendo por la misma mirada, en el mismo momento?"— sigue dando
-como máximo una por vez, igual que en cualquier pantalla de la aplicación; lo
-que deja de valer, sólo acá, es medirla contra el documento entero en lugar de
-contra la banda visible. Y ninguna de las dos ancla un número: la card
-Núcleo ancla la idea que sostiene el producto (núcleo + módulos), la card
-Profesional ancla la recomendación de precio — ninguna compite con la
-conversión, que sigue siendo lo único que el Cierre ancla.
+**Y la landing del ápex volvió a tener DOS superficies, no tres (rediseño de
+la landing).** Vale registrar el recorrido, porque la corrección la disparó la
+propia regla del párrafo siguiente. El cierre del rediseño (2026-08-22) había
+sumado la card "Núcleo" de Módulos y la card "Profesional" de Planes a la
+franja del Cierre, con el argumento de que en una página que se recorre con
+scroll la unidad de cuenta es la banda visible y no el documento entero. Ese
+argumento sigue siendo bueno y no se retira. Lo que no se sostuvo es el caso
+concreto: Planes y Cierre son secciones **consecutivas**, y el propio documento
+lo admitía abajo con todas las letras — "ahí el argumento de la banda visible
+es más débil".
+
+Hoy las dos superficies de la landing son la **banda del Total adentro del
+carrito del héroe** —que ancla la plata, exactamente el mismo rol que en
+`/vender`, y encima ahora es un número que se mueve cuando alguien toca el
+carrito— y la **franja del Cierre**, que ancla la conversión. Están separadas
+por tres secciones enteras, así que no compiten por ninguna mirada.
+
+Lo que perdieron Núcleo y Profesional no se reemplazó por otro color sino por
+estructura: el núcleo se distingue por FORMA —una banda a todo el ancho contra
+tres paneles en tercios, que es lo que dice "hay uno solo y es la base"— y el
+plan recomendado por un contorno de `--primary`, que es el token de selección
+del sistema. Un contorno no es una superficie, así que la regla queda intacta.
+
+**Y ahora hay un test que la sostiene**: `app/sitio/landing.test.tsx`
+("el arándano como superficie") cuenta los paños de la página renderizada y
+falla si aparece un tercero. La regla dejó de depender de que alguien se
+acuerde de leer este párrafo.
 
 **Lo que esto NO habilita** (hallazgo (a) de la review final del cierre: una
 regla que no puede rechazar nada no es una regla). En la landing: como máximo
@@ -416,9 +423,14 @@ esta tabla. Lo que sí es nuevo es el H1 "Entrar" del login (28 px/600, sin
 son **quince** los roles que Archivo cubre en total.
 
 **La landing (Tasks 3-5 del cierre del rediseño) sumó siete roles más**,
-todos en `app/sitio/secciones.tsx` salvo donde se aclara, y ninguno con
-`font-stretch` propio (mismo motivo que Cobro y los roles de /ventas: no le
-piden nada al eje `wdth`): el H1 del Hero (62 px/700, tracking -2 px); el
+todos en `app/sitio/secciones.tsx` salvo donde se aclara. Seis de los siete no
+le piden nada al eje `wdth` (mismo motivo que Cobro y los roles de /ventas).
+**El séptimo sí, desde el rediseño de la landing**: el H1 del Hero pasó a
+`font-stretch: 78%`, el registro del rótulo de un local. Es la tercera
+posición del eje que usa el producto, después del cartel (112%) y el importe
+(85%), y cierra una asimetría que estuvo escrita todo este tiempo: Archivo se
+eligió POR ese eje, y la landing era el único lugar que lo usaba en el 100%
+por default. Los roles son: el H1 del Hero (62 px/700, tracking -2 px); el
 título de sección que comparten Módulos, Rubros y Planes (38 px/700, tracking
 -1 px — una sola fila para los tres, porque es literalmente el mismo
 componente, `TituloDeSeccion`, no tres tamaños elegidos por separado); el H2
@@ -466,7 +478,7 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | **Número de orden** — columna ORDEN del listado de /servicio-tecnico | Archivo | 14 px en los dos anchos | 700 |
 | **Conteo de chip** — chips de filtro del tablero de /servicio-tecnico | Archivo | 12 px en la pastilla de escritorio; 17 px en la card de la grilla del teléfono, donde el conteo pasa a ser el dato principal y el rótulo baja a 10 px | 700 en escritorio; 600 en el teléfono |
 | **H1 de login** — título "Entrar" del formulario | Archivo | 26 px en el teléfono, 28 px en escritorio | 600 |
-| **H1 del Hero** — "Todo el local en un solo lugar", landing | Archivo | 36 px en el teléfono, 62 px en escritorio | 600 sin tracking en el teléfono; 700 y tracking -2 px en escritorio |
+| **H1 del Hero** — "Todo el local en un solo lugar", landing | Archivo | 36 px en el teléfono, 62 px en escritorio | 600 sin tracking en el teléfono; 700 y tracking -2 px en escritorio; `font-stretch: 78%` |
 | **Título de sección** — H2 compartido por Módulos, Rubros y Planes, landing | Archivo | 26 px en el teléfono, 38 px en escritorio | 600 sin tracking en el teléfono; 700 y tracking -1 px en escritorio |
 | **H2 del Cierre** — "El alta es instantánea", landing | Archivo | 28 px en el teléfono, 44 px en escritorio | 600 sin tracking en el teléfono; 700 y tracking -1.4 px en escritorio |
 | **Marca del Nav** — "Arándano", landing | Archivo | 16 px en el teléfono, 17 px en escritorio | 600 en el teléfono, 700 en escritorio |
