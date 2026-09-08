@@ -18,7 +18,7 @@ import {
   vendidoDeVenta, cobradoDePagos, hayQueDesglosar, formatearTotales,
 } from '@/lib/ventas/cobrado'
 import { ChipEstado } from '../chip-estado'
-import { AnularVenta } from '../formularios'
+import { AnularVenta, DetalleDeLaVenta } from '../formularios'
 import { esUuid } from '@/lib/uuid'
 import estilos from '../tipografia.module.css'
 
@@ -418,21 +418,23 @@ export type PagoRecibido = {
  *
  * **El orden se invierte entre anchos, y por eso las dos columnas de
  * escritorio son `contents lg:flex` en vez de `flex lg:flex`.** El teléfono
- * (`WBV5G`) apila Resumen primero, después "Qué se vendió", "Cómo se pagó" y
- * por último la Zona de riesgo — pero escritorio pone "Qué se vendió"/"Cómo
- * se pagó" a la izquierda y Resumen/Zona de riesgo a la derecha, con "Qué se
- * vendió" ANTES que Resumen en el DOM. Un `order` por card sobre el MISMO
- * árbol no alcanza si las dos columnas siguen siendo cajas reales en las dos
- * anchuras, porque `order` sólo reordena hermanos DENTRO del mismo contenedor
- * flex — así que cada columna se disuelve en el teléfono (`contents`, mismo
- * truco que ya usa `app/(app)/vender/caja.tsx` para su variante píldora): sus
- * dos cards pasan a ser hijos directos del `flex-col` externo, cada una con
- * su propio `order-N` (1: Resumen, 2: Qué se vendió, 3: Cómo se pagó, 4: Zona
- * de riesgo). En escritorio (`lg:flex`) cada columna vuelve a ser una caja
- * real y `lg:order-none` restaura el orden natural del DOM adentro de ella
- * (Qué se vendió antes que Cómo se pagó; Resumen antes que Zona de riesgo) —
- * el `order` del teléfono no tiene ningún efecto ahí porque cada columna sólo
- * tiene 2 hijos entre los que reordenar, y los dos ya están en su lugar.
+ * (`WBV5G`) apila Resumen primero, después "Qué se vendió", "Cómo se pagó",
+ * Detalles y por último la Zona de riesgo — pero escritorio pone "Qué se
+ * vendió"/"Cómo se pagó" a la izquierda y Resumen/Detalles/Zona de riesgo a
+ * la derecha, con "Qué se vendió" ANTES que Resumen en el DOM. Un `order` por
+ * card sobre el MISMO árbol no alcanza si las dos columnas siguen siendo
+ * cajas reales en las dos anchuras, porque `order` sólo reordena hermanos
+ * DENTRO del mismo contenedor flex — así que cada columna se disuelve en el
+ * teléfono (`contents`, mismo truco que ya usa `app/(app)/vender/caja.tsx`
+ * para su variante píldora): sus cards pasan a ser hijos directos del
+ * `flex-col` externo, cada una con su propio `order-N` (1: Resumen, 2: Qué se
+ * vendió, 3: Cómo se pagó, 4: Detalles, 5: Zona de riesgo). En escritorio
+ * (`lg:flex`) cada columna vuelve a ser una caja real y `lg:order-none`
+ * restaura el orden natural del DOM adentro de ella (Qué se vendió antes que
+ * Cómo se pagó; Resumen antes que Detalles antes que Zona de riesgo) — el
+ * `order` del teléfono no tiene ningún efecto ahí porque cada columna ya trae
+ * sus hijos en el orden que necesita en escritorio (2 en la izquierda, 3 en
+ * la derecha).
  *
  * **La banda TOTAL pinta con `--marca`, sólo en el teléfono.** El nodo `Cv4xd`
  * de `WBV5G` declara `fill: $ar-primary-deep` (`--marca`, ver
@@ -444,7 +446,7 @@ export type PagoRecibido = {
  */
 export function Detalle({
   resumen, anulada, notaDeAnulacionTexto, items, totalFormateado, lineasDeTotal = null, pagos,
-  ofreceAnular, ventaId,
+  ofreceAnular, ventaId, detalle,
 }: {
   resumen: ResumenTexto
   anulada: boolean
@@ -475,6 +477,9 @@ export function Detalle({
    *  merge con el ciclo de permisos (2026-08-26) tenía que evitar. */
   ofreceAnular: boolean
   ventaId: string
+  /** El texto libre que el local anotó sobre esta venta, o `null` sin nada
+   *  cargado todavía — la card se dibuja igual, con el textarea vacío. */
+  detalle: string | null
 }) {
   return (
     <div className="flex flex-col gap-3 px-[14px] py-3 lg:gap-4 lg:p-6">
@@ -793,6 +798,25 @@ export function Detalle({
             </div>
           </div>
 
+          {/* El detalle de la venta (sin frame en design/arandano.pen — ver
+              docs/correcciones-pendientes-del-pen.md): card propia y no una
+              fila del panel Resumen, que es de sólo lectura con un formato
+              fijo. Se dibuja SIEMPRE, con o sin dato: es el lugar donde el
+              detalle se carga cuando aparece después, así que esconderla vacía
+              sería esconder el caso que este ciclo existe para atender.
+
+              Va pegada al Resumen y por encima de la Zona de riesgo: describe
+              la venta, y la acción destructiva se queda última en las dos
+              disposiciones. */}
+          <div className="order-4 flex flex-col overflow-hidden rounded-2xl border bg-card lg:order-none">
+            <div className="border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
+              <h2 className={`${estilos.tituloDeCard} text-foreground`}>Detalles</h2>
+            </div>
+            <div className="p-[14px] lg:p-4">
+              <DetalleDeLaVenta ventaId={ventaId} detalle={detalle} />
+            </div>
+          </div>
+
           {/* Zona de riesgo (design/arandano.pen, nodo `TIlD3`): la maqueta
               sólo dibuja el texto de advertencia, sin ningún botón — no
               existe ningún frame de venta anulada contra el que confirmar si
@@ -818,13 +842,13 @@ export function Detalle({
               mismo lugar que la advertencia, así que la columna nunca queda
               con las dos cosas a la vez. */}
           {notaDeAnulacionTexto ? (
-            <Alert className="order-4 rounded-2xl bg-destructive-soft px-[14px] py-[14px] lg:order-none lg:px-4 lg:py-4">
+            <Alert className="order-5 rounded-2xl bg-destructive-soft px-[14px] py-[14px] lg:order-none lg:px-4 lg:py-4">
               <AlertDescription className="text-[11px] leading-[1.45] text-destructive opacity-85">
                 {notaDeAnulacionTexto}
               </AlertDescription>
             </Alert>
           ) : (
-            <div className="order-4 flex flex-col gap-[9px] rounded-2xl bg-destructive-soft p-[14px] lg:order-none lg:p-4">
+            <div className="order-5 flex flex-col gap-[9px] rounded-2xl bg-destructive-soft p-[14px] lg:order-none lg:p-4">
               <div className="flex items-center gap-[7px]">
                 <TriangleAlert aria-hidden="true" className="size-[14px] text-destructive" />
                 <span className="text-[13px] font-bold text-destructive">Anular la venta</span>
@@ -857,6 +881,7 @@ export type DatosDelDetalle = {
   totalFormateado: string
   lineasDeTotal: { rotulo: string; montoFormateado: string; destacada: boolean }[] | null
   pagos: PagoRecibido[]
+  detalle: string | null
 }
 
 /**
@@ -890,6 +915,9 @@ export async function datosDelDetalle(tenantId: string, ventaId: string): Promis
       // comparación, aunque el renglón único ya no lo use — lo arma
       // `cobradoDePagos(venta.pagos)`.
       id: true, numero: true, total: true, recargo: true, creadoEn: true, anuladaEn: true, totalUsd: true,
+      // Texto libre del local sobre esta venta. Se muestra y se edita en su
+      // propia card; no entra en ningún cálculo.
+      detalle: true,
       usuario: { select: { nombre: true } },
       // Quién anuló, no sólo que esté anulada: `Venta.anuladaPorId` existe en
       // el schema para responder esa pregunta (CLAUDE.md, el modelo `Pago`
@@ -1006,6 +1034,7 @@ export async function datosDelDetalle(tenantId: string, ventaId: string): Promis
         rotulo, montoFormateado: valor, destacada,
       })) ?? null,
     pagos,
+    detalle: venta.detalle,
   }
 }
 
@@ -1037,6 +1066,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
         pagos={datos.pagos}
         ofreceAnular={seOfreceAnular(puedeAnularVenta, datos.anuladaEn)}
         ventaId={id}
+        detalle={datos.detalle}
       />
     </>
   )

@@ -371,6 +371,20 @@ campo de cotización, ver *Decisiones*.
   entre sí. **El vuelto se calcula contra lo que hay que cobrar por esa fila,
   no contra su base**: con un plan de efectivo en pesos —el descuento por pago
   contado— los dos números no coinciden, y restar la base devolvía de menos.
+- **Detalles (opcional).** Un textarea de dos filas dentro del `<form>` de cobro,
+  entre los pagos y el pie. Texto libre para el dato de entrega —a quién se le
+  entregó, una dirección, un teléfono—: no participa de ningún total ni de
+  ningún chip, así que un local que no lo use no ve ninguna diferencia. Viaja
+  como el campo `detalle` del formulario; el saneo y el tope los aplica el
+  motor, una sola vez, en `lib/ventas/detalle.ts` (`TOPE_DETALLE`) — el mismo
+  número que lee el `maxLength` del textarea. Se limpia al cobrar Y al vaciar
+  el carrito, los dos caminos: el detalle es de esa venta, no del turno, y
+  dejarlo puesto al vaciar pegaría el dato de entrega de un cliente al carrito
+  siguiente. `Enter` con el foco acá no cobra — la allow-list del atajo global
+  sólo dispara con el foco en `<body>`. `Esc` con el foco acá tampoco arma el
+  vaciado del carrito: el textarea corta la tecla antes de que llegue al
+  listener global (`detenerEscapeGlobal`, el mismo remedio que ya usan los
+  mini-forms de caja).
 - Cobrar apretando `Enter` con el foco en `<body>` (sin nada en particular
   enfocado), y vaciar el carrito con `Esc`.
 - Ver el estado real de la caja del turno en un chip del header, y abrirla o
@@ -939,7 +953,7 @@ El historial por período.
 
 El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 
-**Acciones**: `anular`.
+**Acciones**: `anular`, `guardarDetalle`.
 
 **Qué se puede hacer**
 
@@ -971,6 +985,18 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
   "Consumidor final"), el estado y el comprobante.
 - **Anular la venta** — con el permiso `VENTAS_ANULAR` (un dueño siempre lo
   tiene; un empleado, sólo si se lo otorgaron), y sólo mientras siga cobrada.
+- **Detalles.** Card propia en la columna derecha, entre Resumen y Zona de
+  riesgo, con un textarea y "Guardar detalles" (`guardarDetalle`). Se dibuja
+  siempre, con o sin dato: es donde el detalle se carga cuando aparece después
+  del cobro. Hasta este ciclo lo único que le pasaba a una venta después del
+  cobro era anularse —cambiar su estado—; esto es **la primera vez que se
+  edita el contenido** de una venta ya cobrada, y actualiza una sola columna
+  filtrada por id y tenant — nada de lo que el motor garantiza pasa por ahí.
+  **Se puede editar también una venta anulada**, a propósito: el detalle no es
+  parte de lo que se cobró, y una venta anulada es justamente sobre la que
+  alguien quiere dejar escrito qué pasó. Sin permiso propio (`exigirSesion`) y
+  sin rastro de quién editó: es un campo, no una tabla-libro. Aviso por toast,
+  con clave estable, lanzado en el mismo handler que ejecuta la acción.
 
 **Decisiones**
 

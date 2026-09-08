@@ -502,3 +502,20 @@ describe('el borrado de un artículo', () => {
     expect(rows[0].n).toBe(1)
   })
 })
+
+describe('la migración del detalle de venta', () => {
+  it('guarda el detalle como texto nullable', async () => {
+    const r = await cliente.query(
+      `SELECT data_type, is_nullable, column_default
+         FROM information_schema.columns
+        WHERE table_name = 'ventas' AND column_name = 'detalle'`,
+    )
+    expect(r.rows).toHaveLength(1)
+    expect(r.rows[0].data_type).toBe('text')
+    // Nullable y SIN default: `NULL` dice "acá no se anotó nada", que es lo que
+    // pasa en la enorme mayoría de las ventas. Un `default ''` daría una
+    // tercera respuesta indistinguible de las otras dos.
+    expect(r.rows[0].is_nullable).toBe('YES')
+    expect(r.rows[0].column_default).toBeNull()
+  })
+})

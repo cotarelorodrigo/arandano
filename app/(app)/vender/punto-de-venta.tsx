@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { ArrowRight, CircleAlert, Minus, Plus, ScanBarcode, TriangleAlert, X } from 'lucide-react'
 import { cobrar, buscarArticulos, unidadesDeArticulo, type EstadoCobro } from './acciones'
 import { usePasoDeCobro, type Paso } from './paso'
-import { ChipCaja, ChipsDeEstado, ControlDeCaja, type CajaDelChip } from './caja'
+import { ChipCaja, ChipsDeEstado, ControlDeCaja, detenerEscapeGlobal, type CajaDelChip } from './caja'
 import type { ArticuloVendible } from '@/lib/ventas/buscar'
 // De TIPO y no de valor, por lo mismo que `PlanVisible` más abajo:
 // `lib/inventario/unidades.ts` arrastra `lib/tenant/transaccion.ts`, y un
@@ -20,6 +20,10 @@ import {
   porcentajeEnMilesimas, recargoEnCentavos, subtotalEnCentavos, totalesDePagosEnCentavos,
   totalesEnCentavos, type TotalesEnCentavos,
 } from '@/lib/ventas/centavos'
+// De VALOR y no de tipo, y se puede: `lib/ventas/detalle.ts` no importa nada,
+// así que no arrastra `pg` al bundle del cliente — la misma condición que
+// cumple `lib/ventas/centavos.ts`, unas líneas más arriba.
+import { TOPE_DETALLE } from '@/lib/ventas/detalle'
 // De TIPO y no de valor: `lib/planes/consultar.ts` importa Prisma, y un import
 // de valor desde este archivo —que lleva 'use client'— arrastraría `pg` al
 // bundle del navegador. Mismo caso que `ArticuloVendible`, y lo que vigila
@@ -31,6 +35,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -1048,6 +1053,9 @@ export function PuntoDeVenta({
   // en cada render.
   const [ventaProcesada, setVentaProcesada] = useState<string | null>(null)
   const [pagos, setPagos] = useState<Pago[]>([])
+  // Controlado y no libre en el DOM: el reset tras cobrar limpia por estado, y
+  // un textarea sin controlar se quedaría con el detalle de la venta anterior.
+  const [detalle, setDetalle] = useState('')
   // El último total que los pagos ya reflejaron, para el ajuste de más abajo:
   // sin esto, "seguir el total" se repetiría en cada render y pisaría un monto
   // que la persona ya tocó a mano. Los DOS totales (Task 9): un pago en pesos
@@ -1225,6 +1233,9 @@ export function PuntoDeVenta({
     // a poner en el próximo render, ya por el total de la venta siguiente
     // (0 hasta que se agregue el primer artículo).
     setPagos([])
+    // El detalle es de ESA venta: dejarlo puesto pegaría el dato de entrega de
+    // un cliente a la venta del siguiente.
+    setDetalle('')
   }
 
   // Qué pasa cuando una venta se cobró bien. Un efecto de verdad y no un
@@ -1577,6 +1588,13 @@ export function PuntoDeVenta({
       // no hay que repetirlo.
       actualizarCarrito(() => [])
       setPagos([])
+      // Mismo argumento que el reset post-cobro, más abajo: el detalle es de
+      // ESA venta, y dejarlo puesto pegaría el dato de entrega de un cliente
+      // al carrito que arranca después de vaciar. En el teléfono es peor: la
+      // card de cobro está `hidden` hasta el paso de cobro, así que nadie ve
+      // el texto viejo al rearmar el carrito — se lo reencuentra recién
+      // adentro de una venta que no tiene nada que ver.
+      setDetalle('')
       return
     }
     // Primer golpe: arma la confirmación y NO borra nada todavía.
@@ -2473,6 +2491,48 @@ export function PuntoDeVenta({
                     <Plus className="size-[14px]" aria-hidden="true" />
                     Agregar pago
                   </Button>
+                </div>
+
+                {/* El detalle de la venta: texto libre para el dato de entrega
+                    —a quién se le entregó, una dirección, un teléfono—. No
+                    participa de ningún total ni de ningún chip: un local que no
+                    lo use ve el campo vacío y nada más.
+
+                    Va DESPUÉS de los pagos y antes del pie: el pie es lo que se
+                    lee de un vistazo justo antes de apretar Cobrar (totales,
+                    faltante, botón), y un campo de texto en el medio de eso
+                    sería ruido en el único momento en que la pantalla se mira
+                    con apuro.
+
+                    `maxLength` con el MISMO tope que corta el servidor, para
+                    que el corte no sea una sorpresa. Adentro del <form>, que es
+                    lo único que hace que el campo viaje en el submit.
+
+                    `onKeyDown={detenerEscapeGlobal}`: el listener global de
+                    teclas sólo se abstiene ante un overlay de Radix (ver
+                    `hayOverlayDeRadixAbierto`, arriba), y este textarea no lo
+                    es. Sin el corte, Escape acá es el reflejo de "cancelar
+                    esto" mientras alguien está a mitad de una frase, y dos
+                    golpes en menos de tres segundos arman y confirman el
+                    vaciado del carrito debajo del texto — mismo remedio que
+                    ya usan los mini-forms de `caja.tsx`, mismo motivo (ver su
+                    comentario ahí, que además deja escrita la deuda
+                    preexistente: los inputs de la fila de pago tienen el
+                    mismo hueco hoy y este fix no los alcanza). */}
+                <div className="flex flex-col gap-1.5 px-4 pb-4">
+                  <Label htmlFor="detalle-de-la-venta" className="text-xs text-foreground-soft">
+                    Detalles (opcional)
+                  </Label>
+                  <Textarea
+                    id="detalle-de-la-venta"
+                    name="detalle"
+                    value={detalle}
+                    onChange={(e) => setDetalle(e.target.value)}
+                    onKeyDown={detenerEscapeGlobal}
+                    maxLength={TOPE_DETALLE}
+                    rows={2}
+                    placeholder="Lo retira el hermano el jueves"
+                  />
                 </div>
 
                 {/* Empuja el pie al fondo de la card cuando hay pocos pagos —

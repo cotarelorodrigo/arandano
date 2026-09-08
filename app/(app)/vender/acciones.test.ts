@@ -393,6 +393,33 @@ describe('cobrar', () => {
     const r = await cobrar(INICIAL, datosConUnidad(u.id, `segunda-caja-${crypto.randomUUID()}`))
     expect(r.error).toContain('se acaba de vender')
   })
+
+  // El caso que cubre el hueco de que `EntradaCrearVenta.detalle` sea opcional:
+  // si `cobrar` dejara de pasarlo, `tsc` no diría nada y el dato desaparecería
+  // en silencio. Va del FormData a la fila, sin escalas.
+  it('el detalle del formulario llega a la fila de la venta', async () => {
+    estado.cookie = cookieEmpleado
+    const datos = formulario({ clave: `detalle-${crypto.randomUUID()}` })
+    datos.set('detalle', '  Lo retira el hermano el jueves  ')
+
+    const r = await cobrar(INICIAL, datos)
+    expect(r.error).toBeNull()
+    expect(r.venta).not.toBeNull()
+
+    const f = await owner.query(`SELECT detalle FROM ventas WHERE id = $1`, [r.venta!.id])
+    expect(f.rows[0].detalle).toBe('Lo retira el hermano el jueves')
+  })
+
+  // El camino por defecto del mostrador: nadie escribe nada y el campo ni
+  // siquiera viaja. Tiene que dar exactamente lo mismo que antes de este ciclo.
+  it('sin el campo, la venta queda sin detalle', async () => {
+    estado.cookie = cookieEmpleado
+    const r = await cobrar(INICIAL, formulario({ clave: `sin-detalle-${crypto.randomUUID()}` }))
+    expect(r.error).toBeNull()
+
+    const f = await owner.query(`SELECT detalle FROM ventas WHERE id = $1`, [r.venta!.id])
+    expect(f.rows[0].detalle).toBeNull()
+  })
 })
 
 // Task 7 del ciclo "unidades sin identificar": el IMEI se puede capturar en el

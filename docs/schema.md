@@ -288,6 +288,7 @@ erDiagram
     decimal(12,2) vendido_con_costo
     timestamptz(3) anulada_en "opcional"
     uuid anulada_por_id FK "opcional"
+    text detalle "opcional"
     timestamptz(3) creado_en
   }
   verifications {

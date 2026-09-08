@@ -1304,6 +1304,42 @@ del formulario y la franja del Cierre.
 ---
 
 
+## 36. La maqueta no dibuja el campo de detalles ni su card, en ningún ancho
+
+- **Frames**: ninguno. `design/arandano.pen` es anterior al ciclo del detalle
+  de venta (2026-09-08) — no tiene ni el frame de escritorio ni el `Móvil / …`
+  con el campo del panel de cobro ni con la card del detalle.
+
+**El textarea "Detalles (opcional)"** del panel de cobro de `App / Vender`, bajo
+la lista de pagos y arriba del pie. Se derivó de los controles que la propia
+card ya dibuja —no hay tratamiento visual nuevo, sólo un control más—. Lo que no
+tiene referencia es **cuánto espacio vertical se le puede dar**, y la pregunta
+no es la misma en los dos anchos. En escritorio el botón Cobrar sí vive debajo
+del textarea, al pie de la card (`hidden … @cobro/venta:flex`), así que lo que
+el campo se lleva se lo saca a los totales y al chip de faltante. En el teléfono
+ese botón NO está debajo: vive en `PieDeVenta`, que es `sticky bottom-0`, así
+que no puede quedar fuera de la vista y el riesgo es el inverso —que sea el
+textarea el que quede tapado por ese pie, y cuánto hay que scrollear el panel
+para alcanzarlo—. Es el riesgo de presentación que dejó el ciclo, y el frame
+tendría que decidir la altura del campo en cada ancho sabiendo esa diferencia.
+
+**La card "Detalles"** de `App / Venta detalle` y de `Móvil / Venta detalle`,
+entre "Resumen" y "Zona de riesgo". Se derivó de las cards con formulario de
+`/inventario/[id]`. Acá el `.pen` tampoco calla del todo: dibuja esta pantalla
+con una cantidad concreta de cards y este ciclo le suma una, así que el reparto
+de la columna derecha en escritorio y el orden de la pila en el teléfono
+—Resumen, la card nueva, y la Zona de riesgo última en las dos disposiciones—
+son derivados y no están confirmados por ningún frame.
+
+Qué haría falta: los dos frames dibujados, y en particular una decisión sobre la
+altura del textarea del cobro en cada ancho — en escritorio contra el pie de la
+card que va debajo, y en el teléfono contra el pie sticky que lo puede tapar.
+
+Detectado al construir el ciclo del detalle de venta (2026-09-08). Ver
+`docs/superpowers/specs/2026-09-08-detalle-de-venta-design.md`.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

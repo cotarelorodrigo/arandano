@@ -630,6 +630,63 @@ describe('crearVenta', () => {
     expect(stock.toString()).toBe('32.5')
   })
 
+  it('guarda el detalle, saneado', async () => {
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+      detalle: '  Lo retira el hermano el jueves  ',
+    })
+
+    const venta = await enTransaccionDeTenant(tenantId, (tx) =>
+      tx.venta.findUniqueOrThrow({ where: { id } }),
+    )
+    expect(venta.detalle).toBe('Lo retira el hermano el jueves')
+  })
+
+  // El caso por defecto: la enorme mayoría de las ventas no anota nada, y las
+  // tres formas de decirlo tienen que llegar a la misma fila.
+  it('sin detalle, o con uno vacío, la venta queda en NULL', async () => {
+    const sinCampo = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+    })
+    const conEspacios = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+      detalle: '   ',
+    })
+
+    const ventas = await enTransaccionDeTenant(tenantId, (tx) =>
+      tx.venta.findMany({ where: { id: { in: [sinCampo.id, conEspacios.id] } } }),
+    )
+    expect(ventas).toHaveLength(2)
+    for (const v of ventas) expect(v.detalle).toBeNull()
+  })
+
+  // Se corta y NO se rechaza: un cartel rojo en el mostrador por una nota
+  // larga sería frenar un cobro por lo único de esa pantalla que no es plata.
+  it('un detalle larguísimo se corta en el tope y la venta se cobra igual', async () => {
+    const { TOPE_DETALLE } = await import('@/lib/ventas/detalle')
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+      detalle: 'x'.repeat(TOPE_DETALLE + 200),
+    })
+
+    const venta = await enTransaccionDeTenant(tenantId, (tx) =>
+      tx.venta.findUniqueOrThrow({ where: { id } }),
+    )
+    expect(venta.detalle).toHaveLength(TOPE_DETALLE)
+  })
+
   it('los números de venta son correlativos y sin huecos', async () => {
     const numeros = await enTransaccionDeTenant(tenantId, async (tx) =>
       (await tx.venta.findMany({ orderBy: { numero: 'asc' } })).map((v) => v.numero),
@@ -1666,6 +1723,7 @@ describe('el detalle de venta muestra los IMEI (Task 10)', () => {
         pagos: datos.pagos,
         ofreceAnular: false,
         ventaId,
+        detalle: datos.detalle,
       }),
     )
   }
@@ -1727,6 +1785,19 @@ describe('el detalle de venta muestra los IMEI (Task 10)', () => {
     })
     expect(html.split('355000000000777').length - 1).toBe(1)
     expect(html.split('IMEI ').length - 1).toBe(1)
+  })
+
+  it('trae el detalle de la venta', async () => {
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+      detalle: 'Retira Ana',
+    })
+
+    const datos = await datosDelDetalle(tenantId, id)
+    expect(datos?.detalle).toBe('Retira Ana')
   })
 })
 

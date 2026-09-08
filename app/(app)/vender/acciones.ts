@@ -183,6 +183,13 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
 
     const clave = String(datos.get('clave') ?? '').trim()
 
+    // Sin validar ni cortar acá: el saneo y el tope viven en el motor
+    // (`normalizarDetalle`, lib/ventas/detalle.ts), que es el que los aplica
+    // para TODOS sus llamadores. Repetirlos acá sería la segunda copia de la
+    // misma regla, que es exactamente la forma de defecto que este repo ya pagó
+    // con las dos implementaciones del selector de categoría.
+    const detalle = String(datos.get('detalle') ?? '')
+
     const venta = await crearVenta({
       tenantId: sesion.tenant.id,
       usuarioId: sesion.usuario.id,
@@ -191,6 +198,7 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
       // Vacía significa "sin clave", no "clave vacía": una cadena vacía
       // repetida haría que el segundo cobro devolviera el primero.
       claveIdempotencia: clave === '' ? undefined : clave,
+      detalle,
     })
 
     revalidatePath('/ventas')
