@@ -1451,4 +1451,31 @@ describe('resumenDeBorrado', () => {
     const r = await resumenDeBorrado(tenantId, a.id)
     expect(r).toEqual({ movimientos: 0, unidades: 0, ventas: 0 })
   })
+
+  // Dos unidades del mismo artículo vendidas de una son siempre dos LÍNEAS de
+  // la misma venta (con serie, `crearVenta` exige cantidad 1 por línea), y
+  // "ventas" tiene que contar la venta, no las líneas: si no, vender dos
+  // iPhones iguales de una sola vez diría "se vendió 2 veces".
+  let proximoNumero = 9500
+  it('una venta con dos líneas del mismo artículo cuenta como una sola venta', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Vendido dos veces en una venta', tipo: 'PRODUCTO',
+      precio: d('100'),
+    })
+    const v = await owner.query(
+      `INSERT INTO ventas (id, tenant_id, numero, usuario_id, total, creado_en)
+       VALUES (gen_random_uuid(), $1, $2, $3, 200.00, now()) RETURNING id`,
+      [tenantId, proximoNumero++, usuarioId],
+    )
+    await owner.query(
+      `INSERT INTO venta_items
+         (id, tenant_id, venta_id, articulo_id, descripcion, cantidad, precio_unitario)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'Línea 1', 1, 100.00),
+              (gen_random_uuid(), $1, $2, $3, 'Línea 2', 1, 100.00)`,
+      [tenantId, v.rows[0].id, a.id],
+    )
+
+    const r = await resumenDeBorrado(tenantId, a.id)
+    expect(r.ventas).toBe(1)
+  })
 })

@@ -576,8 +576,14 @@ export type ResumenDeBorrado = {
 /**
  * Qué se lleva puesto el borrado, para que el diálogo diga números reales.
  *
- * Una sola consulta con `_count` anidado y no tres `count` sueltos: son tres
- * subconsultas sobre la misma fila.
+ * `movimientos` y `unidades` salen de una sola consulta con `_count`
+ * anidado: son dos subconsultas sobre la misma fila. `ventas`, en cambio, NO
+ * puede salir de ahí como `_count.ventaItems` — eso cuenta LÍNEAS de venta, y
+ * con un artículo con serie dos unidades vendidas en la misma venta son
+ * siempre dos líneas (`crearVenta` exige cantidad 1 por línea con serie), así
+ * que ese número diría "se vendió 2 veces" de una venta que fue una sola. El
+ * diálogo necesita ventas DISTINTAS, y eso pide su propia consulta: un
+ * `findMany` de `venta_items` con `distinct: ['ventaId']`.
  *
  * **Puede quedar vieja** entre que la pantalla se renderiza y alguien aprieta
  * Borrar, y está bien: la pantalla informa, la base decide. Ese reparto es lo
@@ -590,13 +596,18 @@ export async function resumenDeBorrado(
   return enTransaccionDeTenant(tenantId, async (tx) => {
     const fila = await tx.articulo.findUnique({
       where: { id: articuloId },
-      select: { _count: { select: { movimientos: true, unidades: true, ventaItems: true } } },
+      select: { _count: { select: { movimientos: true, unidades: true } } },
     })
     if (!fila) return { movimientos: 0, unidades: 0, ventas: 0 }
+    const ventas = await tx.ventaItem.findMany({
+      where: { articuloId },
+      distinct: ['ventaId'],
+      select: { ventaId: true },
+    })
     return {
       movimientos: fila._count.movimientos,
       unidades: fila._count.unidades,
-      ventas: fila._count.ventaItems,
+      ventas: ventas.length,
     }
   })
 }
