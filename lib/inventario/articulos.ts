@@ -566,3 +566,100 @@ export async function reactivarArticulo(entrada: {
 }): Promise<void> {
   await marcarBaja(entrada.tenantId, entrada.articuloId, null)
 }
+
+export type ResumenDeBorrado = {
+  movimientos: number
+  unidades: number
+  ventas: number
+}
+
+/**
+ * Qué se lleva puesto el borrado, para que el diálogo diga números reales.
+ *
+ * Una sola consulta con `_count` anidado y no tres `count` sueltos: son tres
+ * subconsultas sobre la misma fila.
+ *
+ * **Puede quedar vieja** entre que la pantalla se renderiza y alguien aprieta
+ * Borrar, y está bien: la pantalla informa, la base decide. Ese reparto es lo
+ * que justifica que el guard sea la FK de `venta_items` y no este número.
+ */
+export async function resumenDeBorrado(
+  tenantId: string,
+  articuloId: string,
+): Promise<ResumenDeBorrado> {
+  return enTransaccionDeTenant(tenantId, async (tx) => {
+    const fila = await tx.articulo.findUnique({
+      where: { id: articuloId },
+      select: { _count: { select: { movimientos: true, unidades: true, ventaItems: true } } },
+    })
+    if (!fila) return { movimientos: 0, unidades: 0, ventas: 0 }
+    return {
+      movimientos: fila._count.movimientos,
+      unidades: fila._count.unidades,
+      ventas: fila._count.ventaItems,
+    }
+  })
+}
+
+/**
+ * El artículo desaparece, con su historial de stock y sus unidades.
+ *
+ * Es el acto opuesto a `desactivarArticulo`, no una versión más fuerte:
+ * desactivar es para el artículo que se deja de vender —su historia importa y
+ * queda—, y esto es para el que nunca debió existir, el duplicado cargado por
+ * error, que no tiene historia que preservar.
+ *
+ * **El conteo de ventas de acá abajo NO es la garantía**: es para poder
+ * escribir un mensaje que se entienda. La garantía es que
+ * `venta_items.articulo_id` sigue siendo `ON DELETE RESTRICT`, así que si
+ * alguien cobra el artículo entre el conteo y el DELETE, la base rechaza el
+ * borrado igual. Mismo criterio que la idempotencia del cobro (el índice
+ * único, no el `findFirst` previo) y que la carrera por una unidad (el
+ * `updateMany` condicional).
+ */
+export async function borrarArticulo(entrada: {
+  tenantId: string
+  articuloId: string
+}): Promise<void> {
+  const { tenantId, articuloId } = entrada
+  try {
+    await enTransaccionDeTenant(tenantId, async (tx) => {
+      const ventas = await tx.ventaItem.count({ where: { articuloId } })
+      if (ventas > 0) {
+        throw new ErrorDeInventario('ARTICULO_CON_VENTAS', mensajeDeVentas(ventas))
+      }
+
+      // `deleteMany` y no `delete`, por lo mismo que `marcarBaja` usa
+      // `updateMany`: un id de otro tenant no encuentra fila (RLS lo esconde) y
+      // devuelve `count: 0` en vez de tirar un error de Prisma que nadie
+      // atrapa. "No existe" y "no es tuyo" tienen que ser la misma respuesta.
+      const { count } = await tx.articulo.deleteMany({ where: { id: articuloId } })
+      if (count === 0) {
+        throw new ErrorDeInventario(
+          'ARTICULO_INEXISTENTE',
+          `el artículo ${articuloId} no existe en este tenant`,
+        )
+      }
+    })
+  } catch (e) {
+    // P2003 = FK violada. Se traduce ACÁ y no en `traducirErrorDeBase`, a
+    // propósito: ahí un P2003 puede venir de cualquier otra FK del módulo —la
+    // de categorías, por ejemplo— y significaría otra cosa. Un traductor que
+    // conteste "tiene ventas" ante cualquier FK violada manda a buscar donde
+    // no es. Acá, en cambio, la única FK Restrict que puede frenar este DELETE
+    // es la de venta_items.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003') {
+      throw new ErrorDeInventario(
+        'ARTICULO_CON_VENTAS',
+        'este artículo se vendió: borrarlo se llevaría esas ventas. Podés desactivarlo.',
+      )
+    }
+    throw traducirErrorDeBase(e)
+  }
+}
+
+function mensajeDeVentas(ventas: number): string {
+  return ventas === 1
+    ? 'este artículo se vendió 1 vez: borrarlo se llevaría esa venta. Podés desactivarlo.'
+    : `este artículo se vendió ${ventas} veces: borrarlo se llevaría esas ventas. Podés desactivarlo.`
+}
