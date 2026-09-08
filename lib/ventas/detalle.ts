@@ -9,10 +9,12 @@
  *
  * **Este módulo no importa nada, a propósito.** `punto-de-venta.tsx` y
  * `formularios.tsx` llevan 'use client' e importan `TOPE_DETALLE` de VALOR; un
- * solo import que llegue a `lib/db.ts` arrastraría `pg` al bundle del navegador
- * y tiraría abajo la compilación del cliente entera. Es el bug que
- * test/limite-cliente-servidor.test.ts existe para no repetir, y el mismo
- * motivo por el que `lib/ventas/centavos.ts` tampoco importa nada.
+ * import que llegue a `lib/db.ts` arrastraría `pg` al bundle del navegador y
+ * tiraría abajo la compilación del cliente entera. La regla que impide eso no
+ * es "cero imports", es "ninguna cadena de imports que alcance `lib/db.ts`" —
+ * `lib/ventas/centavos.ts` importa `@/lib/formato/gramatica`, que es a su vez
+ * puro y nunca llega a `lib/db.ts`, así que es seguro para el cliente. Acá
+ * simplemente no necesitamos nada, así que no importamos.
  */
 
 /**

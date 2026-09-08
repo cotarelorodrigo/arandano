@@ -19,7 +19,7 @@
 - **La columna es `detalle` (singular) y el rótulo de pantalla es "Detalles"** (plural), en las dos pantallas.
 - **El campo no toca ningún total.** No entra en `totalesDeItems`, ni en `totalesDePagos`, ni en ningún chip de faltante o vuelto.
 - **Una migración con SQL escrito a mano va con `--create-only`** (`docs/decisiones-del-rediseno.md`): sin eso `migrate dev` la aplica al generarla y editarla después choca contra el guard de checksum, que exige `migrate reset` — prohibido en este proyecto.
-- **`lib/ventas/detalle.ts` no importa nada.** Es la condición para que un archivo `'use client'` pueda importar `TOPE_DETALLE` de valor sin arrastrar `pg` al bundle — lo vigila `test/limite-cliente-servidor.test.ts`. Mismo precedente que `lib/ventas/centavos.ts`.
+- **`lib/ventas/detalle.ts` no importa nada.** Es la condición para que un archivo `'use client'` pueda importar `TOPE_DETALLE` de valor sin arrastrar `pg` al bundle — lo vigila `test/limite-cliente-servidor.test.ts`. La regla es que ninguna cadena de imports llegue a `lib/db.ts`; acá simplemente no necesitamos importar nada, así que no lo hacemos.
 - **Comandos del gate:** `npm test` (levanta la base efímera, corre `prisma migrate deploy` y después vitest), `npx tsc --noEmit`, `npm run lint`.
 - **Los tests del motor viven en `test/ventas.test.ts`**, no en `lib/ventas/crear.test.ts` (ese archivo no existe: el motor necesita el arnés de base efímera que sólo está montado en `test/`).
 
@@ -124,10 +124,12 @@ Create `lib/ventas/detalle.ts`:
  *
  * **Este módulo no importa nada, a propósito.** `punto-de-venta.tsx` y
  * `formularios.tsx` llevan 'use client' e importan `TOPE_DETALLE` de VALOR; un
- * solo import que llegue a `lib/db.ts` arrastraría `pg` al bundle del navegador
- * y tiraría abajo la compilación del cliente entera. Es el bug que
- * test/limite-cliente-servidor.test.ts existe para no repetir, y el mismo
- * motivo por el que `lib/ventas/centavos.ts` tampoco importa nada.
+ * import que llegue a `lib/db.ts` arrastraría `pg` al bundle del navegador y
+ * tiraría abajo la compilación del cliente entera. La regla que impide eso no
+ * es "cero imports", es "ninguna cadena de imports que alcance `lib/db.ts`" —
+ * `lib/ventas/centavos.ts` importa `@/lib/formato/gramatica`, que es a su vez
+ * puro y nunca llega a `lib/db.ts`, así que es seguro para el cliente. Acá
+ * simplemente no necesitamos nada, así que no importamos.
  */
 
 /**
