@@ -296,9 +296,17 @@ borra el artículo.
 
 El botón de borrar queda **apagado y a la vista**, no ausente: es lo que ata el
 mensaje a la acción que la persona vino a hacer. El de desactivar dispara la
-acción que ya existe — y **no se dibuja si el artículo ya está desactivado**,
-donde no ofrecería nada; ahí el diálogo se queda sólo con el motivo y
-`[Cancelar]`.
+acción que ya existe, y tanto él como la frase que lo anuncia ("Podés
+desactivarlo…") comparten las MISMAS tres condiciones: hay ventas —si no, el
+diálogo ya está en su cara permisiva—, el artículo **no** está desactivado
+todavía —ahí esa salida no existe—, y la persona tiene `ARTICULOS_EDITAR` —sin
+ese permiso no tiene el botón "Desactivar" en ninguna de las dos copias de la
+ficha, y ofrecérselo acá sería prometerle algo que no puede hacer. La tercera
+condición se sumó durante las reviews del ciclo, cuando quedó claro que las
+primeras dos solas dejaban a un empleado sin `ARTICULOS_EDITAR` leyendo
+"Podés desactivarlo" sin ningún botón, en ningún lado, que lo hiciera. Faltando
+cualquiera de las tres, el diálogo se queda sólo con el motivo —sin esa
+oración— y `[Cancelar]`.
 
 **El botón "Borrar" de la ficha se dibuja siempre**, con o sin ventas: quien
 busca el botón y no lo encuentra asume que la feature no existe, y este diálogo

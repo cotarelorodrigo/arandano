@@ -1372,6 +1372,37 @@ describe('borrar un artículo', () => {
     })
   })
 
+  // Dos unidades del mismo artículo vendidas de una son siempre dos LÍNEAS de
+  // la misma venta (con serie, `crearVenta` exige cantidad 1 por línea), y el
+  // mensaje tiene que contar la venta, no las líneas — mismo motivo, y mismo
+  // escenario, que el que fija `resumenDeBorrado` un poco más abajo. Antes del
+  // ajuste de la review de la rama, esta función contaba LÍNEAS
+  // (`ventaItem.count`) y el mensaje decía "se vendió 2 veces" de una venta
+  // que fue una sola.
+  it('una venta con dos líneas del mismo artículo cuenta como una sola venta en el mensaje', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Vendido dos veces en una venta', tipo: 'PRODUCTO',
+      precio: d('100'),
+    })
+    const v = await owner.query(
+      `INSERT INTO ventas (id, tenant_id, numero, usuario_id, total, creado_en)
+       VALUES (gen_random_uuid(), $1, $2, $3, 200.00, now()) RETURNING id`,
+      [tenantId, proximoNumero++, usuarioId],
+    )
+    await owner.query(
+      `INSERT INTO venta_items
+         (id, tenant_id, venta_id, articulo_id, descripcion, cantidad, precio_unitario)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'Línea 1', 1, 100.00),
+              (gen_random_uuid(), $1, $2, $3, 'Línea 2', 1, 100.00)`,
+      [tenantId, v.rows[0].id, a.id],
+    )
+
+    const error = await borrarArticulo({ tenantId, articuloId: a.id }).catch((e) => e)
+    expect(error.codigo).toBe('ARTICULO_CON_VENTAS')
+    expect(error.message).toContain('se vendió 1 vez')
+    expect(error.message).not.toContain('2 veces')
+  })
+
   /**
    * El camino del P2003: el conteo previo dice 0 y el DELETE falla igual.
    *
