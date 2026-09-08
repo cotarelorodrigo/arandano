@@ -84,14 +84,10 @@ final del archivo:
 
 ```ts
 describe('el borrado de un artículo', () => {
-  /** Un tenant con un usuario, listo para colgarle artículos. */
+  /** Un tenant con un usuario, listo para colgarle artículos. `crearTenantCrudo`
+   *  ya vive en este archivo, así que el escenario sólo agrega lo suyo. */
   async function escenario(nombre: string) {
-    const t = await cliente.query(
-      `INSERT INTO tenants (id, subdominio, nombre, estado, creado_en, actualizado_en)
-       VALUES (gen_random_uuid(), $1, $1, 'TRIAL', now(), now()) RETURNING id`,
-      [`${nombre}-${Date.now()}`],
-    )
-    const tenantId = t.rows[0].id
+    const tenantId = await crearTenantCrudo(`${nombre}-${Date.now()}`)
     const u = await cliente.query(
       `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
        VALUES (gen_random_uuid(), $1, 'Dueño', $2, 'DUENO', now(), now()) RETURNING id`,
@@ -131,6 +127,30 @@ describe('el borrado de un artículo', () => {
       [articuloId],
     )
     return rows[0].n as number
+  }
+
+  /**
+   * Una consulta con el rol de la APP y la GUC del tenant puesta, que es como
+   * corre en producción.
+   *
+   * El `BEGIN`/`COMMIT` no es ceremonia: el tercer argumento de `set_config`
+   * la hace LOCAL A LA TRANSACCIÓN, así que sin transacción explícita el
+   * autocommit se la lleva antes de la sentencia siguiente y la consulta corre
+   * sin tenant — donde RLS falla cerrado y devuelve cero filas. Un test así
+   * pasa sin probar nada. Es el mismo `comoTenant` de `test/rls.test.ts`.
+   */
+  async function comoApp(tenantId: string, sql: string, params: unknown[] = []) {
+    const app = new Client({ connectionString: urlApp() })
+    await app.connect()
+    try {
+      await app.query('BEGIN')
+      await app.query(`SELECT set_config('arandano.tenant_id', $1, true)`, [tenantId])
+      const res = await app.query(sql, params)
+      await app.query('COMMIT')
+      return res
+    } finally {
+      await app.end()
+    }
   }
 
   it('se lleva sus movimientos de stock', async () => {
@@ -194,17 +214,21 @@ describe('el borrado de un artículo', () => {
   it('el rol de la app borra el artículo y la cascada se lleva el libro que él no puede tocar', async () => {
     const e = await escenario('borr-app')
     await conMovimiento(e)
-    const app = new Client({ connectionString: urlApp() })
-    await app.connect()
+
+    // El REVOKE se comprueba en su propia conexión: un statement que falla
+    // aborta la transacción entera, así que meterlo en la misma que el DELETE
+    // bueno dejaría a ése sin poder correr.
+    const sinPermiso = new Client({ connectionString: urlApp() })
+    await sinPermiso.connect()
     try {
-      await app.query(`SELECT set_config('arandano.tenant_id', $1, true)`, [e.tenantId])
       await expect(
-        app.query(`DELETE FROM movimientos_stock WHERE articulo_id = $1`, [e.articuloId]),
+        sinPermiso.query(`DELETE FROM movimientos_stock WHERE articulo_id = $1`, [e.articuloId]),
       ).rejects.toThrow(/permission denied|denegado/i)
-      await app.query(`DELETE FROM articulos WHERE id = $1`, [e.articuloId])
     } finally {
-      await app.end()
+      await sinPermiso.end()
     }
+
+    await comoApp(e.tenantId, `DELETE FROM articulos WHERE id = $1`, [e.articuloId])
     expect(await cuantos('movimientos_stock', e.articuloId)).toBe(0)
   })
 
@@ -214,15 +238,10 @@ describe('el borrado de un artículo', () => {
   it('el rol de la app no borra el artículo de otro tenant', async () => {
     const mio = await escenario('borr-mio')
     const ajeno = await escenario('borr-ajeno')
-    const app = new Client({ connectionString: urlApp() })
-    await app.connect()
-    try {
-      await app.query(`SELECT set_config('arandano.tenant_id', $1, true)`, [mio.tenantId])
-      const r = await app.query(`DELETE FROM articulos WHERE id = $1`, [ajeno.articuloId])
-      expect(r.rowCount).toBe(0)
-    } finally {
-      await app.end()
-    }
+
+    const r = await comoApp(mio.tenantId, `DELETE FROM articulos WHERE id = $1`, [ajeno.articuloId])
+    expect(r.rowCount, 'RLS lo esconde, así que el DELETE no encuentra fila').toBe(0)
+
     const { rows } = await cliente.query(`SELECT count(*)::int AS n FROM articulos WHERE id = $1`, [
       ajeno.articuloId,
     ])
@@ -672,9 +691,9 @@ describe('borrar un artículo', () => {
 describe('resumenDeBorrado', () => {
   it('cuenta los movimientos, las unidades y las ventas del artículo', async () => {
     const a = await crearArticuloConSerie('Para el resumen', ['333333333333333', '444444444444444'])
-    await ingresarStock({
-      tenantId, articuloId: a.id, usuarioId, cantidad: d('1'), imeis: ['555555555555555'],
-    })
+    // Sólo `imeis`, sin `cantidad`: con serie prendida, `ingresarStock` rechaza
+    // las dos juntas a propósito (SERIE_REQUIERE_IMEIS).
+    await ingresarStock({ tenantId, articuloId: a.id, usuarioId, imeis: ['555555555555555'] })
 
     const r = await resumenDeBorrado(tenantId, a.id)
     expect(r.unidades).toBe(3)
