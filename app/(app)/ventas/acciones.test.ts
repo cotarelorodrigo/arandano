@@ -35,6 +35,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
 let anular: typeof import('./acciones').anular
+let guardarDetalle: typeof import('./acciones').guardarDetalle
 let authParaTenant: typeof import('@/lib/auth/para-tenant').authParaTenant
 let origenDelRequest: typeof import('@/lib/auth/origen').origenDelRequest
 
@@ -50,6 +51,7 @@ let owner: Client
 let duenioId: string
 let articuloId: string
 let ventaId: string
+let ventaAjena: string
 let cookieEmpleado: string
 let cookieDuenio: string
 
@@ -59,7 +61,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   process.env.DOMINIO_BASE = 'arandano.test'
 
-  ;({ anular } = await import('./acciones'))
+  ;({ anular, guardarDetalle } = await import('./acciones'))
   ;({ authParaTenant } = await import('@/lib/auth/para-tenant'))
   ;({ origenDelRequest } = await import('@/lib/auth/origen'))
   const administrar = await import('@/lib/usuarios/administrar')
@@ -90,6 +92,25 @@ beforeAll(async () => {
     [estado.tenantId],
   )
   articuloId = a.rows[0].id
+
+  // Un segundo tenant con una venta suya, para el caso de aislamiento. La venta
+  // va por SQL crudo y no por `crearVenta`: no hace falta que tenga
+  // movimientos ni que cierre contra nada, sólo existir para que el `update`
+  // tenga a qué NO llegar.
+  const otro = await crearTenant(owner, `ventas-acciones-ajeno-${Date.now()}`)
+  const ua = await owner.query(
+    `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
+     VALUES (gen_random_uuid(), $1, 'Dueño del otro', 'duenio@otro.test', 'DUENO', now(), now())
+     RETURNING id`,
+    [otro],
+  )
+  const va = await owner.query(
+    `INSERT INTO ventas (id, tenant_id, numero, usuario_id, total, creado_en)
+     VALUES (gen_random_uuid(), $1, 1, $2, 1000.00, now())
+     RETURNING id`,
+    [otro, ua.rows[0].id],
+  )
+  ventaAjena = va.rows[0].id
 
   // Una venta real vía el motor, no un INSERT a mano: es la única forma de que
   // `MovimientoStock` (motivo VENTA) exista para que `anularVenta` tenga algo
@@ -127,6 +148,40 @@ async function cookieDe(email: string): Promise<string> {
   const cookie = r.headers.get('set-cookie')
   if (!cookie) throw new Error('el login no devolvió cookie; el test no probaría nada')
   return cookie.split(';')[0]
+}
+
+/**
+ * Una venta cobrada propia de cada caso, sobre un artículo propio.
+ *
+ * No se reusa la `ventaId` del `beforeAll`: el describe de `anular` la anula, y
+ * un caso que dependa de haber corrido antes o después de ése no prueba lo que
+ * dice probar. Artículo nuevo por llamada para no competir por el stock del
+ * que usan los otros casos.
+ */
+async function unaVentaCobrada(): Promise<string> {
+  const { crearVenta } = await import('@/lib/ventas/crear')
+  const a = await owner.query(
+    `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, creado_en, actualizado_en)
+     VALUES (gen_random_uuid(), $1, $2, 'Artículo del detalle', 'PRODUCTO', 1000.00, 5, now(), now())
+     RETURNING id`,
+    [estado.tenantId, `DET-${crypto.randomUUID().slice(0, 8)}`],
+  )
+  const v = await crearVenta({
+    tenantId: estado.tenantId,
+    usuarioId: duenioId,
+    items: [{ articuloId: a.rows[0].id, cantidad: new Prisma.Decimal('1') }],
+    pagos: [{
+      medio: 'EFECTIVO', moneda: 'ARS',
+      base: new Prisma.Decimal('1000'), cotizacion: new Prisma.Decimal('1'),
+    }],
+  })
+  return v.id
+}
+
+/** El detalle tal como quedó en la base. */
+async function detalleDe(ventaId: string): Promise<string | null> {
+  const r = await owner.query(`SELECT detalle FROM ventas WHERE id = $1`, [ventaId])
+  return r.rows[0].detalle
 }
 
 describe('anular', () => {
@@ -177,5 +232,97 @@ describe('anular una venta', () => {
     const cuerpo = FUENTE.slice(FUENTE.indexOf('export async function anular'))
     expect(cuerpo).toContain("exigirPermiso('VENTAS_ANULAR')")
     expect(cuerpo).not.toContain('exigirDuenio()')
+  })
+})
+
+describe('guardarDetalle', () => {
+  it('guarda el detalle saneado sobre una venta ya cobrada', async () => {
+    estado.cookie = cookieEmpleado
+    const ventaId = await unaVentaCobrada()
+
+    const r = await guardarDetalle({ ventaId, detalle: '  Retira Ana, martes de 10 a 12  ' })
+    expect(r.error).toBeNull()
+    expect(await detalleDe(ventaId)).toBe('Retira Ana, martes de 10 a 12')
+  })
+
+  // Un EMPLEADO también: no hay permiso propio, y el que atiende el mostrador
+  // es justamente quien se entera de a quién hay que entregarle.
+  it('un EMPLEADO puede, sin permiso propio', async () => {
+    estado.cookie = cookieEmpleado
+    const ventaId = await unaVentaCobrada()
+
+    const r = await guardarDetalle({ ventaId, detalle: 'Pasa el martes' })
+    expect(r.error).toBeNull()
+    expect(await detalleDe(ventaId)).toBe('Pasa el martes')
+  })
+
+  // Vaciar tiene que BORRAR el dato, no dejar una cadena vacía: es la única
+  // forma de volver al estado "acá no se anotó nada".
+  it('vaciar el campo lo deja en NULL', async () => {
+    estado.cookie = cookieEmpleado
+    const ventaId = await unaVentaCobrada()
+    await guardarDetalle({ ventaId, detalle: 'algo' })
+
+    const r = await guardarDetalle({ ventaId, detalle: '   ' })
+    expect(r.error).toBeNull()
+    expect(await detalleDe(ventaId)).toBeNull()
+  })
+
+  it('corta en el tope en vez de rechazar', async () => {
+    const { TOPE_DETALLE } = await import('@/lib/ventas/detalle')
+    estado.cookie = cookieEmpleado
+    const ventaId = await unaVentaCobrada()
+
+    const r = await guardarDetalle({ ventaId, detalle: 'y'.repeat(TOPE_DETALLE + 100) })
+    expect(r.error).toBeNull()
+    expect(await detalleDe(ventaId)).toHaveLength(TOPE_DETALLE)
+  })
+
+  // Decisión explícita del ciclo: una venta anulada SÍ se puede detallar. Es el
+  // caso que más lo necesita — es justamente aquella sobre la que alguien va a
+  // querer dejar escrito qué pasó.
+  it('funciona sobre una venta anulada', async () => {
+    estado.cookie = cookieEmpleado
+    const ventaId = await unaVentaCobrada()
+    await owner.query(`UPDATE ventas SET anulada_en = now() WHERE id = $1`, [ventaId])
+
+    const r = await guardarDetalle({
+      ventaId,
+      detalle: 'El cliente devolvió el equipo con la caja abierta',
+    })
+    expect(r.error).toBeNull()
+    expect(await detalleDe(ventaId)).toBe('El cliente devolvió el equipo con la caja abierta')
+  })
+
+  // La venta de otro local no existe para esta sesión: RLS ya filtró, así que
+  // el update no alcanza ninguna fila y la acción avisa en vez de romper.
+  it('no toca la venta de otro tenant', async () => {
+    estado.cookie = cookieEmpleado
+
+    const r = await guardarDetalle({ ventaId: ventaAjena, detalle: 'no debería entrar' })
+    expect(r.error).not.toBeNull()
+    expect(await detalleDe(ventaAjena)).toBeNull()
+  })
+
+  // Un id inventado no puede salir como 500: sin este guard, Prisma rechaza el
+  // uuid mal formado con un error que nadie traduce. Y tiene que dar el MISMO
+  // mensaje que el de arriba — distinguirlos filtraría qué ids existen.
+  it('un id que no es uuid avisa igual que uno ajeno, con el mismo mensaje', async () => {
+    estado.cookie = cookieEmpleado
+
+    const malFormado = await guardarDetalle({ ventaId: 'no-soy-un-uuid', detalle: 'x' })
+    const ajena = await guardarDetalle({ ventaId: ventaAjena, detalle: 'x' })
+    expect(malFormado.error).not.toBeNull()
+    expect(malFormado.error).toBe(ajena.error)
+  })
+
+  // Sin sesión no se escribe nada: una server action es un endpoint que se
+  // invoca sin pasar por ninguna pantalla.
+  it('sin sesión, redirige y no escribe', async () => {
+    estado.cookie = ''
+    const ventaId = await unaVentaCobrada()
+
+    await expect(guardarDetalle({ ventaId, detalle: 'x' })).rejects.toThrow('REDIRECT')
+    expect(await detalleDe(ventaId)).toBeNull()
   })
 })
