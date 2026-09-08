@@ -14,6 +14,7 @@ import {
 } from './totales'
 import { exigirCliente, exigirUsuario } from './pertenencia'
 import { ErrorDeVenta, traducirErrorDeBase } from './errores'
+import { normalizarDetalle } from './detalle'
 import { normalizarImei } from '@/lib/inventario/unidades'
 
 export type ItemDeVenta = {
@@ -71,12 +72,22 @@ export type EntradaCrearVenta = {
   // dos llamadas iguales creen dos ventas, que es lo correcto para un test o un
   // script; la pantalla sí la manda.
   claveIdempotencia?: string
+  /**
+   * Texto libre que el local anota sobre la venta. OPCIONAL a propósito, que es
+   * lo contrario de lo que este repo decidió para `categoriaId` en
+   * `editarArticulo`: allá el dato cruzaba dos pantallas y dos caminos de
+   * lectura y olvidárselo fallaba en silencio; acá hay un solo escritor real
+   * (`cobrar`) y decenas de llamadores de test y de seed a los que el campo no
+   * les dice nada. Lo que cubre el hueco es un caso que va del FormData a la
+   * fila (app/(app)/vender/acciones.test.ts).
+   */
+  detalle?: string
 }
 
 export async function crearVenta(
   entrada: EntradaCrearVenta,
 ): Promise<{ id: string; numero: number }> {
-  const { tenantId, usuarioId, clienteId, items, pagos, claveIdempotencia } = entrada
+  const { tenantId, usuarioId, clienteId, items, pagos, claveIdempotencia, detalle } = entrada
 
   if (items.length === 0) {
     throw new ErrorDeVenta('SIN_ITEMS', 'una venta necesita al menos un ítem')
@@ -117,6 +128,12 @@ export async function crearVenta(
     if (recortado === '') return undefined
     return normalizarImei(i.imeiCapturado)
   })
+  // Acá y no adentro de la transacción, por lo mismo que los IMEI de arriba:
+  // es una regla de dominio sobre la entrada, no algo que dependa de nada que
+  // la base tenga que decir. Y en el MOTOR y no en el server action, para que
+  // cualquier llamador —pantalla, script, un módulo que llame a
+  // `crearVentaDesde`— guarde el campo con la misma forma.
+  const detalleGuardado = normalizarDetalle(detalle)
   // Un `imeiCapturado` SIN `unidadId` no tiene a qué unidad atarse: el bucle
   // que toma unidades más abajo saltea cualquier ítem sin `unidadId` (`if
   // (l.unidadId === undefined) continue`), así que sin este chequeo el
@@ -424,6 +441,7 @@ export async function crearVenta(
           clienteId,
           usuarioId,
           claveIdempotencia,
+          detalle: detalleGuardado,
           total: totales.ars,
           // La mercadería EN DÓLARES, a precio de lista. `total` es la mitad
           // en pesos de lo mismo, y ninguna venta anterior a este ciclo pasa a

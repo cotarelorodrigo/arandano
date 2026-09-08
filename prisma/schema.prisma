@@ -624,6 +624,17 @@ model Venta {
   // ésta va a ser el comprobante que necesita su nota de crédito.
   anuladaEn         DateTime? @map("anulada_en") @db.Timestamptz(3)
   anuladaPorId      String?   @map("anulada_por_id") @db.Uuid
+  /// Texto libre que el local anota sobre la venta: a quién se le entregó, una
+  /// dirección, un teléfono suelto. NO significa nada para el motor —no entra
+  /// en ningún total ni en ninguna validación de plata—, y eso es justamente lo
+  /// que hace segura la única escritura que existe sobre una venta ya cobrada
+  /// (`guardarDetalle`, app/(app)/ventas/acciones.ts).
+  ///
+  /// Nullable y sin default, como `MovimientoStock.nota` y
+  /// `UnidadDeArticulo.bajaNota`: `NULL` es "acá no se anotó nada". El saneo y
+  /// el tope viven en `lib/ventas/detalle.ts`, compartidos por sus dos
+  /// escritores.
+  detalle           String?
   creadoEn          DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
 
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
