@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { Client } from 'pg'
-import { urlOwner } from './postgres-efimero'
+import { urlOwner, urlApp } from './postgres-efimero'
 
 let cliente: Client
 
@@ -334,5 +334,171 @@ describe('categorias', () => {
       `SELECT count(*)::int AS n FROM categorias WHERE tenant_id = $1`, [t],
     )
     expect(rows[0].n).toBe(0)
+  })
+})
+
+describe('el borrado de un artículo', () => {
+  /** Un tenant con un usuario, listo para colgarle artículos. `crearTenantCrudo`
+   *  ya vive en este archivo, así que el escenario sólo agrega lo suyo. */
+  async function escenario(nombre: string) {
+    const tenantId = await crearTenantCrudo(`${nombre}-${Date.now()}`)
+    const u = await cliente.query(
+      `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Dueño', $2, 'DUENO', now(), now()) RETURNING id`,
+      [tenantId, `d-${tenantId}@borrado.test`],
+    )
+    const a = await cliente.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'BORR-1', 'Duplicado', 'PRODUCTO', 100.00, 1, now(), now())
+       RETURNING id`,
+      [tenantId],
+    )
+    return { tenantId, usuarioId: u.rows[0].id as string, articuloId: a.rows[0].id as string }
+  }
+
+  async function conMovimiento(e: { tenantId: string; usuarioId: string; articuloId: string }) {
+    await cliente.query(
+      `INSERT INTO movimientos_stock
+         (id, tenant_id, articulo_id, usuario_id, motivo, delta, creado_en)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'INGRESO', 1, now())`,
+      [e.tenantId, e.articuloId, e.usuarioId],
+    )
+  }
+
+  async function conUnidad(e: { tenantId: string; usuarioId: string; articuloId: string }) {
+    const { rows } = await cliente.query(
+      `INSERT INTO unidades_articulo
+         (id, tenant_id, articulo_id, imei, ingresada_por_id, ingresada_en, creado_en)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, now(), now()) RETURNING id`,
+      [e.tenantId, e.articuloId, `IMEI-${crypto.randomUUID()}`, e.usuarioId],
+    )
+    return rows[0].id as string
+  }
+
+  async function cuantos(tabla: string, articuloId: string) {
+    const { rows } = await cliente.query(
+      `SELECT count(*)::int AS n FROM ${tabla} WHERE articulo_id = $1`,
+      [articuloId],
+    )
+    return rows[0].n as number
+  }
+
+  /**
+   * Una consulta con el rol de la APP y la GUC del tenant puesta, que es como
+   * corre en producción.
+   *
+   * El `BEGIN`/`COMMIT` no es ceremonia: el tercer argumento de `set_config`
+   * la hace LOCAL A LA TRANSACCIÓN, así que sin transacción explícita el
+   * autocommit se la lleva antes de la sentencia siguiente y la consulta corre
+   * sin tenant — donde RLS falla cerrado y devuelve cero filas. Un test así
+   * pasa sin probar nada. Es el mismo `comoTenant` de `test/rls.test.ts`.
+   */
+  async function comoApp(tenantId: string, sql: string, params: unknown[] = []) {
+    const app = new Client({ connectionString: urlApp() })
+    await app.connect()
+    try {
+      await app.query('BEGIN')
+      await app.query(`SELECT set_config('arandano.tenant_id', $1, true)`, [tenantId])
+      const res = await app.query(sql, params)
+      await app.query('COMMIT')
+      return res
+    } finally {
+      await app.end()
+    }
+  }
+
+  it('se lleva sus movimientos de stock', async () => {
+    const e = await escenario('borr-movs')
+    await conMovimiento(e)
+    await cliente.query(`DELETE FROM articulos WHERE id = $1`, [e.articuloId])
+    expect(await cuantos('movimientos_stock', e.articuloId)).toBe(0)
+  })
+
+  it('se lleva sus unidades', async () => {
+    const e = await escenario('borr-unis')
+    await conUnidad(e)
+    await cliente.query(`DELETE FROM articulos WHERE id = $1`, [e.articuloId])
+    expect(await cuantos('unidades_articulo', e.articuloId)).toBe(0)
+  })
+
+  // El caso que prueba que `movimientos_stock.unidad_id` tenía que dejar de
+  // ser RESTRICT: acá las dos filas se van en la MISMA sentencia, y RESTRICT
+  // —que se evalúa inmediato, sin esperar al final— abortaría el borrado por
+  // una fila que se está yendo igual.
+  it('se lleva un movimiento que apunta a una unidad, las dos a la vez', async () => {
+    const e = await escenario('borr-mov-uni')
+    const unidadId = await conUnidad(e)
+    await cliente.query(
+      `INSERT INTO movimientos_stock
+         (id, tenant_id, articulo_id, unidad_id, usuario_id, motivo, delta, creado_en)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, 'AJUSTE', -1, now())`,
+      [e.tenantId, e.articuloId, unidadId, e.usuarioId],
+    )
+    await cliente.query(`DELETE FROM articulos WHERE id = $1`, [e.articuloId])
+    expect(await cuantos('movimientos_stock', e.articuloId)).toBe(0)
+    expect(await cuantos('unidades_articulo', e.articuloId)).toBe(0)
+  })
+
+  // El guard, y la razón por la que `venta_items` NO pasa a Cascade: la
+  // historia de la plata no se toca. Que lo sostenga la base y no un `if` es
+  // lo que hace que la regla valga aunque el chequeo de la aplicación falle.
+  it('la base se niega si el artículo tiene una línea de venta', async () => {
+    const e = await escenario('borr-vendido')
+    const v = await cliente.query(
+      `INSERT INTO ventas (id, tenant_id, numero, usuario_id, total, creado_en)
+       VALUES (gen_random_uuid(), $1, 1, $2, 100.00, now()) RETURNING id`,
+      [e.tenantId, e.usuarioId],
+    )
+    await cliente.query(
+      `INSERT INTO venta_items
+         (id, tenant_id, venta_id, articulo_id, descripcion, cantidad, precio_unitario)
+       VALUES (gen_random_uuid(), $1, $2, $3, 'Duplicado', 1, 100.00)`,
+      [e.tenantId, v.rows[0].id, e.articuloId],
+    )
+    await expect(
+      cliente.query(`DELETE FROM articulos WHERE id = $1`, [e.articuloId]),
+    ).rejects.toThrow(/foreign key|llave foránea/i)
+  })
+
+  // La mitad que de verdad importa y que el owner no puede probar: el rol de
+  // la app NO tiene DELETE sobre movimientos_stock (setup-db-roles.sh lo
+  // revoca), y sin embargo la cascada se los lleva. Las acciones de FK las
+  // ejecuta el sistema y no pasan por el chequeo de privilegios del rol que
+  // llama — es exactamente la puerta que este ciclo abre a propósito.
+  it('el rol de la app borra el artículo y la cascada se lleva el libro que él no puede tocar', async () => {
+    const e = await escenario('borr-app')
+    await conMovimiento(e)
+
+    // El REVOKE se comprueba en su propia conexión: un statement que falla
+    // aborta la transacción entera, así que meterlo en la misma que el DELETE
+    // bueno dejaría a ése sin poder correr.
+    const sinPermiso = new Client({ connectionString: urlApp() })
+    await sinPermiso.connect()
+    try {
+      await expect(
+        sinPermiso.query(`DELETE FROM movimientos_stock WHERE articulo_id = $1`, [e.articuloId]),
+      ).rejects.toThrow(/permission denied|denegado/i)
+    } finally {
+      await sinPermiso.end()
+    }
+
+    await comoApp(e.tenantId, `DELETE FROM articulos WHERE id = $1`, [e.articuloId])
+    expect(await cuantos('movimientos_stock', e.articuloId)).toBe(0)
+  })
+
+  // RLS es lo único que impide borrar el artículo de otro local, y sigue en
+  // pie: la cascada no es una vía de entrada porque la fila que se borra —la
+  // de `articulos`— está protegida por su policy.
+  it('el rol de la app no borra el artículo de otro tenant', async () => {
+    const mio = await escenario('borr-mio')
+    const ajeno = await escenario('borr-ajeno')
+
+    const r = await comoApp(mio.tenantId, `DELETE FROM articulos WHERE id = $1`, [ajeno.articuloId])
+    expect(r.rowCount, 'RLS lo esconde, así que el DELETE no encuentra fila').toBe(0)
+
+    const { rows } = await cliente.query(`SELECT count(*)::int AS n FROM articulos WHERE id = $1`, [
+      ajeno.articuloId,
+    ])
+    expect(rows[0].n).toBe(1)
   })
 })

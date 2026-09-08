@@ -154,6 +154,22 @@ ALTER DEFAULT PRIVILEGES FOR ROLE arandano_owner IN SCHEMA public
 -- migración, cuando la tabla todavía no existe: sin el guard, un REVOKE sobre
 -- una tabla inexistente aborta todo el archivo. Es el mismo recurso que usa el
 -- grant por nombre de resolver_tenant, más abajo.
+--
+-- LA EXCEPCIÓN, y está acá porque es acá donde se la busca: desde el ciclo del
+-- borrado de artículos (2026-09-07), movimientos_stock.articulo_id es ON DELETE
+-- CASCADE. Las acciones de FK las ejecuta el sistema y no pasan por este
+-- REVOKE, así que borrar un artículo SÍ se lleva sus movimientos aunque el rol
+-- de la app no pueda tocarlos por ningún otro camino. Es exactamente la puerta
+-- de atrás que el bloque de eventos_orden, unas líneas más abajo, cierra a mano
+-- para las órdenes — acá se deja abierta a propósito y acotada: sólo la cruza un
+-- artículo que nunca produjo una venta, porque venta_items.articulo_id sigue
+-- siendo Restrict y frena a cualquier otro. Un artículo que no vendió nada no
+-- deja ningún "por qué tengo 3 y no 5" sin contestar: no queda ningún stock que
+-- explicar, porque el artículo entero deja de existir.
+--
+-- Depende de que ninguna tabla tenga FORCE ROW LEVEL SECURITY, que hoy es el
+-- caso (ver la migración resolver_tenant). Con FORCE, la cascada pasaría a
+-- evaluarse contra las policies y este camino dejaría de funcionar.
 DO $$
 BEGIN
   IF to_regclass('public.movimientos_stock') IS NOT NULL THEN

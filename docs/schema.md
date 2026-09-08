@@ -298,8 +298,8 @@ erDiagram
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
-  articulos ||--o{ movimientos_stock : "ON DELETE RESTRICT"
-  articulos ||--o{ unidades_articulo : "ON DELETE RESTRICT"
+  articulos ||--o{ movimientos_stock : "ON DELETE CASCADE"
+  articulos ||--o{ unidades_articulo : "ON DELETE CASCADE"
   articulos ||--o{ venta_items : "ON DELETE RESTRICT"
   categorias |o--o{ articulos : "ON DELETE RESTRICT"
   categorias |o--o{ categorias : "ON DELETE RESTRICT"
@@ -329,7 +329,7 @@ erDiagram
   tenants ||--o{ ventas : "ON DELETE CASCADE"
   tenants ||--o{ verifications : "ON DELETE CASCADE"
   tenants ||--o| bots_de_whatsapp : "ON DELETE CASCADE"
-  unidades_articulo |o--o{ movimientos_stock : "ON DELETE RESTRICT"
+  unidades_articulo |o--o{ movimientos_stock : "ON DELETE NO ACTION"
   users |o--o{ cajas : "ON DELETE RESTRICT"
   users |o--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
   users |o--o{ unidades_articulo : "ON DELETE RESTRICT"
