@@ -153,8 +153,9 @@ destructiva, que se mantiene última en las dos disposiciones.
 Recibe el id de la venta y el texto; sanea y corta con la misma función que usa
 el motor.
 
-**Sin permiso nuevo.** Va detrás de `conSesion`, donde ya están
-`ingresarMercaderia` y `corregirPorConteo`. La regla que este repo viene
+**Sin permiso nuevo.** Va detrás de `exigirSesion` a secas — el mismo nivel al
+que `ingresarMercaderia` y `corregirPorConteo` llegan por el `conSesion` local
+de `app/(app)/inventario/acciones.ts`. La regla que este repo viene
 aplicando es delegar **por lo que la acción mueve**, no por el sustantivo que la
 nombra: `PLANES_PAGO` existe aparte porque mueve el precio de todo el catálogo,
 `ARTICULOS_BORRAR` existe aparte porque no se deshace y se lleva filas de dos
@@ -219,9 +220,11 @@ formulario de `/inventario/[id]`. Queda anotado en
 
 ## Tests
 
-- `lib/ventas/crear.test.ts`: se guarda; se trimea; vacío y sólo-espacios quedan
-  en `null`; se corta en el tope; y una venta sin detalle es idéntica a la de
-  hoy.
+- `test/ventas.test.ts` (y no `lib/ventas/crear.test.ts`, que no existe: el
+  motor necesita el arnés de base efímera que sólo está montado en `test/`): se
+  guarda; se trimea; vacío y sólo-espacios quedan en `null`; se corta en el
+  tope; y una venta sin detalle es idéntica a la de hoy.
+- `lib/ventas/detalle.test.ts`: el saneo y el tope, sin base de por medio.
 - `app/(app)/vender/acciones.test.ts`: el campo viaja del `FormData` a la fila.
 - `app/(app)/ventas/acciones.test.ts`: guarda; respeta el tope y el saneo;
   funciona sobre una venta anulada; y no alcanza a una venta de otro tenant.
