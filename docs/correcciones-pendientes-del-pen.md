@@ -1157,6 +1157,29 @@ justo la que no entraba.
 
 ---
 
+## 32. La maqueta no dibuja el botón "Borrar" ni su diálogo, en ningún ancho
+
+- **Frames**: ninguno. `design/arandano.pen` es anterior al ciclo de borrar
+  artículo (2026-09-07) — no tiene ni el frame de escritorio ni el `Móvil / …`
+  con el botón "Borrar" o su diálogo de confirmación.
+
+**Qué hizo el código, y por qué.** No inventó tratamiento nuevo: el diálogo
+(`DialogoDeBorrado`, `app/(app)/inventario/borrar-dialogo.tsx`) se derivó del
+mismo `Dialog` de shadcn que ya usan el diálogo de permisos de `/usuarios` y
+`DialogoDePlan` de `/formas-de-pago` — mismo `DialogHeader`/`DialogDescription`/
+`DialogFooter`, mismo `Button variant="destructive"` como disparador. Ningún
+tratamiento visual nuevo, sólo el contenido.
+
+**Dónde se puso, sin frame que lo diga.** A la izquierda de "Desactivar", en
+las dos copias (Topbar de escritorio y pie del teléfono): el orden sigue el
+mismo criterio ya escrito en el código —"el de la izquierda es el más
+destructivo"— y no hay maqueta que lo confirme ni lo contradiga.
+
+Detectado al construir la Task 6 del ciclo de borrar artículo (2026-09-07). Ver
+`docs/superpowers/specs/2026-09-07-borrar-articulo-design.md`.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

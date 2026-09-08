@@ -13,6 +13,7 @@ import { esUuid } from '@/lib/uuid'
 import { planesDelTenant, type PlanVisible } from '@/lib/planes/consultar'
 import { arbolDeCategorias } from '@/lib/inventario/categorias'
 import { unidadesLibres } from '@/lib/inventario/unidades'
+import { resumenDeBorrado } from '@/lib/inventario/articulos'
 import { precioConPlan } from '@/lib/planes/precio'
 import { ROTULO_MEDIO } from '@/lib/ventas/medios'
 import estilos from '../tipografia.module.css'
@@ -255,6 +256,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
 
   const puedeEditar = await puedeConSesion(sesion, 'ARTICULOS_EDITAR')
   const puedeCostos = await puedeConSesion(sesion, 'COSTOS')
+  const puedeBorrar = await puedeConSesion(sesion, 'ARTICULOS_BORRAR')
   const esProducto = articulo.tipo === 'PRODUCTO'
 
   // Seis meses de sobra para "Cómo se movió": agregarVentasPorMes() sólo usa
@@ -264,7 +266,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   const SIETE_MESES_ATRAS = new Date()
   SIETE_MESES_ATRAS.setUTCMonth(SIETE_MESES_ATRAS.getUTCMonth() - 7)
 
-  const [movimientos, ultimoConCosto, ventasPorMes, planes, arbol, unidades] = await Promise.all([
+  const [movimientos, ultimoConCosto, ventasPorMes, planes, arbol, unidades, resumenBorrado] = await Promise.all([
     prisma.movimientoStock.findMany({
       where: { articuloId: id },
       // `id` como segundo criterio, no sólo `creadoEn`: `creado_en` es la
@@ -341,6 +343,11 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
     // otras seis, así que el costo real es una consulta en paralelo, no un
     // round-trip extra en serie.
     unidadesLibres(sesion.tenant.id, articulo.id),
+    // Task 6 del ciclo de borrar artículo: mismo criterio que el árbol de
+    // categorías de arriba — sin el permiso no hay diálogo que alimentar, y
+    // la consulta (dos idas a Postgres dentro de una transacción,
+    // `resumenDeBorrado`) sería trabajo tirado.
+    puedeBorrar ? resumenDeBorrado(sesion.tenant.id, id) : null,
   ])
 
   const ultimoCosto = ultimoConCosto?.costoUnitario ?? null
@@ -513,6 +520,8 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
       articuloId={articulo.id}
       desactivado={articulo.desactivadoEn !== null}
       puedeEditar={puedeEditar}
+      puedeBorrar={puedeBorrar}
+      resumenBorrado={resumenBorrado}
       nombre={articulo.nombre}
       sku={articulo.sku}
       precio={articulo.precio.toString()}

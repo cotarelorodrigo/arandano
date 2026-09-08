@@ -15,7 +15,11 @@ vi.mock('./acciones', () => ({
   ingresarMercaderia: vi.fn(),
   corregirPorConteo: vi.fn(),
   exportarHistorialCsv: vi.fn(),
+  borrarArticuloAccion: vi.fn(),
 }))
+// DialogoDeBorrado (Task 6) llama a useRouter(): sin este mock,
+// renderToStaticMarkup revienta apenas FichaDeArticulo lo instancia.
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 
 const ARBOL = [
   { id: 'id-cables', nombre: 'Cables', cuenta: 3, hijas: [] },
@@ -41,7 +45,12 @@ async function renderAlta(arbol = ARBOL, puedeCostos = true) {
 
 async function renderFicha(
   categoriaId: string | null,
-  extra: Partial<{ desactivado: boolean; puedeEditar: boolean; moneda: 'ARS' | 'USD' }> = {},
+  extra: Partial<{
+    desactivado: boolean
+    puedeEditar: boolean
+    puedeBorrar: boolean
+    moneda: 'ARS' | 'USD'
+  }> = {},
 ) {
   const { FichaDeArticulo } = await import('./formularios')
   return renderToStaticMarkup(
@@ -58,6 +67,8 @@ async function renderFicha(
         categoriaId={categoriaId}
         desactivado={extra.desactivado ?? false}
         puedeEditar={extra.puedeEditar ?? true}
+        puedeBorrar={extra.puedeBorrar ?? true}
+        resumenBorrado={{ movimientos: 3, unidades: 0, ventas: 0 }}
         columnaIzquierda={<div>columna izquierda</div>}
       />
     </SidebarProvider>,
@@ -508,8 +519,13 @@ describe('el pie del teléfono repite las acciones del Topbar (Task 7 del ciclo 
     expect(new Set(formularios).size).toBe(2)
   })
 
-  it('sin puedeEditar, el pie del teléfono tampoco se renderiza', async () => {
-    const html = await renderFicha(null, { puedeEditar: false })
+  // Task 6 del ciclo de borrar artículo: el pie ahora lo gobiernan DOS
+  // permisos independientes (`puedeEditar || puedeBorrar`), así que sin
+  // ninguno de los dos hay que apagar los dos explícitamente — con
+  // `puedeBorrar` en su default (true) el pie seguiría apareciendo, sólo con
+  // "Borrar" adentro.
+  it('sin ningún permiso, el pie del teléfono tampoco se renderiza', async () => {
+    const html = await renderFicha(null, { puedeEditar: false, puedeBorrar: false })
     expect(html).not.toMatch(/border-t bg-card p-\[14px\] lg:hidden/)
   })
 
@@ -530,6 +546,28 @@ describe('el pie del teléfono repite las acciones del Topbar (Task 7 del ciclo 
       expect([...con.matchAll(new RegExp(etiqueta, 'g'))]).toHaveLength(2)
       expect([...sin.matchAll(new RegExp(etiqueta, 'g'))]).toHaveLength(0)
     }
+  })
+
+  // El mismo caso que el de arriba, para el botón nuevo y su permiso propio:
+  // cuenta en las DOS direcciones. Un `not.toContain` no alcanzaría —pasaría
+  // igual si una copia quedó gateada y la otra no.
+  it('las DOS copias de "Borrar" las gobierna puedeBorrar, no puedeEditar', async () => {
+    const con = await renderFicha(null, { puedeBorrar: true })
+    const sin = await renderFicha(null, { puedeBorrar: false })
+    expect([...con.matchAll(/Borrar/g)]).toHaveLength(2)
+    expect([...sin.matchAll(/Borrar/g)]).toHaveLength(0)
+  })
+
+  // Los dos permisos son independientes de verdad: un empleado que puede
+  // borrar pero no editar tiene que ver "Borrar" y no "Guardar cambios".
+  it('puedeEditar y puedeBorrar no se arrastran entre sí', async () => {
+    const soloBorrar = await renderFicha(null, { puedeEditar: false, puedeBorrar: true })
+    expect([...soloBorrar.matchAll(/Borrar/g)]).toHaveLength(2)
+    expect(soloBorrar).not.toContain('Guardar cambios')
+
+    const soloEditar = await renderFicha(null, { puedeEditar: true, puedeBorrar: false })
+    expect(soloEditar).not.toContain('Borrar')
+    expect([...soloEditar.matchAll(/Guardar cambios/g)]).toHaveLength(2)
   })
 })
 

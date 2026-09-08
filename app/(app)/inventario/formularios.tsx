@@ -25,6 +25,8 @@ import type { RamaConHijas } from '@/lib/inventario/categorias'
 import { SelectorDeCategoria } from './selector-categoria'
 import { SelectorDeMoneda } from '@/components/selector-de-moneda'
 import { ListaDeImeis } from './lista-de-imeis'
+import { DialogoDeBorrado } from './borrar-dialogo'
+import type { ResumenDeBorrado } from '@/lib/inventario/articulos'
 import estilos from './tipografia.module.css'
 
 // Acá y no en acciones.ts: aquel archivo es 'use server' y sólo puede exportar
@@ -430,6 +432,8 @@ export function FichaDeArticulo({
   articuloId,
   desactivado,
   puedeEditar,
+  puedeBorrar,
+  resumenBorrado,
   nombre,
   sku,
   precio,
@@ -445,6 +449,8 @@ export function FichaDeArticulo({
   articuloId: string
   desactivado: boolean
   puedeEditar: boolean
+  puedeBorrar: boolean
+  resumenBorrado: ResumenDeBorrado | null
   nombre: string
   sku: string
   precio: string
@@ -473,36 +479,48 @@ export function FichaDeArticulo({
         // exportar CSV) ya están en el cuerpo — no queda nada que ese menú
         // pueda contener sin inventarlo.
         acciones={
-          puedeEditar ? (
+          puedeEditar || puedeBorrar ? (
             <>
-              <Button
-                type="submit"
-                form={FORM_BAJA_ARTICULO}
-                // Condicional, no fijo en "destructive": reactivar un
-                // artículo no es una acción destructiva y pintarla en rojo la
-                // hace parecer una — antes del rediseño ya era
-                // `desactivado ? 'secondary' : 'destructive'`, y esta task lo
-                // había dejado fijo por error.
-                variant={desactivado ? 'secondary' : 'destructive'}
-                disabled={dandoBaja}
-              >
-                {desactivado ? (
-                  <RotateCcw aria-hidden="true" className="size-[15px]" />
-                ) : (
-                  <Ban aria-hidden="true" className="size-[15px]" />
-                )}
-                {dandoBaja
-                  ? desactivado
-                    ? 'Reactivando…'
-                    : 'Desactivando…'
-                  : desactivado
-                    ? 'Reactivar'
-                    : 'Desactivar'}
-              </Button>
-              <Button type="submit" form={FORM_EDITAR_ARTICULO} disabled={editando}>
-                <Check aria-hidden="true" className="size-[15px]" />
-                {editando ? 'Guardando…' : 'Guardar cambios'}
-              </Button>
+              {/* Primero el borrado y después la baja, en el mismo orden en
+                  las dos copias: el de la izquierda es el más destructivo. */}
+              {puedeBorrar && <DialogoDeBorrado
+                articuloId={articuloId}
+                nombre={nombre}
+                desactivado={desactivado}
+                resumen={resumenBorrado ?? { movimientos: 0, unidades: 0, ventas: 0 }}
+              />}
+              {puedeEditar && (
+                <>
+                  <Button
+                    type="submit"
+                    form={FORM_BAJA_ARTICULO}
+                    // Condicional, no fijo en "destructive": reactivar un
+                    // artículo no es una acción destructiva y pintarla en rojo la
+                    // hace parecer una — antes del rediseño ya era
+                    // `desactivado ? 'secondary' : 'destructive'`, y esta task lo
+                    // había dejado fijo por error.
+                    variant={desactivado ? 'secondary' : 'destructive'}
+                    disabled={dandoBaja}
+                  >
+                    {desactivado ? (
+                      <RotateCcw aria-hidden="true" className="size-[15px]" />
+                    ) : (
+                      <Ban aria-hidden="true" className="size-[15px]" />
+                    )}
+                    {dandoBaja
+                      ? desactivado
+                        ? 'Reactivando…'
+                        : 'Desactivando…'
+                      : desactivado
+                        ? 'Reactivar'
+                        : 'Desactivar'}
+                  </Button>
+                  <Button type="submit" form={FORM_EDITAR_ARTICULO} disabled={editando}>
+                    <Check aria-hidden="true" className="size-[15px]" />
+                    {editando ? 'Guardando…' : 'Guardar cambios'}
+                  </Button>
+                </>
+              )}
             </>
           ) : undefined
         }
@@ -616,43 +634,54 @@ export function FichaDeArticulo({
           repetidos — `lg:hidden`, atados a los MISMOS `<form>` por `form=`
           (nunca por `id=`: los botones del pie no llevan uno propio).
 
-          La guarda es `puedeEditar` —el permiso `ARTICULOS_EDITAR`—, la MISMA
-          que la copia del Topbar (`acciones`, más arriba) y que el `<form>`
-          de baja. Las dos copias del par de botones se guardan con la misma
-          expresión: gatear sólo una dejaría a un empleado sin el permiso con
-          "Desactivar" y "Guardar cambios" a mano en el teléfono.
+          La guarda es `puedeEditar || puedeBorrar` —cada permiso, `ARTICULOS_EDITAR`
+          y `ARTICULOS_BORRAR`, es independiente— la MISMA que la copia del
+          Topbar (`acciones`, más arriba). Las dos copias de cada acción se
+          guardan con la misma expresión: gatear sólo una dejaría a un
+          empleado sin el permiso con el botón a mano en el teléfono.
           `formularios.test.tsx` lo fija contando ocurrencias. */}
-      {puedeEditar && (
+      {(puedeEditar || puedeBorrar) && (
         <div className="sticky bottom-0 z-10 flex items-center gap-[10px] border-t bg-card p-[14px] lg:hidden">
-          <Button
-            type="submit"
-            form={FORM_BAJA_ARTICULO}
-            variant={desactivado ? 'secondary' : 'destructive'}
-            disabled={dandoBaja}
-            className={`shrink-0 ${CLASES_BOTON_PIE}`}
-          >
-            {desactivado ? (
-              <RotateCcw aria-hidden="true" className="size-[15px]" />
-            ) : (
-              <Ban aria-hidden="true" className="size-[15px]" />
-            )}
-            {dandoBaja
-              ? desactivado
-                ? 'Reactivando…'
-                : 'Desactivando…'
-              : desactivado
-                ? 'Reactivar'
-                : 'Desactivar'}
-          </Button>
-          <Button
-            type="submit"
-            form={FORM_EDITAR_ARTICULO}
-            disabled={editando}
-            className={`flex-1 ${CLASES_BOTON_PIE}`}
-          >
-            <Check aria-hidden="true" className="size-[15px]" />
-            {editando ? 'Guardando…' : 'Guardar cambios'}
-          </Button>
+          {puedeBorrar && <DialogoDeBorrado
+            articuloId={articuloId}
+            nombre={nombre}
+            desactivado={desactivado}
+            resumen={resumenBorrado ?? { movimientos: 0, unidades: 0, ventas: 0 }}
+            movil
+          />}
+          {puedeEditar && (
+            <>
+              <Button
+                type="submit"
+                form={FORM_BAJA_ARTICULO}
+                variant={desactivado ? 'secondary' : 'destructive'}
+                disabled={dandoBaja}
+                className={`shrink-0 ${CLASES_BOTON_PIE}`}
+              >
+                {desactivado ? (
+                  <RotateCcw aria-hidden="true" className="size-[15px]" />
+                ) : (
+                  <Ban aria-hidden="true" className="size-[15px]" />
+                )}
+                {dandoBaja
+                  ? desactivado
+                    ? 'Reactivando…'
+                    : 'Desactivando…'
+                  : desactivado
+                    ? 'Reactivar'
+                    : 'Desactivar'}
+              </Button>
+              <Button
+                type="submit"
+                form={FORM_EDITAR_ARTICULO}
+                disabled={editando}
+                className={`flex-1 ${CLASES_BOTON_PIE}`}
+              >
+                <Check aria-hidden="true" className="size-[15px]" />
+                {editando ? 'Guardando…' : 'Guardar cambios'}
+              </Button>
+            </>
+          )}
         </div>
       )}
     </>
