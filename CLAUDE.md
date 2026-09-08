@@ -3152,6 +3152,139 @@ Y del producto:
   desbordado); y que un empleado con `ARTICULOS_EDITAR` y sin
   `ARTICULOS_BORRAR` vea "Guardar cambios" y no vea "Borrar".
 
+- ~~Poder anotar un dato de entrega en una venta.~~ **Hecho** (2026-09-08). Sale del pedido
+  textual del dueño del producto: *"cuando estamos cargando una venta puede
+  tener un campo detalles de tipo texto para que puedan guardar alguna
+  información adicional"*, y de la precisión que llegó al empezar a diseñarlo:
+  lo que se guarda ahí son **datos del cliente y de la entrega** — a quién se le
+  entregó, una dirección, un teléfono suelto. Hasta hoy una venta no tenía dónde
+  poner una sola palabra: tiene ítems, pagos, cliente, usuario y totales, y cada
+  uno de esos campos significa algo preciso que el motor calcula o valida, así
+  que lo que un mostrador anota al pasar —*"lo retira el hermano el jueves"*—
+  no entraba en ninguno y no se anotaba en ningún lado. Ver
+  `docs/superpowers/specs/2026-09-08-detalle-de-venta-design.md`.
+
+  **El principio del ciclo, del que cuelga todo lo demás: el detalle no
+  significa nada para el motor.** No participa de ningún total, de ninguna
+  validación de plata ni de ningún invariante — es un campo que alguien lee,
+  nunca uno que el sistema interpreta. Ésa es la propiedad que lo hace barato de
+  agregar y la que hace segura la única decisión incómoda del ciclo. Y sigue
+  rigiendo el criterio con el que entraron los planes de pago y el precio en
+  dólares: un local que no lo use no ve ninguna diferencia, salvo un campo vacío
+  en el panel de cobro.
+
+  **Es la primera edición del CONTENIDO de una venta ya cobrada, y la distinción
+  con "la primera escritura" hay que cuidarla**, porque la versión imprecisa se
+  escribió durante el ciclo y costó una vuelta de review: `anular` también
+  escribe sobre una venta cerrada (`anuladaEn`, `anuladaPorId`), sólo que cambia
+  su ESTADO. Lo que se estrena acá es editar lo que la venta DICE. **Lo que lo
+  hace seguro es el alcance**: `guardarDetalle` actualiza UNA columna, la de
+  texto libre, filtrada por id y por tenant, y no toca ninguna otra. Nada de lo
+  que el motor de ventas garantiza —que los pagos cierren contra los totales,
+  que el stock haya bajado, que la clave de idempotencia sea única— pasa por esa
+  columna ni puede cambiar por ella.
+
+  **Se edita también una venta anulada.** Es la excepción explícita a que una
+  venta anulada sea un comprobante congelado, y se sostiene por el mismo
+  principio: el detalle no es parte de lo que se cobró — los ítems, los pagos y
+  los dos totales siguen intactos y siguen sin tener ningún camino de escritura
+  después del cobro. Y es el caso que más lo necesita: una venta anulada es
+  justamente aquella sobre la que alguien va a querer dejar escrito qué pasó.
+
+  **Sin permiso nuevo.** `guardarDetalle` va detrás de `exigirSesion` a secas, el
+  mismo nivel al que `ingresarMercaderia` y `corregirPorConteo` llegan por el
+  `conSesion` de su pantalla. La regla que este repo viene aplicando es delegar
+  **por lo que la acción mueve**: `PLANES_PAGO` existe aparte porque mueve el
+  precio de todo el catálogo, `ARTICULOS_BORRAR` porque no se deshace y se lleva
+  filas de dos tablas más. Esto mueve una columna de texto de una venta y se
+  corrige tipeando de nuevo. `lib/permisos/catalogo.ts` no crece, y la fuente
+  sigue siendo ese archivo y no este párrafo.
+
+  **Sin rastro de ediciones, dicho sin maquillar**: una corrección pisa lo
+  anterior, y después nadie puede saber qué decía antes ni quién lo cambió. Es
+  un campo, no una tabla-libro. Si algún día hace falta el rastro, la salida
+  conocida es una tabla de ediciones con su propia línea en
+  `setup-db-roles.sh`, y es **aditiva**: nada de este ciclo habría que deshacer.
+
+  **El tope y el saneo viven una sola vez** —`TOPE_DETALLE` y
+  `normalizarDetalle`, en `lib/ventas/detalle.ts`—, y no por prolijidad: la
+  misma regla la necesitan sus dos escritores (`crearVenta` al cobrar y
+  `guardarDetalle` al editar) y los dos `Textarea` que declaran su `maxLength`
+  para que el corte no sea una sorpresa. Que cada uno escribiera su propia
+  versión es exactamente la forma de defecto que este repo ya pagó con las dos
+  implementaciones del selector de categoría, donde el alta y la ficha se
+  desincronizaron en silencio durante cuatro días con el gate en verde. Lo que
+  esa función decide: vacío, sólo espacios y ausente son **lo mismo** —la
+  ausencia del dato, o sea `null`, el mismo criterio con el que `crearVenta` ya
+  trata un `imeiCapturado` vacío—, y lo que pasa el tope se **corta y no se
+  rechaza**, porque un cartel rojo en el mostrador por una nota larga sería
+  frenar un cobro por lo único de esa pantalla que no es plata.
+
+  **La normalización vive en el motor y no en el server action del cobro**,
+  antes de abrir la transacción, junto al resto de las validaciones de dominio y
+  exactamente donde `crearVenta` ya normaliza los IMEI capturados: así cualquier
+  llamador —pantalla, script, o un módulo futuro entrando por
+  `crearVentaDesde`— guarda el campo con la misma forma.
+
+  **La migración viaja en el mismo deploy que la UI**, con el argumento ya
+  escrito para el precio en dólares y para el borrado de artículos: una columna
+  aditiva y nullable, cero `DROP` y cero renombres, que el código anterior no
+  escribe por ningún camino y no lee por ninguno. Lo que expand/contract exige
+  no es "la migración en un deploy aparte", es que el schema nuevo soporte la
+  versión anterior del código.
+
+  **Y una nota sobre la regla de las dos copias, que acá NO se activa**: el
+  `<form>` de cobro de `/vender` es único —el layout de teléfono y el de
+  escritorio lo comparten y se distinguen sólo por CSS—, así que el campo entra
+  una sola vez. Vale dejarlo dicho igual, porque la conclusión correcta ("no hay
+  dos copias") sólo se puede sacar mirando, y el próximo control que se sume a
+  esa pantalla puede no tener la misma suerte. Lo que sí sumó el ciclo es un
+  caso que fija que ese `Textarea` no declara ningún manejador de teclado
+  propio: el atajo global de `Enter` ya es allow-list —sólo dispara con el foco
+  en `<body>` o sin foco—, así que tipear ahí nunca cobró, pero salirse de esa
+  allow-list por la ventana es el modo de falla que el repo pagó una vez cuando
+  los `Select` de Radix dejaron de renderizar un `<select>` y la deny-list de
+  entonces los dejó pasar.
+
+  **Lo que este ciclo NO hace**:
+
+  - **Nada en el listado de `/ventas`**: ni una columna con el detalle, ni un
+    buscador de texto. Los filtros de esa pantalla son rango de fechas, vista,
+    moneda y página; un buscador es un control nuevo, con su query, su índice y
+    una paginación que lo preserve. Decisión explícita del dueño del producto:
+    primero que el dato exista. **El disparador para reconsiderarlo**: que
+    alguien tenga que abrir ventas de a una para encontrar la que buscaba.
+  - **Sin historial de ediciones** (ver arriba).
+  - **Sin campos estructurados de entrega** (dirección, teléfono, fecha de
+    retiro). Empezar por texto libre es lo que deja ver qué se anota de verdad
+    antes de inventarle una forma; el día que la mayoría de los detalles sean un
+    teléfono, ahí se va a saber qué columna hace falta.
+  - **Sin tocar el ticket**: las ventas todavía no tienen ticket impreso —el
+    térmico de 80 mm es del módulo de órdenes de trabajo—. Cuando exista, ahí se
+    decide si el detalle sale impreso, y probablemente no en la copia del
+    cliente.
+  - **El bot no lo lee.** Su única herramienta devuelve `{ nombre, precio,
+    disponibilidad }` del catálogo; no hay ningún camino de código desde el
+    agente hasta una venta, y este ciclo no abre ninguno. Es la defensa de
+    siempre: qué tools existen, no qué dice el prompt.
+
+  **`design/arandano.pen` no dibuja ni el campo del panel de cobro ni la card
+  "Detalles"**, en ningún ancho. Se derivaron de patrones que ya existen: el
+  campo, de los controles del propio panel de cobro; la card, de las cards con
+  formulario de `/inventario/[id]`, y va pegada al Resumen y por encima de la
+  Zona de riesgo, que se queda última en las dos disposiciones. Anotado en
+  `docs/correcciones-pendientes-del-pen.md`.
+
+  **Queda pendiente la verificación manual**, y se puede hacer después del merge
+  —`arandano-dev` bind-montea `/root/arandano`, que sirve `main`—. Lo que hay
+  que mirar: cobrar una venta escribiendo un detalle y verlo en su ficha;
+  editarlo desde la ficha y ver que persiste al recargar; vaciarlo y ver que
+  queda vacío y no con espacios; editar el de una venta **anulada**; que una
+  venta sin detalle se vea exactamente como antes en las dos pantallas; y —el
+  único punto que ningún test contesta, y el único riesgo de presentación del
+  ciclo— que a 390 px el textarea del panel de cobro no empuje el botón Cobrar
+  fuera de la vista.
+
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

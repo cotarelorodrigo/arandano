@@ -1304,6 +1304,36 @@ del formulario y la franja del Cierre.
 ---
 
 
+## 36. La maqueta no dibuja el campo de detalles ni su card, en ningún ancho
+
+- **Frames**: ninguno. `design/arandano.pen` es anterior al ciclo del detalle
+  de venta (2026-09-08) — no tiene ni el frame de escritorio ni el `Móvil / …`
+  con el campo del panel de cobro ni con la card del detalle.
+
+**El textarea "Detalles (opcional)"** del panel de cobro de `App / Vender`, bajo
+la lista de pagos y arriba del botón Cobrar. Se derivó de los controles que la
+propia card ya dibuja —no hay tratamiento visual nuevo, sólo un control más—.
+Lo que no tiene referencia es **cuánto espacio vertical se le puede dar sin
+empujar el botón Cobrar fuera de la vista en el teléfono**, que es justamente el
+punto que la verificación manual del ciclo tiene que mirar y el único riesgo de
+presentación que dejó.
+
+**La card "Detalles"** de `App / Venta detalle` y de `Móvil / Venta detalle`,
+entre "Resumen" y "Zona de riesgo". Se derivó de las cards con formulario de
+`/inventario/[id]`. Acá el `.pen` tampoco calla del todo: dibuja esta pantalla
+con una cantidad concreta de cards y este ciclo le suma una, así que el reparto
+de la columna derecha en escritorio y el orden de la pila en el teléfono
+—Resumen, la card nueva, y la Zona de riesgo última en las dos disposiciones—
+son derivados y no están confirmados por ningún frame.
+
+Qué haría falta: los dos frames dibujados, y en particular una decisión sobre la
+altura del textarea del cobro en el ancho del teléfono.
+
+Detectado al construir el ciclo del detalle de venta (2026-09-08). Ver
+`docs/superpowers/specs/2026-09-08-detalle-de-venta-design.md`.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el
