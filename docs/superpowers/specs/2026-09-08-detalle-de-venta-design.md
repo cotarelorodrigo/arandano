@@ -22,9 +22,13 @@ que alguien lee, nunca uno que el sistema interpreta. Ésa es la propiedad que l
 hace barato de agregar y la que hace segura la única decisión incómoda del ciclo
 (que se pueda editar una venta ya cobrada, más abajo).
 
-**Un local que no lo use no ve ninguna diferencia**, salvo un campo vacío en el
-panel de cobro. Es el mismo criterio con el que entraron los planes de pago y el
-precio en dólares.
+**Un local que no lo use no tiene nada nuevo que decidir** —es el mismo criterio
+con el que entraron los planes de pago y el precio en dólares—, pero la
+diferencia visible existe y conviene decirla en vez de esconderla: en `/vender`
+el campo queda vacío, y en `/ventas/[id]` **la card "Detalles" se dibuja
+igual**, con dato o sin él (el porqué, más abajo, en la sección de esa
+pantalla). Es la única pantalla del producto que cambia para un local que no
+use el campo.
 
 ## Lo que se guarda
 
@@ -136,9 +140,17 @@ dato se carga cuando aparece después, así que esconderla cuando está vacía s
 esconder justamente el caso que el ciclo existe para atender.
 
 Adentro, el `Textarea` precargado —con el mismo `maxLength` que el de `/vender`,
-por el mismo motivo— y un botón "Guardar detalles", con `useActionState` en **un
-solo componente** que reparte `pendiente` y el resultado, el mismo motivo por el
-que `FichaDeArticulo` es un componente único y no dos.
+por el mismo motivo— y un botón "Guardar detalles". **Sin `<form>`, con
+`useTransition` y un toast**, siguiendo el precedente más cercano que hay: la
+card "Lo que el bot sabe del local" (`app/(app)/bot/formularios.tsx`). Sin
+`<form>` no hay `FormData` de donde sacar el texto, así que el valor vive en el
+estado —el `Textarea` va controlado y no con `defaultValue`— y el `onClick` lo
+manda. Y el aviso se lanza en el MISMO handler que ejecuta la acción, con el
+resultado en la mano, **nunca desde un `useEffect`**: un efecto está atado al
+ciclo de vida del componente, y cada `revalidatePath` lo remonta y se lleva el
+aviso puesto — que es exactamente el bug que diagnosticó el ciclo de la UI de
+categorías (2026-08-24). La clave del toast es estable, o sonner apila una
+copia por cada guardado.
 
 **Dónde va en la pila.** El cuerpo del detalle ordena sus cards con un `order-N`
 por card sobre el mismo árbol, para que el teléfono apile Resumen primero y
