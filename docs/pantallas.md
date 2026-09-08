@@ -375,10 +375,16 @@ campo de cotización, ver *Decisiones*.
   entre los pagos y el pie. Texto libre para el dato de entrega —a quién se le
   entregó, una dirección, un teléfono—: no participa de ningún total ni de
   ningún chip, así que un local que no lo use no ve ninguna diferencia. Viaja
-  como el campo `detalle` del formulario; el saneo y el tope (500) los aplica el
-  motor, una sola vez, en `lib/ventas/detalle.ts`. Se limpia al cobrar junto con
-  el carrito: el detalle es de esa venta, no del turno. `Enter` con el foco acá
-  no cobra — la allow-list del atajo global sólo dispara con el foco en `<body>`.
+  como el campo `detalle` del formulario; el saneo y el tope los aplica el
+  motor, una sola vez, en `lib/ventas/detalle.ts` (`TOPE_DETALLE`) — el mismo
+  número que lee el `maxLength` del textarea. Se limpia al cobrar Y al vaciar
+  el carrito, los dos caminos: el detalle es de esa venta, no del turno, y
+  dejarlo puesto al vaciar pegaría el dato de entrega de un cliente al carrito
+  siguiente. `Enter` con el foco acá no cobra — la allow-list del atajo global
+  sólo dispara con el foco en `<body>`. `Esc` con el foco acá tampoco arma el
+  vaciado del carrito: el textarea corta la tecla antes de que llegue al
+  listener global (`detenerEscapeGlobal`, el mismo remedio que ya usan los
+  mini-forms de caja).
 - Cobrar apretando `Enter` con el foco en `<body>` (sin nada en particular
   enfocado), y vaciar el carrito con `Esc`.
 - Ver el estado real de la caja del turno en un chip del header, y abrirla o

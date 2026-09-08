@@ -42,6 +42,18 @@ describe('normalizarDetalle', () => {
     expect(normalizarDetalle('Retira Ana\nMartes 10 a 12')).toBe('Retira Ana\nMartes 10 a 12')
   })
 
+  // Los dos escritores no llegan con el mismo salto de línea: `/vender`
+  // postea vía FormData, cuya construcción normaliza a CRLF, y la ficha manda
+  // un string de JS por el argumento del server action, que queda en LF. Sin
+  // esta normalización la MISMA nota tipeada se guarda distinto según qué
+  // pantalla la escribió — y un CRLF cerca del tope corta un carácter de más
+  // contra lo que el `maxLength` del cliente prometía, porque ahí un salto
+  // ocupa dos.
+  it('normaliza CRLF y CR sueltos a LF, para que los dos escritores coincidan', () => {
+    expect(normalizarDetalle('Retira Ana\r\nMartes 10 a 12')).toBe('Retira Ana\nMartes 10 a 12')
+    expect(normalizarDetalle('Retira Ana\rMartes 10 a 12')).toBe('Retira Ana\nMartes 10 a 12')
+  })
+
   it('el tope es 500', () => {
     expect(TOPE_DETALLE).toBe(500)
   })

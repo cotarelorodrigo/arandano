@@ -42,9 +42,20 @@ export const TOPE_DETALLE = 500
  *
  * El segundo `trim()` es por el corte: puede caer justo sobre un espacio, y un
  * detalle que termina en espacio es lo que el primero existe para evitar.
+ *
+ * **Los saltos de línea se normalizan a `\n` ANTES que nada más, y es lo que
+ * hace que esta función cumpla lo que promete el comentario del módulo: que
+ * los dos escritores coincidan.** `/vender` postea vía `FormData`, y la
+ * construcción de esa lista normaliza los saltos a CRLF; `guardarDetalle`
+ * recibe un string de JS por el argumento del server action, que queda en LF
+ * tal cual lo tipeó el navegador. Sin este paso la MISMA nota se guardaba
+ * distinto según qué pantalla la escribió, y un CRLF cerca del tope perdía un
+ * carácter de más contra lo que el `maxLength` del cliente prometía —ahí un
+ * salto cuenta dos.
  */
 export function normalizarDetalle(texto: string | null | undefined): string | null {
   if (texto === null || texto === undefined) return null
-  const limpio = texto.trim().slice(0, TOPE_DETALLE).trim()
+  const conSaltosNormalizados = texto.replace(/\r\n?/g, '\n')
+  const limpio = conSaltosNormalizados.trim().slice(0, TOPE_DETALLE).trim()
   return limpio === '' ? null : limpio
 }

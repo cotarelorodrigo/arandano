@@ -108,8 +108,23 @@ function ChipCajaAbierta({ caja }: { caja: CajaDelChip }) {
  * de burbuja alcanza: React 17+ delega los eventos en la raíz del árbol, así
  * que cortarla ahí frena también al listener nativo que escucha en
  * `window`, más arriba en la cadena.
+ *
+ * EXPORTADA porque el ciclo del detalle de venta encontró el mismo hueco en
+ * el `<Textarea>` de "Detalles", del otro lado de la MISMA pantalla —ver su
+ * `onKeyDown` en `punto-de-venta.tsx`—: ahí Escape es un reflejo de
+ * "cancelar esto" mientras alguien está a mitad de una frase, y dos golpes en
+ * menos de tres segundos arman y confirman el vaciado del carrito debajo del
+ * texto. Sigue siendo el mismo hueco, así que es el mismo remedio.
+ *
+ * DEUDA QUE ESTO NO CIERRA, a propósito: los inputs de la fila de pago
+ * (`recibido`, `base`, `cotizacion`) tienen el mismo hueco hoy y ninguno lleva
+ * este corte. Cerrarlo ahí exige tocar la rama de Escape del listener global
+ * —agregarle la misma allow-list de foco que ya tiene la rama de Enter
+ * (`puedeDispararCobroDesdeFoco`)— y arreglaría los tres inputs de una sola
+ * vez en vez de parcharlos campo por campo; es un cambio más ancho que lo que
+ * agregó el detalle y merece su propio ciclo.
  */
-function detenerEscapeGlobal(e: React.KeyboardEvent) {
+export function detenerEscapeGlobal(e: React.KeyboardEvent) {
   if (e.key === 'Escape') e.stopPropagation()
 }
 

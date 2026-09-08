@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { ArrowRight, CircleAlert, Minus, Plus, ScanBarcode, TriangleAlert, X } from 'lucide-react'
 import { cobrar, buscarArticulos, unidadesDeArticulo, type EstadoCobro } from './acciones'
 import { usePasoDeCobro, type Paso } from './paso'
-import { ChipCaja, ChipsDeEstado, ControlDeCaja, type CajaDelChip } from './caja'
+import { ChipCaja, ChipsDeEstado, ControlDeCaja, detenerEscapeGlobal, type CajaDelChip } from './caja'
 import type { ArticuloVendible } from '@/lib/ventas/buscar'
 // De TIPO y no de valor, por lo mismo que `PlanVisible` más abajo:
 // `lib/inventario/unidades.ts` arrastra `lib/tenant/transaccion.ts`, y un
@@ -1588,6 +1588,13 @@ export function PuntoDeVenta({
       // no hay que repetirlo.
       actualizarCarrito(() => [])
       setPagos([])
+      // Mismo argumento que el reset post-cobro, más abajo: el detalle es de
+      // ESA venta, y dejarlo puesto pegaría el dato de entrega de un cliente
+      // al carrito que arranca después de vaciar. En el teléfono es peor: la
+      // card de cobro está `hidden` hasta el paso de cobro, así que nadie ve
+      // el texto viejo al rearmar el carrito — se lo reencuentra recién
+      // adentro de una venta que no tiene nada que ver.
+      setDetalle('')
       return
     }
     // Primer golpe: arma la confirmación y NO borra nada todavía.
@@ -2499,7 +2506,19 @@ export function PuntoDeVenta({
 
                     `maxLength` con el MISMO tope que corta el servidor, para
                     que el corte no sea una sorpresa. Adentro del <form>, que es
-                    lo único que hace que el campo viaje en el submit. */}
+                    lo único que hace que el campo viaje en el submit.
+
+                    `onKeyDown={detenerEscapeGlobal}`: el listener global de
+                    teclas sólo se abstiene ante un overlay de Radix (ver
+                    `hayOverlayDeRadixAbierto`, arriba), y este textarea no lo
+                    es. Sin el corte, Escape acá es el reflejo de "cancelar
+                    esto" mientras alguien está a mitad de una frase, y dos
+                    golpes en menos de tres segundos arman y confirman el
+                    vaciado del carrito debajo del texto — mismo remedio que
+                    ya usan los mini-forms de `caja.tsx`, mismo motivo (ver su
+                    comentario ahí, que además deja escrita la deuda
+                    preexistente: los inputs de la fila de pago tienen el
+                    mismo hueco hoy y este fix no los alcanza). */}
                 <div className="flex flex-col gap-1.5 px-4 pb-4">
                   <Label htmlFor="detalle-de-la-venta" className="text-xs text-foreground-soft">
                     Detalles (opcional)
@@ -2509,6 +2528,7 @@ export function PuntoDeVenta({
                     name="detalle"
                     value={detalle}
                     onChange={(e) => setDetalle(e.target.value)}
+                    onKeyDown={detenerEscapeGlobal}
                     maxLength={TOPE_DETALLE}
                     rows={2}
                     placeholder="Lo retira el hermano el jueves"

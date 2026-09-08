@@ -1214,6 +1214,21 @@ describe('el punto de venta', () => {
     expect(contexto).toMatch(/setPagos\(\[\]\)/)
   })
 
+  // El mismo argumento que ya vale para el reset post-cobro (ver la describe
+  // "el detalle de la venta", más abajo): el detalle es de ESA venta, y
+  // vaciar el carrito sin vaciarlo pega el dato de entrega de un cliente al
+  // carrito que arranca después. Antes de este caso, `alternarVaciado` sólo
+  // vaciaba `lineas` y `pagos` — el detalle quedaba escrito en pantalla, y en
+  // el teléfono (donde la card de cobro está `hidden` hasta el paso de
+  // cobro) nadie lo veía hasta reencontrarlo pegado a la venta siguiente.
+  it('el segundo Esc también vacía el detalle de la venta', () => {
+    const fuente = readFileSync('app/(app)/vender/punto-de-venta.tsx', 'utf8')
+    const posicion = fuente.indexOf('if (vaciadoArmado) {')
+    expect(posicion, 'la rama de confirmación tiene que existir').toBeGreaterThan(-1)
+    const contexto = fuente.slice(posicion, posicion + 800)
+    expect(contexto).toMatch(/setDetalle\(''\)/)
+  })
+
   // El hallazgo IMPORTANT de la review final: borrar el desarme automático
   // (cualquiera de sus dos caminos) dejaba TODOS los tests de entonces en
   // verde — ninguno lo reclamaba. Sin esto, un Esc armado por error (o uno
@@ -2602,16 +2617,28 @@ describe('el detalle de la venta', () => {
   // cual, más arriba en este archivo (la allow-list del atajo global: sólo
   // BODY o sin foco disparan Enter). Repetirlo acá sería la misma aserción dos
   // veces. Lo que ese caso NO puede cubrir es que ESTE <Textarea> en
-  // particular no se salga de esa allow-list con un manejador de teclado
+  // particular no se salga de esa allow-list con un manejador de Enter
   // propio —el modo de falla real que este repo ya pagó una vez con los
   // Select de Radix, cuyo evento llegaba a `window` sin que la allow-list lo
   // viera—. Sobre SIN_COMENTARIOS, y no sobre FUENTE, para que un comentario
   // que algún día mencione "onKeyDown" en prosa no dispare el caso por la
   // razón equivocada.
-  it('el <Textarea> del detalle no declara ningún manejador de teclado propio', () => {
+  //
+  // Y sí declara manejo de ESCAPE, a propósito y desde la revisión final de
+  // este ciclo: el listener global sólo se abstiene ante un overlay de
+  // Radix, y este textarea no lo es, así que dos Escape en menos de tres
+  // segundos mientras alguien tipea una nota armaban y confirmaban el
+  // vaciado del carrito debajo del texto. El remedio es
+  // `detenerEscapeGlobal`, el mismo que ya usan los mini-forms de
+  // `caja.tsx` (ver su comentario ahí) — no una allow-list de foco nueva
+  // para la rama de Escape del listener global, que arreglaría también el
+  // mismo hueco preexistente en `recibido`/`base`/`cotizacion` de la fila de
+  // pago pero es un cambio más ancho que lo que agregó el detalle.
+  it('el <Textarea> del detalle no agrega manejo propio de Enter, y corta Escape con el remedio de caja.tsx', () => {
     const desdeElTextarea = SIN_COMENTARIOS.slice(SIN_COMENTARIOS.indexOf('<Textarea'))
     const hastaElCierre = desdeElTextarea.slice(0, desdeElTextarea.indexOf('/>'))
     expect(hastaElCierre).toContain('name="detalle"')
-    expect(hastaElCierre).not.toMatch(/onKey(Down|Up|Press)/)
+    expect(hastaElCierre).not.toMatch(/onKey(Up|Press)/)
+    expect(hastaElCierre).toMatch(/onKeyDown=\{detenerEscapeGlobal\}/)
   })
 })
