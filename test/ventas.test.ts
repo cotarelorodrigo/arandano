@@ -1723,6 +1723,7 @@ describe('el detalle de venta muestra los IMEI (Task 10)', () => {
         pagos: datos.pagos,
         ofreceAnular: false,
         ventaId,
+        detalle: datos.detalle,
       }),
     )
   }
@@ -1784,6 +1785,19 @@ describe('el detalle de venta muestra los IMEI (Task 10)', () => {
     })
     expect(html.split('355000000000777').length - 1).toBe(1)
     expect(html.split('IMEI ').length - 1).toBe(1)
+  })
+
+  it('trae el detalle de la venta', async () => {
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+      detalle: 'Retira Ana',
+    })
+
+    const datos = await datosDelDetalle(tenantId, id)
+    expect(datos?.detalle).toBe('Retira Ana')
   })
 })
 

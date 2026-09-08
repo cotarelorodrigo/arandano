@@ -1,10 +1,14 @@
 'use client'
 
-import { useActionState, useState } from 'react'
+import { useActionState, useState, useTransition } from 'react'
+import { toast } from 'sonner'
 import { Undo2 } from 'lucide-react'
-import { anular, type EstadoAnulacion } from './acciones'
+import { anular, guardarDetalle, type EstadoAnulacion, type EstadoDetalle } from './acciones'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { TOPE_DETALLE } from '@/lib/ventas/detalle'
 
 const INICIAL: EstadoAnulacion = { error: null, aviso: null }
 
@@ -75,5 +79,69 @@ export function AnularVenta({ ventaId }: { ventaId: string }) {
         </Button>
       )}
     </form>
+  )
+}
+
+/**
+ * El detalle de la venta: verlo y editarlo.
+ *
+ * `useTransition` + toast y no `useActionState` + `<Alert>` inline, siguiendo
+ * el precedente más cercano que hay (la card "Lo que el bot sabe del local",
+ * app/(app)/bot/formularios.tsx): el aviso se lanza en el MISMO handler que
+ * ejecuta la acción, con el resultado en la mano, nunca desde un `useEffect`
+ * sobre el estado — un efecto está atado al ciclo de vida del componente, y con
+ * cada `revalidatePath` el componente se remonta y se lleva el aviso puesto.
+ * La clave del toast es estable, o sonner apila una copia por cada guardado.
+ *
+ * Los errores no se auto-descartan (dicen qué corregir); los éxitos sí.
+ *
+ * **Controlado y no `defaultValue`**, al revés de lo que haría un `<form>`:
+ * sin form no hay `FormData` de donde sacar el texto, así que el valor tiene
+ * que estar en el estado para que el `onClick` lo pueda mandar. Es el mismo
+ * patrón, y por el mismo motivo, que la card "Lo que el bot sabe del local".
+ */
+export function DetalleDeLaVenta({
+  ventaId,
+  detalle,
+}: {
+  ventaId: string
+  detalle: string | null
+}) {
+  const [guardando, empezar] = useTransition()
+  const [texto, setTexto] = useState(detalle ?? '')
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Label htmlFor="detalle-de-la-venta" className="sr-only">
+        Detalles
+      </Label>
+      {/* Sin `name`, a diferencia del de `/vender`: acá no hay `<form>` que lo
+          postee —el texto viaja por el estado hasta el `onClick`—, y un
+          atributo que no cumple ninguna función es ruido que el próximo lector
+          va a interpretar como que algo lo lee. */}
+      <Textarea
+        id="detalle-de-la-venta"
+        value={texto}
+        onChange={(e) => setTexto(e.target.value)}
+        maxLength={TOPE_DETALLE}
+        rows={4}
+        placeholder="Lo retira el hermano el jueves"
+      />
+      <Button
+        type="button"
+        size="sm"
+        disabled={guardando}
+        className="w-full lg:w-auto lg:self-end"
+        onClick={() =>
+          empezar(async () => {
+            const r: EstadoDetalle = await guardarDetalle({ ventaId, detalle: texto })
+            if (r.error) toast.error(r.error, { id: 'detalle-de-venta', duration: Infinity })
+            else if (r.aviso) toast.success(r.aviso, { id: 'detalle-de-venta' })
+          })
+        }
+      >
+        {guardando ? 'Guardando…' : 'Guardar detalles'}
+      </Button>
+    </div>
   )
 }

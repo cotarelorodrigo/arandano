@@ -388,6 +388,7 @@ function renderDetalle(props: Partial<Parameters<typeof Detalle>[0]> = {}) {
       pagos={[PAGO_ARS]}
       ofreceAnular={false}
       ventaId="v1"
+      detalle={null}
       {...props}
     />,
   )
@@ -636,12 +637,12 @@ describe('Detalle: el orden se invierte entre el teléfono y escritorio', () => 
     expect(html.match(/class="contents lg:flex lg:w-\[324px\] lg:shrink-0 lg:flex-col lg:gap-4"/g)).toHaveLength(1)
   })
 
-  it('Resumen es order-1, Qué se vendió order-2, Cómo se pagó order-3, Zona de riesgo order-4 — todas lg:order-none', () => {
+  it('Resumen es order-1, Qué se vendió order-2, Cómo se pagó order-3, Detalles order-4, Zona de riesgo order-5 — todas lg:order-none', () => {
     const html = renderDetalle()
-    for (const orden of ['order-1', 'order-2', 'order-3', 'order-4']) {
+    for (const orden of ['order-1', 'order-2', 'order-3', 'order-4', 'order-5']) {
       expect(html).toContain(`${orden} flex flex-col`)
     }
-    expect(html.match(/lg:order-none/g)).toHaveLength(4)
+    expect(html.match(/lg:order-none/g)).toHaveLength(5)
   })
 })
 
@@ -763,5 +764,46 @@ describe('la pantalla pide y usa totalUsd, la moneda del ítem y qué cubrió ca
 
   it('cada pago calcula cubreLabel con seMuestraCubre y ROTULO_CUBRE', () => {
     expect(fuente).toContain('seMuestraCubre(p.cubre, venta) ? ROTULO_CUBRE[p.cubre] : null')
+  })
+})
+
+describe('la card de detalles', () => {
+  it('precarga el detalle guardado', () => {
+    const html = renderDetalle({ detalle: 'Retira Ana, martes de 10 a 12' })
+    expect(html).toContain('Detalles')
+    expect(html).toContain('Retira Ana, martes de 10 a 12')
+  })
+
+  // La card se dibuja SIEMPRE, con o sin dato: es el lugar donde el detalle se
+  // carga cuando aparece después, así que esconderla vacía sería esconder
+  // justamente el caso que este ciclo existe para atender.
+  it('se dibuja también sin detalle, con el textarea vacío', () => {
+    const html = renderDetalle({ detalle: null })
+    expect(html).toContain('Detalles')
+    expect(html).toMatch(/<textarea[^>]*id="detalle-de-la-venta"[^>]*>\s*<\/textarea>/)
+  })
+
+  it('el maxLength es el tope del servidor', async () => {
+    const { TOPE_DETALLE } = await import('@/lib/ventas/detalle')
+    const html = renderDetalle({ detalle: null })
+    expect(html).toMatch(new RegExp(`<textarea[^>]*maxlength="${TOPE_DETALLE}"`, 'i'))
+  })
+
+  // Editable también anulada: es la decisión del ciclo, y el caso la fija para
+  // que nadie la "arregle" más adelante creyendo que es un descuido.
+  it('se ofrece igual sobre una venta anulada', () => {
+    const html = renderDetalle({ detalle: null, anulada: true, notaDeAnulacionTexto: 'Anulada por X' })
+    expect(html).toMatch(/<textarea[^>]*id="detalle-de-la-venta"/)
+  })
+
+  // El orden de la pila del teléfono: Detalles va cuarta y la Zona de riesgo
+  // queda última. Si alguien inserta la card sin renumerar, la acción
+  // destructiva se le mete en el medio.
+  it('en el teléfono va cuarta, con la zona de riesgo última', () => {
+    const html = renderDetalle({ detalle: null })
+    const posDetalles = html.indexOf('order-4')
+    const posRiesgo = html.indexOf('order-5')
+    expect(posDetalles).toBeGreaterThan(-1)
+    expect(posRiesgo).toBeGreaterThan(-1)
   })
 })
