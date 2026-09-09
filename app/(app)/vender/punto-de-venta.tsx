@@ -1049,8 +1049,27 @@ export function PuntoDeVenta({
   // una clave vacía nunca llega a enviarse.
   const [clave, setClave] = useState('')
   const [carritoReflejado, setCarritoReflejado] = useState(CARRITO_VACIO)
-  // La última venta ya procesada por la limpieza de abajo, para no repetirla
-  // en cada render.
+  // La última venta cuya limpieza YA corrió, para no repetirla en cada render.
+  // Sólo avanza: ninguna edición del carrito la vuelve a poner en null.
+  //
+  // ESTÁ SEPARADA DE `ventaProcesada` A PROPÓSITO, y la mezcla era un bug de
+  // mostrador: las dos empezaron siendo el mismo estado, con dos significados
+  // encima —"esta venta ya limpió el carrito" (la guarda de la limpieza) y
+  // "el cartel de esta venta sigue en pantalla" (el aviso y el efecto de más
+  // abajo)—. `actualizarCarrito` apaga el cartel poniéndola en null, y eso
+  // RE-ARMABA la limpieza: cobrar, buscar el primer artículo de la venta
+  // siguiente y tocarlo agregaba la línea, el render siguiente encontraba la
+  // guarda abierta otra vez —`estado.venta` sigue puesto: `useActionState`
+  // retiene su último estado— y volvía a vaciar el carrito, el buscador y los
+  // pagos. Desde afuera se veía como que el click no agregaba nada.
+  //
+  // Un estado por significado es lo que lo cierra: la guarda lee la que las
+  // ediciones no tocan, el cartel lee la que sí.
+  const [ventaLimpiada, setVentaLimpiada] = useState<string | null>(null)
+  // La venta cuyo resultado sigue a la vista: la pinta `AvisosDelCobro` y la
+  // lee el efecto de la vuelta al carrito. `actualizarCarrito` la apaga,
+  // porque un cambio en el carrito significa que la persona ya dejó de mirar
+  // el resultado de la venta anterior.
   const [ventaProcesada, setVentaProcesada] = useState<string | null>(null)
   const [pagos, setPagos] = useState<Pago[]>([])
   // Controlado y no libre en el DOM: el reset tras cobrar limpia por estado, y
@@ -1219,9 +1238,14 @@ export function PuntoDeVenta({
   // por el ajuste de la firma de más arriba), calculado
   // durante el render en vez de en un efecto — es el patrón que React
   // documenta para "ajustar estado cuando cambia otro estado" (comparar
-  // contra la última venta ya procesada), y el único que este lint acepta
+  // contra la última venta ya limpiada), y el único que este lint acepta
   // para un setState síncrono.
-  if (estado.venta && estado.venta.id !== ventaProcesada) {
+  //
+  // La guarda lee `ventaLimpiada` y NO `ventaProcesada`: son dos estados
+  // distintos justamente para que esto corra UNA vez por venta. Ver el
+  // comentario de la declaración.
+  if (estado.venta && estado.venta.id !== ventaLimpiada) {
+    setVentaLimpiada(estado.venta.id)
     setVentaProcesada(estado.venta.id)
     setLineas([])
     setBusqueda('')

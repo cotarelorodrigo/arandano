@@ -2028,6 +2028,51 @@ describe('el punto de venta', () => {
       /lineasDelPieDeCobro\(\s*mercaderiaEnPesosCentavos\(totales, pagos\),\s*pagos,\s*planes,\s*totales\.usd !== 0,?\s*\)/,
     )
   })
+
+  // El rebote que perdía la primera línea de CADA venta después de la primera.
+  //
+  // `ventaProcesada` llevaba dos significados encima: "esta venta ya limpió el
+  // carrito" (la guarda del ajuste durante el render) y "el cartel de esta
+  // venta sigue a la vista" (`AvisosDelCobro` y el efecto de la vuelta).
+  // `actualizarCarrito` apaga el cartel poniéndola en null, así que RE-ARMABA
+  // la guarda: cobrar, buscar el primer artículo de la venta siguiente y
+  // tocarlo agregaba la línea, y el render inmediato encontraba la guarda
+  // abierta otra vez —`estado.venta` sigue puesto, `useActionState` retiene su
+  // último estado— y volvía a vaciar carrito, buscador y pagos. Desde el
+  // mostrador se veía como que el click no agregaba nada.
+  //
+  // POR FUENTE, y no por una interacción: el estado que lo probaría —una venta
+  // ya cobrada en `useActionState` más un click sobre un resultado— exige
+  // montar la pantalla de verdad, y este archivo se prueba con
+  // `renderToStaticMarkup` y sin jsdom (ver la nota de `renderConCarrito`). Lo
+  // que sí se puede fijar es el invariante que lo cierra: la guarda lee el
+  // estado que las ediciones del carrito no tocan.
+  it('la limpieza de después de cobrar corre UNA vez por venta, aunque se apague el cartel', () => {
+    // La guarda, contra `ventaLimpiada` y no contra `ventaProcesada`.
+    expect(FUENTE).toMatch(/if \(estado\.venta && estado\.venta\.id !== ventaLimpiada\) \{/)
+
+    // Y `ventaLimpiada` sólo avanza: se escribe en un único lugar, con el id de
+    // la venta. Un `setVentaLimpiada(null)` en cualquier parte devolvería el
+    // bug entero.
+    const escrituras = [...FUENTE.matchAll(/setVentaLimpiada\(/g)]
+    expect(escrituras, 'ventaLimpiada se escribe en un solo lugar').toHaveLength(1)
+    expect(FUENTE).toContain('setVentaLimpiada(estado.venta.id)')
+    expect(FUENTE, 'ninguna edición del carrito puede re-armar la limpieza').not.toContain(
+      'setVentaLimpiada(null)',
+    )
+  })
+
+  // Y la otra mitad del par: `actualizarCarrito` sigue apagando el cartel —que
+  // es para lo que existe— y no toca la guarda.
+  it('actualizarCarrito apaga el cartel de la venta anterior, no la guarda de la limpieza', () => {
+    const posicion = FUENTE.indexOf('function actualizarCarrito')
+    expect(posicion, 'no se encontró actualizarCarrito').toBeGreaterThan(-1)
+    const cuerpo = FUENTE.slice(posicion, FUENTE.indexOf('\n  }', posicion))
+    expect(cuerpo).toContain('setVentaProcesada((actual) => (actual ? null : actual))')
+    expect(cuerpo, 'apagar el cartel no puede volver a habilitar la limpieza').not.toContain(
+      'setVentaLimpiada',
+    )
+  })
 })
 
 // --- El ciclo móvil: el cuerpo en un teléfono de 390 px ---
@@ -2385,9 +2430,9 @@ describe('el punto de venta en el teléfono', () => {
 
   // La vuelta automática NO puede ser la misma que la de la flecha. Con
   // `volverAlCarrito` (que empuja una entrada), tocar Atrás después de cobrar
-  // restauraba `paso='cobro'` con `ventaProcesada` todavía seteado —nadie lo
-  // limpia, y no se puede: gatea el cartel de "Venta #N cobrada" y la guarda
-  // del ajuste durante el render—, así que el efecto volvía a disparar y a
+  // restauraba `paso='cobro'` con `ventaProcesada` todavía seteado —sólo lo
+  // apaga una edición del carrito, y en esa ventana todavía no hubo
+  // ninguna—, así que el efecto volvía a disparar y a
   // empujar otra entrada. El gesto de volver quedaba muerto en la ventana
   // entre cobrar y escanear el artículo siguiente, o sea después de CADA venta.
   it('la vuelta automática no deja entrada de historial, y la flecha sí', () => {
