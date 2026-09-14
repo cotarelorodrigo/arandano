@@ -1342,10 +1342,18 @@ Detectado al construir el ciclo del detalle de venta (2026-09-08). Ver
 
 ## 37. La maqueta no dibuja el botón "Corregir", ni su diálogo, ni la card "Correcciones", en ningún ancho
 
-- **Frames**: `App / Venta detalle` (nodo `NjMl1`) y `WBV5G`
+- **Frames**: `KEwHe` (`App / Venta detalle`) y `WBV5G`
   (`Móvil / Venta detalle`). `design/arandano.pen` es anterior al ciclo de
   corregir cómo se pagó una venta (2026-09-14): ninguno de los dos dibuja nada
   de esto.
+
+**El frame de escritorio es `KEwHe` y no `NjMl1`**, aunque el docblock de
+`app/(app)/ventas/[id]/page.tsx` siga citando el segundo: `NjMl1` es un nodo
+"Fila" anidado adentro del frame, sin texto propio — ver la entrada 21, que
+existe justamente porque alguien ya había confundido esos dos nodos antes. La
+primera versión de esta entrada repitió la confusión y se corrigió verificando
+contra esa entrada en vez de contra la memoria, que es la única forma en que una
+corrección registrada sirve de algo.
 
 **El botón "Corregir"** en el encabezado de la card "Cómo se pagó". El `.pen`
 dibuja esa card con un encabezado que sólo lleva el título, así que el botón no
