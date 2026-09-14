@@ -60,12 +60,31 @@ describe('normalizarDetalle', () => {
 })
 
 describe('el módulo', () => {
+  const importesDe = async (url: URL) => {
+    const { readFileSync } = await import('node:fs')
+    const fuente = readFileSync(url, 'utf8')
+    return [...fuente.matchAll(/^\s*(?:import|export)\s[^\n]*?from\s+'([^']+)'/gm)].map(
+      (m) => m[1],
+    )
+  }
+
   // La condición que deja importar TOPE_DETALLE desde un archivo 'use client'
   // sin arrastrar `pg` al bundle del navegador. Lo vigila también
-  // test/limite-cliente-servidor.test.ts, pero acá falla al lado de la causa.
-  it('no importa nada, para poder viajar al bundle del cliente', async () => {
-    const { readFileSync } = await import('node:fs')
-    const fuente = readFileSync(new URL('./detalle.ts', import.meta.url), 'utf8')
-    expect(fuente).not.toMatch(/^\s*import\s/m)
+  // test/limite-cliente-servidor.test.ts —que sigue la cadena entera—, pero acá
+  // falla al lado de la causa.
+  //
+  // Era "no importa nada" hasta que la mecánica de normalizar salió a
+  // `lib/texto/libre.ts` para compartirla con la nota de una corrección de
+  // pagos. La regla nunca fue cero imports: es que ninguna cadena de imports
+  // alcance `lib/db.ts`. Por eso el caso pasó a nombrar el único import
+  // permitido y a exigir, del otro lado, que ese módulo siga sin importar nada
+  // — que es lo que corta la cadena en un solo salto y lo que hace que este
+  // caso siga atrapando un `@/lib/db` metido de contrabando en cualquiera de
+  // los dos archivos.
+  it('sólo importa lib/texto/libre.ts, que a su vez no importa nada', async () => {
+    expect(await importesDe(new URL('./detalle.ts', import.meta.url))).toEqual([
+      '@/lib/texto/libre',
+    ])
+    expect(await importesDe(new URL('../texto/libre.ts', import.meta.url))).toEqual([])
   })
 })
