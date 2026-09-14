@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "permiso" ADD VALUE 'VENTAS_EDITAR';

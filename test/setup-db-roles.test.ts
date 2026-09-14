@@ -360,6 +360,75 @@ describe('setup-db-roles.sh', () => {
       }
     })
 
+    // La bitácora de las correcciones de pago, y la cuarta tabla-libro. El
+    // motivo acá es más filoso que en las anteriores: corregir una venta
+    // cambia PLATA YA COBRADA y reescribe hacia atrás los reportes del
+    // período. Si la app pudiera editar o borrar esto, quien tenga
+    // VENTAS_EDITAR podría cambiar cómo entró la plata de ayer y borrar la
+    // prueba — que es exactamente lo que el permiso aparte existe para poder
+    // auditar.
+    it('ediciones_venta: la app no puede editar ni borrar, y sí leer', async () => {
+      const app = new Client({ connectionString: urlApp() })
+      await app.connect()
+      try {
+        await expect(app.query('UPDATE ediciones_venta SET nota = nota')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(app.query('DELETE FROM ediciones_venta')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(app.query('SELECT 1 FROM ediciones_venta')).resolves.toBeDefined()
+      } finally {
+        await app.end()
+      }
+    })
+
+    it('pagos_archivados: la app no puede editar ni borrar, y sí leer', async () => {
+      const app = new Client({ connectionString: urlApp() })
+      await app.connect()
+      try {
+        await expect(app.query('UPDATE pagos_archivados SET monto = monto')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(app.query('DELETE FROM pagos_archivados')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(app.query('SELECT 1 FROM pagos_archivados')).resolves.toBeDefined()
+      } finally {
+        await app.end()
+      }
+    })
+
+    // Y la puerta de atrás de ESTA bitácora, que opera un nivel más arriba y
+    // por eso no la cierra ninguno de los dos casos anteriores:
+    // ediciones_venta.venta_id es ON DELETE CASCADE y el padre es `ventas`, no
+    // `ediciones_venta`. Un `DELETE FROM ventas` con el rol de la app se
+    // llevaba el libro entero y sus fotos sin tocar ninguna de las dos tablas
+    // protegidas — misma forma que ordenes_de_trabajo respecto de
+    // eventos_orden, salvo que ahí el REVOKE del padre ya estaba y acá
+    // faltaba.
+    //
+    // Hoy ningún código borra ventas. Lo que esto compra es que el día que
+    // alguien escriba "borrar una venta" —el ciclo de ARTICULOS_BORRAR ya
+    // estrenó un camino de borrado con cascadas— falle RUIDOSAMENTE en vez de
+    // llevarse la bitácora sin avisar.
+    it('ventas: la app no puede borrar (y con eso, la bitácora no tiene puerta de atrás)', async () => {
+      const app = new Client({ connectionString: urlApp() })
+      await app.connect()
+      try {
+        await expect(app.query('DELETE FROM ventas')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        // La otra mitad, y no es simetría: una venta NO es un libro. La
+        // anulación, el detalle y el caché `recargo` se escriben sobre esta
+        // misma fila —el último, en cada corrección—, así que un REVOKE de
+        // UPDATE acá rompería el motor de ventas entero.
+        await expect(app.query('UPDATE ventas SET detalle = detalle')).resolves.toBeDefined()
+      } finally {
+        await app.end()
+      }
+    })
+
     // Y su puerta de atrás, la misma que la de eventos_orden:
     // mensajes_bot.conversacion_id es ON DELETE CASCADE, así que borrar el hilo
     // se llevaría el contenido entero sin tocar la tabla que el caso de arriba

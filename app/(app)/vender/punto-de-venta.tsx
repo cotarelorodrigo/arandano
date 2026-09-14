@@ -24,6 +24,8 @@ import {
 // así que no arrastra `pg` al bundle del cliente — la misma condición que
 // cumple `lib/ventas/centavos.ts`, unas líneas más arriba.
 import { TOPE_DETALLE } from '@/lib/ventas/detalle'
+// Ídem: `lib/ventas/cruce.ts` no importa nada. Se re-exporta más abajo.
+import { cotizacionParaElCruce } from '@/lib/ventas/cruce'
 // De TIPO y no de valor: `lib/planes/consultar.ts` importa Prisma, y un import
 // de valor desde este archivo —que lleva 'use client'— arrastraría `pg` al
 // bundle del navegador. Mismo caso que `ArticuloVendible`, y lo que vigila
@@ -502,29 +504,15 @@ export function lineasDeTotal(
 }
 
 /**
- * Qué cotización le corresponde a un pago que acaba de cambiar de `moneda` o
- * de `cubre`.
- *
- * **VACÍA cuando el pago CRUZA monedas**, y ésa es la regla del ciclo: la
- * cotización no se precarga nunca, ni con la del local ni con la del último
- * pago. Un `'1'` heredado sobre un pago que pasó a cruzar no es un default
- * inocente —es un dólar a un peso, y una venta que cierra por un número que
- * nadie tipeó—.
- *
- * **Y `'1'` cuando NO cruza**, que es lo que el servidor necesita: con
- * `moneda === cubre` la cotización no entra en ninguna cuenta (ver
- * `aporteDePago`/`montoEntregado` en lib/ventas/totales.ts), pero `crearVenta`
- * la exige mayor que cero igual y rechaza con COTIZACION_INVALIDA.
- *
- * Escribir el `'1'` acá es además lo que limpia una cotización MENTIROSA:
- * tipear 1485 con `cubre: 'USD'` y después volver el selector a pesos dejaba
- * ese 1485 pegado a un pago que ya no convierte nada, y como el servidor ni
- * la mira en ese caso, terminaba guardado en `Pago.cotizacion` —histórico e
- * inmutable— sin que ninguna cuenta de la pantalla lo notara.
+ * La regla de la cotización al cambiar de cruce vive en `lib/ventas/cruce.ts`
+ * desde que la comparte con el diálogo de corrección de pagos
+ * (`app/(app)/ventas/corregir-pagos.tsx`): las dos pantallas reparten pagos
+ * entre los mismos dos totales, y la misma regla escrita dos veces es el
+ * defecto que este repo ya pagó con las dos implementaciones del selector de
+ * categoría. Se RE-EXPORTA desde acá para no romper a quien la importe de este
+ * archivo — su docblock completo está en el módulo nuevo.
  */
-export function cotizacionParaElCruce(moneda: Pago['moneda'], cubre: Pago['cubre']): string {
-  return moneda === cubre ? '1' : ''
-}
+export { cotizacionParaElCruce }
 
 /**
  * Qué total cubre un pago que se crea solo: el único que la venta tiene.

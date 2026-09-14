@@ -953,7 +953,7 @@ El historial por período.
 
 El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 
-**Acciones**: `anular`, `guardarDetalle`.
+**Acciones**: `anular`, `guardarDetalle`, `corregirPagos`.
 
 **Qué se puede hacer**
 
@@ -985,6 +985,21 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
   "Consumidor final"), el estado y el comprobante.
 - **Anular la venta** — con el permiso `VENTAS_ANULAR` (un dueño siempre lo
   tiene; un empleado, sólo si se lo otorgaron), y sólo mientras siga cobrada.
+- **Corregir cómo se pagó** — con el permiso `VENTAS_EDITAR` (un dueño siempre
+  lo tiene; un empleado, sólo si se lo otorgaron), y sólo mientras la venta
+  siga cobrada: el motor rechaza una venta anulada con `VENTA_ANULADA`, así
+  que ofrecer el botón ahí sería ofrecer un error. El botón "Corregir" vive en
+  el encabezado de la card "Cómo se pagó" —que se dibuja igual en los dos
+  anchos, así que **una sola copia** alcanza— y abre un diálogo con una fila
+  por pago: medio, moneda, plan (sólo si ese medio tiene planes cargados),
+  `Cubre` (sólo si la venta tiene los dos totales), monto y cotización (sólo si
+  el pago cruza monedas), más "Agregar pago", "Quitar pago" y una nota
+  opcional de hasta `TOPE_NOTA_DE_CORRECCION` caracteres. **La mercadería no se
+  toca**: los dos totales son los guardados, y el juego nuevo tiene que
+  cerrar contra ellos. Un chip dice cuánto falta (o sobra) **por moneda**, sin
+  compensar una con la otra, y guardar está deshabilitado mientras diga algo.
+  Aviso por toast con clave estable por venta, lanzado en el mismo handler que
+  ejecuta la acción; el error queda hasta que se lo lea (`duration: Infinity`).
 - **Detalles.** Card propia en la columna derecha, entre Resumen y Zona de
   riesgo, con un textarea y "Guardar detalles" (`guardarDetalle`). Se dibuja
   siempre, con o sin dato: es donde el detalle se carga cuando aparece después
@@ -997,9 +1012,79 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
   alguien quiere dejar escrito qué pasó. Sin permiso propio (`exigirSesion`) y
   sin rastro de quién editó: es un campo, no una tabla-libro. Aviso por toast,
   con clave estable, lanzado en el mismo handler que ejecuta la acción.
+- **Correcciones.** La bitácora de las correcciones de esta venta: quién, cuándo,
+  la nota si la hay, y **cómo estaban los pagos ANTES** de esa corrección
+  (medio, plan e importe en su propia moneda). Card propia entre Detalles y la
+  Zona de riesgo, con el mismo tratamiento de línea de tiempo que la bitácora de
+  una orden de trabajo. **Sólo se dibuja si hubo alguna corrección** — al revés
+  que Detalles, que se dibuja vacía a propósito porque es el lugar donde el dato
+  se carga; acá no hay nada que cargar, así que un local que nunca corrigió una
+  venta no ve ninguna diferencia. No tiene permiso propio ni acción: es lectura,
+  y la ve cualquiera que pueda abrir la venta.
 
 **Decisiones**
 
+- **El chip de faltante del diálogo sale del MISMO espejo en enteros que usa
+  `/vender`** (`lib/ventas/centavos.ts`, que `centavos.test.ts` compara caso
+  por caso contra la aritmética del motor), así que el diálogo **no puede**
+  decir que cierra mientras el servidor lo rechaza con `PAGOS_NO_CIERRAN`. Y el
+  texto del chip y la guarda del botón salen de **una sola función**
+  (`textoDelChip`): con un predicado aparte para el botón, los dos pueden
+  terminar diciendo cosas distintas, que en una pantalla de plata significa un
+  botón habilitado sin cartel.
+- **La BASE de cada pago se reconstruye, no se lee de una columna**
+  (`baseDePagoGuardado`). `Pago` guarda `monto` —lo que entró a la caja, ya con
+  el recargo adentro— y el motor recibe `base` —lo que ese pago cubre de la
+  mercadería a precio de lista—. La vuelta ramifica donde ramifica
+  `montoEntregado`, y sólo el cruce "pesos entregados contra el total en
+  dólares" divide: es la única división del ciclo, y se puede hacer porque no
+  decide ninguna plata — el número que se cobra lo recalcula el servidor desde
+  la base que el campo devuelve.
+- **Un pago nuevo del diálogo nace con la moneda de lo que va a cubrir, no en
+  pesos**, y la cotización se la decide `cotizacionParaElCruce`
+  (`lib/ventas/cruce.ts`), no un `'1'` fijo. La primera versión de "Agregar
+  pago" sí calculaba `cubre` pero clavaba `moneda: 'ARS'` y `cotizacion: '1'`:
+  en una venta **sólo en dólares** eso hacía nacer un pago que CRUZA con la
+  cotización ya llena en 1 —un dólar a un peso—, el chip decía que la venta
+  cerraba, el servidor lo aceptaba (sólo exige `cotizacion > 0`) y quedaba un
+  `Pago.cotizacion = 1` histórico e inmutable sobre pesos que entraron de
+  verdad. La construcción de la fila vive en `pagoNuevo(totales)`, **exportada**
+  y no adentro del componente: sin jsdom no hay forma de tocar ese botón, así
+  que tres líneas adentro del `onClick` son tres líneas que ningún caso puede
+  mirar — que es exactamente cómo el defecto llegó a existir.
+- **El JSX de las filas del diálogo NO se extrajo del panel de cobro de
+  `/vender`, y es deuda declarada.** La regla de plata vive una sola vez
+  —`lib/ventas/centavos.ts` del lado del navegador, `lib/ventas/pagos.ts` del
+  lado del servidor—; lo duplicado es la disposición, no la regla, que es la
+  diferencia con el caso del selector de categoría (allá lo duplicado era la
+  regla, y las dos copias se desincronizaron en silencio durante cuatro días con
+  el gate en verde). Extraerlo exigiría refactorizar
+  `app/(app)/vender/punto-de-venta.tsx`, la pantalla más delicada del producto,
+  dentro de un ciclo que no la toca. **El disparador para extraerlo**: que
+  aparezca una tercera copia.
+- **La bitácora muestra el "antes" y nunca el "después".** El "después" es la
+  tabla "Cómo se pagó" de arriba, o el "antes" de la corrección siguiente: la
+  cadena es exacta y no tiene un segundo registro del mismo hecho que se pueda
+  desincronizar. Los pagos archivados llegan a `Detalle` con sus `Decimal` de
+  Prisma **tal cual**, sin pasar por `datosDelDetalle` para resolverlos a texto
+  —esta pantalla no cruza a ningún componente cliente— y se formatean con las
+  mismas funciones que "Cómo se pagó" (`ROTULO_MEDIO`, `rotuloDePlan`,
+  `precioEnSuMoneda`), que es lo que hace que un pago archivado se lea igual que
+  uno vivo.
+- **El diálogo avisa cuando algún pago se cobró antes de que existiera
+  `Pago.porcentaje`** (`hayPagoSinPorcentaje`): esas filas se recalculan con el
+  porcentaje de HOY, y la pantalla lo dice en vez de hacerlo en silencio. Un
+  pago **sin plan** no cuenta — su porcentaje es `null` porque se cobró a precio
+  de lista, no porque falte el dato, y contarlo pondría la leyenda en toda venta
+  del país.
+- **El cuerpo del diálogo se exporta aparte del diálogo** (`CuerpoDeCorreccion`)
+  por el mismo motivo que `/formas-de-pago` exporta `CamposDePlan` y `/usuarios`
+  exporta `FilasDePermisos`: Radix desmonta `DialogContent` mientras está
+  cerrado, y este repo no tiene jsdom, así que un render estático del diálogo
+  cerrado no vería nada de lo que hay adentro. Efecto colateral que además es lo
+  que se quiere: el estado del cuerpo nace de las props **cada** vez que se
+  abre, así que cerrar sin guardar y volver a abrir muestra lo guardado y no el
+  borrador de hace un rato.
 - **El pie de "Qué se vendió" desglosa cuando hay algo que desglosar, no sólo
   cuando `Venta.recargo` no es cero** (ciclo del cobrado por moneda,
   `hayQueDesglosar()` en `lib/ventas/cobrado.ts`, la misma función que ya usan
@@ -1026,6 +1111,28 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
   la fila sigue estando: una venta de marzo tiene que seguir diciendo con qué
   plan se cobró aunque el local ya no lo ofrezca hoy. Confirmado contra la
   base en `test/ventas.test.ts`.
+- **Y el diálogo de corrección tampoco lo filtra, por la misma razón llevada
+  un paso más lejos: un plan dado de baja no impide CORREGIR la venta que ya
+  lo usaba.** La corrección revalida el juego entero, así que el pago del plan
+  se vuelve a resolver aunque nadie lo esté tocando; con la regla de
+  `crearVenta` a secas —donde desactivado vale por inexistente, y ahí es
+  correcto: un plan retirado no se reactiva para un cobro nuevo— retirar
+  "Crédito 12 cuotas" volvía **incorregible toda venta que lo hubiera usado**,
+  incluso para cambiarle el medio al pago en efectivo, con un mensaje sin
+  salida ("recargá y elegí otro": recargar no cambia nada, y elegir otro
+  reescribiría lo que ese pago dice que fue). Son **dos mitades que tienen que
+  moverse juntas**: `reemplazarPagos` le pasa a `resolverPagosConRecargo` los
+  `planId` que la venta ya traía (`planesDeLaVenta`, sacado de los pagos vivos
+  y **no** de las claves de `porcentajesPrevios`, que deja afuera los pagos con
+  `porcentaje` NULL), y `datosDelDetalle` le suma a los planes vigentes
+  exactamente esos y ninguno más — sin eso el `Select` de esa fila quedaría en
+  blanco, se leería como "sin plan", y guardar desde ahí reescribiría el pago a
+  precio de lista. Van marcados con `(dado de baja)`
+  (`rotuloDePlanEnElSelector`), para que quien corrige entienda por qué ése no
+  está entre los demás. Un plan dado de baja que la venta **no** tenía se sigue
+  rechazando con `PLAN_INEXISTENTE`, y tampoco se ofrece: ahí sí es un cobro
+  nuevo. Es la misma decisión que este ciclo ya había tomado para el
+  PORCENTAJE, aplicada a la otra columna del mismo plan.
 - **En el teléfono, "Plan" no es una columna: se funde en la línea de meta del
   pago**, delante de la moneda. Es el mismo mecanismo que ya usan Moneda y
   Cotización en esa tabla ("el dato no desaparece, se funde en la meta"), y va
@@ -1114,6 +1221,12 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 - **La banda TOTAL va a ancho completo y se pinta con `--marca`** (nodo
   `Cv4xd`), donde en escritorio es `bg-muted`. Es la superficie de marca de
   esta pantalla en el teléfono.
+- **El diálogo de corrección apila sus controles y lleva scroll propio**
+  (`max-h-[85dvh] overflow-y-auto`): cinco controles por fila no entran en 390
+  px, y el cuerpo crece con cada pago — sin tope de alto, con tres pagos el
+  diálogo se pasa de la pantalla y el botón de guardar queda inalcanzable. El
+  botón "Corregir" no necesita una segunda copia: vive en el encabezado de la
+  card "Cómo se pagó", que se dibuja igual en los dos anchos.
 
 ## `/inventario`
 

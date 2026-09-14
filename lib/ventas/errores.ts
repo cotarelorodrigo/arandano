@@ -12,6 +12,13 @@ export type CodigoErrorDeVenta =
   | 'COTIZACION_INVALIDA'
   | 'PAGOS_NO_CIERRAN'
   | 'VENTA_INEXISTENTE'
+  // Corregir cómo se pagó una venta ANULADA no tiene sentido: sus pagos ya no
+  // cuentan en ningún reporte —toda consulta del período filtra
+  // `anuladaEn: null`—, así que no hay plata que corregir. Separado de
+  // VENTA_INEXISTENTE porque para quien mira la pantalla son dos situaciones
+  // con salidas distintas, igual que ARTICULO_DESACTIVADO respecto de
+  // ARTICULO_INEXISTENTE.
+  | 'VENTA_ANULADA'
   | 'FUERA_DE_RANGO'
   // Distinto de ARTICULO_INEXISTENTE a propósito: para el que está cobrando son
   // dos situaciones con salidas distintas. "No existe" se resuelve buscando de

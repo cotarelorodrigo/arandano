@@ -241,6 +241,50 @@ BEGIN
 END
 $$;
 
+-- ediciones_venta y pagos_archivados: la bitácora de las correcciones de pago,
+-- y la cuarta tabla-libro. Necesita su propia línea por lo mismo que las otras
+-- tres: el default privilege le da UPDATE y DELETE a toda tabla nueva, y eso no
+-- se hereda.
+--
+-- Acá el motivo es más filoso que en las anteriores. Esta bitácora existe
+-- porque corregir una venta cambia PLATA YA COBRADA y reescribe hacia atrás los
+-- reportes del período. Si la app pudiera editarla o borrarla, quien tenga
+-- VENTAS_EDITAR podría cambiar cómo entró la plata de ayer y borrar la prueba —
+-- que es exactamente lo que el permiso aparte existe para poder auditar.
+--
+-- pagos_archivados.edicion_id es ON DELETE CASCADE, así que el DELETE sobre
+-- ediciones_venta es también la puerta de atrás de la foto: cerrar una y dejar
+-- la otra abierta no cierra nada.
+--
+-- Y hay una puerta MÁS, un nivel más arriba, que las dos líneas de abajo no
+-- alcanzan: ediciones_venta.venta_id es ON DELETE CASCADE y su padre es
+-- `ventas`. Un `DELETE FROM ventas` con el rol de la app se lleva el libro
+-- entero y sus fotos sin tocar ninguna de las dos tablas de acá arriba, así que
+-- el REVOKE sobre el PADRE es parte de la misma cerradura — es exactamente lo
+-- que ya hace ordenes_de_trabajo respecto de eventos_orden, donde el REVOKE del
+-- padre está unas líneas más arriba y no en la tabla-libro.
+--
+-- Ningún código borra ventas —anular es una columna, a propósito—, así que
+-- revocarlo no le saca nada a nadie; lo que cambia es que el día que alguien
+-- escriba "borrar una venta" (el ciclo de ARTICULOS_BORRAR ya estrenó un camino
+-- de borrado con cascadas) va a fallar RUIDOSAMENTE en vez de llevarse la
+-- bitácora sin avisar. El UPDATE sobre ventas SÍ se conserva: la anulación, el
+-- detalle y el caché `recargo` se escriben sobre esa misma fila —el último, en
+-- cada corrección—, que es justamente lo que la separa de una tabla-libro.
+DO $$
+BEGIN
+  IF to_regclass('public.ediciones_venta') IS NOT NULL THEN
+    EXECUTE 'REVOKE UPDATE, DELETE ON public.ediciones_venta FROM arandano_app';
+  END IF;
+  IF to_regclass('public.pagos_archivados') IS NOT NULL THEN
+    EXECUTE 'REVOKE UPDATE, DELETE ON public.pagos_archivados FROM arandano_app';
+  END IF;
+  IF to_regclass('public.ventas') IS NOT NULL THEN
+    EXECUTE 'REVOKE DELETE ON public.ventas FROM arandano_app';
+  END IF;
+END
+$$;
+
 -- leads: append-only para la aplicación, y por un motivo distinto al de
 -- movimientos_stock. Aquella es un libro y no se corrige; ésta no tiene
 -- tenant_id, así que no hay policy que la proteja — sin este REVOKE, cualquier

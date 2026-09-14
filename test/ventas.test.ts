@@ -67,6 +67,16 @@ let itemsDelPeriodo: typeof import('@/lib/dashboard/composicion').itemsDelPeriod
 // construiría el Pool antes de que este archivo setee `DATABASE_URL`.
 let datosDelDetalle: typeof import('@/app/(app)/ventas/[id]/page').datosDelDetalle
 let Detalle: typeof import('@/app/(app)/ventas/[id]/page').Detalle
+// Task 2 del ciclo de editar-venta: `resolverPagosConRecargo` es pura salvo la
+// consulta de planes, así que se prueba directo y no sólo a través de
+// `crearVenta` — es lo que permite ejercitar `porcentajesPrevios` sin tener
+// que fabricar todavía el llamador real (`reemplazarPagos`, Task futura).
+let resolverPagosConRecargo: typeof import('@/lib/ventas/pagos').resolverPagosConRecargo
+let normalizarPagos: typeof import('@/lib/ventas/pagos').normalizarPagos
+// Task 5 del ciclo de editar-venta: el motor de la corrección de pagos. El
+// mismo import dinámico que el resto — `lib/ventas/editar.ts` arrastra
+// `enTransaccionDeTenant` y con él `lib/db.ts`.
+let reemplazarPagos: typeof import('@/lib/ventas/editar').reemplazarPagos
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -157,6 +167,8 @@ beforeAll(async () => {
   ;({ metricasDelPeriodo } = await import('@/lib/dashboard/metricas'))
   ;({ itemsDelPeriodo } = await import('@/lib/dashboard/composicion'))
   ;({ datosDelDetalle, Detalle } = await import('@/app/(app)/ventas/[id]/page'))
+  ;({ resolverPagosConRecargo, normalizarPagos } = await import('@/lib/ventas/pagos'))
+  ;({ reemplazarPagos } = await import('@/lib/ventas/editar'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -1037,6 +1049,109 @@ describe('cobrar con un plan de pago', () => {
     expect(venta.pagos[0].plan?.nombre).toBe('Crédito 18 cuotas')
     expect(venta.pagos[0].plan?.cuotas).toBe(18)
   })
+
+  // Task 2 del ciclo de editar-venta: `Pago.porcentaje` congela el porcentaje
+  // del plan, no sólo el recargo en pesos. Las tres primeras pruebas van
+  // directo contra `resolverPagosConRecargo`, que es pura salvo la consulta
+  // de planes — no hace falta pasar por `crearVenta` para ejercitar
+  // `porcentajesPrevios`.
+  it('resolverPagosConRecargo: un plan que la venta YA tenía conserva su porcentaje', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: 'Crédito congelado',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('45'),
+    })
+    // El plan está hoy en 45 %; la venta lo había congelado en 40 %.
+    await enTransaccionDeTenant(tenantId, async (tx) => {
+      const previos = new Map([[plan.id, d('40')]])
+      const [pago] = await resolverPagosConRecargo(
+        tx,
+        normalizarPagos([
+          {
+            medio: 'TARJETA_CREDITO',
+            moneda: 'ARS',
+            base: d('1000'),
+            cotizacion: d('1'),
+            planId: plan.id,
+          },
+        ]),
+        previos,
+      )
+      expect(pago.porcentaje?.toString()).toBe('40')
+      expect(pago.recargo.toString()).toBe('400')
+      expect(pago.monto.toString()).toBe('1400')
+    })
+  })
+
+  it('resolverPagosConRecargo: un plan que NO estaba en la venta entra con el porcentaje de hoy', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: 'Crédito de hoy',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('45'),
+    })
+    await enTransaccionDeTenant(tenantId, async (tx) => {
+      const [pago] = await resolverPagosConRecargo(
+        tx,
+        normalizarPagos([
+          {
+            medio: 'TARJETA_CREDITO',
+            moneda: 'ARS',
+            base: d('1000'),
+            cotizacion: d('1'),
+            planId: plan.id,
+          },
+        ]),
+        new Map(),
+      )
+      // El porcentaje vigente del plan, no uno viejo: sin entrada previa para
+      // este plan, es un cobro nuevo.
+      expect(pago.porcentaje?.toString()).toBe('45')
+      expect(pago.recargo.toString()).toBe('450')
+    })
+  })
+
+  it('resolverPagosConRecargo: sin plan no hay porcentaje ni recargo', async () => {
+    await enTransaccionDeTenant(tenantId, async (tx) => {
+      const [pago] = await resolverPagosConRecargo(
+        tx,
+        normalizarPagos([
+          { medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') },
+        ]),
+      )
+      expect(pago.porcentaje).toBeNull()
+      expect(pago.recargo.toString()).toBe('0')
+    })
+  })
+
+  it('crearVenta congela el porcentaje del plan en el pago', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: 'Crédito 45',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('45'),
+    })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('1000'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+      ],
+    })
+    const pagos = await prismaParaTenant(tenantId).pago.findMany({ where: { ventaId: id } })
+    expect(pagos[0].porcentaje?.toString()).toBe('45')
+  })
 })
 
 describe('crearVenta con unidades identificadas (IMEI)', () => {
@@ -1722,8 +1837,13 @@ describe('el detalle de venta muestra los IMEI (Task 10)', () => {
         lineasDeTotal: datos.lineasDeTotal,
         pagos: datos.pagos,
         ofreceAnular: false,
+        // El botón de corregir se prueba aparte (page.test.tsx cuenta sus dos
+        // direcciones); acá lo que importa es el cuerpo de la venta real.
+        ofreceCorregir: false,
+        correccion: datos.correccion,
         ventaId,
         detalle: datos.detalle,
+        ediciones: datos.ediciones,
       }),
     )
   }
@@ -1798,6 +1918,87 @@ describe('el detalle de venta muestra los IMEI (Task 10)', () => {
 
     const datos = await datosDelDetalle(tenantId, id)
     expect(datos?.detalle).toBe('Retira Ana')
+  })
+})
+
+/**
+ * La otra mitad de la tolerancia del motor a un plan dado de baja.
+ *
+ * El motor deja corregir una venta que ya usaba ese plan, pero si el diálogo
+ * no lo tiene en su lista, el `Select` de esa fila queda EN BLANCO — se lee
+ * como "sin plan", que es peor que el error que la tolerancia sacó: guardar
+ * desde ahí reescribiría el pago a precio de lista. Por eso `datosDelDetalle`
+ * le suma a los vigentes exactamente los planes que ESTA venta usó, y ninguno
+ * más.
+ */
+describe('el diálogo de corrección ofrece los planes que la venta usó, aunque estén dados de baja', () => {
+  async function ventaConPlan(nombre: string) {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: `${nombre} ${Date.now()}`,
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('40'),
+    })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('1000'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+      ],
+    })
+    return { plan, ventaId: id }
+  }
+
+  it('el plan dado de baja que la venta usó viaja igual, y marcado como dado de baja', async () => {
+    const { plan, ventaId } = await ventaConPlan('Crédito retirado del detalle')
+    await desactivarPlan({ tenantId, id: plan.id })
+
+    const datos = await datosDelDetalle(tenantId, ventaId)
+    const ofrecido = datos!.correccion.planes.find((p) => p.id === plan.id)
+    expect(ofrecido).toBeDefined()
+    // Marcado, para que quien corrige entienda por qué ese no está entre los
+    // demás — el diálogo lo dibuja con `rotuloDePlanEnElSelector`.
+    expect(ofrecido!.desactivadoEn).not.toBeNull()
+  })
+
+  it('un plan dado de baja que esta venta NO usó no se ofrece', async () => {
+    const { ventaId } = await ventaConPlan('Crédito de la venta')
+    const ajeno = await crearPlan({
+      tenantId,
+      nombre: `Crédito retirado de otra venta ${Date.now()}`,
+      medio: 'TARJETA_CREDITO',
+      cuotas: 6,
+      recargoPorcentaje: d('50'),
+    })
+    await desactivarPlan({ tenantId, id: ajeno.id })
+
+    const datos = await datosDelDetalle(tenantId, ventaId)
+    // El contraste que hace significativo al caso de arriba: sin esto, traer
+    // TODOS los planes dados de baja daría el mismo verde, y el mostrador
+    // volvería a poder elegir un plan que el local retiró.
+    expect(datos!.correccion.planes.some((p) => p.id === ajeno.id)).toBe(false)
+  })
+
+  it('los planes vigentes se siguen ofreciendo todos', async () => {
+    const { ventaId } = await ventaConPlan('Crédito vigente de la venta')
+    const vigente = await crearPlan({
+      tenantId,
+      nombre: `Contado vigente ${Date.now()}`,
+      medio: 'EFECTIVO',
+      cuotas: 1,
+      recargoPorcentaje: d('-10'),
+    })
+
+    const datos = await datosDelDetalle(tenantId, ventaId)
+    expect(datos!.correccion.planes.some((p) => p.id === vigente.id)).toBe(true)
   })
 })
 
@@ -2712,5 +2913,829 @@ describe('el costo se congela al cobrar', () => {
     const prisma = prismaParaTenant(tenantId)
     const items = await prisma.ventaItem.findMany({ where: { ventaId: venta.id } })
     expect(items[0].costoUnitario?.toString()).toBe('900')
+  })
+})
+
+/**
+ * Cuántos backends distintos están esperando un lock ahora mismo, sin contar
+ * el de `cliente`. Un solo backend bloqueado puede aparecer con VARIAS filas
+ * en `pg_locks` (el `transactionid` que espera y el `tuple` intermedio), así
+ * que se cuentan PIDs distintos y no filas: contar filas daría "dos esperando"
+ * con uno solo. El porqué de `pg_locks` y no `pg_stat_activity` está en
+ * `esperarBloqueoEn`, más arriba.
+ */
+async function bloqueados(cliente: Client): Promise<number> {
+  const { rows } = await cliente.query(
+    `SELECT count(DISTINCT pid)::int AS n
+       FROM pg_locks
+      WHERE granted = false
+        AND pid <> pg_backend_pid()`,
+  )
+  return rows[0].n
+}
+
+/** Espera a que DOS backends distintos queden esperando un lock. */
+async function esperarDosBloqueos(
+  cliente: Client,
+  { timeoutMs = 5_000, intervaloMs = 20 } = {},
+): Promise<void> {
+  const limite = Date.now() + timeoutMs
+  while (Date.now() < limite) {
+    if ((await bloqueados(cliente)) >= 2) return
+    await new Promise((resolve) => setTimeout(resolve, intervaloMs))
+  }
+  throw new Error(
+    `no quedaron dos backends esperando el lock dentro de ${timeoutMs}ms: ` +
+      'la carrera que este test fuerza no llegó a solapar',
+  )
+}
+
+describe('reemplazarPagos (corregir cómo se pagó una venta ya cobrada)', () => {
+  /** Una venta de una remera, cobrada entera en efectivo. El caso base de
+   *  todos los escenarios de acá: 1000 de mercadería en un solo pago. */
+  async function ventaDeMil() {
+    return crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+    })
+  }
+
+  const pagosDe = (ventaId: string) =>
+    prismaParaTenant(tenantId).pago.findMany({
+      where: { ventaId },
+      orderBy: [{ creadoEn: 'asc' }, { id: 'asc' }],
+    })
+
+  const edicionesDe = (ventaId: string) =>
+    prismaParaTenant(tenantId).edicionDeVenta.findMany({
+      where: { ventaId },
+      include: { pagos: true },
+      orderBy: [{ creadoEn: 'asc' }, { id: 'asc' }],
+    })
+
+  it('cambia el medio de un pago y deja la venta cerrada', async () => {
+    const { id } = await ventaDeMil()
+
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [{ medio: 'TRANSFERENCIA', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+    })
+
+    const pagos = await pagosDe(id)
+    expect(pagos).toHaveLength(1)
+    expect(pagos[0].medio).toBe('TRANSFERENCIA')
+    expect(pagos[0].monto.toString()).toBe('1000')
+  })
+
+  it('parte un pago en dos y sigue cerrando', async () => {
+    const { id } = await ventaDeMil()
+
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [
+        { medio: 'EFECTIVO', moneda: 'ARS', base: d('600'), cotizacion: d('1') },
+        { medio: 'TRANSFERENCIA', moneda: 'ARS', base: d('400'), cotizacion: d('1') },
+      ],
+    })
+
+    const pagos = await pagosDe(id)
+    expect(pagos).toHaveLength(2)
+    expect(pagos.map((p) => p.monto.toString()).sort()).toEqual(['400', '600'])
+  })
+
+  it('rechaza un juego de pagos que no cierra en pesos', async () => {
+    const { id } = await ventaDeMil()
+
+    await expect(
+      reemplazarPagos({
+        tenantId,
+        ventaId: id,
+        usuarioId,
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('900'), cotizacion: d('1') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'PAGOS_NO_CIERRAN' })
+
+    // Y la venta quedó exactamente como estaba: el rechazo se lleva la
+    // transacción entera, así que ni el archivado ni el borrado sobreviven.
+    const pagos = await pagosDe(id)
+    expect(pagos).toHaveLength(1)
+    expect(pagos[0].medio).toBe('EFECTIVO')
+    expect(pagos[0].monto.toString()).toBe('1000')
+    expect(await edicionesDe(id)).toHaveLength(0)
+  })
+
+  it('rechaza corregir una venta anulada', async () => {
+    const { id } = await ventaDeMil()
+    await anularVenta({ tenantId, ventaId: id, usuarioId })
+
+    await expect(
+      reemplazarPagos({
+        tenantId,
+        ventaId: id,
+        usuarioId,
+        pagos: [{ medio: 'TRANSFERENCIA', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'VENTA_ANULADA' })
+
+    // Sin rastro: una venta anulada no acumula bitácora de correcciones.
+    expect(await edicionesDe(id)).toHaveLength(0)
+    expect((await pagosDe(id))[0].medio).toBe('EFECTIVO')
+  })
+
+  it('rechaza una venta que no existe en este tenant', async () => {
+    await expect(
+      reemplazarPagos({
+        tenantId,
+        ventaId: '00000000-0000-7000-8000-000000000000',
+        usuarioId,
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1'), cotizacion: d('1') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'VENTA_INEXISTENTE' })
+  })
+
+  // La venta del OTRO negocio no es un caso aparte: RLS la esconde, así que
+  // para esta transacción sencillamente no existe — igual que una inventada.
+  // Es el mismo criterio con el que `exigirCliente` trata un cliente ajeno, y
+  // lo único que el llamador tiene derecho a saber.
+  it('una venta de otro tenant es indistinguible de una inexistente', async () => {
+    const aj = await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, stock, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'AJE-1', 'Artículo del otro', 'PRODUCTO', 1000.00, 10, now(), now())
+       RETURNING id`,
+      [otroTenantId],
+    )
+    const { id: ventaAjena } = await crearVenta({
+      tenantId: otroTenantId,
+      usuarioId: usuarioAjeno,
+      items: [{ articuloId: aj.rows[0].id, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+    })
+
+    await expect(
+      reemplazarPagos({
+        tenantId,
+        ventaId: ventaAjena,
+        usuarioId,
+        pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'VENTA_INEXISTENTE' })
+
+    // Y la del otro negocio quedó intacta.
+    const pagosAjenos = await prismaParaTenant(otroTenantId).pago.findMany({
+      where: { ventaId: ventaAjena },
+    })
+    expect(pagosAjenos).toHaveLength(1)
+    expect(pagosAjenos[0].medio).toBe('EFECTIVO')
+  })
+
+  it('archiva los pagos viejos con sus Decimal intactos y el pagadoEn original', async () => {
+    const { id } = await ventaDeMil()
+    const antes = await pagosDe(id)
+
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [{ medio: 'TRANSFERENCIA', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+      nota: '  era transferencia  ',
+    })
+
+    const ediciones = await edicionesDe(id)
+    expect(ediciones).toHaveLength(1)
+    expect(ediciones[0].nota).toBe('era transferencia')
+    expect(ediciones[0].usuarioId).toBe(usuarioId)
+    expect(ediciones[0].pagos).toHaveLength(1)
+    expect(ediciones[0].pagos[0].medio).toBe('EFECTIVO')
+    expect(ediciones[0].pagos[0].moneda).toBe('ARS')
+    expect(ediciones[0].pagos[0].cubre).toBe('ARS')
+    expect(ediciones[0].pagos[0].monto.toString()).toBe('1000')
+    expect(ediciones[0].pagos[0].cotizacion.toString()).toBe('1')
+    expect(ediciones[0].pagos[0].recargo.toString()).toBe('0')
+    // El `pagadoEn` es el `creadoEn` del pago ORIGINAL y no el de la fila
+    // archivada: la foto tiene que decir cuándo se cobró, no cuándo se
+    // archivó.
+    expect(ediciones[0].pagos[0].pagadoEn.getTime()).toBe(antes[0].creadoEn.getTime())
+  })
+
+  // La nota sigue la misma regla que el detalle de venta: vacío, sólo espacios
+  // y ausente son lo MISMO — la ausencia del dato.
+  it('sin nota, o con una nota en blanco, la edición queda con nota null', async () => {
+    const { id } = await ventaDeMil()
+
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [{ medio: 'TRANSFERENCIA', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+    })
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [{ medio: 'TARJETA_DEBITO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+      nota: '   \n  ',
+    })
+
+    const ediciones = await edicionesDe(id)
+    expect(ediciones).toHaveLength(2)
+    expect(ediciones.every((e) => e.nota === null)).toBe(true)
+  })
+
+  it('el porcentaje que la venta ya tenía sobrevive a corregir OTRO pago', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: `Crédito congelado por la corrección ${Date.now()}`,
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('40'),
+    })
+
+    // La venta se cobra con el plan al valor de hoy…
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('600'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+        { medio: 'EFECTIVO', moneda: 'ARS', base: d('400'), cotizacion: d('1') },
+      ],
+    })
+    const recargoOriginal = (
+      await prismaParaTenant(tenantId).pago.findFirstOrThrow({
+        where: { ventaId: id, medio: 'TARJETA_CREDITO' },
+      })
+    ).recargo.toString()
+    expect(recargoOriginal).toBe('240')
+
+    // …el dueño sube el plan…
+    await prismaParaTenant(tenantId).planDePago.update({
+      where: { id: plan.id },
+      data: { recargoPorcentaje: d('99') },
+    })
+
+    // …y alguien corrige el medio del OTRO pago, el que no tiene plan.
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('600'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+        { medio: 'TRANSFERENCIA', moneda: 'ARS', base: d('400'), cotizacion: d('1') },
+      ],
+    })
+
+    const credito = await prismaParaTenant(tenantId).pago.findFirstOrThrow({
+      where: { ventaId: id, medio: 'TARJETA_CREDITO' },
+    })
+    expect(credito.recargo.toString()).toBe(recargoOriginal)
+    expect(credito.porcentaje?.toString()).toBe('40')
+    // Y el caché de la venta sigue diciendo lo mismo que sus pagos.
+    const venta = await prismaParaTenant(tenantId).venta.findUniqueOrThrow({ where: { id } })
+    expect(venta.recargo.toString()).toBe('240')
+  })
+
+  // La otra mitad de la misma regla: un plan que la venta NO tenía entra con
+  // el porcentaje de HOY, porque ahí sí es un cobro nuevo.
+  it('un plan que la venta NO tenía entra con el porcentaje de hoy', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: `Crédito nuevo de la corrección ${Date.now()}`,
+      medio: 'TARJETA_CREDITO',
+      cuotas: 6,
+      recargoPorcentaje: d('50'),
+    })
+    const { id } = await ventaDeMil()
+
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('1000'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+      ],
+    })
+
+    const pagos = await pagosDe(id)
+    expect(pagos[0].porcentaje?.toString()).toBe('50')
+    expect(pagos[0].recargo.toString()).toBe('500')
+    expect(pagos[0].monto.toString()).toBe('1500')
+  })
+
+  // La baja de un plan NO puede volver incorregible una venta que ya lo usaba.
+  //
+  // `resolverPagosConRecargo` trata `desactivadoEn` como inexistente, y para
+  // COBRAR eso es correcto: un plan dado de baja no se reactiva, se elige
+  // otro. La corrección revalida el juego ENTERO, así que ese mismo plan
+  // —que nadie está eligiendo de nuevo, viene de la venta— se vuelve a
+  // resolver y hacía fallar la operación completa: corregir el medio del pago
+  // en EFECTIVO de una venta de marzo devolvía "Ese plan de pago ya no está
+  // disponible. Recargá la pantalla y elegí otro.", y ni recargar ni elegir
+  // otro son salidas — elegir otro reescribiría lo que ese pago dice que fue.
+  //
+  // Es la misma decisión que este ciclo ya tomó para el PORCENTAJE ("un plan
+  // que la venta ya tenía no es un cobro nuevo"), aplicada a la otra columna
+  // del mismo plan, y la misma que la pantalla ya tomaba al MOSTRARLO.
+  it('un plan dado de baja no impide corregir OTRO pago de la venta que lo usaba', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: `Crédito que el local retira ${Date.now()}`,
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('40'),
+    })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('600'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+        { medio: 'EFECTIVO', moneda: 'ARS', base: d('400'), cotizacion: d('1') },
+      ],
+    })
+
+    // El local retira el plan: deja de ofrecerlo de hoy en adelante.
+    await desactivarPlan({ tenantId, id: plan.id })
+
+    // Y alguien corrige el medio del pago en EFECTIVO, que no tiene nada que
+    // ver con el plan. El pago de crédito viaja igual, con el mismo planId,
+    // porque la corrección manda el juego entero.
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('600'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+        { medio: 'TRANSFERENCIA', moneda: 'ARS', base: d('400'), cotizacion: d('1') },
+      ],
+    })
+
+    const pagos = await pagosDe(id)
+    expect(pagos.map((p) => p.medio).sort()).toEqual(['TARJETA_CREDITO', 'TRANSFERENCIA'])
+    // Y el pago del plan dado de baja quedó exactamente como estaba: su plan,
+    // su porcentaje congelado y su recargo.
+    const credito = pagos.find((p) => p.medio === 'TARJETA_CREDITO')!
+    expect(credito.planDePagoId).toBe(plan.id)
+    expect(credito.porcentaje?.toString()).toBe('40')
+    expect(credito.recargo.toString()).toBe('240')
+  })
+
+  // La otra mitad, sin la cual la de arriba sería "tolerar cualquier plan dado
+  // de baja": uno que la venta NO tenía sí es un cobro nuevo, y ahí la regla
+  // de `crearVenta` sigue valiendo entera.
+  it('un plan dado de baja que la venta NO tenía se sigue rechazando', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: `Crédito ajeno a esta venta ${Date.now()}`,
+      medio: 'TARJETA_CREDITO',
+      cuotas: 6,
+      recargoPorcentaje: d('50'),
+    })
+    await desactivarPlan({ tenantId, id: plan.id })
+    // La venta se cobró en efectivo: nunca tuvo este plan ni ningún otro.
+    const { id } = await ventaDeMil()
+
+    await expect(
+      reemplazarPagos({
+        tenantId,
+        ventaId: id,
+        usuarioId,
+        pagos: [
+          {
+            medio: 'TARJETA_CREDITO',
+            moneda: 'ARS',
+            base: d('1000'),
+            cotizacion: d('1'),
+            planId: plan.id,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ codigo: 'PLAN_INEXISTENTE' })
+
+    // Y la venta quedó como estaba.
+    const pagos = await pagosDe(id)
+    expect(pagos).toHaveLength(1)
+    expect(pagos[0].medio).toBe('EFECTIVO')
+    expect(await edicionesDe(id)).toHaveLength(0)
+  })
+
+  // Y la tolerancia es del plan que la venta TRAÍA, no de las claves de
+  // `porcentajesPrevios`: ese mapa excluye los pagos cobrados antes de que
+  // existiera `Pago.porcentaje`, así que derivarla de ahí dejaba sin
+  // tolerancia justo a las ventas más viejas, que son las que más chance
+  // tienen de haber usado un plan que el local ya retiró.
+  it('tolera el plan de un pago viejo aunque su porcentaje esté en NULL', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: `Crédito de antes del porcentaje ${Date.now()}`,
+      medio: 'TARJETA_CREDITO',
+      cuotas: 3,
+      recargoPorcentaje: d('25'),
+    })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('600'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+        { medio: 'EFECTIVO', moneda: 'ARS', base: d('400'), cotizacion: d('1') },
+      ],
+    })
+    // Como lo dejaba el cobro antes de la Task 2: el recargo congelado, el
+    // porcentaje en NULL. Se escribe como owner porque `pagos` es append-only
+    // para la app y esta fila simula un estado anterior al ciclo.
+    await owner.query(
+      `UPDATE pagos SET porcentaje = NULL WHERE venta_id = $1 AND medio = 'TARJETA_CREDITO'`,
+      [id],
+    )
+    await desactivarPlan({ tenantId, id: plan.id })
+
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('600'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+        { medio: 'TRANSFERENCIA', moneda: 'ARS', base: d('400'), cotizacion: d('1') },
+      ],
+    })
+
+    const credito = (await pagosDe(id)).find((p) => p.medio === 'TARJETA_CREDITO')!
+    expect(credito.planDePagoId).toBe(plan.id)
+    // Sin porcentaje previo cae al de HOY, que es lo que el diálogo avisa.
+    expect(credito.porcentaje?.toString()).toBe('25')
+  })
+
+  it('recalcula el caché Venta.recargo con el juego nuevo', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: `Crédito del caché ${Date.now()}`,
+      medio: 'TARJETA_CREDITO',
+      cuotas: 3,
+      recargoPorcentaje: d('25'),
+    })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('1000'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+      ],
+    })
+    expect(
+      (
+        await prismaParaTenant(tenantId).venta.findUniqueOrThrow({ where: { id } })
+      ).recargo.toString(),
+    ).toBe('250')
+
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+    })
+
+    const venta = await prismaParaTenant(tenantId).venta.findUniqueOrThrow({ where: { id } })
+    expect(venta.recargo.toString()).toBe('0')
+    // La mercadería NO se movió.
+    expect(venta.total.toString()).toBe('1000')
+    expect(venta.totalUsd.toString()).toBe('0')
+  })
+
+  it('dos correcciones seguidas encadenan: el antes de la segunda es lo que dejó la primera', async () => {
+    const { id } = await ventaDeMil()
+
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [{ medio: 'TRANSFERENCIA', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+    })
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [{ medio: 'TARJETA_DEBITO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+    })
+
+    const ediciones = await edicionesDe(id)
+    expect(ediciones).toHaveLength(2)
+    expect(ediciones[0].pagos[0].medio).toBe('EFECTIVO')
+    expect(ediciones[1].pagos[0].medio).toBe('TRANSFERENCIA')
+    expect((await pagosDe(id))[0].medio).toBe('TARJETA_DEBITO')
+  })
+
+  // Un artículo en dólares, dado de alta crudo como owner — igual que el
+  // describe `venta con artículos en dólares`, y por el mismo motivo: el
+  // `crearArticulo` de lib/ no toma `moneda`, y los fixtures fijos del
+  // `beforeAll` son todos en pesos. El `sku` se sortea para no chocar.
+  let contadorUsd = 0
+  async function articuloEnDolares(precio: Prisma.Decimal): Promise<string> {
+    contadorUsd += 1
+    const r = await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, moneda, stock, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, $2, 'iPhone de la corrección', 'PRODUCTO', $3, 'USD', 1000, now(), now())
+       RETURNING id`,
+      [tenantId, `COR-USD-${Date.now()}-${contadorUsd}`, precio.toString()],
+    )
+    return r.rows[0].id
+  }
+
+  /**
+   * El caso del feedback que originó el ciclo de USD, ya cobrado: un iPhone de
+   * US$ 300 y una remera de $ 1000 en la misma operación. Deja la venta con
+   * `total = 1000` y `totalUsd = 300`, que es lo único con lo que la mitad en
+   * dólares del invariante se puede ejercitar de verdad.
+   */
+  async function ventaMixta() {
+    const iphone = await articuloEnDolares(d('300'))
+    return crearVenta({
+      tenantId,
+      usuarioId,
+      items: [
+        { articuloId: iphone, cantidad: d('1') },
+        { articuloId: remera, cantidad: d('1') },
+      ],
+      pagos: [
+        { medio: 'EFECTIVO', moneda: 'USD', cubre: 'USD', base: d('300'), cotizacion: d('1') },
+        { medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: d('1000'), cotizacion: d('1') },
+      ],
+    })
+  }
+
+  // Los catorce casos de arriba corren todos contra ventas en pesos, así que
+  // `usd: venta.totalUsd` —la mitad en dólares de la revalidación— no estaba
+  // clavada por ninguno: cambiarla por un cero fijo los dejaba a todos en
+  // verde mientras habilitaba reemplazar los pagos de una venta en dólares por
+  // un juego que no cubre el total en dólares. Plata ya cobrada, y justo el
+  // escenario que originó el ciclo de USD.
+  it('corrige una venta mixta repartiendo de nuevo entre las DOS monedas', async () => {
+    const { id } = await ventaMixta()
+
+    // El reparto del feedback: US$ 200 en billetes y los otros US$ 100 con
+    // pesos a 1485, más la remera aparte. Nada divide: la base del pago que
+    // cubre dólares se tipea EN DÓLARES y el servidor multiplica.
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [
+        { medio: 'EFECTIVO', moneda: 'USD', cubre: 'USD', base: d('200'), cotizacion: d('1') },
+        {
+          medio: 'TRANSFERENCIA',
+          moneda: 'ARS',
+          cubre: 'USD',
+          base: d('100'),
+          cotizacion: d('1485'),
+        },
+        { medio: 'TARJETA_DEBITO', moneda: 'ARS', cubre: 'ARS', base: d('1000'), cotizacion: d('1') },
+      ],
+    })
+
+    const pagos = await pagosDe(id)
+    expect(pagos).toHaveLength(3)
+    const porMedio = new Map(pagos.map((p) => [p.medio, p]))
+    expect(porMedio.get('EFECTIVO')!.monto.toString()).toBe('200')
+    expect(porMedio.get('EFECTIVO')!.cubre).toBe('USD')
+    // Los pesos entregados por los US$ 100: 100 × 1485, multiplicado por el
+    // servidor y no tipeado por la pantalla.
+    expect(porMedio.get('TRANSFERENCIA')!.monto.toString()).toBe('148500')
+    expect(porMedio.get('TRANSFERENCIA')!.cubre).toBe('USD')
+    expect(porMedio.get('TRANSFERENCIA')!.cotizacion.toString()).toBe('1485')
+    expect(porMedio.get('TARJETA_DEBITO')!.monto.toString()).toBe('1000')
+    expect(porMedio.get('TARJETA_DEBITO')!.cubre).toBe('ARS')
+
+    // Y la mercadería sigue diciendo lo mismo en las dos monedas.
+    const venta = await prismaParaTenant(tenantId).venta.findUniqueOrThrow({ where: { id } })
+    expect(venta.total.toString()).toBe('1000')
+    expect(venta.totalUsd.toString()).toBe('300')
+  })
+
+  it('rechaza un juego que cierra en pesos pero NO en dólares', async () => {
+    const { id } = await ventaMixta()
+
+    await expect(
+      reemplazarPagos({
+        tenantId,
+        ventaId: id,
+        usuarioId,
+        pagos: [
+          // 250 y no 300: los pesos cierran, los dólares no. Una venta que
+          // cierra en una sola moneda es tan inválida como la que no cierra a
+          // secas.
+          { medio: 'EFECTIVO', moneda: 'USD', cubre: 'USD', base: d('250'), cotizacion: d('1') },
+          { medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: d('1000'), cotizacion: d('1') },
+        ],
+      }),
+    ).rejects.toMatchObject({ codigo: 'PAGOS_NO_CIERRAN' })
+
+    // Y la venta quedó como estaba, con sus dos pagos originales.
+    const pagos = await pagosDe(id)
+    expect(pagos).toHaveLength(2)
+    expect(pagos.map((p) => p.monto.toString()).sort()).toEqual(['1000', '300'])
+    expect(await edicionesDe(id)).toHaveLength(0)
+  })
+
+  // `reemplazarPagos` es el TERCER escritor de una FK `usuario_id` —después de
+  // `crearVenta` y `anularVenta`, que tienen su caso equivalente— y las FK de
+  // Postgres no ven RLS: sus triggers corren como dueño de la tabla, exento
+  // mientras no haya FORCE ROW LEVEL SECURITY. Sin este caso, borrar la línea
+  // de `exigirUsuario` pasaba los catorce de arriba y escribía un `usuario_id`
+  // ajeno en `ediciones_venta`, que es `onDelete: Restrict`: el otro negocio
+  // queda sin poder dar de baja a su empleado y sin diagnóstico posible desde
+  // adentro. El porqué completo está en `lib/ventas/pertenencia.ts`.
+  it('rechaza un usuarioId de otro tenant sin tocar la venta ni dejar bitácora', async () => {
+    const { id } = await ventaDeMil()
+
+    await expect(
+      reemplazarPagos({
+        tenantId,
+        ventaId: id,
+        usuarioId: usuarioAjeno,
+        pagos: [{ medio: 'TRANSFERENCIA', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'USUARIO_INEXISTENTE' })
+
+    // El chequeo va ANTES de crear la edición justamente para esto: si fuera
+    // después, la fila ya habría quedado escrita con la FK ajena.
+    expect(await edicionesDe(id)).toHaveLength(0)
+    const pagos = await pagosDe(id)
+    expect(pagos).toHaveLength(1)
+    expect(pagos[0].medio).toBe('EFECTIVO')
+
+    // Y la consecuencia se mide donde de verdad duele, leyendo como OWNER —que
+    // no pasa por RLS—: ninguna edición, de ninguna venta, quedó apuntando al
+    // empleado del otro negocio. Desde adentro del tenant esa fila sería
+    // invisible, que es exactamente lo que hace indiagnosticable el daño.
+    //
+    // Se mide así y no borrando al usuario ajeno, como hace el caso gemelo de
+    // `crearVenta` con `clienteAjeno`: ahí el motor rechaza antes de crear
+    // nada, y acá el caso de la venta ajena, más arriba, dejó a propósito una
+    // venta del otro negocio apuntándole — el `DELETE` fallaría por esa otra
+    // FK y el caso mediría cualquier cosa menos lo suyo.
+    const apuntando = await owner.query(
+      'SELECT count(*)::int AS n FROM ediciones_venta WHERE usuario_id = $1',
+      [usuarioAjeno],
+    )
+    expect(apuntando.rows[0].n).toBe(0)
+  })
+
+  it('no toca el stock, ni los movimientos, ni los ítems, ni el número de venta', async () => {
+    const { id, numero } = await ventaDeMil()
+    const stockAntes = await stockDe(remera)
+    const ventaAntes = await prismaParaTenant(tenantId).venta.findUniqueOrThrow({ where: { id } })
+    const movimientosAntes = await prismaParaTenant(tenantId).movimientoStock.count({
+      where: { ventaId: id },
+    })
+    const itemsAntes = await prismaParaTenant(tenantId).ventaItem.findMany({
+      where: { ventaId: id },
+    })
+
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [{ medio: 'TRANSFERENCIA', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+    })
+
+    const venta = await prismaParaTenant(tenantId).venta.findUniqueOrThrow({ where: { id } })
+    expect(venta.numero).toBe(numero)
+    // Los tres cachés que describen la MERCADERÍA no se mueven: sólo
+    // `recargo`, que es el único que habla de los pagos.
+    expect(venta.costoArs.toString()).toBe(ventaAntes.costoArs.toString())
+    expect(venta.vendidoConCosto.toString()).toBe(ventaAntes.vendidoConCosto.toString())
+    expect(venta.total.toString()).toBe(ventaAntes.total.toString())
+    expect(await stockDe(remera)).toBe(stockAntes)
+    expect(
+      await prismaParaTenant(tenantId).movimientoStock.count({ where: { ventaId: id } }),
+    ).toBe(movimientosAntes)
+    const itemsDespues = await prismaParaTenant(tenantId).ventaItem.findMany({
+      where: { ventaId: id },
+    })
+    expect(itemsDespues.map((i) => i.id).sort()).toEqual(itemsAntes.map((i) => i.id).sort())
+  })
+
+  // La carrera que el lock de la fila de la venta existe para cerrar, forzada
+  // de verdad: se toma el lock desde AFUERA, se largan las dos correcciones
+  // —que quedan las dos esperándolo, comprobado contra `pg_locks`— y recién
+  // ahí se suelta.
+  //
+  // Con el lock tomado ANTES de leer nada, las dos se serializan enteras: una
+  // archiva EFECTIVO y la otra archiva lo que dejó la primera. Sin él, las dos
+  // leerían el mismo estado anterior y las dos archivarían EFECTIVO — la plata
+  // quedaría bien (el último juego de pagos es uno solo y cierra) y la
+  // bitácora diría que se pasó de A a C dos veces cuando se pasó de A a B y de
+  // B a C.
+  //
+  // Las aserciones NO dependen del orden de las ediciones a propósito:
+  // `creado_en` sale de `CURRENT_TIMESTAMP`, que dentro de una transacción es
+  // la hora de ARRANQUE, no la del commit — así que dos transacciones que se
+  // serializan por el lock pueden quedar grabadas en el orden inverso al que
+  // corrieron. Lo que se afirma es la propiedad, no la secuencia: exactamente
+  // UNA de las dos vio el estado original.
+  it('dos correcciones simultáneas no archivan la misma foto', async () => {
+    const { id } = await ventaDeMil()
+
+    const tomador = new Client({ connectionString: urlOwner() })
+    await tomador.connect()
+    let correcciones: Promise<PromiseSettledResult<void>[]> | null = null
+    try {
+      await tomador.query('BEGIN')
+      await tomador.query('SELECT id FROM ventas WHERE id = $1 FOR UPDATE', [id])
+
+      correcciones = Promise.allSettled([
+        reemplazarPagos({
+          tenantId,
+          ventaId: id,
+          usuarioId,
+          pagos: [{ medio: 'TRANSFERENCIA', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+        }),
+        reemplazarPagos({
+          tenantId,
+          ventaId: id,
+          usuarioId,
+          pagos: [{ medio: 'TARJETA_DEBITO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+        }),
+      ])
+
+      // Las DOS esperando, no una: soltar el lock con una sola en cola dejaría
+      // a la otra llegando recién después del commit de la primera, y el
+      // solape que este test fuerza no existiría.
+      await esperarDosBloqueos(tomador)
+    } finally {
+      await tomador.query('ROLLBACK').catch(() => {})
+      await tomador.end()
+    }
+
+    const resultados = await correcciones!
+    expect(resultados.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled'])
+
+    const ediciones = await edicionesDe(id)
+    expect(ediciones).toHaveLength(2)
+    const archivados = ediciones.flatMap((e) => e.pagos.map((p) => p.medio))
+    expect(archivados).toHaveLength(2)
+    // Exactamente UNA archivó el estado original. Sin el lock, las dos.
+    expect(archivados.filter((m) => m === 'EFECTIVO')).toHaveLength(1)
+
+    // Y la que corrió segunda archivó lo que había dejado la primera, así que
+    // el estado final es el de la otra.
+    const pisado = archivados.find((m) => m !== 'EFECTIVO')
+    const pagos = await pagosDe(id)
+    expect(pagos).toHaveLength(1)
+    expect(pagos[0].medio).not.toBe(pisado)
+    expect(pagos[0].monto.toString()).toBe('1000')
   })
 })

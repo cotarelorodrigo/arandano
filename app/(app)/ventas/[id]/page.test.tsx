@@ -19,9 +19,14 @@ import {
   seOfreceAnular, cotizacionVisible, subtituloDeItem, metaDeItem, metaDePago, filasDeResumen,
   notaDeAnulacion, Detalle, type ItemVendido, type PagoRecibido,
   lineasDeRecargo, rotuloDePlan, seMuestraCubre, ROTULO_CUBRE, imeisPorItem,
+  seOfreceCorregir, baseDePagoGuardado, hayPagoSinPorcentaje, type EdicionVisible,
 } from './page'
 import { CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
+// Las MISMAS funciones con las que el motor arma y valida una venta: el caso
+// del ida y vuelta de `baseDePagoGuardado` no puede reimplementarlas, porque
+// entonces probaría su propia copia en vez de la aritmética que corre.
+import { montoEntregado, recargoDePago, totalesDePagos } from '@/lib/ventas/totales'
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -377,6 +382,33 @@ const PAGO_USD: PagoRecibido = {
   esUsd: true,
 }
 
+/** Lo que el diálogo de corrección necesita para precargarse. Un juego mínimo
+ *  y consistente con `PAGO_ARS`: la venta cierra con un solo pago en pesos. */
+const CORRECCION: Parameters<typeof Detalle>[0]['correccion'] = {
+  totalArs: '94000.00',
+  totalUsd: '0',
+  pagos: [
+    { medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: '94000.00', cotizacion: '1', planId: null },
+  ],
+  planes: [],
+  hayPagoSinPorcentaje: false,
+}
+
+/** Una corrección de la bitácora: los pagos de ANTES, con sus `Decimal`
+ *  crudos —`Detalle` no cruza a un componente cliente, así que los formatea
+ *  ella misma con las mismas funciones que ya usa "Cómo se pagó", en vez de
+ *  recibirlos ya resueltos a texto como el resto de las props. Consistente
+ *  con `PAGO_ARS`: un pago en efectivo, sin plan. */
+const EDICION: EdicionVisible = {
+  id: 'e1',
+  nota: 'era transferencia',
+  creadoEn: new Date('2026-09-14T12:00:00Z'),
+  usuario: { nombre: 'Flor' },
+  pagos: [
+    { id: 'p1', medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', monto: d('1000'), cotizacion: d('1'), recargo: d('0'), plan: null },
+  ],
+}
+
 function renderDetalle(props: Partial<Parameters<typeof Detalle>[0]> = {}) {
   return renderToStaticMarkup(
     <Detalle
@@ -387,8 +419,13 @@ function renderDetalle(props: Partial<Parameters<typeof Detalle>[0]> = {}) {
       totalFormateado="$ 94.000,00"
       pagos={[PAGO_ARS]}
       ofreceAnular={false}
+      ofreceCorregir={false}
+      correccion={CORRECCION}
       ventaId="v1"
       detalle={null}
+      // El caso común, y el que tiene que verse EXACTAMENTE como antes de la
+      // Task 8: una venta que nunca se corrigió no dibuja la card.
+      ediciones={[]}
       {...props}
     />,
   )
@@ -637,12 +674,232 @@ describe('Detalle: el orden se invierte entre el teléfono y escritorio', () => 
     expect(html.match(/class="contents lg:flex lg:w-\[324px\] lg:shrink-0 lg:flex-col lg:gap-4"/g)).toHaveLength(1)
   })
 
-  it('Resumen es order-1, Qué se vendió order-2, Cómo se pagó order-3, Detalles order-4, Zona de riesgo order-5 — todas lg:order-none', () => {
+  // order-5 (Correcciones) queda reservado para cuando hubo alguna — sin
+  // ediciones no aparece ninguna card con ese número (ver "la card de
+  // correcciones", más abajo, para el caso con corrección).
+  it('Resumen es order-1, Qué se vendió order-2, Cómo se pagó order-3, Detalles order-4, Zona de riesgo order-6 (sin correcciones) — todas lg:order-none', () => {
     const html = renderDetalle()
-    for (const orden of ['order-1', 'order-2', 'order-3', 'order-4', 'order-5']) {
+    for (const orden of ['order-1', 'order-2', 'order-3', 'order-4', 'order-6']) {
       expect(html).toContain(`${orden} flex flex-col`)
     }
+    expect(html).not.toContain('order-5')
     expect(html.match(/lg:order-none/g)).toHaveLength(5)
+  })
+})
+
+describe('Detalle: el botón de corregir cómo se pagó', () => {
+  /**
+   * En las DOS direcciones y CONTANDO apariciones, que es lo que un
+   * `not.toContain` solo no puede dar: con el permiso tiene que estar, sin el
+   * permiso no tiene que estar ninguna. El encabezado de "Cómo se pagó" se
+   * renderiza igual en los dos anchos —no lleva `hidden lg:flex`—, así que hay
+   * UNA sola copia; el día que alguien duplique el botón para el teléfono, este
+   * conteo se pone rojo y obliga a gatear las dos (la lección de "Anular orden"
+   * en el merge del ciclo móvil).
+   */
+  const disparadores = (html: string) => [...html.matchAll(/>Corregir</g)]
+
+  it('con VENTAS_EDITAR aparece, una sola vez', () => {
+    expect(disparadores(renderDetalle({ ofreceCorregir: true }))).toHaveLength(1)
+  })
+
+  it('sin VENTAS_EDITAR no aparece ninguna vez', () => {
+    expect(disparadores(renderDetalle({ ofreceCorregir: false }))).toHaveLength(0)
+  })
+
+  /**
+   * El cableado, que el render no puede ver: `Detalle` recibe `ofreceCorregir`
+   * ya resuelto, así que un llamador que le pasara el PERMISO pelado ofrecería
+   * corregir una venta anulada — que el motor rechaza con `VENTA_ANULADA`, o
+   * sea un botón que siempre falla. Mismo mecanismo y mismo motivo que el caso
+   * gemelo de `ofreceAnular`, más abajo.
+   */
+  it('la pantalla combina el permiso con anuladaEn antes de pasarlo a Detalle', () => {
+    const fuente = readFileSync('app/(app)/ventas/[id]/page.tsx', 'utf8')
+    expect(fuente).toContain('ofreceCorregir={seOfreceCorregir(puedeEditarVenta, datos.anuladaEn)}')
+    expect(fuente).not.toContain('ofreceCorregir={puedeEditarVenta}')
+  })
+})
+
+describe('seOfreceCorregir', () => {
+  it('pide el permiso Y que la venta siga cobrada', () => {
+    expect(seOfreceCorregir(true, null)).toBe(true)
+    expect(seOfreceCorregir(false, null)).toBe(false)
+    // Anulada: no hay nada que corregir sobre cómo se pagó algo que se dio de
+    // baja, y el motor la rechaza con VENTA_ANULADA.
+    expect(seOfreceCorregir(true, new Date('2026-09-10T12:00:00Z'))).toBe(false)
+  })
+})
+
+describe('baseDePagoGuardado: la vuelta del monto guardado a la base', () => {
+  const d = (v: string) => new Prisma.Decimal(v)
+
+  it('un pago en pesos contra el total en pesos: la base es el monto menos el recargo', () => {
+    const base = baseDePagoGuardado({
+      moneda: 'ARS', cubre: 'ARS', monto: d('14000'), cotizacion: d('1'), recargo: d('4000'),
+    })
+    expect(base.toString()).toBe('10000')
+  })
+
+  it('sin plan el recargo es cero, así que la base es el monto', () => {
+    const base = baseDePagoGuardado({
+      moneda: 'ARS', cubre: 'ARS', monto: d('94000'), cotizacion: d('1'), recargo: d('0'),
+    })
+    expect(base.toString()).toBe('94000')
+  })
+
+  // Un pago ENTREGADO en dólares no puede llevar plan (PLAN_EN_DOLARES), así
+  // que su recargo es siempre 0 y la cotización no entra en la cuenta: la base
+  // son los mismos dólares del monto, sin dividir.
+  it('un pago en dólares no divide por su cotización', () => {
+    const base = baseDePagoGuardado({
+      moneda: 'USD', cubre: 'USD', monto: d('300'), cotizacion: d('1485'), recargo: d('0'),
+    })
+    expect(base.toString()).toBe('300')
+  })
+
+  it('dólares entregados contra el total en pesos tampoco dividen', () => {
+    const base = baseDePagoGuardado({
+      moneda: 'USD', cubre: 'ARS', monto: d('20'), cotizacion: d('1485'), recargo: d('0'),
+    })
+    expect(base.toString()).toBe('20')
+  })
+
+  /**
+   * El único caso que divide, y el que justifica que esta función exista: el
+   * iPhone de US$ 300 pagado en pesos en doce cuotas al 40 %. `Pago.monto`
+   * guarda los $623.700 que entraron, de los cuales $178.200 son recargo; los
+   * $445.500 que quedan son 300 dólares a 1485. El campo del diálogo se rotula
+   * "Cubre US$", así que tiene que decir 300.
+   */
+  it('pesos entregados contra el total en dólares vuelven a los dólares que cubren', () => {
+    const base = baseDePagoGuardado({
+      moneda: 'ARS', cubre: 'USD', monto: d('623700'), cotizacion: d('1485'), recargo: d('178200'),
+    })
+    expect(base.toString()).toBe('300')
+  })
+})
+
+/**
+ * El ida y vuelta COMPLETO, que es la propiedad que de verdad importa.
+ *
+ * Los casos de arriba prueban un pago suelto con números elegidos para que
+ * salgan redondos. Lo que sostiene la pantalla es otra cosa: que las bases
+ * reconstruidas de una venta ENTERA vuelvan a sumar exactamente `total` y
+ * `totalUsd` — si no, abrir el diálogo sobre una venta perfectamente válida
+ * muestra "Faltan US$ 0,01" sin que nadie haya tocado nada, y el botón de
+ * guardar arranca apagado.
+ *
+ * Sin este caso, lo único que sostiene esa propiedad es la prosa del docblock:
+ * cambiar el modo de redondeo de `redondearDinero`, o el `ROUND_HALF_UP` de
+ * `baseDePagoGuardado`, o permitir tres decimales en `base`, la rompe con los
+ * cinco casos de arriba en verde.
+ *
+ * Se arma como la arma el motor —`montoEntregado` + `recargoDePago` son las
+ * MISMAS funciones que usa `resolverPagosConRecargo`— y se cierra con
+ * `totalesDePagos`, la misma con la que `exigirQueCierren` acepta o rechaza.
+ */
+describe('baseDePagoGuardado: las bases reconstruidas de una venta vuelven a cerrar', () => {
+  const d = (v: string) => new Prisma.Decimal(v)
+
+  /** Lo que el motor guardaría para este pago: `monto` (con el recargo
+   *  adentro) y `recargo`, que es lo único que la fila de `Pago` conserva. */
+  function comoLoGuardaElMotor(p: {
+    moneda: 'ARS' | 'USD'
+    cubre: 'ARS' | 'USD'
+    base: Prisma.Decimal
+    cotizacion: Prisma.Decimal
+    porcentaje?: Prisma.Decimal
+  }) {
+    const entregado = montoEntregado(p)
+    const recargo = p.porcentaje ? recargoDePago(entregado, p.porcentaje) : d('0')
+    return {
+      moneda: p.moneda,
+      cubre: p.cubre,
+      cotizacion: p.cotizacion,
+      monto: entregado.add(recargo),
+      recargo,
+    }
+  }
+
+  it('una venta MIXTA con plan y cotización de cuatro decimales cierra exacto', () => {
+    // Tres pagos, uno de cada forma que puede tomar una fila:
+    //  - efectivo en pesos contra el total en pesos, sin plan;
+    //  - pesos entregados contra el total en dólares, con un plan del 40 %
+    //    (el único caso que hace DIVIDIR a la reconstrucción);
+    //  - dólares entregados contra el total en dólares.
+    // La cotización lleva sus cuatro decimales a propósito: es la escala real
+    // de la columna, y es donde un redondeo mal puesto se nota.
+    const COTIZACION = d('1485.1234')
+    const entrada = [
+      { moneda: 'ARS' as const, cubre: 'ARS' as const, base: d('15000.35'), cotizacion: d('1') },
+      {
+        moneda: 'ARS' as const, cubre: 'USD' as const, base: d('137.77'),
+        cotizacion: COTIZACION, porcentaje: d('40'),
+      },
+      { moneda: 'USD' as const, cubre: 'USD' as const, base: d('162.23'), cotizacion: COTIZACION },
+    ]
+
+    // Los dos totales de la venta: lo que el motor exigió al cobrarla.
+    const totales = totalesDePagos(entrada)
+    expect(totales.ars.toString()).toBe('15000.35')
+    expect(totales.usd.toString()).toBe('300')
+
+    // Ida y vuelta: guardar como guarda el motor, y reconstruir.
+    const reconstruidas = entrada.map((p) => {
+      const guardado = comoLoGuardaElMotor(p)
+      return { ...guardado, base: baseDePagoGuardado(guardado) }
+    })
+
+    // 1) Cada base vuelve idéntica a la que se cobró.
+    expect(reconstruidas.map((p) => p.base.toString())).toEqual([
+      '15000.35',
+      '137.77',
+      '162.23',
+    ])
+
+    // 2) Y —lo que de verdad decide si el diálogo abre cerrado— el juego
+    //    reconstruido sigue cerrando contra los MISMOS dos totales, por la
+    //    misma función con la que `exigirQueCierren` acepta o rechaza.
+    const vueltos = totalesDePagos(reconstruidas)
+    expect(vueltos.ars.equals(totales.ars)).toBe(true)
+    expect(vueltos.usd.equals(totales.usd)).toBe(true)
+  })
+
+  /**
+   * **La frontera, afirmada y no sólo descrita en prosa**: con `cotizacion < 1`
+   * la identidad SE ROMPE. Base `0,03` a cotización `0,5` entrega `0,02`
+   * (0,015 → ROUND_HALF_UP) y vuelve como `0,04`.
+   *
+   * El docblock de `baseDePagoGuardado` lo descarta por económicamente
+   * imposible —una cotización menor que 1 significaría un dólar que vale menos
+   * que un peso—, y está bien descartado, pero el motor **no lo rechaza**:
+   * `normalizarPagos` sólo exige `cotizacion > 0`. Este caso deja el límite
+   * escrito donde se puede ver: el día que alguien lo corra hacia abajo, lo
+   * primero que tiene que leer es esto.
+   */
+  it('con una cotización MENOR que 1 la vuelta ya no es exacta, y eso está aceptado', () => {
+    const guardado = comoLoGuardaElMotor({
+      moneda: 'ARS', cubre: 'USD', base: d('0.03'), cotizacion: d('0.5'),
+    })
+    expect(guardado.monto.toString()).toBe('0.02')
+    expect(baseDePagoGuardado(guardado).toString()).toBe('0.04')
+  })
+})
+
+describe('hayPagoSinPorcentaje: sólo cuenta un pago CON plan al que le falta el dato', () => {
+  it('un pago sin plan no tiene porcentaje que recuperar', () => {
+    expect(hayPagoSinPorcentaje([{ planDePagoId: null, porcentaje: null }])).toBe(false)
+  })
+
+  it('un pago con plan y con porcentaje congelado tampoco', () => {
+    expect(
+      hayPagoSinPorcentaje([{ planDePagoId: 'p1', porcentaje: new Prisma.Decimal('40') }]),
+    ).toBe(false)
+  })
+
+  it('un pago con plan y sin porcentaje sí: se cobró antes de que la columna existiera', () => {
+    expect(hayPagoSinPorcentaje([{ planDePagoId: 'p1', porcentaje: null }])).toBe(true)
   })
 })
 
@@ -809,11 +1066,62 @@ describe('la card de detalles', () => {
     const bloqueDetalles = html.match(/<div class="(order-\d)[^"]*"><div class="border-b[^"]*"><h2[^>]*>Detalles<\/h2>/)
     expect(bloqueDetalles?.[1]).toBe('order-4')
     // La Zona de riesgo (sin anular, es el bloque con bg-destructive-soft):
-    // lleva order-5.
+    // lleva order-6 — le cedió el order-5 a Correcciones, que sin ediciones
+    // no se dibuja (ver "la card de correcciones", más abajo).
     const bloqueRiesgo = html.match(/<div class="(order-\d)[^"]* bg-destructive-soft[^"]*"/)
-    expect(bloqueRiesgo?.[1]).toBe('order-5')
+    expect(bloqueRiesgo?.[1]).toBe('order-6')
     // Y en POSICIÓN, que es lo que de verdad ordena la pila del teléfono:
     // Detalles aparece antes que "Anular la venta" en el HTML final.
     expect(html.indexOf('>Detalles<')).toBeLessThan(html.indexOf('Anular la venta'))
+  })
+})
+
+describe('la card de correcciones', () => {
+  // A diferencia de "Detalles", que se dibuja vacía a propósito porque es el
+  // lugar donde el dato se carga: acá no hay nada que cargar, así que un
+  // local que nunca corrigió una venta no ve ninguna diferencia.
+  it('no dibuja la card cuando la venta nunca se corrigió', () => {
+    const html = renderDetalle({ ediciones: [] })
+    expect(html).not.toContain('Correcciones')
+  })
+
+  it('dibuja quién, cuándo, la nota y cómo estaban los pagos antes', () => {
+    const html = renderDetalle({ ediciones: [EDICION] })
+    expect(html).toContain('Correcciones')
+    expect(html).toContain('Flor')
+    expect(html).toContain('era transferencia')
+    expect(html).toContain('Efectivo')
+    // El monto del pago archivado, formateado con la misma función que ya
+    // usa "Cómo se pagó" — nunca "1000" a secas.
+    expect(html).toContain(formatearPrecio('1000'))
+  })
+
+  it('sin nota no dibuja ningún párrafo de más', () => {
+    const html = renderDetalle({ ediciones: [{ ...EDICION, nota: null }] })
+    expect(html).not.toContain('era transferencia')
+  })
+
+  it('cada pago con plan suma su rótulo, con el mismo rotuloDePlan de la tabla de al lado', () => {
+    const html = renderDetalle({
+      ediciones: [
+        {
+          ...EDICION,
+          pagos: [
+            { ...EDICION.pagos[0], plan: { nombre: 'Crédito 3 cuotas', cuotas: 3 } },
+          ],
+        },
+      ],
+    })
+    expect(html).toContain(rotuloDePlan({ nombre: 'Crédito 3 cuotas', cuotas: 3 })!)
+  })
+
+  // El orden de la pila del teléfono: entre Detalles (order-4) y la Zona de
+  // riesgo (order-6), nunca al final ni al principio.
+  it('en el teléfono va entre Detalles y la Zona de riesgo: order-5', () => {
+    const html = renderDetalle({ ediciones: [EDICION] })
+    const bloque = html.match(/<div class="(order-\d)[^"]*"><div class="border-b[^"]*"><h2[^>]*>Correcciones<\/h2>/)
+    expect(bloque?.[1]).toBe('order-5')
+    expect(html.indexOf('>Detalles<')).toBeLessThan(html.indexOf('>Correcciones<'))
+    expect(html.indexOf('>Correcciones<')).toBeLessThan(html.indexOf('Anular la venta'))
   })
 })

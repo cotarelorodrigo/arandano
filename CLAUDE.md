@@ -3311,6 +3311,258 @@ Y del producto:
   tapado por ese pie, y cuánto hay que scrollear el panel de cobro para
   alcanzarlo.
 
+- ~~Poder corregir cómo se pagó una venta ya cobrada.~~ **Hecho** (2026-09-14).
+  Sale del pedido textual del dueño del producto: *"tenemos que agregar la
+  funcionalidad para poder editar/modificar una venta. si un empleado realizo
+  una venta pero se confundio en el metodo de pago entonces deberia poder
+  modificarlo. lo mismo con el monto por ejemplo. el dueño puede decidir sacarle
+  el permiso de editar venta al empleado"*. Hasta este ciclo, lo único que le
+  podía pasar a una venta después del cobro era anularse o que alguien le
+  escribiera el detalle: si quien atendió marcó "Efectivo" donde era
+  "Transferencia", el único camino era anular y volver a cargarla entera —se
+  quema un número de venta, quedan dos filas en el listado, se generan
+  movimientos de stock compensatorios por un error que nunca tocó el stock, y el
+  reporte del día muestra una venta anulada que no lo está—. Ver
+  `docs/superpowers/specs/2026-09-14-editar-venta-design.md`.
+
+  **El alcance: se corrige cómo se pagó, nunca qué se vendió.** Medio, moneda,
+  plan, cotización y el reparto entre pagos, incluido agregar o quitar uno —el
+  caso *"cobré todo en efectivo y en realidad fue mitad y mitad"*—. La
+  mercadería no se toca, y ese corte no es prolijidad: es lo que hace seguro al
+  ciclo. Una venta guardada tiene un invariante que `crearVenta` valida y que
+  ninguna escritura posterior rompió nunca —los pagos cierran exactamente contra
+  los dos totales, con el recargo por afuera—, y mientras los ítems queden
+  intactos esos totales no se mueven, así que la corrección se valida con
+  **exactamente la misma regla que ya corre al cobrar, contra los mismos
+  números**. Se descartó el alcance completo (editar también los ítems), que
+  arrastra stock, unidades con IMEI, el costo congelado de cada ítem y el margen
+  del período; y se descartó el rodeo (*"Corregir" anula la original y abre
+  `/vender` precargado*), que no toca el motor pero quema un número por cada
+  corrección y deja dos filas donde hubo una venta.
+
+  **Sin ventana de tiempo**, igual que anular, que tampoco la tiene. El costo
+  aceptado, dicho explícito: corregir una venta de hace tres meses **reescribe el
+  reporte de ese mes**, porque "Cómo entró la plata" y los totales del período
+  leen los pagos. Se descartó "sólo el mismo día" —deja sin salida el error que
+  se descubre a la mañana siguiente, que es cuando se descubren casi todos— y se
+  descartó atarlo al turno de caja, porque `crearVenta` ni siquiera exige caja
+  abierta para cobrar.
+
+  **Las decisiones del modelo, cada una con la alternativa descartada:**
+
+  - **Dos tablas nuevas, append-only de verdad**: `ediciones_venta` (quién,
+    cuándo, sobre qué venta, y una nota opcional) y `pagos_archivados` (las filas
+    de pago **tal como estaban antes** de esa edición). Append-only por `REVOKE
+    UPDATE, DELETE` en `scripts/setup-db-roles.sh`, como `movimientos_stock`,
+    `eventos_orden` y `mensajes_bot` — no por comentario.
+  - **El "después" no se guarda en ningún lado.** Es `pagos` tal como está hoy, o
+    el "antes" de la edición siguiente. Guardar los dos lados sería un segundo
+    registro del mismo hecho, con el modo de falla que este repo ya nombró al
+    decidir que `VentaItem` no lleva `unidadId`: que un día digan cosas
+    distintas.
+  - **Se archiva la fila, no un JSON.** El schema no tiene hoy ni una columna
+    `Json`, y la primera no iba a ser una que guarde importes: Prisma serializa
+    un `Decimal` a string, así que un snapshot en JSON convierte la plata en
+    texto y pierde la escala que `Decimal(12,2)` garantiza. Con tabla propia, un
+    peso archivado es el mismo tipo que un peso vivo.
+  - **`pagos` NO se convierte en tabla-libro**, que es la alternativa que parece
+    más pura. Marcar las filas viejas con un `reemplazadoEn` y filtrarlas
+    repartiría la responsabilidad entre todos los lectores de pagos que ya
+    existen —`lib/ventas/composicion.ts`, `lib/ventas/cobrado.ts`,
+    `lib/ventas/medios.ts`, el detalle y el panel del período—, y el que se
+    olvide de filtrar muestra plata contada dos veces, sin error y sin que nada
+    avise. Es el modo de falla de las dos copias de un botón, multiplicado.
+  - **Sin idempotencia por clave**, al revés que el cobro. Una corrección que
+    llega dos veces deja el mismo juego de pagos y una segunda fila de bitácora
+    con "antes" igual a "después": eso es ruido, no plata duplicada. Inventarle
+    una clave a un formulario que se abre a mano sería resolver un problema que
+    el cobro tiene —el lector de código de barras, el F5 sobre el POST— y éste
+    no.
+
+  **`Pago.porcentaje Decimal(6,3)?` es la columna que hace falta para no
+  corromper lo viejo**, y la encontró la auto-revisión del spec antes de escribir
+  una línea. `Pago` congelaba el `recargo` —cuántos pesos fueron recargo— pero no
+  el **porcentaje** que lo produjo: ése se leía vivo de
+  `PlanDePago.recargoPorcentaje` al cobrar. Mientras la única escritura sobre una
+  venta cerrada fuera anularla, alcanzaba. Con corrección de pagos deja de
+  alcanzar, y el modo de falla es silencioso: una venta de marzo cobrada con
+  "Crédito 12 cuotas, 40 %" más un pago en efectivo; en julio el dueño sube ese
+  plan a 45 % —en este país los recargos de cuotas se mueven todos los meses—; en
+  agosto alguien corrige **el medio del pago en efectivo**, la corrección
+  revalida el juego entero, el pago con plan se vuelve a resolver contra
+  `PlanDePago` y su recargo pasa a ser el 45 % de hoy. Nadie pidió eso, y
+  contradice de frente lo que el propio schema ya escribe al lado de
+  `Pago.recargo`: *"un plan editado o dado de baja no puede cambiar lo que una
+  venta vieja dice que cobró"*. **Y no se puede derivar**: el porcentaje saldría
+  de `recargo / (monto − recargo) × 100`, una **división**, que es exactamente lo
+  que el ciclo del precio en dólares prohibió en este motor. La regla queda en
+  tres líneas: un plan que la venta **ya tenía** entra con el porcentaje que esa
+  venta congeló; un plan que **no estaba** entra con el de hoy, porque es un
+  cobro nuevo y no hay nada viejo que respetar; sin plan no hay porcentaje ni
+  recargo. **Nullable y sin backfill**: `NULL` dice exactamente "no se guardó", y
+  para esas filas la corrección cae al porcentaje de hoy **y el diálogo lo dice**
+  en vez de hacerlo en silencio.
+
+  **El refactor que fue condición y no adorno.** El bloque que valida pagos
+  adentro de `crearVenta` salió a `lib/ventas/pagos.ts` —`normalizarPagos`,
+  `resolverPagosConRecargo`, `exigirQueCierren`— y `crearVenta` pasa a llamarlo,
+  sin ningún cambio de comportamiento salvo que ahora escribe `Pago.porcentaje`.
+  Si no se hacía, quedaban **dos implementaciones de la misma regla de plata**,
+  que es el defecto exacto que este repo ya pagó dos veces —el selector de
+  categoría desincronizado durante cuatro días con el gate en verde, y las dos
+  copias de "Anular orden" apuntando a permisos distintos—. Acá el modo de falla
+  no habría sido un botón de más: es una venta guardada que dice haber cobrado
+  algo que no cierra.
+
+  **`reemplazarPagos` (`lib/ventas/editar.ts`) toma el lock de la fila de la
+  venta antes de leer nada más**, y no por la plata. Bajo READ COMMITTED —el
+  nivel por defecto, que `enTransaccionDeTenant` no cambia— dos correcciones
+  simultáneas leen las dos el mismo estado anterior y archivan la misma foto: la
+  plata queda bien, porque el último juego de pagos es uno solo y cierra, pero
+  **la bitácora miente** —dice que se pasó de A a C y de A a C cuando se pasó de
+  A a B y de B a C—. Una bitácora que miente es peor que no tenerla. Y exige que
+  el juego nuevo cierre contra `venta.total` y `venta.totalUsd` **ya guardados**:
+  no los recalcula desde los ítems, porque si un artículo cambió de precio desde
+  la venta el total recalculado daría distinto del cobrado.
+
+  **Una venta anulada NO se corrige** (`VENTA_ANULADA`), y es la decisión
+  **inversa** a la de `guardarDetalle`, por exactamente la misma razón que allá
+  era sí: aquello no era plata y esto sí. Sus pagos ya no cuentan en ningún
+  reporte —toda consulta del período filtra `anuladaEn: null`—, así que no hay
+  plata que corregir, y cambiar cómo entró algo que no entró es reescribir el
+  pasado sin efecto. Para dejar escrito qué pasó con una venta anulada está el
+  detalle, que sí se puede editar.
+
+  **El permiso es `VENTAS_EDITAR`, aparte de `VENTAS_ANULAR` y no plegado sobre
+  él** — y conviene dejarlo escrito acá porque es el que más fácil se pliega en
+  un refactor futuro: son dos permisos con nombres parecidos sobre la misma
+  pantalla, y alguien va a proponer unificarlos. **No hay que hacerlo.** La regla
+  de este repo es delegar **por lo que la acción MUEVE**, y son dos cosas
+  distintas: anular da de baja la venta entera y devuelve el stock —todo el mundo
+  ve que desapareció, el listado del período la muestra tachada—; corregir la
+  deja en pie diciendo que la plata entró de otra forma, que es **más
+  silencioso**. Un dueño puede querer que quien atiende corrija su propio error
+  de medio de pago sin poder borrar ventas del período, y también exactamente lo
+  contrario. Es el mismo escalón que ya separa `ARTICULOS_BORRAR` de
+  `ARTICULOS_EDITAR` y `PLANES_PAGO` de `ARTICULOS_EDITAR`. La fuente sigue
+  siendo `lib/permisos/catalogo.ts`, atado al enum del schema en las dos
+  direcciones, no este párrafo.
+
+  **El permiso está en las DOS puertas** —el botón y la server action—, y el caso
+  cuenta en las dos direcciones: con el permiso el botón está, sin el permiso no
+  está. Un `not.toContain` solo pasaría igual si la guarda quedara en una sola
+  copia.
+
+  **El chip del diálogo sale del mismo espejo en enteros que usa `/vender`**
+  (`lib/ventas/centavos.ts`), así que con la misma aritmética, el mismo redondeo
+  y el mismo momento de redondear, el diálogo **no puede** decir que cierra
+  mientras el servidor lo rechaza.
+
+  **La única división del motor es nueva, y vale escribirla sin maquillar.**
+  `baseDePagoGuardado` (`app/(app)/ventas/[id]/page.tsx`) **divide**, contra la
+  regla que este repo tiene escrita desde el ciclo del precio en dólares. Ocurre
+  en un solo cruce —un pago entregado en pesos que cubre el total en dólares,
+  donde `monto = base × cotización + recargo`— y es inevitable **para prefilear
+  el diálogo**: la base de un pago no vive en ninguna columna, `Pago` guarda
+  `monto`, que ya incluye el recargo. Lo que la hace tolerable es que **no decide
+  plata**: el resultado vuelve al campo del formulario y el monto que se cobra lo
+  recalcula el servidor desde la base que recibe. La review la verificó por
+  fuerza bruta sobre cientos de miles de pares y encontró dónde se rompe: **con
+  `cotizacion < 1`** (una base de 0,03 a cotización 0,5 vuelve 0,04). El motor no
+  rechaza esas cotizaciones —sólo pide `> 0`—, así que queda aceptado por
+  económicamente imposible (un dólar que vale menos que un peso), con un caso que
+  lo deja escrito en vez de confiado a la memoria. **Lo que la haría innecesaria
+  es una columna `Pago.base`, aditiva**: ésa es la salida conocida para el
+  próximo ciclo que toque `Pago`.
+
+  **El bug de plata que el ciclo produjo y arregló, que es la mejor lección que
+  deja.** El diálogo hacía nacer cada fila de pago nueva con `moneda: 'ARS'` y
+  `cotizacion: '1'` fijos mientras sí calculaba `cubre`. En una venta **sólo en
+  dólares** eso da un pago que CRUZA con la cotización en 1 —un dólar a un peso—:
+  el espejo del cliente no divide, así que el chip daba `null` y "Guardar"
+  quedaba habilitado; el motor sólo exige `cotizacion > 0`, así que lo aceptaba;
+  y quedaba un `Pago.cotizacion = 1` **histórico e inmutable** sobre los pesos
+  que entraron de verdad, propagado a "Cómo entró la plata". Lo que lo hace
+  digno de escribirse no es el bug: es que **`/vender` no tenía ese agujero y lo
+  decía con todas las letras en un comentario**, y el docblock de
+  `cotizacionParaElCruce` —que ESTE MISMO ciclo mudó a `lib/ventas/cruce.ts`—
+  nombra el modo de falla palabra por palabra. O sea que el ciclo movió de lugar
+  la advertencia y reprodujo igual el defecto que la advertencia describe. El
+  arreglo fue copiar la forma que `/vender` ya tenía. **Y la segunda mitad, que
+  es la que sirve para el futuro**: la construcción de la fila salió del
+  componente a `pagoNuevo(totales)`, **exportada**, porque sin jsdom no hay forma
+  de tocar "Agregar pago" — tres líneas adentro de un `onClick` son tres líneas
+  que ningún caso puede mirar, que es exactamente cómo el bug llegó a existir.
+
+  **La deuda que el ciclo acepta a propósito**: el diálogo **no** extrae el panel
+  de cobro de `punto-de-venta.tsx`, que es la pantalla más delicada del producto
+  —vuelto, atajos de teclado con allow-list de foco, pie fijo del teléfono, el
+  paso de cobro sincronizado con `pushState`—. La diferencia con el caso del
+  selector de categoría, que es lo que hace que esto sea deuda tolerable y no el
+  mismo error: **allá lo duplicado era la regla** y se desincronizó en silencio;
+  acá la regla vive una sola vez —`centavos.ts` del lado del navegador,
+  `pagos.ts` del lado del servidor— y lo duplicado es la disposición. **El
+  disparador para extraerlo**: que aparezca una tercera copia.
+
+  **La migración viaja en el mismo deploy que la UI**, con el argumento ya
+  escrito para el precio en dólares, el borrado de artículos y el detalle de
+  venta: dos tablas nuevas, una columna nullable en `pagos`, un valor más en el
+  enum `Permiso`, cero `DROP` y cero renombres. El único punto que merece el
+  chequeo explícito es `Pago.porcentaje`, porque es la columna que la imagen
+  vieja sí toca: `crearVenta` de la versión anterior inserta pagos **sin** ese
+  campo, y al ser nullable esa fila es válida —queda en `NULL`, que es justamente
+  lo que se define como "no se guardó"—. O sea que el rollback automático del
+  healthcheck no deja ninguna fila inválida atrás.
+
+  **Lo que este ciclo NO hace**: los ítems —cambiar qué se vendió es otro ciclo,
+  y el que tenga que resolver las compensaciones de stock—; el cliente, la fecha,
+  el vendedor y el número de venta; editar una venta anulada; **deshacer** una
+  corrección (se corrige de nuevo, y la bitácora tiene las dos: un "deshacer"
+  sería un tercer camino de escritura sobre los pagos para llegar a un estado que
+  el que ya existe alcanza); **nada en `/ventas`** —el listado no dice que una
+  venta fue corregida, hay que abrirla para enterarse, y **el disparador para
+  reconsiderarlo** es que a un dueño le moleste no poder ver de un vistazo qué
+  ventas del período se tocaron—; y ningún aviso a nadie, porque hoy no existe
+  nada que notifique.
+
+  **Un hallazgo de infraestructura que el ciclo destapó y NO arregló**:
+  `prisma migrate reset` contra la base de dev es inusable, y su modo de falla no
+  es "no hace nada" sino **te deja la base sin historial de migraciones**. La
+  función `resolver_tenant()` tiene el tipo `estado_tenant` en su firma, Prisma
+  dropea los tipos pero no las funciones, y el `DROP TYPE` choca contra esa
+  dependencia: aborta con **P3016 DESPUÉS de haber borrado `_prisma_migrations`**,
+  así que recuperarla cuesta rebaselinear el historial entero a mano. La salida
+  conocida es un `DROP SCHEMA public CASCADE` explícito en vez de confiar en el
+  reset automático. Cerrarlo de verdad es su propio ciclo; el comando y el rodeo
+  quedaron escritos en `docs/runbook-stacks.md`.
+
+  **`design/arandano.pen` no dibuja ni el botón "Corregir", ni el diálogo, ni la
+  card "Correcciones"**, en ningún ancho. Se derivaron del `Dialog` de
+  `/usuarios` y `/formas-de-pago`, de los controles del panel de cobro, y de la
+  línea de tiempo de la bitácora de una orden de trabajo. Anotado en
+  `docs/correcciones-pendientes-del-pen.md`.
+
+  **Queda pendiente la verificación manual, y en este ciclo es lo que lo cierra
+  de verdad: NADA de esto se vio en un navegador.** Se puede hacer después del
+  merge —`arandano-dev` bind-montea `/root/arandano`, que sirve `main`—. Lo que
+  hay que mirar: cobrar en efectivo, corregir a transferencia, y ver que el panel
+  "Cómo entró la plata" de `/ventas` cambia de barra; partir un pago en dos y ver
+  que el chip sólo deja guardar cuando cierra; corregir una venta con los dos
+  totales, moviendo qué pago cubre cuál; **el riesgo de plata**, que es que el
+  chip diga lo mismo que el servidor con un plan de **efectivo en descuento**
+  (porcentaje negativo), que es exactamente donde este repo ya tuvo un bug de
+  plata; cobrar con un plan, cambiarle el porcentaje al plan desde
+  `/formas-de-pago`, volver y corregir el **otro** pago, viendo que el recargo
+  del pago con plan queda igual; **tocar "Agregar pago" en una venta sólo en
+  dólares** —`pagoNuevo()` está clavado por casos, el `onClick` que la inserta
+  no—; el alto del diálogo a 390 px con dos o tres pagos (`max-h-[85dvh]
+  overflow-y-auto`, un número elegido sin frame y sin mirar), y que el toast de
+  error persista de verdad; varias correcciones apiladas a 390 px, y una nota
+  larga de la bitácora en la columna de 324 px de escritorio, que hoy no tiene ni
+  truncado ni ancho máximo; que un empleado con `VENTAS_ANULAR` y sin
+  `VENTAS_EDITAR` vea "Anular" y no vea "Corregir", y que tipear la URL no le
+  alcance; y que una venta anulada no ofrezca corregir.
+
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

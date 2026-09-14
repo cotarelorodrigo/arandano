@@ -1,9 +1,12 @@
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest'
+import type { MockedFunction } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { Client } from 'pg'
 import { Prisma } from '@/generated/prisma/client'
 import { urlOwner, urlApp } from '@/test/postgres-efimero'
 import { crearTenant } from '@/test/datos'
+import { ErrorDeVenta } from '@/lib/ventas/errores'
+import type { Permiso } from '@/lib/permisos/catalogo'
 
 const FUENTE = readFileSync(new URL('./acciones.ts', import.meta.url), 'utf8')
 
@@ -34,10 +37,35 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
+// Para `corregirPagos`, más abajo: `exigirSesion` y `permisosDe` se espían
+// (autospy) en vez de reemplazarse del todo. Por default una spy LLAMA A LA
+// IMPLEMENTACIÓN REAL, así que `anular`/`guardarDetalle` de arriba —que
+// dependen del login real vía cookie— siguen exactamente igual; sólo el
+// describe de `corregirPagos`, al final del archivo, les configura un valor
+// de retorno propio.
+vi.mock('@/lib/auth/sesion', { spy: true })
+vi.mock('@/lib/permisos/consultar', { spy: true })
+
+// El motor de la corrección, en cambio, se reemplaza ENTERO: a diferencia de
+// `anular`/`guardarDetalle`, el describe de `corregirPagos` prueba sólo el
+// CONTRATO de la action —el guard, la traducción de errores—, no el motor,
+// que ya tiene su propio test contra la base en la Task 5
+// (lib/ventas/editar.test.ts).
+const reemplazarPagosMock = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/ventas/editar', () => ({ reemplazarPagos: reemplazarPagosMock }))
+
 let anular: typeof import('./acciones').anular
 let guardarDetalle: typeof import('./acciones').guardarDetalle
+let corregirPagos: typeof import('./acciones').corregirPagos
 let authParaTenant: typeof import('@/lib/auth/para-tenant').authParaTenant
 let origenDelRequest: typeof import('@/lib/auth/origen').origenDelRequest
+// Las dos spies de `corregirPagos`. Se resuelven acá y no con un import
+// estático de `@/lib/auth/sesion`/`@/lib/permisos/consultar` arriba del
+// archivo por la misma razón que `anular`/`guardarDetalle`: esos módulos
+// arrastran `lib/db.ts`, que arma su Pool leyendo `DATABASE_URL` al
+// importarse, y esa variable recién se fija acá abajo.
+let sesionMock: MockedFunction<typeof import('@/lib/auth/sesion').exigirSesion>
+let permisosMock: MockedFunction<typeof import('@/lib/permisos/consultar').permisosDe>
 
 // Propio del test y no importado de acciones.ts: ese archivo es 'use server' y
 // sólo puede exportar funciones async.
@@ -61,9 +89,11 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   process.env.DOMINIO_BASE = 'arandano.test'
 
-  ;({ anular, guardarDetalle } = await import('./acciones'))
+  ;({ anular, guardarDetalle, corregirPagos } = await import('./acciones'))
   ;({ authParaTenant } = await import('@/lib/auth/para-tenant'))
   ;({ origenDelRequest } = await import('@/lib/auth/origen'))
+  sesionMock = vi.mocked((await import('@/lib/auth/sesion')).exigirSesion)
+  permisosMock = vi.mocked((await import('@/lib/permisos/consultar')).permisosDe)
   const administrar = await import('@/lib/usuarios/administrar')
   const { crearVenta } = await import('@/lib/ventas/crear')
 
@@ -324,5 +354,191 @@ describe('guardarDetalle', () => {
 
     await expect(guardarDetalle({ ventaId, detalle: 'x' })).rejects.toThrow('REDIRECT')
     expect(await detalleDe(ventaId)).toBeNull()
+  })
+})
+
+/**
+ * `corregirPagos` prueba sólo el CONTRATO de la action: el guard, y que lo
+ * que llega mal formado de afuera salga como aviso y no como 500. El motor
+ * (`reemplazarPagos`) está mockeado —tiene su propio test contra la base en
+ * `lib/ventas/editar.test.ts` (Task 5)— así que estos casos no tocan Postgres
+ * y no comparten fixtures con `anular`/`guardarDetalle` de arriba.
+ *
+ * Va AL FINAL del archivo a propósito: `sesionMock`/`permisosMock` son spies
+ * sobre `exigirSesion`/`permisosDe` que este describe configura con un valor
+ * fijo, pisando (mientras dure el archivo) el comportamiento real del que
+ * dependen los describes de arriba. Corriendo después de ellos, no hay nada
+ * que puedan romper.
+ */
+describe('corregirPagos', () => {
+  // Dos uuid cualesquiera: estos tests no tocan la base, así que no hace
+  // falta que `TENANT`/`USUARIO`/`VENTA` existan de verdad.
+  const TENANT = '01920000-0000-7000-8000-0000000000aa'
+  const USUARIO = '01920000-0000-7000-8000-0000000000bb'
+  const VENTA = '01920000-0000-7000-8000-000000000001'
+  const UN_PAGO = [
+    { medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: '1000', cotizacion: '1', planId: null },
+  ]
+  // El mismo texto que `NO_EXISTE` en acciones.ts (no se puede importar: ese
+  // archivo es 'use server' y sólo puede exportar funciones async). Una sola
+  // constante acá, para no repetir el literal entre el caso del id mal
+  // formado y el del id ajeno/inexistente — son el mismo mensaje a propósito.
+  const NO_EXISTE = 'Esa venta no existe.'
+
+  // Sólo el HISTORIAL de llamadas: los `mockResolvedValue` de `sesionMock` y
+  // `permisosMock` se dejan vivir de un test al otro a propósito, igual que
+  // en el brief — cada test que necesita otro permiso lo vuelve a fijar.
+  beforeEach(() => {
+    reemplazarPagosMock.mockClear()
+  })
+
+  it('sin VENTAS_EDITAR no llega al motor', async () => {
+    sesionMock.mockResolvedValue({
+      tenant: { id: TENANT, nombre: 'Local de prueba', estado: 'TRIAL' },
+      subdominio: 'local-de-prueba',
+      usuario: { id: USUARIO, nombre: 'Un empleado', email: 'e@ejemplo.test', rol: 'EMPLEADO' },
+    })
+    permisosMock.mockResolvedValue(new Set<Permiso>())
+
+    // `exigirPermiso` llama a `forbidden()` de next/navigation, que tira.
+    await expect(corregirPagos({ ventaId: VENTA, pagos: UN_PAGO, nota: '' })).rejects.toThrow()
+    expect(reemplazarPagosMock).not.toHaveBeenCalled()
+  })
+
+  it('con VENTAS_EDITAR llega al motor con los importes como Decimal', async () => {
+    permisosMock.mockResolvedValue(new Set<Permiso>(['VENTAS_EDITAR']))
+    reemplazarPagosMock.mockResolvedValueOnce(undefined)
+
+    const r = await corregirPagos({ ventaId: VENTA, pagos: UN_PAGO, nota: '  era transferencia ' })
+
+    expect(r.error).toBeNull()
+    const arg = reemplazarPagosMock.mock.calls[0][0]
+    expect(arg.pagos[0].base.toString()).toBe('1000')
+    expect(arg.pagos[0].planId).toBeUndefined()
+    // La nota viaja CRUDA: `reemplazarPagos` es quien la normaliza (trim,
+    // tope, vacío → null). Normalizarla acá también sería la segunda
+    // implementación de la misma regla.
+    expect(arg.nota).toBe('  era transferencia ')
+  })
+
+  it('traduce un ErrorDeVenta a un aviso y no a un 500', async () => {
+    permisosMock.mockResolvedValue(new Set<Permiso>(['VENTAS_EDITAR']))
+    reemplazarPagosMock.mockRejectedValueOnce(
+      new ErrorDeVenta('PAGOS_NO_CIERRAN', 'los pagos en pesos suman 900 y el total en pesos es 1000'),
+    )
+
+    const r = await corregirPagos({ ventaId: VENTA, pagos: UN_PAGO, nota: '' })
+
+    expect(r.error).toContain('los pagos en pesos suman 900')
+    expect(r.aviso).toBeNull()
+  })
+
+  it('un ventaId mal formado no llega a Prisma', async () => {
+    permisosMock.mockResolvedValue(new Set<Permiso>(['VENTAS_EDITAR']))
+
+    const r = await corregirPagos({ ventaId: 'no-es-uuid', pagos: UN_PAGO, nota: '' })
+
+    expect(r.error).toBe(NO_EXISTE)
+    expect(reemplazarPagosMock).not.toHaveBeenCalled()
+  })
+
+  // El camino que el guard de arriba NO frena: un uuid bien formado que
+  // `reemplazarPagos` rechaza por `VENTA_INEXISTENTE` (ajeno, o inventado
+  // pero con forma de uuid). Su mensaje real lleva el id y "no existe en
+  // este tenant" —diagnóstico para el log del servidor—, y eso NO puede
+  // salir por la action: le contaría el modelo de aislamiento a quien prueba
+  // ids, y además, si no se tradujera, sería distinguible del caso de arriba
+  // (id mal formado), que es justo lo que la constraint del brief prohíbe.
+  // Los dos caminos tienen que dar el MISMO texto — comparado contra la
+  // constante de este archivo, no contra un literal repetido.
+  it('un ventaId ajeno/inexistente da el MISMO mensaje que uno mal formado, sin el uuid ni el detalle del tenant', async () => {
+    permisosMock.mockResolvedValue(new Set<Permiso>(['VENTAS_EDITAR']))
+    reemplazarPagosMock.mockRejectedValueOnce(
+      new ErrorDeVenta('VENTA_INEXISTENTE', `la venta ${VENTA} no existe en este tenant`),
+    )
+
+    const ajenoOInexistente = await corregirPagos({ ventaId: VENTA, pagos: UN_PAGO, nota: '' })
+    const malFormado = await corregirPagos({ ventaId: 'no-es-uuid', pagos: UN_PAGO, nota: '' })
+
+    expect(ajenoOInexistente.error).toBe(NO_EXISTE)
+    expect(ajenoOInexistente.error).toBe(malFormado.error)
+  })
+
+  it('un importe que no es un número sale como aviso, no como 500', async () => {
+    permisosMock.mockResolvedValue(new Set<Permiso>(['VENTAS_EDITAR']))
+
+    const r = await corregirPagos({
+      ventaId: VENTA,
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: 'mil', cotizacion: '1', planId: null }],
+      nota: '',
+    })
+
+    expect(r.error).not.toBeNull()
+    expect(reemplazarPagosMock).not.toHaveBeenCalled()
+  })
+
+  // Los casts a `MedioPago`/`Moneda` no validan nada por sí solos: sin este
+  // guard, un enum inventado lo rechazaría Prisma recién adentro de
+  // `reemplazarPagos`, con un `PrismaClientValidationError` sin `codigo` — un
+  // 500. Mismo guard, mismo motivo, que ya usa `cobrar`
+  // (app/(app)/vender/acciones.ts) para el mismo problema.
+  it('un medio de pago inventado sale como aviso, no como 500', async () => {
+    permisosMock.mockResolvedValue(new Set<Permiso>(['VENTAS_EDITAR']))
+
+    const r = await corregirPagos({
+      ventaId: VENTA,
+      pagos: [{ medio: 'CRIPTO', moneda: 'ARS', cubre: 'ARS', base: '1000', cotizacion: '1', planId: null }],
+      nota: '',
+    })
+
+    expect(r.error).not.toBeNull()
+    expect(reemplazarPagosMock).not.toHaveBeenCalled()
+  })
+
+  it('una moneda inventada sale como aviso, no como 500', async () => {
+    permisosMock.mockResolvedValue(new Set<Permiso>(['VENTAS_EDITAR']))
+
+    const r = await corregirPagos({
+      ventaId: VENTA,
+      pagos: [{ medio: 'EFECTIVO', moneda: 'YENES', cubre: 'ARS', base: '1000', cotizacion: '1', planId: null }],
+      nota: '',
+    })
+
+    expect(r.error).not.toBeNull()
+    expect(reemplazarPagosMock).not.toHaveBeenCalled()
+  })
+
+  it('un "cubre" inventado sale como aviso, no como 500', async () => {
+    permisosMock.mockResolvedValue(new Set<Permiso>(['VENTAS_EDITAR']))
+
+    const r = await corregirPagos({
+      ventaId: VENTA,
+      pagos: [{ medio: 'EFECTIVO', moneda: 'ARS', cubre: 'YENES', base: '1000', cotizacion: '1', planId: null }],
+      nota: '',
+    })
+
+    expect(r.error).not.toBeNull()
+    expect(reemplazarPagosMock).not.toHaveBeenCalled()
+  })
+
+  // `planId` viaja como string suelta y no como uuid tipado: un `planId`
+  // mal formado llegaría intacto hasta el `findMany({ where: { id: { in:
+  // [...] } } })` de `resolverPagosConRecargo` (lib/ventas/pagos.ts) y
+  // Prisma lo rechazaría ahí con un error sin `codigo` — el mismo riesgo que
+  // ya blindan `ventaId` y el resto de esta action. Mismo guard que usa
+  // `cobrar` para el mismo campo.
+  it('un planId mal formado sale como aviso, no como 500', async () => {
+    permisosMock.mockResolvedValue(new Set<Permiso>(['VENTAS_EDITAR']))
+
+    const r = await corregirPagos({
+      ventaId: VENTA,
+      pagos: [
+        { medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: '1000', cotizacion: '1', planId: 'no-es-uuid' },
+      ],
+      nota: '',
+    })
+
+    expect(r.error).not.toBeNull()
+    expect(reemplazarPagosMock).not.toHaveBeenCalled()
   })
 })

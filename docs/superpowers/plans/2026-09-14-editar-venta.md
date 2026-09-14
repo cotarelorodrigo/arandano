@@ -17,7 +17,7 @@
 - **Nada divide.** Ver `aporteDePago` en `lib/ventas/totales.ts`: una división produce ventas que no cierran por un centavo y que la persona del mostrador no puede arreglar.
 - **Toda tabla nueva lleva `tenant_id`, `ENABLE ROW LEVEL SECURITY` y la policy `tenant_aislamiento`** escrita a mano en la migración (Prisma no la genera). `test/rls-cobertura.test.ts` falla si falta.
 - **Las migraciones son sólo aditivas**: cero `DROP`, cero renombres. `prisma migrate dev` en desarrollo; producción usa `migrate deploy`.
-- **Después de cada migración hay que regenerar el ERD**: `scripts/generar-erd.sh prisma/schema.prisma`, que reescribe `docs/schema.md`. El paso 3 de `deploy.sh` lo verifica.
+- **Después de cada migración hay que regenerar el ERD**: `scripts/generar-erd.sh --schema=prisma/schema.prisma --salida=docs/schema.md`. El paso 3 de `deploy.sh` lo verifica.
 - **Un módulo que importe `lib/db.ts` (directa o transitivamente) no puede ser importado desde un archivo `'use client'`** — arrastra `pg` al bundle del navegador y tira abajo la compilación del cliente. `test/limite-cliente-servidor.test.ts` lo vigila.
 - **Toda guarda de permiso tiene que alcanzar las DOS copias** de una acción duplicada (escritorio y teléfono), y el caso que lo fija cuenta apariciones **en las dos direcciones**: con el permiso tienen que estar las dos, sin el permiso ninguna. Un `not.toContain` solo no alcanza.
 - **Mobile-first**: el valor del teléfono sin prefijo, el de escritorio con `lg:` (1024 px). Prohibido `sm:`/`md:` en código propio.
@@ -413,7 +413,7 @@ En `prisma/schema.prisma`, modelo `Pago`, inmediatamente **arriba** de `recargo`
 
 ```bash
 npx prisma migrate dev --name pago_porcentaje
-scripts/generar-erd.sh prisma/schema.prisma
+scripts/generar-erd.sh --schema=prisma/schema.prisma --salida=docs/schema.md
 ```
 
 Verificar a ojo que `migration.sql` diga sólo `ALTER TABLE "pagos" ADD COLUMN "porcentaje" DECIMAL(6,3);` — nullable, sin default, sin `DROP`.
@@ -638,7 +638,7 @@ CREATE POLICY "tenant_aislamiento" ON "pagos_archivados" FOR ALL
   WITH CHECK ("tenant_id" = nullif(current_setting('arandano.tenant_id', true), '')::uuid);
 ```
 
-Después: `npx prisma migrate reset --force` en dev para que la migración editada se aplique entera, y `scripts/generar-erd.sh prisma/schema.prisma`.
+Después: `npx prisma migrate reset --force` en dev para que la migración editada se aplique entera, y `scripts/generar-erd.sh --schema=prisma/schema.prisma --salida=docs/schema.md`.
 
 - [ ] **Step 5: El REVOKE en `setup-db-roles.sh`**
 
@@ -733,7 +733,7 @@ En `prisma/schema.prisma`, enum `Permiso`, al final (el orden del enum no es el 
 
 ```bash
 npx prisma migrate dev --name permiso_ventas_editar
-scripts/generar-erd.sh prisma/schema.prisma
+scripts/generar-erd.sh --schema=prisma/schema.prisma --salida=docs/schema.md
 ```
 
 Verificar que el SQL sea sólo `ALTER TYPE "permiso" ADD VALUE 'VENTAS_EDITAR';`.

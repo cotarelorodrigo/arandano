@@ -12,13 +12,15 @@ import {
   formatearPrecio, formatearCantidad, formatearHora, formatearFechaCorta,
   formatearFecha, precioEnSuMoneda,
 } from '@/lib/formato/mostrar'
-import { ROTULO_MEDIO, CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
+import { ROTULO_MEDIO, CONSUMIDOR_FINAL, type Medio } from '@/lib/ventas/medios'
 import { subtotalItem, pesosEntregados, baseEnDolares } from '@/lib/ventas/totales'
 import {
   vendidoDeVenta, cobradoDePagos, hayQueDesglosar, formatearTotales,
 } from '@/lib/ventas/cobrado'
 import { ChipEstado } from '../chip-estado'
 import { AnularVenta, DetalleDeLaVenta } from '../formularios'
+import { CorregirPagos, type PagoParaCorregir } from '../corregir-pagos'
+import { planesDelTenant, type PlanVisible } from '@/lib/planes/consultar'
 import { esUuid } from '@/lib/uuid'
 import estilos from '../tipografia.module.css'
 
@@ -39,6 +41,76 @@ const ROTULO_MONEDA: Record<'ARS' | 'USD', string> = { ARS: 'Pesos', USD: 'Dóla
  */
 export function seOfreceAnular(puedeAnular: boolean, anuladaEn: Date | null): boolean {
   return puedeAnular && anuladaEn === null
+}
+
+/**
+ * Si esta pantalla OFRECE el botón de corregir cómo se pagó ESTA venta: que la
+ * persona tenga `VENTAS_EDITAR`, y que la venta siga cobrada.
+ *
+ * La segunda mitad no es prolijidad: `reemplazarPagos` rechaza una venta
+ * anulada con `VENTA_ANULADA` —no hay nada que corregir sobre cómo se pagó
+ * algo que se dio de baja—, así que un botón que se ofreciera igual sería un
+ * botón que siempre falla. Misma forma y mismo motivo que `seOfreceAnular`,
+ * arriba; el guard de verdad, el que protege, sigue viviendo en
+ * `exigirPermiso('VENTAS_EDITAR')` adentro de la action `corregirPagos()`.
+ */
+export function seOfreceCorregir(puedeEditar: boolean, anuladaEn: Date | null): boolean {
+  return puedeEditar && anuladaEn === null
+}
+
+/**
+ * La BASE de un pago ya guardado: lo que ese pago cubre de la mercadería, a
+ * precio de lista.
+ *
+ * **No está en ninguna columna, y por eso hay que reconstruirla.** `Pago` guarda
+ * `monto` —lo que entró a la caja, en la moneda que se entregó— y el motor
+ * (`lib/ventas/pagos.ts`) recibe `base`, que es otra cosa: `monto` es
+ * `montoEntregado(base) + recargo`. Para precargar el diálogo de corrección hay
+ * que invertir esa cuenta, y la inversión ramifica exactamente donde ramifica
+ * `montoEntregado`:
+ *
+ * - **Pesos entregados contra el total en DÓLARES** (el único caso que cruza
+ *   hacia abajo): `monto = base × cotización + recargo`, así que la vuelta
+ *   DIVIDE. Es la única división de todo este motor, y se puede hacer acá
+ *   porque no decide ninguna plata: el resultado vuelve al campo "Cubre US$",
+ *   y el número que se cobra lo recalcula el servidor desde ahí. El redondeo a
+ *   dos decimales recupera la base exacta mientras la cotización sea ≥ 1 —el
+ *   error que introdujo el redondeo del `monto` es a lo sumo medio centavo, y
+ *   dividirlo por la cotización lo deja muy por debajo del medio centavo que
+ *   podría desempatar—, y una cotización menor que 1 significaría un dólar que
+ *   vale menos que un peso.
+ * - **Todos los demás casos**: `monto = base + recargo`, así que alcanza con
+ *   restar. Para un pago entregado en dólares el recargo es siempre cero —el
+ *   motor prohíbe el plan ahí (`PLAN_EN_DOLARES`)—, así que la resta es un
+ *   no-op y la base es el monto.
+ */
+export function baseDePagoGuardado(p: {
+  moneda: 'ARS' | 'USD'
+  cubre: 'ARS' | 'USD'
+  monto: Decimal
+  cotizacion: Decimal
+  recargo: Decimal
+}): Decimal {
+  const sinRecargo = p.monto.sub(p.recargo)
+  if (p.moneda === 'ARS' && p.cubre === 'USD' && p.cotizacion.greaterThan(0)) {
+    return sinRecargo.div(p.cotizacion).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP)
+  }
+  return sinRecargo
+}
+
+/**
+ * Si algún pago de esta venta se cobró ANTES de que existiera
+ * `Pago.porcentaje`, y por lo tanto va a recalcularse con el porcentaje de hoy
+ * si alguien corrige.
+ *
+ * Un pago **sin plan** no tiene porcentaje que recuperar —su `porcentaje` es
+ * `null` porque se cobró a precio de lista, no porque falte el dato—, así que
+ * no cuenta: contarlo pondría la leyenda del diálogo en toda venta del país.
+ */
+export function hayPagoSinPorcentaje(
+  pagos: { planDePagoId: string | null; porcentaje: Decimal | null }[],
+): boolean {
+  return pagos.some((p) => p.planDePagoId !== null && p.porcentaje === null)
 }
 
 /**
@@ -395,6 +467,34 @@ export type PagoRecibido = {
   esUsd: boolean
 }
 
+/** Una corrección de cómo se pagó la venta: quién, cuándo, la nota libre y
+ *  cómo estaban los pagos ANTES — la fila de `PagoArchivado` que
+ *  `reemplazarPagos` graba antes de reemplazarlos.
+ *
+ *  A diferencia del resto de las props de `Detalle` (`PagoRecibido`,
+ *  `ItemVendido`), viaja con sus `Decimal` de Prisma tal cual, sin pasar por
+ *  `datosDelDetalle` para resolverlos a texto: `Detalle` no cruza a un
+ *  componente cliente —este archivo no tiene ningún `'use client'`—, así que
+ *  no hace falta esa capa, y formatear acá con las MISMAS funciones que ya
+ *  usa "Cómo se pagó" (`ROTULO_MEDIO`, `rotuloDePlan`, `precioEnSuMoneda`) es
+ *  lo que hace que un pago archivado se lea igual que uno vivo. */
+export type EdicionVisible = {
+  id: string
+  nota: string | null
+  creadoEn: Date
+  usuario: { nombre: string }
+  pagos: {
+    id: string
+    medio: Medio
+    moneda: Moneda
+    cubre: Moneda
+    monto: Decimal
+    cotizacion: Decimal
+    recargo: Decimal
+    plan: { nombre: string; cuotas: number } | null
+  }[]
+}
+
 /**
  * El cuerpo entero del detalle de una venta: el panel Resumen, las dos
  * tablas ("Qué se vendió", "Cómo se pagó") y la Zona de riesgo — todo lo que
@@ -428,13 +528,15 @@ export type PagoRecibido = {
  * teléfono (`contents`, mismo truco que ya usa `app/(app)/vender/caja.tsx`
  * para su variante píldora): sus cards pasan a ser hijos directos del
  * `flex-col` externo, cada una con su propio `order-N` (1: Resumen, 2: Qué se
- * vendió, 3: Cómo se pagó, 4: Detalles, 5: Zona de riesgo). En escritorio
- * (`lg:flex`) cada columna vuelve a ser una caja real y `lg:order-none`
- * restaura el orden natural del DOM adentro de ella (Qué se vendió antes que
- * Cómo se pagó; Resumen antes que Detalles antes que Zona de riesgo) — el
- * `order` del teléfono no tiene ningún efecto ahí porque cada columna ya trae
- * sus hijos en el orden que necesita en escritorio (2 en la izquierda, 3 en
- * la derecha).
+ * vendió, 3: Cómo se pagó, 4: Detalles, 5: Correcciones, 6: Zona de riesgo —
+ * Correcciones sumó su número entre Detalles y la Zona de riesgo sin
+ * renumerar el resto, y le corrió el 5 viejo de la Zona de riesgo al 6). En
+ * escritorio (`lg:flex`) cada columna vuelve a ser una caja real y
+ * `lg:order-none` restaura el orden natural del DOM adentro de ella (Qué se
+ * vendió antes que Cómo se pagó; Resumen antes que Detalles antes que
+ * Correcciones antes que Zona de riesgo) — el `order` del teléfono no tiene
+ * ningún efecto ahí porque cada columna ya trae sus hijos en el orden que
+ * necesita en escritorio (2 en la izquierda, 3 en la derecha).
  *
  * **La banda TOTAL pinta con `--marca`, sólo en el teléfono.** El nodo `Cv4xd`
  * de `WBV5G` declara `fill: $ar-primary-deep` (`--marca`, ver
@@ -446,7 +548,7 @@ export type PagoRecibido = {
  */
 export function Detalle({
   resumen, anulada, notaDeAnulacionTexto, items, totalFormateado, lineasDeTotal = null, pagos,
-  ofreceAnular, ventaId, detalle,
+  ofreceAnular, ofreceCorregir, correccion, ventaId, detalle, ediciones,
 }: {
   resumen: ResumenTexto
   anulada: boolean
@@ -476,10 +578,31 @@ export function Detalle({
    *  distintas con el mismo nombre es exactamente el modo de falla que el
    *  merge con el ciclo de permisos (2026-08-26) tenía que evitar. */
   ofreceAnular: boolean
+  /** Si se dibuja el botón de corregir cómo se pagó: `VENTAS_EDITAR` Y que la
+   *  venta siga cobrada, ya combinados por `seOfreceCorregir` en el llamador.
+   *  Se llama `ofreceCorregir` y no `puedeEditarVenta` por lo mismo que
+   *  `ofreceAnular` de acá arriba: el permiso pelado es otra cosa. */
+  ofreceCorregir: boolean
+  /** Todo lo que el diálogo de corrección necesita para precargarse. Viaja
+   *  SIEMPRE, con `ofreceCorregir` en falso también: es una decisión de
+   *  presentación, no un secreto — son los mismos pagos que la tabla de al
+   *  lado ya muestra, con la base reconstruida. */
+  correccion: {
+    totalArs: string
+    totalUsd: string
+    pagos: PagoParaCorregir[]
+    planes: PlanVisible[]
+    hayPagoSinPorcentaje: boolean
+  }
   ventaId: string
   /** El texto libre que el local anotó sobre esta venta, o `null` sin nada
    *  cargado todavía — la card se dibuja igual, con el textarea vacío. */
   detalle: string | null
+  /** La bitácora de correcciones, más nueva primero. Lista vacía —el caso
+   *  común, toda venta que nunca se corrigió— y la card de "Correcciones"
+   *  directamente no se dibuja: a diferencia de "Detalles", acá no hay nada
+   *  que cargar. */
+  ediciones: EdicionVisible[]
 }) {
   return (
     <div className="flex flex-col gap-3 px-[14px] py-3 lg:gap-4 lg:p-6">
@@ -661,8 +784,24 @@ export function Detalle({
           </div>
 
           <div className="order-3 flex flex-col overflow-hidden rounded-2xl border bg-card lg:order-none">
-            <div className="border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
+            {/* El encabezado pasa a ser un flex con el título a la izquierda y
+                el botón de corregir a la derecha. Se renderiza IGUAL en los dos
+                anchos —no lleva `hidden lg:flex`, a diferencia de las
+                `acciones` de `<Encabezado>`—, así que UNA sola copia del botón
+                alcanza: la regla de las dos copias exige la segunda cuando el
+                Topbar esconde la primera, y acá no la esconde nadie. */}
+            <div className="flex items-center justify-between gap-2 border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
               <h2 className={`${estilos.tituloDeCard} text-foreground`}>Cómo se pagó</h2>
+              {ofreceCorregir && (
+                <CorregirPagos
+                  ventaId={ventaId}
+                  totalArs={correccion.totalArs}
+                  totalUsd={correccion.totalUsd}
+                  pagos={correccion.pagos}
+                  planes={correccion.planes}
+                  hayPagoSinPorcentaje={correccion.hayPagoSinPorcentaje}
+                />
+              )}
             </div>
             <div role="table" className="grid grid-cols-1 lg:grid-cols-[1fr_150px_110px_130px_130px_140px]">
               <div role="row" className="hidden lg:contents">
@@ -817,6 +956,49 @@ export function Detalle({
             </div>
           </div>
 
+          {/* Correcciones: la bitácora de cómo se pagó esta venta. SÓLO se
+              dibuja si hubo alguna — a diferencia de Detalles, arriba, que se
+              dibuja vacía a propósito porque es el lugar donde el dato se
+              carga. Acá no hay nada que cargar, así que un local que nunca
+              corrigió una venta no ve ninguna diferencia.
+
+              Va después de Detalles y antes de la Zona de riesgo, en las dos
+              disposiciones: describe la venta, y la acción destructiva se
+              queda última (ver el docblock de `Detalle`, más arriba, para la
+              renumeración de `order-*` que esto le pidió a la Zona de
+              riesgo). */}
+          {ediciones.length > 0 && (
+            <div className="order-5 flex flex-col overflow-hidden rounded-2xl border bg-card lg:order-none">
+              <div className="border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
+                <h2 className={`${estilos.tituloDeCard} text-foreground`}>Correcciones</h2>
+              </div>
+              <div className="flex flex-col p-[14px] lg:p-4">
+                {ediciones.map((e) => (
+                  <div key={e.id} className="flex flex-col gap-1.5 border-b pb-3 text-[12px] last:border-b-0 last:pb-0 [&:not(:first-child)]:pt-3">
+                    <p className="text-foreground">
+                      <span className="font-semibold">{e.usuario.nombre}</span> corrigió los pagos el{' '}
+                      {formatearFecha(e.creadoEn)} a las {formatearHora(e.creadoEn)}
+                    </p>
+                    {e.nota !== null && <p className="text-muted-foreground">{e.nota}</p>}
+                    <ul className="flex flex-col gap-0.5 text-muted-foreground">
+                      {e.pagos.map((p) => {
+                        const planLabel = rotuloDePlan(p.plan)
+                        return (
+                          <li key={p.id}>
+                            {ROTULO_MEDIO[p.medio]}
+                            {planLabel !== null && ` · ${planLabel}`}
+                            {' · '}
+                            {precioEnSuMoneda(p.monto.toString(), p.moneda)}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Zona de riesgo (design/arandano.pen, nodo `TIlD3`): la maqueta
               sólo dibuja el texto de advertencia, sin ningún botón — no
               existe ningún frame de venta anulada contra el que confirmar si
@@ -842,13 +1024,13 @@ export function Detalle({
               mismo lugar que la advertencia, así que la columna nunca queda
               con las dos cosas a la vez. */}
           {notaDeAnulacionTexto ? (
-            <Alert className="order-5 rounded-2xl bg-destructive-soft px-[14px] py-[14px] lg:order-none lg:px-4 lg:py-4">
+            <Alert className="order-6 rounded-2xl bg-destructive-soft px-[14px] py-[14px] lg:order-none lg:px-4 lg:py-4">
               <AlertDescription className="text-[11px] leading-[1.45] text-destructive opacity-85">
                 {notaDeAnulacionTexto}
               </AlertDescription>
             </Alert>
           ) : (
-            <div className="order-5 flex flex-col gap-[9px] rounded-2xl bg-destructive-soft p-[14px] lg:order-none lg:p-4">
+            <div className="order-6 flex flex-col gap-[9px] rounded-2xl bg-destructive-soft p-[14px] lg:order-none lg:p-4">
               <div className="flex items-center gap-[7px]">
                 <TriangleAlert aria-hidden="true" className="size-[14px] text-destructive" />
                 <span className="text-[13px] font-bold text-destructive">Anular la venta</span>
@@ -882,6 +1064,21 @@ export type DatosDelDetalle = {
   lineasDeTotal: { rotulo: string; montoFormateado: string; destacada: boolean }[] | null
   pagos: PagoRecibido[]
   detalle: string | null
+  /** Todo lo que el diálogo de corrección necesita, ya en texto: los dos
+   *  totales de la mercadería, los pagos con su BASE reconstruida
+   *  (`baseDePagoGuardado`), los planes vigentes del local y si algún pago se
+   *  cobró antes de que existiera `Pago.porcentaje`. */
+  correccion: {
+    totalArs: string
+    totalUsd: string
+    pagos: PagoParaCorregir[]
+    planes: PlanVisible[]
+    hayPagoSinPorcentaje: boolean
+  }
+  /** La bitácora de correcciones, más nueva primero — tal cual la devuelve
+   *  el `select` de más abajo, sin resolver a texto (ver el docblock de
+   *  `EdicionVisible`). */
+  ediciones: EdicionVisible[]
 }
 
 /**
@@ -943,6 +1140,11 @@ export async function datosDelDetalle(tenantId: string, ventaId: string): Promis
       pagos: {
         select: {
           id: true, medio: true, moneda: true, monto: true, cotizacion: true,
+          // `recargo` (corrección de pagos): `baseDePagoGuardado` lo necesita
+          // para volver del `monto` guardado —que ya lo incluye— a la BASE,
+          // que es lo que el diálogo precarga y lo único que el motor valida
+          // contra los dos totales.
+          recargo: true,
           // `cubre` (Task 11): qué total de la venta paga esta fila —
           // `seMuestraCubre` decide con esto y con los dos totales de la
           // venta si hace falta decirlo.
@@ -954,7 +1156,29 @@ export async function datosDelDetalle(tenantId: string, ventaId: string): Promis
           // qué plan se cobró, no importa si ese plan sigue vigente hoy.
           // Confirmado contra la base en test/ventas.test.ts.
           plan: { select: { nombre: true, cuotas: true } },
+          // Para precargar el diálogo de corrección: el id del plan (el
+          // `plan: { nombre, cuotas }` de al lado es para mostrar) y el
+          // porcentaje congelado, que es lo que decide si el diálogo avisa que
+          // ese pago se va a recalcular con el porcentaje de hoy.
+          planDePagoId: true,
+          porcentaje: true,
         },
+      },
+      // La bitácora de correcciones. Va en la misma consulta que el resto: es
+      // una sola pantalla y ya trae siete cosas.
+      ediciones: {
+        select: {
+          id: true, nota: true, creadoEn: true,
+          usuario: { select: { nombre: true } },
+          pagos: {
+            select: {
+              id: true, medio: true, moneda: true, cubre: true,
+              monto: true, cotizacion: true, recargo: true,
+              plan: { select: { nombre: true, cuotas: true } },
+            },
+          },
+        },
+        orderBy: { creadoEn: 'desc' },
       },
       // Los equipos que se llevó la venta (Task 10): sólo existe una fila acá
       // para un artículo con `llevaSerie` — la inmensa mayoría de las ventas
@@ -964,6 +1188,29 @@ export async function datosDelDetalle(tenantId: string, ventaId: string): Promis
     },
   })
   if (!venta) return null
+
+  // DESPUÉS del `findUnique` y no en paralelo: con una venta que no existe
+  // —un id tipeado en la barra de direcciones— esta consulta no le sirve a
+  // nadie, y la pantalla ya dispara varias.
+  //
+  // Los vigentes MÁS los que ESTA venta ya usó, y ninguno otro. Un plan dado
+  // de baja no se puede volver a elegir para un cobro nuevo —el motor lo
+  // rechaza igual que a uno inexistente—, así que ofrecerlo sería ofrecer un
+  // error; pero el que la venta ya traía sí lo acepta `reemplazarPagos`
+  // (`planesDeLaVenta`, lib/ventas/pagos.ts), y si no estuviera en esta lista
+  // el `Select` de esa fila quedaría EN BLANCO: se leería como "sin plan", y
+  // guardar desde ahí reescribiría el pago a precio de lista. Las dos mitades
+  // son la misma regla de siempre —ofrecer exactamente lo que el servidor
+  // acepta—, y el diálogo los dibuja marcados (`rotuloDePlanEnElSelector`).
+  //
+  // El plan con el que se cobró un pago viejo se sigue MOSTRANDO igual, por
+  // el `plan: { select: … }` de arriba, que no filtra por baja.
+  const planesDeLaVenta = new Set(
+    venta.pagos.flatMap((p) => (p.planDePagoId !== null ? [p.planDePagoId] : [])),
+  )
+  const planes = (await planesDelTenant(tenantId, { incluirDesactivados: true })).filter(
+    (p) => p.desactivadoEn === null || planesDeLaVenta.has(p.id),
+  )
 
   const resumen = filasDeResumen(venta)
   const anulada = venta.anuladaEn !== null
@@ -1035,6 +1282,27 @@ export async function datosDelDetalle(tenantId: string, ventaId: string): Promis
       })) ?? null,
     pagos,
     detalle: venta.detalle,
+    correccion: {
+      // `toString()` del `Decimal`: lo que cruza a un componente cliente no
+      // puede ser un `Decimal` (arrastraría el cliente de Prisma al bundle),
+      // y un `number` no representa plata. Mismo criterio que `PlanVisible`.
+      totalArs: venta.total.toString(),
+      totalUsd: venta.totalUsd.toString(),
+      pagos: venta.pagos.map((p) => ({
+        medio: p.medio,
+        moneda: p.moneda,
+        cubre: p.cubre,
+        base: baseDePagoGuardado(p).toString(),
+        cotizacion: p.cotizacion.toString(),
+        planId: p.planDePagoId,
+      })),
+      planes,
+      hayPagoSinPorcentaje: hayPagoSinPorcentaje(venta.pagos),
+    },
+    // Tal cual la trae el `select` de arriba: coincide con `EdicionVisible`
+    // campo a campo (id, nota, creadoEn, usuario.nombre, y cada pago con su
+    // Decimal crudo), así que no hace falta remapearla.
+    ediciones: venta.ediciones,
   }
 }
 
@@ -1052,6 +1320,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
   if (!datos) notFound()
 
   const puedeAnularVenta = await puedeConSesion(sesion, 'VENTAS_ANULAR')
+  const puedeEditarVenta = await puedeConSesion(sesion, 'VENTAS_EDITAR')
 
   return (
     <>
@@ -1065,8 +1334,11 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
         lineasDeTotal={datos.lineasDeTotal}
         pagos={datos.pagos}
         ofreceAnular={seOfreceAnular(puedeAnularVenta, datos.anuladaEn)}
+        ofreceCorregir={seOfreceCorregir(puedeEditarVenta, datos.anuladaEn)}
+        correccion={datos.correccion}
         ventaId={id}
         detalle={datos.detalle}
+        ediciones={datos.ediciones}
       />
     </>
   )
