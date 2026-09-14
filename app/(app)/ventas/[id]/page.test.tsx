@@ -19,7 +19,7 @@ import {
   seOfreceAnular, cotizacionVisible, subtituloDeItem, metaDeItem, metaDePago, filasDeResumen,
   notaDeAnulacion, Detalle, type ItemVendido, type PagoRecibido,
   lineasDeRecargo, rotuloDePlan, seMuestraCubre, ROTULO_CUBRE, imeisPorItem,
-  seOfreceCorregir, baseDePagoGuardado, hayPagoSinPorcentaje,
+  seOfreceCorregir, baseDePagoGuardado, hayPagoSinPorcentaje, type EdicionVisible,
 } from './page'
 import { CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
@@ -394,6 +394,21 @@ const CORRECCION: Parameters<typeof Detalle>[0]['correccion'] = {
   hayPagoSinPorcentaje: false,
 }
 
+/** Una corrección de la bitácora: los pagos de ANTES, con sus `Decimal`
+ *  crudos —`Detalle` no cruza a un componente cliente, así que los formatea
+ *  ella misma con las mismas funciones que ya usa "Cómo se pagó", en vez de
+ *  recibirlos ya resueltos a texto como el resto de las props. Consistente
+ *  con `PAGO_ARS`: un pago en efectivo, sin plan. */
+const EDICION: EdicionVisible = {
+  id: 'e1',
+  nota: 'era transferencia',
+  creadoEn: new Date('2026-09-14T12:00:00Z'),
+  usuario: { nombre: 'Flor' },
+  pagos: [
+    { id: 'p1', medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', monto: d('1000'), cotizacion: d('1'), recargo: d('0'), plan: null },
+  ],
+}
+
 function renderDetalle(props: Partial<Parameters<typeof Detalle>[0]> = {}) {
   return renderToStaticMarkup(
     <Detalle
@@ -408,6 +423,9 @@ function renderDetalle(props: Partial<Parameters<typeof Detalle>[0]> = {}) {
       correccion={CORRECCION}
       ventaId="v1"
       detalle={null}
+      // El caso común, y el que tiene que verse EXACTAMENTE como antes de la
+      // Task 8: una venta que nunca se corrigió no dibuja la card.
+      ediciones={[]}
       {...props}
     />,
   )
@@ -656,11 +674,15 @@ describe('Detalle: el orden se invierte entre el teléfono y escritorio', () => 
     expect(html.match(/class="contents lg:flex lg:w-\[324px\] lg:shrink-0 lg:flex-col lg:gap-4"/g)).toHaveLength(1)
   })
 
-  it('Resumen es order-1, Qué se vendió order-2, Cómo se pagó order-3, Detalles order-4, Zona de riesgo order-5 — todas lg:order-none', () => {
+  // order-5 (Correcciones) queda reservado para cuando hubo alguna — sin
+  // ediciones no aparece ninguna card con ese número (ver "la card de
+  // correcciones", más abajo, para el caso con corrección).
+  it('Resumen es order-1, Qué se vendió order-2, Cómo se pagó order-3, Detalles order-4, Zona de riesgo order-6 (sin correcciones) — todas lg:order-none', () => {
     const html = renderDetalle()
-    for (const orden of ['order-1', 'order-2', 'order-3', 'order-4', 'order-5']) {
+    for (const orden of ['order-1', 'order-2', 'order-3', 'order-4', 'order-6']) {
       expect(html).toContain(`${orden} flex flex-col`)
     }
+    expect(html).not.toContain('order-5')
     expect(html.match(/lg:order-none/g)).toHaveLength(5)
   })
 })
@@ -1044,11 +1066,62 @@ describe('la card de detalles', () => {
     const bloqueDetalles = html.match(/<div class="(order-\d)[^"]*"><div class="border-b[^"]*"><h2[^>]*>Detalles<\/h2>/)
     expect(bloqueDetalles?.[1]).toBe('order-4')
     // La Zona de riesgo (sin anular, es el bloque con bg-destructive-soft):
-    // lleva order-5.
+    // lleva order-6 — le cedió el order-5 a Correcciones, que sin ediciones
+    // no se dibuja (ver "la card de correcciones", más abajo).
     const bloqueRiesgo = html.match(/<div class="(order-\d)[^"]* bg-destructive-soft[^"]*"/)
-    expect(bloqueRiesgo?.[1]).toBe('order-5')
+    expect(bloqueRiesgo?.[1]).toBe('order-6')
     // Y en POSICIÓN, que es lo que de verdad ordena la pila del teléfono:
     // Detalles aparece antes que "Anular la venta" en el HTML final.
     expect(html.indexOf('>Detalles<')).toBeLessThan(html.indexOf('Anular la venta'))
+  })
+})
+
+describe('la card de correcciones', () => {
+  // A diferencia de "Detalles", que se dibuja vacía a propósito porque es el
+  // lugar donde el dato se carga: acá no hay nada que cargar, así que un
+  // local que nunca corrigió una venta no ve ninguna diferencia.
+  it('no dibuja la card cuando la venta nunca se corrigió', () => {
+    const html = renderDetalle({ ediciones: [] })
+    expect(html).not.toContain('Correcciones')
+  })
+
+  it('dibuja quién, cuándo, la nota y cómo estaban los pagos antes', () => {
+    const html = renderDetalle({ ediciones: [EDICION] })
+    expect(html).toContain('Correcciones')
+    expect(html).toContain('Flor')
+    expect(html).toContain('era transferencia')
+    expect(html).toContain('Efectivo')
+    // El monto del pago archivado, formateado con la misma función que ya
+    // usa "Cómo se pagó" — nunca "1000" a secas.
+    expect(html).toContain(formatearPrecio('1000'))
+  })
+
+  it('sin nota no dibuja ningún párrafo de más', () => {
+    const html = renderDetalle({ ediciones: [{ ...EDICION, nota: null }] })
+    expect(html).not.toContain('era transferencia')
+  })
+
+  it('cada pago con plan suma su rótulo, con el mismo rotuloDePlan de la tabla de al lado', () => {
+    const html = renderDetalle({
+      ediciones: [
+        {
+          ...EDICION,
+          pagos: [
+            { ...EDICION.pagos[0], plan: { nombre: 'Crédito 3 cuotas', cuotas: 3 } },
+          ],
+        },
+      ],
+    })
+    expect(html).toContain(rotuloDePlan({ nombre: 'Crédito 3 cuotas', cuotas: 3 })!)
+  })
+
+  // El orden de la pila del teléfono: entre Detalles (order-4) y la Zona de
+  // riesgo (order-6), nunca al final ni al principio.
+  it('en el teléfono va entre Detalles y la Zona de riesgo: order-5', () => {
+    const html = renderDetalle({ ediciones: [EDICION] })
+    const bloque = html.match(/<div class="(order-\d)[^"]*"><div class="border-b[^"]*"><h2[^>]*>Correcciones<\/h2>/)
+    expect(bloque?.[1]).toBe('order-5')
+    expect(html.indexOf('>Detalles<')).toBeLessThan(html.indexOf('>Correcciones<'))
+    expect(html.indexOf('>Correcciones<')).toBeLessThan(html.indexOf('Anular la venta'))
   })
 })

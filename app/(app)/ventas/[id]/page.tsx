@@ -12,7 +12,7 @@ import {
   formatearPrecio, formatearCantidad, formatearHora, formatearFechaCorta,
   formatearFecha, precioEnSuMoneda,
 } from '@/lib/formato/mostrar'
-import { ROTULO_MEDIO, CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
+import { ROTULO_MEDIO, CONSUMIDOR_FINAL, type Medio } from '@/lib/ventas/medios'
 import { subtotalItem, pesosEntregados, baseEnDolares } from '@/lib/ventas/totales'
 import {
   vendidoDeVenta, cobradoDePagos, hayQueDesglosar, formatearTotales,
@@ -467,6 +467,34 @@ export type PagoRecibido = {
   esUsd: boolean
 }
 
+/** Una corrección de cómo se pagó la venta: quién, cuándo, la nota libre y
+ *  cómo estaban los pagos ANTES — la fila de `PagoArchivado` que
+ *  `reemplazarPagos` graba antes de reemplazarlos.
+ *
+ *  A diferencia del resto de las props de `Detalle` (`PagoRecibido`,
+ *  `ItemVendido`), viaja con sus `Decimal` de Prisma tal cual, sin pasar por
+ *  `datosDelDetalle` para resolverlos a texto: `Detalle` no cruza a un
+ *  componente cliente —este archivo no tiene ningún `'use client'`—, así que
+ *  no hace falta esa capa, y formatear acá con las MISMAS funciones que ya
+ *  usa "Cómo se pagó" (`ROTULO_MEDIO`, `rotuloDePlan`, `precioEnSuMoneda`) es
+ *  lo que hace que un pago archivado se lea igual que uno vivo. */
+export type EdicionVisible = {
+  id: string
+  nota: string | null
+  creadoEn: Date
+  usuario: { nombre: string }
+  pagos: {
+    id: string
+    medio: Medio
+    moneda: Moneda
+    cubre: Moneda
+    monto: Decimal
+    cotizacion: Decimal
+    recargo: Decimal
+    plan: { nombre: string; cuotas: number } | null
+  }[]
+}
+
 /**
  * El cuerpo entero del detalle de una venta: el panel Resumen, las dos
  * tablas ("Qué se vendió", "Cómo se pagó") y la Zona de riesgo — todo lo que
@@ -500,13 +528,15 @@ export type PagoRecibido = {
  * teléfono (`contents`, mismo truco que ya usa `app/(app)/vender/caja.tsx`
  * para su variante píldora): sus cards pasan a ser hijos directos del
  * `flex-col` externo, cada una con su propio `order-N` (1: Resumen, 2: Qué se
- * vendió, 3: Cómo se pagó, 4: Detalles, 5: Zona de riesgo). En escritorio
- * (`lg:flex`) cada columna vuelve a ser una caja real y `lg:order-none`
- * restaura el orden natural del DOM adentro de ella (Qué se vendió antes que
- * Cómo se pagó; Resumen antes que Detalles antes que Zona de riesgo) — el
- * `order` del teléfono no tiene ningún efecto ahí porque cada columna ya trae
- * sus hijos en el orden que necesita en escritorio (2 en la izquierda, 3 en
- * la derecha).
+ * vendió, 3: Cómo se pagó, 4: Detalles, 5: Correcciones, 6: Zona de riesgo —
+ * Correcciones sumó su número entre Detalles y la Zona de riesgo sin
+ * renumerar el resto, y le corrió el 5 viejo de la Zona de riesgo al 6). En
+ * escritorio (`lg:flex`) cada columna vuelve a ser una caja real y
+ * `lg:order-none` restaura el orden natural del DOM adentro de ella (Qué se
+ * vendió antes que Cómo se pagó; Resumen antes que Detalles antes que
+ * Correcciones antes que Zona de riesgo) — el `order` del teléfono no tiene
+ * ningún efecto ahí porque cada columna ya trae sus hijos en el orden que
+ * necesita en escritorio (2 en la izquierda, 3 en la derecha).
  *
  * **La banda TOTAL pinta con `--marca`, sólo en el teléfono.** El nodo `Cv4xd`
  * de `WBV5G` declara `fill: $ar-primary-deep` (`--marca`, ver
@@ -518,7 +548,7 @@ export type PagoRecibido = {
  */
 export function Detalle({
   resumen, anulada, notaDeAnulacionTexto, items, totalFormateado, lineasDeTotal = null, pagos,
-  ofreceAnular, ofreceCorregir, correccion, ventaId, detalle,
+  ofreceAnular, ofreceCorregir, correccion, ventaId, detalle, ediciones,
 }: {
   resumen: ResumenTexto
   anulada: boolean
@@ -568,6 +598,11 @@ export function Detalle({
   /** El texto libre que el local anotó sobre esta venta, o `null` sin nada
    *  cargado todavía — la card se dibuja igual, con el textarea vacío. */
   detalle: string | null
+  /** La bitácora de correcciones, más nueva primero. Lista vacía —el caso
+   *  común, toda venta que nunca se corrigió— y la card de "Correcciones"
+   *  directamente no se dibuja: a diferencia de "Detalles", acá no hay nada
+   *  que cargar. */
+  ediciones: EdicionVisible[]
 }) {
   return (
     <div className="flex flex-col gap-3 px-[14px] py-3 lg:gap-4 lg:p-6">
@@ -921,6 +956,49 @@ export function Detalle({
             </div>
           </div>
 
+          {/* Correcciones: la bitácora de cómo se pagó esta venta. SÓLO se
+              dibuja si hubo alguna — a diferencia de Detalles, arriba, que se
+              dibuja vacía a propósito porque es el lugar donde el dato se
+              carga. Acá no hay nada que cargar, así que un local que nunca
+              corrigió una venta no ve ninguna diferencia.
+
+              Va después de Detalles y antes de la Zona de riesgo, en las dos
+              disposiciones: describe la venta, y la acción destructiva se
+              queda última (ver el docblock de `Detalle`, más arriba, para la
+              renumeración de `order-*` que esto le pidió a la Zona de
+              riesgo). */}
+          {ediciones.length > 0 && (
+            <div className="order-5 flex flex-col overflow-hidden rounded-2xl border bg-card lg:order-none">
+              <div className="border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
+                <h2 className={`${estilos.tituloDeCard} text-foreground`}>Correcciones</h2>
+              </div>
+              <div className="flex flex-col p-[14px] lg:p-4">
+                {ediciones.map((e) => (
+                  <div key={e.id} className="flex flex-col gap-1.5 border-b pb-3 text-[12px] last:border-b-0 last:pb-0 [&:not(:first-child)]:pt-3">
+                    <p className="text-foreground">
+                      <span className="font-semibold">{e.usuario.nombre}</span> corrigió los pagos el{' '}
+                      {formatearFecha(e.creadoEn)} a las {formatearHora(e.creadoEn)}
+                    </p>
+                    {e.nota !== null && <p className="text-muted-foreground">{e.nota}</p>}
+                    <ul className="flex flex-col gap-0.5 text-muted-foreground">
+                      {e.pagos.map((p) => {
+                        const planLabel = rotuloDePlan(p.plan)
+                        return (
+                          <li key={p.id}>
+                            {ROTULO_MEDIO[p.medio]}
+                            {planLabel !== null && ` · ${planLabel}`}
+                            {' · '}
+                            {precioEnSuMoneda(p.monto.toString(), p.moneda)}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Zona de riesgo (design/arandano.pen, nodo `TIlD3`): la maqueta
               sólo dibuja el texto de advertencia, sin ningún botón — no
               existe ningún frame de venta anulada contra el que confirmar si
@@ -946,13 +1024,13 @@ export function Detalle({
               mismo lugar que la advertencia, así que la columna nunca queda
               con las dos cosas a la vez. */}
           {notaDeAnulacionTexto ? (
-            <Alert className="order-5 rounded-2xl bg-destructive-soft px-[14px] py-[14px] lg:order-none lg:px-4 lg:py-4">
+            <Alert className="order-6 rounded-2xl bg-destructive-soft px-[14px] py-[14px] lg:order-none lg:px-4 lg:py-4">
               <AlertDescription className="text-[11px] leading-[1.45] text-destructive opacity-85">
                 {notaDeAnulacionTexto}
               </AlertDescription>
             </Alert>
           ) : (
-            <div className="order-5 flex flex-col gap-[9px] rounded-2xl bg-destructive-soft p-[14px] lg:order-none lg:p-4">
+            <div className="order-6 flex flex-col gap-[9px] rounded-2xl bg-destructive-soft p-[14px] lg:order-none lg:p-4">
               <div className="flex items-center gap-[7px]">
                 <TriangleAlert aria-hidden="true" className="size-[14px] text-destructive" />
                 <span className="text-[13px] font-bold text-destructive">Anular la venta</span>
@@ -997,6 +1075,10 @@ export type DatosDelDetalle = {
     planes: PlanVisible[]
     hayPagoSinPorcentaje: boolean
   }
+  /** La bitácora de correcciones, más nueva primero — tal cual la devuelve
+   *  el `select` de más abajo, sin resolver a texto (ver el docblock de
+   *  `EdicionVisible`). */
+  ediciones: EdicionVisible[]
 }
 
 /**
@@ -1203,6 +1285,10 @@ export async function datosDelDetalle(tenantId: string, ventaId: string): Promis
       planes,
       hayPagoSinPorcentaje: hayPagoSinPorcentaje(venta.pagos),
     },
+    // Tal cual la trae el `select` de arriba: coincide con `EdicionVisible`
+    // campo a campo (id, nota, creadoEn, usuario.nombre, y cada pago con su
+    // Decimal crudo), así que no hace falta remapearla.
+    ediciones: venta.ediciones,
   }
 }
 
@@ -1238,6 +1324,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
         correccion={datos.correccion}
         ventaId={id}
         detalle={datos.detalle}
+        ediciones={datos.ediciones}
       />
     </>
   )

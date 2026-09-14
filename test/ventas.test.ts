@@ -1843,6 +1843,7 @@ describe('el detalle de venta muestra los IMEI (Task 10)', () => {
         correccion: datos.correccion,
         ventaId,
         detalle: datos.detalle,
+        ediciones: datos.ediciones,
       }),
     )
   }
