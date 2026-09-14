@@ -61,6 +61,11 @@ export const PERMISOS = [
     ayuda: 'Anular una venta ya cobrada y devolver su stock al inventario.',
   },
   {
+    clave: 'VENTAS_EDITAR',
+    nombre: 'Corregir ventas',
+    ayuda: 'Corregir cómo se pagó una venta ya cobrada: el medio, el plan y el reparto entre pagos.',
+  },
+  {
     clave: 'BOT',
     nombre: 'Configurar el bot de WhatsApp',
     ayuda: 'Prender y apagar el bot, y editar la información del local que responde.',

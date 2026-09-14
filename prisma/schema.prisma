@@ -65,6 +65,15 @@ enum Permiso {
   // mismo escalón que separa VENTAS_ANULAR y ORDENES_ANULAR de la edición.
   ARTICULOS_BORRAR
 
+  // Corregir cómo se pagó una venta ya cobrada. Aparte de VENTAS_ANULAR y no
+  // plegado sobre él, por lo mismo que ARTICULOS_BORRAR está aparte de
+  // ARTICULOS_EDITAR: se delega por lo que la acción MUEVE. Anular da de baja
+  // la venta entera y devuelve el stock —todo el mundo ve que desapareció—;
+  // corregir la deja en pie diciendo que la plata entró de otra forma, que es
+  // más silencioso. Un dueño puede querer delegar uno y no el otro, en
+  // cualquiera de las dos direcciones.
+  VENTAS_EDITAR
+
   @@map("permiso")
 }
 
