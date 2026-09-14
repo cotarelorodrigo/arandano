@@ -954,7 +954,29 @@ export async function datosDelDetalle(tenantId: string, ventaId: string): Promis
           // qué plan se cobró, no importa si ese plan sigue vigente hoy.
           // Confirmado contra la base en test/ventas.test.ts.
           plan: { select: { nombre: true, cuotas: true } },
+          // Para precargar el diálogo de corrección: el id del plan (el
+          // `plan: { nombre, cuotas }` de al lado es para mostrar) y el
+          // porcentaje congelado, que es lo que decide si el diálogo avisa que
+          // ese pago se va a recalcular con el porcentaje de hoy.
+          planDePagoId: true,
+          porcentaje: true,
         },
+      },
+      // La bitácora de correcciones. Va en la misma consulta que el resto: es
+      // una sola pantalla y ya trae siete cosas.
+      ediciones: {
+        select: {
+          id: true, nota: true, creadoEn: true,
+          usuario: { select: { nombre: true } },
+          pagos: {
+            select: {
+              id: true, medio: true, moneda: true, cubre: true,
+              monto: true, cotizacion: true, recargo: true,
+              plan: { select: { nombre: true, cuotas: true } },
+            },
+          },
+        },
+        orderBy: { creadoEn: 'desc' },
       },
       // Los equipos que se llevó la venta (Task 10): sólo existe una fila acá
       // para un artículo con `llevaSerie` — la inmensa mayoría de las ventas

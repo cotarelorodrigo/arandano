@@ -1,10 +1,13 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { Prisma } from '@/generated/prisma/client'
+import type { MedioPago, Moneda } from '@/generated/prisma/client'
 import { exigirPermiso } from '@/lib/permisos/guarda'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { anularVenta } from '@/lib/ventas/anular'
+import { reemplazarPagos } from '@/lib/ventas/editar'
 import { normalizarDetalle } from '@/lib/ventas/detalle'
 import { ErrorDeVenta } from '@/lib/ventas/errores'
 import { esUuid } from '@/lib/uuid'
@@ -98,4 +101,108 @@ export async function guardarDetalle(entrada: {
 
   revalidatePath(`/ventas/${ventaId}`)
   return { error: null, aviso: 'Detalles guardados.' }
+}
+
+// Lista blanca de medios/monedas, igual que `cobrar`
+// (app/(app)/vender/acciones.ts) y por el mismo motivo: sin este chequeo, un
+// enum inventado llega intacto hasta `reemplazarPagos`, que lo pasa a Prisma,
+// que lo rechaza con un `PrismaClientValidationError` — un 500 sin `codigo`,
+// en vez del aviso que el resto de esta función usa para todo lo demás.
+const MEDIOS = ['EFECTIVO', 'TRANSFERENCIA', 'TARJETA_DEBITO', 'TARJETA_CREDITO'] as const
+const MONEDAS = ['ARS', 'USD'] as const
+
+export type EstadoCorreccion = { error: string | null; aviso: string | null }
+
+/**
+ * Corregir cómo se pagó una venta.
+ *
+ * **Detrás de `VENTAS_EDITAR`, y el guard va acá y no sólo en la pantalla**:
+ * una action se invoca sin pasar por ningún componente, y esto mueve plata ya
+ * cobrada. Es la misma lección de las dos copias de un botón que dejó escrita
+ * el merge del ciclo móvil.
+ *
+ * **Los importes llegan como string.** Un `number` de JS no representa la plata
+ * sin perder centavos; el servidor los convierte a `Decimal` y el motor valida
+ * la escala. Mismo criterio que el cobro.
+ *
+ * **`medio`/`moneda`/`cubre` y `planId` se validan ACÁ, antes de llegar al
+ * motor** — igual que ya hace `cobrar` para el mismo problema: un valor fuera
+ * del enum, o un `planId` que no tiene forma de uuid, lo rechazaría Prisma
+ * recién adentro de `reemplazarPagos` (en el `createMany` de pagos o en el
+ * `findMany({ where: { id: { in: [...] } } })` de `resolverPagosConRecargo`),
+ * con un error sin `codigo` que saldría como 500 en vez del aviso que
+ * corresponde.
+ */
+export async function corregirPagos(entrada: {
+  ventaId: string
+  pagos: {
+    medio: string
+    moneda: string
+    cubre: string
+    base: string
+    cotizacion: string
+    planId: string | null
+  }[]
+  nota: string
+}): Promise<EstadoCorreccion> {
+  const sesion = await exigirPermiso('VENTAS_EDITAR')
+  const { ventaId, pagos, nota } = entrada
+  // Mismo guard que `guardarDetalle`, con el mismo mensaje: distinguir un id
+  // mal formado de uno de otro tenant filtraría qué ids existen.
+  if (!esUuid(ventaId)) return { error: NO_EXISTE, aviso: null }
+
+  try {
+    const normalizados = pagos.map((p) => {
+      if (!MEDIOS.includes(p.medio as MedioPago)) {
+        throw new ErrorDeVenta('MONTO_INVALIDO', `medio de pago desconocido: ${p.medio}`)
+      }
+      if (!MONEDAS.includes(p.moneda as Moneda)) {
+        throw new ErrorDeVenta('COTIZACION_INVALIDA', `moneda desconocida: ${p.moneda}`)
+      }
+      if (!MONEDAS.includes(p.cubre as Moneda)) {
+        throw new ErrorDeVenta('COTIZACION_INVALIDA', `moneda desconocida: ${p.cubre}`)
+      }
+      if (p.planId !== null && !esUuid(p.planId)) {
+        // Mismo mensaje que usa `cobrar` para el mismo caso: sin el id, que
+        // no le dice nada a quien está corrigiendo la venta.
+        throw new ErrorDeVenta(
+          'PLAN_INEXISTENTE',
+          'Ese plan de pago ya no está disponible. Recargá la pantalla y elegí otro.',
+        )
+      }
+      return {
+        medio: p.medio as MedioPago,
+        moneda: p.moneda as Moneda,
+        cubre: p.cubre as Moneda,
+        base: new Prisma.Decimal(p.base),
+        cotizacion: new Prisma.Decimal(p.cotizacion),
+        planId: p.planId ?? undefined,
+      }
+    })
+
+    await reemplazarPagos({
+      tenantId: sesion.tenant.id,
+      ventaId,
+      usuarioId: sesion.usuario.id,
+      // Cruda: `reemplazarPagos` es quien la normaliza (trim, tope, vacío →
+      // null). Normalizarla acá también sería la segunda implementación de la
+      // misma regla — el defecto que este ciclo entero existe para no repetir.
+      nota,
+      pagos: normalizados,
+    })
+  } catch (e) {
+    if (e instanceof ErrorDeVenta) return { error: e.message, aviso: null }
+    // Un importe que no es un número tira un error crudo desde el
+    // constructor de `Decimal` (`decimal.js`, "[DecimalError] Invalid
+    // argument"): sale como aviso y no como 500, igual que el resto de lo que
+    // puede llegar mal formado de afuera.
+    if (e instanceof Error && e.name === 'Error' && /Decimal/.test(e.message)) {
+      return { error: 'Revisá los importes: hay uno que no es un número.', aviso: null }
+    }
+    throw e
+  }
+
+  revalidatePath('/ventas')
+  revalidatePath(`/ventas/${ventaId}`)
+  return { error: null, aviso: 'Listo: se corrigió cómo se pagó esta venta.' }
 }
