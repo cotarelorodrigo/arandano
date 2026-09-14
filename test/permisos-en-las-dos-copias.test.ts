@@ -131,6 +131,37 @@ describe('/ventas/[id]: el permiso se combina con anuladaEn antes de llegar al c
   it('el botón de anular sigue existiendo una sola vez', () => {
     expect([...VENTA.matchAll(/<AnularVenta /g)]).toHaveLength(1)
   })
+
+  // Lo mismo para "Corregir" (VENTAS_EDITAR), que es el segundo permiso de
+  // esta pantalla. El conteo de RENDER en las dos direcciones —con el permiso
+  // una aparición, sin él ninguna— vive en `app/(app)/ventas/[id]/page.test.tsx`,
+  // que sí puede montar `Detalle`; acá queda lo que aquél no puede ver.
+  it('Detalle recibe seOfreceCorregir(permiso, anuladaEn), nunca el permiso pelado', () => {
+    expect(VENTA).toContain('ofreceCorregir={seOfreceCorregir(puedeEditarVenta, datos.anuladaEn)}')
+    expect(VENTA).not.toContain('ofreceCorregir={puedeEditarVenta}')
+  })
+
+  // El botón vive en el encabezado de la card "Cómo se pagó", que NO se
+  // esconde en ningún ancho (no lleva `hidden lg:flex`, a diferencia de las
+  // `acciones` de `<Encabezado>`): por eso alcanza con una copia. Si alguien
+  // agrega la del teléfono sin gatearla, este conteo lo marca — que es
+  // exactamente el bug de "Anular orden" del merge del ciclo móvil.
+  it('el disparador de corrección existe una sola vez', () => {
+    expect([...VENTA.matchAll(/<CorregirPagos/g)]).toHaveLength(1)
+  })
+
+  // Y el permiso NO corta antes del render como en /formas-de-pago: esta
+  // pantalla es de cualquiera con sesión y sólo el botón lleva guarda, así que
+  // el componente del diálogo no puede evaluar `VENTAS_EDITAR` por su cuenta
+  // —lo hace la action, que es la puerta que protege de verdad—.
+  it("el diálogo no evalúa 'VENTAS_EDITAR': eso vive en la action y en la página", () => {
+    const DIALOGO = readFileSync('app/(app)/ventas/corregir-pagos.tsx', 'utf8')
+    const sinComentarios = DIALOGO.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    expect(sinComentarios).not.toMatch(/VENTAS_EDITAR/)
+    expect(readFileSync('app/(app)/ventas/acciones.ts', 'utf8')).toContain(
+      "exigirPermiso('VENTAS_EDITAR')",
+    )
+  })
 })
 
 describe('/vender: ChipCaja/ControlDeCaja son la sexta acción duplicada del repo, y HOY no llevan permiso', () => {

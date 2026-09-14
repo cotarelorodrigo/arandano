@@ -19,6 +19,7 @@ import {
   seOfreceAnular, cotizacionVisible, subtituloDeItem, metaDeItem, metaDePago, filasDeResumen,
   notaDeAnulacion, Detalle, type ItemVendido, type PagoRecibido,
   lineasDeRecargo, rotuloDePlan, seMuestraCubre, ROTULO_CUBRE, imeisPorItem,
+  seOfreceCorregir, baseDePagoGuardado, hayPagoSinPorcentaje,
 } from './page'
 import { CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
@@ -377,6 +378,18 @@ const PAGO_USD: PagoRecibido = {
   esUsd: true,
 }
 
+/** Lo que el diálogo de corrección necesita para precargarse. Un juego mínimo
+ *  y consistente con `PAGO_ARS`: la venta cierra con un solo pago en pesos. */
+const CORRECCION: Parameters<typeof Detalle>[0]['correccion'] = {
+  totalArs: '94000.00',
+  totalUsd: '0',
+  pagos: [
+    { medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: '94000.00', cotizacion: '1', planId: null },
+  ],
+  planes: [],
+  hayPagoSinPorcentaje: false,
+}
+
 function renderDetalle(props: Partial<Parameters<typeof Detalle>[0]> = {}) {
   return renderToStaticMarkup(
     <Detalle
@@ -387,6 +400,8 @@ function renderDetalle(props: Partial<Parameters<typeof Detalle>[0]> = {}) {
       totalFormateado="$ 94.000,00"
       pagos={[PAGO_ARS]}
       ofreceAnular={false}
+      ofreceCorregir={false}
+      correccion={CORRECCION}
       ventaId="v1"
       detalle={null}
       {...props}
@@ -643,6 +658,115 @@ describe('Detalle: el orden se invierte entre el teléfono y escritorio', () => 
       expect(html).toContain(`${orden} flex flex-col`)
     }
     expect(html.match(/lg:order-none/g)).toHaveLength(5)
+  })
+})
+
+describe('Detalle: el botón de corregir cómo se pagó', () => {
+  /**
+   * En las DOS direcciones y CONTANDO apariciones, que es lo que un
+   * `not.toContain` solo no puede dar: con el permiso tiene que estar, sin el
+   * permiso no tiene que estar ninguna. El encabezado de "Cómo se pagó" se
+   * renderiza igual en los dos anchos —no lleva `hidden lg:flex`—, así que hay
+   * UNA sola copia; el día que alguien duplique el botón para el teléfono, este
+   * conteo se pone rojo y obliga a gatear las dos (la lección de "Anular orden"
+   * en el merge del ciclo móvil).
+   */
+  const disparadores = (html: string) => [...html.matchAll(/>Corregir</g)]
+
+  it('con VENTAS_EDITAR aparece, una sola vez', () => {
+    expect(disparadores(renderDetalle({ ofreceCorregir: true }))).toHaveLength(1)
+  })
+
+  it('sin VENTAS_EDITAR no aparece ninguna vez', () => {
+    expect(disparadores(renderDetalle({ ofreceCorregir: false }))).toHaveLength(0)
+  })
+
+  /**
+   * El cableado, que el render no puede ver: `Detalle` recibe `ofreceCorregir`
+   * ya resuelto, así que un llamador que le pasara el PERMISO pelado ofrecería
+   * corregir una venta anulada — que el motor rechaza con `VENTA_ANULADA`, o
+   * sea un botón que siempre falla. Mismo mecanismo y mismo motivo que el caso
+   * gemelo de `ofreceAnular`, más abajo.
+   */
+  it('la pantalla combina el permiso con anuladaEn antes de pasarlo a Detalle', () => {
+    const fuente = readFileSync('app/(app)/ventas/[id]/page.tsx', 'utf8')
+    expect(fuente).toContain('ofreceCorregir={seOfreceCorregir(puedeEditarVenta, datos.anuladaEn)}')
+    expect(fuente).not.toContain('ofreceCorregir={puedeEditarVenta}')
+  })
+})
+
+describe('seOfreceCorregir', () => {
+  it('pide el permiso Y que la venta siga cobrada', () => {
+    expect(seOfreceCorregir(true, null)).toBe(true)
+    expect(seOfreceCorregir(false, null)).toBe(false)
+    // Anulada: no hay nada que corregir sobre cómo se pagó algo que se dio de
+    // baja, y el motor la rechaza con VENTA_ANULADA.
+    expect(seOfreceCorregir(true, new Date('2026-09-10T12:00:00Z'))).toBe(false)
+  })
+})
+
+describe('baseDePagoGuardado: la vuelta del monto guardado a la base', () => {
+  const d = (v: string) => new Prisma.Decimal(v)
+
+  it('un pago en pesos contra el total en pesos: la base es el monto menos el recargo', () => {
+    const base = baseDePagoGuardado({
+      moneda: 'ARS', cubre: 'ARS', monto: d('14000'), cotizacion: d('1'), recargo: d('4000'),
+    })
+    expect(base.toString()).toBe('10000')
+  })
+
+  it('sin plan el recargo es cero, así que la base es el monto', () => {
+    const base = baseDePagoGuardado({
+      moneda: 'ARS', cubre: 'ARS', monto: d('94000'), cotizacion: d('1'), recargo: d('0'),
+    })
+    expect(base.toString()).toBe('94000')
+  })
+
+  // Un pago ENTREGADO en dólares no puede llevar plan (PLAN_EN_DOLARES), así
+  // que su recargo es siempre 0 y la cotización no entra en la cuenta: la base
+  // son los mismos dólares del monto, sin dividir.
+  it('un pago en dólares no divide por su cotización', () => {
+    const base = baseDePagoGuardado({
+      moneda: 'USD', cubre: 'USD', monto: d('300'), cotizacion: d('1485'), recargo: d('0'),
+    })
+    expect(base.toString()).toBe('300')
+  })
+
+  it('dólares entregados contra el total en pesos tampoco dividen', () => {
+    const base = baseDePagoGuardado({
+      moneda: 'USD', cubre: 'ARS', monto: d('20'), cotizacion: d('1485'), recargo: d('0'),
+    })
+    expect(base.toString()).toBe('20')
+  })
+
+  /**
+   * El único caso que divide, y el que justifica que esta función exista: el
+   * iPhone de US$ 300 pagado en pesos en doce cuotas al 40 %. `Pago.monto`
+   * guarda los $623.700 que entraron, de los cuales $178.200 son recargo; los
+   * $445.500 que quedan son 300 dólares a 1485. El campo del diálogo se rotula
+   * "Cubre US$", así que tiene que decir 300.
+   */
+  it('pesos entregados contra el total en dólares vuelven a los dólares que cubren', () => {
+    const base = baseDePagoGuardado({
+      moneda: 'ARS', cubre: 'USD', monto: d('623700'), cotizacion: d('1485'), recargo: d('178200'),
+    })
+    expect(base.toString()).toBe('300')
+  })
+})
+
+describe('hayPagoSinPorcentaje: sólo cuenta un pago CON plan al que le falta el dato', () => {
+  it('un pago sin plan no tiene porcentaje que recuperar', () => {
+    expect(hayPagoSinPorcentaje([{ planDePagoId: null, porcentaje: null }])).toBe(false)
+  })
+
+  it('un pago con plan y con porcentaje congelado tampoco', () => {
+    expect(
+      hayPagoSinPorcentaje([{ planDePagoId: 'p1', porcentaje: new Prisma.Decimal('40') }]),
+    ).toBe(false)
+  })
+
+  it('un pago con plan y sin porcentaje sí: se cobró antes de que la columna existiera', () => {
+    expect(hayPagoSinPorcentaje([{ planDePagoId: 'p1', porcentaje: null }])).toBe(true)
   })
 })
 

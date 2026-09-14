@@ -250,7 +250,13 @@ type MonedaTexto = 'ARS' | 'USD'
 /** Los dos totales del carrito, en centavos de su propia moneda. */
 export type TotalesEnCentavos = { ars: number; usd: number }
 
-type FilaDePagoCentavos = {
+/**
+ * Una fila de pago tal como la miran las dos pantallas que reparten plata: el
+ * cobro (`/vender`) y la corrección (`/ventas/[id]`). Exportada desde que la
+ * segunda existe — es un `export` de TIPO puro, así que no cambia nada en
+ * runtime.
+ */
+export type FilaDePagoCentavos = {
   moneda: MonedaTexto
   cubre: MonedaTexto
   baseCentavos: number

@@ -19,6 +19,8 @@ import {
 } from '@/lib/ventas/cobrado'
 import { ChipEstado } from '../chip-estado'
 import { AnularVenta, DetalleDeLaVenta } from '../formularios'
+import { CorregirPagos, type PagoParaCorregir } from '../corregir-pagos'
+import { planesDelTenant, type PlanVisible } from '@/lib/planes/consultar'
 import { esUuid } from '@/lib/uuid'
 import estilos from '../tipografia.module.css'
 
@@ -39,6 +41,76 @@ const ROTULO_MONEDA: Record<'ARS' | 'USD', string> = { ARS: 'Pesos', USD: 'Dóla
  */
 export function seOfreceAnular(puedeAnular: boolean, anuladaEn: Date | null): boolean {
   return puedeAnular && anuladaEn === null
+}
+
+/**
+ * Si esta pantalla OFRECE el botón de corregir cómo se pagó ESTA venta: que la
+ * persona tenga `VENTAS_EDITAR`, y que la venta siga cobrada.
+ *
+ * La segunda mitad no es prolijidad: `reemplazarPagos` rechaza una venta
+ * anulada con `VENTA_ANULADA` —no hay nada que corregir sobre cómo se pagó
+ * algo que se dio de baja—, así que un botón que se ofreciera igual sería un
+ * botón que siempre falla. Misma forma y mismo motivo que `seOfreceAnular`,
+ * arriba; el guard de verdad, el que protege, sigue viviendo en
+ * `exigirPermiso('VENTAS_EDITAR')` adentro de la action `corregirPagos()`.
+ */
+export function seOfreceCorregir(puedeEditar: boolean, anuladaEn: Date | null): boolean {
+  return puedeEditar && anuladaEn === null
+}
+
+/**
+ * La BASE de un pago ya guardado: lo que ese pago cubre de la mercadería, a
+ * precio de lista.
+ *
+ * **No está en ninguna columna, y por eso hay que reconstruirla.** `Pago` guarda
+ * `monto` —lo que entró a la caja, en la moneda que se entregó— y el motor
+ * (`lib/ventas/pagos.ts`) recibe `base`, que es otra cosa: `monto` es
+ * `montoEntregado(base) + recargo`. Para precargar el diálogo de corrección hay
+ * que invertir esa cuenta, y la inversión ramifica exactamente donde ramifica
+ * `montoEntregado`:
+ *
+ * - **Pesos entregados contra el total en DÓLARES** (el único caso que cruza
+ *   hacia abajo): `monto = base × cotización + recargo`, así que la vuelta
+ *   DIVIDE. Es la única división de todo este motor, y se puede hacer acá
+ *   porque no decide ninguna plata: el resultado vuelve al campo "Cubre US$",
+ *   y el número que se cobra lo recalcula el servidor desde ahí. El redondeo a
+ *   dos decimales recupera la base exacta mientras la cotización sea ≥ 1 —el
+ *   error que introdujo el redondeo del `monto` es a lo sumo medio centavo, y
+ *   dividirlo por la cotización lo deja muy por debajo del medio centavo que
+ *   podría desempatar—, y una cotización menor que 1 significaría un dólar que
+ *   vale menos que un peso.
+ * - **Todos los demás casos**: `monto = base + recargo`, así que alcanza con
+ *   restar. Para un pago entregado en dólares el recargo es siempre cero —el
+ *   motor prohíbe el plan ahí (`PLAN_EN_DOLARES`)—, así que la resta es un
+ *   no-op y la base es el monto.
+ */
+export function baseDePagoGuardado(p: {
+  moneda: 'ARS' | 'USD'
+  cubre: 'ARS' | 'USD'
+  monto: Decimal
+  cotizacion: Decimal
+  recargo: Decimal
+}): Decimal {
+  const sinRecargo = p.monto.sub(p.recargo)
+  if (p.moneda === 'ARS' && p.cubre === 'USD' && p.cotizacion.greaterThan(0)) {
+    return sinRecargo.div(p.cotizacion).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP)
+  }
+  return sinRecargo
+}
+
+/**
+ * Si algún pago de esta venta se cobró ANTES de que existiera
+ * `Pago.porcentaje`, y por lo tanto va a recalcularse con el porcentaje de hoy
+ * si alguien corrige.
+ *
+ * Un pago **sin plan** no tiene porcentaje que recuperar —su `porcentaje` es
+ * `null` porque se cobró a precio de lista, no porque falte el dato—, así que
+ * no cuenta: contarlo pondría la leyenda del diálogo en toda venta del país.
+ */
+export function hayPagoSinPorcentaje(
+  pagos: { planDePagoId: string | null; porcentaje: Decimal | null }[],
+): boolean {
+  return pagos.some((p) => p.planDePagoId !== null && p.porcentaje === null)
 }
 
 /**
@@ -446,7 +518,7 @@ export type PagoRecibido = {
  */
 export function Detalle({
   resumen, anulada, notaDeAnulacionTexto, items, totalFormateado, lineasDeTotal = null, pagos,
-  ofreceAnular, ventaId, detalle,
+  ofreceAnular, ofreceCorregir, correccion, ventaId, detalle,
 }: {
   resumen: ResumenTexto
   anulada: boolean
@@ -476,6 +548,22 @@ export function Detalle({
    *  distintas con el mismo nombre es exactamente el modo de falla que el
    *  merge con el ciclo de permisos (2026-08-26) tenía que evitar. */
   ofreceAnular: boolean
+  /** Si se dibuja el botón de corregir cómo se pagó: `VENTAS_EDITAR` Y que la
+   *  venta siga cobrada, ya combinados por `seOfreceCorregir` en el llamador.
+   *  Se llama `ofreceCorregir` y no `puedeEditarVenta` por lo mismo que
+   *  `ofreceAnular` de acá arriba: el permiso pelado es otra cosa. */
+  ofreceCorregir: boolean
+  /** Todo lo que el diálogo de corrección necesita para precargarse. Viaja
+   *  SIEMPRE, con `ofreceCorregir` en falso también: es una decisión de
+   *  presentación, no un secreto — son los mismos pagos que la tabla de al
+   *  lado ya muestra, con la base reconstruida. */
+  correccion: {
+    totalArs: string
+    totalUsd: string
+    pagos: PagoParaCorregir[]
+    planes: PlanVisible[]
+    hayPagoSinPorcentaje: boolean
+  }
   ventaId: string
   /** El texto libre que el local anotó sobre esta venta, o `null` sin nada
    *  cargado todavía — la card se dibuja igual, con el textarea vacío. */
@@ -661,8 +749,24 @@ export function Detalle({
           </div>
 
           <div className="order-3 flex flex-col overflow-hidden rounded-2xl border bg-card lg:order-none">
-            <div className="border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
+            {/* El encabezado pasa a ser un flex con el título a la izquierda y
+                el botón de corregir a la derecha. Se renderiza IGUAL en los dos
+                anchos —no lleva `hidden lg:flex`, a diferencia de las
+                `acciones` de `<Encabezado>`—, así que UNA sola copia del botón
+                alcanza: la regla de las dos copias exige la segunda cuando el
+                Topbar esconde la primera, y acá no la esconde nadie. */}
+            <div className="flex items-center justify-between gap-2 border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
               <h2 className={`${estilos.tituloDeCard} text-foreground`}>Cómo se pagó</h2>
+              {ofreceCorregir && (
+                <CorregirPagos
+                  ventaId={ventaId}
+                  totalArs={correccion.totalArs}
+                  totalUsd={correccion.totalUsd}
+                  pagos={correccion.pagos}
+                  planes={correccion.planes}
+                  hayPagoSinPorcentaje={correccion.hayPagoSinPorcentaje}
+                />
+              )}
             </div>
             <div role="table" className="grid grid-cols-1 lg:grid-cols-[1fr_150px_110px_130px_130px_140px]">
               <div role="row" className="hidden lg:contents">
@@ -882,6 +986,17 @@ export type DatosDelDetalle = {
   lineasDeTotal: { rotulo: string; montoFormateado: string; destacada: boolean }[] | null
   pagos: PagoRecibido[]
   detalle: string | null
+  /** Todo lo que el diálogo de corrección necesita, ya en texto: los dos
+   *  totales de la mercadería, los pagos con su BASE reconstruida
+   *  (`baseDePagoGuardado`), los planes vigentes del local y si algún pago se
+   *  cobró antes de que existiera `Pago.porcentaje`. */
+  correccion: {
+    totalArs: string
+    totalUsd: string
+    pagos: PagoParaCorregir[]
+    planes: PlanVisible[]
+    hayPagoSinPorcentaje: boolean
+  }
 }
 
 /**
@@ -943,6 +1058,11 @@ export async function datosDelDetalle(tenantId: string, ventaId: string): Promis
       pagos: {
         select: {
           id: true, medio: true, moneda: true, monto: true, cotizacion: true,
+          // `recargo` (corrección de pagos): `baseDePagoGuardado` lo necesita
+          // para volver del `monto` guardado —que ya lo incluye— a la BASE,
+          // que es lo que el diálogo precarga y lo único que el motor valida
+          // contra los dos totales.
+          recargo: true,
           // `cubre` (Task 11): qué total de la venta paga esta fila —
           // `seMuestraCubre` decide con esto y con los dos totales de la
           // venta si hace falta decirlo.
@@ -986,6 +1106,15 @@ export async function datosDelDetalle(tenantId: string, ventaId: string): Promis
     },
   })
   if (!venta) return null
+
+  // DESPUÉS del `findUnique` y no en paralelo: con una venta que no existe
+  // —un id tipeado en la barra de direcciones— esta consulta no le sirve a
+  // nadie, y la pantalla ya dispara varias. Los planes VIGENTES y no todos:
+  // un plan dado de baja no se puede volver a elegir (el motor lo rechaza
+  // igual que a uno inexistente), así que ofrecerlo sería ofrecer un error.
+  // El plan con el que se cobró un pago viejo se sigue MOSTRANDO igual, por
+  // el `plan: { select: … }` de arriba, que no filtra por baja.
+  const planes = await planesDelTenant(tenantId)
 
   const resumen = filasDeResumen(venta)
   const anulada = venta.anuladaEn !== null
@@ -1057,6 +1186,23 @@ export async function datosDelDetalle(tenantId: string, ventaId: string): Promis
       })) ?? null,
     pagos,
     detalle: venta.detalle,
+    correccion: {
+      // `toString()` del `Decimal`: lo que cruza a un componente cliente no
+      // puede ser un `Decimal` (arrastraría el cliente de Prisma al bundle),
+      // y un `number` no representa plata. Mismo criterio que `PlanVisible`.
+      totalArs: venta.total.toString(),
+      totalUsd: venta.totalUsd.toString(),
+      pagos: venta.pagos.map((p) => ({
+        medio: p.medio,
+        moneda: p.moneda,
+        cubre: p.cubre,
+        base: baseDePagoGuardado(p).toString(),
+        cotizacion: p.cotizacion.toString(),
+        planId: p.planDePagoId,
+      })),
+      planes,
+      hayPagoSinPorcentaje: hayPagoSinPorcentaje(venta.pagos),
+    },
   }
 }
 
@@ -1074,6 +1220,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
   if (!datos) notFound()
 
   const puedeAnularVenta = await puedeConSesion(sesion, 'VENTAS_ANULAR')
+  const puedeEditarVenta = await puedeConSesion(sesion, 'VENTAS_EDITAR')
 
   return (
     <>
@@ -1087,6 +1234,8 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
         lineasDeTotal={datos.lineasDeTotal}
         pagos={datos.pagos}
         ofreceAnular={seOfreceAnular(puedeAnularVenta, datos.anuladaEn)}
+        ofreceCorregir={seOfreceCorregir(puedeEditarVenta, datos.anuladaEn)}
+        correccion={datos.correccion}
         ventaId={id}
         detalle={datos.detalle}
       />

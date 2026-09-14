@@ -1837,6 +1837,10 @@ describe('el detalle de venta muestra los IMEI (Task 10)', () => {
         lineasDeTotal: datos.lineasDeTotal,
         pagos: datos.pagos,
         ofreceAnular: false,
+        // El botón de corregir se prueba aparte (page.test.tsx cuenta sus dos
+        // direcciones); acá lo que importa es el cuerpo de la venta real.
+        ofreceCorregir: false,
+        correccion: datos.correccion,
         ventaId,
         detalle: datos.detalle,
       }),

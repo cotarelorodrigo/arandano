@@ -953,7 +953,7 @@ El historial por período.
 
 El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 
-**Acciones**: `anular`, `guardarDetalle`.
+**Acciones**: `anular`, `guardarDetalle`, `corregirPagos`.
 
 **Qué se puede hacer**
 
@@ -985,6 +985,21 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
   "Consumidor final"), el estado y el comprobante.
 - **Anular la venta** — con el permiso `VENTAS_ANULAR` (un dueño siempre lo
   tiene; un empleado, sólo si se lo otorgaron), y sólo mientras siga cobrada.
+- **Corregir cómo se pagó** — con el permiso `VENTAS_EDITAR` (un dueño siempre
+  lo tiene; un empleado, sólo si se lo otorgaron), y sólo mientras la venta
+  siga cobrada: el motor rechaza una venta anulada con `VENTA_ANULADA`, así
+  que ofrecer el botón ahí sería ofrecer un error. El botón "Corregir" vive en
+  el encabezado de la card "Cómo se pagó" —que se dibuja igual en los dos
+  anchos, así que **una sola copia** alcanza— y abre un diálogo con una fila
+  por pago: medio, moneda, plan (sólo si ese medio tiene planes cargados),
+  `Cubre` (sólo si la venta tiene los dos totales), monto y cotización (sólo si
+  el pago cruza monedas), más "Agregar pago", "Quitar pago" y una nota
+  opcional de hasta `TOPE_NOTA_DE_CORRECCION` caracteres. **La mercadería no se
+  toca**: los dos totales son los guardados, y el juego nuevo tiene que
+  cerrar contra ellos. Un chip dice cuánto falta (o sobra) **por moneda**, sin
+  compensar una con la otra, y guardar está deshabilitado mientras diga algo.
+  Aviso por toast con clave estable por venta, lanzado en el mismo handler que
+  ejecuta la acción; el error queda hasta que se lo lea (`duration: Infinity`).
 - **Detalles.** Card propia en la columna derecha, entre Resumen y Zona de
   riesgo, con un textarea y "Guardar detalles" (`guardarDetalle`). Se dibuja
   siempre, con o sin dato: es donde el detalle se carga cuando aparece después
@@ -1000,6 +1015,22 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 
 **Decisiones**
 
+- **El chip de faltante del diálogo sale del MISMO espejo en enteros que usa
+  `/vender`** (`lib/ventas/centavos.ts`, que `centavos.test.ts` compara caso
+  por caso contra la aritmética del motor), así que el diálogo **no puede**
+  decir que cierra mientras el servidor lo rechaza con `PAGOS_NO_CIERREN`. Y el
+  texto del chip y la guarda del botón salen de **una sola función**
+  (`textoDelChip`): con un predicado aparte para el botón, los dos pueden
+  terminar diciendo cosas distintas, que en una pantalla de plata significa un
+  botón habilitado sin cartel.
+- **La BASE de cada pago se reconstruye, no se lee de una columna**
+  (`baseDePagoGuardado`). `Pago` guarda `monto` —lo que entró a la caja, ya con
+  el recargo adentro— y el motor recibe `base` —lo que ese pago cubre de la
+  mercadería a precio de lista—. La vuelta ramifica donde ramifica
+  `montoEntregado`, y sólo el cruce "pesos entregados contra el total en
+  dólares" divide: es la única división del ciclo, y se puede hacer porque no
+  decide ninguna plata — el número que se cobra lo recalcula el servidor desde
+  la base que el campo devuelve.
 - **El pie de "Qué se vendió" desglosa cuando hay algo que desglosar, no sólo
   cuando `Venta.recargo` no es cero** (ciclo del cobrado por moneda,
   `hayQueDesglosar()` en `lib/ventas/cobrado.ts`, la misma función que ya usan
