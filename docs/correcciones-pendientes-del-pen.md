@@ -1340,6 +1340,55 @@ Detectado al construir el ciclo del detalle de venta (2026-09-08). Ver
 
 ---
 
+## 37. La maqueta no dibuja el botón "Corregir", ni su diálogo, ni la card "Correcciones", en ningún ancho
+
+- **Frames**: `App / Venta detalle` (nodo `NjMl1`) y `WBV5G`
+  (`Móvil / Venta detalle`). `design/arandano.pen` es anterior al ciclo de
+  corregir cómo se pagó una venta (2026-09-14): ninguno de los dos dibuja nada
+  de esto.
+
+**El botón "Corregir"** en el encabezado de la card "Cómo se pagó". El `.pen`
+dibuja esa card con un encabezado que sólo lleva el título, así que el botón no
+tiene lugar asignado: se lo puso como `Button variant="outline" size="sm"` con
+el `Pencil` de lucide, a la derecha del título, que es la forma que ya tiene el
+encabezado con acción de otras cards del producto. Lo que ningún frame confirma
+es que ése sea el lugar: la alternativa razonable —al pie de la card, junto al
+resto de las acciones de esta pantalla— no se descartó por diseño sino porque el
+encabezado es donde el botón queda al lado de lo que corrige.
+
+**El diálogo entero.** Se derivó del `Dialog` de `/usuarios` y de
+`/formas-de-pago` —los dos únicos diálogos con formulario que el producto
+tiene—, y sus filas de pago, de los controles del panel de cobro de
+`App / Vender`. Lo que no tiene referencia es la parte que sólo existe acá:
+**cuánto alto puede ocupar el cuerpo en un teléfono**. El código lo resolvió con
+`max-h-[85dvh] overflow-y-auto`, un número elegido sin frame, y el riesgo que
+deja es el mismo que ya declaró la entrada 36 para el textarea del cobro —que el
+control quede fuera de la vista— pero al revés: acá lo que se puede escapar es el
+botón de guardar. Con tres pagos a 390 px, ese `85dvh` es una apuesta que nadie
+miró todavía.
+
+**La card "Correcciones"**, entre "Detalles" y la "Zona de riesgo". Se derivó de
+la línea de tiempo de la bitácora de una orden de trabajo
+(`/servicio-tecnico/[id]`), que es el único tratamiento de bitácora que el `.pen`
+sí dibuja — pero para otra pantalla, con otro ancho de columna y otro contenido.
+Y acá el `.pen` tampoco calla del todo: dibuja esta pantalla con una cantidad
+concreta de cards, y este ciclo le suma **otra** —encima de la que ya le había
+sumado el ciclo del detalle—, así que el reparto de la columna derecha en
+escritorio y el orden de la pila en el teléfono son derivados y no están
+confirmados por ningún frame. Dos cosas puntuales que un frame tendría que
+decidir: qué pasa con una **nota larga** en la columna de 324 px de escritorio
+(hoy no tiene ni truncado ni ancho máximo) y cómo se ven **varias correcciones
+apiladas** a 390 px.
+
+Qué haría falta: los dos frames dibujados, con el encabezado de "Cómo se pagó"
+con su acción, el diálogo en los dos anchos —y en particular su alto máximo en el
+teléfono—, y la card de bitácora con al menos dos entradas y una nota larga.
+
+Detectado al construir el ciclo de corregir cómo se pagó una venta (2026-09-14).
+Ver `docs/superpowers/specs/2026-09-14-editar-venta-design.md`.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

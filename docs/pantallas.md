@@ -1012,6 +1012,15 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
   alguien quiere dejar escrito qué pasó. Sin permiso propio (`exigirSesion`) y
   sin rastro de quién editó: es un campo, no una tabla-libro. Aviso por toast,
   con clave estable, lanzado en el mismo handler que ejecuta la acción.
+- **Correcciones.** La bitácora de las correcciones de esta venta: quién, cuándo,
+  la nota si la hay, y **cómo estaban los pagos ANTES** de esa corrección
+  (medio, plan e importe en su propia moneda). Card propia entre Detalles y la
+  Zona de riesgo, con el mismo tratamiento de línea de tiempo que la bitácora de
+  una orden de trabajo. **Sólo se dibuja si hubo alguna corrección** — al revés
+  que Detalles, que se dibuja vacía a propósito porque es el lugar donde el dato
+  se carga; acá no hay nada que cargar, así que un local que nunca corrigió una
+  venta no ve ninguna diferencia. No tiene permiso propio ni acción: es lectura,
+  y la ve cualquiera que pueda abrir la venta.
 
 **Decisiones**
 
@@ -1031,6 +1040,51 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
   dólares" divide: es la única división del ciclo, y se puede hacer porque no
   decide ninguna plata — el número que se cobra lo recalcula el servidor desde
   la base que el campo devuelve.
+- **Un pago nuevo del diálogo nace con la moneda de lo que va a cubrir, no en
+  pesos**, y la cotización se la decide `cotizacionParaElCruce`
+  (`lib/ventas/cruce.ts`), no un `'1'` fijo. La primera versión de "Agregar
+  pago" sí calculaba `cubre` pero clavaba `moneda: 'ARS'` y `cotizacion: '1'`:
+  en una venta **sólo en dólares** eso hacía nacer un pago que CRUZA con la
+  cotización ya llena en 1 —un dólar a un peso—, el chip decía que la venta
+  cerraba, el servidor lo aceptaba (sólo exige `cotizacion > 0`) y quedaba un
+  `Pago.cotizacion = 1` histórico e inmutable sobre pesos que entraron de
+  verdad. La construcción de la fila vive en `pagoNuevo(totales)`, **exportada**
+  y no adentro del componente: sin jsdom no hay forma de tocar ese botón, así
+  que tres líneas adentro del `onClick` son tres líneas que ningún caso puede
+  mirar — que es exactamente cómo el defecto llegó a existir.
+- **El JSX de las filas del diálogo NO se extrajo del panel de cobro de
+  `/vender`, y es deuda declarada.** La regla de plata vive una sola vez
+  —`lib/ventas/centavos.ts` del lado del navegador, `lib/ventas/pagos.ts` del
+  lado del servidor—; lo duplicado es la disposición, no la regla, que es la
+  diferencia con el caso del selector de categoría (allá lo duplicado era la
+  regla, y las dos copias se desincronizaron en silencio durante cuatro días con
+  el gate en verde). Extraerlo exigiría refactorizar
+  `app/(app)/vender/punto-de-venta.tsx`, la pantalla más delicada del producto,
+  dentro de un ciclo que no la toca. **El disparador para extraerlo**: que
+  aparezca una tercera copia.
+- **La bitácora muestra el "antes" y nunca el "después".** El "después" es la
+  tabla "Cómo se pagó" de arriba, o el "antes" de la corrección siguiente: la
+  cadena es exacta y no tiene un segundo registro del mismo hecho que se pueda
+  desincronizar. Los pagos archivados llegan a `Detalle` con sus `Decimal` de
+  Prisma **tal cual**, sin pasar por `datosDelDetalle` para resolverlos a texto
+  —esta pantalla no cruza a ningún componente cliente— y se formatean con las
+  mismas funciones que "Cómo se pagó" (`ROTULO_MEDIO`, `rotuloDePlan`,
+  `precioEnSuMoneda`), que es lo que hace que un pago archivado se lea igual que
+  uno vivo.
+- **El diálogo avisa cuando algún pago se cobró antes de que existiera
+  `Pago.porcentaje`** (`hayPagoSinPorcentaje`): esas filas se recalculan con el
+  porcentaje de HOY, y la pantalla lo dice en vez de hacerlo en silencio. Un
+  pago **sin plan** no cuenta — su porcentaje es `null` porque se cobró a precio
+  de lista, no porque falte el dato, y contarlo pondría la leyenda en toda venta
+  del país.
+- **El cuerpo del diálogo se exporta aparte del diálogo** (`CuerpoDeCorreccion`)
+  por el mismo motivo que `/formas-de-pago` exporta `CamposDePlan` y `/usuarios`
+  exporta `FilasDePermisos`: Radix desmonta `DialogContent` mientras está
+  cerrado, y este repo no tiene jsdom, así que un render estático del diálogo
+  cerrado no vería nada de lo que hay adentro. Efecto colateral que además es lo
+  que se quiere: el estado del cuerpo nace de las props **cada** vez que se
+  abre, así que cerrar sin guardar y volver a abrir muestra lo guardado y no el
+  borrador de hace un rato.
 - **El pie de "Qué se vendió" desglosa cuando hay algo que desglosar, no sólo
   cuando `Venta.recargo` no es cero** (ciclo del cobrado por moneda,
   `hayQueDesglosar()` en `lib/ventas/cobrado.ts`, la misma función que ya usan
@@ -1145,6 +1199,12 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 - **La banda TOTAL va a ancho completo y se pinta con `--marca`** (nodo
   `Cv4xd`), donde en escritorio es `bg-muted`. Es la superficie de marca de
   esta pantalla en el teléfono.
+- **El diálogo de corrección apila sus controles y lleva scroll propio**
+  (`max-h-[85dvh] overflow-y-auto`): cinco controles por fila no entran en 390
+  px, y el cuerpo crece con cada pago — sin tope de alto, con tres pagos el
+  diálogo se pasa de la pantalla y el botón de guardar queda inalcanzable. El
+  botón "Corregir" no necesita una segunda copia: vive en el encabezado de la
+  card "Cómo se pagó", que se dibuja igual en los dos anchos.
 
 ## `/inventario`
 

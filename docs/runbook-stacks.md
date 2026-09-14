@@ -168,6 +168,43 @@ pasó una vez en este ciclo: un comentario que mencionaba `` `prisma migrate
 dev` `` entre comillas invertidas hacía que bash intentara correr `prisma`
 de verdad cada vez que el script corría.
 
+## `prisma migrate reset` contra dev es una trampa, no un atajo
+
+**No lo corras contra `arandano-dev`.** No es una preferencia de estilo: el
+comando falla, y el modo de falla no es "no hace nada" sino **te deja la base sin
+historial de migraciones**.
+
+Qué pasa. El reset de Prisma borra el schema `public` objeto por objeto, y
+`resolver_tenant()` —la función `SECURITY DEFINER` que resuelve subdominio →
+tenant, ver arriba— tiene `estado_tenant` en su firma (`RETURNS TABLE (id uuid,
+nombre text, estado estado_tenant)`, migración `20260808203015_resolver_tenant`).
+Prisma dropea los tipos pero no las funciones, así que el `DROP TYPE
+"estado_tenant"` choca contra esa dependencia y el comando aborta con **P3016**.
+El problema es *cuándo* aborta: `_prisma_migrations` ya está borrada para
+entonces. La base queda con todas sus tablas y sin ninguna fila que diga qué
+migraciones corrieron, y recuperarla cuesta rebaselinear a mano el historial
+entero.
+
+La salida conocida, si de verdad hace falta empezar de cero contra dev, es no
+delegarle el borrado a Prisma:
+
+```bash
+# Contra la base de DEV. Mirá dos veces la URL antes de apretar Enter.
+psql "$MIGRATE_DATABASE_URL" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+npx prisma migrate deploy
+scripts/setup-db-roles.sh …   # el schema nuevo nace sin los GRANT
+```
+
+`CASCADE` se lleva la función junto con el tipo, que es exactamente lo que
+`migrate reset` no sabe hacer.
+
+**Cerrarlo de verdad es su propio ciclo**, y no es obvio cuál es la respuesta
+correcta: un `migrate reset` que funcione pide que la función se dropee antes que
+el tipo, y el único lugar donde eso se puede declarar es el propio SQL de las
+migraciones. Mientras tanto vale la regla de arriba, que es de una línea.
+
+Detectado en el ciclo de corregir cómo se pagó una venta (2026-09-14).
+
 ## `scripts/setup-host.sh`: la receta de reproducción de la máquina
 
 Es el script que deja el VPS en el estado que estos stacks asumen: swap, Docker instalado desde el repo oficial, rotación de logs a nivel del daemon, `live-restore` y el slice `arandanobuild.slice` que capea los builds. Es **idempotente** — correrlo dos veces no rompe nada, cada paso chequea su propio estado antes de actuar — porque su razón de ser es poder reconstruir el servidor si se pierde, no sólo documentar cómo se armó una vez.
