@@ -125,6 +125,46 @@ export function hayDosTotales(totales: TotalesEnCentavos): boolean {
   return totales.ars !== 0 && totales.usd !== 0
 }
 
+/**
+ * La fila que nace al tocar "Agregar pago".
+ *
+ * **Nunca nace CRUZANDO**, y ésa es toda la razón por la que es una función
+ * exportada y no tres líneas adentro del componente: `cubre` apunta al total
+ * que la venta tenga cuando tiene uno solo —con sólo dólares, un pago que
+ * naciera cubriendo pesos apuntaría a un total que vale cero, la venta no
+ * cerraría nunca y el selector para corregirlo ni se dibuja (`hayDosTotales`)—,
+ * y la moneda que ENTREGA sale de ahí: `moneda: cubre`. Es la misma forma que
+ * el pago que nace solo en `/vender` (`punto-de-venta.tsx`).
+ *
+ * **El bug que esto arregla no se veía por ningún lado.** Con `moneda: 'ARS'`
+ * fijo, una venta SÓLO en dólares —el iPhone a US$ 300, el caso insignia del
+ * producto— hacía nacer la fila cruzando, con el campo "Cotización" ya lleno
+ * con `1`: un dólar a un peso. El espejo del cliente no divide
+ * (`totalesDePagosEnCentavos` suma la base al total en dólares sin mirar la
+ * cotización), así que tipear 300 dejaba el chip en `null` y "Guardar"
+ * habilitado; el motor tampoco lo frena, porque `normalizarPagos` sólo exige
+ * `cotizacion > 0`. Lo que quedaba guardado era `Pago.cotizacion = 1` sobre los
+ * $445.500 que entraron de verdad — histórico, inmutable, y propagado a "Cómo
+ * entró la plata" y a la columna Cobrado por `pesosEntregados`. Es exactamente
+ * el modo de falla que el docblock de `cotizacionParaElCruce`
+ * (`lib/ventas/cruce.ts`) nombra palabra por palabra.
+ *
+ * La cotización sale de esa misma función y no de un literal `'1'`: con
+ * `moneda === cubre` da `'1'`, y si algún día esa regla cambiara, cambiaría en
+ * un solo lugar.
+ */
+export function pagoNuevo(totales: TotalesEnCentavos): PagoParaCorregir {
+  const cubre = totales.ars === 0 && totales.usd !== 0 ? 'USD' : 'ARS'
+  return {
+    medio: 'EFECTIVO',
+    moneda: cubre,
+    cubre,
+    base: '',
+    cotizacion: cotizacionParaElCruce(cubre, cubre),
+    planId: null,
+  }
+}
+
 /** La fila de la pantalla traducida a la forma en enteros que entiende el
  *  espejo de `lib/ventas/centavos.ts`. */
 function aCentavosDeLaFila(fila: PagoParaCorregir): FilaDePagoCentavos {
@@ -301,22 +341,7 @@ export function CuerpoDeCorreccion({
 
   function agregar() {
     const clave = `pago-${proximaClave.current++}`
-    setFilas((actuales) => [
-      ...actuales,
-      {
-        clave,
-        medio: 'EFECTIVO',
-        moneda: 'ARS',
-        // Contra el total que la venta tenga cuando tiene uno solo: con sólo
-        // dólares, un pago nuevo que naciera cubriendo pesos apuntaría a un
-        // total que vale cero y el selector para corregirlo tampoco se
-        // dibuja. Misma regla que `cubrePorDefecto` en `/vender`.
-        cubre: totales.ars === 0 && totales.usd !== 0 ? 'USD' : 'ARS',
-        base: '',
-        cotizacion: '1',
-        planId: null,
-      },
-    ])
+    setFilas((actuales) => [...actuales, { ...pagoNuevo(totales), clave }])
   }
 
   function guardar() {

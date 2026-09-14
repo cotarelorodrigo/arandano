@@ -23,6 +23,10 @@ import {
 } from './page'
 import { CONSUMIDOR_FINAL } from '@/lib/ventas/medios'
 import { formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
+// Las MISMAS funciones con las que el motor arma y valida una venta: el caso
+// del ida y vuelta de `baseDePagoGuardado` no puede reimplementarlas, porque
+// entonces probaría su propia copia en vez de la aritmética que corre.
+import { montoEntregado, recargoDePago, totalesDePagos } from '@/lib/ventas/totales'
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -751,6 +755,113 @@ describe('baseDePagoGuardado: la vuelta del monto guardado a la base', () => {
       moneda: 'ARS', cubre: 'USD', monto: d('623700'), cotizacion: d('1485'), recargo: d('178200'),
     })
     expect(base.toString()).toBe('300')
+  })
+})
+
+/**
+ * El ida y vuelta COMPLETO, que es la propiedad que de verdad importa.
+ *
+ * Los casos de arriba prueban un pago suelto con números elegidos para que
+ * salgan redondos. Lo que sostiene la pantalla es otra cosa: que las bases
+ * reconstruidas de una venta ENTERA vuelvan a sumar exactamente `total` y
+ * `totalUsd` — si no, abrir el diálogo sobre una venta perfectamente válida
+ * muestra "Faltan US$ 0,01" sin que nadie haya tocado nada, y el botón de
+ * guardar arranca apagado.
+ *
+ * Sin este caso, lo único que sostiene esa propiedad es la prosa del docblock:
+ * cambiar el modo de redondeo de `redondearDinero`, o el `ROUND_HALF_UP` de
+ * `baseDePagoGuardado`, o permitir tres decimales en `base`, la rompe con los
+ * cinco casos de arriba en verde.
+ *
+ * Se arma como la arma el motor —`montoEntregado` + `recargoDePago` son las
+ * MISMAS funciones que usa `resolverPagosConRecargo`— y se cierra con
+ * `totalesDePagos`, la misma con la que `exigirQueCierren` acepta o rechaza.
+ */
+describe('baseDePagoGuardado: las bases reconstruidas de una venta vuelven a cerrar', () => {
+  const d = (v: string) => new Prisma.Decimal(v)
+
+  /** Lo que el motor guardaría para este pago: `monto` (con el recargo
+   *  adentro) y `recargo`, que es lo único que la fila de `Pago` conserva. */
+  function comoLoGuardaElMotor(p: {
+    moneda: 'ARS' | 'USD'
+    cubre: 'ARS' | 'USD'
+    base: Prisma.Decimal
+    cotizacion: Prisma.Decimal
+    porcentaje?: Prisma.Decimal
+  }) {
+    const entregado = montoEntregado(p)
+    const recargo = p.porcentaje ? recargoDePago(entregado, p.porcentaje) : d('0')
+    return {
+      moneda: p.moneda,
+      cubre: p.cubre,
+      cotizacion: p.cotizacion,
+      monto: entregado.add(recargo),
+      recargo,
+    }
+  }
+
+  it('una venta MIXTA con plan y cotización de cuatro decimales cierra exacto', () => {
+    // Tres pagos, uno de cada forma que puede tomar una fila:
+    //  - efectivo en pesos contra el total en pesos, sin plan;
+    //  - pesos entregados contra el total en dólares, con un plan del 40 %
+    //    (el único caso que hace DIVIDIR a la reconstrucción);
+    //  - dólares entregados contra el total en dólares.
+    // La cotización lleva sus cuatro decimales a propósito: es la escala real
+    // de la columna, y es donde un redondeo mal puesto se nota.
+    const COTIZACION = d('1485.1234')
+    const entrada = [
+      { moneda: 'ARS' as const, cubre: 'ARS' as const, base: d('15000.35'), cotizacion: d('1') },
+      {
+        moneda: 'ARS' as const, cubre: 'USD' as const, base: d('137.77'),
+        cotizacion: COTIZACION, porcentaje: d('40'),
+      },
+      { moneda: 'USD' as const, cubre: 'USD' as const, base: d('162.23'), cotizacion: COTIZACION },
+    ]
+
+    // Los dos totales de la venta: lo que el motor exigió al cobrarla.
+    const totales = totalesDePagos(entrada)
+    expect(totales.ars.toString()).toBe('15000.35')
+    expect(totales.usd.toString()).toBe('300')
+
+    // Ida y vuelta: guardar como guarda el motor, y reconstruir.
+    const reconstruidas = entrada.map((p) => {
+      const guardado = comoLoGuardaElMotor(p)
+      return { ...guardado, base: baseDePagoGuardado(guardado) }
+    })
+
+    // 1) Cada base vuelve idéntica a la que se cobró.
+    expect(reconstruidas.map((p) => p.base.toString())).toEqual([
+      '15000.35',
+      '137.77',
+      '162.23',
+    ])
+
+    // 2) Y —lo que de verdad decide si el diálogo abre cerrado— el juego
+    //    reconstruido sigue cerrando contra los MISMOS dos totales, por la
+    //    misma función con la que `exigirQueCierren` acepta o rechaza.
+    const vueltos = totalesDePagos(reconstruidas)
+    expect(vueltos.ars.equals(totales.ars)).toBe(true)
+    expect(vueltos.usd.equals(totales.usd)).toBe(true)
+  })
+
+  /**
+   * **La frontera, afirmada y no sólo descrita en prosa**: con `cotizacion < 1`
+   * la identidad SE ROMPE. Base `0,03` a cotización `0,5` entrega `0,02`
+   * (0,015 → ROUND_HALF_UP) y vuelve como `0,04`.
+   *
+   * El docblock de `baseDePagoGuardado` lo descarta por económicamente
+   * imposible —una cotización menor que 1 significaría un dólar que vale menos
+   * que un peso—, y está bien descartado, pero el motor **no lo rechaza**:
+   * `normalizarPagos` sólo exige `cotizacion > 0`. Este caso deja el límite
+   * escrito donde se puede ver: el día que alguien lo corra hacia abajo, lo
+   * primero que tiene que leer es esto.
+   */
+  it('con una cotización MENOR que 1 la vuelta ya no es exacta, y eso está aceptado', () => {
+    const guardado = comoLoGuardaElMotor({
+      moneda: 'ARS', cubre: 'USD', base: d('0.03'), cotizacion: d('0.5'),
+    })
+    expect(guardado.monto.toString()).toBe('0.02')
+    expect(baseDePagoGuardado(guardado).toString()).toBe('0.04')
   })
 })
 

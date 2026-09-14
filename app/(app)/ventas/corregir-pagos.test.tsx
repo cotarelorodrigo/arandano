@@ -18,9 +18,13 @@ import {
   faltanteEnCentavos,
   textoDelChip,
   hayDosTotales,
+  pagoNuevo,
+  aCobrarEnCentavos,
+  planesDeLaFila,
   CuerpoDeCorreccion,
   type PagoParaCorregir,
 } from './corregir-pagos'
+import type { PlanVisible } from '@/lib/planes/consultar'
 
 // Los nombres de campo son los de `FilaDePagoCentavos` en
 // `lib/ventas/centavos.ts` —`baseCentavos` y `cotizacionDiezMilesimas`, no
@@ -122,6 +126,144 @@ describe('hayDosTotales: sólo cuando la venta tiene mercadería en las dos mone
 
   it('con las dos, sí', () => {
     expect(hayDosTotales({ ars: 100000, usd: 30000 })).toBe(true)
+  })
+})
+
+describe('pagoNuevo: la fila que nace al tocar "Agregar pago"', () => {
+  /**
+   * El invariante, en las TRES formas de venta: una fila nueva **nunca nace
+   * cruzando**. Si naciera, su campo "Cotización" se dibujaría ya lleno con el
+   * `'1'` que le corresponde a un pago que NO cruza — un dólar a un peso — y
+   * nada de la pantalla ni del motor lo frenaría: el espejo del cliente no
+   * divide (suma la base al total en dólares sin mirar la cotización) y
+   * `normalizarPagos` sólo exige `cotizacion > 0`. Lo que quedaría guardado es
+   * `Pago.cotizacion = 1` sobre los pesos que entraron de verdad, histórico e
+   * inmutable.
+   */
+  it.each([
+    ['sólo en pesos', { ars: 100000, usd: 0 }],
+    ['sólo en dólares', { ars: 0, usd: 30000 }],
+    ['mixta', { ars: 1500000, usd: 30000 }],
+  ] as const)('en una venta %s, lo que entrega es lo que cubre', (_, totales) => {
+    const fila = pagoNuevo(totales)
+    expect(fila.moneda).toBe(fila.cubre)
+  })
+
+  // El caso insignia del producto —el iPhone a US$ 300— y el que tenía el bug:
+  // la fila nace entregando dólares contra el total en dólares, no pesos.
+  it('en una venta sólo en dólares nace en USD y no en pesos con cotización 1', () => {
+    expect(pagoNuevo({ ars: 0, usd: 30000 })).toEqual({
+      medio: 'EFECTIVO',
+      moneda: 'USD',
+      cubre: 'USD',
+      base: '',
+      cotizacion: '1',
+      planId: null,
+    })
+  })
+
+  // Con las DOS monedas manda pesos, que es el default de siempre y el que
+  // deja elegir al selector de `Cubre` —que ahí sí se dibuja—.
+  it('en una venta mixta nace en pesos contra el total en pesos', () => {
+    const fila = pagoNuevo({ ars: 1500000, usd: 30000 })
+    expect(fila.moneda).toBe('ARS')
+    expect(fila.cubre).toBe('ARS')
+  })
+
+  // La base arranca VACÍA y no en cero: un cero silencioso es una línea que la
+  // pantalla da por buena. `dineroEnCentavos('')` da NaN, así que el chip dice
+  // que no se entiende y "Guardar" queda apagado hasta que alguien tipee.
+  it('la base arranca vacía, así que la venta no puede cerrar sola', () => {
+    expect(pagoNuevo({ ars: 100000, usd: 0 }).base).toBe('')
+  })
+})
+
+describe('aCobrarEnCentavos: lo que se le pide a la persona por UNA fila', () => {
+  const PLAN: PlanVisible = {
+    id: 'plan-credito',
+    nombre: 'Crédito 12 cuotas',
+    medio: 'TARJETA_CREDITO',
+    cuotas: 12,
+    porcentaje: '40',
+    orden: 1,
+    desactivadoEn: null,
+  }
+  const DESCUENTO: PlanVisible = { ...PLAN, id: 'plan-contado', nombre: 'Contado', medio: 'EFECTIVO', cuotas: 1, porcentaje: '-10' }
+
+  const FILA: PagoParaCorregir = {
+    medio: 'TARJETA_CREDITO', moneda: 'ARS', cubre: 'ARS',
+    base: '10000', cotizacion: '1', planId: null,
+  }
+
+  it('sin plan es la base: no hay nada que recargar', () => {
+    expect(aCobrarEnCentavos(FILA, [PLAN])).toBe(1000000)
+  })
+
+  it('con un plan que no está en la lista tampoco recarga', () => {
+    // Un plan dado de baja entre que la pantalla cargó y ahora: el selector ya
+    // no lo ofrece. Mostrar la base es la respuesta correcta — inventar un
+    // recargo con un porcentaje que no se tiene sería peor.
+    expect(aCobrarEnCentavos({ ...FILA, planId: 'plan-borrado' }, [PLAN])).toBe(1000000)
+  })
+
+  it('con un plan del 40 % suma el recargo', () => {
+    expect(aCobrarEnCentavos({ ...FILA, planId: PLAN.id }, [PLAN])).toBe(1400000)
+  })
+
+  // El descuento por pago contado, que este producto trata como caso de
+  // primera clase: el porcentaje lleva signo y el resultado BAJA.
+  it('con un plan negativo descuenta', () => {
+    const fila = { ...FILA, medio: 'EFECTIVO' as const, planId: DESCUENTO.id }
+    expect(aCobrarEnCentavos(fila, [DESCUENTO])).toBe(900000)
+  })
+
+  /**
+   * **El porcentaje va sobre los PESOS QUE ENTREGA la fila, no sobre la
+   * base**, y éste es el caso que lo distingue: un pago en pesos que cubre el
+   * total en dólares tiene la base en DÓLARES (300), y el recargo del 40 % se
+   * calcula sobre los $445.500 que entrega, no sobre 300. Es la misma cuenta
+   * cuya versión de `/vender` produjo un bug de plata en el merge del ciclo
+   * móvil, y el caso del feedback que originó el ciclo del precio en dólares:
+   * el iPhone de US$ 300 en 12 cuotas al 40 % se cobra $623.700.
+   */
+  it('sobre un pago que cruza, el recargo va sobre los pesos entregados y no sobre la base', () => {
+    const cruce: PagoParaCorregir = {
+      medio: 'TARJETA_CREDITO', moneda: 'ARS', cubre: 'USD',
+      base: '300', cotizacion: '1485', planId: PLAN.id,
+    }
+    expect(aCobrarEnCentavos(cruce, [PLAN])).toBe(62370000)
+  })
+})
+
+describe('planesDeLaFila: no ofrecer lo que el servidor va a rechazar', () => {
+  const CREDITO: PlanVisible = {
+    id: 'p1', nombre: 'Crédito 12', medio: 'TARJETA_CREDITO', cuotas: 12,
+    porcentaje: '40', orden: 1, desactivadoEn: null,
+  }
+  const EFECTIVO: PlanVisible = { ...CREDITO, id: 'p2', nombre: 'Contado', medio: 'EFECTIVO', cuotas: 1, porcentaje: '-10' }
+  const TODOS = [CREDITO, EFECTIVO]
+
+  it('ofrece los del medio de la fila y ninguno más (PLAN_NO_CORRESPONDE)', () => {
+    expect(planesDeLaFila({ medio: 'TARJETA_CREDITO', moneda: 'ARS' }, TODOS)).toEqual([CREDITO])
+    expect(planesDeLaFila({ medio: 'EFECTIVO', moneda: 'ARS' }, TODOS)).toEqual([EFECTIVO])
+  })
+
+  it('un medio sin planes cargados no ofrece ninguno: la fila no dibuja el selector', () => {
+    expect(planesDeLaFila({ medio: 'TRANSFERENCIA', moneda: 'ARS' }, TODOS)).toEqual([])
+  })
+
+  // La segunda mitad de la regla: el motor prohíbe el plan sobre un pago
+  // ENTREGADO en dólares (PLAN_EN_DOLARES), porque ahí el recargo saldría en
+  // dólares y volver a pesos exigiría dividir.
+  it('un pago entregado en dólares no ofrece ninguno, aunque su medio tenga', () => {
+    expect(planesDeLaFila({ medio: 'TARJETA_CREDITO', moneda: 'USD' }, TODOS)).toEqual([])
+  })
+
+  // Y NO mira `cubre`: un pago en pesos contra el total en dólares lleva su
+  // plan sin problema — es justamente el iPhone financiado en doce cuotas.
+  // Filtrar también por `cubre` le sacaría al mostrador el caso más caro.
+  it('un pago en pesos que cubre el total en dólares sí los ofrece', () => {
+    expect(planesDeLaFila({ medio: 'TARJETA_CREDITO', moneda: 'ARS' }, TODOS)).toEqual([CREDITO])
   })
 })
 
