@@ -188,27 +188,29 @@ model Tenant {
   creadoEn           DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn      DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  modulos         TenantModule[]
-  users           User[]
-  clientes        Cliente[]
-  articulos       Articulo[]
-  ventas          Venta[]
-  ventaItems      VentaItem[]
-  pagos           Pago[]
-  movimientos     MovimientoStock[]
-  sesiones        Session[]
-  cuentas         Account[]
-  verificaciones  Verification[]
-  ordenes         OrdenDeTrabajo[]
-  eventosOrden    EventoOrden[]
-  cajas           Caja[]
-  categorias      Categoria[]
-  usuarioPermisos UsuarioPermiso[]
-  planesDePago    PlanDePago[]
-  bot             BotDeWhatsapp?
-  conversaciones  ConversacionBot[]
-  mensajesBot     MensajeBot[]
-  unidades        UnidadDeArticulo[]
+  modulos          TenantModule[]
+  users            User[]
+  clientes         Cliente[]
+  articulos        Articulo[]
+  ventas           Venta[]
+  ventaItems       VentaItem[]
+  pagos            Pago[]
+  movimientos      MovimientoStock[]
+  sesiones         Session[]
+  cuentas          Account[]
+  verificaciones   Verification[]
+  ordenes          OrdenDeTrabajo[]
+  eventosOrden     EventoOrden[]
+  cajas            Caja[]
+  categorias       Categoria[]
+  usuarioPermisos  UsuarioPermiso[]
+  planesDePago     PlanDePago[]
+  bot              BotDeWhatsapp?
+  conversaciones   ConversacionBot[]
+  mensajesBot      MensajeBot[]
+  unidades         UnidadDeArticulo[]
+  edicionesDeVenta EdicionDeVenta[]
+  pagosArchivados  PagoArchivado[]
 
   @@map("tenants")
 }
@@ -266,6 +268,7 @@ model User {
   permisos            UsuarioPermiso[]
   unidadesIngresadas  UnidadDeArticulo[] @relation("UnidadesIngresadas")
   unidadesDadasDeBaja UnidadDeArticulo[] @relation("UnidadesDadasDeBaja")
+  ventasEditadas      EdicionDeVenta[]   @relation("VentasEditadas")
 
   // Por tenant y no global: la misma persona puede trabajar en dos negocios.
   @@unique([tenantId, email])
@@ -514,8 +517,9 @@ model PlanDePago {
   creadoEn          DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn     DateTime  @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  pagos  Pago[]
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pagos           Pago[]
+  pagosArchivados PagoArchivado[]
 
   @@unique([tenantId, medio, nombre])
   @@index([tenantId, medio])
@@ -646,6 +650,7 @@ model Venta {
   pagos       Pago[]
   movimientos MovimientoStock[]
   unidades    UnidadDeArticulo[]
+  ediciones   EdicionDeVenta[]
 
   @@unique([tenantId, numero])
   @@unique([tenantId, claveIdempotencia])
@@ -659,17 +664,17 @@ model Venta {
 // marzo. `articuloId` se guarda igual, para poder navegar, pero no es de donde
 // sale lo que se muestra.
 model VentaItem {
-  id             String  @id @default(uuid(7)) @db.Uuid
-  tenantId       String  @map("tenant_id") @db.Uuid
-  ventaId        String  @map("venta_id") @db.Uuid
-  articuloId     String  @map("articulo_id") @db.Uuid
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  ventaId        String   @map("venta_id") @db.Uuid
+  articuloId     String   @map("articulo_id") @db.Uuid
   descripcion    String
-  cantidad       Decimal @db.Decimal(12, 3)
-  precioUnitario Decimal @map("precio_unitario") @db.Decimal(12, 2)
+  cantidad       Decimal  @db.Decimal(12, 3)
+  precioUnitario Decimal  @map("precio_unitario") @db.Decimal(12, 2)
   // Congelada al vender, igual que `descripcion` y `precioUnitario`: el
   // artículo puede pasar de dólares a pesos mañana y esta venta tiene que
   // seguir diciendo en qué moneda se cobró.
-  moneda         Moneda  @default(ARS)
+  moneda         Moneda   @default(ARS)
   /// El último costo conocido del artículo AL MOMENTO DE COBRAR, en pesos.
   /// Congelado, igual que `descripcion` y `precioUnitario` y por el mismo
   /// motivo: un costo que se corrige mañana no puede cambiar lo que una venta
@@ -752,6 +757,72 @@ model Pago {
   // migración destructiva que corresponde a un deploy posterior.
   @@index([tenantId, moneda, creadoEn])
   @@map("pagos")
+}
+
+/// Una corrección de cómo se pagó una venta: quién, cuándo y por qué.
+///
+/// Append-only, como `eventos_orden` y `movimientos_stock`, y no por
+/// comentario: `scripts/setup-db-roles.sh` le revoca UPDATE y DELETE al rol de
+/// la app. Una bitácora editable no contesta la única pregunta para la que
+/// existe — "¿quién le cambió el medio de pago a esta venta y cuándo?".
+model EdicionDeVenta {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  ventaId   String   @map("venta_id") @db.Uuid
+  usuarioId String   @map("usuario_id") @db.Uuid
+  /// El motivo, si lo quisieron escribir. OPCIONAL a propósito: un motivo
+  /// obligatorio sobre una corrección que suele ser evidente ("puse efectivo y
+  /// era transferencia") es fricción, y un campo obligatorio que nadie quiere
+  /// llenar se llena con un punto. Mismo criterio que `EventoOrden.nota`.
+  nota      String?
+  creadoEn  DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  venta   Venta  @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  usuario User   @relation("VentasEditadas", fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  pagos PagoArchivado[]
+
+  @@index([tenantId, ventaId, creadoEn])
+  @@map("ediciones_venta")
+}
+
+/// Un pago tal como estaba ANTES de la corrección que lo reemplazó.
+///
+/// **El "después" no se guarda en ningún lado**: es `pagos` tal como está hoy,
+/// o el "antes" de la edición siguiente. Guardar los dos lados sería un segundo
+/// registro del mismo hecho, con el modo de falla que ya evitó que `VentaItem`
+/// llevara `unidadId`: que un día digan cosas distintas.
+///
+/// **Se archiva la FILA y no un snapshot en JSON**: Prisma serializa un
+/// `Decimal` a string, así que un JSON convertiría la plata en texto y perdería
+/// la escala que `Decimal(12,2)` garantiza. Con tabla propia, un peso archivado
+/// es el mismo tipo que un peso vivo.
+model PagoArchivado {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  edicionId    String    @map("edicion_id") @db.Uuid
+  medio        MedioPago
+  moneda       Moneda
+  cubre        Moneda
+  monto        Decimal   @db.Decimal(12, 2)
+  cotizacion   Decimal   @db.Decimal(12, 4)
+  planDePagoId String?   @map("plan_de_pago_id") @db.Uuid
+  porcentaje   Decimal?  @db.Decimal(6, 3)
+  recargo      Decimal   @db.Decimal(12, 2)
+  /// El `creadoEn` del pago original. Se llama distinto para que no se confunda
+  /// con el de esta fila, que es cuándo se archivó.
+  pagadoEn     DateTime  @map("pagado_en") @db.Timestamptz(3)
+  creadoEn     DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  edicion EdicionDeVenta @relation(fields: [edicionId], references: [id], onDelete: Cascade)
+  /// Restrict, igual que `Pago.planDePagoId`: un plan que ya cobró no se borra,
+  /// se da de baja. La foto tiene que poder seguir diciendo cuál era.
+  plan    PlanDePago?    @relation(fields: [planDePagoId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, edicionId])
+  @@map("pagos_archivados")
 }
 
 // La caja del turno: quién la abrió, con cuánto, y quién la cerró.

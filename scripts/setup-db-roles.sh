@@ -241,6 +241,32 @@ BEGIN
 END
 $$;
 
+-- ediciones_venta y pagos_archivados: la bitácora de las correcciones de pago,
+-- y la cuarta tabla-libro. Necesita su propia línea por lo mismo que las otras
+-- tres: el default privilege le da UPDATE y DELETE a toda tabla nueva, y eso no
+-- se hereda.
+--
+-- Acá el motivo es más filoso que en las anteriores. Esta bitácora existe
+-- porque corregir una venta cambia PLATA YA COBRADA y reescribe hacia atrás los
+-- reportes del período. Si la app pudiera editarla o borrarla, quien tenga
+-- VENTAS_EDITAR podría cambiar cómo entró la plata de ayer y borrar la prueba —
+-- que es exactamente lo que el permiso aparte existe para poder auditar.
+--
+-- pagos_archivados.edicion_id es ON DELETE CASCADE, así que el DELETE sobre
+-- ediciones_venta es también la puerta de atrás de la foto: cerrar una y dejar
+-- la otra abierta no cierra nada. Misma forma que ordenes_de_trabajo respecto de
+-- eventos_orden.
+DO $$
+BEGIN
+  IF to_regclass('public.ediciones_venta') IS NOT NULL THEN
+    EXECUTE 'REVOKE UPDATE, DELETE ON public.ediciones_venta FROM arandano_app';
+  END IF;
+  IF to_regclass('public.pagos_archivados') IS NOT NULL THEN
+    EXECUTE 'REVOKE UPDATE, DELETE ON public.pagos_archivados FROM arandano_app';
+  END IF;
+END
+$$;
+
 -- leads: append-only para la aplicación, y por un motivo distinto al de
 -- movimientos_stock. Aquella es un libro y no se corrige; ésta no tiene
 -- tenant_id, así que no hay policy que la proteja — sin este REVOKE, cualquier

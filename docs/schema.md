@@ -113,6 +113,14 @@ erDiagram
     timestamptz(3) creado_en
     timestamptz(3) ultimo_mensaje_en
   }
+  ediciones_venta {
+    uuid id PK
+    uuid tenant_id FK
+    uuid venta_id FK
+    uuid usuario_id FK
+    text nota "opcional"
+    timestamptz(3) creado_en
+  }
   eventos_orden {
     uuid id PK
     uuid tenant_id FK
@@ -190,6 +198,21 @@ erDiagram
     uuid plan_de_pago_id FK "opcional"
     decimal(6,3) porcentaje "opcional"
     decimal(12,2) recargo
+    timestamptz(3) creado_en
+  }
+  pagos_archivados {
+    uuid id PK
+    uuid tenant_id FK
+    uuid edicion_id FK
+    medio_pago medio
+    moneda moneda
+    moneda cubre
+    decimal(12,2) monto
+    decimal(12,4) cotizacion
+    uuid plan_de_pago_id FK "opcional"
+    decimal(6,3) porcentaje "opcional"
+    decimal(12,2) recargo
+    timestamptz(3) pagado_en
     timestamptz(3) creado_en
   }
   planes_de_pago {
@@ -309,19 +332,23 @@ erDiagram
   clientes |o--o{ ventas : "ON DELETE RESTRICT"
   clientes ||--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
   conversaciones_bot ||--o{ mensajes_bot : "ON DELETE CASCADE"
+  ediciones_venta ||--o{ pagos_archivados : "ON DELETE CASCADE"
   ordenes_de_trabajo ||--o{ eventos_orden : "ON DELETE CASCADE"
   planes_de_pago |o--o{ pagos : "ON DELETE RESTRICT"
+  planes_de_pago |o--o{ pagos_archivados : "ON DELETE RESTRICT"
   tenants ||--o{ accounts : "ON DELETE CASCADE"
   tenants ||--o{ articulos : "ON DELETE CASCADE"
   tenants ||--o{ cajas : "ON DELETE CASCADE"
   tenants ||--o{ categorias : "ON DELETE CASCADE"
   tenants ||--o{ clientes : "ON DELETE CASCADE"
   tenants ||--o{ conversaciones_bot : "ON DELETE CASCADE"
+  tenants ||--o{ ediciones_venta : "ON DELETE CASCADE"
   tenants ||--o{ eventos_orden : "ON DELETE CASCADE"
   tenants ||--o{ mensajes_bot : "ON DELETE CASCADE"
   tenants ||--o{ movimientos_stock : "ON DELETE CASCADE"
   tenants ||--o{ ordenes_de_trabajo : "ON DELETE CASCADE"
   tenants ||--o{ pagos : "ON DELETE CASCADE"
+  tenants ||--o{ pagos_archivados : "ON DELETE CASCADE"
   tenants ||--o{ planes_de_pago : "ON DELETE CASCADE"
   tenants ||--o{ sessions : "ON DELETE CASCADE"
   tenants ||--o{ tenant_modules : "ON DELETE CASCADE"
@@ -339,6 +366,7 @@ erDiagram
   users |o--o{ ventas : "ON DELETE RESTRICT"
   users ||--o{ accounts : "ON DELETE CASCADE"
   users ||--o{ cajas : "ON DELETE RESTRICT"
+  users ||--o{ ediciones_venta : "ON DELETE RESTRICT"
   users ||--o{ eventos_orden : "ON DELETE RESTRICT"
   users ||--o{ movimientos_stock : "ON DELETE RESTRICT"
   users ||--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
@@ -348,6 +376,7 @@ erDiagram
   users ||--o{ ventas : "ON DELETE RESTRICT"
   ventas |o--o{ movimientos_stock : "ON DELETE RESTRICT"
   ventas |o--o{ unidades_articulo : "ON DELETE RESTRICT"
+  ventas ||--o{ ediciones_venta : "ON DELETE CASCADE"
   ventas ||--o{ pagos : "ON DELETE CASCADE"
   ventas ||--o{ venta_items : "ON DELETE CASCADE"
 ```
@@ -374,6 +403,7 @@ erDiagram
 - **categorias**: `categorias_tenant_id_padre_id_idx` sobre (`tenant_id`, `padre_id`)
 - **clientes**: `clientes_tenant_id_idx` sobre (`tenant_id`)
 - **conversaciones_bot**: `conversaciones_bot_tenant_id_ultimo_mensaje_en_idx` sobre (`tenant_id`, `ultimo_mensaje_en`)
+- **ediciones_venta**: `ediciones_venta_tenant_id_venta_id_creado_en_idx` sobre (`tenant_id`, `venta_id`, `creado_en`)
 - **eventos_orden**: `eventos_orden_tenant_id_orden_id_creado_en_idx` sobre (`tenant_id`, `orden_id`, `creado_en`)
 - **mensajes_bot**: `mensajes_bot_tenant_id_conversacion_id_creado_en_idx` sobre (`tenant_id`, `conversacion_id`, `creado_en`)
 - **mensajes_bot**: `mensajes_bot_tenant_id_direccion_creado_en_idx` sobre (`tenant_id`, `direccion`, `creado_en`)
@@ -383,6 +413,7 @@ erDiagram
 - **ordenes_de_trabajo**: `ordenes_de_trabajo_tenant_id_estado_creado_en_idx` sobre (`tenant_id`, `estado`, `creado_en`)
 - **pagos**: `pagos_tenant_id_moneda_creado_en_idx` sobre (`tenant_id`, `moneda`, `creado_en`)
 - **pagos**: `pagos_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
+- **pagos_archivados**: `pagos_archivados_tenant_id_edicion_id_idx` sobre (`tenant_id`, `edicion_id`)
 - **planes_de_pago**: `planes_de_pago_tenant_id_medio_idx` sobre (`tenant_id`, `medio`)
 - **sessions**: `sessions_tenant_id_user_id_idx` sobre (`tenant_id`, `user_id`)
 - **unidades_articulo**: `unidades_articulo_tenant_id_articulo_id_idx` sobre (`tenant_id`, `articulo_id`)

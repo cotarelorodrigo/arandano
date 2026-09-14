@@ -360,6 +360,45 @@ describe('setup-db-roles.sh', () => {
       }
     })
 
+    // La bitácora de las correcciones de pago, y la cuarta tabla-libro. El
+    // motivo acá es más filoso que en las anteriores: corregir una venta
+    // cambia PLATA YA COBRADA y reescribe hacia atrás los reportes del
+    // período. Si la app pudiera editar o borrar esto, quien tenga
+    // VENTAS_EDITAR podría cambiar cómo entró la plata de ayer y borrar la
+    // prueba — que es exactamente lo que el permiso aparte existe para poder
+    // auditar.
+    it('ediciones_venta: la app no puede editar ni borrar, y sí leer', async () => {
+      const app = new Client({ connectionString: urlApp() })
+      await app.connect()
+      try {
+        await expect(app.query('UPDATE ediciones_venta SET nota = nota')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(app.query('DELETE FROM ediciones_venta')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(app.query('SELECT 1 FROM ediciones_venta')).resolves.toBeDefined()
+      } finally {
+        await app.end()
+      }
+    })
+
+    it('pagos_archivados: la app no puede editar ni borrar, y sí leer', async () => {
+      const app = new Client({ connectionString: urlApp() })
+      await app.connect()
+      try {
+        await expect(app.query('UPDATE pagos_archivados SET monto = monto')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(app.query('DELETE FROM pagos_archivados')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(app.query('SELECT 1 FROM pagos_archivados')).resolves.toBeDefined()
+      } finally {
+        await app.end()
+      }
+    })
+
     // Y su puerta de atrás, la misma que la de eventos_orden:
     // mensajes_bot.conversacion_id es ON DELETE CASCADE, así que borrar el hilo
     // se llevaría el contenido entero sin tocar la tabla que el caso de arriba
