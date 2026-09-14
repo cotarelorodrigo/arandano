@@ -60,12 +60,44 @@ describe('normalizarDetalle', () => {
 })
 
 describe('el módulo', () => {
+  /**
+   * De qué módulos arrastra algo el archivo, en cualquiera de las formas en
+   * que un bundler lo entiende.
+   *
+   * Los comentarios se sacan PRIMERO: los docblocks de estos dos archivos
+   * hablan justamente de imports y nombran `'use client'` entre comillas, así
+   * que un regex que los leyera devolvería módulos que nadie importa.
+   *
+   * Y después se aplasta el espacio en blanco, que es lo que hace que un
+   * import MULTILÍNEA —`import {\n  a,\n} from '@/lib/db'`— cuente como la
+   * sentencia que es. Un regex atado al renglón lo ve como una línea sin
+   * `from` y lo deja pasar entero, que es el agujero que tenía la primera
+   * versión de este caso.
+   *
+   * Las tres formas que reconoce, y por qué las tres: `import … from '…'`,
+   * `export … from '…'` (re-exportar arrastra igual que importar) y el import
+   * de EFECTO `import '@/lib/db'`, que no lleva `from` y es el que más fácil
+   * se cuela — alcanza para construir el Pool de `pg` aunque no se use ningún
+   * nombre.
+   */
   const importesDe = async (url: URL) => {
     const { readFileSync } = await import('node:fs')
     const fuente = readFileSync(url, 'utf8')
-    return [...fuente.matchAll(/^\s*(?:import|export)\s[^\n]*?from\s+'([^']+)'/gm)].map(
-      (m) => m[1],
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/^\s*\/\/.*$/gm, ' ')
+      .replace(/\s+/g, ' ')
+    const encontrados = [
+      ...fuente.matchAll(
+        /\bimport\s+'([^']+)'|\b(?:import|export)\b[^'"]*?\bfrom\s+'([^']+)'/g,
+      ),
+    ].map((m) => m[1] ?? m[2])
+    // El `import()` dinámico no tiene `from` ni arranca un renglón, así que
+    // ninguna de las tres formas de arriba lo ve. No se intenta parsear: se
+    // prohíbe, que en dos archivos de veinte líneas es la respuesta correcta.
+    expect(fuente, 'un import() dinámico esquiva este caso: no va acá').not.toMatch(
+      /\bimport\s*\(/,
     )
+    return encontrados
   }
 
   // La condición que deja importar TOPE_DETALLE desde un archivo 'use client'

@@ -3224,6 +3224,161 @@ describe('reemplazarPagos (corregir cómo se pagó una venta ya cobrada)', () =>
     expect((await pagosDe(id))[0].medio).toBe('TARJETA_DEBITO')
   })
 
+  // Un artículo en dólares, dado de alta crudo como owner — igual que el
+  // describe `venta con artículos en dólares`, y por el mismo motivo: el
+  // `crearArticulo` de lib/ no toma `moneda`, y los fixtures fijos del
+  // `beforeAll` son todos en pesos. El `sku` se sortea para no chocar.
+  let contadorUsd = 0
+  async function articuloEnDolares(precio: Prisma.Decimal): Promise<string> {
+    contadorUsd += 1
+    const r = await owner.query(
+      `INSERT INTO articulos (id, tenant_id, sku, nombre, tipo, precio, moneda, stock, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, $2, 'iPhone de la corrección', 'PRODUCTO', $3, 'USD', 1000, now(), now())
+       RETURNING id`,
+      [tenantId, `COR-USD-${Date.now()}-${contadorUsd}`, precio.toString()],
+    )
+    return r.rows[0].id
+  }
+
+  /**
+   * El caso del feedback que originó el ciclo de USD, ya cobrado: un iPhone de
+   * US$ 300 y una remera de $ 1000 en la misma operación. Deja la venta con
+   * `total = 1000` y `totalUsd = 300`, que es lo único con lo que la mitad en
+   * dólares del invariante se puede ejercitar de verdad.
+   */
+  async function ventaMixta() {
+    const iphone = await articuloEnDolares(d('300'))
+    return crearVenta({
+      tenantId,
+      usuarioId,
+      items: [
+        { articuloId: iphone, cantidad: d('1') },
+        { articuloId: remera, cantidad: d('1') },
+      ],
+      pagos: [
+        { medio: 'EFECTIVO', moneda: 'USD', cubre: 'USD', base: d('300'), cotizacion: d('1') },
+        { medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: d('1000'), cotizacion: d('1') },
+      ],
+    })
+  }
+
+  // Los catorce casos de arriba corren todos contra ventas en pesos, así que
+  // `usd: venta.totalUsd` —la mitad en dólares de la revalidación— no estaba
+  // clavada por ninguno: cambiarla por un cero fijo los dejaba a todos en
+  // verde mientras habilitaba reemplazar los pagos de una venta en dólares por
+  // un juego que no cubre el total en dólares. Plata ya cobrada, y justo el
+  // escenario que originó el ciclo de USD.
+  it('corrige una venta mixta repartiendo de nuevo entre las DOS monedas', async () => {
+    const { id } = await ventaMixta()
+
+    // El reparto del feedback: US$ 200 en billetes y los otros US$ 100 con
+    // pesos a 1485, más la remera aparte. Nada divide: la base del pago que
+    // cubre dólares se tipea EN DÓLARES y el servidor multiplica.
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [
+        { medio: 'EFECTIVO', moneda: 'USD', cubre: 'USD', base: d('200'), cotizacion: d('1') },
+        {
+          medio: 'TRANSFERENCIA',
+          moneda: 'ARS',
+          cubre: 'USD',
+          base: d('100'),
+          cotizacion: d('1485'),
+        },
+        { medio: 'TARJETA_DEBITO', moneda: 'ARS', cubre: 'ARS', base: d('1000'), cotizacion: d('1') },
+      ],
+    })
+
+    const pagos = await pagosDe(id)
+    expect(pagos).toHaveLength(3)
+    const porMedio = new Map(pagos.map((p) => [p.medio, p]))
+    expect(porMedio.get('EFECTIVO')!.monto.toString()).toBe('200')
+    expect(porMedio.get('EFECTIVO')!.cubre).toBe('USD')
+    // Los pesos entregados por los US$ 100: 100 × 1485, multiplicado por el
+    // servidor y no tipeado por la pantalla.
+    expect(porMedio.get('TRANSFERENCIA')!.monto.toString()).toBe('148500')
+    expect(porMedio.get('TRANSFERENCIA')!.cubre).toBe('USD')
+    expect(porMedio.get('TRANSFERENCIA')!.cotizacion.toString()).toBe('1485')
+    expect(porMedio.get('TARJETA_DEBITO')!.monto.toString()).toBe('1000')
+    expect(porMedio.get('TARJETA_DEBITO')!.cubre).toBe('ARS')
+
+    // Y la mercadería sigue diciendo lo mismo en las dos monedas.
+    const venta = await prismaParaTenant(tenantId).venta.findUniqueOrThrow({ where: { id } })
+    expect(venta.total.toString()).toBe('1000')
+    expect(venta.totalUsd.toString()).toBe('300')
+  })
+
+  it('rechaza un juego que cierra en pesos pero NO en dólares', async () => {
+    const { id } = await ventaMixta()
+
+    await expect(
+      reemplazarPagos({
+        tenantId,
+        ventaId: id,
+        usuarioId,
+        pagos: [
+          // 250 y no 300: los pesos cierran, los dólares no. Una venta que
+          // cierra en una sola moneda es tan inválida como la que no cierra a
+          // secas.
+          { medio: 'EFECTIVO', moneda: 'USD', cubre: 'USD', base: d('250'), cotizacion: d('1') },
+          { medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: d('1000'), cotizacion: d('1') },
+        ],
+      }),
+    ).rejects.toMatchObject({ codigo: 'PAGOS_NO_CIERRAN' })
+
+    // Y la venta quedó como estaba, con sus dos pagos originales.
+    const pagos = await pagosDe(id)
+    expect(pagos).toHaveLength(2)
+    expect(pagos.map((p) => p.monto.toString()).sort()).toEqual(['1000', '300'])
+    expect(await edicionesDe(id)).toHaveLength(0)
+  })
+
+  // `reemplazarPagos` es el TERCER escritor de una FK `usuario_id` —después de
+  // `crearVenta` y `anularVenta`, que tienen su caso equivalente— y las FK de
+  // Postgres no ven RLS: sus triggers corren como dueño de la tabla, exento
+  // mientras no haya FORCE ROW LEVEL SECURITY. Sin este caso, borrar la línea
+  // de `exigirUsuario` pasaba los catorce de arriba y escribía un `usuario_id`
+  // ajeno en `ediciones_venta`, que es `onDelete: Restrict`: el otro negocio
+  // queda sin poder dar de baja a su empleado y sin diagnóstico posible desde
+  // adentro. El porqué completo está en `lib/ventas/pertenencia.ts`.
+  it('rechaza un usuarioId de otro tenant sin tocar la venta ni dejar bitácora', async () => {
+    const { id } = await ventaDeMil()
+
+    await expect(
+      reemplazarPagos({
+        tenantId,
+        ventaId: id,
+        usuarioId: usuarioAjeno,
+        pagos: [{ medio: 'TRANSFERENCIA', moneda: 'ARS', base: d('1000'), cotizacion: d('1') }],
+      }),
+    ).rejects.toMatchObject({ codigo: 'USUARIO_INEXISTENTE' })
+
+    // El chequeo va ANTES de crear la edición justamente para esto: si fuera
+    // después, la fila ya habría quedado escrita con la FK ajena.
+    expect(await edicionesDe(id)).toHaveLength(0)
+    const pagos = await pagosDe(id)
+    expect(pagos).toHaveLength(1)
+    expect(pagos[0].medio).toBe('EFECTIVO')
+
+    // Y la consecuencia se mide donde de verdad duele, leyendo como OWNER —que
+    // no pasa por RLS—: ninguna edición, de ninguna venta, quedó apuntando al
+    // empleado del otro negocio. Desde adentro del tenant esa fila sería
+    // invisible, que es exactamente lo que hace indiagnosticable el daño.
+    //
+    // Se mide así y no borrando al usuario ajeno, como hace el caso gemelo de
+    // `crearVenta` con `clienteAjeno`: ahí el motor rechaza antes de crear
+    // nada, y acá el caso de la venta ajena, más arriba, dejó a propósito una
+    // venta del otro negocio apuntándole — el `DELETE` fallaría por esa otra
+    // FK y el caso mediría cualquier cosa menos lo suyo.
+    const apuntando = await owner.query(
+      'SELECT count(*)::int AS n FROM ediciones_venta WHERE usuario_id = $1',
+      [usuarioAjeno],
+    )
+    expect(apuntando.rows[0].n).toBe(0)
+  })
+
   it('no toca el stock, ni los movimientos, ni los ítems, ni el número de venta', async () => {
     const { id, numero } = await ventaDeMil()
     const stockAntes = await stockDe(remera)
