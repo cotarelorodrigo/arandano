@@ -1921,6 +1921,87 @@ describe('el detalle de venta muestra los IMEI (Task 10)', () => {
   })
 })
 
+/**
+ * La otra mitad de la tolerancia del motor a un plan dado de baja.
+ *
+ * El motor deja corregir una venta que ya usaba ese plan, pero si el diálogo
+ * no lo tiene en su lista, el `Select` de esa fila queda EN BLANCO — se lee
+ * como "sin plan", que es peor que el error que la tolerancia sacó: guardar
+ * desde ahí reescribiría el pago a precio de lista. Por eso `datosDelDetalle`
+ * le suma a los vigentes exactamente los planes que ESTA venta usó, y ninguno
+ * más.
+ */
+describe('el diálogo de corrección ofrece los planes que la venta usó, aunque estén dados de baja', () => {
+  async function ventaConPlan(nombre: string) {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: `${nombre} ${Date.now()}`,
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('40'),
+    })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('1000'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+      ],
+    })
+    return { plan, ventaId: id }
+  }
+
+  it('el plan dado de baja que la venta usó viaja igual, y marcado como dado de baja', async () => {
+    const { plan, ventaId } = await ventaConPlan('Crédito retirado del detalle')
+    await desactivarPlan({ tenantId, id: plan.id })
+
+    const datos = await datosDelDetalle(tenantId, ventaId)
+    const ofrecido = datos!.correccion.planes.find((p) => p.id === plan.id)
+    expect(ofrecido).toBeDefined()
+    // Marcado, para que quien corrige entienda por qué ese no está entre los
+    // demás — el diálogo lo dibuja con `rotuloDePlanEnElSelector`.
+    expect(ofrecido!.desactivadoEn).not.toBeNull()
+  })
+
+  it('un plan dado de baja que esta venta NO usó no se ofrece', async () => {
+    const { ventaId } = await ventaConPlan('Crédito de la venta')
+    const ajeno = await crearPlan({
+      tenantId,
+      nombre: `Crédito retirado de otra venta ${Date.now()}`,
+      medio: 'TARJETA_CREDITO',
+      cuotas: 6,
+      recargoPorcentaje: d('50'),
+    })
+    await desactivarPlan({ tenantId, id: ajeno.id })
+
+    const datos = await datosDelDetalle(tenantId, ventaId)
+    // El contraste que hace significativo al caso de arriba: sin esto, traer
+    // TODOS los planes dados de baja daría el mismo verde, y el mostrador
+    // volvería a poder elegir un plan que el local retiró.
+    expect(datos!.correccion.planes.some((p) => p.id === ajeno.id)).toBe(false)
+  })
+
+  it('los planes vigentes se siguen ofreciendo todos', async () => {
+    const { ventaId } = await ventaConPlan('Crédito vigente de la venta')
+    const vigente = await crearPlan({
+      tenantId,
+      nombre: `Contado vigente ${Date.now()}`,
+      medio: 'EFECTIVO',
+      cuotas: 1,
+      recargoPorcentaje: d('-10'),
+    })
+
+    const datos = await datosDelDetalle(tenantId, ventaId)
+    expect(datos!.correccion.planes.some((p) => p.id === vigente.id)).toBe(true)
+  })
+})
+
 describe('venta con artículos en dólares', () => {
   // Alta cruda como owner, igual que el `beforeAll` de arriba: `crearArticulo`
   // de lib/inventario/articulos.ts recibe `moneda` recién en la Task 6, y
@@ -3162,6 +3243,174 @@ describe('reemplazarPagos (corregir cómo se pagó una venta ya cobrada)', () =>
     expect(pagos[0].porcentaje?.toString()).toBe('50')
     expect(pagos[0].recargo.toString()).toBe('500')
     expect(pagos[0].monto.toString()).toBe('1500')
+  })
+
+  // La baja de un plan NO puede volver incorregible una venta que ya lo usaba.
+  //
+  // `resolverPagosConRecargo` trata `desactivadoEn` como inexistente, y para
+  // COBRAR eso es correcto: un plan dado de baja no se reactiva, se elige
+  // otro. La corrección revalida el juego ENTERO, así que ese mismo plan
+  // —que nadie está eligiendo de nuevo, viene de la venta— se vuelve a
+  // resolver y hacía fallar la operación completa: corregir el medio del pago
+  // en EFECTIVO de una venta de marzo devolvía "Ese plan de pago ya no está
+  // disponible. Recargá la pantalla y elegí otro.", y ni recargar ni elegir
+  // otro son salidas — elegir otro reescribiría lo que ese pago dice que fue.
+  //
+  // Es la misma decisión que este ciclo ya tomó para el PORCENTAJE ("un plan
+  // que la venta ya tenía no es un cobro nuevo"), aplicada a la otra columna
+  // del mismo plan, y la misma que la pantalla ya tomaba al MOSTRARLO.
+  it('un plan dado de baja no impide corregir OTRO pago de la venta que lo usaba', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: `Crédito que el local retira ${Date.now()}`,
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('40'),
+    })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('600'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+        { medio: 'EFECTIVO', moneda: 'ARS', base: d('400'), cotizacion: d('1') },
+      ],
+    })
+
+    // El local retira el plan: deja de ofrecerlo de hoy en adelante.
+    await desactivarPlan({ tenantId, id: plan.id })
+
+    // Y alguien corrige el medio del pago en EFECTIVO, que no tiene nada que
+    // ver con el plan. El pago de crédito viaja igual, con el mismo planId,
+    // porque la corrección manda el juego entero.
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('600'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+        { medio: 'TRANSFERENCIA', moneda: 'ARS', base: d('400'), cotizacion: d('1') },
+      ],
+    })
+
+    const pagos = await pagosDe(id)
+    expect(pagos.map((p) => p.medio).sort()).toEqual(['TARJETA_CREDITO', 'TRANSFERENCIA'])
+    // Y el pago del plan dado de baja quedó exactamente como estaba: su plan,
+    // su porcentaje congelado y su recargo.
+    const credito = pagos.find((p) => p.medio === 'TARJETA_CREDITO')!
+    expect(credito.planDePagoId).toBe(plan.id)
+    expect(credito.porcentaje?.toString()).toBe('40')
+    expect(credito.recargo.toString()).toBe('240')
+  })
+
+  // La otra mitad, sin la cual la de arriba sería "tolerar cualquier plan dado
+  // de baja": uno que la venta NO tenía sí es un cobro nuevo, y ahí la regla
+  // de `crearVenta` sigue valiendo entera.
+  it('un plan dado de baja que la venta NO tenía se sigue rechazando', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: `Crédito ajeno a esta venta ${Date.now()}`,
+      medio: 'TARJETA_CREDITO',
+      cuotas: 6,
+      recargoPorcentaje: d('50'),
+    })
+    await desactivarPlan({ tenantId, id: plan.id })
+    // La venta se cobró en efectivo: nunca tuvo este plan ni ningún otro.
+    const { id } = await ventaDeMil()
+
+    await expect(
+      reemplazarPagos({
+        tenantId,
+        ventaId: id,
+        usuarioId,
+        pagos: [
+          {
+            medio: 'TARJETA_CREDITO',
+            moneda: 'ARS',
+            base: d('1000'),
+            cotizacion: d('1'),
+            planId: plan.id,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ codigo: 'PLAN_INEXISTENTE' })
+
+    // Y la venta quedó como estaba.
+    const pagos = await pagosDe(id)
+    expect(pagos).toHaveLength(1)
+    expect(pagos[0].medio).toBe('EFECTIVO')
+    expect(await edicionesDe(id)).toHaveLength(0)
+  })
+
+  // Y la tolerancia es del plan que la venta TRAÍA, no de las claves de
+  // `porcentajesPrevios`: ese mapa excluye los pagos cobrados antes de que
+  // existiera `Pago.porcentaje`, así que derivarla de ahí dejaba sin
+  // tolerancia justo a las ventas más viejas, que son las que más chance
+  // tienen de haber usado un plan que el local ya retiró.
+  it('tolera el plan de un pago viejo aunque su porcentaje esté en NULL', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: `Crédito de antes del porcentaje ${Date.now()}`,
+      medio: 'TARJETA_CREDITO',
+      cuotas: 3,
+      recargoPorcentaje: d('25'),
+    })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('600'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+        { medio: 'EFECTIVO', moneda: 'ARS', base: d('400'), cotizacion: d('1') },
+      ],
+    })
+    // Como lo dejaba el cobro antes de la Task 2: el recargo congelado, el
+    // porcentaje en NULL. Se escribe como owner porque `pagos` es append-only
+    // para la app y esta fila simula un estado anterior al ciclo.
+    await owner.query(
+      `UPDATE pagos SET porcentaje = NULL WHERE venta_id = $1 AND medio = 'TARJETA_CREDITO'`,
+      [id],
+    )
+    await desactivarPlan({ tenantId, id: plan.id })
+
+    await reemplazarPagos({
+      tenantId,
+      ventaId: id,
+      usuarioId,
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('600'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+        { medio: 'TRANSFERENCIA', moneda: 'ARS', base: d('400'), cotizacion: d('1') },
+      ],
+    })
+
+    const credito = (await pagosDe(id)).find((p) => p.medio === 'TARJETA_CREDITO')!
+    expect(credito.planDePagoId).toBe(plan.id)
+    // Sin porcentaje previo cae al de HOY, que es lo que el diálogo avisa.
+    expect(credito.porcentaje?.toString()).toBe('25')
   })
 
   it('recalcula el caché Venta.recargo con el juego nuevo', async () => {

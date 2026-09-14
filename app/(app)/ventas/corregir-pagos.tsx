@@ -67,7 +67,7 @@ const SIN_PLAN = 'sin-plan'
  * Sale del MISMO espejo en enteros que usa `/vender`
  * (`totalesDePagosEnCentavos`, `lib/ventas/centavos.ts`), que a su vez espeja
  * caso por caso a `totalesDePagos` del motor: así el diálogo **no puede** decir
- * que cierra mientras el servidor lo rechaza con `PAGOS_NO_CIERREN`. Las dos
+ * que cierra mientras el servidor lo rechaza con `PAGOS_NO_CIERRAN`. Las dos
  * monedas se miden por separado y no se compensan, igual que en
  * `exigirQueCierren`: una venta que cierra en pesos y no en dólares es tan
  * inválida como la que no cierra a secas.
@@ -220,6 +220,26 @@ export function planesDeLaFila(
 }
 
 /**
+ * Cómo se lee un plan en el selector de una fila.
+ *
+ * Los planes que llegan acá son los vigentes MÁS los que ESTA venta ya usaba,
+ * aunque el local los haya dado de baja (`datosDelDetalle`,
+ * `app/(app)/ventas/[id]/page.tsx`). Los segundos tienen que estar —sin ellos
+ * el `Select` de esa fila quedaría en blanco, se leería como "sin plan", y
+ * guardar desde ahí reescribiría el pago a precio de lista— pero sin marca
+ * serían indistinguibles de los otros, y quien corrige no entendería por qué
+ * ese no aparece en el resto del local ni se lo puede elegir en otra venta.
+ *
+ * No es lo mismo que `rotuloDePlan` (`app/(app)/ventas/[id]/page.tsx`), que
+ * agrega las cuotas: ahí se MUESTRA un pago ya guardado, y acá se ELIGE con
+ * qué cobrar — lo único que hace falta decir de más es lo que este plan tiene
+ * de raro.
+ */
+export function rotuloDePlanEnElSelector(plan: PlanVisible): string {
+  return plan.desactivadoEn ? `${plan.nombre} (dado de baja)` : plan.nombre
+}
+
+/**
  * El disparador del diálogo, con el diálogo adentro.
  *
  * **Una sola copia sirve a los dos anchos.** El encabezado de la card "Cómo se
@@ -247,9 +267,11 @@ export function CorregirPagos({
   totalArs: string
   totalUsd: string
   pagos: PagoParaCorregir[]
-  /** Los planes VIGENTES del local. Un plan dado de baja no vuelve para cobrar
-   *  —el motor lo rechaza igual que a uno inexistente—, así que tampoco se
-   *  ofrece. */
+  /** Los planes vigentes del local MÁS los que esta venta ya usaba, aunque
+   *  estén dados de baja — exactamente lo que `reemplazarPagos` acepta. Un plan
+   *  dado de baja que la venta no traía no vuelve para cobrar: el motor lo
+   *  rechaza igual que a uno inexistente, así que tampoco se ofrece. Los que sí
+   *  vienen van marcados (`rotuloDePlanEnElSelector`). */
   planes: PlanVisible[]
   hayPagoSinPorcentaje: boolean
 }) {
@@ -637,7 +659,7 @@ function FilaDeCorreccion({
             <SelectItem value={SIN_PLAN}>Precio de lista</SelectItem>
             {planesDelMedio.map((p) => (
               <SelectItem key={p.id} value={p.id}>
-                {p.nombre}
+                {rotuloDePlanEnElSelector(p)}
               </SelectItem>
             ))}
           </SelectContent>

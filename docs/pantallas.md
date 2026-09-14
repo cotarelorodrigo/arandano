@@ -1027,7 +1027,7 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 - **El chip de faltante del diálogo sale del MISMO espejo en enteros que usa
   `/vender`** (`lib/ventas/centavos.ts`, que `centavos.test.ts` compara caso
   por caso contra la aritmética del motor), así que el diálogo **no puede**
-  decir que cierra mientras el servidor lo rechaza con `PAGOS_NO_CIERREN`. Y el
+  decir que cierra mientras el servidor lo rechaza con `PAGOS_NO_CIERRAN`. Y el
   texto del chip y la guarda del botón salen de **una sola función**
   (`textoDelChip`): con un predicado aparte para el botón, los dos pueden
   terminar diciendo cosas distintas, que en una pantalla de plata significa un
@@ -1111,6 +1111,28 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
   la fila sigue estando: una venta de marzo tiene que seguir diciendo con qué
   plan se cobró aunque el local ya no lo ofrezca hoy. Confirmado contra la
   base en `test/ventas.test.ts`.
+- **Y el diálogo de corrección tampoco lo filtra, por la misma razón llevada
+  un paso más lejos: un plan dado de baja no impide CORREGIR la venta que ya
+  lo usaba.** La corrección revalida el juego entero, así que el pago del plan
+  se vuelve a resolver aunque nadie lo esté tocando; con la regla de
+  `crearVenta` a secas —donde desactivado vale por inexistente, y ahí es
+  correcto: un plan retirado no se reactiva para un cobro nuevo— retirar
+  "Crédito 12 cuotas" volvía **incorregible toda venta que lo hubiera usado**,
+  incluso para cambiarle el medio al pago en efectivo, con un mensaje sin
+  salida ("recargá y elegí otro": recargar no cambia nada, y elegir otro
+  reescribiría lo que ese pago dice que fue). Son **dos mitades que tienen que
+  moverse juntas**: `reemplazarPagos` le pasa a `resolverPagosConRecargo` los
+  `planId` que la venta ya traía (`planesDeLaVenta`, sacado de los pagos vivos
+  y **no** de las claves de `porcentajesPrevios`, que deja afuera los pagos con
+  `porcentaje` NULL), y `datosDelDetalle` le suma a los planes vigentes
+  exactamente esos y ninguno más — sin eso el `Select` de esa fila quedaría en
+  blanco, se leería como "sin plan", y guardar desde ahí reescribiría el pago a
+  precio de lista. Van marcados con `(dado de baja)`
+  (`rotuloDePlanEnElSelector`), para que quien corrige entienda por qué ése no
+  está entre los demás. Un plan dado de baja que la venta **no** tenía se sigue
+  rechazando con `PLAN_INEXISTENTE`, y tampoco se ofrece: ahí sí es un cobro
+  nuevo. Es la misma decisión que este ciclo ya había tomado para el
+  PORCENTAJE, aplicada a la otra columna del mismo plan.
 - **En el teléfono, "Plan" no es una columna: se funde en la línea de meta del
   pago**, delante de la moneda. Es el mismo mecanismo que ya usan Moneda y
   Cotización en esa tabla ("el dato no desaparece, se funde en la meta"), y va

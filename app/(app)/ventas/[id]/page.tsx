@@ -1191,12 +1191,26 @@ export async function datosDelDetalle(tenantId: string, ventaId: string): Promis
 
   // DESPUÉS del `findUnique` y no en paralelo: con una venta que no existe
   // —un id tipeado en la barra de direcciones— esta consulta no le sirve a
-  // nadie, y la pantalla ya dispara varias. Los planes VIGENTES y no todos:
-  // un plan dado de baja no se puede volver a elegir (el motor lo rechaza
-  // igual que a uno inexistente), así que ofrecerlo sería ofrecer un error.
+  // nadie, y la pantalla ya dispara varias.
+  //
+  // Los vigentes MÁS los que ESTA venta ya usó, y ninguno otro. Un plan dado
+  // de baja no se puede volver a elegir para un cobro nuevo —el motor lo
+  // rechaza igual que a uno inexistente—, así que ofrecerlo sería ofrecer un
+  // error; pero el que la venta ya traía sí lo acepta `reemplazarPagos`
+  // (`planesDeLaVenta`, lib/ventas/pagos.ts), y si no estuviera en esta lista
+  // el `Select` de esa fila quedaría EN BLANCO: se leería como "sin plan", y
+  // guardar desde ahí reescribiría el pago a precio de lista. Las dos mitades
+  // son la misma regla de siempre —ofrecer exactamente lo que el servidor
+  // acepta—, y el diálogo los dibuja marcados (`rotuloDePlanEnElSelector`).
+  //
   // El plan con el que se cobró un pago viejo se sigue MOSTRANDO igual, por
   // el `plan: { select: … }` de arriba, que no filtra por baja.
-  const planes = await planesDelTenant(tenantId)
+  const planesDeLaVenta = new Set(
+    venta.pagos.flatMap((p) => (p.planDePagoId !== null ? [p.planDePagoId] : [])),
+  )
+  const planes = (await planesDelTenant(tenantId, { incluirDesactivados: true })).filter(
+    (p) => p.desactivadoEn === null || planesDeLaVenta.has(p.id),
+  )
 
   const resumen = filasDeResumen(venta)
   const anulada = venta.anuladaEn !== null

@@ -114,7 +114,21 @@ export async function reemplazarPagos(entrada: {
         ),
       )
 
-      const resueltos = await resolverPagosConRecargo(tx, normalizados, porcentajesPrevios)
+      // Los planes que la venta YA traía, tolerados aunque el local los haya
+      // dado de baja desde entonces. Sale de `vivos` y NO de las claves de
+      // `porcentajesPrevios`: ese mapa deja afuera los pagos con `porcentaje`
+      // NULL, así que derivarlo de ahí dejaría sin tolerancia justo a las
+      // ventas cobradas antes de que esa columna existiera.
+      const planesDeLaVenta = new Set(
+        vivos.flatMap((p) => (p.planDePagoId !== null ? [p.planDePagoId] : [])),
+      )
+
+      const resueltos = await resolverPagosConRecargo(
+        tx,
+        normalizados,
+        porcentajesPrevios,
+        planesDeLaVenta,
+      )
       // Contra los totales YA GUARDADOS y no contra los ítems recalculados: la
       // mercadería no se toca, y recalcularla abriría la puerta a que una
       // corrección de pagos mueva el total sin que nadie lo haya pedido — si un

@@ -7,6 +7,7 @@
 // la regla de plata sea verificable sin abrir un navegador, que es exactamente
 // el punto ciego que este repo viene señalando ciclo a ciclo.
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { dineroEnCentavos, cotizacionEnDiezMilesimas } from '@/lib/ventas/centavos'
 import { TOPE_NOTA_DE_CORRECCION } from '@/lib/ventas/correccion'
@@ -21,6 +22,7 @@ import {
   pagoNuevo,
   aCobrarEnCentavos,
   planesDeLaFila,
+  rotuloDePlanEnElSelector,
   CuerpoDeCorreccion,
   type PagoParaCorregir,
 } from './corregir-pagos'
@@ -267,6 +269,26 @@ describe('planesDeLaFila: no ofrecer lo que el servidor va a rechazar', () => {
   })
 })
 
+describe('rotuloDePlanEnElSelector: decir por qué ese plan no está entre los demás', () => {
+  const VIGENTE: PlanVisible = {
+    id: 'p1', nombre: 'Crédito 12 cuotas', medio: 'TARJETA_CREDITO', cuotas: 12,
+    porcentaje: '40', orden: 1, desactivadoEn: null,
+  }
+  const RETIRADO: PlanVisible = { ...VIGENTE, id: 'p2', desactivadoEn: new Date('2026-03-01') }
+
+  it('un plan vigente se ofrece con su nombre y nada más', () => {
+    expect(rotuloDePlanEnElSelector(VIGENTE)).toBe('Crédito 12 cuotas')
+  })
+
+  // El único plan dado de baja que esta pantalla ofrece es el que la venta YA
+  // usaba (`datosDelDetalle` no trae ningún otro). Sin la marca, se leería
+  // como un plan cualquiera y quien corrige no entendería por qué no está
+  // entre los demás — ni por qué no se lo puede elegir en otra venta.
+  it('un plan dado de baja dice que lo está', () => {
+    expect(rotuloDePlanEnElSelector(RETIRADO)).toBe('Crédito 12 cuotas (dado de baja)')
+  })
+})
+
 /**
  * El CUERPO del diálogo se renderiza suelto y no adentro de `<CorregirPagos>`,
  * por el mismo motivo que `CamposDePlan` en `/formas-de-pago` y
@@ -360,5 +382,33 @@ describe('CuerpoDeCorreccion', () => {
     const html = renderCuerpo()
     expect(html).toContain('Guardar la corrección')
     expect(html).not.toMatch(SUBMIT_APAGADO)
+  })
+
+})
+
+/**
+ * Que el rótulo esté BIEN no sirve de nada si el `SelectItem` no lo usa, y
+ * ése es exactamente el modo de falla de las dos copias que este repo ya pagó.
+ * Pero `SelectContent` de Radix vive en un portal que sólo se monta con el
+ * selector ABIERTO, así que `renderToStaticMarkup` no ve ni un solo ítem
+ * —comprobado: el HTML del cuerpo trae los tres `SelectTrigger` y ningún
+ * nombre de plan—, y sin jsdom no hay forma de abrirlo.
+ *
+ * Se lee el FUENTE, entonces, que es el mismo recurso con el que
+ * `app/(app)/ventas/[id]/page.test.tsx` ata `rotuloDePlan(p.plan)` a la tabla
+ * "Cómo se pagó" de al lado.
+ */
+describe('el selector de plan usa el rótulo, no el nombre pelado', () => {
+  const fuente = readFileSync('app/(app)/ventas/corregir-pagos.tsx', 'utf8')
+
+  it('el SelectItem de cada plan lo dibuja con rotuloDePlanEnElSelector', () => {
+    expect(fuente).toContain('{rotuloDePlanEnElSelector(p)}')
+  })
+
+  // La otra dirección: sin esto, dejar el `{p.nombre}` viejo AL LADO del
+  // rótulo nuevo pasaría el caso de arriba con el plan dado de baja
+  // apareciendo sin marca.
+  it('y ya no lo dibuja con el nombre pelado', () => {
+    expect(fuente).not.toContain('{p.nombre}')
   })
 })

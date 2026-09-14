@@ -103,11 +103,25 @@ export function normalizarPagos(pagos: PagoDeVenta[]): PagoNormalizado[] {
  *
  * Va como parámetro explícito y no como una rama adentro de la función: el
  * llamador es quien sabe si está cobrando o corrigiendo.
+ *
+ * **`planesDeLaVenta` es lo mismo aplicado a la VIGENCIA**, y por el mismo
+ * motivo. Es el conjunto de `planId` que la venta ya traía; `crearVenta` no lo
+ * pasa y `reemplazarPagos` sí. Un plan dado de baja que está ahí adentro se
+ * resuelve igual —la corrección revalida el juego entero, así que ese pago se
+ * vuelve a resolver aunque nadie lo esté tocando—, y uno que no está se sigue
+ * rechazando, porque ahí sí es un cobro nuevo.
+ *
+ * **Es un conjunto aparte y NO las claves de `porcentajesPrevios`.** Ese mapa
+ * excluye los pagos con `porcentaje` NULL —los cobrados antes de que la
+ * columna existiera—, así que reusarlo dejaría sin tolerancia justo a las
+ * ventas más viejas, que son las que más chance tienen de haber usado un plan
+ * que el local ya retiró.
  */
 export async function resolverPagosConRecargo(
   tx: ClienteTx,
   pagos: PagoNormalizado[],
   porcentajesPrevios?: ReadonlyMap<string, Prisma.Decimal>,
+  planesDeLaVenta?: ReadonlySet<string>,
 ): Promise<PagoResuelto[]> {
   const idsDePlan = [...new Set(pagos.flatMap((p) => (p.planId ? [p.planId] : [])))]
   const planes = idsDePlan.length
@@ -123,7 +137,15 @@ export async function resolverPagosConRecargo(
     // Desactivado se trata como inexistente A PROPÓSITO, al revés que con los
     // artículos: un plan dado de baja no se reactiva para cobrar una venta, se
     // elige otro. La distinción no le cambiaría la salida a nadie.
-    if (!plan || plan.desactivadoEn) {
+    //
+    // **Salvo que la venta ya lo tuviera** (`planesDeLaVenta`, que sólo pasa la
+    // corrección). Ahí no hay ningún cobro nuevo: el pago ya existe con ese
+    // plan, nadie lo está eligiendo de vuelta, y rechazarlo volvería
+    // incorregible toda venta que lo haya usado — incluso para corregir OTRO
+    // pago, porque la corrección revalida el juego entero. El mensaje de abajo
+    // encima no tendría salida: recargar no cambia nada y "elegí otro"
+    // reescribiría lo que ese pago dice que fue.
+    if (!plan || (plan.desactivadoEn && !planesDeLaVenta?.has(p.planId))) {
       // Sin el UUID en el mensaje: `traducir` (app/(app)/vender/acciones.ts)
       // muestra `e.message` tal cual en el cartel del mostrador, y un id
       // opaco no le dice nada a quien está cobrando ni le indica qué hacer.
