@@ -345,6 +345,7 @@ export async function crearVenta(
               monto: p.monto,
               cotizacion: p.cotizacion,
               planDePagoId: p.planId,
+              porcentaje: p.porcentaje,
               recargo: p.recargo,
             })),
           },

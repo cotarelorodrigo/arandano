@@ -710,6 +710,25 @@ model Pago {
   // Con qué plan se cobró. NULL = a precio de lista, que es exactamente lo que
   // son todos los pagos que ya existen: esta columna no necesita backfill.
   planDePagoId String?   @map("plan_de_pago_id") @db.Uuid
+  /// El porcentaje del plan con el que se cobró este pago, congelado igual que
+  /// `recargo` y por el mismo motivo, un escalón más arriba: `recargo` dice
+  /// cuántos pesos fueron recargo, y esto dice de dónde salieron.
+  ///
+  /// Hace falta desde que una venta ya cobrada puede CORREGIR sus pagos. Sin
+  /// esta columna, corregir el medio de un pago obliga a releer
+  /// `PlanDePago.recargoPorcentaje` —el de HOY— para todos los demás pagos de
+  /// la venta, así que una venta de marzo cobrada al 40 % pasaría a decir que
+  /// cobró el 45 % porque el dueño subió el plan en julio. Eso contradice de
+  /// frente lo que el comentario de `recargo` promete: que un plan editado no
+  /// puede cambiar lo que una venta vieja dice que cobró.
+  ///
+  /// Y no se puede derivar: `monto` es base más recargo, así que el porcentaje
+  /// saldría de `recargo / (monto − recargo) × 100` — una DIVISIÓN, que es lo
+  /// que este motor tiene prohibido (ver `aporteDePago` en totales.ts).
+  ///
+  /// Nullable y sin backfill: `NULL` es "se cobró antes de que esto existiera".
+  /// Ahí la corrección cae al porcentaje de hoy, y el diálogo lo dice.
+  porcentaje   Decimal?  @db.Decimal(6, 3)
   // Cuánto de este pago fue recargo — o descuento, en negativo. En PESOS
   // siempre, porque un pago en dólares no puede llevar plan (ver crear.ts).
   // CONGELADO, por lo mismo que VentaItem congela precio y descripción teniendo

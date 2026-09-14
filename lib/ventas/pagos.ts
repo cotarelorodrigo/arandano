@@ -41,6 +41,8 @@ export type PagoDeVenta = {
 export type PagoNormalizado = Omit<PagoDeVenta, 'cubre'> & { cubre: Moneda }
 
 export type PagoResuelto = PagoNormalizado & {
+  /** El porcentaje con el que se calculó `recargo`. `null` sin plan. */
+  porcentaje: Prisma.Decimal | null
   recargo: Prisma.Decimal
   monto: Prisma.Decimal
 }
@@ -91,10 +93,21 @@ export function normalizarPagos(pagos: PagoDeVenta[]): PagoNormalizado[] {
  * RLS ya filtra por tenant, así que el plan de otro local simplemente no
  * aparece y cae en `PLAN_INEXISTENTE`, igual que uno inventado: son la misma
  * situación para quien está cobrando.
+ *
+ * **`porcentajesPrevios` es lo único que distingue un cobro de una
+ * corrección.** Es el mapa `planId → porcentaje` que la venta YA tenía:
+ * `crearVenta` no lo pasa —una venta nueva no tiene nada viejo que respetar— y
+ * `reemplazarPagos` sí. Un plan que la venta ya usaba conserva su porcentaje
+ * aunque el plan haya cambiado desde entonces; uno que no estaba entra con el
+ * de hoy, porque ahí sí es un cobro nuevo.
+ *
+ * Va como parámetro explícito y no como una rama adentro de la función: el
+ * llamador es quien sabe si está cobrando o corrigiendo.
  */
 export async function resolverPagosConRecargo(
   tx: ClienteTx,
   pagos: PagoNormalizado[],
+  porcentajesPrevios?: ReadonlyMap<string, Prisma.Decimal>,
 ): Promise<PagoResuelto[]> {
   const idsDePlan = [...new Set(pagos.flatMap((p) => (p.planId ? [p.planId] : [])))]
   const planes = idsDePlan.length
@@ -104,7 +117,7 @@ export async function resolverPagosConRecargo(
 
   return pagos.map((p) => {
     if (p.planId === undefined) {
-      return { ...p, recargo: new Prisma.Decimal(0), monto: montoEntregado(p) }
+      return { ...p, porcentaje: null, recargo: new Prisma.Decimal(0), monto: montoEntregado(p) }
     }
     const plan = planPorId.get(p.planId)
     // Desactivado se trata como inexistente A PROPÓSITO, al revés que con los
@@ -142,9 +155,10 @@ export async function resolverPagosConRecargo(
         'un pago con plan tiene que entregarse en pesos: el recargo va sobre la parte en pesos',
       )
     }
+    const porcentaje = porcentajesPrevios?.get(p.planId) ?? plan.recargoPorcentaje
     const enPesos = montoEntregado(p)
-    const recargo = recargoDePago(enPesos, plan.recargoPorcentaje)
-    return { ...p, recargo, monto: enPesos.add(recargo) }
+    const recargo = recargoDePago(enPesos, porcentaje)
+    return { ...p, porcentaje, recargo, monto: enPesos.add(recargo) }
   })
 }
 

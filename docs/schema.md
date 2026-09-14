@@ -188,6 +188,7 @@ erDiagram
     decimal(12,2) monto
     decimal(12,4) cotizacion
     uuid plan_de_pago_id FK "opcional"
+    decimal(6,3) porcentaje "opcional"
     decimal(12,2) recargo
     timestamptz(3) creado_en
   }

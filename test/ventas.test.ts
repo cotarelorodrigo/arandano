@@ -67,6 +67,12 @@ let itemsDelPeriodo: typeof import('@/lib/dashboard/composicion').itemsDelPeriod
 // construiría el Pool antes de que este archivo setee `DATABASE_URL`.
 let datosDelDetalle: typeof import('@/app/(app)/ventas/[id]/page').datosDelDetalle
 let Detalle: typeof import('@/app/(app)/ventas/[id]/page').Detalle
+// Task 2 del ciclo de editar-venta: `resolverPagosConRecargo` es pura salvo la
+// consulta de planes, así que se prueba directo y no sólo a través de
+// `crearVenta` — es lo que permite ejercitar `porcentajesPrevios` sin tener
+// que fabricar todavía el llamador real (`reemplazarPagos`, Task futura).
+let resolverPagosConRecargo: typeof import('@/lib/ventas/pagos').resolverPagosConRecargo
+let normalizarPagos: typeof import('@/lib/ventas/pagos').normalizarPagos
 
 const d = (v: string) => new Prisma.Decimal(v)
 
@@ -157,6 +163,7 @@ beforeAll(async () => {
   ;({ metricasDelPeriodo } = await import('@/lib/dashboard/metricas'))
   ;({ itemsDelPeriodo } = await import('@/lib/dashboard/composicion'))
   ;({ datosDelDetalle, Detalle } = await import('@/app/(app)/ventas/[id]/page'))
+  ;({ resolverPagosConRecargo, normalizarPagos } = await import('@/lib/ventas/pagos'))
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -1036,6 +1043,109 @@ describe('cobrar con un plan de pago', () => {
     expect(venta.pagos[0].plan).not.toBeNull()
     expect(venta.pagos[0].plan?.nombre).toBe('Crédito 18 cuotas')
     expect(venta.pagos[0].plan?.cuotas).toBe(18)
+  })
+
+  // Task 2 del ciclo de editar-venta: `Pago.porcentaje` congela el porcentaje
+  // del plan, no sólo el recargo en pesos. Las tres primeras pruebas van
+  // directo contra `resolverPagosConRecargo`, que es pura salvo la consulta
+  // de planes — no hace falta pasar por `crearVenta` para ejercitar
+  // `porcentajesPrevios`.
+  it('resolverPagosConRecargo: un plan que la venta YA tenía conserva su porcentaje', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: 'Crédito congelado',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('45'),
+    })
+    // El plan está hoy en 45 %; la venta lo había congelado en 40 %.
+    await enTransaccionDeTenant(tenantId, async (tx) => {
+      const previos = new Map([[plan.id, d('40')]])
+      const [pago] = await resolverPagosConRecargo(
+        tx,
+        normalizarPagos([
+          {
+            medio: 'TARJETA_CREDITO',
+            moneda: 'ARS',
+            base: d('1000'),
+            cotizacion: d('1'),
+            planId: plan.id,
+          },
+        ]),
+        previos,
+      )
+      expect(pago.porcentaje?.toString()).toBe('40')
+      expect(pago.recargo.toString()).toBe('400')
+      expect(pago.monto.toString()).toBe('1400')
+    })
+  })
+
+  it('resolverPagosConRecargo: un plan que NO estaba en la venta entra con el porcentaje de hoy', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: 'Crédito de hoy',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('45'),
+    })
+    await enTransaccionDeTenant(tenantId, async (tx) => {
+      const [pago] = await resolverPagosConRecargo(
+        tx,
+        normalizarPagos([
+          {
+            medio: 'TARJETA_CREDITO',
+            moneda: 'ARS',
+            base: d('1000'),
+            cotizacion: d('1'),
+            planId: plan.id,
+          },
+        ]),
+        new Map(),
+      )
+      // El porcentaje vigente del plan, no uno viejo: sin entrada previa para
+      // este plan, es un cobro nuevo.
+      expect(pago.porcentaje?.toString()).toBe('45')
+      expect(pago.recargo.toString()).toBe('450')
+    })
+  })
+
+  it('resolverPagosConRecargo: sin plan no hay porcentaje ni recargo', async () => {
+    await enTransaccionDeTenant(tenantId, async (tx) => {
+      const [pago] = await resolverPagosConRecargo(
+        tx,
+        normalizarPagos([
+          { medio: 'EFECTIVO', moneda: 'ARS', base: d('1000'), cotizacion: d('1') },
+        ]),
+      )
+      expect(pago.porcentaje).toBeNull()
+      expect(pago.recargo.toString()).toBe('0')
+    })
+  })
+
+  it('crearVenta congela el porcentaje del plan en el pago', async () => {
+    const plan = await crearPlan({
+      tenantId,
+      nombre: 'Crédito 45',
+      medio: 'TARJETA_CREDITO',
+      cuotas: 12,
+      recargoPorcentaje: d('45'),
+    })
+    const { id } = await crearVenta({
+      tenantId,
+      usuarioId,
+      items: [{ articuloId: remera, cantidad: d('1') }],
+      pagos: [
+        {
+          medio: 'TARJETA_CREDITO',
+          moneda: 'ARS',
+          base: d('1000'),
+          cotizacion: d('1'),
+          planId: plan.id,
+        },
+      ],
+    })
+    const pagos = await prismaParaTenant(tenantId).pago.findMany({ where: { ventaId: id } })
+    expect(pagos[0].porcentaje?.toString()).toBe('45')
   })
 })
 
