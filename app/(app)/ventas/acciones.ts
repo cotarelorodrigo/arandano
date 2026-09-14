@@ -191,6 +191,19 @@ export async function corregirPagos(entrada: {
       pagos: normalizados,
     })
   } catch (e) {
+    // Un `ventaId` bien formado pero ajeno o inexistente no lo frena el
+    // guard de arriba: llega hasta acá y `reemplazarPagos` lo rechaza con
+    // `VENTA_INEXISTENTE`, cuyo mensaje lleva el uuid y "no existe en este
+    // tenant" — diagnóstico útil en el log del servidor (mismo criterio que
+    // `PLAN_INEXISTENTE` en lib/ventas/pagos.ts), pero que un cartel no puede
+    // repetir: le contaría el modelo de aislamiento a quien prueba ids. Por
+    // eso este caso, y sólo éste, se traduce a `NO_EXISTE` en vez de
+    // devolver `e.message` — el MISMO texto que ya usa el guard de arriba
+    // para el id mal formado, que es justo lo que evita que los dos caminos
+    // se puedan distinguir desde afuera.
+    if (e instanceof ErrorDeVenta && e.codigo === 'VENTA_INEXISTENTE') {
+      return { error: NO_EXISTE, aviso: null }
+    }
     if (e instanceof ErrorDeVenta) return { error: e.message, aviso: null }
     // Un importe que no es un número tira un error crudo desde el
     // constructor de `Decimal` (`decimal.js`, "[DecimalError] Invalid

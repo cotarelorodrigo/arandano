@@ -379,6 +379,11 @@ describe('corregirPagos', () => {
   const UN_PAGO = [
     { medio: 'EFECTIVO', moneda: 'ARS', cubre: 'ARS', base: '1000', cotizacion: '1', planId: null },
   ]
+  // El mismo texto que `NO_EXISTE` en acciones.ts (no se puede importar: ese
+  // archivo es 'use server' y sólo puede exportar funciones async). Una sola
+  // constante acá, para no repetir el literal entre el caso del id mal
+  // formado y el del id ajeno/inexistente — son el mismo mensaje a propósito.
+  const NO_EXISTE = 'Esa venta no existe.'
 
   // Sólo el HISTORIAL de llamadas: los `mockResolvedValue` de `sesionMock` y
   // `permisosMock` se dejan vivir de un test al otro a propósito, igual que
@@ -433,8 +438,30 @@ describe('corregirPagos', () => {
 
     const r = await corregirPagos({ ventaId: 'no-es-uuid', pagos: UN_PAGO, nota: '' })
 
-    expect(r.error).toBe('Esa venta no existe.')
+    expect(r.error).toBe(NO_EXISTE)
     expect(reemplazarPagosMock).not.toHaveBeenCalled()
+  })
+
+  // El camino que el guard de arriba NO frena: un uuid bien formado que
+  // `reemplazarPagos` rechaza por `VENTA_INEXISTENTE` (ajeno, o inventado
+  // pero con forma de uuid). Su mensaje real lleva el id y "no existe en
+  // este tenant" —diagnóstico para el log del servidor—, y eso NO puede
+  // salir por la action: le contaría el modelo de aislamiento a quien prueba
+  // ids, y además, si no se tradujera, sería distinguible del caso de arriba
+  // (id mal formado), que es justo lo que la constraint del brief prohíbe.
+  // Los dos caminos tienen que dar el MISMO texto — comparado contra la
+  // constante de este archivo, no contra un literal repetido.
+  it('un ventaId ajeno/inexistente da el MISMO mensaje que uno mal formado, sin el uuid ni el detalle del tenant', async () => {
+    permisosMock.mockResolvedValue(new Set<Permiso>(['VENTAS_EDITAR']))
+    reemplazarPagosMock.mockRejectedValueOnce(
+      new ErrorDeVenta('VENTA_INEXISTENTE', `la venta ${VENTA} no existe en este tenant`),
+    )
+
+    const ajenoOInexistente = await corregirPagos({ ventaId: VENTA, pagos: UN_PAGO, nota: '' })
+    const malFormado = await corregirPagos({ ventaId: 'no-es-uuid', pagos: UN_PAGO, nota: '' })
+
+    expect(ajenoOInexistente.error).toBe(NO_EXISTE)
+    expect(ajenoOInexistente.error).toBe(malFormado.error)
   })
 
   it('un importe que no es un número sale como aviso, no como 500', async () => {
