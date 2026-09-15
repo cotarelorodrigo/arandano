@@ -328,8 +328,14 @@ export async function crearArticulo(
       if (cantidadImeis.greaterThan(stockInicial)) {
         throw new ErrorDeInventario(
           'SERIE_CONTEO_NO_COINCIDE',
-          `el stock inicial es ${stockInicial} y llegaron ${listaImeis!.length} IMEI: el stock ` +
-            'inicial es el que manda, y no se pueden identificar equipos que no entraron',
+          // El caso que más lo dispara no es un error de conteo sino un
+          // celular dual SIM con sus dos IMEI escaneados (mundopcell,
+          // 2026-09-15): el mensaje lo nombra, porque "no se pueden identificar
+          // equipos que no entraron" no le dice nada a quien tiene UN equipo
+          // en la mano.
+          `la cantidad es ${stockInicial} y cargaste ${listaImeis!.length} IMEI. Cada equipo ` +
+            'lleva un solo IMEI: si es dual SIM, cargá sólo el primero. Si de verdad entraron ' +
+            `${listaImeis!.length} equipos, poné ${listaImeis!.length} en la cantidad`,
         )
       }
       cantidadUnidades = stockInicial
