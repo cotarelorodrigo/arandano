@@ -72,7 +72,7 @@ if (!tenant) {
 
 const bot = await prismaParaTenant(tenant.id).botDeWhatsapp.findUnique({
   where: { tenantId: tenant.id },
-  select: { aQueSeDedica: true, instrucciones: true, activo: true },
+  select: { aQueSeDedica: true, instrucciones: true, modo: true },
 })
 
 // Un texto de ejemplo cuando el local todavía no cargó el suyo: sin esto, la
@@ -107,7 +107,10 @@ console.log(`dedica:  ${aQueSeDedica || '(vacío: el bot va a decir sólo "un co
 console.log(
   `info:    ${bot?.instrucciones?.trim() ? 'la que cargó el local' : 'de ejemplo (el local no cargó la suya)'}`,
 )
-if (bot && !bot.activo) console.log('aviso:   el bot está APAGADO; esto lo corre igual, sin tocar ese estado.')
+if (bot && bot.modo !== 'TODOS') {
+  const estado = bot.modo === 'PRUEBA' ? 'EN PRUEBA' : 'APAGADO'
+  console.log(`aviso:   el bot está ${estado}; esto lo corre igual, sin tocar ese estado.`)
+}
 console.log('')
 
 for (const turno of historial) {

@@ -11,10 +11,14 @@ const respuestasDelMes = vi.fn()
 const respuestasDeLaUltimaHora = vi.fn()
 const procesarMensaje = vi.fn()
 const agendado = vi.fn()
+const buscarNumeros = vi.fn()
 
 vi.mock('@/lib/tenant/desde-request', () => ({ tenantDelRequest: () => tenantDelRequest() }))
 vi.mock('@/lib/tenant/prisma', () => ({
-  prismaParaTenant: () => ({ botDeWhatsapp: { findUnique: () => buscarBot() } }),
+  prismaParaTenant: () => ({
+    botDeWhatsapp: { findUnique: () => buscarBot() },
+    numeroDePruebaBot: { findMany: () => buscarNumeros() },
+  }),
 }))
 vi.mock('@/lib/bot/conversaciones', () => ({
   registrarEntrante: (...a: unknown[]) => registrarEntrante(...a),
@@ -61,7 +65,7 @@ const BOT_CONECTADO = {
   phoneNumberId: PHONE_ID,
   numeroVisible: '+5491166660000',
   webhookSecreto: SECRETO,
-  activo: true,
+  modo: 'TODOS',
   aQueSeDedica: 'una waflería',
   instrucciones: 'Abrimos de 9 a 18.',
   topeMensual: 1000,
@@ -80,6 +84,7 @@ beforeEach(() => {
   registrarEntrante.mockResolvedValue({ conversacionId: 'conv-fila-1', esNuevo: true })
   respuestasDelMes.mockResolvedValue(0)
   respuestasDeLaUltimaHora.mockResolvedValue(0)
+  buscarNumeros.mockResolvedValue([])
 })
 
 describe('el webhook de WhatsApp', () => {
@@ -199,8 +204,15 @@ describe('el webhook de WhatsApp', () => {
     }
 
     it('con el bot apagado guarda y calla', async () => {
-      buscarBot.mockResolvedValue({ ...BOT_CONECTADO, activo: false })
+      buscarBot.mockResolvedValue({ ...BOT_CONECTADO, modo: 'APAGADO' })
       await noContesta('BOT_APAGADO')
+    })
+
+    /** La lista se lee sólo cuando hace falta (spec, decisión 5). */
+    it('con el bot apagado no lee la lista de prueba', async () => {
+      buscarBot.mockResolvedValue({ ...BOT_CONECTADO, modo: 'APAGADO' })
+      await POST(pedido())
+      expect(buscarNumeros).not.toHaveBeenCalled()
     })
 
     it('con el tope mensual alcanzado guarda y calla', async () => {
@@ -269,5 +281,96 @@ describe('el webhook de WhatsApp', () => {
     await POST(pedido())
     expect(procesarMensaje, 'el handler ejecutó el agente en línea').not.toHaveBeenCalled()
     expect(agendado).toHaveBeenCalledTimes(1)
+  })
+
+  /**
+   * El modo prueba, en las dos direcciones: un caso que sólo afirmara que el
+   * cliente real no recibe respuesta pasaría igual con el bot apagado para
+   * todos.
+   */
+  describe('el modo prueba', () => {
+    // El waId del CUERPO es +5491155550000.
+    const EL_QUE_ESCRIBE = { digitos: '1155550000' }
+    const OTRO = { digitos: '1199998888' }
+
+    it('le contesta a un número de la lista', async () => {
+      buscarBot.mockResolvedValue({ ...BOT_CONECTADO, modo: 'PRUEBA' })
+      buscarNumeros.mockResolvedValue([OTRO, EL_QUE_ESCRIBE])
+      const r = await POST(pedido())
+      expect(r.status).toBe(200)
+      expect(registrarEntrante.mock.calls[0][1]).toMatchObject({ motivo: null })
+      expect(agendado).toHaveBeenCalledTimes(1)
+    })
+
+    it('a quien no está en la lista lo guarda con MODO_PRUEBA y no le contesta', async () => {
+      buscarBot.mockResolvedValue({ ...BOT_CONECTADO, modo: 'PRUEBA' })
+      buscarNumeros.mockResolvedValue([OTRO])
+      const r = await POST(pedido())
+      expect(r.status).toBe(200)
+      expect(registrarEntrante, 'el mensaje del cliente real no quedó guardado').toHaveBeenCalledTimes(1)
+      expect(registrarEntrante.mock.calls[0][1]).toMatchObject({ motivo: 'MODO_PRUEBA' })
+      expect(agendado, 'el bot en prueba le contestó a un cliente real').not.toHaveBeenCalled()
+    })
+
+    it('con la lista vacía no le contesta a nadie', async () => {
+      buscarBot.mockResolvedValue({ ...BOT_CONECTADO, modo: 'PRUEBA' })
+      buscarNumeros.mockResolvedValue([])
+      await POST(pedido())
+      expect(registrarEntrante.mock.calls[0][1]).toMatchObject({ motivo: 'MODO_PRUEBA' })
+      expect(agendado).not.toHaveBeenCalled()
+    })
+
+    it('el número tipeado con 0 y 15 no habilita al que escribe', async () => {
+      buscarBot.mockResolvedValue({ ...BOT_CONECTADO, modo: 'PRUEBA' })
+      // '011 15 5555-0000' tipeado: 13 dígitos cuyos últimos 10 son otros.
+      buscarNumeros.mockResolvedValue([{ digitos: '0111555550000' }])
+      await POST(pedido())
+      expect(agendado).not.toHaveBeenCalled()
+    })
+
+    it('en todos, quien no está en la lista recibe respuesta igual', async () => {
+      buscarNumeros.mockResolvedValue([OTRO])
+      await POST(pedido())
+      expect(agendado).toHaveBeenCalledTimes(1)
+    })
+
+    /**
+     * El tope por hora defiende del ping-pong entre dos automatizaciones, y
+     * quien usa un número de prueba es una persona que llega a 12 preguntas en
+     * diez minutos (spec, decisión 5). Las dos direcciones: el de prueba pasa,
+     * el que no es de prueba queda frenado.
+     */
+    it('un número de prueba no tiene el tope por hora, en prueba', async () => {
+      buscarBot.mockResolvedValue({ ...BOT_CONECTADO, modo: 'PRUEBA' })
+      buscarNumeros.mockResolvedValue([EL_QUE_ESCRIBE])
+      respuestasDeLaUltimaHora.mockResolvedValue(12)
+      await POST(pedido())
+      expect(agendado).toHaveBeenCalledTimes(1)
+    })
+
+    it('un número de prueba no tiene el tope por hora, en todos', async () => {
+      buscarNumeros.mockResolvedValue([EL_QUE_ESCRIBE])
+      respuestasDeLaUltimaHora.mockResolvedValue(12)
+      await POST(pedido())
+      expect(agendado).toHaveBeenCalledTimes(1)
+    })
+
+    it('uno que no es de prueba sigue frenado por el tope por hora', async () => {
+      buscarNumeros.mockResolvedValue([OTRO])
+      respuestasDeLaUltimaHora.mockResolvedValue(12)
+      await POST(pedido())
+      expect(registrarEntrante.mock.calls[0][1]).toMatchObject({ motivo: 'TOPE_CONVERSACION' })
+      expect(agendado).not.toHaveBeenCalled()
+    })
+
+    /** Cuestan plata igual: cada respuesta de prueba es una llamada al modelo. */
+    it('un número de prueba sí queda frenado por el tope mensual', async () => {
+      buscarBot.mockResolvedValue({ ...BOT_CONECTADO, modo: 'PRUEBA' })
+      buscarNumeros.mockResolvedValue([EL_QUE_ESCRIBE])
+      respuestasDelMes.mockResolvedValue(1000)
+      await POST(pedido())
+      expect(registrarEntrante.mock.calls[0][1]).toMatchObject({ motivo: 'TOPE_MENSUAL' })
+      expect(agendado).not.toHaveBeenCalled()
+    })
   })
 })

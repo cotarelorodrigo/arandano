@@ -193,11 +193,11 @@ lista antes de pasar a prueba.
 
 - Un campo con el botón Agregar. Ayuda: "Con código de área, sin 0 y sin 15.
   Ej: 11 2233-4455".
-- Una fila por número, con los últimos 10 dígitos formateados (`11 2233-4455`),
-  el botón quitar y una segunda línea: **"Todavía no escribió"** o **"Último
-  mensaje: <fecha corta>"**, calculada contra `ConversacionBot.ultimoMensajeEn`
-  con la misma `coincideConAlguno`. Esa línea es la verificación del número
-  (decisión 2).
+- Una fila por número, con los últimos 10 dígitos como `112233-4455` (sin
+  partir el código de área, cuyo largo varía de 2 a 4 dígitos), el botón quitar
+  y una segunda línea: **"Todavía no escribió"** o **"Último mensaje: <fecha
+  corta>"**, calculada contra `ConversacionBot.ultimoMensajeEn` con la misma
+  `coincideConAlguno`. Esa línea es la verificación del número (decisión 2).
 - Los errores de las acciones van por toast, con el patrón del ABM de
   categorías: menos de 10 dígitos, ya está cargado, tope de 20. Los errores no se
   auto-descartan.
@@ -205,8 +205,9 @@ lista antes de pasar a prueba.
 
 **Card "Este mes".** En modo `PRUEBA`, si hubo entrantes con motivo
 `MODO_PRUEBA` en el mes, suma una línea: "Mientras estuvo en prueba te
-escribieron N clientes que no recibieron respuesta." Es un `count` más, y sólo
-corre en ese modo.
+escribieron N clientes que no recibieron respuesta." Cuenta CONVERSACIONES
+distintas, no mensajes —un mismo cliente que escribió seis veces sigue siendo
+uno—, con una consulta más, y sólo corre en ese modo.
 
 **Encabezado.** El subtítulo muestra `<número> · Contestando`, `· En prueba` o
 `· Apagado`.

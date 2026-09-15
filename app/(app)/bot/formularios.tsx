@@ -1,24 +1,35 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Bot, Link2, MessageCircle, Power, Smartphone } from 'lucide-react'
+import { Bot, Link2, MessageCircle, Plus, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
-import { Switch } from '@/components/ui/switch'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Textarea } from '@/components/ui/textarea'
 import { CLASES_RANURA_MOVIL } from '@/components/shell/encabezado'
 import { cn } from '@/lib/utils'
+import {
+  MODOS,
+  MS_CONFIRMACION_TODOS,
+  esModo,
+  leyendaDelModo,
+  tocarModo,
+  type Modo,
+} from '@/lib/bot/modo'
+import { TOPE_NUMEROS_DE_PRUEBA, mostrarNumeroDePrueba } from '@/lib/bot/numeros-de-prueba'
 import estilos from './tipografia.module.css'
 import {
+  agregarNumeroDePruebaDelLocal,
+  cambiarModoDelBot,
   confirmarNumeroDelLocal,
   desconectarNumero,
   generarEnlaceDeConexion,
   guardarInformacionDelLocal,
-  prenderOApagar,
+  quitarNumeroDePruebaDelLocal,
   type EstadoBot,
 } from './acciones'
 
@@ -45,10 +56,15 @@ export type VistaDelBot = {
   conectado: boolean
   numeroVisible: string | null
   conectadoEn: string | null
-  activo: boolean
+  modo: Modo
+  /** La lista de prueba, con la fecha del último mensaje ya formateada en el
+   *  servidor (huso de Buenos Aires). */
+  numerosDePrueba: { id: string; digitos: string; ultimoMensajeEn: string | null }[]
   aQueSeDedica: string
   instrucciones: string
   respuestasDelMes: number
+  /** Entrantes con MODO_PRUEBA este mes. Cero fuera de prueba. */
+  sinRespuestaEnPrueba: number
   topeMensual: number
   esDuenio: boolean
   kapsoListo: boolean
@@ -239,27 +255,65 @@ function Conexion({ vista }: { vista: VistaDelBot }) {
   )
 }
 
-function Interruptor({ vista }: { vista: VistaDelBot }) {
+const ETIQUETA_DEL_MODO: Record<Modo, string> = {
+  APAGADO: 'Apagado',
+  PRUEBA: 'Sólo prueba',
+  TODOS: 'Todos',
+}
+
+/**
+ * A quién le contesta el bot: nadie, sólo los números de prueba, o todos.
+ *
+ * Un segmentado y no un switch más un toggle de prueba: tres estados reales, y
+ * ninguna combinación de dos controles que haya que leer junta para saber qué
+ * pasa con el próximo mensaje.
+ *
+ * **Pasar a Todos pide dos toques** (`tocarModo`, lib/bot/modo.ts). Es la única
+ * transición que manda el bot a clientes reales, y con tres pastillas juntas un
+ * toque de más sobre la vecina alcanza para hacerlo sin querer. La confirmación
+ * vive en la leyenda de abajo y se desarma sola: mismo mecanismo que
+ * `AnularVenta`, sin diálogo.
+ */
+function ModoDelBot({ vista }: { vista: VistaDelBot }) {
   const [enCurso, empezar] = useTransition()
-  const [activo, setActivo] = useState(vista.activo)
+  const [modo, setModo] = useState<Modo>(vista.modo)
+  const [armadoTodos, setArmadoTodos] = useState(false)
+
+  useEffect(() => {
+    if (!armadoTodos) return
+    const t = setTimeout(() => setArmadoTodos(false), MS_CONFIRMACION_TODOS)
+    return () => clearTimeout(t)
+  }, [armadoTodos])
 
   if (!vista.conectado) return null
 
-  const cambiar = (valor: boolean) => {
-    const antes = activo
-    setActivo(valor)
+  const tocar = (valor: string) => {
+    // Radix manda '' al tocar el ítem ya elegido: un modo nunca queda vacío.
+    if (!esModo(valor)) return
+    const r = tocarModo({ modo, armadoTodos }, valor)
+    setArmadoTodos(r.armadoTodos)
+    const nuevo = r.cambiarA
+    if (!nuevo) return
+
+    const antes = modo
+    setModo(nuevo)
     empezar(async () => {
-      const r = avisar(await prenderOApagar(valor), 'bot-switch')
-      // Rollback si el servidor lo rechazó: el switch no puede quedar diciendo
+      const resultado = avisar(await cambiarModoDelBot(nuevo), 'bot-modo')
+      // Rollback si el servidor lo rechazó: el control no puede quedar diciendo
       // algo distinto de lo que la base guardó.
-      if (r.error) setActivo(antes)
-      else if (valor && !vista.aQueSeDedica.trim()) {
+      if (resultado.error) {
+        setModo(antes)
+        return
+      }
+      // Al empezar a probar también: es justo cuando conviene enterarse.
+      if (nuevo === 'APAGADO') return
+      if (!vista.aQueSeDedica.trim()) {
         // Primero éste: sin saber a qué se dedica el local, el bot contesta
         // como "un comercio" cualquiera, que es peor que no saber los horarios.
         toast('El bot todavía no sabe a qué se dedica tu local: va a hablar en genérico hasta que se lo cargues.', {
           id: 'bot-sin-dedicacion',
         })
-      } else if (valor && !vista.instrucciones.trim()) {
+      } else if (!vista.instrucciones.trim()) {
         toast('El bot va a contestar sólo precios y disponibilidad hasta que cargues la información del local.', {
           id: 'bot-sin-info',
         })
@@ -269,18 +323,127 @@ function Interruptor({ vista }: { vista: VistaDelBot }) {
 
   return (
     <Seccion titulo="El bot">
-      <div className="flex items-center justify-between gap-3">
-        <Label htmlFor="bot-activo" className="flex items-center gap-2 text-sm">
-          <Power className="size-4 text-foreground-soft" />
-          {activo ? 'Está contestando' : 'No está contestando'}
-        </Label>
-        <Switch id="bot-activo" checked={activo} disabled={enCurso} onCheckedChange={cambiar} />
-      </div>
+      <ToggleGroup
+        type="single"
+        value={modo}
+        onValueChange={tocar}
+        disabled={enCurso}
+        aria-label="A quién le contesta el bot"
+        className="w-full gap-0.5 rounded-[10px] bg-muted p-[3px]"
+      >
+        {MODOS.map((m) => (
+          <ToggleGroupItem
+            key={m}
+            value={m}
+            className="flex-1 rounded-lg text-xs font-medium text-muted-foreground data-[state=on]:bg-card data-[state=on]:font-semibold data-[state=on]:text-foreground"
+          >
+            {ETIQUETA_DEL_MODO[m]}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+      <p className={cn(AYUDA, armadoTodos && 'font-semibold text-foreground')} aria-live="polite">
+        {leyendaDelModo({ modo, cantidadNumeros: vista.numerosDePrueba.length, armadoTodos })}
+      </p>
       {!vista.modeloListo && (
         <p className="rounded-md bg-muted p-3 text-xs leading-relaxed text-foreground">
           Falta configurar el modelo en este servidor, así que el bot no puede responder todavía.
           Los mensajes que lleguen quedan guardados.
         </p>
+      )}
+    </Seccion>
+  )
+}
+
+/**
+ * La lista de números a los que el bot les contesta en «Sólo prueba».
+ *
+ * Se ve en cualquier modo con número conectado, para poder armarla antes de
+ * pasar a prueba. Cada número muestra si ya escribió alguien que coincida con
+ * él, y ésa es la verificación del número: la comparación es por los últimos
+ * 10 dígitos, así que uno tipeado con 0 y 15 no coincide con nadie y se queda
+ * en "Todavía no escribió" aunque el dueño se escriba desde ese celular.
+ *
+ * Los errores van por toast y no inline, con el mismo `avisar` que el resto de
+ * la pantalla: el campo es uno solo y el mensaje dice qué corregir.
+ */
+function NumerosDePrueba({ vista }: { vista: VistaDelBot }) {
+  const [enCurso, empezar] = useTransition()
+  const [texto, setTexto] = useState('')
+
+  if (!vista.conectado) return null
+
+  const lleno = vista.numerosDePrueba.length >= TOPE_NUMEROS_DE_PRUEBA
+
+  const agregar = () =>
+    empezar(async () => {
+      const r = avisar(await agregarNumeroDePruebaDelLocal(texto), 'bot-numero-agregar')
+      if (!r.error) setTexto('')
+    })
+
+  const quitar = (id: string) =>
+    empezar(async () => {
+      avisar(await quitarNumeroDePruebaDelLocal(id), `bot-numero-quitar-${id}`)
+    })
+
+  return (
+    <Seccion titulo="Números de prueba">
+      <p className={AYUDA}>Con el bot en «Sólo prueba», contesta únicamente a estos números.</p>
+      <form
+        className="flex flex-col gap-2 lg:flex-row"
+        onSubmit={(e) => {
+          e.preventDefault()
+          agregar()
+        }}
+      >
+        <Label htmlFor="bot-numero-prueba" className="sr-only">
+          Número de prueba
+        </Label>
+        <Input
+          id="bot-numero-prueba"
+          inputMode="tel"
+          autoComplete="off"
+          placeholder="11 2233-4455"
+          value={texto}
+          disabled={lleno || enCurso}
+          onChange={(e) => setTexto(e.target.value)}
+          className="min-w-0 flex-1"
+        />
+        <Button type="submit" size="sm" disabled={lleno || enCurso || !texto.trim()}>
+          <Plus className="size-4" />
+          Agregar
+        </Button>
+      </form>
+      <p className={AYUDA}>
+        {lleno
+          ? `Llegaste al tope de ${TOPE_NUMEROS_DE_PRUEBA} números de prueba. Quitá uno para agregar otro.`
+          : 'Con código de área, sin 0 y sin 15. Ej: 11 2233-4455.'}
+      </p>
+      {vista.numerosDePrueba.length > 0 && (
+        <ul className="flex flex-col divide-y rounded-md border">
+          {vista.numerosDePrueba.map((n) => {
+            const visible = mostrarNumeroDePrueba(n.digitos)
+            return (
+              <li key={n.id} className="flex flex-col gap-2 p-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium tabular-nums text-foreground">{visible}</p>
+                  <p className={AYUDA}>
+                    {n.ultimoMensajeEn ? `Último mensaje: ${n.ultimoMensajeEn}` : 'Todavía no escribió'}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={enCurso}
+                  onClick={() => quitar(n.id)}
+                  aria-label={`Quitar ${visible}`}
+                >
+                  Quitar
+                </Button>
+              </li>
+            )
+          })}
+        </ul>
       )}
     </Seccion>
   )
@@ -382,6 +545,17 @@ function Consumo({ vista }: { vista: VistaDelBot }) {
   const porcentaje = tope > 0 ? Math.min(100, Math.round((usado / tope) * 100)) : 0
   const lleno = usado >= tope
 
+  // Un solo template string y no fragmentos JSX: renderToStaticMarkup separa
+  // los fragmentos con `<!-- -->`, y la oración dejaría de poder buscarse
+  // entera en el test.
+  const sinRespuesta = vista.sinRespuestaEnPrueba
+  const enPrueba =
+    vista.modo === 'PRUEBA' && sinRespuesta > 0
+      ? `Mientras estuvo en prueba te escribieron ${sinRespuesta} ${
+          sinRespuesta === 1 ? 'cliente que no recibió' : 'clientes que no recibieron'
+        } respuesta.`
+      : null
+
   return (
     <Seccion titulo="Este mes">
       <p className="text-2xl font-semibold text-foreground">
@@ -394,6 +568,7 @@ function Consumo({ vista }: { vista: VistaDelBot }) {
           ? 'Llegaste al tope del mes: el bot dejó de contestar. Los mensajes que lleguen se siguen guardando.'
           : 'Respuestas que dio el bot este mes. El contador vuelve a cero el primero de cada mes.'}
       </p>
+      {enPrueba && <p className={AYUDA}>{enPrueba}</p>}
     </Seccion>
   )
 }
@@ -429,7 +604,8 @@ export function CuerpoBot({ vista }: { vista: VistaDelBot }) {
     <div className="flex flex-col gap-3 p-[14px] lg:flex-row lg:items-start lg:gap-4 lg:p-6">
       <div className="flex min-w-0 flex-1 flex-col gap-3 lg:gap-4">
         <Conexion vista={vista} />
-        <Interruptor vista={vista} />
+        <ModoDelBot vista={vista} />
+        <NumerosDePrueba vista={vista} />
         <Informacion vista={vista} />
       </div>
       <div className="flex w-full flex-col gap-3 lg:w-[360px] lg:gap-4">

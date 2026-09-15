@@ -1397,6 +1397,31 @@ Ver `docs/superpowers/specs/2026-09-14-editar-venta-design.md`.
 
 ---
 
+## 38. La maqueta no dibuja el modo del bot ni la card "Números de prueba", en ningún ancho
+
+- **Frames**: ninguno. `design/arandano.pen` no tiene la pantalla `/bot` en
+  ningún ancho: es anterior al ciclo del bot (2026-08-29).
+
+**El segmentado Apagado · Sólo prueba · Todos** reemplaza al switch de la card
+"El bot". Se derivó del `ToggleGroup` del alta de `/usuarios` (nodo `iotGr`),
+con las mismas clases. Lo que no tiene referencia es **cómo se ve la
+confirmación armada de Todos**: hoy la leyenda de abajo cambia de texto y pasa a
+semibold, sin ningún color. Un frame tendría que decidir si ese estado pide más
+presencia.
+
+**La card "Números de prueba"**, debajo de "El bot". El campo con su botón se
+derivó de los controles de la card de información del local, y las filas de
+las de unidades de `/inventario/[id]`. Sin referencia: el apilado del botón
+"Quitar" debajo del número en el teléfono y el formato `112233-4455`.
+
+Qué haría falta: la pantalla `/bot` dibujada en los dos anchos, incluida la
+leyenda con la confirmación armada.
+
+Detectado al construir el ciclo del modo prueba del bot (2026-09-15). Ver
+`docs/superpowers/specs/2026-09-15-bot-modo-prueba-design.md`.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

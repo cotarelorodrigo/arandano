@@ -516,6 +516,28 @@ repo. Se activa con `git config core.hooksPath .githooks`, que ya está en
 migraciones destructivas, no los otros chequeos del gate — y `deploy.sh`
 vuelve a chequear lo mismo porque `--no-verify` existe.
 
+### Roll-forward después de un rollback: el modo del bot
+
+Si un rollback —automático o a mano— revirtió la imagen mientras corría la que
+trae el modo `PRUEBA`/`TODOS`/`APAGADO` de `BotDeWhatsapp`, y en ese lapso un
+dueño apagó el bot **con la imagen vieja** (la que sólo conocía `activo`), la
+fila queda con `activo = false` y `modo = 'TODOS'` — la vieja escribe
+`activo`, no toca `modo`, y ese `modo` le había quedado en `TODOS` de antes.
+La imagen nueva lee `modo` y no `activo`, así que al volver a promoverla
+(roll-forward) ese bot contestaría de nuevo a todo el mundo, sin que nadie lo
+haya pedido.
+
+Antes de rollforwardear, correr contra la base del objetivo, como el rol
+dueño (`arandano_owner`):
+
+```sql
+UPDATE bots_de_whatsapp SET modo = 'APAGADO' WHERE modo = 'TODOS' AND NOT activo;
+```
+
+Esto deja de hacer falta el día que el deploy de contract borre `activo` —
+sin esa columna no hay forma de que las dos imágenes se contradigan sobre el
+modo del bot.
+
 ### Desactivar el service worker
 
 El rollback automático revierte la imagen. **No desinstala el service worker**:

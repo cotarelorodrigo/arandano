@@ -2,10 +2,15 @@ import { notFound } from 'next/navigation'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirPermiso } from '@/lib/permisos/guarda'
 import { botHabilitadoEn } from '@/lib/bot/habilitado'
-import { botDelLocal, numerosDisponibles } from '@/lib/bot/administrar'
+import {
+  botDelLocal,
+  numerosDePruebaDelLocal,
+  numerosDisponibles,
+} from '@/lib/bot/administrar'
 import { kapsoConfigurado } from '@/lib/bot/kapso'
 import { modeloConfigurado } from '@/lib/bot/agente'
-import { respuestasDelMes } from '@/lib/bot/limites'
+import { respuestasDelMes, sinRespuestaEnPruebaDelMes } from '@/lib/bot/limites'
+import { subtituloDelModo } from '@/lib/bot/modo'
 import { formatearFechaCorta } from '@/lib/formato/mostrar'
 import { BotonDeConexion, CuerpoBot, type NumeroOfrecido, type VistaDelBot } from './formularios'
 
@@ -60,16 +65,32 @@ export default async function PantallaDelBot() {
     }
   }
 
+  // Sólo con número conectado: sin número no hay modo que elegir, y la card de
+  // números de prueba no se dibuja.
+  const numerosDePrueba = conectado
+    ? (await numerosDePruebaDelLocal(sesion.tenant.id)).map((n) => ({
+        id: n.id,
+        digitos: n.digitos,
+        ultimoMensajeEn: n.ultimoMensajeEn ? formatearFechaCorta(n.ultimoMensajeEn) : null,
+      }))
+    : []
+
   const vista: VistaDelBot = {
     conectado,
     numeroVisible: bot.numeroVisible,
     // Formateado en el servidor: un Date cruza al cliente, pero el formato con
     // huso de Buenos Aires vive de este lado en todo el resto del producto.
     conectadoEn: bot.conectadoEn ? formatearFechaCorta(bot.conectadoEn) : null,
-    activo: bot.activo,
+    modo: bot.modo,
+    numerosDePrueba,
     aQueSeDedica: bot.aQueSeDedica,
     instrucciones: bot.instrucciones,
     respuestasDelMes: conectado ? await respuestasDelMes(sesion.tenant.id) : 0,
+    // Sólo en prueba: es el dato con el que el dueño decide pasar a Todos, y
+    // fuera de ese modo sería una consulta por mensaje de pantalla que no se
+    // muestra.
+    sinRespuestaEnPrueba:
+      conectado && bot.modo === 'PRUEBA' ? await sinRespuestaEnPruebaDelMes(sesion.tenant.id) : 0,
     topeMensual: bot.topeMensual,
     esDuenio,
     kapsoListo: kapsoConfigurado(),
@@ -83,7 +104,7 @@ export default async function PantallaDelBot() {
         titulo="Bot de WhatsApp"
         subtitulo={
           conectado
-            ? `${bot.numeroVisible ?? 'Conectado'} · ${bot.activo ? 'Contestando' : 'Apagado'}`
+            ? `${bot.numeroVisible ?? 'Conectado'} · ${subtituloDelModo(bot.modo)}`
             : 'Sin conectar'
         }
         // Un elemento y no una función: pasarle una función como prop a un

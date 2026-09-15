@@ -70,6 +70,7 @@ erDiagram
     text webhook_id "opcional"
     text webhook_secreto "opcional"
     timestamptz(3) conectado_en "opcional"
+    modo_bot modo
     boolean activo
     text a_que_se_dedica
     text instrucciones
@@ -162,6 +163,12 @@ erDiagram
     uuid unidad_id FK "opcional"
     uuid usuario_id FK
     text nota "opcional"
+    timestamptz(3) creado_en
+  }
+  numeros_de_prueba_bot {
+    uuid id PK
+    uuid tenant_id FK "único junto a digitos"
+    text digitos "único junto a tenant_id"
     timestamptz(3) creado_en
   }
   ordenes_de_trabajo {
@@ -346,6 +353,7 @@ erDiagram
   tenants ||--o{ eventos_orden : "ON DELETE CASCADE"
   tenants ||--o{ mensajes_bot : "ON DELETE CASCADE"
   tenants ||--o{ movimientos_stock : "ON DELETE CASCADE"
+  tenants ||--o{ numeros_de_prueba_bot : "ON DELETE CASCADE"
   tenants ||--o{ ordenes_de_trabajo : "ON DELETE CASCADE"
   tenants ||--o{ pagos : "ON DELETE CASCADE"
   tenants ||--o{ pagos_archivados : "ON DELETE CASCADE"
@@ -387,10 +395,11 @@ erDiagram
 - **estado_orden**: `RECIBIDO`, `EN_DIAGNOSTICO`, `PRESUPUESTADO`, `APROBADO`, `EN_REPARACION`, `LISTO`, `ENTREGADO`, `SIN_REPARACION`, `RECHAZADO`
 - **estado_tenant**: `TRIAL`, `ACTIVO`, `SUSPENDIDO`
 - **medio_pago**: `EFECTIVO`, `TRANSFERENCIA`, `TARJETA_DEBITO`, `TARJETA_CREDITO`
+- **modo_bot**: `APAGADO`, `PRUEBA`, `TODOS`
 - **modulo**: `ORDENES_DE_TRABAJO`, `TURNOS`, `GASTRONOMIA`
 - **moneda**: `ARS`, `USD`
 - **motivo_movimiento**: `VENTA`, `ANULACION_VENTA`, `AJUSTE`, `INGRESO`
-- **motivo_sin_respuesta**: `BOT_APAGADO`, `TOPE_MENSUAL`, `TOPE_CONVERSACION`, `SIN_TEXTO`, `SIN_MODELO`
+- **motivo_sin_respuesta**: `BOT_APAGADO`, `TOPE_MENSUAL`, `TOPE_CONVERSACION`, `SIN_TEXTO`, `SIN_MODELO`, `MODO_PRUEBA`
 - **permiso**: `ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`, `CATEGORIAS`, `VENTAS_ANULAR`, `ORDENES_ANULAR`, `PLANES_PAGO`, `BOT`, `ARTICULOS_BORRAR`, `VENTAS_EDITAR`
 - **rol_usuario**: `DUENO`, `EMPLEADO`
 - **tipo_articulo**: `PRODUCTO`, `SERVICIO`

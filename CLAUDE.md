@@ -3563,6 +3563,63 @@ Y del producto:
   `VENTAS_EDITAR` vea "Anular" y no vea "Corregir", y que tipear la URL no le
   alcance; y que una venta anulada no ofrezca corregir.
 
+- ~~Poder probar el bot sin que les conteste a clientes reales.~~ **Hecho**
+  (2026-09-15). Sale del pedido del dueño del producto: *"que el dueño pueda
+  configurar N números a los que sólo el bot les responda. esto es para que lo
+  pueda testear para ver cómo responde y que no afecte a clientes reales"*. Ver
+  `docs/superpowers/specs/2026-09-15-bot-modo-prueba-design.md`.
+
+  **Probar es un estado del bot, no un flag aparte.** `BotDeWhatsapp.activo`
+  pasó a `modo` (`APAGADO | PRUEBA | TODOS`), un segmentado en `/bot`. Se
+  descartó la lista que restringe "si tiene números": quitar el último número
+  le soltaba el bot a todos los clientes sin ningún gesto que lo dijera. Pasar a
+  Todos pide dos toques, y es la única transición que los pide.
+
+  **`activo` no se borró, y el valor que se le escribe es el que hace seguro el
+  rollback**: `modo === 'TODOS'`. La imagen anterior sólo lee esa columna, así
+  que si el healthcheck la revierte durante una prueba, lee `false` y se calla.
+  Con `modo !== 'APAGADO'` un rollback en plena prueba habría puesto al bot a
+  contestarles a todos. El `DROP` es un deploy posterior. Y el valor nuevo
+  `MODO_PRUEBA` tampoco rompe a la imagen vieja: ningún lector la deserializa
+  (`historialDe` la filtra en el `WHERE`, los topes son `count`), y
+  `lib/bot/conversaciones.test.ts` fija ese invariante.
+
+  **Los números viven en `numeros_de_prueba_bot`**, tabla propia con RLS y no un
+  `text[]`: la unicidad la sostiene el índice. Se comparan contra el `waId` por
+  los **últimos 10 dígitos** (`lib/bot/numeros-de-prueba.ts`), así que el dueño
+  tipea como quiera. El caso que no se salva —el número con 0 y 15— se ataja en
+  la pantalla, donde cada número dice si ya escribió alguien que coincida.
+
+  **Un número de prueba no tiene el tope de 12 respuestas por hora** (defiende
+  del ping-pong entre automatizaciones, y quien prueba es una persona), pero sí
+  el mensual, porque cada respuesta se paga igual.
+
+  **"Este mes" cuenta clientes, no mensajes**: `sinRespuestaEnPruebaDelMes`
+  cuenta conversaciones distintas con al menos un entrante `MODO_PRUEBA` en el
+  mes, no filas de `mensajes_bot` — un mismo cliente que escribió seis veces es
+  uno solo. Es el número con el que el dueño decide pasar a Todos, así que
+  contar mensajes lo habría inflado.
+
+  **Sin permiso nuevo**: `BOT` ya cubría prender y apagar, y elegir a quién le
+  contesta es la misma palanca. `lib/permisos/catalogo.ts` no crece.
+
+  **La migración viaja con la UI en el mismo deploy**: tabla nueva, columna con
+  default y backfill desde `activo`, un valor de enum y un enum nuevos, cero
+  `DROP`. Mismo argumento que el precio en dólares: el schema nuevo soporta la
+  imagen anterior.
+
+  **`design/arandano.pen` no dibuja `/bot` en ningún ancho**. Entrada 38 de
+  `docs/correcciones-pendientes-del-pen.md`.
+
+  **Queda pendiente la verificación manual**, después del merge
+  (`arandano-dev` sirve `main`): conectar el número sandbox de Kapso, cargar el
+  celular propio y pasar a Sólo prueba; escribir desde ese celular y ver que
+  contesta y que la fila pasa a "Último mensaje"; escribir desde otro celular y
+  ver que no contesta y que "Este mes" suma el cliente; tocar Todos una vez y
+  ver que se desarma a los 3 segundos, y dos veces para que cambie; cargar un
+  número con 15 y ver que se queda en "Todavía no escribió"; y mirar las dos
+  cards a 1440 y a 390 px.
+
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

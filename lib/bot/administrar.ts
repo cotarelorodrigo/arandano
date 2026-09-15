@@ -1,7 +1,17 @@
+import { Prisma } from '@/generated/prisma/client'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { origenDelRequest } from '@/lib/auth/origen'
 import { ErrorDeBot } from '@/lib/bot/errores'
+import { esModo, type Modo } from '@/lib/bot/modo'
+import {
+  TOPE_NUMEROS_DE_PRUEBA,
+  coincideConAlguno,
+  coinciden,
+  ultimos10,
+  validarNumeroDePrueba,
+} from '@/lib/bot/numeros-de-prueba'
 import { TOPE_A_QUE_SE_DEDICA, TOPE_INSTRUCCIONES } from '@/lib/bot/prompt'
+import { esUuid } from '@/lib/uuid'
 import {
   borrarWebhook,
   crearCustomer,
@@ -38,7 +48,7 @@ export type BotDelLocal = {
   phoneNumberId: string | null
   numeroVisible: string | null
   conectadoEn: Date | null
-  activo: boolean
+  modo: Modo
   aQueSeDedica: string
   instrucciones: string
   topeMensual: number
@@ -49,7 +59,7 @@ const VACIO: BotDelLocal = {
   phoneNumberId: null,
   numeroVisible: null,
   conectadoEn: null,
-  activo: false,
+  modo: 'APAGADO',
   aQueSeDedica: '',
   instrucciones: '',
   topeMensual: 1000,
@@ -60,7 +70,7 @@ const CAMPOS = {
   phoneNumberId: true,
   numeroVisible: true,
   conectadoEn: true,
-  activo: true,
+  modo: true,
   aQueSeDedica: true,
   instrucciones: true,
   topeMensual: true,
@@ -188,6 +198,7 @@ export async function confirmarNumero(entrada: {
       // decisiones. Un bot que arranca contestando en el mismo segundo, con la
       // información del local todavía vacía, contesta "no sé" a la primera
       // pregunta que le hagan.
+      modo: 'APAGADO',
       activo: false,
     },
   })
@@ -230,14 +241,31 @@ export async function desconectar(tenantId: string): Promise<void> {
       webhookId: null,
       webhookSecreto: null,
       conectadoEn: null,
+      modo: 'APAGADO',
       activo: false,
     },
   })
 }
 
-export async function alternarActivo(tenantId: string, activo: boolean): Promise<void> {
+/**
+ * A quién le contesta el bot.
+ *
+ * `modo` llega como string porque viene de una server action: el navegador
+ * puede mandar cualquier cosa, así que se valida acá y no sólo en el tipo.
+ *
+ * **Escribe `activo = modo === 'TODOS'`, y ése es el valor que hace seguro el
+ * rollback.** La imagen anterior sólo lee `activo`: si el healthcheck la
+ * revierte mientras el local está en prueba, lee `false` y se calla. Con
+ * `modo !== 'APAGADO'` un rollback durante una prueba pondría al bot a
+ * contestarles a todos los clientes. Ver el comentario de la columna en
+ * prisma/schema.prisma.
+ */
+export async function cambiarModo(tenantId: string, modo: string): Promise<void> {
+  if (!esModo(modo)) {
+    throw new ErrorDeBot('MODO_INVALIDO', 'Ese modo del bot no existe.')
+  }
   const prisma = prismaParaTenant(tenantId)
-  if (activo) {
+  if (modo !== 'APAGADO') {
     const bot = await prisma.botDeWhatsapp.findUnique({
       where: { tenantId },
       select: { phoneNumberId: true },
@@ -246,7 +274,10 @@ export async function alternarActivo(tenantId: string, activo: boolean): Promise
       throw new ErrorDeBot('SIN_NUMERO', 'Conectá un número antes de prender el bot.')
     }
   }
-  await prisma.botDeWhatsapp.update({ where: { tenantId }, data: { activo } })
+  await prisma.botDeWhatsapp.update({
+    where: { tenantId },
+    data: { modo, activo: modo === 'TODOS' },
+  })
 }
 
 /**
@@ -286,5 +317,108 @@ export async function guardarInformacion(
     where: { tenantId },
     create: { tenantId, ...datos },
     update: datos,
+  })
+}
+
+const MENSAJE_DE_PROBLEMA = {
+  NUMERO_CORTO: 'El número tiene que ir con código de área: al menos 10 dígitos, sin 0 y sin 15.',
+  NUMERO_LARGO: 'Ese número tiene demasiados dígitos.',
+} as const
+
+function esP2002(e: unknown): boolean {
+  return e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002'
+}
+
+/**
+ * Agrega un número a la lista de prueba.
+ *
+ * El repetido se rechaza dos veces, por dos razones distintas: comparando los
+ * últimos 10 dígitos contra los que ya hay —porque `11 2233-4455` y
+ * `+54 9 11 2233 4455` son el mismo teléfono y el índice único no lo sabe— y
+ * atrapando el P2002 del índice, que es lo único que frena a dos pestañas
+ * agregando el mismo número en el mismo instante.
+ *
+ * El tope se cuenta antes de insertar, así que dos altas simultáneas con 19
+ * números podrían dejar 21. Es aceptable: el tope existe para que la lista siga
+ * siendo de prueba, no para defender un recurso.
+ */
+export async function agregarNumeroDePrueba(tenantId: string, texto: string): Promise<void> {
+  const validado = validarNumeroDePrueba(texto)
+  if (!validado.ok) {
+    throw new ErrorDeBot(validado.problema, MENSAJE_DE_PROBLEMA[validado.problema])
+  }
+
+  const prisma = prismaParaTenant(tenantId)
+  const existentes = await prisma.numeroDePruebaBot.findMany({ select: { digitos: true } })
+  if (existentes.length >= TOPE_NUMEROS_DE_PRUEBA) {
+    throw new ErrorDeBot(
+      'TOPE_NUMEROS',
+      `Ya hay ${TOPE_NUMEROS_DE_PRUEBA} números de prueba. Quitá uno para agregar otro.`,
+    )
+  }
+  const repetido = new ErrorDeBot('NUMERO_REPETIDO', 'Ese número ya está en la lista de prueba.')
+  if (coincideConAlguno(validado.digitos, existentes.map((e) => e.digitos))) throw repetido
+
+  try {
+    await prisma.numeroDePruebaBot.create({ data: { tenantId, digitos: validado.digitos } })
+  } catch (e) {
+    if (esP2002(e)) throw repetido
+    throw e
+  }
+}
+
+/**
+ * Quita un número. Filtra por id y el tenant lo ponen la extensión de Prisma y
+ * RLS: el id de un número de otro local no afecta ninguna fila. Un id que no es
+ * un uuid no llega a la base, donde el cast lo convertiría en un 500.
+ */
+export async function quitarNumeroDePrueba(tenantId: string, id: string): Promise<void> {
+  if (!esUuid(id)) return
+  await prismaParaTenant(tenantId).numeroDePruebaBot.deleteMany({ where: { id } })
+}
+
+export type NumeroDePruebaVisto = {
+  id: string
+  digitos: string
+  /** La última vez que escribió alguien que coincide con este número, o
+   *  `null` si nadie. Es la verificación de que el número está bien cargado. */
+  ultimoMensajeEn: Date | null
+}
+
+/**
+ * La lista de prueba, cada número con su último mensaje.
+ *
+ * El `endsWith` de la consulta es sólo un prefiltro para no traer todas las
+ * conversaciones del local: quien decide es `coinciden`, la misma función que
+ * usa el webhook, así que la pantalla no puede decir "escribió" de un número al
+ * que el bot no le contestaría.
+ */
+export async function numerosDePruebaDelLocal(tenantId: string): Promise<NumeroDePruebaVisto[]> {
+  const prisma = prismaParaTenant(tenantId)
+  const numeros = await prisma.numeroDePruebaBot.findMany({
+    orderBy: { creadoEn: 'asc' },
+    select: { id: true, digitos: true },
+  })
+  if (numeros.length === 0) return []
+
+  // El `endsWith` asume que `waId` —el crudo de `conversation.phone_number` de
+  // Kapso— termina en dígitos pelados, sin formato. Si Kapso alguna vez mandara
+  // algo con puntuación en los últimos 10 caracteres, el prefiltro no lo
+  // traería y la pantalla diría "Todavía no escribió" de un número al que el
+  // bot sí le contesta.
+  const conversaciones = await prisma.conversacionBot.findMany({
+    where: { OR: numeros.map((n) => ({ waId: { endsWith: ultimos10(n.digitos) } })) },
+    select: { waId: true, ultimoMensajeEn: true },
+  })
+
+  return numeros.map((n) => {
+    const fechas = conversaciones
+      .filter((c) => coinciden(c.waId, n.digitos))
+      .map((c) => c.ultimoMensajeEn.getTime())
+    return {
+      id: n.id,
+      digitos: n.digitos,
+      ultimoMensajeEn: fechas.length > 0 ? new Date(Math.max(...fechas)) : null,
+    }
   })
 }
