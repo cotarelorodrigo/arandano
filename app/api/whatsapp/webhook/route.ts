@@ -9,10 +9,11 @@ import {
   respuestasDeLaUltimaHora,
   TOPE_POR_CONVERSACION_POR_HORA,
 } from '@/lib/bot/limites'
+import { coincideConAlguno } from '@/lib/bot/numeros-de-prueba'
 import { modeloConfigurado } from '@/lib/bot/agente'
 import { botHabilitadoEn } from '@/lib/bot/habilitado'
 import { procesarMensaje } from '@/lib/bot/procesar'
-import type { MotivoSinRespuesta } from '@/generated/prisma/client'
+import type { ModoBot, MotivoSinRespuesta } from '@/generated/prisma/client'
 
 /**
  * Por acá entran los mensajes que los clientes le escriben al local.
@@ -71,7 +72,7 @@ export async function POST(request: Request): Promise<Response> {
       phoneNumberId: true,
       numeroVisible: true,
       webhookSecreto: true,
-      activo: true,
+      modo: true,
       aQueSeDedica: true,
       instrucciones: true,
       topeMensual: true,
@@ -101,13 +102,25 @@ export async function POST(request: Request): Promise<Response> {
   const entrantes = mensajesDelWebhook(cuerpo)
   if (entrantes.length === 0) return new Response('ok', { status: 200 })
 
+  // La lista se lee UNA vez por webhook, y sólo si el bot no está apagado: en
+  // PRUEBA decide quién recibe respuesta, en TODOS decide quién no tiene el
+  // tope por hora. Va después de la firma y del cruce de phone_number_id, como
+  // toda lectura del local: un request sin firmar no gasta ni esta consulta.
+  const numerosDePrueba =
+    bot.modo === 'APAGADO'
+      ? []
+      : (
+          await prismaParaTenant(tenantId).numeroDePruebaBot.findMany({ select: { digitos: true } })
+        ).map((n) => n.digitos)
+
   for (const entrante of entrantes) {
     await atender(entrante, {
       tenantId,
       nombreLocal: resolucion.tenant.nombre,
       phoneNumberId: bot.phoneNumberId,
       numeroVisible: bot.numeroVisible,
-      activo: bot.activo,
+      modo: bot.modo,
+      numerosDePrueba,
       aQueSeDedica: bot.aQueSeDedica,
       instrucciones: bot.instrucciones,
       topeMensual: bot.topeMensual,
@@ -122,7 +135,8 @@ type Local = {
   nombreLocal: string
   phoneNumberId: string
   numeroVisible: string | null
-  activo: boolean
+  modo: ModoBot
+  numerosDePrueba: string[]
   aQueSeDedica: string
   instrucciones: string
   topeMensual: number
@@ -175,27 +189,36 @@ async function atender(entrante: MensajeEntrante, local: Local): Promise<void> {
 }
 
 /**
- * Los cuatro cortes, TODOS antes de insertar.
+ * Los cortes, TODOS antes de insertar.
  *
  * Que se evalúen antes no es una optimización: el motivo se escribe en la misma
  * fila que crea el mensaje, y `mensajes_bot` no admite UPDATE (es tabla-libro,
  * ver scripts/setup-db-roles.sh). Anotar el motivo después exigiría un UPDATE
  * que el rol de la app no tiene, y fallaría en silencio.
  *
- * Los cuatro son lecturas locales: ninguno gasta un solo milisegundo de red del
+ * Todos son lecturas locales: ninguno gasta un solo milisegundo de red del
  * presupuesto de diez segundos del webhook.
+ *
+ * **El modo prueba** (docs/superpowers/specs/2026-09-15-bot-modo-prueba-design.md):
+ * en PRUEBA sólo se contesta a los números de la lista, y el resto queda
+ * guardado con `MODO_PRUEBA`. Un número de prueba no tiene el tope por hora en
+ * ningún modo —ese tope defiende del ping-pong entre automatizaciones, y quien
+ * prueba es una persona que llega a doce preguntas en diez minutos—, pero sí el
+ * mensual, porque cada respuesta de prueba se paga igual.
  */
 async function evaluarCorte(
   entrante: MensajeEntrante,
   local: Local,
 ): Promise<MotivoSinRespuesta | null> {
-  if (!local.activo) return 'BOT_APAGADO'
+  if (local.modo === 'APAGADO') return 'BOT_APAGADO'
+  const esDePrueba = coincideConAlguno(entrante.waId, local.numerosDePrueba)
+  if (local.modo === 'PRUEBA' && !esDePrueba) return 'MODO_PRUEBA'
   if (entrante.texto === '') return 'SIN_TEXTO'
   if (!modeloConfigurado()) return 'SIN_MODELO'
   if ((await respuestasDelMes(local.tenantId)) >= local.topeMensual) return 'TOPE_MENSUAL'
   if (
-    (await respuestasDeLaUltimaHora(local.tenantId, entrante.waId)) >=
-    TOPE_POR_CONVERSACION_POR_HORA
+    !esDePrueba &&
+    (await respuestasDeLaUltimaHora(local.tenantId, entrante.waId)) >= TOPE_POR_CONVERSACION_POR_HORA
   ) {
     return 'TOPE_CONVERSACION'
   }

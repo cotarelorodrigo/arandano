@@ -86,3 +86,20 @@ export async function respuestasDeLaUltimaHora(
     },
   })
 }
+
+/**
+ * Cuántos clientes escribieron este mes mientras el bot estaba en prueba y no
+ * recibieron respuesta.
+ *
+ * Es el dato con el que el dueño decide pasar a Todos. Se cuentan filas, igual
+ * que el tope: los mensajes se guardan igual (guardar siempre, decidir
+ * después), así que no hay nada que acumular aparte.
+ */
+export async function sinRespuestaEnPruebaDelMes(
+  tenantId: string,
+  ahora: Date = new Date(),
+): Promise<number> {
+  return prismaParaTenant(tenantId).mensajeBot.count({
+    where: { direccion: 'ENTRANTE', motivo: 'MODO_PRUEBA', creadoEn: { gte: inicioDelMes(ahora) } },
+  })
+}
