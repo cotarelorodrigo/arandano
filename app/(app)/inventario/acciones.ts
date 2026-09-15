@@ -28,7 +28,35 @@ import { calcularSaldos, detalleDeMovimiento, textoDeMotivo } from './historial'
 import { formatearCantidad, formatearFechaCorta, formatearHora } from '@/lib/formato/mostrar'
 import { filaCsv } from '@/lib/formato/csv'
 
-export type EstadoInventario = { error: string | null; aviso: string | null }
+/**
+ * Lo tipeado en el alta, de vuelta al formulario cuando la action falla.
+ *
+ * React 19 resetea los campos no controlados de un `<form action>` al terminar
+ * la action, salga bien o mal: sin esto, un error dejaba el alta vacía, igual
+ * que después de guardar, y el artículo no aparecía en el inventario sin que
+ * nadie hubiera leído por qué (mundopcell, 2026-09-15). Los campos lo usan de
+ * `defaultValue`, que es el valor al que React los restaura — mismo mecanismo
+ * que el mail del login (`app/login/acciones.ts`).
+ *
+ * Sólo lo que el formulario tipea sin estado propio. Categoría, moneda, el
+ * switch de IMEI y la lista de IMEI son controlados (`useState`), así que el
+ * reset no los toca y no hace falta devolverlos.
+ */
+export type ValoresDelAlta = {
+  tipo: 'PRODUCTO' | 'SERVICIO'
+  nombre: string
+  sku: string
+  precio: string
+  stockInicial: string
+  costoUnitario: string
+  facturaProveedor: string
+}
+
+export type EstadoInventario = {
+  error: string | null
+  aviso: string | null
+  valores?: ValoresDelAlta
+}
 
 // El valor inicial NO vive acá, aunque sea lo natural: este archivo es
 // 'use server', y ahí Next.js convierte cada export en un endpoint RPC, así que
@@ -163,7 +191,21 @@ export async function altaArticulo(
     revalidatePath('/inventario')
     return { error: null, aviso: `Artículo creado con el código ${creado.sku}.` }
   } catch (e) {
-    return traducir(e)
+    // `traducir` relanza lo que no es de dominio, así que `valores` sólo viaja
+    // con un error que la persona puede corregir tipeando distinto.
+    return { ...traducir(e), valores: valoresDelAlta(datos) }
+  }
+}
+
+function valoresDelAlta(datos: FormData): ValoresDelAlta {
+  return {
+    tipo: datos.get('tipo') === 'SERVICIO' ? 'SERVICIO' : 'PRODUCTO',
+    nombre: texto(datos, 'nombre'),
+    sku: texto(datos, 'sku'),
+    precio: texto(datos, 'precio'),
+    stockInicial: texto(datos, 'stockInicial'),
+    costoUnitario: texto(datos, 'costoUnitario'),
+    facturaProveedor: texto(datos, 'facturaProveedor'),
   }
 }
 

@@ -87,7 +87,8 @@ export function ListaDeImeis({
           `afXki`. */}
       <p className="text-[11px] leading-[1.4] text-muted-foreground">
         Cargá los que tengas a mano. El resto entra sin identificar y se completa desde la ficha
-        cuando aparezca cada equipo.
+        cuando aparezca cada equipo. Cada equipo lleva un solo IMEI: si es dual SIM, cargá sólo el
+        primero.
       </p>
     </div>
   )

@@ -58,6 +58,17 @@ describe('ListaDeImeis: estructura (render estático)', () => {
     expect(html).toContain('se completa desde la ficha cuando aparezca cada equipo')
   })
 
+  // Un celular dual SIM tiene dos IMEI y es UN equipo. Cargar los dos como dos
+  // filas los cuenta como dos unidades: mundopcell lo hizo con un iPhone el
+  // 2026-09-09 (dos ingresos y dos bajas a mano) y, con cantidad 1, el alta de
+  // otro equipo se rechazó. Cada unidad lleva un solo IMEI, y la lista lo dice
+  // donde se escanea — en el alta y en el ingreso, que instancian ésta.
+  it('la nota avisa que un equipo dual SIM se carga con un solo IMEI', () => {
+    const html = renderToStaticMarkup(<ListaDeImeis />)
+    expect(html).toContain('dual SIM')
+    expect(html).toMatch(/un solo IMEI/)
+  })
+
   it('la nota aparece UNA sola vez', () => {
     const html = renderToStaticMarkup(<ListaDeImeis />)
     expect(html.split('Cargá los que tengas a mano').length - 1).toBe(1)

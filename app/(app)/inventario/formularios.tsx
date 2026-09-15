@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react'
 import { useActionState, useState } from 'react'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { Package, Wrench, Info, Check, Ban, RotateCcw } from 'lucide-react'
 import {
   altaArticulo,
@@ -149,8 +150,30 @@ export function FormularioDeAlta({
   arbol: RamaConHijas[]
   puedeCostos: boolean
 }) {
-  const [estado, accion, pendiente] = useActionState(altaArticulo, INICIAL)
-  const [tipo, setTipo] = useState<'PRODUCTO' | 'SERVICIO'>('PRODUCTO')
+  // El aviso va por toast, además del cartel inline: el cartel vive debajo de
+  // "Datos del artículo" y el botón arriba (Topbar) o en un pie fijo
+  // (teléfono), así que con la card de stock en medio un error existía y nadie
+  // lo leía — la pantalla, recién reseteada por React, se leía como un alta
+  // exitosa (mundopcell, 2026-09-15). Se lanza en el handler que recibe el
+  // resultado y no desde un efecto sobre `estado`: es la lección del ABM de
+  // categorías, donde un toast colgado del ciclo de vida del componente se
+  // perdía con él. El error no se descarta solo porque dice qué corregir; la
+  // clave compartida hace que el éxito del reintento reemplace al error.
+  const [estado, accion, pendiente] = useActionState(
+    async (anterior: EstadoInventario, datos: FormData) => {
+      const r = await altaArticulo(anterior, datos)
+      if (r.error) toast.error(r.error, { id: 'alta-articulo', duration: Infinity })
+      else if (r.aviso) toast.success(r.aviso, { id: 'alta-articulo' })
+      return r
+    },
+    INICIAL,
+  )
+  // Lo tipeado vuelve SÓLO con un error (`altaArticulo`, acciones.ts): React
+  // resetea los campos no controlados al terminar la action, y los restaura a
+  // su `defaultValue`. Con un alta exitosa no viene nada y el formulario queda
+  // vacío para el artículo siguiente.
+  const valores = estado.valores
+  const [tipo, setTipo] = useState<'PRODUCTO' | 'SERVICIO'>(valores?.tipo ?? 'PRODUCTO')
   // Apagado por default: la mayoría de los artículos no llevan IMEI. Un
   // SERVICIO no puede llevar serie — el switch se deshabilita al elegirlo, y
   // el servidor lo rechaza igual (crearArticulo), porque una pantalla que
@@ -199,7 +222,7 @@ export function FormularioDeAlta({
                   type="radio"
                   name="tipo"
                   value="PRODUCTO"
-                  defaultChecked
+                  defaultChecked={(valores?.tipo ?? 'PRODUCTO') === 'PRODUCTO'}
                   className="sr-only"
                   onChange={() => setTipo('PRODUCTO')}
                 />
@@ -213,6 +236,7 @@ export function FormularioDeAlta({
                 <input
                   type="radio"
                   name="tipo"
+                  defaultChecked={valores?.tipo === 'SERVICIO'}
                   value="SERVICIO"
                   className="sr-only"
                   // Un servicio no lleva stock, así que tampoco puede llevar
@@ -261,7 +285,14 @@ export function FormularioDeAlta({
           <CardDelFormulario titulo="Datos del artículo">
             <div className="flex flex-col gap-2">
               <Label htmlFor="nombre">Nombre</Label>
-              <Input id="nombre" name="nombre" required autoFocus className="h-10 rounded-[9px]" />
+              <Input
+                id="nombre"
+                name="nombre"
+                required
+                autoFocus
+                defaultValue={valores?.nombre ?? ''}
+                className="h-10 rounded-[9px]"
+              />
             </div>
             {/* El par de selectores vive en su propio componente desde el ciclo
                 de la categoría en la ficha: la ficha usa el MISMO, que es lo
@@ -270,7 +301,13 @@ export function FormularioDeAlta({
             <div className="flex gap-3">
               <div className="flex flex-1 flex-col gap-2">
                 <Label htmlFor="sku">Código (SKU)</Label>
-                <Input id="sku" name="sku" placeholder="Se genera solo si lo dejás vacío" className="h-10 rounded-[9px]" />
+                <Input
+                  id="sku"
+                  name="sku"
+                  placeholder="Se genera solo si lo dejás vacío"
+                  defaultValue={valores?.sku ?? ''}
+                  className="h-10 rounded-[9px]"
+                />
               </div>
               <div className="flex w-60 flex-col gap-2">
                 <Label htmlFor="precio">Precio de venta</Label>
@@ -289,6 +326,7 @@ export function FormularioDeAlta({
                     inputMode="decimal"
                     placeholder="15000,50"
                     required
+                    defaultValue={valores?.precio ?? ''}
                     className="h-10 flex-1 rounded-l-none rounded-r-[9px]"
                   />
                 </SelectorDeMoneda>
@@ -320,7 +358,13 @@ export function FormularioDeAlta({
                   completa después, desde la ficha. */}
               <div className="flex w-[220px] flex-col gap-2">
                 <Label htmlFor="stockInicial">Cantidad (opcional)</Label>
-                <Input id="stockInicial" name="stockInicial" inputMode="decimal" className="h-10 rounded-[9px]" />
+                <Input
+                  id="stockInicial"
+                  name="stockInicial"
+                  inputMode="decimal"
+                  defaultValue={valores?.stockInicial ?? ''}
+                  className="h-10 rounded-[9px]"
+                />
               </div>
               {llevaSerie && (
                 <div className="flex flex-col gap-2">
@@ -338,6 +382,7 @@ export function FormularioDeAlta({
                     id="costoUnitario"
                     name="costoUnitario"
                     inputMode="decimal"
+                    defaultValue={valores?.costoUnitario ?? ''}
                     className="h-10 rounded-[9px]"
                   />
                 </div>
@@ -353,6 +398,7 @@ export function FormularioDeAlta({
                   id="facturaProveedor"
                   name="facturaProveedor"
                   placeholder="A 0001-00023456"
+                  defaultValue={valores?.facturaProveedor ?? ''}
                   className="h-10 rounded-[9px]"
                 />
               </div>

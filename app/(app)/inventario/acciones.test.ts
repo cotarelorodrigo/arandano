@@ -365,6 +365,9 @@ describe('el rol de cada action de inventario', () => {
     const r = await altaArticulo(INICIAL, datos)
     expect(r.error).toBeNull()
     expect(r.aviso).toMatch(/A-\d{4}/)
+    // Sin `valores`, el reset de React devuelve el formulario a vacío: es lo
+    // que deja la pantalla lista para cargar el artículo siguiente.
+    expect(r.valores).toBeUndefined()
   })
 
   // El formato argentino tiene que llegar entero hasta la base: es el camino
@@ -1096,6 +1099,38 @@ describe('altaArticulo con unidades por IMEI', () => {
     // Consistente con su hermano de más abajo (IMEI repetido): los dos
     // rechazan el alta entera, así que los dos aseveran lo mismo.
     await expect(buscarPorNombre('Cambio de módulo')).resolves.toBeNull()
+  })
+
+  // El caso real de mundopcell (2026-09-15): un celular dual SIM, cantidad 1 y
+  // sus dos IMEI escaneados. El rechazo es correcto —cada unidad lleva un solo
+  // IMEI—, pero tiene que decir por qué en términos del mostrador, y devolver
+  // lo tipeado para que el reset de React no deje la pantalla como si se hubiera
+  // guardado (ver formulario-alta-error.test.tsx).
+  it('un equipo dual SIM con sus dos IMEI y cantidad 1: no crea nada, lo explica y devuelve lo tipeado', async () => {
+    estado.cookie = cookieDuenio
+    const datos = new FormData()
+    datos.set('nombre', 'Motorola dual SIM')
+    datos.set('precio', '350000')
+    datos.set('tipo', 'PRODUCTO')
+    datos.set('moneda', 'ARS')
+    datos.set('llevaSerie', 'on')
+    datos.set('stockInicial', '1')
+    datos.set('facturaProveedor', 'A 0001-00000001')
+    datos.append('imeis', '355200000000001')
+    datos.append('imeis', '355200000000002')
+
+    const r = await altaArticulo(INICIAL, datos)
+    expect(r.error).toMatch(/dual SIM/)
+    expect(r.valores).toEqual({
+      tipo: 'PRODUCTO',
+      nombre: 'Motorola dual SIM',
+      sku: '',
+      precio: '350000',
+      stockInicial: '1',
+      costoUnitario: '',
+      facturaProveedor: 'A 0001-00000001',
+    })
+    await expect(buscarPorNombre('Motorola dual SIM')).resolves.toBeNull()
   })
 
   it('dos IMEI iguales en el alta se rechazan y no crean el artículo', async () => {

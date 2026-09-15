@@ -1382,9 +1382,28 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
   tengan a mano; el resto nacen sin identificar y se completan después, desde
   la ficha. Escanear más IMEI que la cantidad declarada se rechaza
   (`SERIE_CONTEO_NO_COINCIDE`): no se pueden identificar equipos que no
-  entraron.
+  entraron. **El mensaje nombra el caso que más lo dispara**, que no es un
+  error de conteo sino un celular dual SIM con sus dos IMEI escaneados: cada
+  equipo lleva un solo IMEI, y la nota de la lista lo dice donde se escanea.
 
 **Decisiones**
+
+- **Un error no vacía el formulario** (2026-09-15, reportado por mundopcell:
+  *"la página se resetea como si se hubiera guardado, pero en inventario no
+  aparece"*). React 19 resetea los campos no controlados de un `<form action>`
+  al terminar la action, salga bien o mal, y el cartel rojo vive debajo de
+  "Datos del artículo", lejos del botón: un alta rechazada quedaba idéntica a
+  una exitosa. `altaArticulo` devuelve lo tipeado en `valores` **sólo con un
+  error de dominio**, los campos lo usan de `defaultValue` —el valor al que
+  React los restaura, mismo mecanismo que el mail del login—. **Y el aviso va
+  también por toast**, lanzado en el handler que recibe el resultado y no desde
+  un efecto (la lección del ABM de categorías): el error no se descarta solo,
+  el éxito sí, y comparten clave para que el éxito del reintento reemplace al
+  error. El cartel inline se queda, al lado del formulario. Categoría, moneda, el switch y la lista de IMEI no
+  viajan: son controlados y el reset no los toca. **Lo que no cubre**: el resto
+  de los formularios de `/inventario/[id]` sigue sin devolver lo tipeado; ahí
+  los campos restauran al valor guardado del artículo, que es menos grave pero
+  es el mismo mecanismo.
 
 - **Toda la pantalla exige `ARTICULOS_CREAR`**, no sólo la action: `page.tsx`
   llama a `exigirPermiso('ARTICULOS_CREAR')` antes de renderizar nada, así que
