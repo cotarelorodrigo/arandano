@@ -9,7 +9,7 @@ import {
 } from '@/lib/bot/administrar'
 import { kapsoConfigurado } from '@/lib/bot/kapso'
 import { modeloConfigurado } from '@/lib/bot/agente'
-import { respuestasDelMes } from '@/lib/bot/limites'
+import { respuestasDelMes, sinRespuestaEnPruebaDelMes } from '@/lib/bot/limites'
 import { subtituloDelModo } from '@/lib/bot/modo'
 import { formatearFechaCorta } from '@/lib/formato/mostrar'
 import { BotonDeConexion, CuerpoBot, type NumeroOfrecido, type VistaDelBot } from './formularios'
@@ -86,6 +86,11 @@ export default async function PantallaDelBot() {
     aQueSeDedica: bot.aQueSeDedica,
     instrucciones: bot.instrucciones,
     respuestasDelMes: conectado ? await respuestasDelMes(sesion.tenant.id) : 0,
+    // Sólo en prueba: es el dato con el que el dueño decide pasar a Todos, y
+    // fuera de ese modo sería una consulta por mensaje de pantalla que no se
+    // muestra.
+    sinRespuestaEnPrueba:
+      conectado && bot.modo === 'PRUEBA' ? await sinRespuestaEnPruebaDelMes(sesion.tenant.id) : 0,
     topeMensual: bot.topeMensual,
     esDuenio,
     kapsoListo: kapsoConfigurado(),

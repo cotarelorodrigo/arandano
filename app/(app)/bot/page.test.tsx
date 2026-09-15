@@ -23,7 +23,11 @@ const modeloConfigurado = vi.fn()
 vi.mock('@/lib/bot/agente', () => ({ modeloConfigurado: () => modeloConfigurado() }))
 
 const respuestasDelMes = vi.fn()
-vi.mock('@/lib/bot/limites', () => ({ respuestasDelMes: () => respuestasDelMes() }))
+const sinRespuestaEnPruebaDelMes = vi.fn()
+vi.mock('@/lib/bot/limites', () => ({
+  respuestasDelMes: () => respuestasDelMes(),
+  sinRespuestaEnPruebaDelMes: () => sinRespuestaEnPruebaDelMes(),
+}))
 
 const notFound = vi.fn(() => {
   throw new Error('NEXT_NOT_FOUND')
@@ -75,6 +79,7 @@ beforeEach(() => {
   kapsoConfigurado.mockReturnValue(true)
   modeloConfigurado.mockReturnValue(true)
   respuestasDelMes.mockResolvedValue(0)
+  sinRespuestaEnPruebaDelMes.mockResolvedValue(0)
 })
 
 describe('/bot', () => {
@@ -263,6 +268,73 @@ describe('/bot', () => {
       const html = await render()
       expect(html).not.toContain('Sólo prueba')
       expect(numerosDePruebaDelLocal).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('los números de prueba', () => {
+    it('con número conectado se ve la card aunque el bot esté en todos', async () => {
+      botDelLocal.mockResolvedValue(CONECTADO)
+      const html = await render()
+      expect(html).toContain('Números de prueba')
+      expect(html).toContain('Con código de área, sin 0 y sin 15. Ej: 11 2233-4455.')
+    })
+
+    it('sin número conectado no se ve', async () => {
+      expect(await render()).not.toContain('Números de prueba')
+    })
+
+    /**
+     * La segunda línea de cada número es la verificación de que está bien
+     * cargado (spec, decisión 2): las dos formas tienen que poder aparecer.
+     */
+    it('cada número dice si ya escribió', async () => {
+      botDelLocal.mockResolvedValue({ ...CONECTADO, modo: 'PRUEBA' })
+      numerosDePruebaDelLocal.mockResolvedValue([
+        { id: 'n1', digitos: '5491122334455', ultimoMensajeEn: new Date('2026-09-15T17:32:00Z') },
+        { id: 'n2', digitos: '1199998888', ultimoMensajeEn: null },
+      ])
+      const html = await render()
+      expect(html).toContain('112233-4455')
+      expect(html).toContain('119999-8888')
+      expect(html).toContain('Último mensaje:')
+      expect(html).toContain('Todavía no escribió')
+    })
+
+    it('con 20 números avisa el tope y deshabilita el campo', async () => {
+      botDelLocal.mockResolvedValue({ ...CONECTADO, modo: 'PRUEBA' })
+      numerosDePruebaDelLocal.mockResolvedValue(
+        Array.from({ length: 20 }, (_, i) => ({
+          id: `n${i}`,
+          digitos: `11000000${String(i).padStart(2, '0')}`,
+          ultimoMensajeEn: null,
+        })),
+      )
+      const html = await render()
+      expect(html).toContain('Llegaste al tope de 20 números de prueba')
+      expect(html).toMatch(/<input[^>]*id="bot-numero-prueba"[^>]*disabled=""/)
+    })
+  })
+
+  describe('los clientes que escribieron durante la prueba', () => {
+    it('en prueba, con clientes sin respuesta, lo dice en Este mes', async () => {
+      botDelLocal.mockResolvedValue({ ...CONECTADO, modo: 'PRUEBA' })
+      sinRespuestaEnPruebaDelMes.mockResolvedValue(6)
+      expect(await render()).toContain(
+        'Mientras estuvo en prueba te escribieron 6 clientes que no recibieron respuesta.',
+      )
+    })
+
+    it('en prueba sin clientes sin respuesta no agrega la línea', async () => {
+      botDelLocal.mockResolvedValue({ ...CONECTADO, modo: 'PRUEBA' })
+      expect(await render()).not.toContain('Mientras estuvo en prueba')
+    })
+
+    /** Sólo corre en prueba: en todos o apagado es una consulta que no se muestra. */
+    it('fuera de prueba ni siquiera lo cuenta', async () => {
+      botDelLocal.mockResolvedValue(CONECTADO)
+      const html = await render()
+      expect(html).not.toContain('Mientras estuvo en prueba')
+      expect(sinRespuestaEnPruebaDelMes).not.toHaveBeenCalled()
     })
   })
 })

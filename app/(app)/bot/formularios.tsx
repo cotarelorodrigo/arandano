@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Bot, Link2, MessageCircle, Smartphone } from 'lucide-react'
+import { Bot, Link2, MessageCircle, Plus, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -20,13 +20,16 @@ import {
   tocarModo,
   type Modo,
 } from '@/lib/bot/modo'
+import { TOPE_NUMEROS_DE_PRUEBA, mostrarNumeroDePrueba } from '@/lib/bot/numeros-de-prueba'
 import estilos from './tipografia.module.css'
 import {
+  agregarNumeroDePruebaDelLocal,
   cambiarModoDelBot,
   confirmarNumeroDelLocal,
   desconectarNumero,
   generarEnlaceDeConexion,
   guardarInformacionDelLocal,
+  quitarNumeroDePruebaDelLocal,
   type EstadoBot,
 } from './acciones'
 
@@ -60,6 +63,8 @@ export type VistaDelBot = {
   aQueSeDedica: string
   instrucciones: string
   respuestasDelMes: number
+  /** Entrantes con MODO_PRUEBA este mes. Cero fuera de prueba. */
+  sinRespuestaEnPrueba: number
   topeMensual: number
   esDuenio: boolean
   kapsoListo: boolean
@@ -350,6 +355,101 @@ function ModoDelBot({ vista }: { vista: VistaDelBot }) {
 }
 
 /**
+ * La lista de números a los que el bot les contesta en «Sólo prueba».
+ *
+ * Se ve en cualquier modo con número conectado, para poder armarla antes de
+ * pasar a prueba. Cada número muestra si ya escribió alguien que coincida con
+ * él, y ésa es la verificación del número: la comparación es por los últimos
+ * 10 dígitos, así que uno tipeado con 0 y 15 no coincide con nadie y se queda
+ * en "Todavía no escribió" aunque el dueño se escriba desde ese celular.
+ *
+ * Los errores van por toast y no inline, con el mismo `avisar` que el resto de
+ * la pantalla: el campo es uno solo y el mensaje dice qué corregir.
+ */
+function NumerosDePrueba({ vista }: { vista: VistaDelBot }) {
+  const [enCurso, empezar] = useTransition()
+  const [texto, setTexto] = useState('')
+
+  if (!vista.conectado) return null
+
+  const lleno = vista.numerosDePrueba.length >= TOPE_NUMEROS_DE_PRUEBA
+
+  const agregar = () =>
+    empezar(async () => {
+      const r = avisar(await agregarNumeroDePruebaDelLocal(texto), 'bot-numero-agregar')
+      if (!r.error) setTexto('')
+    })
+
+  const quitar = (id: string) =>
+    empezar(async () => {
+      avisar(await quitarNumeroDePruebaDelLocal(id), `bot-numero-quitar-${id}`)
+    })
+
+  return (
+    <Seccion titulo="Números de prueba">
+      <p className={AYUDA}>Con el bot en «Sólo prueba», contesta únicamente a estos números.</p>
+      <form
+        className="flex flex-col gap-2 lg:flex-row"
+        onSubmit={(e) => {
+          e.preventDefault()
+          agregar()
+        }}
+      >
+        <Label htmlFor="bot-numero-prueba" className="sr-only">
+          Número de prueba
+        </Label>
+        <Input
+          id="bot-numero-prueba"
+          inputMode="tel"
+          autoComplete="off"
+          placeholder="11 2233-4455"
+          value={texto}
+          disabled={lleno || enCurso}
+          onChange={(e) => setTexto(e.target.value)}
+          className="min-w-0 flex-1"
+        />
+        <Button type="submit" size="sm" disabled={lleno || enCurso || !texto.trim()}>
+          <Plus className="size-4" />
+          Agregar
+        </Button>
+      </form>
+      <p className={AYUDA}>
+        {lleno
+          ? `Llegaste al tope de ${TOPE_NUMEROS_DE_PRUEBA} números de prueba. Quitá uno para agregar otro.`
+          : 'Con código de área, sin 0 y sin 15. Ej: 11 2233-4455.'}
+      </p>
+      {vista.numerosDePrueba.length > 0 && (
+        <ul className="flex flex-col divide-y rounded-md border">
+          {vista.numerosDePrueba.map((n) => {
+            const visible = mostrarNumeroDePrueba(n.digitos)
+            return (
+              <li key={n.id} className="flex flex-col gap-2 p-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium tabular-nums text-foreground">{visible}</p>
+                  <p className={AYUDA}>
+                    {n.ultimoMensajeEn ? `Último mensaje: ${n.ultimoMensajeEn}` : 'Todavía no escribió'}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={enCurso}
+                  onClick={() => quitar(n.id)}
+                  aria-label={`Quitar ${visible}`}
+                >
+                  Quitar
+                </Button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Seccion>
+  )
+}
+
+/**
  * Los dos campos que el dueño escribe, con UN solo botón.
  *
  * Van separados porque llegan al modelo en lugares distintos, y esa diferencia
@@ -445,6 +545,17 @@ function Consumo({ vista }: { vista: VistaDelBot }) {
   const porcentaje = tope > 0 ? Math.min(100, Math.round((usado / tope) * 100)) : 0
   const lleno = usado >= tope
 
+  // Un solo template string y no fragmentos JSX: renderToStaticMarkup separa
+  // los fragmentos con `<!-- -->`, y la oración dejaría de poder buscarse
+  // entera en el test.
+  const sinRespuesta = vista.sinRespuestaEnPrueba
+  const enPrueba =
+    vista.modo === 'PRUEBA' && sinRespuesta > 0
+      ? `Mientras estuvo en prueba te escribieron ${sinRespuesta} ${
+          sinRespuesta === 1 ? 'cliente que no recibió' : 'clientes que no recibieron'
+        } respuesta.`
+      : null
+
   return (
     <Seccion titulo="Este mes">
       <p className="text-2xl font-semibold text-foreground">
@@ -457,6 +568,7 @@ function Consumo({ vista }: { vista: VistaDelBot }) {
           ? 'Llegaste al tope del mes: el bot dejó de contestar. Los mensajes que lleguen se siguen guardando.'
           : 'Respuestas que dio el bot este mes. El contador vuelve a cero el primero de cada mes.'}
       </p>
+      {enPrueba && <p className={AYUDA}>{enPrueba}</p>}
     </Seccion>
   )
 }
@@ -493,6 +605,7 @@ export function CuerpoBot({ vista }: { vista: VistaDelBot }) {
       <div className="flex min-w-0 flex-1 flex-col gap-3 lg:gap-4">
         <Conexion vista={vista} />
         <ModoDelBot vista={vista} />
+        <NumerosDePrueba vista={vista} />
         <Informacion vista={vista} />
       </div>
       <div className="flex w-full flex-col gap-3 lg:w-[360px] lg:gap-4">
