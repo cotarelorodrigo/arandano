@@ -9,9 +9,11 @@ vi.mock('@/lib/permisos/guarda', () => ({
 
 const botDelLocal = vi.fn()
 const numerosDisponibles = vi.fn()
+const numerosDePruebaDelLocal = vi.fn()
 vi.mock('@/lib/bot/administrar', () => ({
   botDelLocal: () => botDelLocal(),
   numerosDisponibles: () => numerosDisponibles(),
+  numerosDePruebaDelLocal: () => numerosDePruebaDelLocal(),
 }))
 
 const kapsoConfigurado = vi.fn()
@@ -41,7 +43,6 @@ const SIN_CONECTAR: BotDelLocal = {
   phoneNumberId: null,
   numeroVisible: null,
   conectadoEn: null,
-  activo: false,
   modo: 'APAGADO',
   aQueSeDedica: '',
   instrucciones: '',
@@ -54,7 +55,6 @@ const CONECTADO: BotDelLocal = {
   phoneNumberId: 'pn_1',
   numeroVisible: '+54 9 11 5555 0000',
   conectadoEn: new Date('2026-08-29T12:00:00Z'),
-  activo: true,
   modo: 'TODOS',
   aQueSeDedica: 'una waflería',
   instrucciones: 'Abrimos de 9 a 18.',
@@ -71,6 +71,7 @@ beforeEach(() => {
   })
   botDelLocal.mockResolvedValue(SIN_CONECTAR)
   numerosDisponibles.mockResolvedValue([])
+  numerosDePruebaDelLocal.mockResolvedValue([])
   kapsoConfigurado.mockReturnValue(true)
   modeloConfigurado.mockReturnValue(true)
   respuestasDelMes.mockResolvedValue(0)
@@ -215,5 +216,53 @@ describe('/bot', () => {
   it('sin la variable declarada, la pantalla abre en cualquier local', async () => {
     expect(await render()).toContain('Conectá el WhatsApp del local')
     expect(notFound).not.toHaveBeenCalled()
+  })
+
+  describe('el modo del bot', () => {
+    it('ofrece los tres modos con el actual marcado', async () => {
+      botDelLocal.mockResolvedValue({ ...CONECTADO, modo: 'PRUEBA' })
+      const html = await render()
+      expect(html).toContain('Apagado')
+      expect(html).toContain('Sólo prueba')
+      expect(html).toContain('Todos')
+      // En modo single, Radix renderiza cada ítem como un <button role="radio">
+      // con aria-checked: el elegido es el único en "true".
+      expect(html).toMatch(/<button[^>]*aria-checked="true"[^>]*>Sólo prueba<\/button>/)
+      expect(html).not.toMatch(/<button[^>]*aria-checked="true"[^>]*>Todos<\/button>/)
+    })
+
+    it('en prueba el encabezado dice En prueba', async () => {
+      botDelLocal.mockResolvedValue({ ...CONECTADO, modo: 'PRUEBA' })
+      expect(await render()).toContain('En prueba')
+    })
+
+    it('apagado el encabezado dice Apagado y la leyenda explica que no contesta', async () => {
+      botDelLocal.mockResolvedValue({ ...CONECTADO, modo: 'APAGADO' })
+      const html = await render()
+      expect(html).toContain('+54 9 11 5555 0000 · Apagado')
+      expect(html).toContain('No le contesta a nadie. Los mensajes quedan guardados.')
+    })
+
+    it('en prueba sin números avisa que no le contesta a nadie', async () => {
+      botDelLocal.mockResolvedValue({ ...CONECTADO, modo: 'PRUEBA' })
+      numerosDePruebaDelLocal.mockResolvedValue([])
+      expect(await render()).toContain(
+        'Todavía no cargaste ningún número de prueba: no le contesta a nadie.',
+      )
+    })
+
+    it('en prueba con números dice a quién contesta', async () => {
+      botDelLocal.mockResolvedValue({ ...CONECTADO, modo: 'PRUEBA' })
+      numerosDePruebaDelLocal.mockResolvedValue([
+        { id: 'n1', digitos: '1122334455', ultimoMensajeEn: null },
+      ])
+      expect(await render()).toContain('Contesta sólo a los números de prueba.')
+    })
+
+    it('sin número conectado no ofrece el modo ni consulta los números de prueba', async () => {
+      const html = await render()
+      expect(html).not.toContain('Sólo prueba')
+      expect(numerosDePruebaDelLocal).not.toHaveBeenCalled()
+    })
   })
 })

@@ -256,15 +256,6 @@ describe('la información del local', () => {
   })
 })
 
-describe('prender el bot', () => {
-  it('no se puede prender sin número conectado', async () => {
-    await conCustomer()
-    await expect(administrar.alternarActivo(tenantId, true)).rejects.toMatchObject({
-      codigo: 'SIN_NUMERO',
-    })
-  })
-})
-
 describe('cambiar el modo', () => {
   /**
    * El valor de `activo` es el que hace seguro el rollback (spec, decisión 4):

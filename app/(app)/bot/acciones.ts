@@ -9,7 +9,6 @@ import { ErrorDeBot } from '@/lib/bot/errores'
 import { ErrorDeKapso } from '@/lib/bot/kapso'
 import {
   agregarNumeroDePrueba,
-  alternarActivo,
   cambiarModo,
   confirmarNumero,
   desconectar,
@@ -125,22 +124,6 @@ export async function desconectarNumero(): Promise<EstadoBot> {
     await desconectar(sesion.tenant.id)
     revalidatePath('/bot')
     return { error: null, aviso: 'El número quedó desconectado.', enlace: null }
-  } catch (e) {
-    return traducir(e)
-  }
-}
-
-export async function prenderOApagar(activo: boolean): Promise<EstadoBot> {
-  try {
-    const sesion = await exigirPermiso('BOT')
-    exigirBotHabilitado(sesion.subdominio)
-    await alternarActivo(sesion.tenant.id, activo)
-    revalidatePath('/bot')
-    return {
-      error: null,
-      aviso: activo ? 'El bot está contestando.' : 'El bot dejó de contestar.',
-      enlace: null,
-    }
   } catch (e) {
     return traducir(e)
   }

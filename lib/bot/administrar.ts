@@ -48,7 +48,6 @@ export type BotDelLocal = {
   phoneNumberId: string | null
   numeroVisible: string | null
   conectadoEn: Date | null
-  activo: boolean
   modo: Modo
   aQueSeDedica: string
   instrucciones: string
@@ -60,7 +59,6 @@ const VACIO: BotDelLocal = {
   phoneNumberId: null,
   numeroVisible: null,
   conectadoEn: null,
-  activo: false,
   modo: 'APAGADO',
   aQueSeDedica: '',
   instrucciones: '',
@@ -72,7 +70,6 @@ const CAMPOS = {
   phoneNumberId: true,
   numeroVisible: true,
   conectadoEn: true,
-  activo: true,
   modo: true,
   aQueSeDedica: true,
   instrucciones: true,
@@ -281,12 +278,6 @@ export async function cambiarModo(tenantId: string, modo: string): Promise<void>
     where: { tenantId },
     data: { modo, activo: modo === 'TODOS' },
   })
-}
-
-/** Transitoria: la usa `prenderOApagar` hasta que la pantalla pase a
- *  `cambiarModo` (Task 6 del plan del modo prueba), que la borra. */
-export async function alternarActivo(tenantId: string, activo: boolean): Promise<void> {
-  await cambiarModo(tenantId, activo ? 'TODOS' : 'APAGADO')
 }
 
 /**

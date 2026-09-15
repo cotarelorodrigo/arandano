@@ -1,24 +1,32 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-import { Bot, Link2, MessageCircle, Power, Smartphone } from 'lucide-react'
+import { Bot, Link2, MessageCircle, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
-import { Switch } from '@/components/ui/switch'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Textarea } from '@/components/ui/textarea'
 import { CLASES_RANURA_MOVIL } from '@/components/shell/encabezado'
 import { cn } from '@/lib/utils'
+import {
+  MODOS,
+  MS_CONFIRMACION_TODOS,
+  esModo,
+  leyendaDelModo,
+  tocarModo,
+  type Modo,
+} from '@/lib/bot/modo'
 import estilos from './tipografia.module.css'
 import {
+  cambiarModoDelBot,
   confirmarNumeroDelLocal,
   desconectarNumero,
   generarEnlaceDeConexion,
   guardarInformacionDelLocal,
-  prenderOApagar,
   type EstadoBot,
 } from './acciones'
 
@@ -45,7 +53,10 @@ export type VistaDelBot = {
   conectado: boolean
   numeroVisible: string | null
   conectadoEn: string | null
-  activo: boolean
+  modo: Modo
+  /** La lista de prueba, con la fecha del último mensaje ya formateada en el
+   *  servidor (huso de Buenos Aires). */
+  numerosDePrueba: { id: string; digitos: string; ultimoMensajeEn: string | null }[]
   aQueSeDedica: string
   instrucciones: string
   respuestasDelMes: number
@@ -239,27 +250,65 @@ function Conexion({ vista }: { vista: VistaDelBot }) {
   )
 }
 
-function Interruptor({ vista }: { vista: VistaDelBot }) {
+const ETIQUETA_DEL_MODO: Record<Modo, string> = {
+  APAGADO: 'Apagado',
+  PRUEBA: 'Sólo prueba',
+  TODOS: 'Todos',
+}
+
+/**
+ * A quién le contesta el bot: nadie, sólo los números de prueba, o todos.
+ *
+ * Un segmentado y no un switch más un toggle de prueba: tres estados reales, y
+ * ninguna combinación de dos controles que haya que leer junta para saber qué
+ * pasa con el próximo mensaje.
+ *
+ * **Pasar a Todos pide dos toques** (`tocarModo`, lib/bot/modo.ts). Es la única
+ * transición que manda el bot a clientes reales, y con tres pastillas juntas un
+ * toque de más sobre la vecina alcanza para hacerlo sin querer. La confirmación
+ * vive en la leyenda de abajo y se desarma sola: mismo mecanismo que
+ * `AnularVenta`, sin diálogo.
+ */
+function ModoDelBot({ vista }: { vista: VistaDelBot }) {
   const [enCurso, empezar] = useTransition()
-  const [activo, setActivo] = useState(vista.activo)
+  const [modo, setModo] = useState<Modo>(vista.modo)
+  const [armadoTodos, setArmadoTodos] = useState(false)
+
+  useEffect(() => {
+    if (!armadoTodos) return
+    const t = setTimeout(() => setArmadoTodos(false), MS_CONFIRMACION_TODOS)
+    return () => clearTimeout(t)
+  }, [armadoTodos])
 
   if (!vista.conectado) return null
 
-  const cambiar = (valor: boolean) => {
-    const antes = activo
-    setActivo(valor)
+  const tocar = (valor: string) => {
+    // Radix manda '' al tocar el ítem ya elegido: un modo nunca queda vacío.
+    if (!esModo(valor)) return
+    const r = tocarModo({ modo, armadoTodos }, valor)
+    setArmadoTodos(r.armadoTodos)
+    const nuevo = r.cambiarA
+    if (!nuevo) return
+
+    const antes = modo
+    setModo(nuevo)
     empezar(async () => {
-      const r = avisar(await prenderOApagar(valor), 'bot-switch')
-      // Rollback si el servidor lo rechazó: el switch no puede quedar diciendo
+      const resultado = avisar(await cambiarModoDelBot(nuevo), 'bot-modo')
+      // Rollback si el servidor lo rechazó: el control no puede quedar diciendo
       // algo distinto de lo que la base guardó.
-      if (r.error) setActivo(antes)
-      else if (valor && !vista.aQueSeDedica.trim()) {
+      if (resultado.error) {
+        setModo(antes)
+        return
+      }
+      // Al empezar a probar también: es justo cuando conviene enterarse.
+      if (nuevo === 'APAGADO') return
+      if (!vista.aQueSeDedica.trim()) {
         // Primero éste: sin saber a qué se dedica el local, el bot contesta
         // como "un comercio" cualquiera, que es peor que no saber los horarios.
         toast('El bot todavía no sabe a qué se dedica tu local: va a hablar en genérico hasta que se lo cargues.', {
           id: 'bot-sin-dedicacion',
         })
-      } else if (valor && !vista.instrucciones.trim()) {
+      } else if (!vista.instrucciones.trim()) {
         toast('El bot va a contestar sólo precios y disponibilidad hasta que cargues la información del local.', {
           id: 'bot-sin-info',
         })
@@ -269,13 +318,27 @@ function Interruptor({ vista }: { vista: VistaDelBot }) {
 
   return (
     <Seccion titulo="El bot">
-      <div className="flex items-center justify-between gap-3">
-        <Label htmlFor="bot-activo" className="flex items-center gap-2 text-sm">
-          <Power className="size-4 text-foreground-soft" />
-          {activo ? 'Está contestando' : 'No está contestando'}
-        </Label>
-        <Switch id="bot-activo" checked={activo} disabled={enCurso} onCheckedChange={cambiar} />
-      </div>
+      <ToggleGroup
+        type="single"
+        value={modo}
+        onValueChange={tocar}
+        disabled={enCurso}
+        aria-label="A quién le contesta el bot"
+        className="w-full gap-0.5 rounded-[10px] bg-muted p-[3px]"
+      >
+        {MODOS.map((m) => (
+          <ToggleGroupItem
+            key={m}
+            value={m}
+            className="flex-1 rounded-lg text-xs font-medium text-muted-foreground data-[state=on]:bg-card data-[state=on]:font-semibold data-[state=on]:text-foreground"
+          >
+            {ETIQUETA_DEL_MODO[m]}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+      <p className={cn(AYUDA, armadoTodos && 'font-semibold text-foreground')} aria-live="polite">
+        {leyendaDelModo({ modo, cantidadNumeros: vista.numerosDePrueba.length, armadoTodos })}
+      </p>
       {!vista.modeloListo && (
         <p className="rounded-md bg-muted p-3 text-xs leading-relaxed text-foreground">
           Falta configurar el modelo en este servidor, así que el bot no puede responder todavía.
@@ -429,7 +492,7 @@ export function CuerpoBot({ vista }: { vista: VistaDelBot }) {
     <div className="flex flex-col gap-3 p-[14px] lg:flex-row lg:items-start lg:gap-4 lg:p-6">
       <div className="flex min-w-0 flex-1 flex-col gap-3 lg:gap-4">
         <Conexion vista={vista} />
-        <Interruptor vista={vista} />
+        <ModoDelBot vista={vista} />
         <Informacion vista={vista} />
       </div>
       <div className="flex w-full flex-col gap-3 lg:w-[360px] lg:gap-4">

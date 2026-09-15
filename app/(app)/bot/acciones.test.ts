@@ -14,7 +14,6 @@ vi.mock('next/navigation', () => ({ notFound: () => notFound() }))
 const generarEnlace = vi.fn()
 const confirmarNumero = vi.fn()
 const desconectar = vi.fn()
-const alternarActivo = vi.fn()
 const guardarInformacion = vi.fn()
 const cambiarModo = vi.fn()
 const agregarNumeroDePrueba = vi.fn()
@@ -23,7 +22,6 @@ vi.mock('@/lib/bot/administrar', () => ({
   generarEnlace: (...a: unknown[]) => generarEnlace(...a),
   confirmarNumero: (...a: unknown[]) => confirmarNumero(...a),
   desconectar: (...a: unknown[]) => desconectar(...a),
-  alternarActivo: (...a: unknown[]) => alternarActivo(...a),
   guardarInformacion: (...a: unknown[]) => guardarInformacion(...a),
   cambiarModo: (...a: unknown[]) => cambiarModo(...a),
   agregarNumeroDePrueba: (...a: unknown[]) => agregarNumeroDePrueba(...a),
@@ -67,7 +65,6 @@ describe('los guards de las acciones de /bot', () => {
   })
 
   it.each([
-    ['prenderOApagar', () => acciones.prenderOApagar(true)],
     ['guardarInformacionDelLocal', () => acciones.guardarInformacionDelLocal({ aQueSeDedica: 'una waflería', instrucciones: 'Abrimos 9 a 18' })],
     ['cambiarModoDelBot', () => acciones.cambiarModoDelBot('PRUEBA')],
     ['agregarNumeroDePruebaDelLocal', () => acciones.agregarNumeroDePruebaDelLocal('11 2233-4455')],
@@ -94,11 +91,6 @@ describe('los guards de las acciones de /bot', () => {
     expect(efecto(), 'la acción corrió sin el permiso BOT').not.toHaveBeenCalled()
   })
 
-  it('un empleado sin BOT no puede prender el bot', async () => {
-    exigirPermiso.mockRejectedValue(new Error('forbidden'))
-    await expect(acciones.prenderOApagar(true)).rejects.toThrow()
-    expect(alternarActivo, 'se prendió el bot sin permiso').not.toHaveBeenCalled()
-  })
 })
 
 describe('lo que las acciones devuelven', () => {
@@ -124,11 +116,6 @@ describe('lo que las acciones devuelven', () => {
       aQueSeDedica: 'una waflería',
       instrucciones: 'Abrimos de 9 a 18.',
     })
-  })
-
-  it('el switch manda el booleano, no un texto', async () => {
-    await acciones.prenderOApagar(false)
-    expect(alternarActivo).toHaveBeenCalledWith('tenant-1', false)
   })
 
   it('el modo viaja tal cual; lo valida administrar', async () => {
@@ -192,7 +179,6 @@ describe('el gate del rollout alcanza a todas las acciones', () => {
     ['generarEnlaceDeConexion', () => acciones.generarEnlaceDeConexion(), generarEnlace],
     ['confirmarNumeroDelLocal', () => acciones.confirmarNumeroDelLocal('pn_1'), confirmarNumero],
     ['desconectarNumero', () => acciones.desconectarNumero(), desconectar],
-    ['prenderOApagar', () => acciones.prenderOApagar(true), alternarActivo],
     [
       'guardarInformacionDelLocal',
       () => acciones.guardarInformacionDelLocal({ aQueSeDedica: 'una waflería', instrucciones: 'Abrimos 9 a 18' }),
