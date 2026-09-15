@@ -16,12 +16,18 @@ const confirmarNumero = vi.fn()
 const desconectar = vi.fn()
 const alternarActivo = vi.fn()
 const guardarInformacion = vi.fn()
+const cambiarModo = vi.fn()
+const agregarNumeroDePrueba = vi.fn()
+const quitarNumeroDePrueba = vi.fn()
 vi.mock('@/lib/bot/administrar', () => ({
   generarEnlace: (...a: unknown[]) => generarEnlace(...a),
   confirmarNumero: (...a: unknown[]) => confirmarNumero(...a),
   desconectar: (...a: unknown[]) => desconectar(...a),
   alternarActivo: (...a: unknown[]) => alternarActivo(...a),
   guardarInformacion: (...a: unknown[]) => guardarInformacion(...a),
+  cambiarModo: (...a: unknown[]) => cambiarModo(...a),
+  agregarNumeroDePrueba: (...a: unknown[]) => agregarNumeroDePrueba(...a),
+  quitarNumeroDePrueba: (...a: unknown[]) => quitarNumeroDePrueba(...a),
 }))
 
 const SESION = {
@@ -63,6 +69,9 @@ describe('los guards de las acciones de /bot', () => {
   it.each([
     ['prenderOApagar', () => acciones.prenderOApagar(true)],
     ['guardarInformacionDelLocal', () => acciones.guardarInformacionDelLocal({ aQueSeDedica: 'una waflería', instrucciones: 'Abrimos 9 a 18' })],
+    ['cambiarModoDelBot', () => acciones.cambiarModoDelBot('PRUEBA')],
+    ['agregarNumeroDePruebaDelLocal', () => acciones.agregarNumeroDePruebaDelLocal('11 2233-4455')],
+    ['quitarNumeroDePruebaDelLocal', () => acciones.quitarNumeroDePruebaDelLocal('0190a1b2-0000-7000-8000-000000000000')],
   ])('%s se delega con el permiso BOT', async (_nombre, correr) => {
     await correr()
     expect(exigirPermiso).toHaveBeenCalledWith('BOT')
@@ -73,6 +82,16 @@ describe('los guards de las acciones de /bot', () => {
     exigirDuenio.mockRejectedValue(new Error('forbidden'))
     await expect(acciones.generarEnlaceDeConexion()).rejects.toThrow()
     expect(generarEnlace, 'se generó un enlace sin ser dueño').not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['cambiarModoDelBot', () => acciones.cambiarModoDelBot('TODOS'), () => cambiarModo],
+    ['agregarNumeroDePruebaDelLocal', () => acciones.agregarNumeroDePruebaDelLocal('11 2233-4455'), () => agregarNumeroDePrueba],
+    ['quitarNumeroDePruebaDelLocal', () => acciones.quitarNumeroDePruebaDelLocal('x'), () => quitarNumeroDePrueba],
+  ])('un empleado sin BOT no puede %s', async (_n, correr, efecto) => {
+    exigirPermiso.mockRejectedValue(new Error('forbidden'))
+    await expect(correr()).rejects.toThrow()
+    expect(efecto(), 'la acción corrió sin el permiso BOT').not.toHaveBeenCalled()
   })
 
   it('un empleado sin BOT no puede prender el bot', async () => {
@@ -112,6 +131,35 @@ describe('lo que las acciones devuelven', () => {
     expect(alternarActivo).toHaveBeenCalledWith('tenant-1', false)
   })
 
+  it('el modo viaja tal cual; lo valida administrar', async () => {
+    await acciones.cambiarModoDelBot('PRUEBA')
+    expect(cambiarModo).toHaveBeenCalledWith('tenant-1', 'PRUEBA')
+  })
+
+  it('cada modo avisa lo que va a pasar con el próximo mensaje', async () => {
+    expect((await acciones.cambiarModoDelBot('APAGADO')).aviso).toBe('El bot dejó de contestar.')
+    expect((await acciones.cambiarModoDelBot('PRUEBA')).aviso).toBe(
+      'El bot contesta sólo a los números de prueba.',
+    )
+    expect((await acciones.cambiarModoDelBot('TODOS')).aviso).toBe('El bot les contesta a todos.')
+  })
+
+  it('agregar pasa el texto tipeado y quitar el id', async () => {
+    await acciones.agregarNumeroDePruebaDelLocal('11 2233-4455')
+    expect(agregarNumeroDePrueba).toHaveBeenCalledWith('tenant-1', '11 2233-4455')
+    await acciones.quitarNumeroDePruebaDelLocal('id-1')
+    expect(quitarNumeroDePrueba).toHaveBeenCalledWith('tenant-1', 'id-1')
+  })
+
+  it('un número repetido se muestra como error, no se relanza', async () => {
+    const { ErrorDeBot } = await import('@/lib/bot/errores')
+    agregarNumeroDePrueba.mockRejectedValueOnce(
+      new ErrorDeBot('NUMERO_REPETIDO', 'Ese número ya está en la lista de prueba.'),
+    )
+    const r = await acciones.agregarNumeroDePruebaDelLocal('11 2233-4455')
+    expect(r.error).toBe('Ese número ya está en la lista de prueba.')
+  })
+
   /**
    * Un error corregible se muestra; cualquier otro se RELANZA para que llegue
    * al log en vez de quedar disfrazado de cartel en la pantalla.
@@ -139,7 +187,7 @@ describe('lo que las acciones devuelven', () => {
  * sí): un `rejects.toThrow()` solo pasaría igual si el gate rechazara SIEMPRE,
  * y eso dejaría al local habilitado sin bot y con el gate en verde.
  */
-describe('el gate del rollout alcanza a las cinco acciones', () => {
+describe('el gate del rollout alcanza a todas las acciones', () => {
   const TODAS: [string, () => Promise<unknown>, ReturnType<typeof vi.fn>][] = [
     ['generarEnlaceDeConexion', () => acciones.generarEnlaceDeConexion(), generarEnlace],
     ['confirmarNumeroDelLocal', () => acciones.confirmarNumeroDelLocal('pn_1'), confirmarNumero],

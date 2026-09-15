@@ -9,10 +9,13 @@ import { ErrorDeBot } from '@/lib/bot/errores'
 import { ErrorDeKapso } from '@/lib/bot/kapso'
 import {
   alternarActivo,
+  agregarNumeroDePrueba,
+  cambiarModo,
   confirmarNumero,
   desconectar,
   generarEnlace,
   guardarInformacion,
+  quitarNumeroDePrueba,
 } from '@/lib/bot/administrar'
 
 /**
@@ -58,7 +61,7 @@ function traducir(e: unknown): EstadoBot {
 }
 
 /**
- * El gate del rollout, en las CINCO acciones y no sólo en la pantalla.
+ * El gate del rollout, en TODAS las acciones y no sólo en la pantalla.
  *
  * `BOT_HABILITADO_EN` decide en qué locales existe el bot mientras se prueba en
  * producción con uno solo (ver `lib/bot/habilitado.ts`). Esconder la pantalla no
@@ -153,6 +156,60 @@ export async function guardarInformacionDelLocal(entrada: {
     await guardarInformacion(sesion.tenant.id, entrada)
     revalidatePath('/bot')
     return { error: null, aviso: 'Guardado.', enlace: null }
+  } catch (e) {
+    return traducir(e)
+  }
+}
+
+
+const AVISO_DEL_MODO: Record<string, string> = {
+  APAGADO: 'El bot dejó de contestar.',
+  PRUEBA: 'El bot contesta sólo a los números de prueba.',
+  TODOS: 'El bot les contesta a todos.',
+}
+
+/**
+ * A quién le contesta el bot. El modo llega como string y lo valida
+ * `cambiarModo`: una server action recibe lo que el navegador mande.
+ *
+ * La confirmación en dos toques para pasar a Todos vive en la pantalla y no
+ * acá: es una defensa contra el toque de más, no una autorización, y quien
+ * tiene `BOT` puede pasar a Todos llamando a la acción directo igual que
+ * tocando dos veces.
+ */
+export async function cambiarModoDelBot(modo: string): Promise<EstadoBot> {
+  try {
+    const sesion = await exigirPermiso('BOT')
+    exigirBotHabilitado(sesion.subdominio)
+    await cambiarModo(sesion.tenant.id, modo)
+    revalidatePath('/bot')
+    return { error: null, aviso: AVISO_DEL_MODO[modo] ?? null, enlace: null }
+  } catch (e) {
+    return traducir(e)
+  }
+}
+
+/** Con `BOT`, igual que cambiar el modo: elegir a quién le contesta el bot en
+ *  prueba es la misma palanca. */
+export async function agregarNumeroDePruebaDelLocal(texto: string): Promise<EstadoBot> {
+  try {
+    const sesion = await exigirPermiso('BOT')
+    exigirBotHabilitado(sesion.subdominio)
+    await agregarNumeroDePrueba(sesion.tenant.id, texto)
+    revalidatePath('/bot')
+    return { error: null, aviso: 'Número de prueba agregado.', enlace: null }
+  } catch (e) {
+    return traducir(e)
+  }
+}
+
+export async function quitarNumeroDePruebaDelLocal(id: string): Promise<EstadoBot> {
+  try {
+    const sesion = await exigirPermiso('BOT')
+    exigirBotHabilitado(sesion.subdominio)
+    await quitarNumeroDePrueba(sesion.tenant.id, id)
+    revalidatePath('/bot')
+    return { error: null, aviso: 'Número de prueba quitado.', enlace: null }
   } catch (e) {
     return traducir(e)
   }
