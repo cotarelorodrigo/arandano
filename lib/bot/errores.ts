@@ -5,6 +5,11 @@ export type CodigoErrorDeBot =
   | 'NUMERO_AJENO'
   | 'SIN_NUMERO'
   | 'YA_CONECTADO'
+  | 'MODO_INVALIDO'
+  | 'NUMERO_CORTO'
+  | 'NUMERO_LARGO'
+  | 'NUMERO_REPETIDO'
+  | 'TOPE_NUMEROS'
 
 /** Con código y no sólo con mensaje, por lo mismo que `ErrorDePlan`: la
  *  pantalla tiene que poder distinguir "ese número no es de este local" de

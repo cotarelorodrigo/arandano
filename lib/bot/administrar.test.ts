@@ -25,17 +25,21 @@ vi.mock('@/lib/auth/origen', () => ({
 
 let owner: Client
 let tenantId: string
+let otroTenantId: string
 let administrar: typeof import('@/lib/bot/administrar')
 
 beforeEach(async () => {
   vi.clearAllMocks()
   await owner.query('DELETE FROM bots_de_whatsapp')
+  await owner.query('DELETE FROM numeros_de_prueba_bot')
+  await owner.query('DELETE FROM conversaciones_bot')
 })
 
 beforeAll(async () => {
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
   tenantId = await crearTenant(owner, 'bot-administrar')
+  otroTenantId = await crearTenant(owner, 'bot-administrar-otro')
   process.env.DATABASE_URL = urlApp()
   administrar = await import('@/lib/bot/administrar')
 })
@@ -51,6 +55,31 @@ async function conCustomer() {
      VALUES (gen_random_uuid(), $1, 'cus_1', now(), now())`,
     [tenantId],
   )
+}
+
+async function conectado(modo: 'APAGADO' | 'PRUEBA' | 'TODOS' = 'APAGADO') {
+  await owner.query(
+    `INSERT INTO bots_de_whatsapp
+       (id, tenant_id, kapso_customer_id, phone_number_id, webhook_secreto, modo, activo, creado_en, actualizado_en)
+     VALUES (gen_random_uuid(), $1, 'cus_1', 'pn_1', 'sec_1', $2, $3, now(), now())`,
+    [tenantId, modo, modo === 'TODOS'],
+  )
+}
+
+async function estadoDelBot() {
+  const { rows } = await owner.query(
+    'SELECT modo, activo FROM bots_de_whatsapp WHERE tenant_id = $1',
+    [tenantId],
+  )
+  return rows[0] as { modo: string; activo: boolean }
+}
+
+async function digitosCargados(tenant = tenantId) {
+  const { rows } = await owner.query(
+    'SELECT digitos FROM numeros_de_prueba_bot WHERE tenant_id = $1 ORDER BY creado_en',
+    [tenant],
+  )
+  return rows.map((r) => r.digitos as string)
 }
 
 describe('confirmar el número del local', () => {
@@ -100,7 +129,7 @@ describe('confirmar el número del local', () => {
     })
 
     const { rows } = await owner.query(
-      'SELECT phone_number_id, webhook_secreto, activo, conectado_en FROM bots_de_whatsapp WHERE tenant_id = $1',
+      'SELECT phone_number_id, webhook_secreto, activo, conectado_en, modo FROM bots_de_whatsapp WHERE tenant_id = $1',
       [tenantId],
     )
     expect(rows[0].phone_number_id).toBe('pn_mio')
@@ -108,6 +137,7 @@ describe('confirmar el número del local', () => {
     expect(rows[0].conectado_en).not.toBeNull()
     // Conectar el número y ponerlo a contestar son dos decisiones.
     expect(rows[0].activo, 'el bot arrancó contestando sin que nadie lo prendiera').toBe(false)
+    expect(rows[0].modo).toBe('APAGADO')
   })
 
   /** El webhook lleva el subdominio del tenant: es lo que después permite que
@@ -142,8 +172,8 @@ describe('desconectar', () => {
   it('limpia lo local aunque Kapso no responda', async () => {
     await owner.query(
       `INSERT INTO bots_de_whatsapp
-         (id, tenant_id, kapso_customer_id, phone_number_id, webhook_id, webhook_secreto, activo, creado_en, actualizado_en)
-       VALUES (gen_random_uuid(), $1, 'cus_1', 'pn_1', 'wh_1', 'sec_1', true, now(), now())`,
+         (id, tenant_id, kapso_customer_id, phone_number_id, webhook_id, webhook_secreto, activo, modo, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'cus_1', 'pn_1', 'wh_1', 'sec_1', true, 'TODOS', now(), now())`,
       [tenantId],
     )
     borrarWebhook.mockRejectedValue(new Error('Kapso caído'))
@@ -151,7 +181,7 @@ describe('desconectar', () => {
     await administrar.desconectar(tenantId)
 
     const { rows } = await owner.query(
-      'SELECT phone_number_id, webhook_secreto, activo, kapso_customer_id FROM bots_de_whatsapp WHERE tenant_id = $1',
+      'SELECT phone_number_id, webhook_secreto, activo, kapso_customer_id, modo FROM bots_de_whatsapp WHERE tenant_id = $1',
       [tenantId],
     )
     expect(rows[0].phone_number_id).toBeNull()
@@ -160,6 +190,7 @@ describe('desconectar', () => {
     // El customer sobrevive: reconectar no tiene por qué crear uno nuevo, y dos
     // customers para el mismo local dejarían los números repartidos entre ambos.
     expect(rows[0].kapso_customer_id).toBe('cus_1')
+    expect(rows[0].modo).toBe('APAGADO')
   })
 })
 
@@ -231,5 +262,167 @@ describe('prender el bot', () => {
     await expect(administrar.alternarActivo(tenantId, true)).rejects.toMatchObject({
       codigo: 'SIN_NUMERO',
     })
+  })
+})
+
+describe('cambiar el modo', () => {
+  /**
+   * El valor de `activo` es el que hace seguro el rollback (spec, decisión 4):
+   * la imagen anterior sólo lee esa columna, y en prueba tiene que leer `false`
+   * para callarse en vez de contestarles a todos.
+   */
+  it('en prueba deja activo en false', async () => {
+    await conectado('TODOS')
+    await administrar.cambiarModo(tenantId, 'PRUEBA')
+    expect(await estadoDelBot()).toEqual({ modo: 'PRUEBA', activo: false })
+  })
+
+  it('en todos deja activo en true', async () => {
+    await conectado('PRUEBA')
+    await administrar.cambiarModo(tenantId, 'TODOS')
+    expect(await estadoDelBot()).toEqual({ modo: 'TODOS', activo: true })
+  })
+
+  it('apagado deja activo en false', async () => {
+    await conectado('TODOS')
+    await administrar.cambiarModo(tenantId, 'APAGADO')
+    expect(await estadoDelBot()).toEqual({ modo: 'APAGADO', activo: false })
+  })
+
+  it('no se puede pasar a prueba ni a todos sin número conectado', async () => {
+    await conCustomer()
+    await expect(administrar.cambiarModo(tenantId, 'PRUEBA')).rejects.toMatchObject({ codigo: 'SIN_NUMERO' })
+    await expect(administrar.cambiarModo(tenantId, 'TODOS')).rejects.toMatchObject({ codigo: 'SIN_NUMERO' })
+  })
+
+  /** Lo que llega a la server action es un string del navegador. */
+  it('rechaza un modo que no existe y no escribe', async () => {
+    await conectado('APAGADO')
+    await expect(administrar.cambiarModo(tenantId, 'ENCENDIDO')).rejects.toMatchObject({
+      codigo: 'MODO_INVALIDO',
+    })
+    expect(await estadoDelBot()).toEqual({ modo: 'APAGADO', activo: false })
+  })
+
+  it('lo que la pantalla lee incluye el modo', async () => {
+    await conectado('PRUEBA')
+    expect(await administrar.botDelLocal(tenantId)).toMatchObject({ modo: 'PRUEBA' })
+  })
+
+  it('el local que nunca tocó la pantalla está apagado', async () => {
+    expect(await administrar.botDelLocal(tenantId)).toMatchObject({ modo: 'APAGADO' })
+  })
+})
+
+describe('los números de prueba', () => {
+  it('guarda sólo los dígitos, tal como se tipearon', async () => {
+    await administrar.agregarNumeroDePrueba(tenantId, '+54 9 11 2233-4455')
+    expect(await digitosCargados()).toEqual(['5491122334455'])
+  })
+
+  it('rechaza un número sin código de área y no escribe', async () => {
+    await expect(administrar.agregarNumeroDePrueba(tenantId, '2233-4455')).rejects.toMatchObject({
+      codigo: 'NUMERO_CORTO',
+    })
+    expect(await digitosCargados()).toEqual([])
+  })
+
+  it('rechaza un número de más de 15 dígitos', async () => {
+    await expect(
+      administrar.agregarNumeroDePrueba(tenantId, '1234567890123456'),
+    ).rejects.toMatchObject({ codigo: 'NUMERO_LARGO' })
+  })
+
+  it('rechaza el mismo número repetido', async () => {
+    await administrar.agregarNumeroDePrueba(tenantId, '11 2233-4455')
+    await expect(administrar.agregarNumeroDePrueba(tenantId, '1122334455')).rejects.toMatchObject({
+      codigo: 'NUMERO_REPETIDO',
+    })
+    expect(await digitosCargados()).toHaveLength(1)
+  })
+
+  /** Dos formas del mismo teléfono son el mismo número de prueba. */
+  it('rechaza el mismo teléfono escrito de otra forma', async () => {
+    await administrar.agregarNumeroDePrueba(tenantId, '11 2233-4455')
+    await expect(
+      administrar.agregarNumeroDePrueba(tenantId, '+54 9 11 2233 4455'),
+    ).rejects.toMatchObject({ codigo: 'NUMERO_REPETIDO' })
+    expect(await digitosCargados()).toEqual(['1122334455'])
+  })
+
+  it('no deja pasar del tope de 20', async () => {
+    for (let i = 0; i < 20; i++) {
+      await owner.query(
+        `INSERT INTO numeros_de_prueba_bot (id, tenant_id, digitos, creado_en)
+         VALUES (gen_random_uuid(), $1, $2, now())`,
+        [tenantId, `11000000${String(i).padStart(2, '0')}`],
+      )
+    }
+    await expect(administrar.agregarNumeroDePrueba(tenantId, '11 2233-4455')).rejects.toMatchObject({
+      codigo: 'TOPE_NUMEROS',
+    })
+    expect(await digitosCargados()).toHaveLength(20)
+  })
+
+  it('quita un número propio', async () => {
+    await administrar.agregarNumeroDePrueba(tenantId, '11 2233-4455')
+    const [{ id }] = await administrar.numerosDePruebaDelLocal(tenantId)
+    await administrar.quitarNumeroDePrueba(tenantId, id)
+    expect(await digitosCargados()).toEqual([])
+  })
+
+  it('quitar el id de un número de otro local no borra nada', async () => {
+    const { rows } = await owner.query(
+      `INSERT INTO numeros_de_prueba_bot (id, tenant_id, digitos, creado_en)
+       VALUES (gen_random_uuid(), $1, '1122334455', now()) RETURNING id`,
+      [otroTenantId],
+    )
+    await administrar.quitarNumeroDePrueba(tenantId, rows[0].id)
+    expect(await digitosCargados(otroTenantId), 'se borró el número de prueba de otro local').toEqual([
+      '1122334455',
+    ])
+  })
+
+  it('un id que no es un uuid no rompe ni borra nada', async () => {
+    await administrar.agregarNumeroDePrueba(tenantId, '11 2233-4455')
+    await expect(administrar.quitarNumeroDePrueba(tenantId, 'no-es-un-uuid')).resolves.toBeUndefined()
+    expect(await digitosCargados()).toHaveLength(1)
+  })
+
+  /**
+   * La línea "Último mensaje" es la verificación del número: si el dueño se
+   * escribe desde ese celular y la fila sigue diciendo "Todavía no escribió",
+   * el número está mal cargado (spec, decisión 2).
+   */
+  it('cada número dice cuándo escribió por última vez quien coincide con él', async () => {
+    const cuando = new Date('2026-09-15T17:32:00Z')
+    await owner.query(
+      `INSERT INTO conversaciones_bot (id, tenant_id, wa_id, creado_en, ultimo_mensaje_en)
+       VALUES (gen_random_uuid(), $1, '+5491122334455', now(), $2)`,
+      [tenantId, cuando],
+    )
+    await administrar.agregarNumeroDePrueba(tenantId, '11 2233-4455')
+    await administrar.agregarNumeroDePrueba(tenantId, '11 9999-8888')
+
+    const vistos = await administrar.numerosDePruebaDelLocal(tenantId)
+    expect(vistos.map((v) => [v.digitos, v.ultimoMensajeEn?.toISOString() ?? null])).toEqual([
+      ['1122334455', cuando.toISOString()],
+      ['1199998888', null],
+    ])
+  })
+
+  it('el número tipeado con 0 y 15 no encuentra la conversación', async () => {
+    await owner.query(
+      `INSERT INTO conversaciones_bot (id, tenant_id, wa_id, creado_en, ultimo_mensaje_en)
+       VALUES (gen_random_uuid(), $1, '+5491122334455', now(), now())`,
+      [tenantId],
+    )
+    await administrar.agregarNumeroDePrueba(tenantId, '011 15 2233-4455')
+    const [visto] = await administrar.numerosDePruebaDelLocal(tenantId)
+    expect(visto.ultimoMensajeEn).toBeNull()
+  })
+
+  it('sin números no consulta conversaciones y devuelve la lista vacía', async () => {
+    expect(await administrar.numerosDePruebaDelLocal(tenantId)).toEqual([])
   })
 })

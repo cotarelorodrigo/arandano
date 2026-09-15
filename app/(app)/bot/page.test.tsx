@@ -42,6 +42,7 @@ const SIN_CONECTAR: BotDelLocal = {
   numeroVisible: null,
   conectadoEn: null,
   activo: false,
+  modo: 'APAGADO',
   aQueSeDedica: '',
   instrucciones: '',
   topeMensual: 1000,
@@ -54,6 +55,7 @@ const CONECTADO: BotDelLocal = {
   numeroVisible: '+54 9 11 5555 0000',
   conectadoEn: new Date('2026-08-29T12:00:00Z'),
   activo: true,
+  modo: 'TODOS',
   aQueSeDedica: 'una waflería',
   instrucciones: 'Abrimos de 9 a 18.',
 }
