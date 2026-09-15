@@ -2444,9 +2444,10 @@ Usuarios`).
 
 ## `/bot`
 
-El bot de WhatsApp del local: conectar el número, prender y apagar, y escribir
-lo que el bot cuenta del negocio. Sin bandeja de conversaciones — el local sigue
-teniendo la suya, que es la aplicación de WhatsApp Business en su celular.
+El bot de WhatsApp del local: conectar el número, elegir a quién le contesta
+—a nadie, sólo a números de prueba o a todos—, y escribir lo que el bot cuenta
+del negocio. Sin bandeja de conversaciones — el local sigue teniendo la suya,
+que es la aplicación de WhatsApp Business en su celular.
 
 **Acciones**: `generarEnlaceDeConexion`, `confirmarNumeroDelLocal`,
 `desconectarNumero`, `cambiarModoDelBot`, `agregarNumeroDePruebaDelLocal`,
@@ -2593,7 +2594,9 @@ teniendo la suya, que es la aplicación de WhatsApp Business en su celular.
   segmentado Apagado · Sólo prueba · Todos. Con una lista que restringiera "si
   tiene números", quitar el último le soltaría el bot a todos los clientes sin
   ningún gesto. En prueba, el mensaje de un cliente real se guarda igual con
-  motivo `MODO_PRUEBA`, y "Este mes" dice cuántos escribieron sin respuesta.
+  motivo `MODO_PRUEBA`, y "Este mes" dice cuántos CLIENTES distintos escribieron
+  sin respuesta —conversaciones, no mensajes: uno que escribió seis veces sigue
+  contando una sola vez—.
 
 - **Pasar a Todos pide dos toques, y es la única transición que los pide.**
   El primer toque arma la confirmación en la leyenda y se desarma sola a los 3

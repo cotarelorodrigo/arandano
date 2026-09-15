@@ -3594,6 +3594,12 @@ Y del producto:
   del ping-pong entre automatizaciones, y quien prueba es una persona), pero sí
   el mensual, porque cada respuesta se paga igual.
 
+  **"Este mes" cuenta clientes, no mensajes**: `sinRespuestaEnPruebaDelMes`
+  cuenta conversaciones distintas con al menos un entrante `MODO_PRUEBA` en el
+  mes, no filas de `mensajes_bot` — un mismo cliente que escribió seis veces es
+  uno solo. Es el número con el que el dueño decide pasar a Todos, así que
+  contar mensajes lo habría inflado.
+
   **Sin permiso nuevo**: `BOT` ya cubría prender y apagar, y elegir a quién le
   contesta es la misma palanca. `lib/permisos/catalogo.ts` no crece.
 
@@ -3613,6 +3619,7 @@ Y del producto:
   ver que se desarma a los 3 segundos, y dos veces para que cambie; cargar un
   número con 15 y ver que se queda en "Todavía no escribió"; y mirar las dos
   cards a 1440 y a 390 px.
+
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

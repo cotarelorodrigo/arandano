@@ -205,8 +205,9 @@ lista antes de pasar a prueba.
 
 **Card "Este mes".** En modo `PRUEBA`, si hubo entrantes con motivo
 `MODO_PRUEBA` en el mes, suma una línea: "Mientras estuvo en prueba te
-escribieron N clientes que no recibieron respuesta." Es un `count` más, y sólo
-corre en ese modo.
+escribieron N clientes que no recibieron respuesta." Cuenta CONVERSACIONES
+distintas, no mensajes —un mismo cliente que escribió seis veces sigue siendo
+uno—, con una consulta más, y sólo corre en ese modo.
 
 **Encabezado.** El subtítulo muestra `<número> · Contestando`, `· En prueba` o
 `· Apagado`.
