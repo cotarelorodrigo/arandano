@@ -8,8 +8,8 @@ import { botHabilitadoEn } from '@/lib/bot/habilitado'
 import { ErrorDeBot } from '@/lib/bot/errores'
 import { ErrorDeKapso } from '@/lib/bot/kapso'
 import {
-  alternarActivo,
   agregarNumeroDePrueba,
+  alternarActivo,
   cambiarModo,
   confirmarNumero,
   desconectar,
@@ -160,7 +160,6 @@ export async function guardarInformacionDelLocal(entrada: {
     return traducir(e)
   }
 }
-
 
 const AVISO_DEL_MODO: Record<string, string> = {
   APAGADO: 'El bot dejó de contestar.',

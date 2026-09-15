@@ -198,6 +198,9 @@ describe('el gate del rollout alcanza a todas las acciones', () => {
       () => acciones.guardarInformacionDelLocal({ aQueSeDedica: 'una waflería', instrucciones: 'Abrimos 9 a 18' }),
       guardarInformacion,
     ],
+    ['cambiarModoDelBot', () => acciones.cambiarModoDelBot('PRUEBA'), cambiarModo],
+    ['agregarNumeroDePruebaDelLocal', () => acciones.agregarNumeroDePruebaDelLocal('11 2233-4455'), agregarNumeroDePrueba],
+    ['quitarNumeroDePruebaDelLocal', () => acciones.quitarNumeroDePruebaDelLocal('id-1'), quitarNumeroDePrueba],
   ]
 
   it.each(TODAS)('%s no hace nada en un local fuera de la lista', async (_n, correr, efecto) => {
