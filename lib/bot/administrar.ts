@@ -401,6 +401,11 @@ export async function numerosDePruebaDelLocal(tenantId: string): Promise<NumeroD
   })
   if (numeros.length === 0) return []
 
+  // El `endsWith` asume que `waId` —el crudo de `conversation.phone_number` de
+  // Kapso— termina en dígitos pelados, sin formato. Si Kapso alguna vez mandara
+  // algo con puntuación en los últimos 10 caracteres, el prefiltro no lo
+  // traería y la pantalla diría "Todavía no escribió" de un número al que el
+  // bot sí le contesta.
   const conversaciones = await prisma.conversacionBot.findMany({
     where: { OR: numeros.map((n) => ({ waId: { endsWith: ultimos10(n.digitos) } })) },
     select: { waId: true, ultimoMensajeEn: true },

@@ -90,7 +90,6 @@ describe('los guards de las acciones de /bot', () => {
     await expect(correr()).rejects.toThrow()
     expect(efecto(), 'la acción corrió sin el permiso BOT').not.toHaveBeenCalled()
   })
-
 })
 
 describe('lo que las acciones devuelven', () => {

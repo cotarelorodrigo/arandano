@@ -88,18 +88,25 @@ export async function respuestasDeLaUltimaHora(
 }
 
 /**
- * Cuántos clientes escribieron este mes mientras el bot estaba en prueba y no
- * recibieron respuesta.
+ * Cuántos CLIENTES (conversaciones), no mensajes, escribieron este mes
+ * mientras el bot estaba en prueba y no recibieron respuesta.
  *
- * Es el dato con el que el dueño decide pasar a Todos. Se cuentan filas, igual
- * que el tope: los mensajes se guardan igual (guardar siempre, decidir
- * después), así que no hay nada que acumular aparte.
+ * Es el dato con el que el dueño decide pasar a Todos, así que tiene que
+ * contar personas y no líneas: un mismo cliente que insiste seis veces sigue
+ * siendo un cliente, y contar sus seis mensajes infla el número que decide el
+ * pasaje a producción. Por eso es un `count` de `ConversacionBot` con al menos
+ * un entrante `MODO_PRUEBA` del mes —una conversación por cliente—, y no de
+ * `MensajeBot`.
  */
 export async function sinRespuestaEnPruebaDelMes(
   tenantId: string,
   ahora: Date = new Date(),
 ): Promise<number> {
-  return prismaParaTenant(tenantId).mensajeBot.count({
-    where: { direccion: 'ENTRANTE', motivo: 'MODO_PRUEBA', creadoEn: { gte: inicioDelMes(ahora) } },
+  return prismaParaTenant(tenantId).conversacionBot.count({
+    where: {
+      mensajes: {
+        some: { direccion: 'ENTRANTE', motivo: 'MODO_PRUEBA', creadoEn: { gte: inicioDelMes(ahora) } },
+      },
+    },
   })
 }

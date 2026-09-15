@@ -615,9 +615,9 @@ describe('aislamiento por RLS', () => {
       const b = await owner.query(
         `INSERT INTO bots_de_whatsapp
            (id, tenant_id, kapso_customer_id, phone_number_id, webhook_secreto,
-            activo, instrucciones, tope_mensual, creado_en, actualizado_en)
+            activo, modo, instrucciones, tope_mensual, creado_en, actualizado_en)
          VALUES (gen_random_uuid(), $1, 'cus-de-b', 'pn-de-b', 'secreto-de-b',
-                 true, 'Abrimos de 9 a 18', 1000, now(), now())
+                 true, 'TODOS', 'Abrimos de 9 a 18', 1000, now(), now())
          RETURNING id`,
         [tenantB],
       )

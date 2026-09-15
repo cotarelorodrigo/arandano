@@ -5,7 +5,6 @@ import { crearTenant } from '@/test/datos'
 
 let owner: Client
 let tenantId: string
-let conversacionId: string
 let limites: typeof import('@/lib/bot/limites')
 
 beforeAll(async () => {
@@ -22,15 +21,18 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await owner.query('DELETE FROM conversaciones_bot WHERE tenant_id = $1', [tenantId])
-  const { rows } = await owner.query(
-    `INSERT INTO conversaciones_bot (id, tenant_id, wa_id, creado_en, ultimo_mensaje_en)
-     VALUES (gen_random_uuid(), $1, '+5491155550000', now(), now()) RETURNING id`,
-    [tenantId],
-  )
-  conversacionId = rows[0].id
 })
 
-async function entrante(motivo: string | null, creadoEn = 'now()') {
+async function conversacion(waId: string): Promise<string> {
+  const { rows } = await owner.query(
+    `INSERT INTO conversaciones_bot (id, tenant_id, wa_id, creado_en, ultimo_mensaje_en)
+     VALUES (gen_random_uuid(), $1, $2, now(), now()) RETURNING id`,
+    [tenantId, waId],
+  )
+  return rows[0].id
+}
+
+async function entrante(conversacionId: string, motivo: string | null, creadoEn = 'now()') {
   await owner.query(
     `INSERT INTO mensajes_bot (id, tenant_id, conversacion_id, direccion, texto, wamid, motivo, creado_en)
      VALUES (gen_random_uuid(), $1, $2, 'ENTRANTE', 'hola', gen_random_uuid()::text, $3, ${creadoEn})`,
@@ -39,12 +41,25 @@ async function entrante(motivo: string | null, creadoEn = 'now()') {
 }
 
 describe('los clientes que escribieron durante la prueba', () => {
-  it('cuenta sólo los entrantes con MODO_PRUEBA del mes', async () => {
-    await entrante('MODO_PRUEBA')
-    await entrante('MODO_PRUEBA')
-    await entrante('BOT_APAGADO')
-    await entrante(null)
-    await entrante('MODO_PRUEBA', "now() - interval '40 days'")
+  it('cuenta clientes distintos, no mensajes', async () => {
+    // El mismo cliente escribe dos veces con MODO_PRUEBA, más dos mensajes que
+    // no cuentan (otro motivo, sin motivo): sigue siendo UN cliente.
+    const conv1 = await conversacion('+5491155550001')
+    await entrante(conv1, 'MODO_PRUEBA')
+    await entrante(conv1, 'MODO_PRUEBA')
+    await entrante(conv1, 'BOT_APAGADO')
+    await entrante(conv1, null)
+
+    // Un segundo cliente, con un solo mensaje: cuenta.
+    const conv2 = await conversacion('+5491155550002')
+    await entrante(conv2, 'MODO_PRUEBA')
+
+    // Un tercer cliente cuyo único mensaje MODO_PRUEBA es de hace 40 días: no
+    // tiene ningún mensaje de ESTE mes, así que no cuenta — ni siquiera para
+    // hacer que una conversación "vacía" (sin mensajes del mes) sume.
+    const conv3 = await conversacion('+5491155550003')
+    await entrante(conv3, 'MODO_PRUEBA', "now() - interval '40 days'")
+
     expect(await limites.sinRespuestaEnPruebaDelMes(tenantId)).toBe(2)
   })
 
