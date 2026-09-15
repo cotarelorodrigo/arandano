@@ -193,11 +193,11 @@ lista antes de pasar a prueba.
 
 - Un campo con el botón Agregar. Ayuda: "Con código de área, sin 0 y sin 15.
   Ej: 11 2233-4455".
-- Una fila por número, con los últimos 10 dígitos formateados (`11 2233-4455`),
-  el botón quitar y una segunda línea: **"Todavía no escribió"** o **"Último
-  mensaje: <fecha corta>"**, calculada contra `ConversacionBot.ultimoMensajeEn`
-  con la misma `coincideConAlguno`. Esa línea es la verificación del número
-  (decisión 2).
+- Una fila por número, con los últimos 10 dígitos como `112233-4455` (sin
+  partir el código de área, cuyo largo varía de 2 a 4 dígitos), el botón quitar
+  y una segunda línea: **"Todavía no escribió"** o **"Último mensaje: <fecha
+  corta>"**, calculada contra `ConversacionBot.ultimoMensajeEn` con la misma
+  `coincideConAlguno`. Esa línea es la verificación del número (decisión 2).
 - Los errores de las acciones van por toast, con el patrón del ABM de
   categorías: menos de 10 dígitos, ya está cargado, tope de 20. Los errores no se
   auto-descartan.

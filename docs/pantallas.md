@@ -2449,14 +2449,18 @@ lo que el bot cuenta del negocio. Sin bandeja de conversaciones — el local sig
 teniendo la suya, que es la aplicación de WhatsApp Business en su celular.
 
 **Acciones**: `generarEnlaceDeConexion`, `confirmarNumeroDelLocal`,
-`desconectarNumero`, `prenderOApagar`, `guardarInformacionDelLocal`.
+`desconectarNumero`, `cambiarModoDelBot`, `agregarNumeroDePruebaDelLocal`,
+`quitarNumeroDePruebaDelLocal`, `guardarInformacionDelLocal`.
 
 **Qué se puede hacer**
 
 - Generar el enlace de onboarding y conectar el número que el local ya usa (sólo
   el dueño).
 - Confirmar cuál de los números que Kapso reporta es el del local (sólo el dueño).
-- Prender y apagar el bot.
+- Elegir a quién le contesta el bot: a nadie, sólo a los números de prueba, o
+  a todos.
+- Cargar y quitar los números de prueba (hasta 20), y ver si cada uno ya
+  escribió.
 - Escribir a qué se dedica el local, en una frase, que es con lo que el bot se
   presenta.
 - Escribir la información que el bot responde: horarios, dirección, envíos,
@@ -2584,6 +2588,33 @@ teniendo la suya, que es la aplicación de WhatsApp Business en su celular.
   código puede quedarse (sin variable no hace nada) o irse entero —
   `lib/bot/habilitado.ts`, las cinco llamadas y sus casos— cuando ya no se
   espere volver a usarlo.
+
+- **Probar es un modo del bot, no un switch más una lista.** El control es un
+  segmentado Apagado · Sólo prueba · Todos. Con una lista que restringiera "si
+  tiene números", quitar el último le soltaría el bot a todos los clientes sin
+  ningún gesto. En prueba, el mensaje de un cliente real se guarda igual con
+  motivo `MODO_PRUEBA`, y "Este mes" dice cuántos escribieron sin respuesta.
+
+- **Pasar a Todos pide dos toques, y es la única transición que los pide.**
+  El primer toque arma la confirmación en la leyenda y se desarma sola a los 3
+  segundos (`tocarModo`, `lib/bot/modo.ts`). Es una defensa contra el toque de
+  más sobre la pastilla vecina, no una autorización: la acción con `BOT` pasa a
+  Todos igual.
+
+- **Los números se comparan por los últimos 10 dígitos**
+  (`lib/bot/numeros-de-prueba.ts`), así que `11 2233-4455` y el `5491122334455`
+  de Kapso son el mismo. Uno tipeado con 0 y 15 no coincide con nadie, y por eso
+  cada fila dice "Último mensaje" o "Todavía no escribió": es la verificación de
+  que el número está bien cargado. Se muestran como `112233-4455`, sin partir el
+  código de área, porque su largo varía.
+
+- **Un número de prueba no tiene el tope de 12 respuestas por hora**, en ningún
+  modo, pero sí el mensual. El tope por hora defiende del ping-pong entre
+  automatizaciones; quien prueba es una persona.
+
+- **`activo` se sigue escribiendo como `modo === 'TODOS'`** aunque la pantalla
+  ya no lo lea: la imagen anterior sólo lee esa columna, y así un rollback
+  durante una prueba deja al bot callado. Se borra en un deploy posterior.
 
 ## `/dashboard`
 
