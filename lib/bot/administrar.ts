@@ -11,6 +11,7 @@ import {
   validarNumeroDePrueba,
 } from '@/lib/bot/numeros-de-prueba'
 import { TOPE_A_QUE_SE_DEDICA, TOPE_INSTRUCCIONES } from '@/lib/bot/prompt'
+import { esUuid } from '@/lib/uuid'
 import {
   borrarWebhook,
   crearCustomer,
@@ -328,8 +329,6 @@ export async function guardarInformacion(
   })
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
 const MENSAJE_DE_PROBLEMA = {
   NUMERO_CORTO: 'El número tiene que ir con código de área: al menos 10 dígitos, sin 0 y sin 15.',
   NUMERO_LARGO: 'Ese número tiene demasiados dígitos.',
@@ -383,7 +382,7 @@ export async function agregarNumeroDePrueba(tenantId: string, texto: string): Pr
  * un uuid no llega a la base, donde el cast lo convertiría en un 500.
  */
 export async function quitarNumeroDePrueba(tenantId: string, id: string): Promise<void> {
-  if (!UUID.test(id)) return
+  if (!esUuid(id)) return
   await prismaParaTenant(tenantId).numeroDePruebaBot.deleteMany({ where: { id } })
 }
 
