@@ -139,8 +139,25 @@ enum MotivoSinRespuesta {
   TOPE_CONVERSACION
   SIN_TEXTO
   SIN_MODELO
+  // El bot está en modo prueba y quien escribió no es uno de los números de
+  // prueba del local: un cliente real. Se guarda igual —guardar siempre, decidir
+  // después—, y es lo que le permite a la pantalla decir cuántos clientes
+  // escribieron mientras el dueño probaba.
+  MODO_PRUEBA
 
   @@map("motivo_sin_respuesta")
+}
+
+// A quién le contesta el bot. Tres estados y no un switch más una lista: con
+// una lista que restringe "si tiene números", quitar el último le soltaría el
+// bot a todos los clientes sin un gesto que lo diga. Ver
+// docs/superpowers/specs/2026-09-15-bot-modo-prueba-design.md.
+enum ModoBot {
+  APAGADO
+  PRUEBA
+  TODOS
+
+  @@map("modo_bot")
 }
 
 enum EstadoOrden {
@@ -197,29 +214,30 @@ model Tenant {
   creadoEn           DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn      DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  modulos          TenantModule[]
-  users            User[]
-  clientes         Cliente[]
-  articulos        Articulo[]
-  ventas           Venta[]
-  ventaItems       VentaItem[]
-  pagos            Pago[]
-  movimientos      MovimientoStock[]
-  sesiones         Session[]
-  cuentas          Account[]
-  verificaciones   Verification[]
-  ordenes          OrdenDeTrabajo[]
-  eventosOrden     EventoOrden[]
-  cajas            Caja[]
-  categorias       Categoria[]
-  usuarioPermisos  UsuarioPermiso[]
-  planesDePago     PlanDePago[]
-  bot              BotDeWhatsapp?
-  conversaciones   ConversacionBot[]
-  mensajesBot      MensajeBot[]
-  unidades         UnidadDeArticulo[]
-  edicionesDeVenta EdicionDeVenta[]
-  pagosArchivados  PagoArchivado[]
+  modulos            TenantModule[]
+  users              User[]
+  clientes           Cliente[]
+  articulos          Articulo[]
+  ventas             Venta[]
+  ventaItems         VentaItem[]
+  pagos              Pago[]
+  movimientos        MovimientoStock[]
+  sesiones           Session[]
+  cuentas            Account[]
+  verificaciones     Verification[]
+  ordenes            OrdenDeTrabajo[]
+  eventosOrden       EventoOrden[]
+  cajas              Caja[]
+  categorias         Categoria[]
+  usuarioPermisos    UsuarioPermiso[]
+  planesDePago       PlanDePago[]
+  bot                BotDeWhatsapp?
+  conversaciones     ConversacionBot[]
+  mensajesBot        MensajeBot[]
+  numerosDePruebaBot NumeroDePruebaBot[]
+  unidades           UnidadDeArticulo[]
+  edicionesDeVenta   EdicionDeVenta[]
+  pagosArchivados    PagoArchivado[]
 
   @@map("tenants")
 }
@@ -1066,8 +1084,16 @@ model BotDeWhatsapp {
   webhookSecreto  String?   @map("webhook_secreto")
   conectadoEn     DateTime? @map("conectado_en") @db.Timestamptz(3)
 
-  // El switch. Arranca APAGADO: conectar el número y ponerlo a contestarles a
-  // los clientes son dos decisiones, y la segunda tiene que ser deliberada.
+  // A quién le contesta: nadie, sólo los números de prueba, o todos. Arranca
+  // APAGADO: conectar el número y ponerlo a contestar son dos decisiones, y la
+  // segunda tiene que ser deliberada.
+  modo          ModoBot @default(APAGADO)
+  // YA NO DECIDE NADA en el código nuevo, y no se borra todavía (expand/
+  // contract). Toda escritura de `modo` la escribe como `modo === 'TODOS'`, y
+  // ese valor es el que hace seguro el rollback: la imagen anterior sólo lee
+  // esta columna, así que si el healthcheck la revierte durante una prueba, lee
+  // `false` y se calla en vez de contestarles a todos los clientes. El DROP va
+  // en un deploy posterior.
   activo        Boolean @default(false)
   // A qué se dedica el local, en una frase, para que el bot no tenga que
   // adivinarlo. Va SEPARADO de `instrucciones` y no es una prolijidad: aquel
@@ -1096,6 +1122,29 @@ model BotDeWhatsapp {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("bots_de_whatsapp")
+}
+
+// Los números a los que el bot les contesta en modo PRUEBA. Una fila por
+// número: agregar es un INSERT y quitar un DELETE, la fila ES el dato, igual
+// que usuario_permisos. Tabla propia y no un text[] en bots_de_whatsapp: la
+// unicidad la sostiene el índice y no un chequeo de aplicación que dos pestañas
+// pisarían.
+//
+// `digitos` guarda los dígitos tal como se tipearon (sin símbolos), no sólo los
+// últimos 10, para que la pantalla muestre lo que el dueño cargó. La coincidencia
+// con el waId es por los últimos 10 (lib/bot/numeros-de-prueba.ts), así que dos
+// formas del mismo teléfono podrían convivir como filas distintas: la acción de
+// agregar lo rechaza antes, y si pasara igual es inofensivo.
+model NumeroDePruebaBot {
+  id       String   @id @default(uuid(7)) @db.Uuid
+  tenantId String   @map("tenant_id") @db.Uuid
+  digitos  String
+  creadoEn DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, digitos])
+  @@map("numeros_de_prueba_bot")
 }
 
 // Un hilo con una persona. `waId` es su teléfono en formato internacional, tal

@@ -609,6 +609,7 @@ describe('aislamiento por RLS', () => {
     let botB: string
     let conversacionB: string
     let mensajeB: string
+    let numeroB: string
 
     beforeAll(async () => {
       const b = await owner.query(
@@ -639,6 +640,14 @@ describe('aislamiento por RLS', () => {
         [tenantB, conversacionB],
       )
       mensajeB = m.rows[0].id
+
+      const n = await owner.query(
+        `INSERT INTO numeros_de_prueba_bot (id, tenant_id, digitos, creado_en)
+         VALUES (gen_random_uuid(), $1, '1122334455', now())
+         RETURNING id`,
+        [tenantB],
+      )
+      numeroB = n.rows[0].id
     })
 
     it('bots_de_whatsapp: el otro tenant no ve la fila, y su dueño sí', async () => {
@@ -772,6 +781,39 @@ describe('aislamiento por RLS', () => {
       await expect(
         comoTenant(tenantB, 'DELETE FROM conversaciones_bot WHERE id = $1', [conversacionB]),
       ).rejects.toThrow(/permission denied|permiso denegado/i)
+    })
+
+    it('numeros_de_prueba_bot: el otro tenant no ve la lista, y su dueño sí', async () => {
+      const { rows: deA } = await comoTenant(tenantA, 'SELECT 1 FROM numeros_de_prueba_bot')
+      expect(deA, 'numeros_de_prueba_bot filtró filas de otro tenant').toHaveLength(0)
+
+      const { rows: deB } = await comoTenant(tenantB, 'SELECT 1 FROM numeros_de_prueba_bot')
+      expect(deB, 'numeros_de_prueba_bot no es legible por su propio tenant').toHaveLength(1)
+    })
+
+    /**
+     * Meterle un número a la lista de otro local es hacer que su bot en prueba
+     * le conteste a un desconocido. Por eso el INSERT con tenant ajeno se
+     * afirma aparte del SELECT.
+     */
+    it('numeros_de_prueba_bot: rechaza insertar un número en la lista de otro', async () => {
+      await expect(
+        comoTenant(
+          tenantA,
+          `INSERT INTO numeros_de_prueba_bot (id, tenant_id, digitos, creado_en)
+           VALUES (gen_random_uuid(), $1, '1199998888', now())`,
+          [tenantB],
+        ),
+      ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+    })
+
+    it('numeros_de_prueba_bot: A no puede quitarle un número (DELETE) a B', async () => {
+      const { rowCount } = await comoTenant(
+        tenantA,
+        'DELETE FROM numeros_de_prueba_bot WHERE id = $1',
+        [numeroB],
+      )
+      expect(rowCount, 'el DELETE de A afectó una fila que no es suya').toBe(0)
     })
   })
 })

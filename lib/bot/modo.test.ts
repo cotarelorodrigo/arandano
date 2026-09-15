@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
-import { esModo, leyendaDelModo, subtituloDelModo, tocarModo } from './modo'
+import { esModo, leyendaDelModo, subtituloDelModo, tocarModo, MODOS } from './modo'
 
 describe('esModo', () => {
   it('acepta los tres modos y nada más', () => {
@@ -88,5 +89,29 @@ describe('subtituloDelModo', () => {
     expect(subtituloDelModo('APAGADO')).toBe('Apagado')
     expect(subtituloDelModo('PRUEBA')).toBe('En prueba')
     expect(subtituloDelModo('TODOS')).toBe('Contestando')
+  })
+})
+
+/** Los valores del enum ModoBot tal como los declara el schema. Mismo mecanismo
+ *  que test/permisos-catalogo.test.ts. */
+function modosDelSchema(): string[] {
+  const schema = readFileSync('prisma/schema.prisma', 'utf8')
+  const bloque = schema.slice(schema.indexOf('enum ModoBot {'))
+  const cuerpo = bloque.slice(bloque.indexOf('{') + 1, bloque.indexOf('}'))
+  return cuerpo
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /^[A-Z_]+$/.test(l))
+}
+
+describe('MODOS contra el schema', () => {
+  it('encuentra el enum en el schema; si no, el test no prueba nada', () => {
+    expect(modosDelSchema().length).toBeGreaterThan(0)
+  })
+
+  // Las dos direcciones: una lista escrita a mano que se desincronice del enum
+  // deja al servidor aceptando un modo que la base rechaza, o al revés.
+  it('tiene exactamente los valores del enum ModoBot', () => {
+    expect([...MODOS].sort()).toEqual(modosDelSchema().sort())
   })
 })
