@@ -2881,8 +2881,17 @@ function PieDeVenta({
             hayCarrito={hayCarrito}
           />
         ))}
+      {/* LAS DOS RAMAS LLEVAN `key`, y no es prolijidad: sin ella React reusa el
+          mismo `<button>` del DOM y le cambia sólo los atributos. El `onClick`
+          de la rama del carrito cambia el paso con un render sincrónico, así
+          que cuando el navegador corre la acción por default del click el
+          botón ya es el `submit` del formulario —habilitado, porque el pago
+          que nace solo cubre el total— y la venta se cobraba sin pasar por el
+          panel de cobro. Con keys distintas el botón tocado sale del DOM y su
+          click no envía nada. */}
       {paso === 'cobro' ? (
         <Button
+          key="cobrar"
           type="submit"
           form={ID_FORMULARIO_DE_COBRO}
           disabled={!cierra || cobrando}
@@ -2892,7 +2901,7 @@ function PieDeVenta({
           <ArrowRight className="size-[18px]" aria-hidden="true" />
         </Button>
       ) : (
-        <Button type="button" onClick={irACobro} disabled={!hayCarrito} className={clasesBoton}>
+        <Button key="ir-a-cobro" type="button" onClick={irACobro} disabled={!hayCarrito} className={clasesBoton}>
           Cobrar
           <ArrowRight className="size-[18px]" aria-hidden="true" />
         </Button>
