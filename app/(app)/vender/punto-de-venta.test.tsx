@@ -2062,6 +2062,28 @@ describe('el punto de venta', () => {
     )
   })
 
+  // Tocar "Cobrar →" en el carrito del teléfono COBRABA LA VENTA, en efectivo
+  // y sin pasar por el panel de cobro. Las dos ramas del botón del pie son un
+  // `<Button>` en la misma posición del árbol, así que sin `key` React reusa
+  // el MISMO `<button>` del DOM y sólo le cambia los atributos. El `onClick`
+  // cambia el paso por `useSyncExternalStore`, que re-renderiza sincrónico
+  // ANTES de que termine el click; cuando el navegador corre la acción por
+  // default del botón, ya es `type="submit"` del formulario de cobro, y
+  // habilitado: el pago que nace solo cubre el total, así que `cierra` es
+  // verdadero. Desde el mostrador se veía como que el cobro aparecía y se iba.
+  //
+  // POR FUENTE por lo mismo que el caso de arriba: sin jsdom no hay click.
+  it('las dos ramas del botón del pie son dos elementos distintos del DOM', () => {
+    const posicion = FUENTE.indexOf('function PieDeVenta')
+    expect(posicion, 'no se encontró PieDeVenta').toBeGreaterThan(-1)
+    const cuerpo = FUENTE.slice(posicion, FUENTE.indexOf('\n}\n', posicion))
+    const botones = [...cuerpo.matchAll(/<Button\b[^>]*>/g)].map((m) => m[0])
+    expect(botones, 'el pie tiene exactamente dos botones').toHaveLength(2)
+    const claves = botones.map((b) => b.match(/\bkey="([^"]+)"/)?.[1])
+    expect(claves, 'cada rama lleva su propia key').not.toContain(undefined)
+    expect(new Set(claves).size, 'y las dos keys son distintas').toBe(2)
+  })
+
   // Y la otra mitad del par: `actualizarCarrito` sigue apagando el cartel —que
   // es para lo que existe— y no toca la guarda.
   it('actualizarCarrito apaga el cartel de la venta anterior, no la guarda de la limpieza', () => {
