@@ -140,6 +140,7 @@ export function PanelDeResultado({
   bateriaTexto,
   dolar,
   alCambiarDolar,
+  dolarDelLocal = null,
 }: {
   tabla: TablaDeCanje
   equipo: Pick<ArticuloVendible, 'nombre' | 'precio' | 'moneda'> | null
@@ -147,6 +148,10 @@ export function PanelDeResultado({
   bateriaTexto: string
   dolar: string
   alCambiarDolar: (texto: string) => void
+  // La cotización del local SI ES DE HOY, con la que arrancó el campo (ver
+  // `Calculadora`). Sólo para decir de dónde salió el número mientras siga
+  // siendo ése; `null` si no hay una de hoy.
+  dolarDelLocal?: string | null
 }) {
   const lectura = leerBateria(bateriaTexto)
   const rango = lectura.ok ? rangoParaBateria(tabla.rangos, lectura.bateria) : null
@@ -195,8 +200,11 @@ export function PanelDeResultado({
           <Label htmlFor="dolar" className={ROTULO}>
             Cotización del dólar
           </Label>
-          {/* Se tipea en cada consulta, como en /vender: no se precarga la del
-              local ni la de la última vez. type="text" por la coma decimal. */}
+          {/* Arranca con la del local SI ES DE HOY, como el cobro de /vender
+              (ciclo de la cotización del dólar, 2026-10-18, que revierte el
+              "se tipea en cada consulta" con que nació esta calculadora); si
+              no, vacío. Nunca la de la última consulta. type="text" por la
+              coma decimal. */}
           <Input
             id="dolar"
             inputMode="decimal"
@@ -210,6 +218,9 @@ export function PanelDeResultado({
           <p className="text-[11px] text-muted-foreground">
             El equipo está en {resultado?.precio.moneda === 'USD' ? 'dólares' : 'pesos'} y la tabla en{' '}
             {tabla.moneda === 'USD' ? 'dólares' : 'pesos'}: la diferencia sale en la moneda del equipo.
+            {/* De dónde salió el número, mientras siga siendo ése: el vendedor
+                tiene que saber que no lo tipeó él. */}
+            {dolarDelLocal !== null && dolar === dolarDelLocal && ' Es la cotización del local de hoy; se puede cambiar.'}
           </p>
         </div>
       )}
@@ -340,11 +351,23 @@ function BuscadorDeEquipo({
  * Tres preguntas en el orden en que se dan en el mostrador: qué se lleva, qué
  * deja, con cuánta batería.
  */
-export function Calculadora({ tabla, puedeEditar }: { tabla: TablaDeCanje; puedeEditar: boolean }) {
+export function Calculadora({
+  tabla,
+  puedeEditar,
+  dolarInicial,
+}: {
+  tabla: TablaDeCanje
+  puedeEditar: boolean
+  // La cotización del dólar del local SI ES DE HOY, decidida en el servidor
+  // al armar la página (`page.tsx`); `null` si es vieja o no hay. A
+  // diferencia del cobro, acá alcanza con el reloj del servidor: el campo se
+  // llena UNA vez, al montar, y la página se arma en ese mismo momento.
+  dolarInicial: string | null
+}) {
   const [equipo, setEquipo] = useState<ArticuloVendible | null>(null)
   const [modeloId, setModeloId] = useState('')
   const [bateria, setBateria] = useState('')
-  const [dolar, setDolar] = useState('')
+  const [dolar, setDolar] = useState(dolarInicial ?? '')
 
   const modelo = tabla.modelos.find((m) => m.id === modeloId) ?? null
   const lectura = leerBateria(bateria)
@@ -418,6 +441,7 @@ export function Calculadora({ tabla, puedeEditar }: { tabla: TablaDeCanje; puede
           bateriaTexto={bateria}
           dolar={dolar}
           alCambiarDolar={setDolar}
+          dolarDelLocal={dolarInicial}
         />
       </div>
     </div>

@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import { exigirSesion } from '@/lib/auth/sesion'
 import { puedeConSesion } from '@/lib/permisos/guarda'
 import { tablaDeCanje } from '@/lib/canje/consultar'
+import { cotizacionVigente } from '@/lib/cotizacion/consultar'
+import { cotizacionDeHoy } from '@/lib/cotizacion/reglas'
 import { Calculadora } from './calculadora'
 
 export const dynamic = 'force-dynamic'
@@ -24,12 +26,17 @@ export const dynamic = 'force-dynamic'
  *
  * El enlace a `/plan-canje/valores` sólo para quien puede editarla: un enlace
  * a una pantalla que responde 403 es una puerta pintada.
+ *
+ * El campo "Cotización del dólar" arranca con la del local **si es de hoy**
+ * (ciclo de la cotización del dólar, 2026-10-18): la misma regla que el cobro
+ * de `/vender`, y por el mismo motivo — una de ayer no convierte nada sola.
  */
 export default async function PlanCanje() {
   const sesion = await exigirSesion()
-  const [tabla, puedeEditar] = await Promise.all([
+  const [tabla, puedeEditar, cotizacion] = await Promise.all([
     tablaDeCanje(sesion.tenant.id),
     puedeConSesion(sesion, 'CANJE_VALORES'),
+    cotizacionVigente(sesion.tenant.id),
   ])
 
   return (
@@ -50,7 +57,11 @@ export default async function PlanCanje() {
             : undefined
         }
       />
-      <Calculadora tabla={tabla} puedeEditar={puedeEditar} />
+      <Calculadora
+        tabla={tabla}
+        puedeEditar={puedeEditar}
+        dolarInicial={cotizacionDeHoy(cotizacion, new Date())}
+      />
     </>
   )
 }

@@ -2496,8 +2496,10 @@ donde cada vendedor le preguntaba al dueño cuánto se paga por cada equipo.
 - Ver tres números: el precio del equipo, lo que se le reconoce por el usado
   (con el rango en el que cayó) y **la diferencia que paga el cliente**, en la
   banda de `--marca`.
-- Con el equipo y la tabla en monedas distintas, tipear la cotización del
-  dólar y ver la diferencia en la moneda del equipo.
+- Con el equipo y la tabla en monedas distintas, ver la diferencia en la
+  moneda del equipo con la cotización del dólar: el campo arranca con la del
+  local si es de hoy ("Es la cotización del local de hoy; se puede cambiar") y
+  si no, se tipea.
 
 **Decisiones**
 
@@ -2518,9 +2520,13 @@ donde cada vendedor le preguntaba al dueño cuánto se paga por cada equipo.
   ese rango.
 - **El usado que vale más que el equipo** se muestra como "Le devolvés al
   cliente" con el número en positivo, nunca como una diferencia negativa.
-- **Con monedas distintas no se inventa una cotización**, ni la del local: se
-  tipea en cada consulta, como en `/vender`. Sin ella no hay diferencia, y el
-  campo sólo aparece cuando hace falta.
+- **Con monedas distintas no se inventa una cotización**: el campo arranca con
+  la del local **sólo si es de hoy**, la misma regla que el cobro de `/vender`
+  (ciclo de la cotización del dólar, 2026-10-18, que revierte el "se tipea en
+  cada consulta, ni la del local" con que nació esta pantalla). La decide
+  `page.tsx` con `cotizacionDeHoy` al armar la página —el campo se llena una
+  sola vez, al montar—, y nunca la de la consulta anterior. Sin cotización no
+  hay diferencia, y el campo sólo aparece cuando hace falta.
 - **La banda de la diferencia es la única superficie de `--marca`** y está
   siempre, aunque no haya nada elegido —un ancla que aparece y desaparece no es
   un ancla—; mientras falta algo, dice qué. Usa el rol Importe de `/vender`.
