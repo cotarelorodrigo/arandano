@@ -238,6 +238,10 @@ model Tenant {
   unidades           UnidadDeArticulo[]
   edicionesDeVenta   EdicionDeVenta[]
   pagosArchivados    PagoArchivado[]
+  rangosDeBateria    RangoDeBateria[]
+  modelosDeCanje     ModeloDeCanje[]
+  valoresDeCanje     ValorDeCanje[]
+  configuracionCanje ConfiguracionDeCanje?
 
   @@map("tenants")
 }
@@ -551,6 +555,125 @@ model PlanDePago {
   @@unique([tenantId, medio, nombre])
   @@index([tenantId, medio])
   @@map("planes_de_pago")
+}
+
+// ── Plan canje ──────────────────────────────────────────────────────────────
+//
+// La tabla que el dueño tiene en la cabeza —cuánto paga por un usado según el
+// modelo y la batería— escrita en el sistema, y nada más: ninguna de estas
+// cuatro tablas toca ventas, stock ni caja. La calculadora de /plan-canje las
+// LEE y calcula; registrar el canje como venta es un ciclo aparte (spec
+// 2026-10-18-plan-canje-design.md, "Fuera de alcance"), y por eso borrar o
+// cambiar una fila no puede romper ninguna operación pasada: todavía no existe
+// ninguna que la nombre.
+//
+// Es núcleo y no un módulo: el canje no es exclusivo de los celulares. Por eso
+// el "modelo" es un texto que escribe el dueño y no una FK a Articulo —el
+// usado que entra no está en el catálogo— y el estado es un rango de batería,
+// que es lo único que el cliente pidió. Si aparece otro eje (capacidad,
+// estado estético), el rango pasa a ser uno de varios.
+
+// Un rango CERRADO de porcentajes enteros, 0 ≤ minimo ≤ maximo ≤ 100 (CHECK en
+// la migración, como red debajo de la validación de lib/canje/administrar.ts).
+//
+// Sin solapamientos dentro de un tenant, y eso NO lo dice la base: hacerlo con
+// una exclusion constraint pide `btree_gist`, una extensión que sólo instala el
+// superusuario (mismo motivo por el que la búsqueda no usa `unaccent`, ver
+// lib/ventas/buscar.ts). Lo valida la aplicación, en la misma transacción que
+// escribe y bajo un lock por tenant.
+//
+// Los huecos SÍ se permiten: un local que no toma equipos con menos de 80 % no
+// carga ese rango, y la calculadora dice "sin cotización".
+//
+// Sin columna `orden` (ajuste sobre el spec, ver su sección "Ajustes durante
+// la implementación"): como no se solapan, el orden de mayor a menor batería es
+// total y es el único que tiene sentido para una tabla de canje. Un orden
+// editable aparte sólo podría contradecirlo.
+model RangoDeBateria {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  minimo        Int
+  maximo        Int
+  creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  valores ValorDeCanje[]
+
+  @@index([tenantId])
+  @@map("rangos_de_bateria")
+}
+
+// Un modelo de equipo usado, tal como lo escribe el dueño ("iPhone 14", "iPhone
+// 13 Pro"). Texto libre a propósito: ver el comentario de la sección.
+//
+// Único por tenant SIN distinguir mayúsculas —"iphone 14" e "iPhone 14" son el
+// mismo equipo y dos filas harían que el vendedor elija entre dos precios—. Eso
+// lo garantiza un índice único de EXPRESIÓN, (tenant_id, lower(nombre)), que
+// vive en la migración porque Prisma no sabe declararlo acá: mismo caso que el
+// índice parcial de `categorias`. La aplicación lo chequea antes, para poder
+// decir el nombre que choca.
+model ModeloDeCanje {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  nombre        String
+  creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  valores ValorDeCanje[]
+
+  @@index([tenantId])
+  @@map("modelos_de_canje")
+}
+
+// Lo que el local paga por ese modelo en ese rango. Una celda vacía de la tabla
+// es AUSENCIA de fila, no un cero: "no tomamos ese equipo en ese estado" y "lo
+// tomamos gratis" son cosas distintas, y la calculadora dice "sin cotización"
+// sólo para la primera.
+//
+// Cascade desde modelo y rango: borrar "iPhone 8" se lleva sus valores, que es
+// lo que el dueño quiere decir. Nada más apunta acá, así que el cascade no
+// puede llevarse nada que no sea de la tabla de canje.
+//
+// Sin moneda propia: la moneda es una sola para toda la tabla
+// (`ConfiguracionDeCanje`). `valor ≥ 0` tiene CHECK en la migración.
+model ValorDeCanje {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  modeloId      String   @map("modelo_id") @db.Uuid
+  rangoId       String   @map("rango_id") @db.Uuid
+  valor         Decimal  @db.Decimal(12, 2)
+  actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  modelo ModeloDeCanje  @relation(fields: [modeloId], references: [id], onDelete: Cascade)
+  rango  RangoDeBateria @relation(fields: [rangoId], references: [id], onDelete: Cascade)
+
+  @@unique([modeloId, rangoId])
+  @@index([tenantId])
+  @@index([rangoId])
+  @@map("valores_de_canje")
+}
+
+// La moneda de TODA la tabla de canje. Una por tabla y no una por celda: una
+// tabla con unas celdas en pesos y otras en dólares no la escribe ningún local,
+// y una moneda por celda obliga a mirar dos cosas en cada número.
+//
+// Una fila por tenant, con el tenant como clave. Que la fila NO exista es lo
+// normal —el tenant que nunca entró a la tabla— y se lee como el default, USD:
+// el pedido que abrió el ciclo es de un local que vende iPhones en dólares.
+//
+// Cambiar la moneda NO convierte los valores: no hay cotización guardada de la
+// cual hacerlo, y la pantalla lo avisa antes de confirmar.
+model ConfiguracionDeCanje {
+  tenantId      String   @id @map("tenant_id") @db.Uuid
+  moneda        Moneda   @default(USD)
+  actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("configuraciones_de_canje")
 }
 
 // Append-only: nada se edita ni se borra. Es lo que permite responder "por qué
