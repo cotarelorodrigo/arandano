@@ -478,6 +478,7 @@ const FILA: Parameters<typeof Listado>[0]['filas'][number] = {
   categoria: 'Accesorios · Protección',
   tipo: 'PRODUCTO',
   precioFormateado: '$ 12.000,00',
+  equivalente: null,
   stockTexto: '48',
   estado: null,
   desactivado: false,
@@ -738,6 +739,36 @@ describe('el precio de cada fila, en su moneda (Task 8 del ciclo de USD)', () =>
     })
     expect(html).toContain(formatearPrecio('300'))
     expect(html).not.toContain('US$')
+  })
+})
+
+// Ciclo de la cotización del dólar (2026-10-18): un artículo en dólares lleva
+// debajo su equivalente en pesos con la cotización del local, y la fecha si
+// esa cotización no es de hoy. Orientativo y apagado, para que no se lea como
+// un segundo precio.
+describe('el equivalente en pesos de un artículo en dólares', () => {
+  it('va debajo del precio, en su propia línea', () => {
+    const html = renderListado({
+      filas: [{ ...FILA, precioFormateado: precioEnSuMoneda('1000', 'USD'), equivalente: '≈ $ 1.420.000 · 15/10' }],
+    })
+    expect(html).toContain('≈ $ 1.420.000 · 15/10')
+    expect(html.indexOf('US$')).toBeLessThan(html.indexOf('≈'))
+    expect(html).toMatch(/<span class="[^"]*text-muted-foreground[^"]*">≈/)
+  })
+
+  it('sin equivalente la celda no suma nada', () => {
+    expect(renderListado({ filas: [FILA] })).not.toContain('≈')
+  })
+
+  // `Inventario` es un Server Component con sesión y Prisma: el armado de la
+  // fila se mira en el fuente. Sólo los artículos en dólares, con la forma
+  // corta (la celda es de 140 px) y un solo "ahora" para toda la página.
+  it('la página lo arma sólo para artículos en dólares, con la vigente', () => {
+    const FUENTE = readFileSync('app/(app)/inventario/page.tsx', 'utf8')
+    expect(FUENTE).toContain('cotizacionVigente(sesion.tenant.id)')
+    expect(FUENTE).toMatch(
+      /a\.moneda === 'USD' \? equivalenteEnPesos\(a\.precio\.toString\(\), cotizacion, ahora, 'corto'\) : null/,
+    )
   })
 })
 

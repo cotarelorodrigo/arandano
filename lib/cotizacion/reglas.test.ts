@@ -46,6 +46,11 @@ describe('el equivalente en pesos de un precio en dólares', () => {
     expect(equivalenteEnPesos('1000', DEL_15, AHORA)).toBe('≈ $ 1.420.000 con el dólar del 15/10')
   })
 
+  it('la forma corta de la lista lleva la fecha igual, en menos ancho', () => {
+    expect(equivalenteEnPesos('1000', DEL_15, AHORA, 'corto')).toBe('≈ $\u00a01.420.000 · 15/10')
+    expect(equivalenteEnPesos('1000', DE_HOY, AHORA, 'corto')).toBe('≈ $\u00a01.450.000')
+  })
+
   it('sin ninguna: null, no un número inventado', () => {
     expect(equivalenteEnPesos('1000', null, AHORA)).toBeNull()
   })

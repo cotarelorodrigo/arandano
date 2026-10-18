@@ -70,14 +70,76 @@ describe('textoDeMargen (Task 4 del rediseño: el tile "Último costo")', () => 
     expect(textoDeMargen(d('100'), 'ARS', d('150'), 'ARS')).toBe('margen -50,0 %')
   })
 
-  // Monedas distintas, en las DOS direcciones: no hay cotización guardada, y
+  // Monedas distintas SIN cotización del local, en las DOS direcciones:
   // comparar un costo en una moneda contra un precio en la otra exigiría
   // inventarla — la misma regla que "—" en el chip de cotización de /vender
-  // en vez de un número fabricado. Se mantiene el comportamiento de antes del
-  // ciclo (decisión 3 del spec).
-  it('con monedas distintas no calcula margen, en ninguna de las dos direcciones', () => {
+  // en vez de un número fabricado. El pie cae a `textoDeCruceDeMonedas`.
+  it('con monedas distintas y sin cotización no calcula margen, en ninguna de las dos direcciones', () => {
     expect(textoDeMargen(d('300'), 'USD', d('150000'), 'ARS')).toBeNull()
     expect(textoDeMargen(d('150000'), 'ARS', d('100'), 'USD')).toBeNull()
+    expect(textoDeMargen(d('300'), 'USD', d('150000'), 'ARS', null)).toBeNull()
+  })
+})
+
+// Ciclo de la cotización del dólar (2026-10-18): con una cotización del local,
+// el margen con monedas cruzadas se calcula convirtiendo el COSTO a la moneda
+// del precio, y el pie dice con qué dólar y de qué día — siempre, sea de hoy o
+// no: es un número de referencia, no plata que se cobra.
+describe('textoDeMargen con la cotización del local', () => {
+  const DE_HOY = { valor: '1500', creadaEn: new Date('2026-10-18T15:00:00Z') }
+  const DEL_15 = { valor: '1500', creadaEn: new Date('2026-10-15T15:00:00Z') }
+
+  it('costo en pesos, precio en dólares: divide el costo por el dólar', () => {
+    // US$ 300 contra $ 300.000 a 1500 = US$ 200 → (300 − 200) / 300 = 33,3 %.
+    expect(textoDeMargen(d('300'), 'USD', d('300000'), 'ARS', DE_HOY)).toBe(
+      'margen 33,3 % · con el dólar a $\u00a01.500 del 18/10',
+    )
+  })
+
+  it('costo en dólares, precio en pesos: multiplica el costo por el dólar', () => {
+    // $ 450.000 contra US$ 200 a 1500 = $ 300.000 → (450.000 − 300.000) / 450.000 = 33,3 %.
+    expect(textoDeMargen(d('450000'), 'ARS', d('200'), 'USD', DE_HOY)).toBe(
+      'margen 33,3 % · con el dólar a $\u00a01.500 del 18/10',
+    )
+  })
+
+  it('con una vieja también calcula, y el pie lleva su fecha', () => {
+    expect(textoDeMargen(d('300'), 'USD', d('300000'), 'ARS', DEL_15)).toBe(
+      'margen 33,3 % · con el dólar a $\u00a01.500 del 15/10',
+    )
+  })
+
+  it('con la misma moneda la cotización no entra: el pie es el de siempre', () => {
+    expect(textoDeMargen(d('12000'), 'ARS', d('7400'), 'ARS', DE_HOY)).toBe('margen 38,3 %')
+    expect(textoDeMargen(d('300'), 'USD', d('200'), 'USD', DE_HOY)).toBe('margen 33,3 %')
+  })
+
+  it('un precio en cero sigue sin margen aunque haya cotización', () => {
+    expect(textoDeMargen(d('0'), 'USD', d('300000'), 'ARS', DE_HOY)).toBeNull()
+  })
+})
+
+describe('el equivalente en pesos del tile "Precio de venta"', () => {
+  it('va en su propia línea, arriba del pie', async () => {
+    const html = renderToStaticMarkup(
+      <Tile rotulo="PRECIO DE VENTA" valor="US$ 1.000,00" equivalente="≈ $ 1.450.000" pie="actualizado hoy" />,
+    )
+    expect(html).toContain('≈ $ 1.450.000')
+    expect(html.indexOf('≈ $ 1.450.000')).toBeLessThan(html.indexOf('actualizado hoy'))
+  })
+
+  it('sin equivalente el tile queda como siempre', () => {
+    const html = renderToStaticMarkup(<Tile rotulo="PRECIO DE VENTA" valor="$ 1.000,00" pie="actualizado hoy" />)
+    expect(html).not.toContain('≈')
+  })
+
+  // La página es un Server Component con sesión y Prisma: el cableado se mira
+  // en el fuente. Sólo para un artículo en dólares, con la vigente.
+  it('la ficha lo pide sólo para un artículo en dólares, con la cotización del local', () => {
+    const desde = FUENTE.indexOf('rotulo="PRECIO DE VENTA"')
+    const bloque = FUENTE.slice(desde, desde + 700)
+    expect(bloque).toMatch(/articulo\.moneda === 'USD'\s*\?\s*equivalenteEnPesos\(articulo\.precio\.toString\(\), cotizacion, new Date\(\)\)/)
+    expect(FUENTE).toContain('cotizacionVigente(sesion.tenant.id)')
   })
 })
 
@@ -179,7 +241,7 @@ describe('los tiles de la ficha (Task 4 del rediseño)', () => {
     const desde = FUENTE.indexOf('rotulo="ÚLTIMO COSTO"')
     const bloque = FUENTE.slice(desde, desde + 1200)
     expect(bloque).toContain(
-      'textoDeMargen(articulo.precio, articulo.moneda, ultimoCosto, monedaDelCosto)',
+      'textoDeMargen(articulo.precio, articulo.moneda, ultimoCosto, monedaDelCosto, cotizacion)',
     )
     expect(bloque).toContain('monedaDelCosto !== articulo.moneda')
     expect(bloque).toContain('textoDeCruceDeMonedas(monedaDelCosto)')

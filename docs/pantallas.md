@@ -1305,13 +1305,19 @@ El listado de artículos, con buscador, filtro de tipo y chips de estado
 
 **Decisiones**
 
-- **El precio se muestra en su moneda y SIN equivalente en pesos** (ciclo del
-  precio en dólares, 2026-08-29). Fuera de una venta no hay ninguna cotización
-  de la cual derivarlo, y un número inventado es peor que ninguno — la misma
-  regla por la que el chip de cotización del header de `/vender` muestra `—` en
-  vez de fabricar un valor. La columna no se ordena ni se suma, así que dos
-  monedas conviviendo en ella no rompen nada: `precioEnSuMoneda`
-  (`lib/formato/mostrar.ts`) elige el formateador y no convierte.
+- **El precio se muestra en su moneda**, y la columna no se ordena ni se suma,
+  así que dos monedas conviviendo en ella no rompen nada: `precioEnSuMoneda`
+  (`lib/formato/mostrar.ts`) elige el formateador y no convierte. **Un artículo
+  en dólares lleva debajo su equivalente en pesos** con la cotización del local
+  (ciclo de la cotización del dólar, 2026-10-18): "≈ $ 1.450.000", más chico y
+  apagado para que no se lea como un segundo precio, y con la fecha si esa
+  cotización no es de hoy ("≈ $ 1.420.000 · 15/10", la forma corta de
+  `equivalenteEnPesos` porque la columna es de 140 px). Es orientativo: el cobro
+  sigue cobrando en dólares con la cotización de cada pago. **Sin ninguna
+  cotización cargada no hay equivalente** — un número inventado es peor que
+  ninguno, la regla que hasta ese ciclo dejaba la columna sin equivalente
+  nunca (ciclo del precio en dólares, 2026-08-29: "fuera de una venta no hay
+  ninguna cotización de la cual derivarlo").
 - **El conteo de una rama incluye el de sus marcas**, más los artículos
   colgados del rubro mismo. Si no cerrara, el número de arriba no coincidiría
   con la suma de abajo y el árbol dejaría de servir para decidir.
@@ -1581,10 +1587,12 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
 **Qué se puede hacer**
 
 - Ver los tiles: **En stock** (pintado con `--marca`, el ancla de esta
-  pantalla), **Precio de venta** (en su moneda, con hace cuánto se actualizó)
-  y, con el permiso `COSTOS`, **Último costo** (en la moneda en que se cargó,
-  con el margen contra el precio actual cuando las dos monedas coinciden). Un
-  servicio sólo muestra el de precio.
+  pantalla), **Precio de venta** (en su moneda, con hace cuánto se actualizó y,
+  si está en dólares, su equivalente en pesos con la cotización del local) y,
+  con el permiso `COSTOS`, **Último costo** (en la moneda en que se cargó, con
+  el margen contra el precio actual; con monedas distintas, convertido con la
+  cotización del local y diciendo con cuál). Un servicio sólo muestra el de
+  precio.
 - **Costo total** (con el permiso `COSTOS`): cuánto costó la mercadería que
   queda, con la cuenta en el pie — `30 × $ 7.400`, o `3 × US$ 450` si el
   último costo se cargó en dólares: va en la moneda de ese costo. Sale de
@@ -1769,14 +1777,20 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   ingreso guarda la suya (`MovimientoStock.monedaCosto`), el tile muestra el
   costo en ella, y el margen se calcula **sólo cuando costo y precio están en
   la misma moneda** — un iPhone en dólares con el costo cargado en dólares
-  recupera su margen. Con monedas distintas no hay margen (no hay cotización
-  guardada contra la cual comparar) y el pie dice cuál es el cruce: "el costo
+  recupera su margen. Con monedas distintas **y sin ninguna cotización del
+  dólar cargada** no hay margen y el pie dice cuál es el cruce: "el costo
   está en pesos: sin margen para un artículo en dólares" (el texto de antes) o
   "el costo está en dólares: sin margen para un artículo en pesos". Los dos
   son **distintos** del "el precio no permite calcular el margen": aquél es
   "no se puede dividir", éstos son "no hay contra qué comparar".
-  `textoDeMargen(precio, monedaPrecio, costo, monedaCosto)` recibe las dos
-  monedas como parámetros **requeridos** por el mismo motivo que
+  **Con una cotización del local, el cruce sí tiene margen** (ciclo de la
+  cotización del dólar, 2026-10-18): el costo se pasa a la moneda del precio
+  con la vigente y el pie dice con cuál, siempre con su fecha: "margen 31,2 % ·
+  con el dólar a $ 1.450 del 18/10". También con una vieja —es un número de
+  referencia, no plata que se cobra—, y por eso la fecha va siempre. El costo
+  mostrado en el tile NO se convierte: es lo que se pagó, en lo que se pagó.
+  `textoDeMargen(precio, monedaPrecio, costo, monedaCosto, cotizacion)` recibe
+  las dos monedas como parámetros **requeridos** por el mismo motivo que
   `editarArticulo` — omitir una mostraría un margen cruzando monedas, o sea un
   número equivocado sobre plata. El "último costo" sigue siendo el ingreso
   más reciente con costo, **sea cual sea su moneda**: uno en dólares

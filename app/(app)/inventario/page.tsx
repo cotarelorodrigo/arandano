@@ -12,6 +12,8 @@ import {
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { precioEnSuMoneda, formatearCantidad } from '@/lib/formato/mostrar'
+import { cotizacionVigente } from '@/lib/cotizacion/consultar'
+import { equivalenteEnPesos } from '@/lib/cotizacion/reglas'
 import { estadoDeFila, ChipEstado, type EstadoDeFila } from './chip-estado'
 import { PanelDeCategorias } from './panel-categorias'
 import {
@@ -325,6 +327,11 @@ export type FilaDeArticulo = {
   categoria: string | null
   tipo: 'PRODUCTO' | 'SERVICIO'
   precioFormateado: string
+  /** "≈ $ 1.450.000" debajo del precio de un artículo en dólares (ciclo de la
+   *  cotización del dólar), con la fecha si la cotización del local no es de
+   *  hoy; `null` para uno en pesos o sin cotización cargada. Orientativo: el
+   *  cobro cobra en la moneda del artículo. Ver `equivalenteEnPesos`. */
+  equivalente: string | null
   /** Ya resuelto — "—" para un servicio, la cantidad formateada si no. Un
    *  solo cómputo (`Inventario`, más abajo): lo muestran por igual la celda
    *  de escritorio y la línea de meta del teléfono. */
@@ -550,8 +557,17 @@ export function Listado({
                       claseCodigoOPrecio(f.desactivado),
                     )}
                   >
+                    {/* Con equivalente, dos líneas alineadas a la derecha: el
+                        precio (lo que se cobra) arriba y el "≈" más chico y
+                        apagado abajo, para que no se lea como un segundo
+                        precio. Sin él, la celda queda como siempre. */}
                     <div className="lg:flex lg:h-full lg:items-center lg:justify-end">
-                      {f.precioFormateado}
+                      <div className="flex flex-col items-end">
+                        <span>{f.precioFormateado}</span>
+                        {f.equivalente && (
+                          <span className="text-[11px] font-normal text-muted-foreground">{f.equivalente}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -715,7 +731,7 @@ export default async function Inventario({
 
   const donde = construirDonde({ busqueda, verInactivos, tipo, categoria: rama })
 
-  const [articulos, total, negativos] = await Promise.all([
+  const [articulos, total, negativos, cotizacion] = await Promise.all([
     prisma.articulo.findMany({
       where: donde,
       orderBy: { nombre: 'asc' },
@@ -736,7 +752,13 @@ export default async function Inventario({
     tipo === 'SERVICIO'
       ? 0
       : prisma.articulo.count({ where: { ...donde, tipo: 'PRODUCTO', stock: { lt: 0 } } }),
+    // La cotización del dólar del local, para el "≈ $" de los artículos en
+    // dólares. Una fila por índice, en la misma tanda.
+    cotizacionVigente(sesion.tenant.id),
   ])
+  // Un solo "ahora" para toda la página: todas las filas juzgan "de hoy"
+  // contra el mismo instante.
+  const ahora = new Date()
 
   // La cuenta de "Todos los artículos" del panel: el CATÁLOGO, no el resultado.
   // `total` está filtrado por búsqueda, tipo y rama; usarlo acá haría que
@@ -904,6 +926,8 @@ export default async function Inventario({
               categoria: a.categoria,
               tipo: a.tipo,
               precioFormateado: precioEnSuMoneda(a.precio.toString(), a.moneda),
+              equivalente:
+                a.moneda === 'USD' ? equivalenteEnPesos(a.precio.toString(), cotizacion, ahora, 'corto') : null,
               // Un guion y NO un 0: el motor no le descuenta stock a un
               // servicio (lib/ventas/crear.ts filtra por esProducto), así
               // que un 0 se leería como faltante y alguien saldría a

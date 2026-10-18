@@ -76,11 +76,21 @@ export function sugerenciaDeCotizacionVieja(c: CotizacionDelLocal | null, ahora:
  * El producto se redondea al centavo con la misma regla que el cobro
  * (`pesosDePagoEnCentavos`), y recién después al peso para mostrar.
  */
-export function equivalenteEnPesos(precioUsd: string, c: CotizacionDelLocal | null, ahora: Date): string | null {
+export function equivalenteEnPesos(
+  precioUsd: string,
+  c: CotizacionDelLocal | null,
+  ahora: Date,
+  // 'corto' para la celda de 140 px de la lista de `/inventario`, donde "con
+  // el dólar del" no entra en una línea: "≈ $ 1.420.000 · 15/10". La fecha va
+  // igual — es la condición para usar una vieja—; lo que se acorta es la frase.
+  forma: 'largo' | 'corto' = 'largo',
+): string | null {
   if (!c) return null
   const centavos = pesosDePagoEnCentavos(aCentavos(precioUsd), aDiezMilesimas(c.valor))
   const texto = `≈ ${formatearPesosRedondos(deCentavos(centavos))}`
-  return esDeHoy(c.creadaEn, ahora) ? texto : `${texto} con el dólar del ${formatearDiaYMes(c.creadaEn)}`
+  if (esDeHoy(c.creadaEn, ahora)) return texto
+  const dia = formatearDiaYMes(c.creadaEn)
+  return forma === 'corto' ? `${texto} · ${dia}` : `${texto} con el dólar del ${dia}`
 }
 
 /**
