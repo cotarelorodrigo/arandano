@@ -221,6 +221,33 @@ describe('el cobrado del turno', () => {
     expect(e.actual.ars).toBe('200.00')
   })
 
+  // Hallazgo de la review: anulada en el hueco entre el cierre de A y la
+  // apertura de B, no se restaba en ningún lado, y lo que quedó de A (la
+  // apertura de B) la seguía incluyendo.
+  it('una venta del turno anterior anulada entre los dos turnos resta en el siguiente', async () => {
+    // Turno A, cerrado hace una hora, con una venta adentro.
+    const { rows } = await owner.query(
+      `INSERT INTO cajas (id, tenant_id, abierta_en, abierta_por_id, saldo_inicial, cerrada_en, cerrada_por_id, creado_en)
+       VALUES (gen_random_uuid(), $1, now() - interval '3 hours', $2, 0, now() - interval '1 hour', $2, now())
+       RETURNING id`,
+      [tenantA, usuarioA],
+    )
+    expect(rows).toHaveLength(1)
+    await venta(tenantA, usuarioA, [{ monto: '800' }], {
+      creadoEn: "now() - interval '2 hours'",
+      anuladaEn: "now() - interval '30 minutes'",
+    })
+    // Una venta creada Y anulada en el hueco nunca estuvo en un cajón contado.
+    await venta(tenantA, usuarioA, [{ monto: '50' }], {
+      creadoEn: "now() - interval '40 minutes'",
+      anuladaEn: "now() - interval '20 minutes'",
+    })
+    await mod.abrirCaja(tenantA, usuarioA, '1000')
+    const e = await actual(tenantA)
+    expect(e.devuelto.ars).toBe('800.00')
+    expect(e.actual.ars).toBe('200.00')
+  })
+
   it('una venta de un turno anterior anulada ANTES de abrir éste no toca este cajón', async () => {
     await venta(tenantA, usuarioA, [{ monto: '800' }], {
       creadoEn: "now() - interval '1 day'",

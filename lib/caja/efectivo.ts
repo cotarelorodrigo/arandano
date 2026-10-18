@@ -89,6 +89,16 @@ function restar(a: Totales, b: Totales): Totales {
  * "Antes" incluye ventas cobradas sin ninguna caja abierta (`crearVenta` no la
  * exige): la devolución sale igual de este cajón.
  *
+ * **Y las anuladas en el hueco entre turnos** (hallazgo de la review): una
+ * venta del turno A anulada DESPUÉS de que A cerró y ANTES de que abriera B no
+ * se restaba en ningún lado, mientras que lo que quedó de A —la apertura
+ * sugerida de B— seguía incluyendo esa plata. La devolución salió del cajón
+ * que después abrió B, así que se resta en B: para las ventas creadas antes
+ * del cierre anterior (`inicioDeDevoluciones`), la ventana de la anulación
+ * arranca en ese cierre y no en la apertura de este turno. Una venta creada
+ * en el hueco y anulada en el hueco no entra: nunca estuvo en ningún cajón
+ * contado. Sin cierre anterior, la ventana es la de siempre.
+ *
  * **Límite declarado** (spec, decisión 1): una EDICIÓN de una venta de otro
  * turno que cambie efectivo (de tarjeta a efectivo) no se refleja en el turno
  * donde se hizo la corrección. La diferencia aparece en el arqueo, que es
@@ -117,11 +127,21 @@ export async function efectivoDelTurno(tx: ClienteTx, caja: CajaDelTurno): Promi
     },
     _count: true,
   })
+  const inicio = await inicioDeDevoluciones(tx, caja)
   const devueltoGrupos = await tx.pago.groupBy({
     by: ['moneda', 'monto'],
     where: {
       medio: 'EFECTIVO',
-      venta: { creadoEn: { lt: caja.abiertaEn }, anuladaEn: { gte: caja.abiertaEn } },
+      venta: {
+        OR: [
+          // Creada antes de este turno y anulada durante él (la regla de
+          // siempre; incluye las del hueco entre turnos).
+          { creadoEn: { lt: caja.abiertaEn }, anuladaEn: { gte: caja.abiertaEn } },
+          // Creada antes del cierre anterior y anulada en el hueco: su
+          // efectivo estaba en lo que quedó, y salió antes de que abriera éste.
+          { creadoEn: { lt: inicio }, anuladaEn: { gte: inicio, lt: caja.abiertaEn } },
+        ],
+      },
     },
     _count: true,
   })
@@ -153,6 +173,21 @@ export async function efectivoDelTurno(tx: ClienteTx, caja: CajaDelTurno): Promi
     retiros,
   )
   return { apertura, cobrado, devuelto, ingresos, egresos, retiros, actual }
+}
+
+/**
+ * Desde cuándo una anulación le pertenece a este turno: el cierre de la caja
+ * anterior del local, o la apertura de ésta si no hubo ninguna antes. La caja
+ * anterior es la última cerrada ANTES de que abriera ésta (y no ésta misma,
+ * que adentro de `cerrarCaja` ya tiene su `cerradaEn` escrito).
+ */
+async function inicioDeDevoluciones(tx: ClienteTx, caja: CajaDelTurno): Promise<Date> {
+  const anterior = await tx.caja.findFirst({
+    where: { id: { not: caja.id }, cerradaEn: { not: null, lte: caja.abiertaEn } },
+    orderBy: { cerradaEn: 'desc' },
+    select: { cerradaEn: true },
+  })
+  return anterior?.cerradaEn ?? caja.abiertaEn
 }
 
 /**
