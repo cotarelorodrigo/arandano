@@ -83,6 +83,15 @@ enum Permiso {
   // encargado lo cotice sin que toque los recargos, o al revés.
   CANJE_VALORES
 
+  // Cargar la cotización del dólar del local (`CotizacionDelDolar`). Verla la
+  // ve cualquiera con sesión —es un dato del mostrador—; cargarla es fijar el
+  // número con el que el cobro arranca cada pago que cruza monedas, así que se
+  // delega aparte. No se pliega sobre PLANES_PAGO aunque los dos muevan el
+  // precio de todo el catálogo: un dueño puede querer que el encargado de la
+  // mañana actualice el dólar sin poder tocar los recargos, que se deciden una
+  // vez y no todos los días.
+  COTIZACION
+
   @@map("permiso")
 }
 
@@ -209,16 +218,16 @@ model Tenant {
   proximoSkuArticulo Int          @default(1) @map("proximo_sku_articulo")
   // El tercer correlativo por tenant. Va SIN huecos, como el de ventas.
   proximoNumeroOrden Int          @default(1) @map("proximo_numero_orden")
-  // A cuánto está el dólar EN ESTE LOCAL, hoy. Lo fija el dueño.
-  //
-  // No duplica a Pago.cotizacion: aquélla es a cuánto se cobró UNA venta, es
-  // histórica y no se toca nunca más. Ésta es el precio de hoy, y cambia. Un
-  // ciclo futuro que quiera "unificarlas" estaría borrando la diferencia entre
-  // lo que valió y lo que vale.
+  // SIN LECTOR desde el ciclo de la cotización del dólar (2026-10-18,
+  // docs/superpowers/specs/2026-10-18-cotizacion-del-dolar-design.md). Iba a
+  // ser "a cuánto está el dólar en este local, hoy", y nunca tuvo escritor: la
+  // cotización del local vive ahora en `CotizacionDelDolar`, una fila por
+  // carga, porque el pedido trae historial (quién y cuándo) y una columna que
+  // se pisa no lo guarda. El `DROP` de las dos columnas es un deploy posterior
+  // (expand/contract): anotado en docs/contexto/proximos-pasos.md. Hasta
+  // entonces nada las lee ni las escribe — no revivirlas.
   cotizacionUsd      Decimal?     @map("cotizacion_usd") @db.Decimal(12, 2)
-  // De cuándo es la de arriba. La maqueta no lo dibuja y va igual: un dólar en
-  // el header sin saber de cuándo es, es peor que no mostrarlo — el que cobra
-  // no tiene forma de saber si está mirando el de hoy o el de la semana pasada.
+  // Ver el comentario de arriba: misma suerte, mismo DROP pendiente.
   cotizacionUsdEn    DateTime?    @map("cotizacion_usd_en") @db.Timestamptz(3)
   creadoEn           DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn      DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
@@ -251,6 +260,7 @@ model Tenant {
   modelosDeCanje     ModeloDeCanje[]
   valoresDeCanje     ValorDeCanje[]
   configuracionCanje ConfiguracionDeCanje?
+  cotizaciones       CotizacionDelDolar[]
 
   @@map("tenants")
 }
@@ -309,6 +319,7 @@ model User {
   unidadesIngresadas  UnidadDeArticulo[] @relation("UnidadesIngresadas")
   unidadesDadasDeBaja UnidadDeArticulo[] @relation("UnidadesDadasDeBaja")
   ventasEditadas      EdicionDeVenta[]   @relation("VentasEditadas")
+  cotizacionesCargadas CotizacionDelDolar[]
 
   // Por tenant y no global: la misma persona puede trabajar en dos negocios.
   @@unique([tenantId, email])
@@ -716,6 +727,44 @@ model ConfiguracionDeCanje {
   @@map("configuraciones_de_canje")
 }
 
+// La cotización del dólar del LOCAL: a cuánto la toma este negocio hoy. Una
+// fila por carga, y la vigente es la más reciente.
+//
+// **Append-only**, como `ediciones_venta`, y no por comentario:
+// `scripts/setup-db-roles.sh` le revoca UPDATE y DELETE al rol de la app.
+// Corregir un cero de más es cargar otra; el historial (quién, cuándo, cuánto)
+// es la mitad del pedido, y un historial que se puede editar no contesta
+// "¿quién puso el dólar a 14.500 el martes?".
+//
+// **No es `Pago.cotizacion`**: aquélla es a cuánto se cobró UN pago, histórica
+// e inmutable; ésta es el precio de hoy, y sólo arranca el campo del cobro si
+// es DE HOY en hora argentina (`esDeHoy`, lib/formato/fechas.ts). Una vieja se
+// muestra con su fecha y no convierte nada sola — el motivo por el que el
+// ciclo del 2026-08-29 había prohibido precargar sigue vigente, y es lo que
+// esa regla atiende. Ver docs/superpowers/specs/2026-10-18-cotizacion-del-dolar-design.md.
+//
+// La vigente es la de `creadaEn` más reciente, con desempate por `id`
+// (uuid(7), ordenable por tiempo): `creado_en` es la hora de inicio de la
+// transacción, así que dos cargas del mismo milisegundo no tienen otro orden.
+//
+// `valor > 0` tiene CHECK en la migración. Restrict hacia el usuario por lo
+// mismo que `ediciones_venta`: el que cargó un dólar se desactiva, no se borra.
+model CotizacionDelDolar {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  valor        Decimal  @db.Decimal(12, 2)
+  cargadaPorId String   @map("cargada_por_id") @db.Uuid
+  creadaEn     DateTime @default(now()) @map("creada_en") @db.Timestamptz(3)
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cargadaPor User   @relation(fields: [cargadaPorId], references: [id], onDelete: Restrict)
+
+  // Sirve a las dos lecturas: la vigente (la última) y el historial (las diez
+  // últimas), las dos "del tenant, de la más nueva a la más vieja".
+  @@index([tenantId, creadaEn])
+  @@map("cotizaciones_del_dolar")
+}
+
 // Append-only: nada se edita ni se borra. Es lo que permite responder "por qué
 // tengo 3 y no 5", que es la pregunta que un dueño hace cuando el inventario no
 // le cierra.
@@ -965,6 +1014,12 @@ model Pago {
   // ese default dejó de tener sentido. Queda SIN LECTOR y el índice NO se
   // borra: este ciclo es sólo aditivo, y el `DROP` de un índice es una
   // migración destructiva que corresponde a un deploy posterior.
+  //
+  // Sigue sin lector después del ciclo de la cotización del dólar
+  // (2026-10-18): la cotización que el cobro precarga sale de
+  // `CotizacionDelDolar`, con su propio índice, y NO del último pago — ése era
+  // justamente el dato viejo que el 2026-08-29 sacó. Su `DROP` está anotado
+  // junto con el de `Tenant.cotizacionUsd` en docs/contexto/proximos-pasos.md.
   @@index([tenantId, moneda, creadoEn])
   @@map("pagos")
 }
