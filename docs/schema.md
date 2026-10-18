@@ -105,6 +105,11 @@ erDiagram
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
+  configuraciones_de_canje {
+    uuid tenant_id PK, FK
+    moneda moneda
+    timestamptz(3) actualizado_en
+  }
   conversaciones_bot {
     uuid id PK
     uuid tenant_id FK "único junto a wa_id"
@@ -151,6 +156,13 @@ erDiagram
     motivo_sin_respuesta motivo "opcional"
     text error "opcional"
     timestamptz(3) creado_en
+  }
+  modelos_de_canje {
+    uuid id PK
+    uuid tenant_id FK
+    text nombre
+    timestamptz(3) creado_en
+    timestamptz(3) actualizado_en
   }
   movimientos_stock {
     uuid id PK
@@ -235,6 +247,14 @@ erDiagram
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
+  rangos_de_bateria {
+    uuid id PK
+    uuid tenant_id FK
+    integer minimo
+    integer maximo
+    timestamptz(3) creado_en
+    timestamptz(3) actualizado_en
+  }
   sessions {
     uuid id PK
     uuid tenant_id FK
@@ -295,6 +315,14 @@ erDiagram
     permiso permiso PK
     timestamptz(3) otorgado_en
   }
+  valores_de_canje {
+    uuid id PK
+    uuid tenant_id FK
+    uuid modelo_id FK "único junto a rango_id"
+    uuid rango_id FK "único junto a modelo_id"
+    decimal(12,2) valor
+    timestamptz(3) actualizado_en
+  }
   venta_items {
     uuid id PK
     uuid tenant_id FK
@@ -341,9 +369,11 @@ erDiagram
   clientes ||--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
   conversaciones_bot ||--o{ mensajes_bot : "ON DELETE CASCADE"
   ediciones_venta ||--o{ pagos_archivados : "ON DELETE CASCADE"
+  modelos_de_canje ||--o{ valores_de_canje : "ON DELETE CASCADE"
   ordenes_de_trabajo ||--o{ eventos_orden : "ON DELETE CASCADE"
   planes_de_pago |o--o{ pagos : "ON DELETE RESTRICT"
   planes_de_pago |o--o{ pagos_archivados : "ON DELETE RESTRICT"
+  rangos_de_bateria ||--o{ valores_de_canje : "ON DELETE CASCADE"
   tenants ||--o{ accounts : "ON DELETE CASCADE"
   tenants ||--o{ articulos : "ON DELETE CASCADE"
   tenants ||--o{ cajas : "ON DELETE CASCADE"
@@ -353,21 +383,25 @@ erDiagram
   tenants ||--o{ ediciones_venta : "ON DELETE CASCADE"
   tenants ||--o{ eventos_orden : "ON DELETE CASCADE"
   tenants ||--o{ mensajes_bot : "ON DELETE CASCADE"
+  tenants ||--o{ modelos_de_canje : "ON DELETE CASCADE"
   tenants ||--o{ movimientos_stock : "ON DELETE CASCADE"
   tenants ||--o{ numeros_de_prueba_bot : "ON DELETE CASCADE"
   tenants ||--o{ ordenes_de_trabajo : "ON DELETE CASCADE"
   tenants ||--o{ pagos : "ON DELETE CASCADE"
   tenants ||--o{ pagos_archivados : "ON DELETE CASCADE"
   tenants ||--o{ planes_de_pago : "ON DELETE CASCADE"
+  tenants ||--o{ rangos_de_bateria : "ON DELETE CASCADE"
   tenants ||--o{ sessions : "ON DELETE CASCADE"
   tenants ||--o{ tenant_modules : "ON DELETE CASCADE"
   tenants ||--o{ unidades_articulo : "ON DELETE CASCADE"
   tenants ||--o{ users : "ON DELETE CASCADE"
   tenants ||--o{ usuario_permisos : "ON DELETE CASCADE"
+  tenants ||--o{ valores_de_canje : "ON DELETE CASCADE"
   tenants ||--o{ venta_items : "ON DELETE CASCADE"
   tenants ||--o{ ventas : "ON DELETE CASCADE"
   tenants ||--o{ verifications : "ON DELETE CASCADE"
   tenants ||--o| bots_de_whatsapp : "ON DELETE CASCADE"
+  tenants ||--o| configuraciones_de_canje : "ON DELETE CASCADE"
   unidades_articulo |o--o{ movimientos_stock : "ON DELETE NO ACTION"
   users |o--o{ cajas : "ON DELETE RESTRICT"
   users |o--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
@@ -401,7 +435,7 @@ erDiagram
 - **moneda**: `ARS`, `USD`
 - **motivo_movimiento**: `VENTA`, `ANULACION_VENTA`, `AJUSTE`, `INGRESO`
 - **motivo_sin_respuesta**: `BOT_APAGADO`, `TOPE_MENSUAL`, `TOPE_CONVERSACION`, `SIN_TEXTO`, `SIN_MODELO`, `MODO_PRUEBA`
-- **permiso**: `ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`, `CATEGORIAS`, `VENTAS_ANULAR`, `ORDENES_ANULAR`, `PLANES_PAGO`, `BOT`, `ARTICULOS_BORRAR`, `VENTAS_EDITAR`
+- **permiso**: `ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`, `CATEGORIAS`, `VENTAS_ANULAR`, `ORDENES_ANULAR`, `PLANES_PAGO`, `BOT`, `ARTICULOS_BORRAR`, `VENTAS_EDITAR`, `CANJE_VALORES`
 - **rol_usuario**: `DUENO`, `EMPLEADO`
 - **tipo_articulo**: `PRODUCTO`, `SERVICIO`
 
@@ -417,6 +451,7 @@ erDiagram
 - **eventos_orden**: `eventos_orden_tenant_id_orden_id_creado_en_idx` sobre (`tenant_id`, `orden_id`, `creado_en`)
 - **mensajes_bot**: `mensajes_bot_tenant_id_conversacion_id_creado_en_idx` sobre (`tenant_id`, `conversacion_id`, `creado_en`)
 - **mensajes_bot**: `mensajes_bot_tenant_id_direccion_creado_en_idx` sobre (`tenant_id`, `direccion`, `creado_en`)
+- **modelos_de_canje**: `modelos_de_canje_tenant_id_idx` sobre (`tenant_id`)
 - **movimientos_stock**: `movimientos_stock_tenant_id_articulo_id_idx` sobre (`tenant_id`, `articulo_id`)
 - **movimientos_stock**: `movimientos_stock_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
 - **ordenes_de_trabajo**: `ordenes_de_trabajo_tenant_id_cliente_id_idx` sobre (`tenant_id`, `cliente_id`)
@@ -425,9 +460,12 @@ erDiagram
 - **pagos**: `pagos_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
 - **pagos_archivados**: `pagos_archivados_tenant_id_edicion_id_idx` sobre (`tenant_id`, `edicion_id`)
 - **planes_de_pago**: `planes_de_pago_tenant_id_medio_idx` sobre (`tenant_id`, `medio`)
+- **rangos_de_bateria**: `rangos_de_bateria_tenant_id_idx` sobre (`tenant_id`)
 - **sessions**: `sessions_tenant_id_user_id_idx` sobre (`tenant_id`, `user_id`)
 - **unidades_articulo**: `unidades_articulo_tenant_id_articulo_id_idx` sobre (`tenant_id`, `articulo_id`)
 - **unidades_articulo**: `unidades_articulo_tenant_id_imei_idx` sobre (`tenant_id`, `imei`)
+- **valores_de_canje**: `valores_de_canje_rango_id_idx` sobre (`rango_id`)
+- **valores_de_canje**: `valores_de_canje_tenant_id_idx` sobre (`tenant_id`)
 - **venta_items**: `venta_items_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
 - **ventas**: `ventas_tenant_id_creado_en_idx` sobre (`tenant_id`, `creado_en`)
 - **verifications**: `verifications_tenant_id_identifier_idx` sobre (`tenant_id`, `identifier`)

@@ -120,12 +120,14 @@ describe('Navegacion', () => {
     expect(html).not.toContain('href="/usuarios"')
   })
 
-  it('están las cuatro pestañas que ve cualquiera', async () => {
+  it('están las cinco pestañas que ve cualquiera', async () => {
     // Sin ningún permiso otorgado: son las que no dependen de ninguno.
     const html = await render('EMPLEADO', '/vender', [])
-    // Vender, Ventas, Inventario y Servicio Técnico. Usuarios y Dashboard no:
-    // son del dueño. Formas de pago tampoco: pide PLANES_PAGO.
-    for (const href of ['/vender', '/ventas', '/inventario', '/servicio-tecnico']) {
+    // Vender, Ventas, Inventario, Servicio Técnico y Plan canje. Usuarios y
+    // Dashboard no: son del dueño. Formas de pago tampoco: pide PLANES_PAGO.
+    // Plan canje sí, sin CANJE_VALORES: la calculadora es de cualquiera, y
+    // ese permiso abre la tabla, no la pestaña.
+    for (const href of ['/vender', '/ventas', '/inventario', '/servicio-tecnico', '/plan-canje']) {
       expect(html).toContain(`href="${href}"`)
     }
   })
@@ -171,6 +173,13 @@ describe('Navegacion', () => {
   it('otro permiso cualquiera no destraba Formas de pago', async () => {
     const html = await render('EMPLEADO', '/vender', ['COSTOS'])
     expect(html).not.toContain('href="/formas-de-pago"')
+  })
+
+  // La tabla de valores cuelga de /plan-canje: entrar a editarla no puede
+  // apagar la pestaña de la que se vino.
+  it('/plan-canje/valores deja Plan canje subrayado', async () => {
+    const activa = await traerEstaActiva()
+    expect(activa('/plan-canje', '/plan-canje/valores')).toBe(true)
   })
 
   // El detalle de una orden y el ticket cuelgan de /servicio-tecnico, así que

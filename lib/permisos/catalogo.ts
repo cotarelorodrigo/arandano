@@ -23,6 +23,13 @@
  * para esa forma de pago — una palanca de una fila. Quien puede corregir el
  * precio de una funda no necesariamente puede decidir cuánto recarga el local
  * por pagar en doce cuotas.
+ *
+ * **`CANJE_VALORES` protege la tabla del plan canje y NO la calculadora**, que
+ * es el reparto que el pedido describe: el vendedor consulta cuánto vale el
+ * usado sin poder cambiarlo. Tampoco se pliega sobre `PLANES_PAGO` ni sobre
+ * `ARTICULOS_EDITAR`: no mueve un precio de venta sino lo que el local entrega
+ * a cambio de un equipo, y un dueño puede querer que su encargado cotice usados
+ * sin tocar los recargos, o al revés.
  */
 export const PERMISOS = [
   {
@@ -74,6 +81,11 @@ export const PERMISOS = [
     clave: 'ORDENES_ANULAR',
     nombre: 'Anular órdenes de trabajo',
     ayuda: 'Anular una orden de servicio técnico ya abierta.',
+  },
+  {
+    clave: 'CANJE_VALORES',
+    nombre: 'Editar los valores del plan canje',
+    ayuda: 'Cargar cuánto se paga por cada equipo usado según su batería, y en qué moneda. La calculadora la usa cualquiera.',
   },
 ] as const
 

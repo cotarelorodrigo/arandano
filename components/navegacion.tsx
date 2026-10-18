@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import {
-  Bot, CreditCard, LayoutDashboard, Package, ReceiptText, ShoppingCart, Users, Wrench,
+  ArrowLeftRight, Bot, CreditCard, LayoutDashboard, Package, ReceiptText, ShoppingCart, Users, Wrench,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { usePathname } from 'next/navigation'
@@ -53,6 +53,14 @@ export const PESTANAS: Pestana[] = [
   // exista el registry de módulos, esta entrada sale de TenantModule. El
   // disparador es el primer tenant de un rubro sin servicio técnico.
   { href: '/servicio-tecnico', texto: 'Servicio Técnico', icono: Wrench },
+  // Fija y visible en TODO tenant, con la misma deuda consciente que
+  // /servicio-tecnico de arriba: cuando exista el registry de módulos/presets,
+  // el preset decide si aparece (spec 2026-10-18-plan-canje-design.md,
+  // decisión 1). Hasta entonces la ve también un kiosco que no toma usados, y
+  // ahí sólo muestra una calculadora con la tabla vacía. Sin `permiso`: la
+  // calculadora es de cualquiera del local; lo que pide CANJE_VALORES es la
+  // tabla, a la que se entra desde la propia calculadora.
+  { href: '/plan-canje', texto: 'Plan canje', icono: ArrowLeftRight },
   { href: '/formas-de-pago', texto: 'Formas de pago', icono: CreditCard, permiso: 'PLANES_PAGO' },
   // `/bot` y no `/whatsapp`: CLAUDE.md promete el bot en "WhatsApp/Instagram",
   // así que el día que entre el segundo canal la ruta no se renombra. El rótulo
