@@ -16,7 +16,7 @@ import {
 } from '@/lib/dashboard/rango'
 import { metricasDelPeriodo, delta, soloEnDolares, type Delta } from '@/lib/dashboard/metricas'
 import { agregarPorDia, pieDeTendencia, ventasDeLaTendencia } from '@/lib/dashboard/tendencia'
-import { valuacionDelTenant } from '@/lib/inventario/valuacion'
+import { valuacionDelTenant, type Valuacion } from '@/lib/inventario/valuacion'
 import {
   itemsDelPeriodo, ramaPorArticulo, agruparPorArticulo, sumarPorRama, repartirEnGajos, gajoMasGrande,
   topDeArticulos, TOP_DE_ARTICULOS,
@@ -63,11 +63,47 @@ function sinVentasEnPeriodoAnterior(rango: Rango, hoy: string): string {
  * número que parece completo sin serlo es exactamente lo que este repo ya
  * rechazó cuando le puso pie a `delta()` en vez de inventar un "+100 %".
  * Concuerda en número — "1 artículo", "12 artículos".
+ *
+ * `aparte` son los dólares que el número grande no incluye (ciclo del costo en
+ * dólares, 2026-10-18): mismo "US$ … aparte" que el pie del tile de marca. Va
+ * antes de los faltantes porque es plata real que el tile no muestra en ningún
+ * otro lado; los faltantes son plata que nadie sabe cuánto es.
  */
-export function pieDelCostoDelStock(sinCosto: number): string {
-  if (sinCosto <= 0) return 'al día de hoy'
-  const plural = sinCosto === 1 ? 'artículo' : 'artículos'
-  return `al día de hoy · ${sinCosto} ${plural} sin costo`
+export function pieDelCostoDelStock(sinCosto: number, aparte: string | null = null): string {
+  const partes = ['al día de hoy']
+  if (aparte) partes.push(aparte)
+  if (sinCosto > 0) {
+    const plural = sinCosto === 1 ? 'artículo' : 'artículos'
+    partes.push(`${sinCosto} ${plural} sin costo`)
+  }
+  return partes.join(' · ')
+}
+
+/**
+ * El valor y el pie del tile "Costo del stock", con el costo partido por
+ * moneda (decisión 6 del spec del costo en dólares, 2026-10-18).
+ *
+ * Los pesos y los dólares NUNCA se suman: haría falta una cotización y el
+ * sistema no guarda ninguna (se tipea en cada venta). El formato es el del tile
+ * de marca de esta misma fila: pesos de número grande y "US$ … aparte" en el
+ * pie, e invertido —dólares de número grande— cuando no hay ni un peso, para
+ * que un local que compra todo en dólares no abra el tile con "$ 0,00" de
+ * titular y la plata real escondida en el pie. Es la misma regla que
+ * `soloEnDolares` (lib/dashboard/metricas.ts), escrita acá porque aquélla
+ * recibe un `{ ars, usd }` de cobros y ésta una `Valuacion`.
+ *
+ * Exportada y pura por lo de siempre: el Server Component no se puede llamar
+ * desde un test, y la decisión de qué moneda es el número grande es la que
+ * tiene que estar cubierta.
+ */
+export function tileDelCostoDelStock(valuacion: Valuacion): { valor: string; pie: string } {
+  const { total, totalUsd, sinCosto } = valuacion
+  const invertido = total.isZero() && !totalUsd.isZero()
+  if (invertido) {
+    return { valor: formatearDolares(totalUsd.toString()), pie: pieDelCostoDelStock(sinCosto) }
+  }
+  const aparte = totalUsd.isZero() ? null : `${formatearDolares(totalUsd.toString())} aparte`
+  return { valor: formatearPrecio(total.toString()), pie: pieDelCostoDelStock(sinCosto, aparte) }
 }
 
 const NUMERO_DELTA = new Intl.NumberFormat('es-AR', {
@@ -427,6 +463,9 @@ export default async function Dashboard({
         ? sinVentasEnPeriodoAnterior(rango, hoy)
         : undefined
 
+  // Pesos y dólares por separado, nunca sumados: ver `tileDelCostoDelStock`.
+  const costoDelStock = tileDelCostoDelStock(valuacion)
+
   const deltaCobradas = delta(
     new Prisma.Decimal(metricas.cobradas),
     new Prisma.Decimal(metricasPrevias.cobradas),
@@ -611,8 +650,8 @@ export default async function Dashboard({
             {puedeCostos && (
               <Tile
                 rotulo="Costo del stock"
-                valor={formatearPrecio(valuacion.total.toString())}
-                pie={pieDelCostoDelStock(valuacion.sinCosto)}
+                valor={costoDelStock.valor}
+                pie={costoDelStock.pie}
               />
             )}
           </div>

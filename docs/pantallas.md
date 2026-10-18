@@ -2664,6 +2664,14 @@ julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
   otros lados. El conteo cuenta **artículos con stock**, no movimientos: uno en
   cero no distorsiona el total, así que contarlo inflaría el aviso.
 
+  **Partido por moneda** (ciclo del costo en dólares, 2026-10-18): cada
+  artículo suma a la moneda de su último costo, y pesos y dólares **nunca se
+  suman** — haría falta una cotización que el sistema no guarda. El formato es
+  el del tile de marca: pesos de número grande y `US$ X aparte` en el pie
+  (`al día de hoy · US$ 1.350,00 aparte · 2 artículos sin costo`), e
+  invertido —dólares de número grande— cuando no hay ni un peso. Lo decide
+  `tileDelCostoDelStock` (`app/(app)/dashboard/page.tsx`).
+
   **No entra al CSV** de esta pantalla: ese archivo exporta el período, y una
   fila que ignora el rango dentro de una exportación rotulada por rango es un
   dato que alguien va a leer mal.
