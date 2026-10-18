@@ -75,7 +75,8 @@ Y del producto:
   `docs/superpowers/specs/2026-08-15-servicio-tecnico-design.md`. **Queda para
   los ciclos siguientes**: repuestos que descuenten stock —que es el que cierra
   la decisión abierta de `MovimientoStock`—, el cobro por `crearVentaDesde`,
-  las fotos del equipo, el registry de módulos y la sección `/clientes`.
+  las fotos del equipo, el registry de módulos y la sección `/clientes` (hecha
+  el 2026-10-18, ver su entrada más abajo).
 - Definir el registry de módulos y los puntos de extensión del núcleo: navegación, tipos de artículo, `crearVentaDesde`, movimientos de stock, intents del bot, jobs de pg-boss, vistas del catálogo público y datos demo.
 - ~~Inicializar shadcn/ui, que hoy está a medias.~~ **Hecho** (2026-08-10, en
   el ciclo de autenticación): Tailwind v4 sumado, `components.json` armado y
@@ -3453,6 +3454,89 @@ Y del producto:
   cliente"); como empleado sin `CANJE_VALORES`, ver la calculadora sin el
   enlace a la tabla y que `/plan-canje/valores` dé 403; y mirar las dos
   pantallas a 1440 y a 390 px (la tabla scrollea adentro de su card).
+
+- ~~Tener registrados a todos los que le compraron al local, para después
+  mandarles ofertas (la solapa Clientes).~~ **Hecho** (2026-10-18). Sale del
+  mismo cliente que vende iPhones (audios del 7 y 8 de octubre, "Tarea 3"). Ver
+  `docs/superpowers/specs/2026-10-18-clientes-design.md` (con su sección
+  "Ajustes durante la implementación") y el plan
+  `docs/superpowers/plans/2026-10-18-clientes.md`; el ciclo se resolvió de noche
+  sin preguntas, así que todas sus decisiones son llamadas de quien implementó
+  y están para revisar. La rama sale de `plan-canje`, que sigue en review.
+
+  **El cliente se registra al cobrar.** El paso de cobro de `/vender` suma un
+  campo opcional "Cliente": buscar uno cargado (por nombre o teléfono en
+  cualquier formato) o "Nuevo" con nombre, teléfono y "Acepta que le mandemos
+  ofertas". El nuevo nace en la misma transacción que la venta. Sin tocarlo, la
+  venta sale como siempre: dos campos ocultos vacíos, y los tests de `/vender`
+  que ya existían pasaron sin cambios. `/ventas/[id]` enlaza el cliente a su
+  ficha y permite asignarlo, cambiarlo o quitarlo después (cualquier sesión,
+  como el detalle: no mueve plata).
+
+  **Las dos pantallas.** `/clientes`: buscador (nombre, teléfono, email),
+  filtro "Aceptan ofertas", compras y fecha de alta por fila, alta en un
+  diálogo y "Exportar CSV" (sólo el dueño, con el filtro aplicado).
+  `/clientes/[id]`: datos editables, compras enlazadas (las anuladas
+  tachadas), órdenes de servicio técnico, y "Borrar" para el dueño sólo sin
+  historia. La pestaña "Clientes" va para todos.
+
+  **Datos.** Tres columnas aditivas en `clientes`: `notas`, `acepta_ofertas`
+  (default `false`: nadie aceptó nada por haber sido cargado antes) y
+  `telefono_clave` (los últimos 10 dígitos, rellenada en la misma migración).
+  Índices comunes `(tenant_id, telefono_clave)` y `(tenant_id, cliente_id)` en
+  `ventas`. **El teléfono no se repite en el local**, pero lo frena la
+  aplicación y no un índice único: puede haber repetidos de antes, creados por
+  la recepción de servicio técnico. Lo chequean todos los caminos que crean
+  clientes (`crearClienteEn`), bajo un `pg_advisory_xact_lock` por (tenant,
+  clave). Con menos de 10 dígitos el teléfono se guarda pero no participa.
+
+  **Queda para los ciclos siguientes**:
+
+  - **Mandar ofertas desde el sistema.** El medio no está decidido (WhatsApp
+    por el bot, mail, lista para copiar); hoy el CSV filtrado por "Aceptan
+    ofertas" es la lista.
+  - **Fusionar clientes duplicados** que ya existan (los de antes del chequeo):
+    elegir cuál queda y mover sus ventas y órdenes. Recién con eso se puede
+    pensar en un índice único.
+  - **Relacionar `Cliente` con las conversaciones del bot** (por la clave del
+    teléfono, que ya existe para eso).
+  - Exportar y borrar como permiso delegable, si un dueño lo pide; bitácora de
+    quién cambió el cliente de una venta, si hace falta.
+  - **Preguntas abiertas para el cliente**: qué datos quiere guardar además de
+    nombre, teléfono, email y notas (¿DNI, cumpleaños, dirección?); por qué
+    medio quiere mandar las ofertas; si quiere poder cargar a alguien sin
+    preguntarle por el consentimiento y marcarlo después.
+
+  **`design/arandano.pen` no dibuja las dos pantallas ni el campo del cobro.**
+  Entrada 40 de `docs/correcciones-pendientes-del-pen.md`.
+
+  **Queda pendiente la verificación manual**, después del merge
+  (`arandano-dev` sirve `main`):
+
+  - En `/vender`, cobrar una venta sin tocar "Cliente" y ver en `/ventas/[id]`
+    "Consumidor final" (el camino de siempre, con mouse y con Enter).
+  - Cobrar con "Nuevo" (nombre, teléfono "11 2233-4455", acepta ofertas) y ver
+    al cliente en `/clientes` con 1 compra y el chip.
+  - En otra venta, buscar "+54 9 11 2233 4455", elegirlo **con Enter** y
+    comprobar que ese Enter NO cobra; el Enter siguiente, con el foco fuera de
+    los campos, sí.
+  - Cargar "Nuevo" con ese mismo teléfono y ver el cartel que nombra al
+    existente, sin venta.
+  - Esc en el buscador de clientes y en el alta: no arma el vaciado del
+    carrito.
+  - Lo mismo en el teléfono (390 px): el campo en el paso de cobro, el botón
+    "Cobrar" del pie, y que después de cobrar el carrito vuelva vacío y sin
+    cliente.
+  - En `/ventas/[id]`: Asignar, Cambiar y Quitar cliente; el enlace a la ficha.
+  - En la ficha: editar el teléfono a uno de otro cliente (cartel), destildar
+    ofertas, ver las compras con una anulada; como dueño, borrar uno sin
+    historia y ver el porqué en uno con historia; como empleado, no ver
+    "Borrar" ni "Exportar CSV".
+  - Exportar el CSV con el filtro "Aceptan ofertas" y abrirlo en Excel (los
+    acentos, el "+54" sin fórmula, una nota con coma).
+  - Recibir un equipo en Servicio Técnico con un cliente nuevo de teléfono
+    repetido: el cartel manda a elegirlo de la lista.
+  - Las dos pantallas a 1440 y a 390 px.
 
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).

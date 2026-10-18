@@ -149,3 +149,61 @@ server'` para poder testearlas).
   falla, el cliente no queda. Asignar/cambiar/quitar cliente en una venta ya
   cobrada no toca totales ni pagos.
 - La ficha lista las ventas del cliente y no las de otro.
+
+## Ajustes durante la implementación
+
+Lo que el código obligó a decidir y el spec no decía, cada uno con la opción
+más conservadora que había:
+
+- **El chequeo de repetidos va bajo un lock.** El spec decía "dentro de la
+  transacción del tenant"; eso solo no alcanza: dos altas simultáneas del
+  mismo número no se ven entre sí hasta el commit. `crearClienteEn` y
+  `editarCliente` toman un `pg_advisory_xact_lock` por (tenant, clave), el
+  mismo mecanismo que los rangos del plan canje. En una venta y en una orden se
+  toma antes del lock de la fila del tenant (`proximoNumero`), siempre en ese
+  orden. Un test lanza dos altas a la vez y entra una sola.
+- **Un solo mensaje de repetido para los tres caminos**: "Ese teléfono ya lo
+  tiene Juan Pérez. Si es la misma persona, buscala y elegila en vez de
+  cargarla de nuevo." Sirve en `/vender`, en la recepción y en `/clientes`.
+- **Buscar por teléfono con 10 dígitos o más busca por los últimos diez**, igual
+  que se arma la clave: "+54 9 11 2233-4455" tiene trece dígitos y ninguna clave
+  los contiene enteros. Con menos de 3 dígitos no se busca por clave (sería
+  ruido); por el teléfono tal cual sigue buscando.
+- **`digitosDe` y `ultimos10` se mudaron a `lib/texto/telefono.ts`.** El bot los
+  re-exporta, así que ni sus llamadores ni sus tests cambiaron, y clientes no
+  importa internals del bot.
+- **Los campos tienen topes y el email una forma mínima.** Nombre 120, teléfono
+  40, email 200, notas 1000: lo que pasa se corta, no se rechaza (como el
+  detalle de una venta), y el `maxLength` de cada campo es el mismo número. Un
+  email sin `@` o con espacios se rechaza (`EMAIL_INVALIDO`): lo que ataja es el
+  teléfono tipeado en el campo equivocado. El mensaje de nombre vacío pasó a
+  "El cliente necesita un nombre." (ningún test ni pantalla leía el anterior).
+- **"Compras" no cuenta las anuladas** (listado y CSV: una venta anulada no es
+  una compra); **"tiene N compras: no se puede borrar" sí las cuenta**, porque
+  la FK las cuenta igual. La ficha las muestra tachadas y con el chip
+  "Anulada", para que los dos números se puedan leer.
+- **Sin paginar.** El listado trae los primeros 200 por nombre y dice cuántos
+  hay ("buscá para encontrar al resto"); la ficha, las últimas 100 compras y
+  órdenes, y avisa si hay más. El CSV no tiene tope, por el mismo argumento que
+  `exportarVentas`.
+- **El cliente nuevo viaja del cobro como un JSON en un solo campo oculto**
+  (`clienteNuevo`), al lado de `clienteId`. Los dos vacíos son "sin cliente".
+  El consentimiento sólo es sí con un `true` literal: ni "true" ni "1".
+- **El campo "Cliente" de `/vender` corta la propagación de cada Enter que
+  atiende.** Elegir con Enter saca el buscador del DOM en el mismo evento, el
+  foco cae en `<body>` y el atajo global cobraba la venta con ese mismo Enter
+  (encontrado leyendo el código antes de verlo en pantalla; un caso sobre la
+  fuente lo fija). Después de elegir, el foco queda en `<body>` a propósito: el
+  Enter siguiente sí cobra, como promete la leyenda.
+- **"Asignar cliente" en `/ventas/[id]` también carga uno nuevo**, con el mismo
+  selector que el cobro, y el cliente nace en la misma transacción que el
+  cambio. **No deja fila en `EdicionDeVenta`**: esa bitácora es de cómo se pagó
+  (lo que mueve plata), y "le pusimos el cliente" la volvería ruido. Como
+  `guardarDetalle`, no deja rastro de quién lo cambió ni de qué decía antes; si
+  hace falta, la salida es una columna o una bitácora propia. **Funciona sobre
+  una venta anulada**, como el detalle.
+- **La card de órdenes de la ficha sólo aparece si tiene alguna**: un cliente de
+  un kiosco no tiene por qué ver una card vacía de servicio técnico.
+- **En el teléfono la ficha pone los datos primero**; en escritorio, la
+  historia a la izquierda y los datos a la derecha, como `/ventas/[id]`.
+- **La pestaña va después de Inventario**, sin permiso.
