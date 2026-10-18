@@ -1420,6 +1420,33 @@ leyenda con la confirmación armada.
 Detectado al construir el ciclo del modo prueba del bot (2026-09-15). Ver
 `docs/superpowers/specs/2026-09-15-bot-modo-prueba-design.md`.
 
+## 39. La maqueta no dibuja `/plan-canje` ni `/plan-canje/valores`, en ningún ancho
+
+- **Frames**: ninguno. Las dos pantallas nacen en el ciclo del plan canje
+  (2026-10-18), sin maqueta.
+
+**La calculadora** (`/plan-canje`): dos cards, las tres preguntas a la
+izquierda y la cuenta a la derecha, apiladas en el teléfono. La banda de la
+diferencia copia la banda del total de `/vender` (nodo `B7teV`): mismo paño de
+`--marca`, mismo rótulo de 10 px con tracking 1.4, mismo signo y monto del rol
+Importe. Lo que no tiene referencia: la banda con radio propio adentro de una
+card (en `/vender` es el pie de la card del carrito), la búsqueda del equipo
+como lista debajo del campo y no como el desplegable del mostrador, y el aviso
+de "sin cotización".
+
+**La tabla** (`/plan-canje/valores`): modelos en filas y rangos en columnas,
+con la fila editable entera en el lugar. Derivada de la tabla de
+`/formas-de-pago` (encabezados, celdas, enlaces de acción); las cards de rangos
+y de moneda, de la card "Cómo se usa esto" de esa misma pantalla. Sin
+referencia: el "Borrar" de doble toque, y la tabla en el teléfono, que scrollea
+adentro de su card en vez de volverse tarjetas (misma deuda que la entrada 22).
+
+Qué haría falta: las dos pantallas dibujadas en los dos anchos, incluida la
+fila en edición y la calculadora con monedas distintas (el campo del dólar).
+
+Detectado al construir el ciclo del plan canje (2026-10-18). Ver
+`docs/superpowers/specs/2026-10-18-plan-canje-design.md`.
+
 ---
 
 ## Cómo agregar una entrada

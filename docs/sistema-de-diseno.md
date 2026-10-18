@@ -93,6 +93,7 @@ sistema— y no el dato que cada pantalla en particular existe para mostrar.
 | Bloque de stock en la ficha de un artículo | Cuánto hay |
 | Estado actual en la ficha de una orden | En qué anda el equipo |
 | Banda del total del carrito del héroe, landing (`app/sitio/retrato.tsx`) | El importe que se dice en voz alta, otra vez — es el mismo dato y el mismo rol que en `/vender` |
+| Banda de la diferencia en `/plan-canje` (`app/(app)/plan-canje/calculadora.tsx`) | Lo que el cliente pone encima de su usado — otro importe que se dice en voz alta en el mostrador, con el mismo markup y el mismo rol tipográfico que la banda del total de `/vender` |
 
 **Y eso reescribe "no se usa dos veces en la misma vista", sin aflojarlo.** La
 regla sigue rigiendo entera entre las seis anclas de **contenido**: dos de
@@ -464,9 +465,9 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | Rol del usuario (pie del sidebar), subtítulo del encabezado | sistema | 11 px | 400, `--muted-foreground` |
 | Rótulo "ARÁNDANO", stack · sha — pie del sidebar | sistema | 10 px | 700 el rótulo (`tracking-[0.16em]`); 400 stack · sha, `--muted-foreground` |
 | Meta — texto que acompaña a un dato sin competirle | sistema | 12 px | 400; `--muted-foreground` en superficie clara, `--marca-dim` sobre la banda oscura del total |
-| **Importe** — plata en el punto de venta | Archivo | 42 px el monto de la banda del total; 24 px su signo; 15 px los chips de vuelto y faltante; 14 px la columna | 600 el monto y los chips, 500 el signo, 400 la columna; `font-stretch: 85%`, `tabular-nums` |
+| **Importe** — plata en el punto de venta, y la diferencia que paga el cliente en /plan-canje | Archivo | 42 px el monto de la banda del total; 24 px su signo; 15 px los chips de vuelto y faltante; 14 px la columna | 600 el monto y los chips, 500 el signo, 400 la columna; `font-stretch: 85%`, `tabular-nums` |
 | **Cobro** — título de la card y texto del botón "Cobrar" | Archivo | 16 px el título; 17 px el botón; 14 px el encabezado del carrito, que existe **sólo** en el teléfono | 600 |
-| **Título de card** — encabezados de card en /ventas, /ventas/[id], /inventario/nuevo, /inventario/[id], /servicio-tecnico, /usuarios y /formas-de-pago | Archivo | 15 px en los dos anchos; con una excepción en /usuarios que se da vuelta según el ancho — ver la nota debajo de la tabla | 600 |
+| **Título de card** — encabezados de card en /ventas, /ventas/[id], /inventario/nuevo, /inventario/[id], /servicio-tecnico, /usuarios, /formas-de-pago, /plan-canje y /plan-canje/valores | Archivo | 15 px en los dos anchos; con una excepción en /usuarios que se da vuelta según el ancho — ver la nota debajo de la tabla | 600 |
 | **Valor de tile** — resumen del período en /ventas; ficha de /inventario/[id] | Archivo | en /ventas, 30 px el tile de marca en el teléfono y 32 en escritorio, 24 y 26 los otros dos; en la ficha de /inventario/[id], 34 px el tile de marca en los dos anchos y 19/24 el otro — la maqueta de esa pantalla usa un tamaño distinto para su tile de marca | 600, tracking -0.6 px, `tabular-nums` |
 | **Monto de tabla** — listado de /ventas y detalle de /ventas/[id] | Archivo | 15 px en el teléfono, 14 px en escritorio (ver la nota del `<Table>` debajo de la tabla) | 400 a 600 según la columna, `tabular-nums` |
 | **Banda de Total** — pie de la tabla "Qué se vendió" en /ventas/[id] | Archivo | 22 px | 600, `tabular-nums` |

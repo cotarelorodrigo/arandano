@@ -85,6 +85,10 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   // era lo que sugería el brief) — `.tituloDeCard` va declarada ahí desde
   // ahora aunque esa task no dibuje ninguna card con título: la próxima
   // (los cuatro paneles) lo va a necesitar sobre este mismo módulo.
+  // La novena (ciclo del plan canje): /plan-canje y /plan-canje/valores, las
+  // dos con UN solo módulo en app/(app)/plan-canje/ —son la calculadora y su
+  // tabla, la misma sección— y el mismo caso que /formas-de-pago: el `.pen`
+  // no las dibuja, así que el título vuelve a salir de reusar este rol.
   'Título de card': [
     'app/(app)/ventas/tipografia.module.css',
     'app/(app)/inventario/tipografia.module.css',
@@ -93,6 +97,7 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
     'app/(app)/formas-de-pago/tipografia.module.css',
     'app/(app)/bot/tipografia.module.css',
     'app/(app)/dashboard/tipografia.module.css',
+    'app/(app)/plan-canje/tipografia.module.css',
   ],
   // El valor de los cuatro tiles de /dashboard paga el mismo rol que el valor
   // de tile de /ventas (24/26 px, peso 600) — Ruling O, mismo motivo que la

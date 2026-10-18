@@ -139,7 +139,10 @@ export async function bajaDeRango(_e: EstadoCanje, datos: FormData): Promise<Est
   }
 }
 
-export async function usoDeRangosSugeridos(_e: EstadoCanje, _datos: FormData): Promise<EstadoCanje> {
+/** Sin parámetros: no lee nada del formulario. La pantalla la llama a través
+ *  del mismo `ejecutar` que las demás, que le pasa estado y FormData — una
+ *  función de menos parámetros es asignable a ese tipo, y los ignora. */
+export async function usoDeRangosSugeridos(): Promise<EstadoCanje> {
   try {
     const sesion = await exigirPermiso('CANJE_VALORES')
     await cargarRangosSugeridos({ tenantId: sesion.tenant.id })

@@ -2326,6 +2326,114 @@ que abrió el ciclo ("crédito en 1 pago 10 %, crédito en cuotas 40 %").
   misma entrada 22, que además cuenta el defecto de colapso que el merge sí tuvo
   que arreglar (la tabla quedaba en cero de ancho abajo de ~424 px).
 
+## `/plan-canje`
+
+La calculadora del plan canje: cuánto paga el cliente por el equipo que se lleva
+si entrega su usado como parte de pago. Sale del pedido de un local de iPhones,
+donde cada vendedor le preguntaba al dueño cuánto se paga por cada equipo.
+
+**Acciones**: `buscarEquipos` (sólo lectura).
+
+**Qué se puede hacer**
+
+- Buscar el equipo que se vende —por nombre, código o IMEI, la misma búsqueda
+  de `/vender`— y verlo con su precio en su moneda y su stock.
+- Elegir el modelo del usado que entrega el cliente, de los cargados en la
+  tabla.
+- Tipear la batería del usado (entero de 0 a 100; "88 %" con el signo se
+  acepta, "88,5" se rechaza con su mensaje).
+- Ver tres números: el precio del equipo, lo que se le reconoce por el usado
+  (con el rango en el que cayó) y **la diferencia que paga el cliente**, en la
+  banda de `--marca`.
+- Con el equipo y la tabla en monedas distintas, tipear la cotización del
+  dólar y ver la diferencia en la moneda del equipo.
+
+**Decisiones**
+
+- **Cualquier usuario con sesión, sin permiso.** Es la mitad del pedido: el
+  vendedor consulta la tabla sin encontrar al dueño. La pantalla no escribe
+  nada en la base; la única action es la búsqueda del equipo.
+- **El enlace a la tabla (`/plan-canje/valores`) sólo para quien tiene
+  `CANJE_VALORES`** —en el Topbar de escritorio y en la ranura derecha del
+  teléfono—. Un enlace a una pantalla que responde 403 es una puerta pintada.
+- **La cuenta corre en el navegador**, con cada tecla, sobre las funciones
+  puras de `lib/canje/calculo.ts` (`leerBateria`, `rangoParaBateria`,
+  `calcularCanje`) en centavos enteros. La tabla entera viaja con la página: es
+  chica, y no le muestra al vendedor nada que la calculadora no le diría
+  probando combinaciones.
+- **"Sin cotización" es una respuesta, no un error**: *"Sin cotización cargada
+  para un iPhone 14 con 88 % de batería. Consultá al encargado."* Sale cuando
+  la batería cae en un hueco de los rangos o cuando el modelo no tiene valor en
+  ese rango.
+- **El usado que vale más que el equipo** se muestra como "Le devolvés al
+  cliente" con el número en positivo, nunca como una diferencia negativa.
+- **Con monedas distintas no se inventa una cotización**, ni la del local: se
+  tipea en cada consulta, como en `/vender`. Sin ella no hay diferencia, y el
+  campo sólo aparece cuando hace falta.
+- **La banda de la diferencia es la única superficie de `--marca`** y está
+  siempre, aunque no haya nada elegido —un ancla que aparece y desaparece no es
+  un ancla—; mientras falta algo, dice qué. Usa el rol Importe de `/vender`.
+- **La pestaña se ve en todo tenant**, con la misma deuda consciente que
+  `/servicio-tecnico`: cuando exista el registry de presets, el preset decide.
+- **Necesita JavaScript**: el modelo se elige con un `Select` de Radix y la
+  cuenta corre en el cliente.
+- **`design/arandano.pen` no dibuja esta pantalla.** Entrada 39 de
+  `docs/correcciones-pendientes-del-pen.md`.
+
+## `/plan-canje/valores`
+
+La tabla del plan canje: cuánto paga el local por cada usado, según el modelo y
+el rango de batería, y en qué moneda.
+
+**Acciones**: `altaDeRango`, `edicionDeRango`, `bajaDeRango`,
+`usoDeRangosSugeridos`, `guardadoDeModelo`, `bajaDeModelo`, `cambioDeMoneda`.
+
+**Qué se puede hacer**
+
+- Ver la tabla como el dueño ya la piensa: **modelos en filas, rangos en
+  columnas, el valor en cada celda** ("—" donde no se toma el equipo).
+- Agregar un modelo, o editar uno, **con la fila entera**: el nombre y todas
+  sus celdas se guardan juntos, en una transacción.
+- Borrar un modelo con sus valores (doble toque).
+- Cargar los rangos sugeridos con un botón, sobre una tabla sin rangos: 100 %,
+  90–99 %, 85–89 %, 80–84 % y menos de 80 %.
+- Agregar, editar y borrar rangos en su propia card.
+- Pasar la tabla de dólares a pesos o al revés.
+
+**Decisiones**
+
+- **Detrás de su propio permiso, `CANJE_VALORES`** ("Editar los valores del
+  plan canje"), delegable. La pantalla lo exige y **cada action lo vuelve a
+  exigir**. Un `DUENO` pasa sin fila en `usuario_permisos`.
+- **Una celda vacía es "no se toma ese equipo en ese rango"** y borra el valor
+  si existía; un cero sí es un valor. Los valores pasan por la gramática
+  compartida de `lib/formato` (coma decimal, punto de miles, rechazo de lo
+  ambiguo como `850.000`), con dos decimales a lo sumo.
+- **Los rangos no se pueden solapar** —compartir un borde cuenta—, y se valida
+  en la misma transacción que escribe, bajo un lock por tenant
+  (`pg_advisory_xact_lock`), porque con la tabla vacía no hay fila que
+  bloquear. **Los huecos se permiten**: un local puede no tomar equipos con
+  menos de 80 %.
+- **Los sugeridos se cargan con un botón**, no solos: un GET que escribe es una
+  sorpresa, y el tenant que no hace canje no los necesita. Con algún rango ya
+  cargado el botón no aparece y la action se niega.
+- **El nombre del modelo es único sin distinguir mayúsculas**: un índice único
+  de expresión `(tenant_id, lower(nombre))` en la migración, y el chequeo en la
+  aplicación que dice con cuál choca.
+- **Una sola moneda para toda la tabla**, USD por defecto. Cambiarla **no
+  convierte** los valores, y un diálogo lo avisa antes de confirmar con un
+  ejemplo ("US$ 400,00 pasa a ser $ 400,00").
+- **Editar un rango deja sus valores**; borrarlo se los lleva (cascade), igual
+  que borrar un modelo. Los dos borrados piden un segundo toque.
+- **Una sola fila en edición por vez**: dos filas abiertas con su "Guardar" se
+  prestan a guardar una y creer que se guardaron las dos.
+- **En el teléfono la tabla scrollea adentro de su card**, como
+  `/formas-de-pago`; las cards se apilan.
+- **Necesita JavaScript**: la edición en el lugar, el diálogo de la moneda y
+  los avisos son del cliente.
+- **`design/arandano.pen` no dibuja esta pantalla.** Entrada 39 de
+  `docs/correcciones-pendientes-del-pen.md`.
+
 ## `/usuarios`
 
 El equipo del local (rediseño de `design/arandano.pen`, frame `App /

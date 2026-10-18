@@ -152,7 +152,7 @@ describe('el permiso CANJE_VALORES', () => {
     await expect(acciones.altaDeRango(INICIAL, formulario({ minimo: '1', maximo: '2' }))).rejects.toThrow('FORBIDDEN')
     await expect(acciones.edicionDeRango(INICIAL, formulario({ id: rangoId, minimo: '0', maximo: '99' }))).rejects.toThrow('FORBIDDEN')
     await expect(acciones.bajaDeRango(INICIAL, soloId)).rejects.toThrow('FORBIDDEN')
-    await expect(acciones.usoDeRangosSugeridos(INICIAL, new FormData())).rejects.toThrow('FORBIDDEN')
+    await expect(acciones.usoDeRangosSugeridos()).rejects.toThrow('FORBIDDEN')
     await expect(acciones.guardadoDeModelo(INICIAL, formulario({ nombre: 'iPhone 14' }))).rejects.toThrow('FORBIDDEN')
     await expect(acciones.bajaDeModelo(INICIAL, soloId)).rejects.toThrow('FORBIDDEN')
     await expect(acciones.cambioDeMoneda(INICIAL, formulario({ moneda: 'ARS' }))).rejects.toThrow('FORBIDDEN')
@@ -165,7 +165,7 @@ describe('el permiso CANJE_VALORES', () => {
 
   it('un empleado CON CANJE_VALORES puede editar la tabla', async () => {
     estado.cookie = cookieEmpleadoConPermiso
-    expect((await acciones.usoDeRangosSugeridos(INICIAL, new FormData())).error).toBeNull()
+    expect((await acciones.usoDeRangosSugeridos()).error).toBeNull()
     expect((await acciones.guardadoDeModelo(INICIAL, formulario({ nombre: 'iPhone 14' }))).error).toBeNull()
     expect((await acciones.cambioDeMoneda(INICIAL, formulario({ moneda: 'ARS' }))).error).toBeNull()
     const tabla = await tablaDeCanje(estado.tenantId)
@@ -219,7 +219,7 @@ describe('los rangos', () => {
 
   it('los sugeridos sobre una tabla con rangos vuelven como cartel', async () => {
     await unRango()
-    const r = await acciones.usoDeRangosSugeridos(INICIAL, new FormData())
+    const r = await acciones.usoDeRangosSugeridos()
     expect(r.error).toMatch(/ya tiene rangos/)
   })
 

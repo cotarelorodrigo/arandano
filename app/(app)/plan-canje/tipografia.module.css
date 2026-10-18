@@ -1,0 +1,34 @@
+/*
+ * Archivo sin font-stretch propio, mismo caso que los módulos homónimos de
+ * /ventas, /inventario, /servicio-tecnico, /usuarios y /formas-de-pago: los
+ * títulos de card de /plan-canje y de /plan-canje/valores piden la MISMA cara
+ * que Cartel e Importe, pero no le piden un ancho propio al eje `wdth` — se
+ * quedan en el 100% por default. test/tipografia.test.ts lo cuida con el mismo
+ * mecanismo que esos módulos.
+ *
+ * Uno solo para las dos pantallas y no uno por carpeta: son la misma sección
+ * del producto (la calculadora y su tabla) y el mismo rol, y dos copias de
+ * cuatro líneas serían dos lugares donde el título de card puede empezar a
+ * diferir.
+ *
+ * `design/arandano.pen` no dibuja ninguna de las dos (queda anotado en
+ * docs/correcciones-pendientes-del-pen.md), así que el tratamiento no sale de
+ * un nodo de la maqueta sino del rol "Título de card" que las otras pantallas
+ * ya comparten.
+ *
+ * El número grande de la calculadora —la diferencia que paga el cliente— NO
+ * vive acá: es el rol Importe (components/importe.module.css), el mismo de la
+ * banda del total de /vender, porque es el mismo dato con el mismo uso: un
+ * importe que se dice en voz alta del otro lado del mostrador.
+ */
+.archivo {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Título de card: mismo tamaño y peso que .tituloDeCard de /formas-de-pago y
+   las demás, en su propia clase porque son módulos CSS distintos. */
+.tituloDeCard {
+  composes: archivo;
+  font-weight: 600;
+  font-size: 0.9375rem; /* 15px */
+}
