@@ -10,6 +10,7 @@ import { abrirCaja, cerrarCaja } from '@/lib/caja/abrir-cerrar'
 import { ErrorDeCaja } from '@/lib/caja/errores'
 import { aDecimal, ErrorDeFormato } from '@/lib/formato/numeros'
 import { esUuid } from '@/lib/uuid'
+import { ErrorDeCliente } from '@/lib/clientes/errores'
 import type { MedioPago, Moneda } from '@/generated/prisma/client'
 
 export type EstadoCobro = {
@@ -26,7 +27,10 @@ const MONEDAS = ['ARS', 'USD'] as const
  *  resto se relanza, para que un bug de verdad llegue al log y no se aplane en
  *  un cartel rojo genérico. */
 function traducir(e: unknown): EstadoCobro {
-  if (e instanceof ErrorDeVenta || e instanceof ErrorDeFormato) {
+  // `ErrorDeCliente` desde el ciclo de la solapa Clientes: el cliente nuevo del
+  // cobro nace adentro de la transacción de la venta, y un teléfono repetido o
+  // un nombre vacío son cosas que quien cobra corrige tipeando distinto.
+  if (e instanceof ErrorDeVenta || e instanceof ErrorDeFormato || e instanceof ErrorDeCliente) {
     return { error: e.message, venta: null }
   }
   throw e
@@ -50,6 +54,57 @@ function listaDeJson(datos: FormData, campo: string): unknown[] {
     throw new ErrorDeVenta('SIN_ITEMS', `el ${campo} tiene que ser una lista`)
   }
   return crudo
+}
+
+/**
+ * El cliente del cobro, si quien cobra eligió o cargó uno: `clienteId` (uno
+ * existente) o `clienteNuevo` (JSON con nombre, teléfono y si acepta ofertas).
+ *
+ * **Los dos vacíos —el caso de casi toda venta de mostrador— dan `{}`**, y la
+ * llamada a `crearVenta` queda idéntica a la de antes de que existiera el
+ * campo: el cobro no ganó ningún paso obligatorio ni ningún modo de fallar
+ * nuevo para quien no lo toca (spec 2026-10-18-clientes-design.md, decisión 6).
+ *
+ * Los dos llenos los rechaza el motor (`CLIENTE_DOBLE`); acá no se elige uno
+ * en silencio.
+ *
+ * Mismos guards que el resto de esta función: un id que no es uuid es "ese
+ * cliente no existe" y no un 500 de Prisma, y un JSON ilegible es entrada
+ * inválida.
+ */
+function clienteDelCobro(datos: FormData): {
+  clienteId?: string
+  clienteNuevo?: { nombre: string; telefono: string | null; aceptaOfertas: boolean }
+} {
+  const clienteId = String(datos.get('clienteId') ?? '').trim()
+  const crudoNuevo = String(datos.get('clienteNuevo') ?? '').trim()
+  const salida: ReturnType<typeof clienteDelCobro> = {}
+
+  if (clienteId !== '') {
+    if (!esUuid(clienteId)) {
+      throw new ErrorDeVenta('CLIENTE_INEXISTENTE', 'Ese cliente ya no existe. Elegí otro o cargalo de nuevo.')
+    }
+    salida.clienteId = clienteId
+  }
+  if (crudoNuevo !== '') {
+    let n: { nombre?: unknown; telefono?: unknown; aceptaOfertas?: unknown }
+    try {
+      n = JSON.parse(crudoNuevo)
+    } catch {
+      throw new ErrorDeCliente('NOMBRE_VACIO', 'No se entendió el cliente nuevo que llegó.')
+    }
+    if (n === null || typeof n !== 'object') {
+      throw new ErrorDeCliente('NOMBRE_VACIO', 'No se entendió el cliente nuevo que llegó.')
+    }
+    salida.clienteNuevo = {
+      nombre: typeof n.nombre === 'string' ? n.nombre : '',
+      telefono: typeof n.telefono === 'string' ? n.telefono : null,
+      // Sólo `true` es sí: cualquier otra cosa —ausente, "true" como texto,
+      // un número— es no. El consentimiento no se infiere.
+      aceptaOfertas: n.aceptaOfertas === true,
+    }
+  }
+  return salida
 }
 
 export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCobro> {
@@ -190,9 +245,12 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
     // con las dos implementaciones del selector de categoría.
     const detalle = String(datos.get('detalle') ?? '')
 
+    const cliente = clienteDelCobro(datos)
+
     const venta = await crearVenta({
       tenantId: sesion.tenant.id,
       usuarioId: sesion.usuario.id,
+      ...cliente,
       items,
       pagos,
       // Vacía significa "sin clave", no "clave vacía": una cadena vacía

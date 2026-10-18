@@ -18,7 +18,7 @@ import {
   vendidoDeVenta, cobradoDePagos, hayQueDesglosar, formatearTotales,
 } from '@/lib/ventas/cobrado'
 import { ChipEstado } from '../chip-estado'
-import { AnularVenta, DetalleDeLaVenta } from '../formularios'
+import { AnularVenta, ClienteDeLaVenta, DetalleDeLaVenta } from '../formularios'
 import { CorregirPagos, type PagoParaCorregir } from '../corregir-pagos'
 import { planesDelTenant, type PlanVisible } from '@/lib/planes/consultar'
 import { esUuid } from '@/lib/uuid'
@@ -548,7 +548,7 @@ export type EdicionVisible = {
  */
 export function Detalle({
   resumen, anulada, notaDeAnulacionTexto, items, totalFormateado, lineasDeTotal = null, pagos,
-  ofreceAnular, ofreceCorregir, correccion, ventaId, detalle, ediciones,
+  ofreceAnular, ofreceCorregir, correccion, ventaId, detalle, ediciones, cliente,
 }: {
   resumen: ResumenTexto
   anulada: boolean
@@ -598,6 +598,11 @@ export function Detalle({
   /** El texto libre que el local anotó sobre esta venta, o `null` sin nada
    *  cargado todavía — la card se dibuja igual, con el textarea vacío. */
   detalle: string | null
+  /** El cliente de la venta para la fila "Cliente" —enlace a su ficha y
+   *  "Asignar"/"Cambiar"—, o `null` en consumidor final. Opcional: ausente,
+   *  la fila muestra sólo `resumen.cliente`, como antes de la solapa
+   *  Clientes. */
+  cliente?: { id: string; nombre: string } | null
   /** La bitácora de correcciones, más nueva primero. Lista vacía —el caso
    *  común, toda venta que nunca se corrigió— y la card de "Correcciones"
    *  directamente no se dibuja: a diferencia de "Detalles", acá no hay nada
@@ -929,7 +934,17 @@ export function Detalle({
             <div className="flex flex-col">
               <FilaResumen clave="Fecha">{resumen.fecha}</FilaResumen>
               <FilaResumen clave="Vendió">{resumen.vendio}</FilaResumen>
-              <FilaResumen clave="Cliente">{resumen.cliente}</FilaResumen>
+              <FilaResumen clave="Cliente">
+                {/* Con `cliente` (lo pasa page.tsx), el nombre enlaza a la
+                    ficha y al lado está "Asignar"/"Cambiar" (ciclo de la
+                    solapa Clientes). Sin él —los fixtures de test que no lo
+                    necesitan—, el texto de siempre. */}
+                {cliente === undefined ? (
+                  resumen.cliente
+                ) : (
+                  <ClienteDeLaVenta ventaId={ventaId} cliente={cliente} nombreMostrado={resumen.cliente} />
+                )}
+              </FilaResumen>
               <FilaResumen clave="Estado">
                 <ChipEstado anulada={anulada} />
               </FilaResumen>
@@ -1064,6 +1079,7 @@ export type DatosDelDetalle = {
   lineasDeTotal: { rotulo: string; montoFormateado: string; destacada: boolean }[] | null
   pagos: PagoRecibido[]
   detalle: string | null
+  cliente: { id: string; nombre: string } | null
   /** Todo lo que el diálogo de corrección necesita, ya en texto: los dos
    *  totales de la mercadería, los pagos con su BASE reconstruida
    *  (`baseDePagoGuardado`), los planes vigentes del local y si algún pago se
@@ -1122,7 +1138,8 @@ export async function datosDelDetalle(tenantId: string, ventaId: string): Promis
       // test/ventas.test.ts la asevera en la base — sin este campo en el
       // select no hay ninguna pantalla que la muestre.
       anuladaPor: { select: { nombre: true } },
-      cliente: { select: { nombre: true } },
+      // `id` para enlazar la ficha (/clientes/[id]) desde la fila "Cliente".
+      cliente: { select: { id: true, nombre: true } },
       items: {
         select: {
           id: true, descripcion: true, cantidad: true, precioUnitario: true,
@@ -1282,6 +1299,7 @@ export async function datosDelDetalle(tenantId: string, ventaId: string): Promis
       })) ?? null,
     pagos,
     detalle: venta.detalle,
+    cliente: venta.cliente,
     correccion: {
       // `toString()` del `Decimal`: lo que cruza a un componente cliente no
       // puede ser un `Decimal` (arrastraría el cliente de Prisma al bundle),
@@ -1339,6 +1357,7 @@ export default async function DetalleDeVenta({ params }: { params: Promise<{ id:
         ventaId={id}
         detalle={datos.detalle}
         ediciones={datos.ediciones}
+        cliente={datos.cliente}
       />
     </>
   )

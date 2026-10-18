@@ -102,6 +102,9 @@ erDiagram
     text nombre
     text telefono "opcional"
     text email "opcional"
+    text notas "opcional"
+    boolean acepta_ofertas
+    text telefono_clave "opcional"
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
   }
@@ -446,6 +449,7 @@ erDiagram
 - **cajas**: `cajas_tenant_id_abierta_en_idx` sobre (`tenant_id`, `abierta_en`)
 - **categorias**: `categorias_tenant_id_padre_id_idx` sobre (`tenant_id`, `padre_id`)
 - **clientes**: `clientes_tenant_id_idx` sobre (`tenant_id`)
+- **clientes**: `clientes_tenant_id_telefono_clave_idx` sobre (`tenant_id`, `telefono_clave`)
 - **conversaciones_bot**: `conversaciones_bot_tenant_id_ultimo_mensaje_en_idx` sobre (`tenant_id`, `ultimo_mensaje_en`)
 - **ediciones_venta**: `ediciones_venta_tenant_id_venta_id_creado_en_idx` sobre (`tenant_id`, `venta_id`, `creado_en`)
 - **eventos_orden**: `eventos_orden_tenant_id_orden_id_creado_en_idx` sobre (`tenant_id`, `orden_id`, `creado_en`)
@@ -467,5 +471,6 @@ erDiagram
 - **valores_de_canje**: `valores_de_canje_rango_id_idx` sobre (`rango_id`)
 - **valores_de_canje**: `valores_de_canje_tenant_id_idx` sobre (`tenant_id`)
 - **venta_items**: `venta_items_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
+- **ventas**: `ventas_tenant_id_cliente_id_idx` sobre (`tenant_id`, `cliente_id`)
 - **ventas**: `ventas_tenant_id_creado_en_idx` sobre (`tenant_id`, `creado_en`)
 - **verifications**: `verifications_tenant_id_identifier_idx` sobre (`tenant_id`, `identifier`)

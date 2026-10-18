@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import {
-  ArrowLeftRight, Bot, CreditCard, LayoutDashboard, Package, ReceiptText, ShoppingCart, Users, Wrench,
+  ArrowLeftRight, Bot, Contact, CreditCard, LayoutDashboard, Package, ReceiptText, ShoppingCart, Users, Wrench,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { usePathname } from 'next/navigation'
@@ -48,6 +48,11 @@ export const PESTANAS: Pestana[] = [
   // server action es un endpoint.
   { href: '/dashboard', texto: 'Dashboard', icono: LayoutDashboard, soloDueno: true },
   { href: '/inventario', texto: 'Inventario', icono: Package },
+  // Visible para todos y sin permiso, en todo tenant: cualquier negocio tiene
+  // clientes, y el vendedor los crea al cobrar (spec
+  // 2026-10-18-clientes-design.md, decisiones 3 y 4). Lo del dueño —exportar
+  // y borrar— vive adentro, re-exigido por cada action.
+  { href: '/clientes', texto: 'Clientes', icono: Contact },
   // Fija y visible en TODO tenant, incluido el que no hace servicio técnico.
   // Es deuda consciente y está escrita en el spec con su vencimiento: cuando
   // exista el registry de módulos, esta entrada sale de TenantModule. El

@@ -89,6 +89,8 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   // dos con UN solo módulo en app/(app)/plan-canje/ —son la calculadora y su
   // tabla, la misma sección— y el mismo caso que /formas-de-pago: el `.pen`
   // no las dibuja, así que el título vuelve a salir de reusar este rol.
+  // La décima (ciclo de la solapa Clientes): /clientes y /clientes/[id], con
+  // un solo módulo en app/(app)/clientes/ por lo mismo que /plan-canje.
   'Título de card': [
     'app/(app)/ventas/tipografia.module.css',
     'app/(app)/inventario/tipografia.module.css',
@@ -98,6 +100,7 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
     'app/(app)/bot/tipografia.module.css',
     'app/(app)/dashboard/tipografia.module.css',
     'app/(app)/plan-canje/tipografia.module.css',
+    'app/(app)/clientes/tipografia.module.css',
   ],
   // El valor de los cuatro tiles de /dashboard paga el mismo rol que el valor
   // de tile de /ventas (24/26 px, peso 600) — Ruling O, mismo motivo que la

@@ -1,9 +1,16 @@
 'use client'
 
 import { useActionState, useState, useTransition } from 'react'
+import Link from 'next/link'
 import { toast } from 'sonner'
 import { Undo2 } from 'lucide-react'
-import { anular, guardarDetalle, type EstadoAnulacion, type EstadoDetalle } from './acciones'
+import {
+  anular, asignarCliente, guardarDetalle, type EstadoAnulacion, type EstadoDetalle,
+} from './acciones'
+import { ElegirCliente, type ClienteElegido } from '../clientes/elegir-cliente'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Label } from '@/components/ui/label'
@@ -143,5 +150,98 @@ export function DetalleDeLaVenta({
         {guardando ? 'Guardando…' : 'Guardar detalles'}
       </Button>
     </div>
+  )
+}
+
+/**
+ * El cliente de una venta ya cobrada, en la fila "Cliente" del Resumen: su
+ * nombre enlazado a la ficha (o "Consumidor final"), y "Asignar"/"Cambiar"
+ * para las ventas que se hicieron sin cargarlo (spec
+ * 2026-10-18-clientes-design.md, decisión 6).
+ *
+ * Un diálogo con el MISMO selector del cobro de `/vender` (`ElegirCliente`):
+ * buscar uno cargado o cargar uno nuevo, que nace en la misma transacción que
+ * el cambio. "Quitar cliente" la devuelve a consumidor final. Cualquier
+ * sesión, como el detalle: no mueve plata.
+ *
+ * `nombreMostrado` llega ya resuelto por `filasDeResumen` —el nombre o
+ * `CONSUMIDOR_FINAL`—, así que este componente no repite esa regla.
+ */
+export function ClienteDeLaVenta({
+  ventaId,
+  cliente,
+  nombreMostrado,
+}: {
+  ventaId: string
+  cliente: { id: string; nombre: string } | null
+  nombreMostrado: string
+}) {
+  const [abierto, setAbierto] = useState(false)
+  const [elegido, setElegido] = useState<ClienteElegido | null>(null)
+  const [guardando, empezar] = useTransition()
+
+  function guardar(destino: ClienteElegido | null) {
+    empezar(async () => {
+      const r = await asignarCliente({
+        ventaId,
+        cliente:
+          destino === null
+            ? null
+            : destino.tipo === 'existente'
+              ? { tipo: 'existente', id: destino.id }
+              : destino,
+      })
+      if (r.error) {
+        toast.error(r.error, { id: 'cliente-de-venta', duration: Infinity })
+        return
+      }
+      if (r.aviso) toast.success(r.aviso, { id: 'cliente-de-venta' })
+      setAbierto(false)
+      setElegido(null)
+    })
+  }
+
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      {cliente ? (
+        <Link href={`/clientes/${cliente.id}`} className="truncate text-primary hover:underline">
+          {nombreMostrado}
+        </Link>
+      ) : (
+        <span className="truncate">{nombreMostrado}</span>
+      )}
+      <Dialog
+        open={abierto}
+        onOpenChange={(a) => {
+          setAbierto(a)
+          if (!a) setElegido(null)
+        }}
+      >
+        <DialogTrigger asChild>
+          <button type="button" className="shrink-0 text-xs font-semibold text-primary hover:underline">
+            {cliente ? 'Cambiar' : 'Asignar'}
+          </button>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{cliente ? 'Cambiar el cliente' : 'Asignar un cliente'}</DialogTitle>
+            <DialogDescription>
+              Sólo cambia a quién se le vendió: los totales y los pagos quedan como están.
+            </DialogDescription>
+          </DialogHeader>
+          <ElegirCliente valor={elegido} onCambiar={setElegido} deshabilitado={guardando} />
+          <DialogFooter className="mt-2 gap-2">
+            {cliente && (
+              <Button type="button" variant="outline" disabled={guardando} onClick={() => guardar(null)}>
+                Quitar cliente
+              </Button>
+            )}
+            <Button type="button" disabled={guardando || elegido === null} onClick={() => guardar(elegido)}>
+              {guardando ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </span>
   )
 }

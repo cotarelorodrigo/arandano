@@ -11,6 +11,8 @@ import { reemplazarPagos } from '@/lib/ventas/editar'
 import { normalizarDetalle } from '@/lib/ventas/detalle'
 import { ErrorDeVenta } from '@/lib/ventas/errores'
 import { esUuid } from '@/lib/uuid'
+import { cambiarClienteDeVenta } from '@/lib/ventas/cliente'
+import { ErrorDeCliente } from '@/lib/clientes/errores'
 
 export type EstadoAnulacion = { error: string | null; aviso: string | null }
 
@@ -102,6 +104,73 @@ export async function guardarDetalle(entrada: {
   revalidatePath(`/ventas/${ventaId}`)
   return { error: null, aviso: 'Detalles guardados.' }
 }
+
+export type EstadoCliente = { error: string | null; aviso: string | null }
+
+/**
+ * Asignar, cambiar o quitar el cliente de una venta ya cobrada.
+ *
+ * **Sin permiso propio**, detrás de `exigirSesion` como `guardarDetalle`, y por
+ * el mismo motivo: no mueve plata ni stock, se corrige eligiendo de nuevo, y
+ * el motor (`cambiarClienteDeVenta`, lib/ventas/cliente.ts) sólo toca
+ * `cliente_id`. Lo puede hacer quien cobró la venta, que es quien sabe a quién
+ * se la vendió.
+ *
+ * `cliente` llega como argumento de un server action, o sea JSON armado por el
+ * navegador: se lee campo por campo, sin confiar en la forma. `null` es
+ * "consumidor final".
+ */
+export async function asignarCliente(entrada: {
+  ventaId: string
+  cliente: unknown
+}): Promise<EstadoCliente> {
+  const sesion = await exigirSesion()
+  const { ventaId } = entrada
+  if (!esUuid(ventaId)) return { error: NO_EXISTE, aviso: null }
+
+  const c = entrada.cliente as
+    | { tipo?: unknown; id?: unknown; nombre?: unknown; telefono?: unknown; aceptaOfertas?: unknown }
+    | null
+  let cliente: Parameters<typeof cambiarClienteDeVenta>[0]['cliente']
+  if (c === null) {
+    cliente = null
+  } else if (c?.tipo === 'existente' && typeof c.id === 'string' && esUuid(c.id)) {
+    cliente = { tipo: 'existente', id: c.id }
+  } else if (c?.tipo === 'nuevo') {
+    cliente = {
+      tipo: 'nuevo',
+      nombre: typeof c.nombre === 'string' ? c.nombre : '',
+      telefono: typeof c.telefono === 'string' ? c.telefono : null,
+      aceptaOfertas: c.aceptaOfertas === true,
+    }
+  } else {
+    return { error: CLIENTE_NO_EXISTE, aviso: null }
+  }
+
+  try {
+    await cambiarClienteDeVenta({ tenantId: sesion.tenant.id, ventaId, cliente })
+  } catch (e) {
+    if (e instanceof ErrorDeCliente) return { error: e.message, aviso: null }
+    if (e instanceof ErrorDeVenta) {
+      // `exigirCliente` trae el id en su mensaje (es para el log); a la
+      // pantalla va el texto de siempre.
+      if (e.codigo === 'CLIENTE_INEXISTENTE') return { error: CLIENTE_NO_EXISTE, aviso: null }
+      if (e.codigo === 'VENTA_INEXISTENTE') return { error: NO_EXISTE, aviso: null }
+    }
+    throw e
+  }
+
+  revalidatePath(`/ventas/${ventaId}`)
+  revalidatePath('/ventas')
+  // La ficha del cliente lista sus compras: la del que entra y la del que sale.
+  revalidatePath('/clientes', 'layout')
+  return {
+    error: null,
+    aviso: cliente === null ? 'La venta quedó sin cliente.' : 'Cliente guardado en la venta.',
+  }
+}
+
+const CLIENTE_NO_EXISTE = 'Ese cliente ya no existe. Buscalo de nuevo.'
 
 // Lista blanca de medios/monedas, igual que `cobrar`
 // (app/(app)/vender/acciones.ts) y por el mismo motivo: sin este chequeo, un

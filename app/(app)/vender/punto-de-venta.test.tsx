@@ -12,6 +12,11 @@ import { NOMBRE_DEL_CONTENEDOR } from '@/hooks/use-dos-columnas'
 // renderiza la pantalla, así que se mockean. Las dos de caja entraron cuando el
 // <Encabezado> —y con él el chip y el menú de caja— pasó a renderizarse desde
 // este componente y no desde page.tsx.
+// El buscador del selector de cliente del cobro (ciclo de la solapa
+// Clientes): también es un server action, y su contrato lo fija
+// app/(app)/clientes/acciones.test.ts.
+vi.mock('../clientes/acciones', () => ({ buscarClientesDelLocal: vi.fn(async () => []) }))
+
 vi.mock('./acciones', () => ({
   cobrar: vi.fn(),
   buscarArticulos: vi.fn(async () => []),
@@ -2707,5 +2712,63 @@ describe('el detalle de la venta', () => {
     expect(hastaElCierre).toContain('name="detalle"')
     expect(hastaElCierre).not.toMatch(/onKey(Up|Press)/)
     expect(hastaElCierre).toMatch(/onKeyDown=\{detenerEscapeGlobal\}/)
+  })
+})
+
+// El ciclo de la solapa Clientes: el campo "Cliente" del cobro. Lo que importa
+// es que NO cambie nada para quien no lo toca: nace vacío, sus dos campos
+// ocultos viajan vacíos (`cobrar` los lee como consumidor final), y vive
+// adentro del <form> sin poder enviarlo.
+describe('el cliente de la venta', () => {
+  it('el campo está, rotulado opcional, con el buscador y "Nuevo"', async () => {
+    const html = await render()
+    expect(html).toContain('Cliente (opcional)')
+    expect(html).toContain('Buscar por nombre o teléfono')
+  })
+
+  it('sus dos campos ocultos viven DENTRO del <form> de cobro y nacen vacíos', async () => {
+    const html = await render()
+    const desdeElForm = html.slice(html.indexOf('<form'))
+    const hastaElCierre = desdeElForm.slice(0, desdeElForm.indexOf('</form>'))
+    expect(hastaElCierre).toMatch(/<input type="hidden" name="clienteId" value=""\/>/)
+    expect(hastaElCierre).toMatch(/<input type="hidden" name="clienteNuevo" value=""\/>/)
+  })
+
+  // Va entre los pagos y "Detalles", lejos del pie: el pie es lo que se lee
+  // justo antes de apretar Cobrar (ver el comentario del detalle).
+  it('va antes de "Detalles" y después de "Agregar pago"', async () => {
+    const html = await render()
+    const pago = html.indexOf('Agregar pago')
+    const cliente = html.indexOf('Cliente (opcional)')
+    const detalle = html.indexOf('Detalles (opcional)')
+    expect(pago).toBeGreaterThan(-1)
+    expect(cliente).toBeGreaterThan(pago)
+    expect(detalle).toBeGreaterThan(cliente)
+  })
+
+  // Es de ESA venta, como el detalle: dejarlo puesto le asignaría la venta
+  // siguiente a quien compró recién.
+  it('se limpia al cobrar bien y al confirmar el vaciado', () => {
+    expect(SIN_COMENTARIOS).toMatch(
+      /setVentaProcesada\(estado\.venta\.id\)[\s\S]*?setCliente\(null\)[\s\S]*?\n\s*\}/,
+    )
+    const posicion = FUENTE.indexOf('if (vaciadoArmado) {')
+    expect(FUENTE.slice(posicion, posicion + 1000)).toMatch(/setCliente\(null\)/)
+  })
+
+  it('mientras se cobra, el selector no se puede tocar', () => {
+    expect(SIN_COMENTARIOS).toMatch(/<ElegirCliente[^>]*deshabilitado=\{cobrando\}/)
+  })
+
+  // Review del ciclo: una búsqueda tipeada sin elegir a nadie no cambia
+  // `cliente` (sigue en null), así que el reset tiene que remontar el
+  // selector entero. La `key` cambia en los dos resets de la venta.
+  it('cada reset de la venta remonta el selector con una key nueva', () => {
+    expect(SIN_COMENTARIOS).toMatch(/<ElegirCliente\s+key=\{reinicioDelCliente\}/)
+    expect(SIN_COMENTARIOS).toMatch(
+      /setVentaProcesada\(estado\.venta\.id\)[\s\S]*?setReinicioDelCliente\(\(n\) => n \+ 1\)[\s\S]*?\n\s*\}/,
+    )
+    const posicion = FUENTE.indexOf('if (vaciadoArmado) {')
+    expect(FUENTE.slice(posicion, posicion + 1300)).toMatch(/setReinicioDelCliente\(\(n\) => n \+ 1\)/)
   })
 })

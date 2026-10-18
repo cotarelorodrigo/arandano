@@ -71,8 +71,13 @@ export async function crearOrden(
       // clave de idempotencia existe para cubrir (doble click, F5 sobre el
       // POST, reintento de red) el segundo submit creaba un SEGUNDO "Juan
       // Pérez" y recién después devolvía la orden que ya existía. Un equipo,
-      // una orden, y dos clientes que nadie puede fusionar porque /clientes
-      // todavía no existe.
+      // una orden, y dos clientes que nadie puede fusionar (/clientes existe
+      // desde el 2026-10-18, pero fusionar duplicados sigue fuera de alcance).
+      //
+      // Y desde ese mismo ciclo, `crearClienteEn` rechaza un teléfono que ya
+      // tiene otro cliente del local (`TELEFONO_REPETIDO`), con un mensaje que
+      // manda a elegirlo de la lista: la recepción lo muestra como cualquier
+      // otro `ErrorDeCliente`, y la orden no se crea.
       let clienteId = entrada.clienteId
       if (clienteId === undefined) {
         const nuevo = entrada.clienteNuevo

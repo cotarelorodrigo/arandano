@@ -57,6 +57,7 @@ vi.mock('@/lib/ventas/editar', () => ({ reemplazarPagos: reemplazarPagosMock }))
 let anular: typeof import('./acciones').anular
 let guardarDetalle: typeof import('./acciones').guardarDetalle
 let corregirPagos: typeof import('./acciones').corregirPagos
+let asignarCliente: typeof import('./acciones').asignarCliente
 let authParaTenant: typeof import('@/lib/auth/para-tenant').authParaTenant
 let origenDelRequest: typeof import('@/lib/auth/origen').origenDelRequest
 // Las dos spies de `corregirPagos`. Se resuelven acá y no con un import
@@ -89,7 +90,7 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   process.env.DOMINIO_BASE = 'arandano.test'
 
-  ;({ anular, guardarDetalle, corregirPagos } = await import('./acciones'))
+  ;({ anular, guardarDetalle, corregirPagos, asignarCliente } = await import('./acciones'))
   ;({ authParaTenant } = await import('@/lib/auth/para-tenant'))
   ;({ origenDelRequest } = await import('@/lib/auth/origen'))
   sesionMock = vi.mocked((await import('@/lib/auth/sesion')).exigirSesion)
@@ -354,6 +355,70 @@ describe('guardarDetalle', () => {
 
     await expect(guardarDetalle({ ventaId, detalle: 'x' })).rejects.toThrow('REDIRECT')
     expect(await detalleDe(ventaId)).toBeNull()
+  })
+})
+
+// El ciclo de la solapa Clientes: el cliente de una venta ya cobrada se
+// asigna, se cambia y se quita desde el detalle, con cualquier sesión — como
+// el detalle de arriba, y por el mismo motivo: no mueve plata.
+describe('asignarCliente', () => {
+  async function clienteDe(id: string): Promise<string | null> {
+    const r = await owner.query(`SELECT cliente_id FROM ventas WHERE id = $1`, [id])
+    return r.rows[0].cliente_id
+  }
+  async function unCliente(nombre: string): Promise<string> {
+    const r = await owner.query(
+      `INSERT INTO clientes (id, tenant_id, nombre, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, $2, now(), now()) RETURNING id`,
+      [estado.tenantId, nombre],
+    )
+    return r.rows[0].id
+  }
+
+  it('un EMPLEADO asigna, cambia y quita el cliente', async () => {
+    estado.cookie = cookieEmpleado
+    const ventaId = await unaVentaCobrada()
+    const a = await unCliente('Primera')
+    expect((await asignarCliente({ ventaId, cliente: { tipo: 'existente', id: a } })).error).toBeNull()
+    expect(await clienteDe(ventaId)).toBe(a)
+
+    const r = await asignarCliente({
+      ventaId, cliente: { tipo: 'nuevo', nombre: 'Nueva desde el detalle', telefono: '', aceptaOfertas: false },
+    })
+    expect(r.error).toBeNull()
+    const nuevo = await clienteDe(ventaId)
+    expect(nuevo).not.toBe(a)
+    const fila = await owner.query(`SELECT nombre FROM clientes WHERE id = $1`, [nuevo])
+    expect(fila.rows[0].nombre).toBe('Nueva desde el detalle')
+
+    expect((await asignarCliente({ ventaId, cliente: null })).aviso).toMatch(/sin cliente/)
+    expect(await clienteDe(ventaId)).toBeNull()
+  })
+
+  it('lo mal formado vuelve como aviso, no como 500, y no escribe', async () => {
+    estado.cookie = cookieEmpleado
+    const ventaId = await unaVentaCobrada()
+    expect((await asignarCliente({ ventaId, cliente: { tipo: 'existente', id: 'no-uuid' } })).error).toMatch(/no existe/)
+    expect((await asignarCliente({ ventaId, cliente: { tipo: 'inventado' } })).error).toMatch(/no existe/)
+    expect((await asignarCliente({ ventaId: 'no-uuid', cliente: null })).error).toBe('Esa venta no existe.')
+    expect(
+      (await asignarCliente({ ventaId, cliente: { tipo: 'existente', id: crypto.randomUUID() } })).error,
+    ).toBe('Ese cliente ya no existe. Buscalo de nuevo.')
+    expect(
+      (await asignarCliente({ ventaId, cliente: { tipo: 'nuevo', nombre: '  ', telefono: null } })).error,
+    ).toMatch(/nombre/)
+    expect(await clienteDe(ventaId)).toBeNull()
+  })
+
+  it('la venta de otro local es "no existe"', async () => {
+    estado.cookie = cookieEmpleado
+    expect((await asignarCliente({ ventaId: ventaAjena, cliente: null })).error).toBe('Esa venta no existe.')
+  })
+
+  it('sin sesión, redirige y no escribe', async () => {
+    estado.cookie = ''
+    const ventaId = await unaVentaCobrada()
+    await expect(asignarCliente({ ventaId, cliente: null })).rejects.toThrow('REDIRECT')
   })
 })
 

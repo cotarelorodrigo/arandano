@@ -4,6 +4,8 @@ import { totalesDeItems, excedeEscala, subtotalItem, ESCALA_CANTIDAD } from './t
 import { normalizarPagos, resolverPagosConRecargo, exigirQueCierren } from './pagos'
 import type { PagoDeVenta } from './pagos'
 import { exigirCliente, exigirUsuario } from './pertenencia'
+import { crearClienteEn } from '@/lib/clientes/administrar'
+import { ErrorDeCliente } from '@/lib/clientes/errores'
 import { ErrorDeVenta, traducirErrorDeBase } from './errores'
 import { normalizarDetalle } from './detalle'
 import { normalizarImei } from '@/lib/inventario/unidades'
@@ -37,7 +39,14 @@ export type EntradaCrearVenta = {
   // entonces nada impide que un llamador pase el usuario de otro, y por eso la
   // UI no se construye antes que Auth.js.
   usuarioId: string
+  // A lo sumo uno de los dos, y ninguno es lo normal: la mayoría de las ventas
+  // de mostrador son a consumidor final, y el cobro no gana un paso
+  // obligatorio. `clienteId` para el que ya está cargado; `clienteNuevo` para
+  // el alta al vuelo del cobro (spec 2026-10-18-clientes-design.md, decisión
+  // 6), que nace ADENTRO de la transacción de la venta —como el de la orden de
+  // trabajo—, así que una venta que falla no deja un cliente huérfano.
   clienteId?: string
+  clienteNuevo?: { nombre: string; telefono: string | null; aceptaOfertas: boolean }
   items: ItemDeVenta[]
   pagos: PagoDeVenta[]
   // Opcional: el motor no la inventa. Un llamador que no la manda acepta que
@@ -76,7 +85,13 @@ function costoEnPesosParaCongelar(
 export async function crearVenta(
   entrada: EntradaCrearVenta,
 ): Promise<{ id: string; numero: number }> {
-  const { tenantId, usuarioId, clienteId, items, pagos, claveIdempotencia, detalle } = entrada
+  const { tenantId, usuarioId, clienteNuevo, items, pagos, claveIdempotencia, detalle } = entrada
+
+  // Los dos a la vez es un llamador confundido —la pantalla manda uno u otro—,
+  // y elegir uno en silencio sería adivinar a quién se le vendió.
+  if (entrada.clienteId !== undefined && clienteNuevo !== undefined) {
+    throw new ErrorDeVenta('CLIENTE_DOBLE', 'elegí un cliente o cargá uno nuevo, no los dos')
+  }
 
   if (items.length === 0) {
     throw new ErrorDeVenta('SIN_ITEMS', 'una venta necesita al menos un ítem')
@@ -193,7 +208,21 @@ export async function crearVenta(
 
       // Las FKs hacia el cliente y el usuario, resueltas a mano: las de Postgres
       // no distinguen tenants. El porqué completo está en `pertenencia.ts`.
-      if (clienteId !== undefined) await exigirCliente(tx, clienteId)
+      //
+      // El cliente nuevo nace acá: DESPUÉS del camino rápido de la
+      // idempotencia —el doble click o el F5 sobre el POST devuelven la venta
+      // de la primera vez sin crear un segundo cliente— y ANTES de
+      // `proximoNumero`, que toma la fila del tenant (ver el orden de los
+      // locks en `bloquearClave`, lib/clientes/administrar.ts). Si algo de lo
+      // que sigue falla —stock, pagos que no cierran, un teléfono repetido—,
+      // el rollback se lo lleva junto con la venta. Un `ErrorDeCliente` sale
+      // tal cual: `cobrar` lo muestra.
+      let clienteId = entrada.clienteId
+      if (clienteNuevo !== undefined) {
+        clienteId = (await crearClienteEn(tx, { tenantId, ...clienteNuevo })).id
+      } else if (clienteId !== undefined) {
+        await exigirCliente(tx, clienteId)
+      }
       await exigirUsuario(tx, usuarioId)
 
       const pagosConRecargo = await resolverPagosConRecargo(tx, pagosNormalizados)
@@ -634,7 +663,19 @@ export async function crearVenta(
     // comitea, el P2002 le llega con la fila del otro YA VISIBLE; si
     // rollbackea, inserta ella. El camino "chocó pero no la encuentro" no
     // existe — y si existiera, el `if` de abajo relanza en vez de mentir.
-    if (claveIdempotencia !== undefined && esP2002(e)) {
+    //
+    // **El mismo razonamiento vale para un `TELEFONO_REPETIDO` con
+    // `clienteNuevo`** (review del ciclo de la solapa Clientes): en el doble
+    // submit de verdad simultáneo —dos pestañas, un reintento de red—, la
+    // segunda transacción espera el lock del teléfono (`bloquearClave`), la
+    // primera comitea venta y cliente, y la segunda choca con SU PROPIO
+    // cliente antes de llegar al índice único de la clave. Sin esto quien
+    // cobra leía "ese teléfono ya lo tiene…" por una venta que sí salió. Si
+    // la clave aparece, el choque era éste; si no, el teléfono era de otro y
+    // el error se relanza tal cual.
+    const esChoqueDeSuPropioCliente =
+      clienteNuevo !== undefined && e instanceof ErrorDeCliente && e.codigo === 'TELEFONO_REPETIDO'
+    if (claveIdempotencia !== undefined && (esP2002(e) || esChoqueDeSuPropioCliente)) {
       const yaExiste = await enTransaccionDeTenant(tenantId, async (tx) =>
         tx.venta.findFirst({
           where: { claveIdempotencia },

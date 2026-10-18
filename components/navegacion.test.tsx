@@ -120,14 +120,16 @@ describe('Navegacion', () => {
     expect(html).not.toContain('href="/usuarios"')
   })
 
-  it('están las cinco pestañas que ve cualquiera', async () => {
+  it('están las seis pestañas que ve cualquiera', async () => {
     // Sin ningún permiso otorgado: son las que no dependen de ninguno.
     const html = await render('EMPLEADO', '/vender', [])
-    // Vender, Ventas, Inventario, Servicio Técnico y Plan canje. Usuarios y
-    // Dashboard no: son del dueño. Formas de pago tampoco: pide PLANES_PAGO.
-    // Plan canje sí, sin CANJE_VALORES: la calculadora es de cualquiera, y
-    // ese permiso abre la tabla, no la pestaña.
-    for (const href of ['/vender', '/ventas', '/inventario', '/servicio-tecnico', '/plan-canje']) {
+    // Vender, Ventas, Inventario, Clientes, Servicio Técnico y Plan canje.
+    // Usuarios y Dashboard no: son del dueño. Formas de pago tampoco: pide
+    // PLANES_PAGO. Plan canje sí, sin CANJE_VALORES: la calculadora es de
+    // cualquiera, y ese permiso abre la tabla, no la pestaña. Clientes
+    // también: el vendedor los crea al cobrar; exportar y borrar, que son del
+    // dueño, viven adentro.
+    for (const href of ['/vender', '/ventas', '/inventario', '/clientes', '/servicio-tecnico', '/plan-canje']) {
       expect(html).toContain(`href="${href}"`)
     }
   })
@@ -173,6 +175,12 @@ describe('Navegacion', () => {
   it('otro permiso cualquiera no destraba Formas de pago', async () => {
     const html = await render('EMPLEADO', '/vender', ['COSTOS'])
     expect(html).not.toContain('href="/formas-de-pago"')
+  })
+
+  // La ficha de un cliente cuelga de /clientes, como /ventas/<id> de Ventas.
+  it('la ficha de un cliente deja Clientes subrayado', async () => {
+    const activa = await traerEstaActiva()
+    expect(activa('/clientes', '/clientes/0190a8f2-0000-7000-8000-000000000000')).toBe(true)
   })
 
   // La tabla de valores cuelga de /plan-canje: entrar a editarla no puede

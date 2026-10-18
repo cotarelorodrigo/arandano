@@ -1447,6 +1447,39 @@ fila en edición y la calculadora con monedas distintas (el campo del dólar).
 Detectado al construir el ciclo del plan canje (2026-10-18). Ver
 `docs/superpowers/specs/2026-10-18-plan-canje-design.md`.
 
+## 40. La maqueta no dibuja `/clientes`, la ficha del cliente, ni el campo "Cliente" del cobro, en ningún ancho
+
+- **Frames**: ninguno. Las dos pantallas y el campo nacen en el ciclo de la
+  solapa Clientes (2026-10-18), sin maqueta.
+
+**El listado** (`/clientes`): la fila de filtros copia la de `/inventario`
+(nodo `PmgHg`: buscador, pastilla con checkbox, "Buscar"), con "Exportar CSV" al
+lado para el dueño. El listado son filas enlazadas dentro de una card con
+título, no una tabla: nombre y contacto a la izquierda, compras y fecha a la
+derecha, chip "Acepta ofertas" con el par `ok`/`ok-soft` del chip "Cobrada" de
+`/ventas`. Sin referencia: el estado vacío, el aviso del tope.
+
+**La ficha** (`/clientes/[id]`): dos columnas como `/ventas/[id]` (historia a
+la izquierda, datos y "Borrar" a la derecha en 360 px), apiladas con los datos
+primero en el teléfono. Sin referencia: la card de datos editable entera, las
+compras como filas enlazadas con el chip "Anulada", la card "Borrar" con su
+explicación cuando hay historia.
+
+**El campo "Cliente" del cobro** (`/vender`, frames `B7teV`/`keRdN`): entre los
+pagos y "Detalles (opcional)", que tampoco está dibujado (entrada 36). Un
+buscador con "Nuevo" al lado, la lista de resultados debajo del campo, el
+elegido como una píldora con una X, y el alta al vuelo como una caja con
+nombre, teléfono y el checkbox del consentimiento. En `/ventas/[id]`, el
+nombre del cliente de la fila "Cliente" del Resumen pasa a ser un enlace a su
+ficha, con "Asignar"/"Cambiar" al lado que abre un diálogo con el mismo
+selector.
+
+Qué haría falta: las dos pantallas en los dos anchos, y el paso de cobro de
+`/vender` con el campo en sus cuatro estados (vacío, buscando, elegido, nuevo).
+
+Detectado al construir el ciclo de la solapa Clientes (2026-10-18). Ver
+`docs/superpowers/specs/2026-10-18-clientes-design.md`.
+
 ---
 
 ## Cómo agregar una entrada
