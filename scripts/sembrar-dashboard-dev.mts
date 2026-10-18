@@ -116,9 +116,11 @@ for (const [sku, cantidad, costo] of REPOSICION) {
     articuloId: porSku(sku).id,
     cantidad: d(cantidad),
     usuarioId,
-    // El iPhone está cargado en dólares y `costoUnitario` se guarda en pesos:
-    // compararlos exigiría inventar una cotización, así que va sin costo — el
-    // mismo criterio que ya toma el tile "Último costo" de /inventario/[id].
+    // Los costos de la reposición son todos en pesos (`monedaCosto` queda en
+    // su default ARS), así que el iPhone —cargado en dólares— va sin costo:
+    // un costo en pesos contra un precio en dólares no tiene margen. Desde el
+    // ciclo del costo en dólares (2026-10-18) se le podría cargar uno en USD;
+    // el seed no lo hace para no cambiar los números del dashboard de dev.
     costoUnitario: costo ? d(costo) : null,
     nota: 'Reposición para el seed del dashboard',
   })

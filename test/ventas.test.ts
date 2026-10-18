@@ -2869,6 +2869,31 @@ describe('el costo se congela al cobrar', () => {
     expect(guardada.vendidoConCosto.toString()).toBe('0')
   })
 
+  // El caso que el ciclo del costo en dólares (2026-10-18) hizo posible: un
+  // ítem en dólares con el costo TAMBIÉN en dólares. Sigue en NULL porque
+  // `costoArs` es una cuenta en pesos; si alguien "arreglara" el congelado
+  // para la misma moneda sin sumar `costoUsd` a la venta, US$ 700 entrarían
+  // a `costoArs` como $ 700.
+  it('un ítem en dólares con costo en dólares también queda en NULL', async () => {
+    const enUsd = await crearArticulo({
+      tenantId, usuarioId, nombre: 'iPhone 16', tipo: 'PRODUCTO',
+      precio: d('1000'), moneda: 'USD', stockInicial: d('2'),
+      costoUnitario: d('700'), monedaCosto: 'USD',
+    })
+    const venta = await crearVenta({
+      tenantId, usuarioId,
+      items: [{ articuloId: enUsd.id, cantidad: d('1') }],
+      pagos: [{ medio: 'EFECTIVO', moneda: 'USD', cubre: 'USD',
+        base: d('1000'), cotizacion: d('1') }],
+    })
+    const prisma = prismaParaTenant(tenantId)
+    const items = await prisma.ventaItem.findMany({ where: { ventaId: venta.id } })
+    expect(items[0].costoUnitario).toBeNull()
+    const guardada = await prisma.venta.findUniqueOrThrow({ where: { id: venta.id } })
+    expect(guardada.costoArs.toString()).toBe('0')
+    expect(guardada.vendidoConCosto.toString()).toBe('0')
+  })
+
   // Ciclo del costo en dólares (2026-10-18), decisión 5: la venta congela
   // sólo costos en pesos. Un ítem en pesos cuyo último costo se cargó en
   // dólares queda en NULL — sin el filtro, US$ 8 entrarían a `costoArs` como
