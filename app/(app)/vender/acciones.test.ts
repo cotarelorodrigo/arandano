@@ -522,3 +522,89 @@ describe('unidadesDeArticulo', () => {
     expect(r.map((x) => x.id)).toContain(u.id)
   })
 })
+
+// El ciclo de la solapa Clientes: el campo "Cliente" del cobro, del FormData a
+// la fila. Los dos campos vacíos son el caso de casi toda venta y tienen que
+// dar exactamente lo de antes.
+describe('cobrar con cliente', () => {
+  async function clienteDeLaVenta(ventaId: string) {
+    const f = await owner.query(
+      `SELECT c.id, c.nombre, c.telefono, c.acepta_ofertas FROM ventas v LEFT JOIN clientes c ON c.id = v.cliente_id WHERE v.id = $1`,
+      [ventaId],
+    )
+    return f.rows[0]
+  }
+
+  it('con los dos campos vacíos la venta sale a consumidor final, como siempre', async () => {
+    estado.cookie = cookieEmpleado
+    const datos = formulario({ clave: `sin-cliente-${crypto.randomUUID()}` })
+    datos.set('clienteId', '')
+    datos.set('clienteNuevo', '')
+    const r = await cobrar(INICIAL, datos)
+    expect(r.error).toBeNull()
+    expect((await clienteDeLaVenta(r.venta!.id)).id).toBeNull()
+  })
+
+  it('un cliente nuevo del FormData nace con la venta, con su consentimiento', async () => {
+    estado.cookie = cookieEmpleado
+    const telefono = `11${String(Date.now()).slice(-8)}`
+    const datos = formulario({ clave: `cliente-nuevo-${crypto.randomUUID()}` })
+    datos.set('clienteNuevo', JSON.stringify({ nombre: 'Lucía del mostrador', telefono, aceptaOfertas: true }))
+    const r = await cobrar(INICIAL, datos)
+    expect(r.error).toBeNull()
+    expect(await clienteDeLaVenta(r.venta!.id)).toMatchObject({
+      nombre: 'Lucía del mostrador', telefono, acepta_ofertas: true,
+    })
+  })
+
+  it('el consentimiento sólo es sí con un true de verdad', async () => {
+    estado.cookie = cookieEmpleado
+    const datos = formulario({ clave: `cliente-texto-${crypto.randomUUID()}` })
+    datos.set('clienteNuevo', JSON.stringify({ nombre: 'Consentimiento en texto', telefono: '', aceptaOfertas: 'true' }))
+    const r = await cobrar(INICIAL, datos)
+    expect(r.error).toBeNull()
+    expect((await clienteDeLaVenta(r.venta!.id)).acepta_ofertas).toBe(false)
+  })
+
+  it('un cliente elegido queda en la venta', async () => {
+    estado.cookie = cookieEmpleado
+    const c = await owner.query(
+      `INSERT INTO clientes (id, tenant_id, nombre, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Ya cargado', now(), now()) RETURNING id`,
+      [estado.tenantId],
+    )
+    const datos = formulario({ clave: `cliente-elegido-${crypto.randomUUID()}` })
+    datos.set('clienteId', c.rows[0].id)
+    const r = await cobrar(INICIAL, datos)
+    expect(r.error).toBeNull()
+    expect((await clienteDeLaVenta(r.venta!.id)).id).toBe(c.rows[0].id)
+  })
+
+  it('un teléfono repetido vuelve como cartel y no cobra', async () => {
+    estado.cookie = cookieEmpleado
+    const telefono = `11${String(Date.now() + 7).slice(-8)}`
+    await owner.query(
+      `INSERT INTO clientes (id, tenant_id, nombre, telefono, telefono_clave, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Dueño del número', $2, $2, now(), now())`,
+      [estado.tenantId, telefono],
+    )
+    const clave = `cliente-repetido-${crypto.randomUUID()}`
+    const datos = formulario({ clave })
+    datos.set('clienteNuevo', JSON.stringify({ nombre: 'Otro', telefono, aceptaOfertas: false }))
+    const r = await cobrar(INICIAL, datos)
+    expect(r.venta).toBeNull()
+    expect(r.error).toMatch(/Dueño del número/)
+    const v = await owner.query(`SELECT count(*)::int AS n FROM ventas WHERE clave_idempotencia = $1`, [clave])
+    expect(v.rows[0].n).toBe(0)
+  })
+
+  it('un clienteId que no es uuid, o un cliente nuevo ilegible, vuelven como cartel y no como 500', async () => {
+    estado.cookie = cookieEmpleado
+    const a = formulario({ clave: `cliente-roto-${crypto.randomUUID()}` })
+    a.set('clienteId', 'no-es-un-uuid')
+    expect((await cobrar(INICIAL, a)).error).toMatch(/no existe/)
+    const b = formulario({ clave: `cliente-roto-${crypto.randomUUID()}` })
+    b.set('clienteNuevo', '{ esto no es json')
+    expect((await cobrar(INICIAL, b)).error).toMatch(/No se entendió/)
+  })
+})
