@@ -8,6 +8,21 @@ export type CodigoErrorDeCaja =
   // dos situaciones son, para quien llama, "no hay nada que cerrar".
   | 'SIN_CAJA_ABIERTA'
   | 'SALDO_INVALIDO'
+  // Desde el ciclo del arqueo (2026-10-18). Un monto tipeado que no es plata
+  // válida: el de un movimiento (tiene que ser > 0) o el contado/retirado del
+  // cierre (≥ 0). Aparte de SALDO_INVALIDO porque el mensaje nombra el campo y
+  // la apertura ya tiene su propio código, que los tests de antes assertean.
+  | 'MONTO_INVALIDO'
+  // Un tipo o una moneda de movimiento que no es ninguno de los del enum: sólo
+  // llega con un formulario manipulado, pero se rechaza con código en vez de
+  // dejar que Prisma tire un error de validación sin traducir.
+  | 'MOVIMIENTO_INVALIDO'
+  // Un egreso sin motivo es el que nadie puede explicar después (spec,
+  // decisión 2). También la nota que pasa del largo máximo.
+  | 'NOTA_INVALIDA'
+  // Retirar más de lo que se contó dejaría el cajón en negativo: no es una
+  // diferencia de arqueo, es un error de tipeo.
+  | 'RETIRO_MAYOR_QUE_CONTADO'
   // Lo tira `exigirUsuario` (lib/ventas/pertenencia.ts) y lo hace con
   // `ErrorDeVenta`, no con esta clase: la función se comparte con el motor de
   // ventas y duplicarla para cambiarle la clase al error sería tener dos

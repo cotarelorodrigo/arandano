@@ -40,6 +40,11 @@ afterAll(async () => {
 // una caja que quedó abierta de un caso anterior hace fallar al siguiente por
 // el motivo equivocado.
 beforeEach(async () => {
+  // Los movimientos primero: desde el ciclo del arqueo, movimientos_de_caja
+  // apunta a cajas con ON DELETE RESTRICT (para que borrar una caja no sea la
+  // puerta de atrás del libro), así que una caja con movimientos —de este
+  // archivo o de otro que corrió antes contra la misma base— no se borra.
+  await owner.query('DELETE FROM movimientos_de_caja')
   await owner.query('DELETE FROM cajas')
 })
 
