@@ -1522,6 +1522,42 @@ Detectado al construir el ciclo de la cotización del dólar (2026-10-18). Ver
 
 ---
 
+## 42. La maqueta no dibuja el efectivo en el chip de caja, el panel de la caja, el cierre con arqueo ni `/caja`
+
+- **Frames**: `App / Vender` (nodo `yLN3A`, el chip "Caja abierta") y `VaHod`
+  (nodo `MP7Iu`, el chip del cuerpo del teléfono), que dibujan sólo el reposo
+  con el texto "Caja abierta". `/caja` no tiene frame.
+
+**El chip suma el efectivo actual** ("Caja abierta · $ 55.000,00", y "· US$ …"
+si el turno tuvo dólares), con la tipografía de importe y el mismo par
+`--ok`/`--ok-soft`, en los dos anchos. **El chip de escritorio abre un diálogo**
+(440 px, radio 16, padding 24 — las medidas del diálogo de la cotización de al
+lado) con el desglose del efectivo en una tabla de dos o tres columnas (rótulo,
+pesos, dólares), la lista de movimientos con borde, y dos botones: "Registrar
+movimiento" (outline) y "Cerrar caja" (destructivo). **Registrar** reemplaza el
+contenido por dos segmentados (tipo y moneda, sobre `--muted` con la opción
+elegida en `--card`), monto y motivo. **Cerrar** lo reemplaza por un bloque con
+borde por moneda (esperado, contado, se retira) con la cuenta en vivo —verde
+"Cuadra", ámbar "Faltan/Sobran …"—, la nota y "Cerrar la caja". **La apertura**
+suma "+ dólares" (ghost) que despliega un segundo campo "US$" en la misma
+píldora. **En el teléfono** todo eso va en la hoja del Topbar ("Caja y dólar").
+
+**`/caja`**: Encabezado con el período de subtítulo, el filtro desde/hasta de
+`/ventas`, y una card "Cierres de caja" con una fila por cierre: ventana y
+quiénes, una grilla de seis cifras por moneda (tres columnas en el teléfono,
+seis en escritorio) con la diferencia en `--warn`/`--warn-soft` si no cuadra, y
+los movimientos plegados en un `<details>` con borde.
+
+Qué haría falta: el chip con el importe en los dos anchos, el diálogo en sus
+tres vistas (resumen con y sin dólares, movimiento, cierre con y sin
+diferencia), la apertura con dólares desplegados y la pantalla `/caja` con y
+sin cierres.
+
+Detectado al construir el ciclo del arqueo de caja (2026-10-18). Ver
+`docs/superpowers/specs/2026-10-18-arqueo-de-caja-design.md`.
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

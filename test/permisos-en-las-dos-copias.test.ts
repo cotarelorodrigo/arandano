@@ -170,22 +170,26 @@ describe('/vender: ChipCaja/ControlDeCaja son la sexta acción duplicada del rep
 
   // `ChipCaja` (escritorio, dentro de `acciones`, `hidden lg:flex`) y
   // `ControlDeCaja` (teléfono, en `controlMovil`) son las dos copias: las dos
-  // montan los mismos `FormularioDeApertura` y `ConfirmarCierre` de
-  // `caja.tsx`. HOY está bien que ninguna lleve guarda de permiso —CLAUDE.md
-  // fija que cualquiera del local, dueño o empleado, abre y cierra la caja—,
-  // así que no hay ninguna fuga. Lo que este caso documenta es el sitio: el
-  // día que exista un permiso de caja (la pieza 6 del roadmap, el arqueo),
-  // este archivo es donde alguien tiene que agregar la cobertura de que las
-  // DOS copias gatean con el MISMO permiso — si no, vuelve exactamente el bug
-  // que este archivo existe para cuidar.
+  // montan el mismo `FormularioDeApertura` y el mismo `PanelDeCaja` —que
+  // adentro tiene el registro de movimientos y el cierre con arqueo— de
+  // `caja.tsx`. HOY está bien que ninguna lleve guarda de permiso: el ciclo
+  // del arqueo (2026-10-18, spec decisión 2) decidió que cualquiera del local,
+  // dueño o empleado, abre, cierra Y registra egresos y retiros —cada
+  // movimiento lleva quién fue, y el arqueo es el control—, así que no hay
+  // ninguna fuga. "Un permiso para registrar egresos" quedó fuera de alcance
+  // en ese spec; el día que exista, este archivo es donde alguien tiene que
+  // agregar la cobertura de que las DOS copias gatean con el MISMO permiso —
+  // si no, vuelve exactamente el bug que este archivo existe para cuidar.
   it('las dos copias existen: <ChipCaja> en escritorio y <ControlDeCaja> en el teléfono', () => {
     expect(VENDER).toContain('<ChipCaja')
     expect(VENDER).toContain('<ControlDeCaja')
   })
 
-  it('las dos montan FormularioDeApertura/ConfirmarCierre sin que nada tome un permiso todavía', () => {
+  it('las dos montan FormularioDeApertura/PanelDeCaja sin que nada tome un permiso todavía', () => {
     expect(CAJA).toContain('function FormularioDeApertura')
-    expect(CAJA).toContain('function ConfirmarCierre')
+    expect(CAJA).toContain('function PanelDeCaja')
+    expect(CAJA).toContain('function FormularioDeCierre')
+    expect(CAJA).toContain('function FormularioDeMovimiento')
     // Ninguna firma de este archivo recibe un `puedeX: boolean` —la
     // convención que usan `puedeCrear`, `puedeEditar`, `puedeAnular`,
     // `puedeCategorias`— todavía. Este caso se pone rojo apenas alguien

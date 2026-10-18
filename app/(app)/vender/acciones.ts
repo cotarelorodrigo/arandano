@@ -10,6 +10,7 @@ import { ErrorDeVenta } from '@/lib/ventas/errores'
 import { buscarArticulosVendibles, type ArticuloVendible } from '@/lib/ventas/buscar'
 import { unidadesLibres, type UnidadLibre } from '@/lib/inventario/unidades'
 import { abrirCaja, cerrarCaja } from '@/lib/caja/abrir-cerrar'
+import { registrarMovimiento } from '@/lib/caja/movimientos'
 import { ErrorDeCaja } from '@/lib/caja/errores'
 import { aCotizacion, aDecimal, ErrorDeFormato } from '@/lib/formato/numeros'
 import { esUuid } from '@/lib/uuid'
@@ -299,12 +300,12 @@ export async function unidadesDeArticulo(articuloId: string): Promise<UnidadLibr
 
 export type EstadoCaja = { error: string | null }
 
-/** `abrirCaja`/`cerrarCaja` tiran `ErrorDeCaja`, salvo la pertenencia del
- *  usuario (`exigirUsuario`, compartida con el motor de ventas), que tira
- *  `ErrorDeVenta` — ver el comentario de `errores.ts` sobre por qué esa
- *  función no duplica su propia clase de error para esto. Cualquier otra
- *  cosa se relanza: un bug de verdad tiene que llegar al log, no aplanarse
- *  en un cartel genérico. */
+/** `abrirCaja`/`cerrarCaja`/`registrarMovimiento` tiran `ErrorDeCaja`, salvo
+ *  la pertenencia del usuario (`exigirUsuario`, compartida con el motor de
+ *  ventas), que tira `ErrorDeVenta` — ver el comentario de `errores.ts` sobre
+ *  por qué esa función no duplica su propia clase de error para esto.
+ *  Cualquier otra cosa se relanza: un bug de verdad tiene que llegar al log,
+ *  no aplanarse en un cartel genérico. */
 function traducirErrorDeCaja(e: unknown): EstadoCaja {
   if (e instanceof ErrorDeCaja || e instanceof ErrorDeVenta) {
     return { error: e.message }
@@ -313,38 +314,89 @@ function traducirErrorDeCaja(e: unknown): EstadoCaja {
 }
 
 /**
+ * Las pantallas que muestran la caja: `/vender` (el chip, su panel y la hoja
+ * del teléfono) y `/caja` (el historial de cierres, desde el ciclo del arqueo).
+ * Toda action que cambia la caja revalida las dos, en un solo lugar para que
+ * una nueva no se olvide de la segunda.
+ */
+function revalidarCaja() {
+  revalidatePath('/vender')
+  revalidatePath('/caja')
+}
+
+/**
  * Abre la caja del turno desde el chip del header de `/vender`.
  *
  * Cualquiera del local abre, dueño o empleado — decisión ya tomada en
  * `lib/caja/abrir-cerrar.ts`, esta action sólo la expone al formulario del
- * chip y traduce el resultado.
+ * chip y traduce el resultado. `saldoInicialUsd` es el campo plegado en
+ * "+ dólares" (ciclo del arqueo): ausente o vacío abre sin dólares, que es lo
+ * que manda un formulario de antes del deploy.
  */
 export async function abrirCajaDesdeVender(_e: EstadoCaja, datos: FormData): Promise<EstadoCaja> {
   try {
     const sesion = await exigirSesion()
     const saldoInicial = String(datos.get('saldoInicial') ?? '0')
-    await abrirCaja(sesion.tenant.id, sesion.usuario.id, saldoInicial)
-    // Revalida /vender y no /caja: no existe esa pantalla todavía, y este
-    // chip vive únicamente acá.
-    revalidatePath('/vender')
+    const saldoInicialUsd = String(datos.get('saldoInicialUsd') ?? '')
+    await abrirCaja(sesion.tenant.id, sesion.usuario.id, saldoInicial, saldoInicialUsd)
+    revalidarCaja()
     return { error: null }
   } catch (e) {
     return traducirErrorDeCaja(e)
   }
 }
 
-/** Cierra la caja del turno en curso, mismo chip.
+/**
+ * Cierra la caja del turno en curso, con el arqueo del formulario de cierre
+ * (spec 2026-10-18-arqueo-de-caja-design.md, decisión 4).
  *
- * Sin ningún parámetro: no necesita ni el estado previo ni ningún campo del
- * formulario, y `useActionState` la acepta igual como action —una función
- * con MENOS parámetros que los que el llamador puede pasar es asignable al
- * tipo que React espera—, así que declarar `_e`/`datos` sin usarlos sería
- * puro ruido para el linter. */
-export async function cerrarCajaDesdeVender(): Promise<EstadoCaja> {
+ * **Sin contado en pesos no hay cierre**: un campo ausente se lee como vacío,
+ * y `cerrarCaja` lo rechaza con un cartel. La primera versión cerraba sin
+ * arqueo cuando el campo faltaba, para un formulario viejo cacheado durante el
+ * deploy; era un bypass permanente (cualquier sesión cerraba sin contar con
+ * sólo omitir el campo) y no servía para lo que decía, porque el id de una
+ * server action cambia en cada build. Hallazgo de la review del ciclo.
+ */
+export async function cerrarCajaDesdeVender(_e: EstadoCaja, datos: FormData): Promise<EstadoCaja> {
   try {
     const sesion = await exigirSesion()
-    await cerrarCaja(sesion.tenant.id, sesion.usuario.id)
-    revalidatePath('/vender')
+    const texto = (campo: string) => {
+      const v = datos.get(campo)
+      return typeof v === 'string' ? v : null
+    }
+    await cerrarCaja(sesion.tenant.id, sesion.usuario.id, {
+      contadoArs: texto('contadoArs') ?? '',
+      contadoUsd: texto('contadoUsd'),
+      retiradoArs: texto('retiradoArs'),
+      retiradoUsd: texto('retiradoUsd'),
+      nota: texto('notaCierre'),
+    })
+    revalidarCaja()
+    return { error: null }
+  } catch (e) {
+    return traducirErrorDeCaja(e)
+  }
+}
+
+/**
+ * Registra un ingreso, un egreso o un retiro en la caja abierta, desde el
+ * panel de la caja (spec, decisión 2). Sin permiso, igual que abrir y cerrar:
+ * cualquiera del local registra, cada movimiento lleva quién fue, y el arqueo
+ * es el control.
+ */
+export async function registrarMovimientoDesdeVender(
+  _e: EstadoCaja,
+  datos: FormData,
+): Promise<EstadoCaja> {
+  try {
+    const sesion = await exigirSesion()
+    await registrarMovimiento(sesion.tenant.id, sesion.usuario.id, {
+      tipo: String(datos.get('tipo') ?? ''),
+      moneda: String(datos.get('moneda') ?? ''),
+      monto: String(datos.get('monto') ?? ''),
+      nota: String(datos.get('nota') ?? ''),
+    })
+    revalidarCaja()
     return { error: null }
   } catch (e) {
     return traducirErrorDeCaja(e)

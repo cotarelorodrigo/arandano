@@ -1,0 +1,23 @@
+/*
+ * Archivo sin font-stretch propio, mismo caso que el módulo homónimo de
+ * /clientes: el título de card de /caja pide la MISMA cara que Cartel e
+ * Importe, pero no le pide un ancho propio al eje `wdth` — se queda en el
+ * 100% por default. test/tipografia.test.ts lo cuida con el mismo mecanismo.
+ *
+ * `design/arandano.pen` no dibuja /caja (docs/correcciones-pendientes-del-pen.md),
+ * así que el tratamiento sale del rol "Título de card" que las otras
+ * pantallas ya comparten. Los importes usan el rol Importe de
+ * components/importe.module.css, y la pantalla no usa el paño de --marca:
+ * ningún número de un historial se dice en voz alta.
+ */
+.archivo {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Título de card: mismo tamaño y peso que .tituloDeCard de /clientes y las
+   demás, en su propia clase porque son módulos CSS distintos. */
+.tituloDeCard {
+  composes: archivo;
+  font-weight: 600;
+  font-size: 0.9375rem; /* 15px */
+}

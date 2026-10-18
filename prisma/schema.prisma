@@ -130,6 +130,22 @@ enum Moneda {
   @@map("moneda")
 }
 
+/// Qué clase de plata entra o sale del cajón SIN una venta (spec
+/// docs/superpowers/specs/2026-10-18-arqueo-de-caja-design.md, decisión 2).
+/// Tres y no dos ("entra"/"sale") porque un retiro del dueño y un gasto no son
+/// lo mismo para quien lee el cierre: los dos bajan el efectivo, pero sólo el
+/// egreso es plata que el local gastó, y por eso sólo el egreso exige nota.
+enum TipoMovimientoCaja {
+  /// Plata que entra sin venta: el cambio que se trae del banco.
+  INGRESO
+  /// Plata que sale para un gasto: el delivery, la limpieza.
+  EGRESO
+  /// Plata que el dueño se lleva durante el día, sin ser gasto.
+  RETIRO
+
+  @@map("tipo_movimiento_caja")
+}
+
 /// De qué lado salió un mensaje del bot. ENTRANTE lo escribió el cliente del
 /// local; SALIENTE lo escribió el bot. No hay un tercer valor para "lo escribió
 /// el dueño a mano desde su celular": esos mensajes no pasan por nosotros —el
@@ -261,6 +277,7 @@ model Tenant {
   valoresDeCanje     ValorDeCanje[]
   configuracionCanje ConfiguracionDeCanje?
   cotizaciones       CotizacionDelDolar[]
+  movimientosDeCaja  MovimientoDeCaja[]
 
   @@map("tenants")
 }
@@ -305,21 +322,22 @@ model User {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  ventasHechas        Venta[]            @relation("VentasHechas")
-  ventasAnuladas      Venta[]            @relation("VentasAnuladas")
-  movimientos         MovimientoStock[]
-  sesiones            Session[]
-  cuentas             Account[]
-  ordenesRecibidas    OrdenDeTrabajo[]   @relation("OrdenesRecibidas")
-  ordenesAnuladas     OrdenDeTrabajo[]   @relation("OrdenesAnuladas")
-  eventosOrden        EventoOrden[]
-  cajasAbiertas       Caja[]             @relation("CajasAbiertas")
-  cajasCerradas       Caja[]             @relation("CajasCerradas")
-  permisos            UsuarioPermiso[]
-  unidadesIngresadas  UnidadDeArticulo[] @relation("UnidadesIngresadas")
-  unidadesDadasDeBaja UnidadDeArticulo[] @relation("UnidadesDadasDeBaja")
-  ventasEditadas      EdicionDeVenta[]   @relation("VentasEditadas")
+  ventasHechas         Venta[]              @relation("VentasHechas")
+  ventasAnuladas       Venta[]              @relation("VentasAnuladas")
+  movimientos          MovimientoStock[]
+  sesiones             Session[]
+  cuentas              Account[]
+  ordenesRecibidas     OrdenDeTrabajo[]     @relation("OrdenesRecibidas")
+  ordenesAnuladas      OrdenDeTrabajo[]     @relation("OrdenesAnuladas")
+  eventosOrden         EventoOrden[]
+  cajasAbiertas        Caja[]               @relation("CajasAbiertas")
+  cajasCerradas        Caja[]               @relation("CajasCerradas")
+  permisos             UsuarioPermiso[]
+  unidadesIngresadas   UnidadDeArticulo[]   @relation("UnidadesIngresadas")
+  unidadesDadasDeBaja  UnidadDeArticulo[]   @relation("UnidadesDadasDeBaja")
+  ventasEditadas       EdicionDeVenta[]     @relation("VentasEditadas")
   cotizacionesCargadas CotizacionDelDolar[]
+  movimientosDeCaja    MovimientoDeCaja[]
 
   // Por tenant y no global: la misma persona puede trabajar en dos negocios.
   @@unique([tenantId, email])
@@ -1096,21 +1114,31 @@ model PagoArchivado {
   @@map("pagos_archivados")
 }
 
-// La caja del turno: quién la abrió, con cuánto, y quién la cerró.
+// La caja del turno: quién la abrió, con cuánto, quién la cerró y —desde el
+// ciclo del arqueo (2026-10-18, spec 2026-10-18-arqueo-de-caja-design.md)— de
+// cuánto fue el cierre y cuánto se retiró.
 //
-// Lo que NO tiene, a propósito: arqueo, movimientos de efectivo y cuadre contra
-// las ventas del turno. Eso es la pieza 6 del roadmap y su propio ciclo; acá
-// entra sólo lo que la maqueta muestra (el chip "Caja abierta" del header de
-// /vender), para que ese chip diga la verdad en vez de estar pintado.
+// El TURNO es una ventana de tiempo, `[abiertaEn, cerradaEn ?? ahora)`, y no
+// una FK desde `Pago`: `crearVenta` no exige caja abierta, y la regla "una sola
+// abierta por tenant" (índice único parcial) hace que la ventana identifique un
+// solo turno. El efectivo ESPERADO se deriva de lo que el sistema ya sabe
+// (lib/caja/efectivo.ts); lo único que se escribe a mano es lo que sólo una
+// persona puede saber: lo que hay en el cajón cuando lo cuenta, y lo que se
+// lleva. Los movimientos sin venta (ingresos, egresos, retiros) son
+// `MovimientoDeCaja`.
 model Caja {
   id       String @id @default(uuid(7)) @db.Uuid
   tenantId String @map("tenant_id") @db.Uuid
 
-  abiertaEn    DateTime @default(now()) @map("abierta_en") @db.Timestamptz(3)
-  abiertaPorId String   @map("abierta_por_id") @db.Uuid
+  abiertaEn       DateTime @default(now()) @map("abierta_en") @db.Timestamptz(3)
+  abiertaPorId    String   @map("abierta_por_id") @db.Uuid
   // Con cuánto efectivo arranca el turno. Decimal y nunca Float: un flotante
   // binario no representa 0,10 y el error se acumula en cada suma.
-  saldoInicial Decimal  @map("saldo_inicial") @db.Decimal(12, 2)
+  saldoInicial    Decimal  @map("saldo_inicial") @db.Decimal(12, 2)
+  // La misma apertura en dólares, que nunca se suma a la de pesos. Default 0 y
+  // no nullable: toda caja que ya existía abrió sin dólares, que es
+  // exactamente lo que dice un cero — no hace falta distinguir "no se sabe".
+  saldoInicialUsd Decimal  @default(0) @map("saldo_inicial_usd") @db.Decimal(12, 2)
 
   // Nullable es lo que define "abierta": la caja del turno en curso es la que
   // tiene esto en NULL, y el índice único parcial de la migración usa
@@ -1118,14 +1146,79 @@ model Caja {
   cerradaEn    DateTime? @map("cerrada_en") @db.Timestamptz(3)
   cerradaPorId String?   @map("cerrada_por_id") @db.Uuid
 
+  // El arqueo del cierre, por moneda. TODAS nullable, y sin backfill: una caja
+  // cerrada antes de este ciclo no tiene arqueo (y la imagen anterior, durante
+  // el deploy, las ignora), y un llamador viejo de `cerrarCaja` —un formulario
+  // cacheado— cierra sin ellas. NULL es "se cerró sin contar", no "contó cero".
+  //
+  // `esperado` es el que se RECALCULÓ en la transacción del cierre, no el que
+  // mostraba la pantalla al abrir el formulario: si entró un cobro mientras la
+  // persona contaba, el esperado guardado lo incluye.
+  //
+  // La diferencia (contado − esperado) y lo que queda (contado − retirado) se
+  // derivan y no se guardan: guardarlas sería tener dos veces el mismo dato,
+  // que se puede desincronizar. CHECKs de no-negativo en la migración (el
+  // esperado sí puede ser negativo: un egreso mayor que lo que había es un
+  // dato, no un error de escritura).
+  esperadoArs Decimal? @map("esperado_ars") @db.Decimal(12, 2)
+  esperadoUsd Decimal? @map("esperado_usd") @db.Decimal(12, 2)
+  contadoArs  Decimal? @map("contado_ars") @db.Decimal(12, 2)
+  contadoUsd  Decimal? @map("contado_usd") @db.Decimal(12, 2)
+  retiradoArs Decimal? @map("retirado_ars") @db.Decimal(12, 2)
+  retiradoUsd Decimal? @map("retirado_usd") @db.Decimal(12, 2)
+  notaCierre  String?  @map("nota_cierre")
+
   creadoEn DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
 
-  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  abiertaPor User   @relation("CajasAbiertas", fields: [abiertaPorId], references: [id], onDelete: Restrict)
-  cerradaPor User?  @relation("CajasCerradas", fields: [cerradaPorId], references: [id], onDelete: Restrict)
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  abiertaPor  User               @relation("CajasAbiertas", fields: [abiertaPorId], references: [id], onDelete: Restrict)
+  cerradaPor  User?              @relation("CajasCerradas", fields: [cerradaPorId], references: [id], onDelete: Restrict)
+  movimientos MovimientoDeCaja[]
 
   @@index([tenantId, abiertaEn])
   @@map("cajas")
+}
+
+// Plata que entra o sale del cajón sin una venta: ingresos, egresos y retiros
+// (spec 2026-10-18-arqueo-de-caja-design.md, decisión 2).
+//
+// Append-only: no se edita ni se borra. Un error se corrige con el movimiento
+// contrario, y los dos quedan a la vista — un libro de caja editable no
+// contesta "¿adónde fueron los $ 5.000?", y el que más motivo tendría para
+// editarlo es justamente quien tiene que contestarlo. Lo sostiene el REVOKE de
+// scripts/setup-db-roles.sh, no este comentario.
+//
+// FK a la caja y no una ventana de tiempo como los pagos: un movimiento sólo
+// existe con una caja abierta (`registrarMovimiento` lo exige), así que la
+// caja siempre se conoce y no hay nada que inferir. Restrict hacia la caja:
+// con Cascade, borrar una caja sería la puerta de atrás del libro (el mismo
+// agujero que eventos_orden cerró con un REVOKE sobre su padre); con Restrict,
+// una caja con movimientos no se puede borrar, y ningún código borra cajas.
+// Restrict hacia el usuario por lo mismo que `ediciones_venta`.
+//
+// `monto > 0` tiene CHECK en la migración: el sentido lo da el `tipo`, nunca el
+// signo, para que no haya dos maneras de escribir un egreso.
+model MovimientoDeCaja {
+  id        String             @id @default(uuid(7)) @db.Uuid
+  tenantId  String             @map("tenant_id") @db.Uuid
+  cajaId    String             @map("caja_id") @db.Uuid
+  tipo      TipoMovimientoCaja
+  // Pesos y dólares nunca se suman: cada movimiento es de una sola moneda.
+  moneda    Moneda
+  monto     Decimal            @db.Decimal(12, 2)
+  // Obligatoria para EGRESO —validado en lib/caja/movimientos.ts—: un egreso
+  // sin motivo es el que nadie puede explicar después.
+  nota      String?
+  usuarioId String             @map("usuario_id") @db.Uuid
+  creadoEn  DateTime           @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  caja    Caja   @relation(fields: [cajaId], references: [id], onDelete: Restrict)
+  usuario User   @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  // La única lectura: los movimientos de UNA caja, para el panel y para /caja.
+  @@index([tenantId, cajaId])
+  @@map("movimientos_de_caja")
 }
 
 model OrdenDeTrabajo {

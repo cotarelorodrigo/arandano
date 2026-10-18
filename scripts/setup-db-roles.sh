@@ -306,6 +306,31 @@ BEGIN
 END
 $$;
 
+-- movimientos_de_caja: los ingresos, egresos y retiros del cajón, y la sexta
+-- tabla-libro (ciclo del arqueo, 2026-10-18). Su propia línea por el mismo
+-- motivo que las de arriba: el default privilege le da UPDATE y DELETE a toda
+-- tabla nueva.
+--
+-- Es el libro que el arqueo del cierre usa para cuadrar: si la app pudiera
+-- editarlo, quien registró un egreso de $ 5.000 podría bajarlo a $ 500 después
+-- de llevarse la diferencia, y el cierre cuadraría igual. Un error se corrige
+-- con el movimiento contrario, y los dos quedan a la vista.
+--
+-- La puerta de atrás por cascada está cerrada en el schema y no acá:
+-- movimientos_de_caja.caja_id es ON DELETE RESTRICT (no CASCADE), así que
+-- borrar una caja con movimientos falla en vez de llevárselos. Por eso NO hace
+-- falta revocar DELETE sobre `cajas`, a diferencia de ventas respecto de
+-- ediciones_venta: ahí la FK es CASCADE. El UPDATE sobre `cajas` se conserva:
+-- el cierre y su arqueo se escriben sobre esa fila. La FK a `users` es
+-- RESTRICT y la de `tenants`, que sí cascadea, la app no la borra.
+DO $$
+BEGIN
+  IF to_regclass('public.movimientos_de_caja') IS NOT NULL THEN
+    EXECUTE 'REVOKE UPDATE, DELETE ON public.movimientos_de_caja FROM arandano_app';
+  END IF;
+END
+$$;
+
 -- leads: append-only para la aplicación, y por un motivo distinto al de
 -- movimientos_stock. Aquella es un libro y no se corrige; ésta no tiene
 -- tenant_id, así que no hay policy que la proteja — sin este REVOKE, cualquier

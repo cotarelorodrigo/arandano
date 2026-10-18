@@ -315,11 +315,14 @@ opera con alguien esperando del otro lado del mostrador, y la primera con su
 shell (sidebar + encabezado) ya venía de un ciclo anterior.
 
 **Acciones**: `cobrar`, `buscarArticulos`, `abrirCajaDesdeVender`,
-`cerrarCajaDesdeVender`, `cargarCotizacionDesdeVender` (exige `COTIZACION`), y
+`cerrarCajaDesdeVender` (con el arqueo), `registrarMovimientoDesdeVender`,
+`cargarCotizacionDesdeVender` (exige `COTIZACION`), y
 `buscarClientesDelLocal` (de `app/(app)/clientes/acciones.ts`) para el campo
 "Cliente".
 
-**Lecturas del servidor**: `cajaAbierta`, `historialDeCotizaciones` (las
+**Lecturas del servidor**: `turnoEnCurso` (la caja abierta con su efectivo y
+sus movimientos, desde el ciclo del arqueo; antes `cajaAbierta`),
+`aperturaSugerida`, `historialDeCotizaciones` (las
 últimas diez cargas de la cotización del dólar del local; la primera es la
 vigente), el permiso `COTIZACION` y `planesDelTenant` (sólo los activos). Se
 leen en `page.tsx` y viajan como props: el cliente no consulta la base, así que
@@ -408,6 +411,20 @@ el prefill del último pago; ver *Decisiones*.
   enfocado), y vaciar el carrito con `Esc`.
 - Ver el estado real de la caja del turno en un chip del header, y abrirla o
   cerrarla ahí mismo, sin salir de la pantalla.
+- **Ver cuánto efectivo hay ahora, registrar movimientos y cerrar con arqueo**
+  (ciclo del 2026-10-18,
+  `docs/superpowers/specs/2026-10-18-arqueo-de-caja-design.md`). El chip dice
+  "Caja abierta · $ 55.000,00" (y los dólares al lado, si el turno tuvo) y abre
+  un panel con el desglose —apertura, cobrado en efectivo, devuelto por
+  anulaciones, ingresos, egresos, retiros y el efectivo actual, por moneda—, los
+  movimientos del turno (hora, tipo, motivo, quién), "Registrar movimiento"
+  (egreso con motivo obligatorio, retiro o ingreso, en pesos o dólares) y
+  "Cerrar caja": el esperado por moneda, lo contado (obligatorio), lo que se
+  retira y una nota, con la diferencia ("cuadra", "faltan $ 200,00", "sobran
+  …", en ámbar si no cuadra) y lo que queda en vivo. La diferencia no bloquea
+  el cierre; retirar más de lo contado sí. Abrir la caja arranca con lo que
+  quedó en el último cierre, con los dólares plegados en "+ dólares". En el
+  teléfono, el mismo panel en la hoja del Topbar.
 - **Ver y cargar la cotización del dólar del local** (ciclo del 2026-10-18,
   `docs/superpowers/specs/2026-10-18-cotizacion-del-dolar-design.md`). El chip
   "USD" del header es un botón: abre un diálogo con la vigente, quién la cargó y
@@ -688,10 +705,29 @@ el prefill del último pago; ver *Decisiones*.
   controles se toma prestado de sus hermanos de esta misma pantalla —el
   selector de Medio y el renglón `Entran $X`—, no se inventa.
 - **El chip de caja muestra el estado real y ofrece abrirla o cerrarla ahí
-  mismo**, sin pantalla `/caja` ni arqueo — ver el detalle en *Pendiente*.
-  `cajaAbierta()` se lee en el servidor (`page.tsx`), igual que los planes, así
-  que el chip llega con el dato puesto en vez de parpadear entre "sin caja" y
-  "caja abierta" en cada carga.
+  mismo.** El turno con su efectivo (`turnoEnCurso()`) se lee en el servidor
+  (`page.tsx`), igual que los planes, así que el chip llega con el dato puesto
+  en vez de parpadear entre "sin caja" y "caja abierta" en cada carga, y se
+  actualiza con cada cobro porque el cobro ya revalida `/vender`.
+- **El efectivo esperado se deriva, nunca se lleva a mano** (spec del arqueo).
+  El turno es la ventana `[abiertaEn, ahora)`, no una FK desde `Pago`: suma los
+  pagos en EFECTIVO por la moneda que se entregó, de ventas **creadas** en la
+  ventana y no anuladas (por `Venta.creadoEn` y no `Pago.creadoEn`, porque
+  editar una venta recrea sus pagos), y resta el efectivo de ventas de otro
+  turno anuladas en éste. **Límite declarado**: editar hoy una venta de otro
+  turno para pasarla a efectivo no se refleja en el turno de hoy; aparece en el
+  arqueo.
+- **El panel de la caja es un `Dialog` de Radix**, como el del dólar: mientras
+  está abierto los atajos de la pantalla se abstienen (Enter en el cierre
+  envía el CIERRE, nunca cobra la venta) y al cerrarse no le devuelve el foco
+  al chip, así que Enter vuelve a cobrar. Registrar un movimiento y cerrar son
+  vistas del mismo panel, no diálogos apilados.
+- **Cualquiera del local registra movimientos y cierra**, sin permiso (igual
+  que abrir y cerrar antes): cada movimiento lleva quién fue, y el arqueo es el
+  control. Los movimientos no se editan ni se borran: un error se corrige con
+  el movimiento contrario.
+- **La columna de dólares sólo aparece si el turno tuvo algún dólar**
+  (apertura, cobro o movimiento), en el chip, el panel y el cierre.
 - **`Esc` vacía el carrito con confirmación en dos pasos, no con `confirm()`
   ni con un deshacer.** El primer `Esc` arma la confirmación (la leyenda bajo
   el botón cambia a "Esc de nuevo para vaciar el carrito") y se desarma solo a
@@ -754,7 +790,8 @@ Es la pantalla que más cambia del ciclo, y la única que se parte en dos frames
 - **Los dos chips de estado —caja y dólar— bajan al cuerpo**, arriba del
   buscador, y ahí son de **sólo lectura**. Abrir y cerrar el turno se mudan al
   `more-vertical` de la ranura derecha, que abre un `Sheet` con los **mismos
-  dos mini-formularios** del chip de escritorio. No es un `DropdownMenu`, y la
+  componentes** del chip de escritorio (la apertura y, desde el arqueo, el
+  panel entero de la caja). No es un `DropdownMenu`, y la
   diferencia no es estética: un menú de Radix no puede alojar un `<input>` sin
   pelearle a su typeahead, y sin input la caja se abría en 0 en silencio.
   Abrir una caja con el saldo equivocado es un problema contable.
@@ -789,10 +826,10 @@ Es la pantalla que más cambia del ciclo, y la única que se parte en dos frames
 
 **Pendiente**
 
-- **La caja sigue sin arqueo ni pantalla propia**, y `crearVenta` **no** exige
-  que haya una caja abierta para cobrar — a propósito: eso rompería el cobro
-  de cualquier tenant que no use la caja. El chip del header cubre abrir y
-  cerrar; el arqueo es su propio ciclo futuro.
+- **`crearVenta` sigue sin exigir caja abierta** para cobrar — a propósito: eso
+  rompería el cobro de cualquier tenant que no use la caja. Un cobro sin caja
+  no entra en el efectivo de ningún turno. El arqueo y el historial de cierres
+  (`/caja`) existen desde el 2026-10-18.
 - **El re-apuntado sólo cubre el pago único.** Con dos o más pagos, un total
   que desaparece del carrito deja un pago apuntando a una moneda que la venta
   ya no tiene: el mismo callejón que `reapuntarPagoUnico` vino a tapar, un pago
@@ -3081,6 +3118,55 @@ julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
   `test/permisos-en-las-dos-copias.test.ts` para el resto de las pantallas
   con un control duplicado.
 
+## `/caja`
+
+El historial de cierres de caja: de cuánto fue cada cierre y cuánto se retiró.
+Sale del pedido de un local de iPhones (spec
+`docs/superpowers/specs/2026-10-18-arqueo-de-caja-design.md`, decisión 5).
+Abrir, cerrar y registrar movimientos NO viven acá: viven en el chip de caja de
+`/vender`.
+
+**Acciones**: ninguna. **Lecturas del servidor**: `cierresDelPeriodo`
+(lib/caja/historial.ts).
+
+**Qué se puede hacer**
+
+- Filtrar por fecha de cierre, **desde / hasta** (por defecto los últimos 30
+  días, hoy incluido). El rango queda en la URL; un rango dado vuelta se
+  endereza y una fecha malformada cae al default.
+- Ver, por cierre: la fecha y hora de apertura y de cierre, quién abrió y quién
+  cerró, y por moneda la **apertura, el esperado, lo contado, la diferencia**
+  ("cuadra", "faltan $ 200,00", "sobran …" — resaltada en ámbar si no es
+  cero), **lo retirado y lo que queda**, más la nota del cierre.
+- Desplegar los **movimientos** de cada caja (hora, tipo, motivo, quién, monto
+  con signo).
+
+**Decisiones**
+
+- **Sólo el dueño** (`exigirDuenio`, pestaña `soloDueno`), como `/dashboard`:
+  las diferencias de caja de cada empleado son información de gestión. No es
+  un permiso delegable.
+- **Sólo lee lo guardado**: el esperado es el que se recalculó en la
+  transacción del cierre; la pantalla no lo vuelve a calcular, así que anular o
+  editar hoy una venta vieja no le cambia los números a un cierre de la semana
+  pasada. La diferencia y lo que queda se derivan con la misma aritmética que
+  el formulario de cierre (`lib/caja/arqueo.ts`).
+- **Una caja cerrada sin arqueo** (las de antes de este ciclo: desde el arqueo
+  no se puede cerrar sin contar) dice "Cerrada sin arqueo" y muestra sólo
+  la apertura.
+- **La caja abierta no aparece**: no tiene cierre. Su estado vive en `/vender`.
+- **Los dólares, sólo si algún cierre del período los tuvo**: la misma regla
+  que el panel de la caja.
+- **El detalle va plegado en la misma fila** (`<details>`), no en una ruta
+  `/caja/[id]`: es una lista corta, funciona sin JavaScript y no suma una ruta
+  dinámica al barrido del smoke.
+- **Filas y no una tabla**, para que entre en 390 px sin scroll de costado.
+- **Tope de 400 cierres** por consulta (más de un año de cierres diarios); si
+  se llega, la pantalla lo dice.
+- **Sin `--marca`**: ningún número de un historial se dice en voz alta.
+- **`design/arandano.pen` no dibuja esta pantalla.** Entrada 42 de
+  `docs/correcciones-pendientes-del-pen.md`.
+
 <!-- pantallas:fin -->
 
 ## Lo que hereda toda pantalla de la aplicación
@@ -3169,7 +3255,7 @@ es el esperado y no otro.
 
 | Defecto introducido | Dónde | Qué falló |
 |---|---|---|
-| Una pantalla nueva sin sección (`app/(app)/caja/page.tsx`) | el código | *toda pantalla del código está documentada* — `estas pantallas existen en app/ y docs/pantallas.md no las describe: /caja` |
+| Una pantalla nueva sin sección (`app/(app)/caja/page.tsx`, cuando `/caja` todavía no existía) | el código | *toda pantalla del código está documentada* — `estas pantallas existen en app/ y docs/pantallas.md no las describe: /caja` |
 | Una sección de una ruta inexistente (`## \`/reportes\``) | este archivo | *toda pantalla documentada existe en el código* — `describe pantallas que ya no existen en app/: /reportes` |
 | Dos secciones para la misma ruta | este archivo | *ninguna sección aparece dos veces* — `tiene dos secciones para: /ventas` |
 

@@ -427,6 +427,54 @@ describe('setup-db-roles.sh', () => {
       }
     })
 
+    // El libro de caja del arqueo (2026-10-18): ingresos, egresos y retiros.
+    // Editable, dejaría bajar un egreso después de llevarse la diferencia y
+    // que el cierre cuadrara igual. Corregir es registrar el contrario.
+    it('movimientos_de_caja: la app no puede editar ni borrar, y sí leer e insertar', async () => {
+      const app = new Client({ connectionString: urlApp() })
+      await app.connect()
+      try {
+        await expect(app.query('UPDATE movimientos_de_caja SET monto = monto')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(app.query('DELETE FROM movimientos_de_caja')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(app.query('SELECT 1 FROM movimientos_de_caja')).resolves.toBeDefined()
+        // Mismo razonamiento que el caso de cotizaciones_del_dolar: el error
+        // es de RLS (sin GUC), no de privilegio — o sea, el INSERT está
+        // otorgado.
+        await expect(
+          app.query(
+            `INSERT INTO movimientos_de_caja (id, tenant_id, caja_id, tipo, moneda, monto, usuario_id)
+             VALUES (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'EGRESO', 'ARS', 1, gen_random_uuid())`,
+          ),
+        ).rejects.toThrow(/row-level security/i)
+      } finally {
+        await app.end()
+      }
+    })
+
+    // La puerta de atrás que NO se cierra con un REVOKE sino con la FK:
+    // movimientos_de_caja.caja_id es RESTRICT, así que la app conserva el
+    // DELETE sobre `cajas` (test/rls.test.ts lo usa) sin que borrar una caja
+    // se lleve su libro. Si alguien cambia la FK a CASCADE, esto se pone rojo.
+    it('movimientos_de_caja: la FK a cajas no cascadea (borrar la caja no se lleva el libro)', async () => {
+      const app = new Client({ connectionString: urlApp() })
+      await app.connect()
+      try {
+        const { rows } = await app.query(
+          `SELECT confdeltype FROM pg_constraint
+           WHERE conname = 'movimientos_de_caja_caja_id_fkey'`,
+        )
+        expect(rows).toHaveLength(1)
+        // 'r' = RESTRICT, 'c' = CASCADE.
+        expect(rows[0].confdeltype).toBe('r')
+      } finally {
+        await app.end()
+      }
+    })
+
     // Y la puerta de atrás de ESTA bitácora, que opera un nivel más arriba y
     // por eso no la cierra ninguno de los dos casos anteriores:
     // ediciones_venta.venta_id es ON DELETE CASCADE y el padre es `ventas`, no

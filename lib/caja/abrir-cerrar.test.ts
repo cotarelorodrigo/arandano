@@ -13,6 +13,10 @@ let cerrarCaja: typeof import('@/lib/caja/abrir-cerrar').cerrarCaja
 let cajaAbierta: typeof import('@/lib/caja/abrir-cerrar').cajaAbierta
 let pool: typeof import('@/lib/db').pool
 
+// Desde el ciclo del arqueo, cerrar exige lo contado (no hay cierre sin
+// arqueo). A los casos de este archivo no les importa cuánto: cierran en cero.
+const ARQUEO = { contadoArs: '0' }
+
 beforeAll(async () => {
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -40,6 +44,11 @@ afterAll(async () => {
 // una caja que quedó abierta de un caso anterior hace fallar al siguiente por
 // el motivo equivocado.
 beforeEach(async () => {
+  // Los movimientos primero: desde el ciclo del arqueo, movimientos_de_caja
+  // apunta a cajas con ON DELETE RESTRICT (para que borrar una caja no sea la
+  // puerta de atrás del libro), así que una caja con movimientos —de este
+  // archivo o de otro que corrió antes contra la misma base— no se borra.
+  await owner.query('DELETE FROM movimientos_de_caja')
   await owner.query('DELETE FROM cajas')
 })
 
@@ -57,7 +66,7 @@ describe('abrir y cerrar la caja', () => {
 
   it('cerrar la deja con la fecha y con quién la cerró', async () => {
     const { id } = await abrirCaja(tenantA, usuarioA, '15000.00')
-    await cerrarCaja(tenantA, usuarioA)
+    await cerrarCaja(tenantA, usuarioA, ARQUEO)
     const fila = await owner.query('SELECT cerrada_en, cerrada_por_id FROM cajas WHERE id = $1', [id])
     expect(fila.rows[0].cerrada_en).not.toBeNull()
     expect(fila.rows[0].cerrada_por_id).toBe(usuarioA)
@@ -65,13 +74,13 @@ describe('abrir y cerrar la caja', () => {
 
   it('después de cerrar, cajaAbierta() vuelve a dar null', async () => {
     await abrirCaja(tenantA, usuarioA, '15000.00')
-    await cerrarCaja(tenantA, usuarioA)
+    await cerrarCaja(tenantA, usuarioA, ARQUEO)
     expect(await cajaAbierta(tenantA)).toBeNull()
   })
 
   it('se puede abrir una caja nueva después de cerrar la anterior', async () => {
     const primera = await abrirCaja(tenantA, usuarioA, '15000.00')
-    await cerrarCaja(tenantA, usuarioA)
+    await cerrarCaja(tenantA, usuarioA, ARQUEO)
     const segunda = await abrirCaja(tenantA, usuarioA, '20000.00')
     expect(segunda.id).not.toBe(primera.id)
     expect((await cajaAbierta(tenantA))?.id).toBe(segunda.id)
@@ -106,7 +115,7 @@ describe('abrir y cerrar la caja', () => {
   })
 
   it('cerrar sin caja abierta falla con un error claro', async () => {
-    await expect(cerrarCaja(tenantA, usuarioA)).rejects.toMatchObject({
+    await expect(cerrarCaja(tenantA, usuarioA, ARQUEO)).rejects.toMatchObject({
       codigo: 'SIN_CAJA_ABIERTA',
     })
   })
@@ -119,7 +128,7 @@ describe('abrir y cerrar la caja', () => {
     const empleado = await crearUsuario(owner, tenantA, 'nahuel@caja-a.test', 'EMPLEADO')
     await abrirCaja(tenantA, empleado, '15000.00')
     expect(await cajaAbierta(tenantA)).not.toBeNull()
-    await cerrarCaja(tenantA, empleado)
+    await cerrarCaja(tenantA, empleado, ARQUEO)
     expect(await cajaAbierta(tenantA)).toBeNull()
   })
 
@@ -139,7 +148,7 @@ describe('abrir y cerrar la caja', () => {
 
     it('cerrarCaja rechaza un usuario de otro tenant', async () => {
       await abrirCaja(tenantA, usuarioA, '15000.00')
-      await expect(cerrarCaja(tenantA, usuarioB)).rejects.toMatchObject({
+      await expect(cerrarCaja(tenantA, usuarioB, ARQUEO)).rejects.toMatchObject({
         codigo: 'USUARIO_INEXISTENTE',
       })
       // Y la caja de A sigue abierta: el rechazo no la tocó.
@@ -239,7 +248,7 @@ describe('abrir y cerrar la caja', () => {
   // hay un segundo camino por el que colarse.
   it('cerrar una caja ya cerrada (llamando dos veces, sin concurrencia) no la reescribe', async () => {
     const { id } = await abrirCaja(tenantA, usuarioA, '15000.00')
-    await cerrarCaja(tenantA, usuarioA)
+    await cerrarCaja(tenantA, usuarioA, ARQUEO)
 
     const antes = await owner.query(
       'SELECT cerrada_en, cerrada_por_id FROM cajas WHERE id = $1',
@@ -247,7 +256,7 @@ describe('abrir y cerrar la caja', () => {
     )
 
     const otroUsuario = await crearUsuario(owner, tenantA, 'segundo@caja-a.test')
-    await expect(cerrarCaja(tenantA, otroUsuario)).rejects.toMatchObject({
+    await expect(cerrarCaja(tenantA, otroUsuario, ARQUEO)).rejects.toMatchObject({
       codigo: 'SIN_CAJA_ABIERTA',
     })
 
@@ -278,12 +287,19 @@ describe('abrir y cerrar la caja', () => {
   // paso SIEMPRE emite un statement contra `cajas`, dos pasos SIEMPRE emiten
   // dos, sea cual sea el resultado de la carrera.
   //
+  // Desde el ciclo del arqueo el cierre toca `cajas` DESPUÉS del cierre
+  // (busca el cierre anterior para las devoluciones y escribe el arqueo sobre
+  // la fila ya bloqueada), así que lo que se cuenta ya no es "un solo
+  // statement" sino lo que de verdad importa: que el PRIMERO sea el UPDATE que
+  // cierra, sin ninguna lectura de `cajas` antes. Una vuelta a dos pasos pone
+  // un SELECT en ese primer lugar.
+  //
   // Cómo se mide: se espía `pool.connect` (lib/db.ts) —el mismo pool que usa
   // Prisma por debajo de `enTransaccionDeTenant`— y se envuelve el `.query`
   // del cliente que devuelve, para contar los statements cuyo SQL menciona
   // `cajas` durante una llamada a `cerrarCaja`. Es un spy de test sobre un
   // handle que ya es público: no toca código de producción.
-  it('cerrarCaja resuelve el cierre con UN SOLO statement contra `cajas`', async () => {
+  it('cerrarCaja cierra con UN SOLO statement contra `cajas`, sin leerla antes', async () => {
     await abrirCaja(tenantA, usuarioA, '15000.00')
 
     const statementsSobreCajas: string[] = []
@@ -312,7 +328,7 @@ describe('abrir y cerrar la caja', () => {
     }) as unknown as typeof pool.connect)
 
     try {
-      await cerrarCaja(tenantA, usuarioA)
+      await cerrarCaja(tenantA, usuarioA, ARQUEO)
     } finally {
       // Restaurar el mock de `connect` no alcanza: el `.query` envuelto quedó
       // como propiedad propia del CLIENTE devuelto, y ese mismo objeto vuelve
@@ -322,7 +338,13 @@ describe('abrir y cerrar la caja', () => {
       if (clienteEspiado) delete (clienteEspiado as unknown as Record<string, unknown>).query
     }
 
-    expect(statementsSobreCajas).toHaveLength(1)
+    expect(statementsSobreCajas.length).toBeGreaterThan(0)
+    expect(statementsSobreCajas[0], 'lo primero contra cajas tiene que ser el UPDATE del cierre').toMatch(
+      /^\s*UPDATE\b[\s\S]*cerrada_en/i,
+    )
+    // Y es el ÚNICO statement que escribe `cerrada_en`: el resto (la caja
+    // anterior, el arqueo) no vuelve a tocar el cierre.
+    expect(statementsSobreCajas.filter((t) => /^\s*UPDATE\b/i.test(t) && /"cerrada_en"\s*=/.test(t))).toHaveLength(1)
   })
 
   describe('el saldo inicial', () => {

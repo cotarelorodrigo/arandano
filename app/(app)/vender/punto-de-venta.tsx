@@ -6,7 +6,9 @@ import { toast } from 'sonner'
 import { ArrowRight, CircleAlert, Minus, Plus, ScanBarcode, TriangleAlert, X } from 'lucide-react'
 import { cobrar, buscarArticulos, unidadesDeArticulo, type EstadoCobro } from './acciones'
 import { usePasoDeCobro, type Paso } from './paso'
-import { ChipCaja, ChipsDeEstado, ControlDeCaja, detenerEscapeGlobal, type CajaDelChip } from './caja'
+import {
+  ChipCaja, ChipsDeEstado, ControlDeCaja, detenerEscapeGlobal, type AperturaSugerida, type CajaDelChip,
+} from './caja'
 import type { CotizacionDeVender } from './dolar'
 // El selector de cliente del cobro, el mismo de "Asignar cliente" en
 // /ventas/[id]. No importa Prisma: busca por un server action.
@@ -969,6 +971,7 @@ function hayOverlayDeRadixAbierto(): boolean {
 export function PuntoDeVenta({
   planes,
   caja,
+  aperturaSugerida = null,
   cotizacion,
   lineasIniciales,
 }: {
@@ -989,6 +992,11 @@ export function PuntoDeVenta({
   // servidor los resuelve en page.tsx (ver su comentario) y este componente
   // los reparte entre el chip del header, el del cuerpo y el menú del Topbar.
   caja: CajaDelChip | null
+  // Con cuánto arranca el formulario de apertura cuando no hay caja: lo que
+  // quedó en el último cierre con arqueo (ciclo del arqueo, 2026-10-18).
+  // Opcional porque sólo importa sin caja, y los tests que no la miran no
+  // tienen por qué armarla.
+  aperturaSugerida?: AperturaSugerida
   // La cotización del dólar del local con sus últimas cargas, si es vieja y si
   // esta persona la puede cargar (ver `CotizacionDeVender` en dolar.tsx). La
   // usan el chip del header, el del cuerpo, la hoja del Topbar y cada fila de
@@ -1748,13 +1756,15 @@ export function PuntoDeVenta({
         }
         alVolver={pasoVisible === 'cobro' ? volverAlCarrito : undefined}
         acciones={
-          <ChipCaja caja={caja} cotizacion={cotizacion} />
+          <ChipCaja caja={caja} cotizacion={cotizacion} aperturaSugerida={aperturaSugerida} />
         }
         // La ranura derecha del teléfono queda apagada en el cobro: el frame
         // `keRdN` la dibuja deshabilitada (`NlGrn: enabled false`), y abrir o
         // cerrar el turno en medio de un cobro no es lo que nadie va a querer.
         controlMovil={
-          pasoVisible === 'cobro' ? undefined : <ControlDeCaja caja={caja} cotizacion={cotizacion} />
+          pasoVisible === 'cobro' ? undefined : (
+            <ControlDeCaja caja={caja} cotizacion={cotizacion} aperturaSugerida={aperturaSugerida} />
+          )
         }
       />
 
