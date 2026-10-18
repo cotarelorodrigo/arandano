@@ -74,6 +74,15 @@ enum Permiso {
   // cualquiera de las dos direcciones.
   VENTAS_EDITAR
 
+  // Editar la tabla del plan canje: cuánto paga el local por cada usado, los
+  // rangos de batería y la moneda. La calculadora NO lo pide —la consulta
+  // cualquiera con sesión—: es justamente el reparto que el pedido describe,
+  // "el vendedor la consulta sin poder cambiarla". Aparte de PLANES_PAGO y de
+  // ARTICULOS_EDITAR porque mueve otra plata: no un precio de venta sino lo que
+  // el local entrega a cambio de un equipo, y un dueño puede querer que su
+  // encargado lo cotice sin que toque los recargos, o al revés.
+  CANJE_VALORES
+
   @@map("permiso")
 }
 
