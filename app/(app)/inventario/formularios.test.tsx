@@ -419,11 +419,21 @@ describe('MoverStock', () => {
     // tipeado no tenía un número anterior que se reinterprete.
     it('no lleva el aviso de conversión del precio', () => {
       const fuente = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')
-      const desde = fuente.indexOf('<SelectorDeMoneda\n                  id="i-moneda-costo"')
+      const desde = fuente.indexOf(
+        '<SelectorDeMoneda\n                  key={moneda}\n                  id="i-moneda-costo"',
+      )
       expect(desde, 'no se encontró el selector del costo del ingreso').toBeGreaterThan(-1)
       const tag = fuente.slice(desde, fuente.indexOf('>', desde))
       expect(tag).toContain('valorInicial={moneda}')
       expect(tag).toContain('avisarCambio={false}')
+    })
+
+    // `valorInicial` se lee una sola vez (`useState`): sin la key, pasar el
+    // artículo de $ a US$ en la misma ficha dejaba el selector del costo en $
+    // (hallazgo de la review del ciclo del costo en dólares).
+    it('se remonta cuando cambia la moneda del artículo', () => {
+      const fuente = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')
+      expect(fuente).toContain('key={moneda}\n                  id="i-moneda-costo"')
     })
   })
 

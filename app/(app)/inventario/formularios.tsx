@@ -873,7 +873,14 @@ export function MoverStock({
             {puedeCostos && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="i-costo">Costo unitario (opcional)</Label>
+                {/* `key={moneda}` y no sólo `valorInicial`: el selector guarda
+                    su valor en `useState`, que lee la inicial UNA vez. Si en
+                    la misma ficha se pasa el precio de $ a US$, la página se
+                    revalida pero este formulario sigue montado, y sin la key
+                    seguiría proponiendo $ — US$ 450 tipeados sin mirar se
+                    guardarían como $ 450 (hallazgo de la review del ciclo). */}
                 <SelectorDeMoneda
+                  key={moneda}
                   id="i-moneda-costo"
                   name="monedaCosto"
                   valorInicial={moneda}
