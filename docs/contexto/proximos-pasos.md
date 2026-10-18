@@ -3708,7 +3708,9 @@ Y del producto:
     transacción del cierre, que es el que se guarda), contado (obligatorio),
     retirado (≤ contado) y nota; la diferencia y lo que queda en vivo y
     derivados, no guardados. **La diferencia no bloquea.** `cerrarCaja` acepta
-    el arqueo opcional para el formulario viejo cacheado durante el deploy.
+    el arqueo **obligatorio**: no hay cierre sin contado en pesos (la review
+    sacó el camino "sin arqueo" para un formulario cacheado, que era un bypass
+    y no servía: el id de una server action cambia en cada build).
   - **Dónde se ve**: el chip "Caja abierta · $ 55.000,00" de `/vender` abre un
     panel (Dialog de Radix; en el teléfono la hoja del Topbar) con el
     desglose, los movimientos, "Registrar movimiento" y "Cerrar caja"; y

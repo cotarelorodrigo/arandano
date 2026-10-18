@@ -106,7 +106,8 @@ Diferencia y "queda" se derivan; no se guardan dos veces.
 
 `cerrarCaja` sin arqueo deja de existir como camino de la UI, pero la función
 acepta el arqueo opcional para no romper a un llamador viejo (un formulario
-cacheado durante el deploy cierra como hoy, sin arqueo).
+cacheado durante el deploy cierra como hoy, sin arqueo). *(Revertido en la
+implementación: ver "No hay cierre sin arqueo" en los ajustes.)*
 
 ### 5. Dónde se ve
 
@@ -173,9 +174,16 @@ eligió la opción más conservadora.
   impedir el cierre). Cuando la columna se muestra, el campo es `required` en el
   formulario. El contado en pesos es obligatorio también en el servidor. Los
   retirados vacíos son cero.
-- **El formulario viejo se reconoce por la AUSENCIA del campo `contadoArs`**
-  (no por estar vacío): ausente cierra sin arqueo; vacío es el formulario nuevo
-  sin completar, y es un error que se le muestra a la persona.
+- **No hay cierre sin arqueo (revisado en la review del ciclo).** La
+  decisión 4 decía que "`cerrarCaja` acepta el arqueo opcional para no romper
+  a un llamador viejo (un formulario cacheado durante el deploy)", y la
+  primera implementación lo hacía reconociendo el formulario viejo por la
+  AUSENCIA del campo `contadoArs`. Se sacó: era un bypass permanente del
+  arqueo —cualquier sesión cerraba sin contar con sólo omitir el campo— y no
+  compraba lo que prometía, porque el id de una server action cambia en cada
+  build y un formulario de la imagen anterior falla igual contra la nueva.
+  Ahora el arqueo es obligatorio en la firma de `cerrarCaja` y en la action:
+  un campo ausente se lee como vacío, y vacío es un cartel, no un cierre.
 - **La apertura sugerida mira sólo el último cierre**: si ése fue sin arqueo,
   no hay sugerencia (el campo arranca en "0", como antes) en vez de buscar uno
   más viejo, porque lo que quedó hace tres días no es lo que hay hoy. Con

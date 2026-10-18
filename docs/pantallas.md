@@ -3144,8 +3144,8 @@ Abrir, cerrar y registrar movimientos NO viven acá: viven en el chip de caja de
   editar hoy una venta vieja no le cambia los números a un cierre de la semana
   pasada. La diferencia y lo que queda se derivan con la misma aritmética que
   el formulario de cierre (`lib/caja/arqueo.ts`).
-- **Una caja cerrada sin arqueo** (las de antes de este ciclo, o cerrada con el
-  formulario viejo durante el deploy) dice "Cerrada sin arqueo" y muestra sólo
+- **Una caja cerrada sin arqueo** (las de antes de este ciclo: desde el arqueo
+  no se puede cerrar sin contar) dice "Cerrada sin arqueo" y muestra sólo
   la apertura.
 - **La caja abierta no aparece**: no tiene cierre. Su estado vive en `/vender`.
 - **Los dólares, sólo si algún cierre del período los tuvo**: la misma regla

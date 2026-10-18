@@ -135,8 +135,8 @@ export function FilaDeCierre({ cierre, conDolares }: { cierre: CierreDeCaja; con
         )
       })}
       {!cierre.arqueo && (
-        // Una caja de antes del arqueo, o cerrada con el formulario viejo
-        // durante el deploy: no hay nada que inventarle.
+        // Una caja cerrada antes del arqueo (desde entonces no se puede cerrar
+        // sin contar): no hay nada que inventarle.
         <span className="text-xs text-muted-foreground">Cerrada sin arqueo.</span>
       )}
       {cierre.arqueo?.nota && <span className="text-xs text-foreground-soft">Nota: {cierre.arqueo.nota}</span>}

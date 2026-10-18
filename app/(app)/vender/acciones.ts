@@ -347,38 +347,27 @@ export async function abrirCajaDesdeVender(_e: EstadoCaja, datos: FormData): Pro
  * Cierra la caja del turno en curso, con el arqueo del formulario de cierre
  * (spec 2026-10-18-arqueo-de-caja-design.md, decisión 4).
  *
- * **Sin el campo `contadoArs`, cierra sin arqueo**, como antes: es lo que
- * manda el "¿Seguro? Sí, cerrar" de la versión anterior, que puede seguir
- * cacheado en un navegador durante el deploy (la acción vieja no recibía
- * ningún campo). `get` devuelve `null` para un campo AUSENTE y `''` para uno
- * vacío, y esa diferencia es la que separa "formulario viejo" de "el
- * formulario nuevo con el contado sin completar" — el segundo es un error que
- * se le muestra a la persona, no un cierre sin contar.
- *
- * `datos` opcional por lo mismo que antes: `useActionState` llama con
- * `(estado, formData)`, y un llamador sin formulario cierra sin arqueo.
+ * **Sin contado en pesos no hay cierre**: un campo ausente se lee como vacío,
+ * y `cerrarCaja` lo rechaza con un cartel. La primera versión cerraba sin
+ * arqueo cuando el campo faltaba, para un formulario viejo cacheado durante el
+ * deploy; era un bypass permanente (cualquier sesión cerraba sin contar con
+ * sólo omitir el campo) y no servía para lo que decía, porque el id de una
+ * server action cambia en cada build. Hallazgo de la review del ciclo.
  */
-export async function cerrarCajaDesdeVender(_e?: EstadoCaja, datos?: FormData): Promise<EstadoCaja> {
+export async function cerrarCajaDesdeVender(_e: EstadoCaja, datos: FormData): Promise<EstadoCaja> {
   try {
     const sesion = await exigirSesion()
-    const contadoArs = datos?.get('contadoArs')
     const texto = (campo: string) => {
-      const v = datos?.get(campo)
+      const v = datos.get(campo)
       return typeof v === 'string' ? v : null
     }
-    await cerrarCaja(
-      sesion.tenant.id,
-      sesion.usuario.id,
-      typeof contadoArs === 'string'
-        ? {
-            contadoArs,
-            contadoUsd: texto('contadoUsd'),
-            retiradoArs: texto('retiradoArs'),
-            retiradoUsd: texto('retiradoUsd'),
-            nota: texto('notaCierre'),
-          }
-        : undefined,
-    )
+    await cerrarCaja(sesion.tenant.id, sesion.usuario.id, {
+      contadoArs: texto('contadoArs') ?? '',
+      contadoUsd: texto('contadoUsd'),
+      retiradoArs: texto('retiradoArs'),
+      retiradoUsd: texto('retiradoUsd'),
+      nota: texto('notaCierre'),
+    })
     revalidarCaja()
     return { error: null }
   } catch (e) {

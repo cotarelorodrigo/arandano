@@ -161,12 +161,13 @@ function validarArqueo(a: ArqueoTipeado): ArqueoValidado {
  * Mismo criterio que `abrirCaja`: cualquiera del local cierra, no sólo quien
  * la abrió — el que se va del turno puede no ser el mismo que lo empezó.
  *
- * **El arqueo es opcional en la FIRMA y no en la pantalla** (spec, decisión
- * 4): la UI ya no tiene un camino para cerrar sin contar, pero un formulario
- * cacheado durante el deploy —el "¿Seguro? Sí, cerrar" de antes— llega sin
- * campos, y ése cierra como antes, sin arqueo, en vez de fallar. Una caja
- * cerrada así queda con las columnas del arqueo en NULL, igual que las de
- * antes de este ciclo.
+ * **El arqueo es obligatorio, también en la firma.** La primera versión de
+ * este ciclo lo dejaba opcional "para no romper a un formulario cacheado
+ * durante el deploy", y eso era un bypass permanente: cualquier sesión podía
+ * cerrar sin contar con sólo no mandar el campo. Y no compraba nada: el id de
+ * una server action cambia en cada build, así que un formulario de la imagen
+ * anterior falla igual contra la nueva (hallazgo de la review del ciclo). Sin
+ * contado en pesos no hay cierre.
  *
  * **El esperado que se guarda es el recalculado acá adentro**, después de
  * bloquear la fila de la caja con el `UPDATE` del cierre. Si entró un cobro
@@ -178,15 +179,20 @@ function validarArqueo(a: ArqueoTipeado): ArqueoValidado {
  * que una venta que commitea después de este recálculo con un `creado_en`
  * anterior al cierre no queda en el esperado de nadie. Es una ventana de
  * milisegundos, y la diferencia que produciría la muestra el arqueo.
+ *
+ * `cerradaEn` sale del reloj del PROCESO (`new Date()`), mientras que
+ * `creado_en` de ventas y pagos lo escribe el `now()` de Postgres. Los dos
+ * contenedores leen el reloj del mismo host, y el esperado no depende de esa
+ * marca (se calcula sin cota superior); queda anotado en el spec.
  */
 export async function cerrarCaja(
   tenantId: string,
   usuarioId: string,
-  arqueo?: ArqueoTipeado,
+  arqueo: ArqueoTipeado,
 ): Promise<{ id: string }> {
   // Validado afuera de la transacción: un error de tipeo no tiene por qué
   // tomar una conexión ni un lock.
-  const validado = arqueo ? validarArqueo(arqueo) : null
+  const validado = validarArqueo(arqueo)
 
   return enTransaccionDeTenant(tenantId, async (tx) => {
     // Mismo argumento que en abrirCaja: sin esto, un usuarioId ajeno queda
@@ -227,16 +233,14 @@ export async function cerrarCaja(
     }
     const caja = cerradas[0]
 
-    if (validado) {
-      // La fila ya está bloqueada por el UPDATE de arriba hasta el commit:
-      // ningún movimiento de caja entra entre esta cuenta y la escritura.
-      const { actual } = await efectivoDelTurno(tx, caja)
-      await tx.caja.update({
-        where: { id: caja.id },
-        data: { ...validado, esperadoArs: actual.ars, esperadoUsd: actual.usd },
-        select: { id: true },
-      })
-    }
+    // La fila ya está bloqueada por el UPDATE de arriba hasta el commit:
+    // ningún movimiento de caja entra entre esta cuenta y la escritura.
+    const { actual } = await efectivoDelTurno(tx, caja)
+    await tx.caja.update({
+      where: { id: caja.id },
+      data: { ...validado, esperadoArs: actual.ars, esperadoUsd: actual.usd },
+      select: { id: true },
+    })
 
     return { id: caja.id }
   })
@@ -248,7 +252,7 @@ export async function cerrarCaja(
  * el campo (spec, decisión 3).
  *
  * Mira **el último cierre**, y si ése se cerró sin arqueo (una caja de antes
- * de este ciclo, o el formulario cacheado del deploy) devuelve `null` en vez
+ * de este ciclo, que no tienen arqueo) devuelve `null` en vez
  * de buscar uno más viejo: lo que quedó hace tres días no es lo que hay hoy en
  * el cajón, y una sugerencia vieja es peor que un campo vacío. Sólo sugiere:
  * el campo se puede cambiar, y el que abre es quien sabe lo que hay.

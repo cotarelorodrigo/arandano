@@ -33,7 +33,7 @@ export type CierreDeCaja = {
   abiertaPor: string
   cerradaPor: string
   apertura: ImporteDelCierre
-  /** `null` = se cerró sin arqueo (antes de este ciclo, o el formulario viejo). */
+  /** `null` = se cerró sin arqueo (sólo las cerradas antes de este ciclo: hoy no se puede cerrar sin contar). */
   arqueo: {
     esperado: ImporteDelCierre
     contado: ImporteDelCierre

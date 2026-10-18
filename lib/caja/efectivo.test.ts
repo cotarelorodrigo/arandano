@@ -330,17 +330,6 @@ describe('el cierre con arqueo', () => {
     await mod.cerrarCaja(tenantA, usuarioA, { contadoArs: '1000' })
     expect((await filaDeCaja(id)).esperado_ars).toBe('1250.00')
   })
-
-  // Un formulario cacheado durante el deploy (el "Sí, cerrar" de antes) llega
-  // sin campos: cierra como antes en vez de fallar.
-  it('sin arqueo cierra como antes, con las columnas del arqueo en NULL', async () => {
-    const { id } = await mod.abrirCaja(tenantA, usuarioA, '1000')
-    await mod.cerrarCaja(tenantA, usuarioA)
-    const fila = await filaDeCaja(id)
-    expect(fila.cerrada_en).not.toBeNull()
-    expect(fila.esperado_ars).toBeNull()
-    expect(fila.contado_ars).toBeNull()
-  })
 })
 
 describe('la apertura sugerida', () => {
@@ -357,12 +346,17 @@ describe('la apertura sugerida', () => {
   })
 
   // Lo que quedó hace tres días no es lo que hay hoy: si el último cierre
-  // fue sin arqueo, no se busca uno más viejo.
+  // fue sin arqueo, no se busca uno más viejo. Desde la review ya no se
+  // puede cerrar sin arqueo, pero las cajas cerradas antes de este ciclo
+  // existen así: el segundo cierre se escribe crudo, como quedaron ellas.
   it('si el último cierre fue sin arqueo, tampoco (aunque uno anterior lo tenga)', async () => {
     await mod.abrirCaja(tenantA, usuarioA, '0')
     await mod.cerrarCaja(tenantA, usuarioA, { contadoArs: '5000' })
     await mod.abrirCaja(tenantA, usuarioA, '5000')
-    await mod.cerrarCaja(tenantA, usuarioA)
+    await owner.query(
+      `UPDATE cajas SET cerrada_en = now(), cerrada_por_id = $2 WHERE tenant_id = $1 AND cerrada_en IS NULL`,
+      [tenantA, usuarioA],
+    )
     expect(await mod.aperturaSugerida(tenantA)).toBeNull()
   })
 
@@ -377,7 +371,7 @@ describe('la apertura en dólares', () => {
   it('vacía es cero, y con valor se guarda aparte de los pesos', async () => {
     await mod.abrirCaja(tenantA, usuarioA, '100')
     expect((await mod.cajaAbierta(tenantA))?.saldoInicialUsd.toString()).toBe('0')
-    await mod.cerrarCaja(tenantA, usuarioA)
+    await mod.cerrarCaja(tenantA, usuarioA, { contadoArs: '100' })
     await mod.abrirCaja(tenantA, usuarioA, '100', '25,50')
     expect((await mod.cajaAbierta(tenantA))?.saldoInicialUsd.toString()).toBe('25.5')
   })

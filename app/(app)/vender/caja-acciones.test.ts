@@ -183,16 +183,14 @@ describe('las actions de la caja', () => {
     expect((await laCaja()).cerrada_en).toBeNull()
   })
 
-  // El "¿Seguro? Sí, cerrar" de antes del arqueo no mandaba ningún campo, y
-  // la acción vieja ni siquiera recibía parámetros.
-  it('el formulario viejo, sin campos, cierra sin arqueo como antes', async () => {
+  // Hallazgo de la review: cerrar sin el campo del contado era un bypass
+  // permanente del arqueo (el "formulario viejo" que decía cubrir no existe:
+  // el id de la action cambia en cada build). Ausente es vacío, y vacío no
+  // cierra.
+  it('sin el campo del contado no cierra: no hay cierre sin arqueo', async () => {
     await acciones.abrirCajaDesdeVender(INICIAL, formulario({ saldoInicial: '0' }))
-    expect(await acciones.cerrarCajaDesdeVender(INICIAL, new FormData())).toEqual({ error: null })
-    const c = await laCaja()
-    expect(c.cerrada_en).not.toBeNull()
-    expect(c.contado_ars).toBeNull()
-
-    await acciones.abrirCajaDesdeVender(INICIAL, formulario({ saldoInicial: '0' }))
-    expect(await acciones.cerrarCajaDesdeVender()).toEqual({ error: null })
+    const r = await acciones.cerrarCajaDesdeVender(INICIAL, new FormData())
+    expect(r.error).toMatch(/efectivo contado en pesos/)
+    expect((await laCaja()).cerrada_en).toBeNull()
   })
 })
