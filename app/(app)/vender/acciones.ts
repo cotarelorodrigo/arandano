@@ -11,7 +11,7 @@ import { buscarArticulosVendibles, type ArticuloVendible } from '@/lib/ventas/bu
 import { unidadesLibres, type UnidadLibre } from '@/lib/inventario/unidades'
 import { abrirCaja, cerrarCaja } from '@/lib/caja/abrir-cerrar'
 import { ErrorDeCaja } from '@/lib/caja/errores'
-import { aDecimal, ErrorDeFormato } from '@/lib/formato/numeros'
+import { aCotizacion, aDecimal, ErrorDeFormato } from '@/lib/formato/numeros'
 import { esUuid } from '@/lib/uuid'
 import { formatearCotizacion } from '@/lib/formato/mostrar'
 import { ErrorDeCliente } from '@/lib/clientes/errores'
@@ -235,7 +235,10 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
         moneda: moneda as Moneda,
         cubre: cubre as Moneda,
         base: aDecimal(String(p.base ?? ''), 'el monto del pago'),
-        cotizacion: aDecimal(String(p.cotizacion ?? ''), 'la cotización'),
+        // La gramática de cotización y no la compartida: "1.450" es mil
+        // cuatrocientos cincuenta, como lo lee la pantalla
+        // (`cotizacionEnDiezMilesimas`). Ver `aCotizacionCanonica`.
+        cotizacion: aCotizacion(String(p.cotizacion ?? ''), 'la cotización'),
         planId: planId === '' ? undefined : planId,
       }
     })
@@ -396,7 +399,7 @@ export async function cargarCotizacionDesdeVender(
     revalidatePath('/plan-canje')
     return { error: null, confirmar: null, aviso: `Quedó cargada: ${formatearCotizacion(carga.valor)}.` }
   } catch (e) {
-    if (e instanceof ErrorDeCotizacion && e.codigo === 'SALTO_GRANDE') {
+    if (e instanceof ErrorDeCotizacion && (e.codigo === 'SALTO_GRANDE' || e.codigo === 'INVEROSIMIL')) {
       return { error: null, confirmar: e.message, aviso: null }
     }
     // `ErrorDeVenta` por la pertenencia del usuario (`exigirUsuario`), el

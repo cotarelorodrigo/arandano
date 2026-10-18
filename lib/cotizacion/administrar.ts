@@ -1,12 +1,12 @@
 import { Prisma } from '@/generated/prisma/client'
-import { aDecimal } from '@/lib/formato/numeros'
+import { aCotizacion } from '@/lib/formato/numeros'
 import { estaVacio } from '@/lib/formato/gramatica'
 import { formatearCotizacion } from '@/lib/formato/mostrar'
 import { enTransaccionDeTenant } from '@/lib/tenant/transaccion'
 import { exigirUsuario } from '@/lib/ventas/pertenencia'
 import { excedeEscala, ESCALA_DINERO } from '@/lib/ventas/totales'
 import { ErrorDeCotizacion } from './errores'
-import { esSaltoGrande, SALTO_QUE_PIDE_CONFIRMAR_PORCENTAJE } from './reglas'
+import { esPrimeraInverosimil, esSaltoGrande, RANGO_VEROSIMIL, SALTO_QUE_PIDE_CONFIRMAR_PORCENTAJE } from './reglas'
 
 /**
  * Lo único que escribe la cotización del dólar: una fila nueva. Nunca se edita
@@ -28,15 +28,15 @@ import { esSaltoGrande, SALTO_QUE_PIDE_CONFIRMAR_PORCENTAJE } from './reglas'
 const VALOR_MAXIMO = new Prisma.Decimal('9999999999.99')
 
 /**
- * El texto del campo, ya validado: la gramática compartida de `lib/formato`
- * (coma decimal, punto de miles, rechazo de lo ambiguo, la misma de los
- * precios), mayor que cero y con hasta dos decimales —la escala de la
- * columna—. Más decimales se RECHAZAN y no se redondean, por lo mismo que
+ * El texto del campo, ya validado: la gramática de cotización de
+ * `lib/formato` (`aCotizacionCanonica`: la de los precios, salvo que "1.450"
+ * es mil cuatrocientos cincuenta y no ambiguo), mayor que cero y con hasta
+ * dos decimales —la escala de la columna—. Más decimales se RECHAZAN y no se redondean, por lo mismo que
  * `excedeEscala`: lo que se quiso escribir lo sabe la persona.
  */
 export function leerCotizacion(texto: string): Prisma.Decimal {
   if (estaVacio(texto)) throw new ErrorDeCotizacion('VALOR_INVALIDO', 'Falta la cotización.')
-  const valor = aDecimal(texto, 'la cotización')
+  const valor = aCotizacion(texto, 'la cotización')
   if (valor.lessThanOrEqualTo(0)) {
     throw new ErrorDeCotizacion('VALOR_INVALIDO', 'La cotización tiene que ser mayor que cero.')
   }
@@ -53,7 +53,9 @@ export function leerCotizacion(texto: string): Prisma.Decimal {
  * Carga una cotización nueva, que pasa a ser la vigente.
  *
  * **El tope de cordura** (`esSaltoGrande`): si difiere en más de la mitad de la
- * vigente y no vino `confirmada`, tira `SALTO_GRANDE` sin escribir nada, con el
+ * vigente y no vino `confirmada`, tira `SALTO_GRANDE` sin escribir nada (y si
+ * es la primera del local y está fuera del rango verosímil, `INVEROSIMIL`,
+ * con el mismo flujo), con el
  * mensaje que la pantalla muestra al lado del botón de confirmar. Se chequea
  * ACÁ y no en la pantalla porque la pantalla puede estar mostrando una vigente
  * de hace una hora: la comparación tiene que ser contra la que está en la base.
@@ -87,6 +89,16 @@ export async function cargarCotizacion(e: {
         'SALTO_GRANDE',
         `${formatearCotizacion(valor.toString())} es más de un ${SALTO_QUE_PIDE_CONFIRMAR_PORCENTAJE} % distinta de la ` +
           `vigente (${formatearCotizacion(anterior!)}). ¿Es correcta?`,
+      )
+    }
+    // La primera del local no tiene vigente contra la cual medir el salto:
+    // ahí la red es un rango verosímil, con la misma pregunta.
+    if (!e.confirmada && esPrimeraInverosimil(valor.toString(), anterior)) {
+      throw new ErrorDeCotizacion(
+        'INVEROSIMIL',
+        `${formatearCotizacion(valor.toString())} por dólar está fuera de lo esperable ` +
+          `(entre ${formatearCotizacion(String(RANGO_VEROSIMIL.minimo))} y ` +
+          `${formatearCotizacion(String(RANGO_VEROSIMIL.maximo))}). ¿Es correcta?`,
       )
     }
     const fila = await tx.cotizacionDelDolar.create({

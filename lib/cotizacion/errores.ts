@@ -12,6 +12,10 @@ export type CodigoErrorDeCotizacion =
   // Difiere en más de la mitad de la vigente y no vino confirmada. NO es un
   // rechazo: es la pregunta "¿seguro?" que el spec pide ante un cero de más.
   | 'SALTO_GRANDE'
+  // La PRIMERA carga del local está fuera del rango verosímil
+  // (`esPrimeraInverosimil`) y no vino confirmada. La misma pregunta que el
+  // salto, para cuando no hay vigente contra la cual comparar.
+  | 'INVEROSIMIL'
 
 /** Con código y no sólo con mensaje, por lo mismo que `ErrorDePlan`: la action
  *  tiene que distinguir "pedí confirmación" de "eso no es un dólar" sin parsear

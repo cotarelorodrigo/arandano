@@ -256,15 +256,21 @@ describe('las validaciones', () => {
     expect(await cotizacionVigente(estado.tenantId)).toBeNull()
   })
 
-  // La gramática es la compartida de lib/formato, a propósito (spec, decisión
-  // 5): "1.450" es tan probablemente mil cuatrocientos cincuenta como uno con
-  // cuatrocientos cincuenta, y se pide escribirlo sin separador en vez de
-  // adivinar — el mismo criterio que un precio. "1.450,50", sin ambigüedad, sí.
-  it('"1.450" es ambiguo y se pide sin separador; "1.450,50" se entiende', async () => {
+  // La gramática de cotización (`aCotizacionCanonica`): la compartida, salvo
+  // que "1.450" es mil cuatrocientos cincuenta — "uno con cuatrocientos
+  // cincuenta pesos por dólar" no existe (hallazgo de la review). Un precio de
+  // "1.450" sigue siendo ambiguo; eso lo cubre lib/formato/numeros.test.ts.
+  it('"1.450" es mil cuatrocientos cincuenta, y "1.450,50" también se entiende', async () => {
     estado.cookie = cookieDuenia
-    expect((await cargar(INICIAL, formulario({ valor: '1.450' }))).error).toContain('sin separador de miles')
+    expect((await cargar(INICIAL, formulario({ valor: '1.450' }))).error).toBeNull()
+    expect((await cotizacionVigente(estado.tenantId))?.valor).toBe('1450')
     expect((await cargar(INICIAL, formulario({ valor: '1.450,50' }))).error).toBeNull()
     expect((await cotizacionVigente(estado.tenantId))?.valor).toBe('1450.5')
+  })
+
+  it('"1,450" (coma y tres dígitos) se sigue rechazando por ambiguo', async () => {
+    estado.cookie = cookieDuenia
+    expect((await cargar(INICIAL, formulario({ valor: '1,450' }))).error).toContain('sin separador de miles')
   })
 })
 
@@ -287,9 +293,26 @@ describe('el tope de cordura: más de la mitad de diferencia pide confirmar', ()
     expect((await cotizacionVigente(estado.tenantId))?.valor).toBe('14500')
   })
 
-  it('la primera carga no tiene contra qué compararse', async () => {
+  it('la primera carga dentro de lo verosímil no pregunta nada', async () => {
     estado.cookie = cookieDuenia
     expect((await cargar(INICIAL, formulario({ valor: '14500' }))).confirmar).toBeNull()
+  })
+
+  // Sin vigente no hay salto que medir: la red de la primera carga es un rango
+  // verosímil ($ 100 a $ 100.000 por dólar), con la misma pregunta.
+  it('la primera carga fuera de $ 100–$ 100.000 pide confirmar, y confirmada se carga', async () => {
+    estado.cookie = cookieDuenia
+    const pregunta = await cargar(INICIAL, formulario({ valor: '14,50' }))
+    expect(pregunta.error).toBeNull()
+    expect(pregunta.confirmar).toContain('fuera de lo esperable')
+    expect(await cotizacionVigente(estado.tenantId)).toBeNull()
+
+    const muyAlta = await cargar(INICIAL, formulario({ valor: '1450000' }))
+    expect(muyAlta.confirmar).toContain('fuera de lo esperable')
+
+    const confirmada = await cargar(INICIAL, formulario({ valor: '14,50', confirmada: '1' }))
+    expect(confirmada.confirmar).toBeNull()
+    expect((await cotizacionVigente(estado.tenantId))?.valor).toBe('14.5')
   })
 })
 
@@ -311,5 +334,21 @@ describe('el cobro guarda la cotización tipeada, no la del local', () => {
     const { rows } = await owner.query('SELECT cotizacion, monto FROM pagos WHERE venta_id = $1', [r.venta?.id])
     expect(rows[0].cotizacion).toBe('1485.0000')
     expect(Number(rows[0].monto)).toBe(445_500)
+  })
+
+  // El campo "Cotización" del cobro usa la misma gramática que el chip: un
+  // "1.485" tipeado en el mostrador es mil cuatrocientos ochenta y cinco
+  // también en el servidor.
+  it('"1.485" tipeado en el cobro se guarda como 1485', async () => {
+    estado.cookie = cookieEmpleado
+    const datos = formulario({ clave: `con-punto-${Date.now()}` })
+    datos.set('items', JSON.stringify([{ articuloId: articuloUsdId, cantidad: '1' }]))
+    datos.set('pagos', JSON.stringify([
+      { medio: 'EFECTIVO', moneda: 'ARS', cubre: 'USD', base: '300', cotizacion: '1.485' },
+    ]))
+    const r = await cobrar({ error: null, venta: null }, datos)
+    expect(r.error).toBeNull()
+    const { rows } = await owner.query('SELECT cotizacion FROM pagos WHERE venta_id = $1', [r.venta?.id])
+    expect(rows[0].cotizacion).toBe('1485.0000')
   })
 })

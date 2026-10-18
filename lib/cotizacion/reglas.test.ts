@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
-  conElDolar, cotizacionDeHoy, equivalenteEnPesos, esCotizacionVieja, esSaltoGrande,
-  sugerenciaDeCotizacionVieja, type CotizacionDelLocal,
+  conElDolar, cotizacionDeHoy, cotizacionParaElCampo, cotizacionParaPrecargar, equivalenteEnPesos,
+  esCotizacionVieja, esPrimeraInverosimil, esSaltoGrande, sugerenciaDeCotizacionVieja,
+  type CotizacionDelLocal,
 } from './reglas'
 
 // 18/10 a las 15:00 de Buenos Aires.
@@ -30,10 +31,54 @@ describe('la cotización del local se usa sola sólo si es de hoy', () => {
     expect(esCotizacionVieja(null, AHORA)).toBe(true)
   })
 
+  // Sin reloj: la decide el `vieja` del servidor, el mismo que pinta el chip,
+  // así que el texto no puede contradecir al chip (hallazgo de la review).
   it('la sugerencia nombra la fecha y el valor de la vieja, y calla con la de hoy o sin ninguna', () => {
-    expect(sugerenciaDeCotizacionVieja(DEL_15, AHORA)).toBe('La del local es del 15/10: $ 1.420')
-    expect(sugerenciaDeCotizacionVieja(DE_HOY, AHORA)).toBeNull()
-    expect(sugerenciaDeCotizacionVieja(null, AHORA)).toBeNull()
+    expect(sugerenciaDeCotizacionVieja(DEL_15, true)).toBe('La del local es del 15/10: $\u00a01.420')
+    expect(sugerenciaDeCotizacionVieja(DE_HOY, false)).toBeNull()
+    expect(sugerenciaDeCotizacionVieja(null, true)).toBeNull()
+  })
+
+  it('cargada la de hoy a mitad de la venta, la sugerencia se va con el mismo dato que el chip', () => {
+    // Antes: vieja. Después de cargar: la vigente es de hoy y `vieja` pasa a false.
+    expect(sugerenciaDeCotizacionVieja(DEL_15, true)).not.toBeNull()
+    expect(sugerenciaDeCotizacionVieja(DE_HOY, false)).toBeNull()
+  })
+})
+
+// El precargado pide que los DOS relojes digan "de hoy" (hallazgo de la
+// review): el del servidor al armar la página y el del navegador al cruzar.
+describe('cotizacionParaPrecargar: servidor Y navegador', () => {
+  it('de hoy para los dos: precarga, escrita para el campo', () => {
+    expect(cotizacionParaPrecargar(DE_HOY, false, AHORA)).toBe('1450')
+    expect(cotizacionParaPrecargar({ ...DE_HOY, valor: '1450.5' }, false, AHORA)).toBe('1450,50')
+  })
+
+  // La PC del mostrador con la hora atrasada: para su reloj la carga del 15
+  // sigue siendo de hoy, pero el servidor ya pintó el chip en ámbar.
+  it('PC atrasada: el navegador dice "de hoy" pero el servidor dijo vieja → no precarga', () => {
+    const relojAtrasado = new Date('2026-10-15T20:00:00Z')
+    expect(cotizacionDeHoy(DEL_15, relojAtrasado)).toBe('1420')
+    expect(cotizacionParaPrecargar(DEL_15, true, relojAtrasado)).toBeNull()
+  })
+
+  // La pantalla abierta de un día para el otro: el servidor dijo "de hoy" al
+  // armarla ayer, pero el navegador ya está en el día siguiente.
+  it('pasada la medianoche sin recargar: el servidor dijo de hoy pero el navegador no → no precarga', () => {
+    expect(cotizacionParaPrecargar(DE_HOY, false, new Date('2026-10-19T12:00:00Z'))).toBeNull()
+  })
+
+  it('sin ninguna, nada', () => {
+    expect(cotizacionParaPrecargar(null, false, AHORA)).toBeNull()
+  })
+})
+
+describe('cotizacionParaElCampo escribe el valor como en el mostrador', () => {
+  it('coma decimal con dos dígitos, y sin decimales si no los tiene', () => {
+    expect(cotizacionParaElCampo('1450.5')).toBe('1450,50')
+    expect(cotizacionParaElCampo('1450.25')).toBe('1450,25')
+    expect(cotizacionParaElCampo('1450')).toBe('1450')
+    expect(cotizacionParaElCampo('1450.00')).toBe('1450')
   })
 })
 
@@ -87,5 +132,20 @@ describe('el tope de cordura al cargar', () => {
 
   it('el movimiento de todos los días no pide nada', () => {
     expect(esSaltoGrande('1475', '1450')).toBe(false)
+  })
+})
+
+describe('el tope de cordura de la PRIMERA carga', () => {
+  it('sin vigente, fuera de $ 100–$ 100.000 pide confirmar', () => {
+    expect(esPrimeraInverosimil('99.99', null)).toBe(true)
+    expect(esPrimeraInverosimil('100', null)).toBe(false)
+    expect(esPrimeraInverosimil('1450', null)).toBe(false)
+    expect(esPrimeraInverosimil('100000', null)).toBe(false)
+    expect(esPrimeraInverosimil('100000.01', null)).toBe(true)
+    expect(esPrimeraInverosimil('14.5', null)).toBe(true)
+  })
+
+  it('con vigente no se usa: manda la comparación contra ella', () => {
+    expect(esPrimeraInverosimil('14.5', '1450')).toBe(false)
   })
 })
