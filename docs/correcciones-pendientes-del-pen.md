@@ -498,7 +498,7 @@ meta y dejan de ser columna.
 
 ---
 
-## 17. El chip de cotización del teléfono no dice de cuándo es el dólar
+## 17. ~~El chip de cotización del teléfono no dice de cuándo es el dólar~~ — RESUELTA EN CÓDIGO (2026-10-18), LA MAQUETA SIGUE SIN DIBUJARLA
 
 - **Frame**: `VaHod` (`Móvil / Vender`), los chips de estado del cuerpo
 - **Dibuja**: la cotización sola
@@ -517,6 +517,13 @@ es una decisión de producto y no una derivación que el código pueda tomar sol
 
 Detectado en la review de la Task 3 del ciclo móvil (2026-08-26), y explícita
 para el dueño del producto.
+
+**Resuelta en el ciclo de la cotización del dólar (2026-10-18)** con la salida
+de arriba, acotada: la fecha va dentro del chip **sólo cuando la cotización no
+es de hoy** ("USD 1.420 · 15/10", en ámbar), que es cuando importa; siendo de
+hoy, el chip queda como lo dibuja la maqueta. Ya no la lee `Tenant.cotizacionUsd`
+sino `CotizacionDelDolar`. El `.pen` sigue sin dibujar ni este estado ni el
+diálogo de carga: ver la entrada 41.
 
 ---
 
@@ -1479,6 +1486,39 @@ Qué haría falta: las dos pantallas en los dos anchos, y el paso de cobro de
 
 Detectado al construir el ciclo de la solapa Clientes (2026-10-18). Ver
 `docs/superpowers/specs/2026-10-18-clientes-design.md`.
+
+---
+
+## 41. La maqueta no dibuja la carga de la cotización del dólar, ni el chip viejo, ni lo que la cotización agrega en otras pantallas
+
+- **Frames**: `App / Vender` (nodo `TB7On`, el chip "USD") y `VaHod` (nodo
+  `fBLhr`, el chip del cuerpo del teléfono), que dibujan sólo el reposo con un
+  valor; `App / Artículo` y el listado de `/inventario`, que no dibujan ningún
+  equivalente en pesos.
+
+**El chip de escritorio pasó a ser un botón** que abre un diálogo (420 px,
+radio 16, padding 24 — las medidas del selector de unidad de la misma pantalla)
+con la vigente en un bloque `--muted` (o `--warn-soft` si es vieja), el campo
+"Cotización nueva" con "Cargar", la pregunta del tope de cordura en un bloque
+`--warn-soft` con "Sí, cargarla igual", y "Últimas cargas" como una lista con
+borde. **El estado viejo** (no es de hoy, o no hay ninguna) pinta el chip con el
+par `--warn`/`--warn-soft`, el de "Sin caja", y le suma la fecha. **En el
+teléfono** el mismo panel va debajo de la caja en la hoja del Topbar, que pasó a
+llamarse "Caja y dólar".
+
+**En otras pantallas**: el pie del tile "Precio de venta" de la ficha y la celda
+de precio de la lista de `/inventario` suman, para un artículo en dólares, un
+"≈ $ 1.450.000" debajo (con la fecha si la cotización es vieja); el pie del
+margen con monedas cruzadas suma "con el dólar a $ 1.450 del 18/10"; y el cobro
+suma, debajo de "Cotización", la sugerencia en ámbar "La del local es del 15/10:
+$ 1.420".
+
+Qué haría falta: el diálogo en sus estados (de hoy, vieja, sin ninguna, sin
+permiso, con la pregunta), el chip viejo en los dos anchos, y las tres líneas
+nuevas de las otras pantallas.
+
+Detectado al construir el ciclo de la cotización del dólar (2026-10-18). Ver
+`docs/superpowers/specs/2026-10-18-cotizacion-del-dolar-design.md`.
 
 ---
 

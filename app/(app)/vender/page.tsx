@@ -1,7 +1,9 @@
 import { exigirSesion } from '@/lib/auth/sesion'
 import { cajaAbierta } from '@/lib/caja/abrir-cerrar'
 import { planesDelTenant } from '@/lib/planes/consultar'
-import { prismaParaTenant } from '@/lib/tenant/prisma'
+import { puedeConSesion } from '@/lib/permisos/guarda'
+import { historialDeCotizaciones } from '@/lib/cotizacion/consultar'
+import { esCotizacionVieja } from '@/lib/cotizacion/reglas'
 import { PuntoDeVenta } from './punto-de-venta'
 
 export const dynamic = 'force-dynamic'
@@ -13,22 +15,23 @@ export default async function Vender() {
 
   // Los chips de estado necesitan dos datos más, y los dos se leen acá por el
   // mismo motivo que el de arriba: la caja del turno (lib/caja/abrir-cerrar.ts)
-  // y la cotización QUE FIJÓ EL DUEÑO hoy (Tenant.cotizacionUsd), que es un
-  // dato del chip del header y NO precarga ningún campo de cobro — la
-  // cotización de cada pago se tipea, siempre (ver `cotizacionParaElCruce` en
-  // punto-de-venta.tsx).
+  // y la cotización del dólar DEL LOCAL con sus últimas cargas
+  // (`CotizacionDelDolar`, ciclo del 2026-10-18 — antes era
+  // `Tenant.cotizacionUsd`, que nunca tuvo escritor y quedó sin lector). Esa
+  // cotización alimenta el chip del header Y, si es de hoy, arranca el campo
+  // "Cotización" de un pago que cruza monedas (`cotizacionParaElCruce`,
+  // lib/ventas/cruce.ts) — lo que se guarda en el pago sigue siendo lo que
+  // quedó tipeado.
   // Los planes van en la misma tanda, y por el mismo motivo: se leen en el
   // SERVIDOR y viajan como prop. Sin los desactivados —el default de
   // `planesDelTenant`—: un plan dado de baja no se puede usar para cobrar (el
   // motor lo rechaza con PLAN_INEXISTENTE), así que ofrecerlo sería ofrecer un
   // error. `PlanVisible` cruza a un componente cliente sin problema: sus campos
   // son string, number y Date, no Decimal (ver el comentario del tipo).
-  const [caja, tenant, planes] = await Promise.all([
+  const [caja, historial, puedeCargar, planes] = await Promise.all([
     cajaAbierta(sesion.tenant.id),
-    prismaParaTenant(sesion.tenant.id).tenant.findUnique({
-      where: { id: sesion.tenant.id },
-      select: { cotizacionUsd: true, cotizacionUsdEn: true },
-    }),
+    historialDeCotizaciones(sesion.tenant.id),
+    puedeConSesion(sesion, 'COTIZACION'),
     planesDelTenant(sesion.tenant.id),
   ])
 
@@ -42,11 +45,16 @@ export default async function Vender() {
     <PuntoDeVenta
       planes={planes}
       caja={caja ? { abiertaEn: caja.abiertaEn } : null}
-      // .toString() y no el Decimal crudo: un componente CLIENTE no puede
-      // recibir un Decimal de Prisma a través de la frontera, mismo motivo que
-      // ArticuloVendible en lib/ventas/buscar.ts.
-      cotizacionUsd={tenant?.cotizacionUsd?.toString() ?? null}
-      cotizacionUsdEn={tenant?.cotizacionUsdEn ?? null}
+      // `vieja` se decide ACÁ, con el reloj del servidor al armar la página,
+      // para que el HTML del servidor y el del navegador pinten lo mismo; ver
+      // el comentario de `CotizacionDeVender` (dolar.tsx) para lo que decide
+      // el navegador por su cuenta. El valor ya viene como texto
+      // (`historialDeCotizaciones`): un Decimal no cruza al cliente.
+      cotizacion={{
+        historial,
+        vieja: esCotizacionVieja(historial[0] ?? null, new Date()),
+        puedeCargar,
+      }}
     />
   )
 }

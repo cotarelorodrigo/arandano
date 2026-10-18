@@ -262,7 +262,7 @@ en todas las pantallas.
 | Token | Hex | Dónde se ve |
 |---|---|---|
 | `--ok` sobre `--ok-soft` | `#0F7048` / `#E1F3EA` | El vuelto, la caja abierta, una venta cobrada, un ingreso de mercadería |
-| `--warn` sobre `--warn-soft` | `#9A5B00` / `#FBF0DC` | Stock insuficiente al vender, la clave que se muestra una sola vez, un ajuste por conteo |
+| `--warn` sobre `--warn-soft` | `#9A5B00` / `#FBF0DC` | Stock insuficiente al vender, la clave que se muestra una sola vez, un ajuste por conteo, la cotización del dólar que no es de hoy |
 | `--destructive` sobre `--destructive-soft` | `#B32318` / `#FDE9E7` | El faltante del cobro, una venta anulada, stock negativo, la zona de anular |
 
 **El ámbar no es un rojo suave, y esa distinción es load-bearing.** Vender sin

@@ -7,6 +7,7 @@ import { ArrowRight, CircleAlert, Minus, Plus, ScanBarcode, TriangleAlert, X } f
 import { cobrar, buscarArticulos, unidadesDeArticulo, type EstadoCobro } from './acciones'
 import { usePasoDeCobro, type Paso } from './paso'
 import { ChipCaja, ChipsDeEstado, ControlDeCaja, detenerEscapeGlobal, type CajaDelChip } from './caja'
+import type { CotizacionDeVender } from './dolar'
 // El selector de cliente del cobro, el mismo de "Asignar cliente" en
 // /ventas/[id]. No importa Prisma: busca por un server action.
 import { ElegirCliente, camposOcultosDelCliente, type ClienteElegido } from '../clientes/elegir-cliente'
@@ -29,6 +30,7 @@ import {
 import { TOPE_DETALLE } from '@/lib/ventas/detalle'
 // Ídem: `lib/ventas/cruce.ts` no importa nada. Se re-exporta más abajo.
 import { cotizacionParaElCruce } from '@/lib/ventas/cruce'
+import { cotizacionDeHoy, sugerenciaDeCotizacionVieja, type CotizacionDelLocal } from '@/lib/cotizacion/reglas'
 // De TIPO y no de valor: `lib/planes/consultar.ts` importa Prisma, y un import
 // de valor desde este archivo —que lleva 'use client'— arrastraría `pg` al
 // bundle del navegador. Mismo caso que `ArticuloVendible`, y lo que vigila
@@ -967,13 +969,16 @@ function hayOverlayDeRadixAbierto(): boolean {
 export function PuntoDeVenta({
   planes,
   caja,
-  cotizacionUsd,
-  cotizacionUsdEn,
+  cotizacion,
   lineasIniciales,
 }: {
-  // `cotizacionInicial` se borró en este ciclo: era la última cotización con la
-  // que se había cobrado un pago (`Pago.cotizacion`, histórica) y precargaba el
-  // campo. La cotización arranca VACÍA siempre — ver `cotizacionParaElCruce`.
+  // `cotizacionInicial` se borró en el ciclo del precio en dólares
+  // (2026-08-29): era la última cotización con la que se había cobrado un
+  // pago (`Pago.cotizacion`, histórica) y precargaba el campo con un dato que
+  // podía ser de la semana pasada. Desde el ciclo de la cotización del dólar
+  // (2026-10-18) el campo vuelve a arrancar con algo, pero con OTRO dato y
+  // otro límite: la cotización del local (`cotizacion`, abajo) y sólo si es de
+  // hoy — ver `cotizacionParaElCruce` (lib/ventas/cruce.ts).
 
   // Los planes ACTIVOS del local, leídos en el servidor (`page.tsx`) por lo
   // mismo que la cotización: el cliente no consulta la base. Vacío es el caso
@@ -984,8 +989,11 @@ export function PuntoDeVenta({
   // servidor los resuelve en page.tsx (ver su comentario) y este componente
   // los reparte entre el chip del header, el del cuerpo y el menú del Topbar.
   caja: CajaDelChip | null
-  cotizacionUsd: string | null
-  cotizacionUsdEn: Date | null
+  // La cotización del dólar del local con sus últimas cargas, si es vieja y si
+  // esta persona la puede cargar (ver `CotizacionDeVender` en dolar.tsx). La
+  // usan el chip del header, el del cuerpo, la hoja del Topbar y cada fila de
+  // pago que cruza monedas.
+  cotizacion: CotizacionDeVender
   // SÓLO PARA TESTS: seedea el carrito ya armado. `page.tsx`, el único
   // llamador real, nunca lo pasa —ahí el carrito siempre arranca vacío—; es
   // lo que le permite a `punto-de-venta.test.tsx` (`renderConCarrito`)
@@ -1740,12 +1748,14 @@ export function PuntoDeVenta({
         }
         alVolver={pasoVisible === 'cobro' ? volverAlCarrito : undefined}
         acciones={
-          <ChipCaja caja={caja} cotizacionUsd={cotizacionUsd} cotizacionUsdEn={cotizacionUsdEn} />
+          <ChipCaja caja={caja} cotizacion={cotizacion} />
         }
         // La ranura derecha del teléfono queda apagada en el cobro: el frame
         // `keRdN` la dibuja deshabilitada (`NlGrn: enabled false`), y abrir o
         // cerrar el turno en medio de un cobro no es lo que nadie va a querer.
-        controlMovil={pasoVisible === 'cobro' ? undefined : <ControlDeCaja caja={caja} />}
+        controlMovil={
+          pasoVisible === 'cobro' ? undefined : <ControlDeCaja caja={caja} cotizacion={cotizacion} />
+        }
       />
 
       {/* "Cuerpo": el buscador a todo el ancho, arriba de las dos columnas.
@@ -1769,7 +1779,7 @@ export function PuntoDeVenta({
               (`acciones`, hidden lg:flex — de `<Encabezado>`, que sigue
               contestando la pregunta del viewport) y en el teléfono abren el cuerpo.
               De sólo lectura: ver el comentario de ChipsDeEstado en caja.tsx. */}
-          <ChipsDeEstado caja={caja} cotizacionUsd={cotizacionUsd} />
+          <ChipsDeEstado caja={caja} cotizacion={cotizacion} />
 
           {/* El buscador: a todo el ancho del Cuerpo, ya no encajado en la
               columna izquierda. El borde violeta de 2px es PERMANENTE —no sólo
@@ -2472,6 +2482,9 @@ export function PuntoDeVenta({
                       // este ciclo.
                       ofreceCubre={totales.ars > 0 && totales.usd > 0}
                       hayFaltante={hayFaltante}
+                      // La vigente, sin juzgar si es de hoy: eso lo decide la
+                      // fila en el momento en que el pago pasa a cruzar.
+                      cotizacionDelLocal={cotizacion.historial[0] ?? null}
                       onCambiar={(cambio) => cambiarPago(i, cambio)}
                       onQuitar={() => setPagos((p2) => p2.filter((_, j) => j !== i))}
                       puedeQuitar={pagos.length > 1}
@@ -3086,6 +3099,7 @@ function FilaDePago({
   planes,
   ofreceCubre,
   hayFaltante,
+  cotizacionDelLocal,
   onCambiar,
   onQuitar,
   puedeQuitar,
@@ -3103,6 +3117,12 @@ function FilaDePago({
   // Si la VENTA completa (todos los pagos, no sólo éste) sigue corta — ver
   // `puedeMostrarVuelto` para el porqué de este parámetro.
   hayFaltante: boolean
+  // La cotización vigente del local, o null si nunca se cargó. La fila la
+  // juzga ella misma —¿es de hoy?— en el momento en que el pago pasa a
+  // cruzar, con el reloj del navegador: esta pantalla puede quedar abierta de
+  // un día para el otro, y lo que decidió el servidor al armar la página ya
+  // no alcanza para precargar plata.
+  cotizacionDelLocal: CotizacionDelLocal | null
   onCambiar: (cambio: Partial<Pago>) => void
   onQuitar: () => void
   puedeQuitar: boolean
@@ -3151,6 +3171,25 @@ function FilaDePago({
   // (ver `planesOfrecidos`). Vacío significa que la fila no dibuja ningún
   // control de plan — un local sin planes no ve nada nuevo.
   const planesDelMedio = planesOfrecidos(pago, planes)
+  // "La del local es del 15/10: $ 1.420" debajo de la cotización, cuando la
+  // del local es vieja y por eso el campo arrancó vacío. Se decide en el MISMO
+  // instante y con el MISMO reloj que el precargado (`alCruzar`, abajo): dos
+  // relojes distintos podían dejar el campo vacío sin la sugerencia que
+  // explica por qué. Estado y no un cálculo del render: un `new Date()` en el
+  // render no es puro, y el render no es el momento en que se decide nada.
+  const [sugerencia, setSugerencia] = useState<string | null>(null)
+
+  /**
+   * La cotización con la que arranca un pago que acaba de cambiar de cruce:
+   * la del local si es DE HOY, y si no vacía (la regla de
+   * `cotizacionParaElCruce`). Juzgada con el reloj del navegador AHORA, en el
+   * cambio, y no con lo que decidió el servidor al armar la página.
+   */
+  function alCruzar(moneda: Pago['moneda'], cubre: Pago['cubre']): string {
+    const ahora = new Date()
+    setSugerencia(sugerenciaDeCotizacionVieja(cotizacionDelLocal, ahora))
+    return cotizacionParaElCruce(moneda, cubre, cotizacionDeHoy(cotizacionDelLocal, ahora))
+  }
 
   return (
     // fill $ar-bg (--background) y no --card: design/arandano.pen pinta cada
@@ -3191,11 +3230,12 @@ function FilaDePago({
             const moneda = valor as Pago['moneda']
             onCambiar({
               moneda,
-              // La cotización se rehace con el cruce nuevo: vacía si el pago
-              // pasa a cruzar (nunca precargada, ni con la del local ni con la
-              // del último pago) y 1 si deja de cruzar, que además es lo que
-              // borra una cotización mentirosa. Ver `cotizacionParaElCruce`.
-              cotizacion: cotizacionParaElCruce(moneda, pago.cubre),
+              // La cotización se rehace con el cruce nuevo: la del local si
+              // el pago pasa a cruzar y es DE HOY, vacía si es vieja o no hay
+              // (nunca la del último pago), y 1 si deja de cruzar, que además
+              // es lo que borra una cotización mentirosa. Ver `alCruzar` y
+              // `cotizacionParaElCruce`.
+              cotizacion: alCruzar(moneda, pago.cubre),
               // Y limpia el plan, por lo mismo que el selector de medio de al
               // lado: un plan sobre un pago ENTREGADO en dólares es el
               // PLAN_EN_DOLARES que el motor rechaza. Se limpia en las DOS
@@ -3245,8 +3285,8 @@ function FilaDePago({
               onCambiar({
                 cubre,
                 // La cotización se rehace con el cruce nuevo, igual que en el
-                // selector de moneda de arriba — ver `cotizacionParaElCruce`.
-                cotizacion: cotizacionParaElCruce(pago.moneda, cubre),
+                // selector de moneda de arriba — ver `alCruzar`.
+                cotizacion: alCruzar(pago.moneda, cubre),
                 // Y limpia el plan, por lo mismo que los otros dos selectores:
                 // el recargo se aplica sobre los pesos que la fila entrega, y
                 // cambiar de total cambia ese número. Un plan que sobreviva a
@@ -3333,6 +3373,15 @@ function FilaDePago({
           valor={pago.base}
           onChange={(v) => onCambiar({ base: v })}
         />
+      )}
+
+      {cruza && sugerencia && (
+        // La del local, vieja, a la vista y sin entrar al campo: quien cobra
+        // decide si sigue valiendo y, si vale, la tipea. Texto y no un botón
+        // "usar": un clic que mete el dólar de hace tres días en un cobro es
+        // justo lo que la regla de "sólo si es de hoy" existe para evitar.
+        // Ámbar, como el chip: es "mirá esto", no un error.
+        <p className="px-0.5 text-[11px] font-semibold text-warn">{sugerencia}</p>
       )}
 
       {cruza && (

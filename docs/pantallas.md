@@ -315,15 +315,20 @@ opera con alguien esperando del otro lado del mostrador, y la primera con su
 shell (sidebar + encabezado) ya venía de un ciclo anterior.
 
 **Acciones**: `cobrar`, `buscarArticulos`, `abrirCajaDesdeVender`,
-`cerrarCajaDesdeVender`, y `buscarClientesDelLocal` (de
-`app/(app)/clientes/acciones.ts`) para el campo "Cliente".
+`cerrarCajaDesdeVender`, `cargarCotizacionDesdeVender` (exige `COTIZACION`), y
+`buscarClientesDelLocal` (de `app/(app)/clientes/acciones.ts`) para el campo
+"Cliente".
 
-**Lecturas del servidor**: `cajaAbierta`, `Tenant.cotizacionUsd` y
-`planesDelTenant` (sólo los activos). Las tres se leen en `page.tsx` y viajan
-como props: el cliente no consulta la base, así que la pantalla llega con el
-dato puesto en vez de parpadear. **Eran cuatro hasta el ciclo del precio en
-dólares** (2026-08-29): `ultimaCotizacionUsd` se borró junto con el prefill del
-campo de cotización, ver *Decisiones*.
+**Lecturas del servidor**: `cajaAbierta`, `historialDeCotizaciones` (las
+últimas diez cargas de la cotización del dólar del local; la primera es la
+vigente), el permiso `COTIZACION` y `planesDelTenant` (sólo los activos). Se
+leen en `page.tsx` y viajan como props: el cliente no consulta la base, así que
+la pantalla llega con el dato puesto en vez de parpadear. **Hasta el ciclo de
+la cotización del dólar (2026-10-18) la cotización salía de
+`Tenant.cotizacionUsd`**, una columna que nunca tuvo escritor y quedó sin
+lector (su `DROP` es un deploy posterior). **Y hasta el ciclo del precio en
+dólares (2026-08-29) se leía además `ultimaCotizacionUsd`**, borrada junto con
+el prefill del último pago; ver *Decisiones*.
 
 **Qué se puede hacer**
 
@@ -403,8 +408,23 @@ campo de cotización, ver *Decisiones*.
   enfocado), y vaciar el carrito con `Esc`.
 - Ver el estado real de la caja del turno en un chip del header, y abrirla o
   cerrarla ahí mismo, sin salir de la pantalla.
-- Ver la cotización del dólar que fijó el dueño (`Tenant.cotizacionUsd`), con
-  de cuándo es.
+- **Ver y cargar la cotización del dólar del local** (ciclo del 2026-10-18,
+  `docs/superpowers/specs/2026-10-18-cotizacion-del-dolar-design.md`). El chip
+  "USD" del header es un botón: abre un diálogo con la vigente, quién la cargó y
+  cuándo, el campo para cargar una nueva (sólo con el permiso `COTIZACION`; sin
+  él, lo mismo sin el campo) y las últimas diez cargas (fecha y hora, valor,
+  quién). **El chip va en ámbar** cuando la vigente no es de hoy en hora
+  argentina o no hay ninguna, y si es vieja lleva la fecha escrita ("USD 1.420 ·
+  15/10"). En el teléfono el chip del cuerpo sigue siendo de sólo lectura (con
+  el mismo ámbar y la misma fecha) y el panel vive en la hoja del Topbar, debajo
+  de la caja ("Caja y dólar"). Si la nueva difiere en más de la mitad de la
+  vigente, pide confirmar ("Sí, cargarla igual"): un cero de más es el error más
+  probable. Nunca se edita ni se borra una carga: corregir es cargar otra.
+- **Un pago que cruza monedas arranca con la cotización del local si es de
+  hoy**, y se puede cambiar; lo que se guarda en `Pago.cotizacion` es lo que
+  quedó tipeado. Si la del local es vieja, el campo arranca vacío con la vieja
+  como sugerencia debajo ("La del local es del 15/10: $ 1.420"), en ámbar y sin
+  botón para usarla.
 
 **Decisiones**
 
@@ -442,16 +462,29 @@ campo de cotización, ver *Decisiones*.
   pagos no lo hace**: ahí no hay una respuesta única sobre cuál mover, y queda
   anotado como el mismo callejón un pago más adelante.
 - Con una cantidad a medio tipear muestra `—`, nunca `$ NaN`.
-- **El campo de cotización arranca VACÍO, siempre** (ciclo del precio en
-  dólares, 2026-08-29). Hasta entonces venía precargado con
+- **El campo de cotización arranca con la del local SÓLO si es de hoy**
+  (ciclo de la cotización del dólar, 2026-10-18), y si no, vacío. Esto
+  **revierte a propósito** la regla del ciclo del precio en dólares
+  (2026-08-29: "arranca VACÍO, siempre"), que había sacado el prefill con
   `ultimaCotizacionUsd()` —la última cotización con la que el local había
-  cobrado—, que es exactamente el número del jueves pasado si nadie pagó en
-  dólares desde entonces: la misma clase de dato envejecido contra la que el
-  cliente escribió el feedback que originó ese ciclo. El prefill se fue y
-  `ultimaCotizacionUsd()` se borró con él, sin dejar ningún consumidor. La que
-  el chip del header muestra (`Tenant.cotizacionUsd`, la que el dueño fija para
-  hoy) es **otra cosa** y sigue sin escritor: es un dato para mirar, no un
-  valor que precargue nada.
+  cobrado, o sea el número del jueves pasado si nadie pagó en dólares desde
+  entonces— y borrado esa función. El pedido nuevo vino del cliente: un dólar
+  del local, visible y fácil de actualizar. El motivo de 2026-08-29 sigue
+  vigente y es el que pone el límite: "de hoy" se mide en hora argentina
+  (`esDeHoy`), lo decide el navegador **en el momento del cambio** de moneda o
+  de `Cubre` (la pantalla puede quedar abierta de un día para el otro), y una
+  vieja nunca entra sola al campo: se muestra como sugerencia con su fecha.
+  `ultimaCotizacionUsd()` no vuelve: la cotización del local es OTRO dato
+  (`CotizacionDelDolar`, con quién y cuándo), no el último pago.
+- **Al cerrarse, el diálogo de la cotización no le devuelve el foco al chip**
+  (`onCloseAutoFocus` con `preventDefault`). Radix lo devuelve al disparador, y
+  con el foco en un `<button>` Enter no cobra —la allow-list del atajo sólo
+  dispara con el foco en `<body>`— sino que reabre el diálogo. Sin devolverlo,
+  el foco cae en `<body>` y los atajos siguen vivos. Mientras está abierto es
+  un `[role="dialog"]` y los tres atajos se abstienen, como con el selector de
+  unidad.
+- **La corrección de pagos de una venta ya cobrada (`/ventas/[id]`) no
+  precarga la cotización de hoy**: la de esa venta es la de su día.
 - **La cotización sólo aparece cuando un pago cruza monedas.** Con
   `moneda === cubre` no hay ninguna conversión ocurriendo —pagar US$ 300 en
   billetes contra un total de US$ 300 no convierte nada—, así que la fila

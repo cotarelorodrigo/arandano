@@ -23,7 +23,14 @@ vi.mock('./acciones', () => ({
   unidadesDeArticulo: vi.fn(async () => []),
   abrirCajaDesdeVender: vi.fn(),
   cerrarCajaDesdeVender: vi.fn(),
+  // El chip de la cotización del dólar (dolar.tsx) carga con esta action; su
+  // contrato lo fija app/(app)/vender/cotizacion.test.ts.
+  cargarCotizacionDesdeVender: vi.fn(),
 }))
+
+// Sin ninguna cotización cargada: el estado de todo local hasta que alguien la
+// carga, y el que deja la pantalla exactamente como antes de ese ciclo.
+const SIN_COTIZACION = { historial: [], vieja: true, puedeCargar: false }
 
 // Dos planes con la forma exacta que devuelve `planesDelTenant`
 // (lib/planes/consultar.ts), incluido el `porcentaje` como texto CANÓNICO
@@ -91,8 +98,7 @@ async function render(
       <PuntoDeVenta
         planes={props.planes ?? []}
         caja={props.caja ?? null}
-        cotizacionUsd={null}
-        cotizacionUsdEn={null}
+        cotizacion={SIN_COTIZACION}
       />
     </SidebarProvider>,
   )
@@ -128,8 +134,7 @@ async function renderConCarrito(lineas: Partial<Linea>[]) {
       <PuntoDeVenta
         planes={[]}
         caja={null}
-        cotizacionUsd={null}
-        cotizacionUsdEn={null}
+        cotizacion={SIN_COTIZACION}
         lineasIniciales={completas}
       />
     </SidebarProvider>,
@@ -1695,29 +1700,39 @@ describe('el punto de venta', () => {
     )
   })
 
-  // La cotización NO se precarga nunca: ni con la del local, ni con la del
-  // último pago (que era `cotizacionInicial`, borrada en este ciclo), ni con
-  // un '1' heredado —que sobre un pago que cruza es un dólar a un peso—.
-  it('la cotización arranca vacía y no queda ningún rastro de cotizacionInicial', () => {
+  // La cotización arranca con la DEL LOCAL sólo si es de hoy (ciclo de la
+  // cotización del dólar, 2026-10-18, que revierte el "nunca se precarga" del
+  // 2026-08-29): ni con la del último pago —`cotizacionInicial`, borrada
+  // entonces y que no vuelve—, ni con una vieja, ni con un '1' heredado, que
+  // sobre un pago que cruza es un dólar a un peso.
+  it('no queda ningún rastro de cotizacionInicial, y el campo sólo existe en el cruce', () => {
     const PAGE = readFileSync('app/(app)/vender/page.tsx', 'utf8')
     expect(FUENTE, 'la prop se borró de toda la cadena').not.toContain('cotizacionInicial={')
     expect(PAGE).not.toContain('cotizacionInicial')
+    // Y `page.tsx` ya no lee la columna sin escritor: la cotización sale de la
+    // tabla con historial. Ni en un `select` ni como prop (el comentario que
+    // explica la mudanza sí puede nombrarla).
+    expect(PAGE).not.toMatch(/cotizacionUsd(En)?\s*[:=]/)
+    expect(PAGE).toContain('historialDeCotizaciones(sesion.tenant.id)')
     // El campo se dibuja SÓLO cuando el pago cruza monedas.
     expect(FUENTE).toMatch(/\{cruza \? \(/)
     expect(FUENTE).toMatch(/const cruza = pago\.moneda !== pago\.cubre/)
   })
 
-  it('cotizacionParaElCruce deja el campo vacío al cruzar y lo limpia al dejar de cruzar', async () => {
+  it('cotizacionParaElCruce: al cruzar, la de hoy o vacía; sin cruzar, 1', async () => {
     const { cotizacionParaElCruce } = await import('./punto-de-venta')
-    // Cruza: vacía. Un '1' acá es una venta que cierra por un número que nadie
-    // tipeó.
+    // Cruza sin una de hoy (null o el default): vacía. Un '1' acá es una venta
+    // que cierra por un número que nadie tipeó.
     expect(cotizacionParaElCruce('ARS', 'USD')).toBe('')
-    expect(cotizacionParaElCruce('USD', 'ARS')).toBe('')
-    // No cruza: '1'. El servidor no usa la cotización en ese caso, pero la
-    // exige mayor que cero igual (COTIZACION_INVALIDA), así que la cadena
-    // vacía no puede viajar.
-    expect(cotizacionParaElCruce('ARS', 'ARS')).toBe('1')
-    expect(cotizacionParaElCruce('USD', 'USD')).toBe('1')
+    expect(cotizacionParaElCruce('USD', 'ARS', null)).toBe('')
+    // Cruza con la del local de hoy: arranca con ella.
+    expect(cotizacionParaElCruce('ARS', 'USD', '1450')).toBe('1450')
+    expect(cotizacionParaElCruce('USD', 'ARS', '1450')).toBe('1450')
+    // No cruza: '1', aunque haya una de hoy. El servidor no usa la cotización
+    // en ese caso, pero la exige mayor que cero igual (COTIZACION_INVALIDA), y
+    // un 1450 ahí sería la cotización mentirosa de abajo.
+    expect(cotizacionParaElCruce('ARS', 'ARS', '1450')).toBe('1')
+    expect(cotizacionParaElCruce('USD', 'USD', '1450')).toBe('1')
   })
 
   // La cotización MENTIROSA, hallazgo de la review de la Task 3: con
@@ -1725,19 +1740,48 @@ describe('el punto de venta', () => {
   // con `cubre: 'USD'` y después volver el selector a pesos dejaba ese 1485
   // pegado a un pago que no convierte nada, guardado para siempre en
   // `Pago.cotizacion` sin que ninguna cuenta lo notara. Los DOS selectores que
-  // pueden cambiar el cruce tienen que rehacerla.
+  // pueden cambiar el cruce tienen que rehacerla — y desde el ciclo de la
+  // cotización del dólar, por `alCruzar`, que es la que mira si la del local
+  // es de hoy.
   it('cambiar la moneda o el total que cubre rehace la cotización', () => {
     const desdeLaMoneda = FUENTE.indexOf("const moneda = valor as Pago['moneda']")
     expect(desdeLaMoneda, 'el handler de moneda tiene que existir').toBeGreaterThan(-1)
     expect(
       FUENTE.slice(desdeLaMoneda, FUENTE.indexOf('<SelectTrigger', desdeLaMoneda)),
-    ).toMatch(/cotizacion: cotizacionParaElCruce\(moneda, pago\.cubre\)/)
+    ).toMatch(/cotizacion: alCruzar\(moneda, pago\.cubre\)/)
 
     const desdeElCubre = FUENTE.indexOf("const cubre = valor as Pago['cubre']")
     expect(desdeElCubre, 'el handler de cubre tiene que existir').toBeGreaterThan(-1)
     expect(
       FUENTE.slice(desdeElCubre, FUENTE.indexOf('<SelectTrigger', desdeElCubre)),
-    ).toMatch(/cotizacion: cotizacionParaElCruce\(pago\.moneda, cubre\)/)
+    ).toMatch(/cotizacion: alCruzar\(pago\.moneda, cubre\)/)
+  })
+
+  // El precargado sólo con la de HOY, juzgada con el reloj del navegador EN
+  // el cambio (esta pantalla puede quedar abierta de un día para el otro), y
+  // la sugerencia de la vieja decidida en el mismo instante. Por fuente: sin
+  // jsdom no hay `onValueChange` que disparar; las dos reglas que `alCruzar`
+  // combina se prueban puras en lib/cotizacion/reglas.test.ts.
+  it('alCruzar precarga sólo la de hoy, con el reloj del momento, y arma la sugerencia con el mismo', () => {
+    const desde = FUENTE.indexOf('function alCruzar(')
+    expect(desde, 'alCruzar tiene que existir').toBeGreaterThan(-1)
+    const cuerpo = FUENTE.slice(desde, FUENTE.indexOf('\n  }\n', desde))
+    expect(cuerpo).toContain('const ahora = new Date()')
+    expect(cuerpo).toContain('cotizacionDeHoy(cotizacionDelLocal, ahora)')
+    expect(cuerpo).toContain('sugerenciaDeCotizacionVieja(cotizacionDelLocal, ahora)')
+    expect(cuerpo).toMatch(/cotizacionParaElCruce\(moneda, cubre, cotizacionDeHoy\(/)
+  })
+
+  // La corrección de una venta YA cobrada no usa la de hoy: la cotización de
+  // esa venta es la de su día. El default de `cotizacionParaElCruce` (null) es
+  // exactamente eso, así que basta con que ninguna llamada de ahí le pase un
+  // tercer argumento.
+  it('corregir pagos de una venta pasada no precarga la cotización de hoy', () => {
+    const CORREGIR = readFileSync('app/(app)/ventas/corregir-pagos.tsx', 'utf8')
+    const llamadas = [...CORREGIR.matchAll(/cotizacionParaElCruce\(([^)]*)\)/g)].map((m) => m[1])
+    expect(llamadas.length, 'corregir-pagos tiene que seguir usando la regla').toBeGreaterThan(0)
+    for (const args of llamadas) expect(args.split(',')).toHaveLength(2)
+    expect(CORREGIR).not.toContain('cotizacionDeHoy')
   })
 
   // Igual que cambiar el medio o la moneda: un plan que sobreviva a un cambio

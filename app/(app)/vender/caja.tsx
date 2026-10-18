@@ -1,9 +1,9 @@
 'use client'
 
-import { cloneElement, useActionState, useState } from 'react'
+import { useActionState, useState } from 'react'
 import { MoreVertical } from 'lucide-react'
 import { abrirCajaDesdeVender, cerrarCajaDesdeVender, type EstadoCaja } from './acciones'
-import { formatearFecha, formatearPrecio, montoSinSigno } from '@/lib/formato/mostrar'
+import { formatearFecha } from '@/lib/formato/mostrar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -15,9 +15,9 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CLASES_RANURA_MOVIL } from '@/components/shell/encabezado'
 import estilos from '@/components/importe.module.css'
+import { ChipCotizacion, ChipCotizacionMovil, PanelDeCotizacion, type CotizacionDeVender } from './dolar'
 
 const INICIAL: EstadoCaja = { error: null }
 
@@ -50,20 +50,20 @@ export type CajaDelChip = { abiertaEn: Date }
  * `page.tsx` y porque el `.pen` los dibuja pegados, con el mismo `gap:10` que
  * ya pone `Encabezado` alrededor de `acciones` — así que este componente NO
  * agrega su propio contenedor con gap; devuelve los dos chips como hermanos.
+ * El de cotización vive en `dolar.tsx` desde el ciclo de la cotización del
+ * dólar (2026-10-18): es otro dato, con otra action y otro permiso.
  */
 export function ChipCaja({
   caja,
-  cotizacionUsd,
-  cotizacionUsdEn,
+  cotizacion,
 }: {
   caja: CajaDelChip | null
-  cotizacionUsd: string | null
-  cotizacionUsdEn: Date | null
+  cotizacion: CotizacionDeVender
 }) {
   return (
     <>
       {caja ? <ChipCajaAbierta caja={caja} /> : <ChipSinCaja />}
-      <ChipCotizacion valor={cotizacionUsd} en={cotizacionUsdEn} />
+      <ChipCotizacion cotizacion={cotizacion} />
     </>
   )
 }
@@ -269,55 +269,6 @@ function FormularioDeApertura({
   )
 }
 
-/**
- * El chip de cotización (design/arandano.pen, nodo `TB7On`): rótulo "USD" en
- * la pila del sistema + el valor en Archivo, mismo tratamiento "importe" que
- * el resto de la plata de `/vender` (docs/sistema-de-diseno.md) — es lo que
- * separa el rótulo (acompaña, no compite) del número (lo que importa mirar).
- *
- * Sin cotización cargada NO inventa un número: `Tenant.cotizacionUsd` puede
- * ser null (el dueño nunca la cargó), y mostrar cualquier cifra ahí sería
- * peor que no mostrar ninguna — el que cobra tomaría una cotización que
- * nadie fijó como si fuera la de hoy.
- */
-function ChipCotizacion({ valor, en }: { valor: string | null; en: Date | null }) {
-  const chip = (
-    <span className="flex items-center gap-[6px] rounded-full border border-input px-[11px] py-[6px]">
-      <span className="text-[11px] font-semibold text-foreground-soft">USD</span>
-      <span className={`text-xs font-semibold text-foreground ${estilos.importe}`}>
-        {/* formatearPrecio() ya antepone "$ ", que acá no corresponde —el
-            rótulo "USD" de al lado ya dice de qué moneda se habla—, y
-            montoSinSigno() (lib/formato/mostrar.ts) lo descarta con la misma
-            regla que ya usa la banda del total de punto-de-venta.tsx. */}
-        {valor === null ? '—' : montoSinSigno(formatearPrecio(valor))}
-      </span>
-    </span>
-  )
-  // Sin cotización, tampoco hay fecha que mostrar: un tooltip vacío no suma
-  // nada y el chip ya dice "—" por su cuenta.
-  if (valor === null || en === null) return chip
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        {/* tabIndex={0} vía cloneElement, y no en `chip` directamente: el
-            <span> pelado del chip nunca entra al orden de tabulación por
-            default, así que "Actualizada el ..." quedaba inalcanzable por
-            teclado —hallazgo de la review final— en la pantalla que este
-            mismo ciclo declara la más operada sin mouse. Sólo hace falta acá,
-            en la rama CON tooltip: el chip sin cotización (más arriba) no
-            esconde ningún dato extra detrás de un hover, así que no necesita
-            un tabIndex que no llevaría a ningún lado. */}
-        <TooltipTrigger asChild>{cloneElement(chip, { tabIndex: 0 })}</TooltipTrigger>
-        {/* De cuándo es la cotización. El `.pen` no dibuja esto —el nodo
-            `TB7On` sólo tiene rótulo y valor—, y va igual: el comentario de
-            `Tenant.cotizacionUsdEn` en el schema lo dice explícito, "un dólar
-            en el header sin saber de cuándo es, es peor que no mostrarlo". */}
-        <TooltipContent>Actualizada el {formatearFecha(en)}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  )
-}
-
 // --- El teléfono ---
 //
 // En el teléfono los dos chips se mudan del Topbar al cuerpo, y ahí
@@ -341,10 +292,10 @@ function ChipCotizacion({ valor, en }: { valor: string | null; en: Date | null }
  */
 export function ChipsDeEstado({
   caja,
-  cotizacionUsd,
+  cotizacion,
 }: {
   caja: CajaDelChip | null
-  cotizacionUsd: string | null
+  cotizacion: CotizacionDeVender
 }) {
   return (
     <div className="flex items-center gap-2 lg:hidden">
@@ -365,18 +316,12 @@ export function ChipsDeEstado({
           <span className="text-xs font-semibold text-warn">Sin caja</span>
         </span>
       )}
-      {/* Nodo `fBLhr`: relleno --card y sin borde, al revés que el chip de
-          escritorio (`TB7On`, borde y sin relleno) — sobre el gris del cuerpo
-          del teléfono un chip sin relleno no se despegaría del fondo.
-          Sin tooltip, a diferencia del de escritorio: un tooltip vive del
-          hover, que en un teléfono no existe. El costo es real y queda
-          anotado — acá el dólar se muestra sin decir de cuándo es. */}
-      <span className="flex items-center gap-[6px] rounded-full bg-card px-[11px] py-[6px]">
-        <span className="text-[11px] font-semibold text-foreground-soft">USD</span>
-        <span className={`text-xs font-semibold text-foreground ${estilos.importe}`}>
-          {cotizacionUsd === null ? '—' : montoSinSigno(formatearPrecio(cotizacionUsd))}
-        </span>
-      </span>
+      {/* Nodo `fBLhr`. Sin tooltip —un tooltip vive del hover, que en un
+          teléfono no existe—, y por eso, desde el ciclo de la cotización del
+          dólar, la fecha va escrita en el chip cuando no es de hoy (en ámbar):
+          antes este chip mostraba el dólar sin decir de cuándo era. Ver
+          `ChipCotizacionMovil` en dolar.tsx. */}
+      <ChipCotizacionMovil cotizacion={cotizacion} />
     </div>
   )
 }
@@ -406,7 +351,13 @@ export function ChipsDeEstado({
  * `caja.test.tsx`, no supuesto: en esta pantalla suponer qué renderiza un
  * primitivo de Radix ya produjo un bug de cobro.
  */
-export function ControlDeCaja({ caja }: { caja: CajaDelChip | null }) {
+export function ControlDeCaja({
+  caja,
+  cotizacion,
+}: {
+  caja: CajaDelChip | null
+  cotizacion: CotizacionDeVender
+}) {
   const [abierta, setAbierta] = useState(false)
   // Si el turno de verdad cambió de estado, la hoja ya hizo su trabajo y se
   // cierra sola. `revalidatePath('/vender')` trae el `caja` nuevo por props, y
@@ -426,21 +377,26 @@ export function ControlDeCaja({ caja }: { caja: CajaDelChip | null }) {
           components/shell/encabezado.tsx reserva para "abre algo" — y es
           además lo que pinta el nodo `NlGrn` de VaHod ($ar-sunken). */}
       <SheetTrigger
-        aria-label="Caja del turno"
+        aria-label="Caja del turno y cotización del dólar"
         className={`${CLASES_RANURA_MOVIL} bg-muted text-foreground`}
       >
         <MoreVertical aria-hidden="true" className="size-[19px]" />
       </SheetTrigger>
       {/* Desde abajo: es de donde salen las hojas en un teléfono, y deja el
           control debajo del pulgar en vez de arriba de todo. */}
-      <SheetContent side="bottom" className="gap-0">
+      {/* `max-h` + scroll desde el ciclo de la cotización del dólar: la hoja
+          suma el panel del dólar con sus últimas diez cargas, y en un teléfono
+          de 390 × 700 la caja más ese panel no entran sin desplazarse. */}
+      <SheetContent side="bottom" className="max-h-[85svh] gap-0 overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>Caja</SheetTitle>
+          <SheetTitle>Caja y dólar</SheetTitle>
           {/* Radix pide una descripción para el `aria-describedby` del diálogo.
               Ésta dice lo que la hoja puede hacer, no en qué estado está: el
-              estado lo dice el formulario de abajo, y repetirlo acá lo dejaría
-              desincronizado el día que uno de los dos cambie. */}
-          <SheetDescription>El turno de caja del local: abrirlo o cerrarlo.</SheetDescription>
+              estado lo dicen los formularios de abajo, y repetirlo acá lo
+              dejaría desincronizado el día que uno de los dos cambie. */}
+          <SheetDescription>
+            El turno de caja del local, y la cotización del dólar con sus últimas cargas.
+          </SheetDescription>
         </SheetHeader>
         <div className="p-4">
           {caja ? (
@@ -448,6 +404,15 @@ export function ControlDeCaja({ caja }: { caja: CajaDelChip | null }) {
           ) : (
             <FormularioDeApertura onCancelar={() => setAbierta(false)} apilado />
           )}
+        </div>
+        {/* La misma entrada que el diálogo del chip de escritorio (spec,
+            decisión 3): en el teléfono el chip del cuerpo es de sólo lectura
+            —la maqueta lo dibuja sin control—, y esta hoja es el único control
+            de la pantalla. Mismo `PanelDeCotizacion`, con la guarda del
+            permiso adentro, así que las dos copias no pueden divergir. */}
+        <div className="flex flex-col gap-3 border-t p-4">
+          <span className="text-sm font-semibold text-foreground">Cotización del dólar</span>
+          <PanelDeCotizacion cotizacion={cotizacion} />
         </div>
       </SheetContent>
     </Sheet>
