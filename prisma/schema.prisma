@@ -715,8 +715,12 @@ model ValorDeCanje {
 // normal —el tenant que nunca entró a la tabla— y se lee como el default, USD:
 // el pedido que abrió el ciclo es de un local que vende iPhones en dólares.
 //
-// Cambiar la moneda NO convierte los valores: no hay cotización guardada de la
-// cual hacerlo, y la pantalla lo avisa antes de confirmar.
+// Cambiar la moneda NO convierte los valores, y la pantalla lo avisa antes de
+// confirmar. Cuando la tabla nació no había cotización de la cual hacerlo;
+// desde el ciclo de la cotización del dólar (2026-10-18) el local tiene una, y
+// sigue sin usarse acá a propósito: la tabla es lo que el dueño escribió, y
+// reescribir cada valor con el dólar del día lo dejaría atado a un número que
+// mañana cambia.
 model ConfiguracionDeCanje {
   tenantId      String   @id @map("tenant_id") @db.Uuid
   moneda        Moneda   @default(USD)
@@ -939,8 +943,10 @@ model VentaItem {
   /// NULL cuando el artículo no tenía ningún ingreso con costo cargado, NULL
   /// SIEMPRE para un ítem en dólares, y NULL para un ítem en pesos cuyo último
   /// costo se cargó en dólares (`MovimientoStock.monedaCosto`): esta columna
-  /// es pesos y alimenta `Venta.costoArs`, y meter ahí un costo en dólares o
-  /// convertirlo exigiría inventar una cotización.
+  /// es pesos y alimenta `Venta.costoArs`, y meter ahí un costo en dólares
+  /// sería mentir. Tampoco se convierte con la cotización del local
+  /// (`CotizacionDelDolar`, 2026-10-18): es el precio de hoy, no un dato que se
+  /// pueda congelar; el congelado del costo en dólares es un ciclo pendiente.
   costoUnitario  Decimal? @map("costo_unitario") @db.Decimal(12, 2)
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)

@@ -26,17 +26,17 @@
 ### Task 1: Spec y plan commiteados
 
 - [x] `docs(cotizacion): spec de la cotización del dólar`.
-- [ ] `docs(cotizacion): plan de implementación`.
+- [x] `docs(cotizacion): plan de implementación`.
 
 ### Task 2: El permiso `COTIZACION` y la tabla
 
 **Files:** `lib/permisos/catalogo.ts`, `prisma/schema.prisma`, `prisma/migrations/20261018140000_permiso_cotizacion/`, `prisma/migrations/20261018140100_cotizacion_del_dolar/`, `scripts/setup-db-roles.sh`, `test/setup-db-roles.test.ts`, `docs/schema.md`.
 
-- [ ] Permiso en el catálogo ("Actualizar la cotización del dólar") y en el enum, con su porqué.
-- [ ] Modelo `CotizacionDelDolar { id, tenantId, valor Decimal(12,2), cargadaPorId → User (Restrict), creadaEn }`, `@@index([tenantId, creadaEn])`. `CHECK (valor > 0)`, RLS + policy.
-- [ ] Comentarios de `Tenant.cotizacionUsd`/`cotizacionUsdEn` (sin lector, DROP pendiente) y del índice viejo de `Pago`.
-- [ ] REVOKE UPDATE, DELETE + caso en `test/setup-db-roles.test.ts`.
-- [ ] `npx vitest run test/permisos-catalogo.test.ts test/rls-cobertura.test.ts test/setup-db-roles.test.ts test/schema.test.ts`.
+- [x] Permiso en el catálogo ("Actualizar la cotización del dólar") y en el enum, con su porqué.
+- [x] Modelo `CotizacionDelDolar { id, tenantId, valor Decimal(12,2), cargadaPorId → User (Restrict), creadaEn }`, `@@index([tenantId, creadaEn])`. `CHECK (valor > 0)`, RLS + policy.
+- [x] Comentarios de `Tenant.cotizacionUsd`/`cotizacionUsdEn` (sin lector, DROP pendiente) y del índice viejo de `Pago`.
+- [x] REVOKE UPDATE, DELETE + caso en `test/setup-db-roles.test.ts`.
+- [x] `npx vitest run test/permisos-catalogo.test.ts test/rls-cobertura.test.ts test/setup-db-roles.test.ts test/schema.test.ts`.
 
 ### Task 3: "Hoy" y las reglas puras
 
@@ -44,41 +44,41 @@
 - `diaEnArgentina(d: Date): string`, `esDeHoy(fecha: Date, ahora: Date): boolean` en `lib/formato/fechas.ts`.
 - `formatearDiaYMes(d: Date): string` ("15/10"), `formatearCotizacion(v: string): string` ("$ 1.450" / "$ 1.450,50"), `formatearPesosRedondos(v: string)` en `lib/formato/mostrar.ts`.
 - `lib/cotizacion/reglas.ts`: `type CotizacionVisible = { valor: string; creadaEn: Date }`; `cotizacionDeHoy(c, ahora): string | null`; `equivalenteEnPesos(precioUsd, c): string`; `margenConCotizacion(...)`; `esSaltoGrande(nueva, vigente): boolean` (> 50 %).
-- [ ] Tests de los bordes de medianoche (23:59 y 00:00 ART contra UTC), del tope y de las cuentas.
+- [x] Tests de los bordes de medianoche (23:59 y 00:00 ART contra UTC), del tope y de las cuentas.
 
 ### Task 4: Cargar y consultar
 
 **Files:** `lib/cotizacion/{administrar,consultar,errores}.ts` + tests; `app/(app)/vender/acciones.ts` (`cargarCotizacionDesdeVender`) + tests.
 
-- [ ] `cargarCotizacion({ tenantId, usuarioId, texto, confirmada })`: gramática de `lib/formato`, > 0, ≤ 2 decimales, entra en `Decimal(12,2)`; salto > 50 % sin confirmar → `ErrorDeCotizacion('SALTO_GRANDE')`.
-- [ ] `cotizacionVigente(tenantId)`, `historialDeCotizaciones(tenantId, 10)` con nombre de quien la cargó; desempate por `id`.
-- [ ] La action exige `COTIZACION`; matriz: dueño, empleado con y sin permiso (forbidden), aislamiento por tenant, historial con usuario y fecha, la vigente es la última, el salto pide confirmación.
-- [ ] El cobro guarda en `Pago.cotizacion` lo tipeado aunque el local tenga otra.
+- [x] `cargarCotizacion({ tenantId, usuarioId, texto, confirmada })`: gramática de `lib/formato`, > 0, ≤ 2 decimales, entra en `Decimal(12,2)`; salto > 50 % sin confirmar → `ErrorDeCotizacion('SALTO_GRANDE')`.
+- [x] `cotizacionVigente(tenantId)`, `historialDeCotizaciones(tenantId, 10)` con nombre de quien la cargó; desempate por `id`.
+- [x] La action exige `COTIZACION`; matriz: dueño, empleado con y sin permiso (forbidden), aislamiento por tenant, historial con usuario y fecha, la vigente es la última, el salto pide confirmación.
+- [x] El cobro guarda en `Pago.cotizacion` lo tipeado aunque el local tenga otra.
 
 ### Task 5: El chip, el diálogo y el cobro de `/vender`
 
 **Files:** `app/(app)/vender/{page,caja,punto-de-venta}.tsx` + tests, `lib/ventas/cruce.ts`, `test/permisos-en-las-dos-copias.test.ts`.
 
-- [ ] `page.tsx` lee vigente + historial + permiso, no `Tenant.cotizacionUsd`.
-- [ ] Chip de escritorio → botón que abre un `Dialog` con la vigente, quién/cuándo, el campo (con permiso) y las últimas 10; ámbar si no es de hoy o no hay; con fecha si es vieja. `onCloseAutoFocus` deja el foco en `<body>`.
-- [ ] Teléfono: chip ámbar igual y el mismo panel en la hoja de `ControlDeCaja`.
-- [ ] `cotizacionParaElCruce(moneda, cubre, deHoy = null)`: precarga la de hoy al cruzar; la vieja nunca. Los dos selectores de la fila la pasan; la corrección de pagos no (es una venta pasada).
-- [ ] Sugerencia visible bajo "Cotización" cuando la del local es vieja.
+- [x] `page.tsx` lee vigente + historial + permiso, no `Tenant.cotizacionUsd`.
+- [x] Chip de escritorio → botón que abre un `Dialog` con la vigente, quién/cuándo, el campo (con permiso) y las últimas 10; ámbar si no es de hoy o no hay; con fecha si es vieja. `onCloseAutoFocus` deja el foco en `<body>`.
+- [x] Teléfono: chip ámbar igual y el mismo panel en la hoja de `ControlDeCaja`.
+- [x] `cotizacionParaElCruce(moneda, cubre, deHoy = null)`: precarga la de hoy al cruzar; la vieja nunca. Los dos selectores de la fila la pasan; la corrección de pagos no (es una venta pasada).
+- [x] Sugerencia visible bajo "Cotización" cuando la del local es vieja.
 
 ### Task 6: Margen y equivalente en pesos
 
 **Files:** `app/(app)/inventario/[id]/page.tsx`, `app/(app)/inventario/page.tsx` + tests.
 
-- [ ] `textoDeMargen` convierte con la vigente y el pie dice "con el dólar a $ X del dd/mm"; sin cotización, el pie de hoy.
-- [ ] "≈ $ …" en el tile "Precio de venta" y en la lista, con la fecha si es vieja.
+- [x] `textoDeMargen` convierte con la vigente y el pie dice "con el dólar a $ X del dd/mm"; sin cotización, el pie de hoy.
+- [x] "≈ $ …" en el tile "Precio de venta" y en la lista, con la fecha si es vieja.
 
 ### Task 7: Plan canje
 
-- [ ] `page.tsx` calcula la de hoy en el servidor y la calculadora arranca con ella.
+- [x] `page.tsx` calcula la de hoy en el servidor y la calculadora arranca con ella.
 
 ### Task 8: Documentación y cierre
 
-- [ ] Comentarios de la regla vieja reescritos (grep `nunca se precarga`, `arranca VACÍA`, `ultimaCotizacionUsd`, `Tenant.cotizacionUsd`).
-- [ ] `docs/pantallas.md` (`/vender`, `/inventario`, `/inventario/[id]`, `/plan-canje`), `docs/correcciones-pendientes-del-pen.md` si corresponde.
-- [ ] `docs/contexto/proximos-pasos.md`: reversión marcada en la entrada del 2026-08-29, entrada nueva con decisiones, lo que queda afuera, preguntas al cliente, contract pendiente y verificación manual.
-- [ ] `prisma generate`, `tsc --noEmit`, eslint de lo tocado, `scripts/tests/correr-todos.sh`, vitest completo.
+- [x] Comentarios de la regla vieja reescritos (grep `nunca se precarga`, `arranca VACÍA`, `ultimaCotizacionUsd`, `Tenant.cotizacionUsd`).
+- [x] `docs/pantallas.md` (`/vender`, `/inventario`, `/inventario/[id]`, `/plan-canje`), `docs/correcciones-pendientes-del-pen.md` si corresponde.
+- [x] `docs/contexto/proximos-pasos.md`: reversión marcada en la entrada del 2026-08-29, entrada nueva con decisiones, lo que queda afuera, preguntas al cliente, contract pendiente y verificación manual.
+- [x] `prisma generate`, `tsc --noEmit`, eslint de lo tocado, `scripts/tests/correr-todos.sh`, vitest completo.

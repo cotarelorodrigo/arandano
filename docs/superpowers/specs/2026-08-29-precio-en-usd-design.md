@@ -81,6 +81,13 @@ jueves pasado si nadie pagó en dólares desde entonces. Es la misma clase de da
 envejecido contra la que el cliente escribió el feedback. El prefill se va, y
 con él `ultimaCotizacionUsd()`, que se queda sin ningún consumidor.
 
+> **Revertida el 2026-10-18** por el ciclo de la cotización del dólar
+> (`docs/superpowers/specs/2026-10-18-cotizacion-del-dolar-design.md`), a pedido
+> del cliente: el campo arranca con la cotización **del local** —una tabla con
+> historial, `CotizacionDelDolar`— **sólo si es de hoy** en hora argentina, y si
+> no, vacío con la vieja como sugerencia. El motivo de esta decisión sigue
+> vigente y es el que pone ese límite; `ultimaCotizacionUsd()` no vuelve.
+
 **5. Ningún permiso nuevo.** Elegir la moneda de un artículo mueve el precio de
 **un** artículo, así que viaja con `ARTICULOS_CREAR` / `ARTICULOS_EDITAR`, igual
 que el precio mismo. Es la misma forma de razonar con la que el ciclo de precios
@@ -366,6 +373,8 @@ distinguir eso de un cambio deliberado, así que la salida es que el selector
   división de siempre.
 - **`Tenant.cotizacionUsd`.** Sigue sin ningún escritor y el chip del header
   sigue mostrando `—`. Este ciclo no se apoya en ella y no la arregla.
+  *(2026-10-18: la reemplazó `CotizacionDelDolar` y quedó sin lector; su `DROP`
+  está pendiente en `docs/contexto/proximos-pasos.md`.)*
 - **El catálogo público, el bot y ARCA.** No existen todavía.
 - **La verificación manual.** Como en los tres ciclos anteriores,
   `arandano-dev` bind-montea `/root/arandano` y no el worktree, así que va

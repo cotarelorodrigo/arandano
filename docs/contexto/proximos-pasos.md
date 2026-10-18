@@ -1362,6 +1362,14 @@ Y del producto:
     descartó porque un default equivocado en un campo de plata se acepta sin
     mirarlo. El prefill se fue y `ultimaCotizacionUsd()` se borró con él, sin
     dejar ningún consumidor.
+    **REVERTIDA el 2026-10-18** por el ciclo de la cotización del dólar (ver
+    *Que el local cargue su cotización del dólar* más abajo y
+    `docs/superpowers/specs/2026-10-18-cotizacion-del-dolar-design.md`), a
+    pedido del cliente que usa el sistema: el campo arranca con la cotización
+    **del local** (`CotizacionDelDolar`, con historial) **sólo si es de hoy**
+    en hora argentina; si no, vacío con la vieja como sugerencia. El motivo de
+    esta decisión sigue vigente —es el que pone ese límite— y
+    `ultimaCotizacionUsd()` no vuelve.
   - **Ningún permiso nuevo.** Elegir la moneda de un artículo mueve el precio de
     **un** artículo, así que viaja con `ARTICULOS_CREAR` / `ARTICULOS_EDITAR`,
     igual que el precio mismo. La alternativa —un permiso propio, como el
@@ -1505,10 +1513,15 @@ Y del producto:
     esa función. Es un deploy **posterior**, no éste: un índice de más no le
     hace daño a nadie, y borrarlo junto con el código que lo dejó de usar es
     exactamente lo que expand/contract prohíbe. El comentario que lo explica
-    vive al lado del índice, en `prisma/schema.prisma`.
+    vive al lado del índice, en `prisma/schema.prisma`. *(Sigue sin lector
+    después del ciclo de la cotización del dólar, 2026-10-18: la cotización
+    precargada sale de `CotizacionDelDolar`, no del último pago.)*
   - **`Tenant.cotizacionUsd` sigue sin ningún escritor** y el chip del header
     sigue mostrando `—`. Este ciclo no se apoya en ella y no la arregla — es
-    justamente lo que la decisión 1 descartó.
+    justamente lo que la decisión 1 descartó. *(2026-10-18: la reemplazó la
+    tabla `CotizacionDelDolar` y quedó también sin lector; su `DROP`, junto
+    con el de este índice, está anotado en el ciclo de la cotización del
+    dólar.)*
   - **Lo que la maqueta no dibuja**: `design/arandano.pen` es anterior al precio
     en dólares, así que ninguna de las pantallas de este ciclo tiene frame para
     lo nuevo. Anotado en `docs/correcciones-pendientes-del-pen.md`, entrada 23.
@@ -3543,6 +3556,111 @@ Y del producto:
   - Recibir un equipo en Servicio Técnico con un cliente nuevo de teléfono
     repetido: el cartel manda a elegirlo de la lista.
   - Las dos pantallas a 1440 y a 390 px.
+
+- ~~Que el local cargue su cotización del dólar, con historial, y que se use
+  donde haya que convertir.~~ **Hecho** (2026-10-18). Sale del mismo cliente
+  que vende iPhones (audio WA0021, segunda versión de "Tarea 1"): *una casilla
+  para cargar la cotización del dólar, que se actualice por día o cada vez que
+  cambie*, con fecha, valor y quién. Ver
+  `docs/superpowers/specs/2026-10-18-cotizacion-del-dolar-design.md` (con su
+  sección "Ajustes durante la implementación") y el plan
+  `docs/superpowers/plans/2026-10-18-cotizacion-del-dolar.md`; el ciclo se
+  resolvió de noche sin preguntas, así que todas sus decisiones son llamadas de
+  quien implementó y están para revisar.
+
+  **Revierte a propósito una decisión cerrada**: la del ciclo del precio en
+  dólares (2026-08-29), "la cotización se tipea en cada venta y nunca se
+  precarga" (marcada como revertida en su entrada, más arriba). El pedido vino
+  del cliente que usa el sistema. El motivo de aquella regla —un dólar que
+  nadie actualizó es el número equivocado— sigue vigente y es el que pone el
+  límite: **la cotización del local sólo se usa sola si es de hoy en hora
+  argentina, y donde se usa se dice de cuándo es.**
+
+  **Las decisiones.**
+
+  - **Una tabla append-only, `cotizaciones_del_dolar`** (valor, quién, cuándo),
+    con RLS, `CHECK (valor > 0)` y `REVOKE UPDATE, DELETE` para el rol de la
+    app: corregir es cargar otra. La vigente es la más reciente (desempate por
+    `id`). `Pago.cotizacion` no cambia de significado: sigue siendo a cuánto se
+    cobró ESE pago.
+  - **Permiso nuevo `COTIZACION`** para cargarla, en su propia migración; verla,
+    todos. Aparte de `PLANES_PAGO`: el dólar se actualiza todos los días y un
+    recargo se decide una vez.
+  - **Se carga desde el chip "USD" de `/vender`**, que pasó a ser un botón: un
+    diálogo con la vigente, quién y cuándo, el campo (con el permiso) y las
+    últimas diez cargas. En el teléfono, el mismo panel en la hoja del Topbar.
+    El chip va en **ámbar y con la fecha** si no es de hoy o no hay ninguna. Si
+    la nueva difiere en más de la mitad de la vigente, pide confirmar.
+  - **"Hoy" es día calendario de Buenos Aires** (`esDeHoy`,
+    `lib/formato/fechas.ts`): la de las 23:59 deja de valer a las 00:00 ART.
+  - **Dónde se usa**: el cobro arranca el campo "Cotización" de un pago que
+    cruza monedas con la de hoy (si es vieja, vacío con la vieja como
+    sugerencia; lo que se guarda es lo tipeado); la calculadora del plan canje,
+    igual; el margen de la ficha con costo y precio en monedas distintas se
+    calcula convirtiendo el costo, también con una vieja, y el pie dice con qué
+    dólar y de qué día; y un artículo en dólares muestra "≈ $ …" en la ficha y
+    en la lista de `/inventario`, con la fecha si es vieja.
+  - **Dónde NO se usa, a propósito**: el dashboard y `/ventas` (los números del
+    pasado ya tienen la cotización de cada pago), el costo del stock del
+    dashboard (sigue separado por moneda), el bot (cotizarle en pesos a un
+    cliente con un dólar de ayer es una promesa que el local no hizo), el costo
+    congelado de la venta y la corrección de pagos de una venta ya cobrada.
+
+  **Queda pendiente (contract, un deploy posterior a éste)**: el `DROP` de
+  `Tenant.cotizacionUsd` y `Tenant.cotizacionUsdEn` —nunca tuvieron escritor y
+  desde este ciclo tampoco lector— y el del índice
+  `@@index([tenantId, moneda, creadoEn])` de `Pago`, sin lector desde el
+  2026-08-29 y que este ciclo tampoco usa. Los dos van juntos, en una migración
+  destructiva propia (`--no-verify` con la razón en el mensaje, como pide el
+  hook), recién cuando la imagen de este ciclo lleve varios deploys en
+  producción.
+
+  **Queda para los ciclos siguientes**:
+
+  - Sumar el costo del stock del dashboard en una sola moneda con la
+    cotización del local (hoy sigue separado; es un pedido abierto).
+  - El costo congelado en dólares de la venta (margen en dólares del
+    dashboard), que sigue siendo su propio ciclo.
+  - Una cotización de referencia automática (un dólar publicado), si el cliente
+    la quiere en vez de cargarla a mano.
+  - **Preguntas abiertas para el cliente**: qué dólar usa el local (blue,
+    oficial, MEP, el suyo propio) — hoy es el que el dueño escriba, sin
+    rótulo —; quién la puede actualizar (hoy el dueño y quien tenga
+    `COTIZACION`); si "de hoy" le alcanza o quiere que venza a una hora
+    (p. ej. a las 18, cuando cierra el blue); y si el tope del 50 % le sirve o
+    le molesta.
+
+  **`design/arandano.pen` no dibuja el diálogo, el chip viejo ni las líneas
+  nuevas de otras pantallas.** Entrada 41 de
+  `docs/correcciones-pendientes-del-pen.md` (y la 17, que este ciclo resolvió
+  en código).
+
+  **Queda pendiente la verificación manual**, después del merge
+  (`arandano-dev` sirve `main`):
+
+  - En `/vender` sin ninguna cargada: chip "USD —" en ámbar; abrirlo y ver
+    "Todavía no hay ninguna cargada".
+  - Como dueño, cargar 1450: el chip deja el ámbar; el diálogo muestra "Cargada
+    hoy a las … por …" y la carga en "Últimas cargas".
+  - Cargar 14500: aparece la pregunta; Enter de nuevo vuelve a preguntar; "Sí,
+    cargarla igual" la carga. Cargar 1450 otra vez para corregir.
+  - **Teclado**: abrir el diálogo, cerrarlo con Esc y comprobar que Enter
+    cobra y que Esc arma el vaciado (no reabre el diálogo); con el diálogo
+    abierto, Enter en el campo carga y no cobra.
+  - Con un iPhone en dólares en el carrito, pasar un pago a pesos cubriendo el
+    total en dólares: "Cotización" arranca en 1450 y se puede cambiar; cobrar
+    con 1485 y ver en la base `pagos.cotizacion = 1485`.
+  - Con una cotización de ayer (insertarla como owner con `creada_en` de ayer):
+    chip en ámbar con la fecha, el campo arranca vacío y debajo "La del local
+    es del …".
+  - Como empleado sin `COTIZACION`: el diálogo sin el campo; otorgarle el
+    permiso en `/usuarios` y ver el campo.
+  - En la ficha de un artículo en dólares con costo en pesos: el pie del margen
+    con "con el dólar a $ … del …"; el "≈ $ …" en el tile y en la lista.
+  - En `/plan-canje`, equipo en dólares con la tabla en pesos: el campo arranca
+    con la de hoy y lo dice.
+  - Todo a 1440 y a 390 px: el chip del cuerpo en ámbar con fecha y la hoja
+    "Caja y dólar" scrolleando con diez cargas.
 
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).

@@ -83,8 +83,11 @@ export function pieDelCostoDelStock(sinCosto: number, aparte: string | null = nu
  * El valor y el pie del tile "Costo del stock", con el costo partido por
  * moneda (decisión 6 del spec del costo en dólares, 2026-10-18).
  *
- * Los pesos y los dólares NUNCA se suman: haría falta una cotización y el
- * sistema no guarda ninguna (se tipea en cada venta). El formato es el del tile
+ * Los pesos y los dólares NUNCA se suman. Hasta el ciclo de la cotización del
+ * dólar (2026-10-18) no había con qué; desde entonces el local tiene una, y se
+ * decidió igual no usarla acá: mezclaría en un solo número dos cosas que el
+ * dueño hoy lee por separado, con un dólar que mañana cambia. Queda como
+ * pedido abierto (spec 2026-10-18-cotizacion-del-dolar). El formato es el del tile
  * de marca de esta misma fila: pesos de número grande y "US$ … aparte" en el
  * pie, e invertido —dólares de número grande— cuando no hay ni un peso, para
  * que un local que compra todo en dólares no abra el tile con "$ 0,00" de

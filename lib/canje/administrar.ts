@@ -289,9 +289,9 @@ export async function borrarModelo({ tenantId, id }: { tenantId: string; id: str
 }
 
 /**
- * La moneda de toda la tabla. **No convierte los valores**: no hay una
- * cotización guardada de la cual hacerlo, y un "400" que pasa de dólares a
- * pesos sigue diciendo 400. La pantalla lo avisa antes de confirmar; acá sólo
+ * La moneda de toda la tabla. **No convierte los valores**, ni siquiera con la
+ * cotización del local (ver `ConfiguracionDeCanje` en el schema): un "400" que
+ * pasa de dólares a pesos sigue diciendo 400. La pantalla lo avisa antes de confirmar; acá sólo
  * se escribe lo que la persona decidió.
  */
 export async function cambiarMonedaDeCanje({

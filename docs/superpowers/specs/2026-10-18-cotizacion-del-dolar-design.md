@@ -113,3 +113,58 @@ confirmar (un cero de más es el error más probable).
   cotización, con una vieja (lleva la fecha).
 - Equivalente en pesos en la ficha y la lista.
 - La calculadora de canje precarga la de hoy.
+
+## Ajustes durante la implementación
+
+Llamadas que el código obligó a tomar, cada una en la dirección más
+conservadora. Ninguna cambia una decisión de arriba; las precisan.
+
+- **"De hoy" lo decide el navegador en el momento del cambio, para precargar;
+  el servidor, para pintar.** El chip y el diálogo se pintan con `vieja`
+  calculado en `page.tsx` al armar la página (el HTML del servidor y el del
+  navegador tienen que coincidir). Lo que el cobro precarga, en cambio, se
+  juzga con el reloj del navegador cuando el pago pasa a cruzar (`alCruzar`),
+  porque `/vender` puede quedar abierto de un día para el otro. Si discrepan
+  —pasada la medianoche, sin recargar— es en la dirección segura: el chip sigue
+  sin ámbar, pero el campo ya no se precarga con la de ayer. La sugerencia de la
+  vieja se decide en el mismo instante y con el mismo reloj que el precargado.
+  En el plan canje alcanza con el servidor: el campo se llena una sola vez, al
+  montar.
+- **La sugerencia de la vieja es texto, sin botón "usar"**: un clic que mete el
+  dólar de hace tres días en un cobro es lo que "sólo si es de hoy" existe para
+  evitar. Copiarla es tipearla.
+- **La corrección de pagos de una venta ya cobrada (`/ventas/[id]`) no
+  precarga.** La spec nombra el cobro; corregir una venta de ayer con el dólar
+  de hoy reescribiría lo que se cobró. `cotizacionParaElCruce` recibe la de hoy
+  como tercer argumento opcional con default `null`, así que todo llamador que
+  no la pasa conserva la regla vieja.
+- **Al cerrar el diálogo, el foco no vuelve al chip** (`onCloseAutoFocus` con
+  `preventDefault`): con el foco en un `<button>` Enter no cobra —la allow-list
+  del atajo sólo dispara en `<body>`— y reabría el diálogo.
+- **Append-only también por privilegio**: `REVOKE UPDATE, DELETE` sobre
+  `cotizaciones_del_dolar` en `scripts/setup-db-roles.sh`, como
+  `ediciones_venta`, más un `CHECK (valor > 0)`. Y la carga verifica que el
+  usuario sea del local (`exigirUsuario`): la FK a `users` no pasa por RLS.
+- **El tope de cordura se chequea en el servidor** contra la vigente de la base,
+  no contra la que muestra la pantalla. Pide confirmar con un segundo botón
+  ("Sí, cargarla igual", `name="confirmada"`); Enter en el campo envía con el
+  primero, así que dos Enter sobre un cero de más vuelven a preguntar.
+- **La gramática compartida rechaza "1.450" por ambiguo** (¿mil cuatrocientos
+  cincuenta o uno con cuatrocientos cincuenta?) y pide escribirlo sin
+  separador, como con un precio. "1450", "1450,50" y "1.450,50" se entienden.
+- **El equivalente en pesos va en su propia línea**, arriba de "actualizado
+  hace…" en el tile y debajo del precio en la lista, redondeado al peso y con
+  "≈". En la lista la fecha de una vieja va corta ("≈ $ 1.420.000 · 15/10"): la
+  columna es de 140 px.
+- **El pie del margen lleva la fecha siempre**, de hoy o vieja, como dice la
+  decisión 4 ("con el dólar a $ 1.450 del 18/10"). El costo del tile no se
+  convierte: el margen sí.
+- **La action revalida `/vender`, `/inventario` (layout, para alcanzar cada
+  ficha) y `/plan-canje`**: las tres leen la vigente.
+- **En el teléfono, la hoja del Topbar pasó a llamarse "Caja y dólar"** y
+  scrollea (`max-h-[85svh]`): la caja más el panel con diez cargas no entran
+  en 390 × 700.
+- **Los comentarios que daban "no hay cotización guardada" como razón** para no
+  convertir (la moneda de la tabla de canje, el costo del stock del dashboard,
+  el costo congelado de la venta) se reescribieron con la razón que sigue
+  valiendo: esos lugares no convierten a propósito, no por falta de dato.

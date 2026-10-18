@@ -54,8 +54,10 @@ type PrismaDeTenant = ReturnType<typeof prismaParaTenant>
  *
  *  `total` es pesos y `totalUsd` dólares, cada artículo en la moneda de su
  *  último costo. Son dos números y no uno porque sumarlos exigiría una
- *  cotización, y el sistema no guarda ninguna en la que confiar (la cotización
- *  se tipea en cada venta, ciclo del precio en USD del 2026-08-29). */
+ *  cotización. Desde el ciclo de la cotización del dólar (2026-10-18) el local
+ *  tiene una, y a propósito NO se usa acá: el costo del stock separado por
+ *  moneda es como el dueño lo lee hoy, y sumarlo con el dólar del día queda
+ *  como pedido abierto (spec 2026-10-18-cotizacion-del-dolar). */
 export type Valuacion = { total: Decimal; totalUsd: Decimal; sinCosto: number }
 
 /**

@@ -157,8 +157,10 @@ export function ChipCotizacion({ cotizacion }: { cotizacion: CotizacionDeVender 
  */
 export function ChipCotizacionMovil({ cotizacion }: { cotizacion: CotizacionDeVender }) {
   return (
+    // Sin `aria-label`: sobre un <span> sin rol el nombre accesible no se
+    // anuncia (ARIA lo prohíbe en el rol genérico). Lo que hay que oír ya
+    // está en el texto: el valor y, si es vieja, la fecha.
     <span
-      aria-label={rotuloDelChip(cotizacion)}
       className={`flex items-center gap-[6px] rounded-full px-[11px] py-[6px] ${
         cotizacion.vieja ? 'bg-warn-soft' : 'bg-card'
       }`}

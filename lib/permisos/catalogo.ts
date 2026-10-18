@@ -98,7 +98,7 @@ export const PERMISOS = [
   {
     clave: 'COTIZACION',
     nombre: 'Actualizar la cotización del dólar',
-    ayuda: 'Cargar a cuánto toma el local el dólar hoy, desde el chip "USD" de Vender. Verla y ver quién la cargó, todos.',
+    ayuda: 'Cargar a cuánto toma el local el dólar hoy, desde el chip USD de Vender. Verla y ver quién la cargó, todos.',
   },
 ] as const
 
