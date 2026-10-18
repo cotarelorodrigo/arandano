@@ -141,6 +141,24 @@ const CLASES_BOTON_PIE = 'h-[50px] rounded-[12px]'
  * `<button type="submit">` necesita ser descendiente del `<form>` que
  * dispara, y acá el botón vive arriba.
  */
+/**
+ * La moneda del costo en el alta (ciclo del costo en dólares, 2026-10-18,
+ * decisión 2): la que la persona eligió, o —mientras no eligió ninguna— la del
+ * precio. Quien da de alta un iPhone en dólares casi siempre lo compró en
+ * dólares, así que proponerla ahorra un toque; pero una vez que tocó el
+ * selector del costo, cambiar el precio de moneda no le pisa la decisión (el
+ * accesorio importado que se vende en dólares y se paga en pesos).
+ *
+ * Pura y exportada para que la regla se pruebe sin DOM: el seguimiento es un
+ * cambio de estado que un render estático no produce.
+ */
+export function monedaDelCostoEnElAlta(
+  monedaPrecio: 'ARS' | 'USD',
+  elegida: 'ARS' | 'USD' | null,
+): 'ARS' | 'USD' {
+  return elegida ?? monedaPrecio
+}
+
 export function FormularioDeAlta({
   proximoSku,
   arbol,
@@ -179,6 +197,12 @@ export function FormularioDeAlta({
   // el servidor lo rechaza igual (crearArticulo), porque una pantalla que
   // esconde un control no es la guarda, sólo el servidor lo es.
   const [llevaSerie, setLlevaSerie] = useState(false)
+  // La moneda del precio se espeja acá (el selector del precio sigue siendo
+  // dueño de la suya) sólo para que la del costo la pueda seguir. `null` en
+  // la del costo es "nadie la tocó todavía": ver `monedaDelCostoEnElAlta`.
+  const [monedaPrecio, setMonedaPrecio] = useState<'ARS' | 'USD'>('ARS')
+  const [monedaCostoElegida, setMonedaCostoElegida] = useState<'ARS' | 'USD' | null>(null)
+  const monedaCosto = monedaDelCostoEnElAlta(monedaPrecio, monedaCostoElegida)
 
   return (
     <form action={accion} className="contents">
@@ -315,7 +339,7 @@ export function FormularioDeAlta({
                     componente es el campo compuesto entero (fila + aviso), y
                     ponerlos como hermanos es lo que partía el campo al medio
                     en cuanto el aviso aparecía. */}
-                <SelectorDeMoneda id="moneda" name="moneda" valorInicial="ARS">
+                <SelectorDeMoneda id="moneda" name="moneda" valorInicial="ARS" onCambio={setMonedaPrecio}>
                   {/* type="text" con inputMode="decimal" y no type="number": el
                       teclado numérico aparece igual en el celular, pero la coma
                       llega sin que el navegador la descarte. El parseo lo hace
@@ -375,16 +399,31 @@ export function FormularioDeAlta({
               {/* Sin el permiso COSTOS, el campo no se dibuja. El
                   blindaje real está en el servidor (altaArticulo,
                   acciones.ts): esconderlo acá es sólo la UI. */}
+              {/* Con su moneda al lado desde el ciclo del costo en dólares
+                  (2026-10-18): el mismo campo compuesto que el precio, detrás
+                  del mismo permiso que el campo — sin COSTOS no hay costo que
+                  necesite moneda. Sin aviso de conversión: no había un costo
+                  anterior que se reinterprete. */}
               {puedeCostos && (
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="costoUnitario">Costo unitario (opcional)</Label>
-                  <Input
-                    id="costoUnitario"
-                    name="costoUnitario"
-                    inputMode="decimal"
-                    defaultValue={valores?.costoUnitario ?? ''}
-                    className="h-10 rounded-[9px]"
-                  />
+                  <SelectorDeMoneda
+                    id="moneda-costo"
+                    name="monedaCosto"
+                    valorInicial="ARS"
+                    valor={monedaCosto}
+                    onCambio={setMonedaCostoElegida}
+                    etiqueta="Moneda del costo"
+                    avisarCambio={false}
+                  >
+                    <Input
+                      id="costoUnitario"
+                      name="costoUnitario"
+                      inputMode="decimal"
+                      defaultValue={valores?.costoUnitario ?? ''}
+                      className="h-10 flex-1 rounded-l-none rounded-r-[9px]"
+                    />
+                  </SelectorDeMoneda>
                 </div>
               )}
               {/* El tercer campo que la maqueta dibuja en esta card
@@ -771,10 +810,18 @@ export function MoverStock({
   articuloId,
   puedeCostos,
   llevaSerie,
+  moneda,
 }: {
   articuloId: string
   puedeCostos: boolean
   llevaSerie: boolean
+  /**
+   * La moneda del PRECIO del artículo, que es la que el selector del costo
+   * propone (ciclo del costo en dólares, 2026-10-18). Requerida: sin ella el
+   * selector arrancaría en pesos para un iPhone en dólares, que es justo la
+   * queja que abrió el ciclo.
+   */
+  moneda: 'ARS' | 'USD'
 }) {
   const [ingreso, accionIngreso, ingresando] = useActionState(ingresarMercaderia, INICIAL)
   const [conteo, accionConteo, contando] = useActionState(corregirPorConteo, INICIAL)
@@ -818,10 +865,35 @@ export function MoverStock({
             {/* Sin el permiso COSTOS, el campo no se dibuja. El blindaje
                 real está en el servidor (ingresarMercaderia, acciones.ts):
                 esconderlo acá es sólo la UI. */}
+            {/* Con su moneda al lado desde el ciclo del costo en dólares:
+                arranca en la del artículo y se puede cambiar — el costo es
+                del ingreso, no del artículo, y un equipo en dólares puede
+                haberse comprado en pesos. Sin aviso de conversión: no hay un
+                costo anterior que se reinterprete. */}
             {puedeCostos && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="i-costo">Costo unitario (opcional)</Label>
-                <Input id="i-costo" name="costoUnitario" inputMode="decimal" className="h-10 rounded-[9px]" />
+                {/* `key={moneda}` y no sólo `valorInicial`: el selector guarda
+                    su valor en `useState`, que lee la inicial UNA vez. Si en
+                    la misma ficha se pasa el precio de $ a US$, la página se
+                    revalida pero este formulario sigue montado, y sin la key
+                    seguiría proponiendo $ — US$ 450 tipeados sin mirar se
+                    guardarían como $ 450 (hallazgo de la review del ciclo). */}
+                <SelectorDeMoneda
+                  key={moneda}
+                  id="i-moneda-costo"
+                  name="monedaCosto"
+                  valorInicial={moneda}
+                  etiqueta="Moneda del costo"
+                  avisarCambio={false}
+                >
+                  <Input
+                    id="i-costo"
+                    name="costoUnitario"
+                    inputMode="decimal"
+                    className="h-10 flex-1 rounded-l-none rounded-r-[9px]"
+                  />
+                </SelectorDeMoneda>
               </div>
             )}
             <div className="flex flex-col gap-2">

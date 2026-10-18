@@ -5,7 +5,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label'
 
 /**
- * En qué moneda está el precio de un artículo.
+ * En qué moneda está el precio de un artículo — y, desde el ciclo del costo en
+ * dólares (2026-10-18), también en qué moneda se pagó su costo.
  *
  * **Un solo componente para el alta y para la ficha**, y no dos controles que
  * haya que acordarse de sincronizar. Es la lección directa del ciclo del
@@ -21,20 +22,49 @@ import { Label } from '@/components/ui/label'
  * el número diga otra cosa, y ninguna validación puede distinguir eso de un
  * cambio deliberado (recargar el precio real en la otra moneda). La decisión
  * es de quien carga el precio, no del control.
+ *
+ * **El costo usa este mismo componente**, no uno parecido: es la misma lección
+ * de arriba aplicada a un campo nuevo. Lo que cambia para el costo son tres
+ * props opcionales, y ninguna altera el comportamiento del precio cuando no se
+ * pasa: `etiqueta` (el nombre accesible), `avisarCambio` (un costo recién
+ * tipeado no tenía un número anterior que se reinterprete, así que el aviso no
+ * dice nada verdadero) y `valor`/`onCambio`, para que el alta haga que la
+ * moneda del costo siga a la del precio mientras nadie la toque.
  */
 export function SelectorDeMoneda({
   id,
   name,
   valorInicial,
+  valor,
+  onCambio,
+  etiqueta = 'Moneda del precio',
+  avisarCambio = true,
   children,
 }: {
   id: string
   name: string
   valorInicial: 'ARS' | 'USD'
-  /** El input del precio, que va pegado al selector adentro de la MISMA fila. */
+  /**
+   * Controlado: si llega, es la moneda que se muestra y se emite, y la
+   * interna se ignora. El alta lo usa para la moneda del costo, que se deriva
+   * de la del precio hasta que la persona elige otra.
+   */
+  valor?: 'ARS' | 'USD'
+  /** Se llama con cada elección, controlado o no. */
+  onCambio?: (moneda: 'ARS' | 'USD') => void
+  /** El texto de la `<Label>` oculta, que es el nombre accesible del trigger. */
+  etiqueta?: string
+  /** Si dibuja el aviso de "el precio no se convierte" al cambiar. */
+  avisarCambio?: boolean
+  /** El input del monto, que va pegado al selector adentro de la MISMA fila. */
   children: React.ReactNode
 }) {
-  const [moneda, setMoneda] = useState(valorInicial)
+  const [propia, setPropia] = useState(valorInicial)
+  const moneda = valor ?? propia
+  const elegir = (v: 'ARS' | 'USD') => {
+    setPropia(v)
+    onCambio?.(v)
+  }
 
   // Un Fragment y no un contenedor propio, con el aviso HERMANO de la fila —
   // el mismo patrón que SelectorDeCategoria usa para su nota del panel de
@@ -53,10 +83,10 @@ export function SelectorDeMoneda({
           un lector de pantalla, pero rompería la afirmación de FichaDeArticulo
           de que el único `aria-label` de la pantalla es el de "Volver". */}
       <Label htmlFor={id} className="sr-only">
-        Moneda del precio
+        {etiqueta}
       </Label>
       <div className="flex">
-        <Select value={moneda} onValueChange={(v) => setMoneda(v as 'ARS' | 'USD')}>
+        <Select value={moneda} onValueChange={(v) => elegir(v as 'ARS' | 'USD')}>
           <SelectTrigger
             id={id}
             // `h-10!` CON el sufijo important, y no `h-10` a secas: la altura
@@ -87,7 +117,7 @@ export function SelectorDeMoneda({
         <input type="hidden" name={name} value={moneda} />
         {children}
       </div>
-      {moneda !== valorInicial && (
+      {avisarCambio && moneda !== valorInicial && (
         <p className="text-xs text-muted-foreground">
           El precio no se convierte:{' '}
           {valorInicial === 'ARS'

@@ -32,12 +32,14 @@ const CERO = new Prisma.Decimal(0)
  * que `/inventario` ya avisa por su cuenta, no plata negativa que haya que
  * restarle al total del local.
  *
- * `costo` va siempre en PESOS, sea cual sea `Articulo.moneda`:
- * `MovimientoStock.costoUnitario` no distingue moneda (deuda del costo,
- * CLAUDE.md). Por eso esta función no recibe la moneda y no podría depender
- * de ella aunque quisiera — a diferencia del margen, que compara el costo
- * CONTRA EL PRECIO y por eso sí tiene que devolver null en dólares. Acá el
- * costo se multiplica por una cantidad, y una cantidad no tiene moneda.
+ * El resultado está en la moneda de `costo` —`MovimientoStock.monedaCosto`,
+ * desde el ciclo del costo en dólares (2026-10-18)—, y por eso esta función no
+ * recibe ninguna moneda: el costo se multiplica por una cantidad, y una
+ * cantidad no tiene moneda, así que el producto queda en la moneda que traía
+ * el costo. Quien lo muestra o lo suma es quien tiene que saber cuál es (la
+ * ficha lo formatea con `precioEnSuMoneda`, `valuacionDelTenant` lo separa por
+ * moneda). A diferencia del margen, que compara el costo CONTRA EL PRECIO y por
+ * eso sí devuelve null cuando las monedas no coinciden.
  */
 export function costoTotalDeArticulo(stock: Decimal, costo: Decimal | null): Decimal | null {
   if (costo === null) return null
@@ -48,8 +50,13 @@ export function costoTotalDeArticulo(stock: Decimal, costo: Decimal | null): Dec
 type PrismaDeTenant = ReturnType<typeof prismaParaTenant>
 
 /** Cuánta plata hay parada en mercadería, y cuántos artículos quedaron afuera
- *  del número por no tener ningún costo cargado. */
-export type Valuacion = { total: Decimal; sinCosto: number }
+ *  del número por no tener ningún costo cargado.
+ *
+ *  `total` es pesos y `totalUsd` dólares, cada artículo en la moneda de su
+ *  último costo. Son dos números y no uno porque sumarlos exigiría una
+ *  cotización, y el sistema no guarda ninguna en la que confiar (la cotización
+ *  se tipea en cada venta, ciclo del precio en USD del 2026-08-29). */
+export type Valuacion = { total: Decimal; totalUsd: Decimal; sinCosto: number }
 
 /**
  * El costo del stock de todo el local.
@@ -75,7 +82,10 @@ export type Valuacion = { total: Decimal; sinCosto: number }
  * hasta el milisegundo.
  *
  * El filtro es `costoUnitario: { not: null }` y no "el ingreso más reciente":
- * un ingreso cargado sin costo no borra lo que se sabía del anterior.
+ * un ingreso cargado sin costo no borra lo que se sabía del anterior. Y NO
+ * filtra por moneda: el último costo es el ingreso más reciente con costo,
+ * sea cual sea su moneda — un ingreso en dólares posterior a uno en pesos es
+ * el costo que vale hoy, y el artículo entero pasa a sumar a `totalUsd`.
  */
 export async function valuacionDelTenant(prisma: PrismaDeTenant): Promise<Valuacion> {
   const [articulos, costos] = await Promise.all([
@@ -91,16 +101,18 @@ export async function valuacionDelTenant(prisma: PrismaDeTenant): Promise<Valuac
       where: { motivo: 'INGRESO', costoUnitario: { not: null } },
       orderBy: [{ articuloId: 'asc' }, { creadoEn: 'desc' }, { id: 'desc' }],
       distinct: ['articuloId'],
-      select: { articuloId: true, costoUnitario: true },
+      select: { articuloId: true, costoUnitario: true, monedaCosto: true },
     }),
   ])
 
-  const costoPorArticulo = new Map(costos.map((m) => [m.articuloId, m.costoUnitario]))
+  const costoPorArticulo = new Map(costos.map((m) => [m.articuloId, m]))
 
   let total = CERO
+  let totalUsd = CERO
   let sinCosto = 0
   for (const a of articulos) {
-    const parcial = costoTotalDeArticulo(a.stock, costoPorArticulo.get(a.id) ?? null)
+    const ultimo = costoPorArticulo.get(a.id)
+    const parcial = costoTotalDeArticulo(a.stock, ultimo?.costoUnitario ?? null)
     if (parcial === null) {
       // Cuenta artículos, no movimientos, y sólo los que tienen mercadería
       // encima: uno con stock cero o negativo aporta cero al total de todos
@@ -109,7 +121,8 @@ export async function valuacionDelTenant(prisma: PrismaDeTenant): Promise<Valuac
       if (a.stock.greaterThan(0)) sinCosto += 1
       continue
     }
-    total = total.add(parcial)
+    if (ultimo?.monedaCosto === 'USD') totalUsd = totalUsd.add(parcial)
+    else total = total.add(parcial)
   }
-  return { total, sinCosto }
+  return { total, totalUsd, sinCosto }
 }

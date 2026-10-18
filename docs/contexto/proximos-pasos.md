@@ -1484,7 +1484,7 @@ Y del producto:
 
   **Queda para los ciclos siguientes**:
 
-  - **El costo en dólares.** `MovimientoStock.costoUnitario` sigue siendo en
+  - ~~**El costo en dólares.** `MovimientoStock.costoUnitario` sigue siendo en
     pesos, así que el tile "Último costo" de un artículo en dólares muestra el
     costo en pesos y, **en lugar del margen, la oración** *"el costo está en
     pesos: sin margen para un artículo en dólares"* — una raya no distingue
@@ -1492,7 +1492,10 @@ Y del producto:
     otro pie posible del mismo tile, y son dos cosas distintas que un dueño
     resuelve de manera distinta. **No es un agujero de este ciclo**: es la costura declarada con la deuda del costo,
     que ya tiene su investigación hecha unos ítems más arriba, y es ese ciclo el
-    que le devuelve el margen a estos artículos.
+    que le devuelve el margen a estos artículos.~~ **Hecho** (2026-10-18): el costo tiene moneda
+    (`MovimientoStock.monedaCosto`) y un artículo en dólares con el costo en
+    dólares recupera el margen. Ver *Que el costo de un artículo en dólares se
+    cargue en dólares* más abajo.
   - **El plan sobre un pago entregado en dólares.** Sigue prohibido
     (`PLAN_EN_DOLARES`); habilitarlo exige resolver antes la división que hoy lo
     bloquea.
@@ -3321,6 +3324,68 @@ Y del producto:
   ver que se desarma a los 3 segundos, y dos veces para que cambie; cargar un
   número con 15 y ver que se queda en "Todavía no escribió"; y mirar las dos
   cards a 1440 y a 390 px.
+
+- ~~Que el costo de un artículo en dólares se cargue en dólares.~~ **Hecho**
+  (2026-10-18). Sale de un cliente que vende iPhones (audios del 7 y 8 de
+  octubre): cargaba el costo de un equipo con precio en dólares y el sistema lo
+  guardaba en pesos y le respondía *"el costo está en pesos: sin margen para un
+  artículo en dólares"*. Cierra el ítem que el ciclo del precio en dólares
+  (2026-08-29) dejó abierto. Ver
+  `docs/superpowers/specs/2026-10-18-costo-en-usd-design.md`; el ciclo se
+  resolvió de noche sin preguntas, así que todas sus decisiones son llamadas de
+  quien implementó y están para revisar.
+
+  **El costo tiene moneda igual que el precio, y nunca se convierte.** Una
+  columna `MovimientoStock.monedaCosto` (`moneda_costo`, no nullable, default
+  `ARS`): el costo es del evento de recepción y su moneda también, así que un
+  artículo que pasa de pesos a dólares deja sus ingresos viejos diciendo en qué
+  se pagaron. Se descartó derivarla de `Articulo.moneda` justamente por eso.
+  Migración aditiva cuyo default describe todas las filas existentes sin
+  backfill; viaja en el mismo deploy que la UI, por el argumento de siempre. El
+  rollback tiene un riesgo declarado en el spec: si alguien carga un costo en
+  dólares y la imagen se revierte, la imagen vieja lo lee como pesos hasta que
+  se vuelva a deployar — sin pérdida de datos.
+
+  **Lo que cambió, pantalla por pantalla.** "Ingresar mercadería" y el alta
+  llevan un selector `$ / US$` al lado del costo —el mismo `SelectorDeMoneda`
+  del precio, con tres props opcionales nuevas—, sólo con `COSTOS`. En el
+  ingreso arranca en la moneda del artículo; en el alta sigue a la del precio
+  hasta que se lo toca (`monedaDelCostoEnElAlta`). Sin moneda en el `FormData`
+  (un formulario cacheado durante un deploy), la acción la toma como pesos;
+  otra cosa que no sea `ARS`/`USD` es un POST armado a mano y se rechaza. La
+  ficha muestra "Último costo", "Costo total" y el detalle del historial en la
+  moneda del costo (`precioEnSuMoneda`), y `textoDeMargen` recibe las dos
+  monedas: margen sólo en la misma, y con monedas distintas el pie dice cuál es
+  el cruce, en las dos direcciones. El "último costo" sigue siendo el ingreso
+  más reciente con costo **sea cual sea su moneda**. `valuacionDelTenant`
+  devuelve `{ total, totalUsd, sinCosto }` y el tile "Costo del stock" del
+  dashboard muestra los dólares aparte, con el formato del tile de marca
+  (invertido cuando no hay ni un peso — ajuste anotado en el spec).
+
+  **La venta sigue congelando sólo costos en pesos.** `VentaItem.costoUnitario`
+  y `Venta.costoArs` son pesos, así que un ítem en pesos cuyo último costo está
+  en dólares queda en `NULL` —sin caer al ingreso anterior en pesos, que sería
+  medir contra un precio de compra que ya no existe— y un ítem en dólares sigue
+  en `NULL` como antes.
+
+  **Queda para los ciclos siguientes**:
+
+  - **El margen en dólares del dashboard.** Exige `costoUsd` y
+    `vendidoConCostoUsd` en `Venta`, y congelar el costo de los ítems en
+    dólares. Hasta entonces, el tile "Margen" sólo mide ventas en pesos.
+  - **Cargar o corregir un costo sin ingresar mercadería**, la otra mitad de la
+    deuda del costo (ver más arriba): sigue sin camino.
+
+  **Queda pendiente la verificación manual**, después del merge
+  (`arandano-dev` sirve `main`): el selector `$ / US$` al lado del costo en el
+  alta y en "Ingresar mercadería", en escritorio y en el teléfono (que el campo
+  compuesto no se parta y que mida lo mismo que el del precio); en el alta,
+  cambiar el precio a US$ y ver que el costo lo sigue, tocar el del costo y ver
+  que deja de seguirlo; los tiles de un artículo en dólares con costo en
+  dólares (`US$` en "Último costo" y "Costo total", con margen); el pie del
+  cruce en un artículo en pesos con costo en dólares; el detalle `US$ … c/u`
+  del historial; y el tile "Costo del stock" con las dos monedas, y con sólo
+  dólares.
 
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).

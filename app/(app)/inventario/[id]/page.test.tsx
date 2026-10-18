@@ -1,12 +1,14 @@
 // Whitebox sobre el FUENTE, mismo criterio que page.test.tsx del listado y
 // que app/(app)/ventas/[id]/page.test.tsx: es un Server Component async con
 // sesión y Prisma reales, sin arnés para montarlo en este repo. Las funciones
-// puras (textoDeMargen, actualizadoHace) sí se importan y se prueban directo.
+// puras (textoDeMargen, textoDeCruceDeMonedas, actualizadoHace) sí se importan y se prueban directo.
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Prisma } from '@/generated/prisma/client'
-import { textoDeMargen, actualizadoHace, Tile, PanelPreciosPorFormaDePago } from './page'
+import {
+  textoDeMargen, textoDeCruceDeMonedas, actualizadoHace, Tile, PanelPreciosPorFormaDePago,
+} from './page'
 import { precioConPlan } from '@/lib/planes/precio'
 import { recargoDePago } from '@/lib/ventas/totales'
 import { formatearPrecio, formatearDolares } from '@/lib/formato/mostrar'
@@ -38,32 +40,57 @@ describe('textoDeMargen (Task 4 del rediseño: el tile "Último costo")', () => 
   // 62,2 % — un número distinto que confirma que la fórmula usa el precio
   // como base y no el costo.
   it('se calcula contra el PRECIO DE VENTA, no contra el costo', () => {
-    expect(textoDeMargen(d('12000'), d('7400'), 'ARS')).toBe('margen 38,3 %')
-    expect(textoDeMargen(d('12000'), d('7400'), 'ARS')).not.toContain('62,2')
+    expect(textoDeMargen(d('12000'), 'ARS', d('7400'), 'ARS')).toBe('margen 38,3 %')
+    expect(textoDeMargen(d('12000'), 'ARS', d('7400'), 'ARS')).not.toContain('62,2')
+  })
+
+  // Ciclo del costo en dólares (2026-10-18): un artículo en dólares con el
+  // costo cargado en dólares recupera el margen — es la deuda que el ciclo
+  // del precio en USD dejó escrita. Mismo ejemplo de la maqueta, en dólares:
+  // la cuenta no depende de la moneda, sólo de que sea la MISMA.
+  it('en dólares contra dólares calcula el mismo margen', () => {
+    expect(textoDeMargen(d('12000'), 'USD', d('7400'), 'USD')).toBe('margen 38,3 %')
   })
 
   // El caso que CLAUDE.md pide explícitamente: sin costo cargado, no se
   // inventa un margen.
   it('sin costo cargado (null) no muestra un margen falso', () => {
-    expect(textoDeMargen(d('12000'), null, 'ARS')).toBeNull()
+    expect(textoDeMargen(d('12000'), 'ARS', null, 'ARS')).toBeNull()
+    expect(textoDeMargen(d('950'), 'USD', null, 'ARS')).toBeNull()
   })
 
   // Guarda de NaN/Infinity: un precio en cero (permitido por exigirPrecio,
   // que sólo prohíbe negativo) divide por cero si nadie lo ataja.
   it('con precio en cero no divide por cero', () => {
-    expect(textoDeMargen(d('0'), d('100'), 'ARS')).toBeNull()
+    expect(textoDeMargen(d('0'), 'ARS', d('100'), 'ARS')).toBeNull()
+    expect(textoDeMargen(d('0'), 'USD', d('100'), 'USD')).toBeNull()
   })
 
   it('un costo mayor al precio da un margen negativo, no null', () => {
-    expect(textoDeMargen(d('100'), d('150'), 'ARS')).toBe('margen -50,0 %')
+    expect(textoDeMargen(d('100'), 'ARS', d('150'), 'ARS')).toBe('margen -50,0 %')
   })
 
-  // Task 8 (ciclo de USD): el costo se guarda en pesos y este ciclo no lo
-  // cambia, así que un artículo en dólares no tiene contra qué comparar su
-  // costo sin inventar una cotización — la misma regla que "—" en el chip
-  // de cotización de /vender en vez de un número fabricado.
-  it('un artículo en dólares no calcula margen, aunque haya costo cargado', () => {
-    expect(textoDeMargen(d('300'), d('150000'), 'USD')).toBeNull()
+  // Monedas distintas, en las DOS direcciones: no hay cotización guardada, y
+  // comparar un costo en una moneda contra un precio en la otra exigiría
+  // inventarla — la misma regla que "—" en el chip de cotización de /vender
+  // en vez de un número fabricado. Se mantiene el comportamiento de antes del
+  // ciclo (decisión 3 del spec).
+  it('con monedas distintas no calcula margen, en ninguna de las dos direcciones', () => {
+    expect(textoDeMargen(d('300'), 'USD', d('150000'), 'ARS')).toBeNull()
+    expect(textoDeMargen(d('150000'), 'ARS', d('100'), 'USD')).toBeNull()
+  })
+})
+
+describe('textoDeCruceDeMonedas (ciclo del costo en dólares)', () => {
+  // El texto de antes del ciclo se mantiene palabra por palabra para el caso
+  // de siempre; el nuevo es su espejo.
+  it('dice cuál es el cruce, según la moneda del costo', () => {
+    expect(textoDeCruceDeMonedas('ARS')).toBe(
+      'el costo está en pesos: sin margen para un artículo en dólares',
+    )
+    expect(textoDeCruceDeMonedas('USD')).toBe(
+      'el costo está en dólares: sin margen para un artículo en pesos',
+    )
   })
 })
 
@@ -123,25 +150,39 @@ describe('los tiles de la ficha (Task 4 del rediseño)', () => {
     expect(bloque).toContain("orderBy: [{ creadoEn: 'desc' }, { id: 'desc' }]")
   })
 
-  it('sin costo cargado, el tile muestra "—" y no un número inventado', () => {
-    expect(FUENTE).toContain("ultimoCosto ? formatearPrecio(ultimoCosto.toString()) : '—'")
+  // Ciclo del costo en dólares (2026-10-18): el costo se muestra en SU
+  // moneda, que es la del ingreso (`monedaCosto`) y no la del artículo.
+  it('sin costo cargado, el tile muestra "—"; con costo, en la moneda del costo', () => {
+    expect(FUENTE).toContain(
+      "ultimoCosto ? precioEnSuMoneda(ultimoCosto.toString(), monedaDelCosto) : '—'",
+    )
   })
 
-  // Task 8 (ciclo de USD): el pie de "Último costo" distingue DOS null
-  // distintos de textoDeMargen — sin costo comparable en pesos (el caso de
-  // siempre) y sin margen posible porque el artículo está en dólares (el
-  // caso nuevo) — con un texto propio para cada uno, no el mismo genérico
-  // para los dos.
-  it('el pie de "Último costo" distingue el artículo en dólares del resto de los casos sin margen', () => {
-    expect(FUENTE).toContain("articulo.moneda === 'USD'")
-    expect(FUENTE).toContain('sin margen para un artículo en dólares')
+  // La moneda sale de la MISMA fila que el costo: la consulta del último
+  // costo la trae en su `select`, y `monedaDelCosto` se lee de ahí.
+  it('la consulta de "Último costo" trae la moneda del costo', () => {
+    const desde = FUENTE.indexOf('where: { articuloId: id, costoUnitario: { not: null } },')
+    expect(desde).toBeGreaterThan(-1)
+    const bloque = FUENTE.slice(desde, desde + 700)
+    expect(bloque).toContain('select: { costoUnitario: true, monedaCosto: true }')
+    expect(FUENTE).toContain("const monedaDelCosto = ultimoConCosto?.monedaCosto ?? 'ARS'")
+  })
+
+  // Task 8 (ciclo de USD), extendido en el ciclo del costo en dólares: el pie
+  // de "Último costo" distingue DOS null distintos de textoDeMargen —el
+  // precio no permite dividir, o costo y precio están en monedas distintas—
+  // con un texto propio para cada uno, no el mismo genérico para los dos.
+  it('el pie de "Último costo" distingue el cruce de monedas del resto de los casos sin margen', () => {
     expect(FUENTE).toContain("'el precio no permite calcular el margen'")
     // La distinción vive DENTRO del `??` de textoDeMargen, no en un `if`
     // aparte: sólo se pregunta la moneda cuando textoDeMargen ya dijo null.
     const desde = FUENTE.indexOf('rotulo="ÚLTIMO COSTO"')
     const bloque = FUENTE.slice(desde, desde + 1200)
-    expect(bloque).toContain('textoDeMargen(articulo.precio, ultimoCosto, articulo.moneda)')
-    expect(bloque).toContain("articulo.moneda === 'USD'")
+    expect(bloque).toContain(
+      'textoDeMargen(articulo.precio, articulo.moneda, ultimoCosto, monedaDelCosto)',
+    )
+    expect(bloque).toContain('monedaDelCosto !== articulo.moneda')
+    expect(bloque).toContain('textoDeCruceDeMonedas(monedaDelCosto)')
   })
 
   // I3 de la review: ningún caso verificaba que el valor mostrado saliera del
@@ -189,7 +230,13 @@ describe('el tile "Costo total" (ciclo del costo del stock)', () => {
     expect(desde).toBeGreaterThan(-1)
     const bloque = FUENTE.slice(desde, desde + 600)
     expect(bloque).toContain('formatearCantidad(articulo.stock.toString())')
-    expect(bloque).toContain('formatearPrecio(ultimoCosto.toString())')
+    expect(bloque).toContain('precioEnSuMoneda(ultimoCosto.toString(), monedaDelCosto)')
+  })
+
+  // Ciclo del costo en dólares (2026-10-18): stock × último costo queda en
+  // la moneda de ese costo — una cantidad no tiene moneda.
+  it('el valor va en la moneda del último costo', () => {
+    expect(FUENTE).toContain('valor={precioEnSuMoneda(costoTotal.toString(), monedaDelCosto)}')
   })
 
   // El envoltorio de los tiles sin marca pasa a grilla de dos columnas en el
@@ -228,7 +275,7 @@ describe('el historial de la ficha (Task 5 del rediseño)', () => {
   })
 
   it('la consulta de movimientos ahora trae costoUnitario, que detalleDeMovimiento necesita', () => {
-    expect(FUENTE).toMatch(/select:\s*{\s*id: true, delta: true, motivo: true, nota: true, creadoEn: true, costoUnitario: true,/)
+    expect(FUENTE).toMatch(/select:\s*{\s*id: true, delta: true, motivo: true, nota: true, creadoEn: true, costoUnitario: true,\s*monedaCosto: true,/)
   })
 
   // Minor de la review: `creado_en` es la hora de INICIO de transacción, así

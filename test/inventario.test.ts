@@ -271,6 +271,39 @@ describe('ingresarStock', () => {
     expect(mov?.ventaId).toBeNull()
   })
 
+  // Ciclo del costo en dólares (2026-10-18). Las dos direcciones: la moneda
+  // que se manda es la que se guarda, y la ausencia es pesos — que es lo que
+  // quería decir todo llamador anterior a la columna (decisión 2 del spec).
+  it('guarda la moneda del costo que se le manda', async () => {
+    await ingresarStock({
+      tenantId, articuloId: remera, cantidad: d('2'), usuarioId,
+      costoUnitario: d('450'), monedaCosto: 'USD',
+    })
+
+    const mov = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.movimientoStock.findFirst({
+        where: { articuloId: remera, motivo: 'INGRESO' },
+        orderBy: { creadoEn: 'desc' },
+      }),
+    )
+    expect(mov?.costoUnitario?.toString()).toBe('450')
+    expect(mov?.monedaCosto).toBe('USD')
+  })
+
+  it('sin moneda del costo, el costo se guarda en pesos', async () => {
+    await ingresarStock({
+      tenantId, articuloId: remera, cantidad: d('2'), usuarioId, costoUnitario: d('700'),
+    })
+
+    const mov = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.movimientoStock.findFirst({
+        where: { articuloId: remera, motivo: 'INGRESO' },
+        orderBy: { creadoEn: 'desc' },
+      }),
+    )
+    expect(mov?.monedaCosto).toBe('ARS')
+  })
+
   it('el costo es opcional: sin él, el movimiento queda con costo null', async () => {
     await ingresarStock({ tenantId, articuloId: remera, cantidad: d('1'), usuarioId })
 
@@ -663,6 +696,35 @@ describe('crearArticulo', () => {
     expect(movs[0].motivo).toBe('INGRESO')
     expect(movs[0].delta.toString()).toBe('4')
     expect(movs[0].costoUnitario?.toString()).toBe('52000')
+  })
+
+  it('el alta con costo en dólares deja el movimiento inicial en dólares', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'iPhone 15 128GB', tipo: 'PRODUCTO', precio: d('950'),
+      moneda: 'USD', stockInicial: d('2'), costoUnitario: d('780'), monedaCosto: 'USD',
+    })
+
+    const movs = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.movimientoStock.findMany({ where: { articuloId: a.id } }),
+    )
+    expect(movs).toHaveLength(1)
+    expect(movs[0].costoUnitario?.toString()).toBe('780')
+    expect(movs[0].monedaCosto).toBe('USD')
+  })
+
+  // La moneda del costo NO se deriva de la del precio: un artículo en dólares
+  // que se compró en pesos (un accesorio importado que se paga al mayorista en
+  // pesos) es un caso real, y el formulario sólo PROPONE la moneda del precio.
+  it('el alta de un artículo en dólares sin moneda del costo guarda el costo en pesos', async () => {
+    const a = await crearArticulo({
+      tenantId, usuarioId, nombre: 'Funda MagSafe', tipo: 'PRODUCTO', precio: d('40'),
+      moneda: 'USD', stockInicial: d('3'), costoUnitario: d('18000'),
+    })
+
+    const movs = await enTransaccionDeTenant(tenantId, async (tx) =>
+      tx.movimientoStock.findMany({ where: { articuloId: a.id } }),
+    )
+    expect(movs[0].monedaCosto).toBe('ARS')
   })
 
   it('guarda la categoría cuando se manda', async () => {

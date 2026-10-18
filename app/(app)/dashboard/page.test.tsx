@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
-  Tile, ChipDeDelta, SegmentadoDeRango, monedaEfectiva, pieDelCostoDelStock,
+  Tile, ChipDeDelta, SegmentadoDeRango, monedaEfectiva, pieDelCostoDelStock, tileDelCostoDelStock,
 } from './page'
+import { Prisma } from '@/generated/prisma/client'
+import { formatearPrecio, formatearDolares } from '@/lib/formato/mostrar'
 import { SelectorDeMonedaElegida } from '@/components/selector-de-moneda-elegida'
 
 // La decisión de invertir el tile —qué magnitud es "el número grande" cuando
@@ -213,8 +215,14 @@ describe('el tile "Costo del stock" (ciclo del costo del stock)', () => {
   // dice, y que concuerde en número, lo afirma el describe de esa función más
   // abajo, llamándola. Un caso que buscara los literales en el FUENTE fallaría
   // siempre —la implementación los arma por interpolación— y diría menos.
-  it('el pie sale de pieDelCostoDelStock, no de un literal en el JSX', () => {
-    expect(FUENTE).toContain('pie={pieDelCostoDelStock(valuacion.sinCosto)}')
+  //
+  // Desde el ciclo del costo en dólares (2026-10-18) el valor y el pie salen
+  // juntos de `tileDelCostoDelStock`, que decide además qué moneda es el
+  // número grande — por la misma razón: la decisión se prueba llamándola.
+  it('el valor y el pie salen de tileDelCostoDelStock, no de literales en el JSX', () => {
+    expect(FUENTE).toContain('const costoDelStock = tileDelCostoDelStock(valuacion)')
+    expect(FUENTE).toContain('valor={costoDelStock.valor}')
+    expect(FUENTE).toContain('pie={costoDelStock.pie}')
   })
 
   // Sin chip de variación: no hay período anterior contra el cual comparar una
@@ -244,6 +252,48 @@ describe('pieDelCostoDelStock', () => {
   it('con faltantes, concuerda en número', () => {
     expect(pieDelCostoDelStock(1)).toBe('al día de hoy · 1 artículo sin costo')
     expect(pieDelCostoDelStock(12)).toBe('al día de hoy · 12 artículos sin costo')
+  })
+
+  it('los dólares aparte van entre la fecha y los faltantes', () => {
+    expect(pieDelCostoDelStock(2, 'US$ 1.350,00 aparte')).toBe(
+      'al día de hoy · US$ 1.350,00 aparte · 2 artículos sin costo',
+    )
+  })
+})
+
+// Ciclo del costo en dólares (2026-10-18), decisión 6 del spec: las dos
+// monedas nunca se suman —haría falta una cotización—, y el formato es el del
+// tile de marca de esta misma fila: pesos de número grande, dólares "aparte"
+// en el pie, e invertido cuando no hay ni un peso.
+describe('tileDelCostoDelStock', () => {
+  const d = (v: string) => new Prisma.Decimal(v)
+  const CERO = d('0')
+
+  it('sólo pesos: el número de siempre', () => {
+    const t = tileDelCostoDelStock({ total: d('222000'), totalUsd: CERO, sinCosto: 0 })
+    expect(t.valor).toBe(formatearPrecio('222000'))
+    expect(t.pie).toBe('al día de hoy')
+  })
+
+  it('pesos y dólares: los dólares van aparte en el pie, sin sumarse', () => {
+    const t = tileDelCostoDelStock({ total: d('222000'), totalUsd: d('1350'), sinCosto: 1 })
+    expect(t.valor).toBe(formatearPrecio('222000'))
+    expect(t.pie).toBe(`al día de hoy · ${formatearDolares('1350')} aparte · 1 artículo sin costo`)
+  })
+
+  // Un local que compra todo en dólares abriría el tile con "$ 0,00" de
+  // titular y la plata real escondida en el pie: lo mismo que el tile de
+  // marca ya rechazó (`soloEnDolares`).
+  it('sólo dólares: invierte, y no queda nada aparte', () => {
+    const t = tileDelCostoDelStock({ total: CERO, totalUsd: d('4500'), sinCosto: 0 })
+    expect(t.valor).toBe(formatearDolares('4500'))
+    expect(t.pie).toBe('al día de hoy')
+  })
+
+  it('sin nada: pesos en cero, como antes del ciclo', () => {
+    const t = tileDelCostoDelStock({ total: CERO, totalUsd: CERO, sinCosto: 3 })
+    expect(t.valor).toBe(formatearPrecio('0'))
+    expect(t.pie).toBe('al día de hoy · 3 artículos sin costo')
   })
 })
 

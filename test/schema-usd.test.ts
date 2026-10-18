@@ -99,3 +99,26 @@ describe('las columnas de moneda nacen con default', () => {
     expect(p.cubre).toBe('ARS')
   })
 })
+
+describe('la moneda del costo nace con default (ciclo del costo en dólares)', () => {
+  // Las filas de `movimientos_stock` anteriores a la columna son todas pesos
+  // —el costo era pesos por construcción—, y el default las describe sin
+  // backfill. Si alguien cambiara el default (o lo sacara y dejara la columna
+  // nullable), todo costo viejo pasaría a leerse en otra moneda o en ninguna.
+  it('un movimiento creado sin monedaCosto queda en ARS', async () => {
+    const a = await crearArticuloCrudo({ nombre: 'Cargador', precio: '9000' })
+    const m = await enTransaccionDeTenant(tenantId, (tx) =>
+      tx.movimientoStock.create({
+        data: {
+          tenantId,
+          articuloId: a.id,
+          delta: d('3'),
+          motivo: 'INGRESO',
+          costoUnitario: d('4500'),
+          usuarioId,
+        },
+      }),
+    )
+    expect(m.monedaCosto).toBe('ARS')
+  })
+})

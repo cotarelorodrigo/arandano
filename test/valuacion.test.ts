@@ -93,15 +93,57 @@ describe('valuacionDelTenant', () => {
     expect(sinCosto).toBe(1)
   })
 
-  it('un artículo en dólares entra igual: el costo está en pesos para todos', async () => {
+  // Lo que decide a qué total va un artículo es la moneda de su COSTO, no la
+  // de su precio: un iPhone que se vende en dólares pero se compró en pesos es
+  // plata en pesos parada en la vitrina.
+  it('un artículo en dólares con costo en pesos suma a los pesos', async () => {
     const { tenantId, usuarioId } = await localNuevo()
     const iphone = await crearArticulo(tenantId, 'iPhone', { moneda: 'USD' })
     await ingresarStock({
       tenantId, articuloId: iphone, cantidad: d('2'), usuarioId, costoUnitario: d('500000'),
     })
 
-    const { total, sinCosto } = await valuacionDelTenant(prismaParaTenant(tenantId))
+    const { total, totalUsd, sinCosto } = await valuacionDelTenant(prismaParaTenant(tenantId))
     expect(total.toString()).toBe('1000000')
+    expect(totalUsd.toString()).toBe('0')
+    expect(sinCosto).toBe(0)
+  })
+
+  // Ciclo del costo en dólares (2026-10-18), decisión 6: cada artículo suma a
+  // la moneda de su último costo, y las dos monedas nunca se suman entre sí —
+  // sumarlas exigiría una cotización que el sistema no guarda.
+  it('separa pesos y dólares según la moneda del último costo', async () => {
+    const { tenantId, usuarioId } = await localNuevo()
+
+    const funda = await crearArticulo(tenantId, 'Funda')
+    await ingresarStock({
+      tenantId, articuloId: funda, cantidad: d('10'), usuarioId, costoUnitario: d('3000'),
+    })
+
+    const iphone = await crearArticulo(tenantId, 'iPhone 15', { moneda: 'USD' })
+    await ingresarStock({
+      tenantId, articuloId: iphone, cantidad: d('3'), usuarioId,
+      costoUnitario: d('450'), monedaCosto: 'USD',
+    })
+
+    // El último costo manda, sea cual sea su moneda (decisión 4): este
+    // artículo se compró primero en pesos y después en dólares, así que hoy
+    // vale en dólares — sus 4 unidades van al total en dólares, y su ingreso
+    // viejo en pesos no suma nada a los pesos.
+    const cargador = await crearArticulo(tenantId, 'Cargador')
+    await ingresarStock({
+      tenantId, articuloId: cargador, cantidad: d('2'), usuarioId, costoUnitario: d('9000'),
+    })
+    await ingresarStock({
+      tenantId, articuloId: cargador, cantidad: d('2'), usuarioId,
+      costoUnitario: d('8'), monedaCosto: 'USD',
+    })
+
+    const { total, totalUsd, sinCosto } = await valuacionDelTenant(prismaParaTenant(tenantId))
+    // 10 × $ 3.000
+    expect(total.toString()).toBe('30000')
+    // 3 × US$ 450 + 4 × US$ 8
+    expect(totalUsd.toString()).toBe('1382')
     expect(sinCosto).toBe(0)
   })
 

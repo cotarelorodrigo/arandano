@@ -48,6 +48,14 @@ export type EntradaCrearArticulo = {
   stockInicial?: Decimal | null
   costoUnitario?: Decimal | null
   /**
+   * En qué moneda se pagó `costoUnitario` (ciclo del costo en dólares,
+   * 2026-10-18). Ausente vale pesos, igual que en `ingresarStock` y por la
+   * misma razón. NO sigue a `moneda`: la pantalla propone la del precio, pero
+   * un artículo en dólares comprado en pesos es un caso real y la decisión es
+   * de quien carga.
+   */
+  monedaCosto?: Moneda
+  /**
    * El comprobante con el que entró la mercadería. No es una columna: va como
    * NOTA del movimiento de stock inicial, que es exactamente para lo que
    * `MovimientoStock.nota` existe y lo que el ingreso de mercadería de la
@@ -409,6 +417,7 @@ export async function crearArticulo(
               motivo: 'INGRESO',
               usuarioId,
               costoUnitario: costoUnitario ?? null,
+              monedaCosto: entrada.monedaCosto ?? 'ARS',
               nota: notaDelStockInicial(entrada.facturaProveedor),
             },
           })
@@ -425,6 +434,7 @@ export async function crearArticulo(
               motivo: 'INGRESO',
               usuarioId,
               costoUnitario: costoUnitario ?? null,
+              monedaCosto: entrada.monedaCosto ?? 'ARS',
               nota: notaDelStockInicial(entrada.facturaProveedor),
             },
           })

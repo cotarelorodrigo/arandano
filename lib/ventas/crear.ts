@@ -1,4 +1,4 @@
-import { Prisma } from '@/generated/prisma/client'
+import { Prisma, type Moneda } from '@/generated/prisma/client'
 import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import { totalesDeItems, excedeEscala, subtotalItem, ESCALA_CANTIDAD } from './totales'
 import { normalizarPagos, resolverPagosConRecargo, exigirQueCierren } from './pagos'
@@ -54,6 +54,23 @@ export type EntradaCrearVenta = {
    * fila (app/(app)/vender/acciones.test.ts).
    */
   detalle?: string
+}
+
+/**
+ * El costo que una línea de venta congela, o NULL.
+ *
+ * Sólo pesos contra pesos: un ítem en pesos cuyo último costo también está en
+ * pesos. Cualquier cruce de monedas —ítem en dólares, o último costo en
+ * dólares— da NULL, porque `VentaItem.costoUnitario` es pesos y medir un costo
+ * en dólares contra un precio en pesos (o al revés) exigiría una cotización.
+ * Separada del `map` para que la regla se lea entera en un lugar.
+ */
+function costoEnPesosParaCongelar(
+  monedaDelItem: Moneda,
+  ultimo: { costoUnitario: Prisma.Decimal | null; monedaCosto: Moneda } | undefined,
+): Prisma.Decimal | null {
+  if (monedaDelItem !== 'ARS' || ultimo?.monedaCosto !== 'ARS') return null
+  return ultimo.costoUnitario
 }
 
 export async function crearVenta(
@@ -205,6 +222,13 @@ export async function crearVenta(
       //
       // El filtro es `costoUnitario: { not: null }` y no "el ingreso más reciente":
       // un ingreso cargado sin costo no borra lo que se sabía del anterior.
+      //
+      // Y NO filtra por `monedaCosto`, a propósito: el último costo es el que
+      // vale hoy sea cual sea su moneda (ciclo del costo en dólares,
+      // 2026-10-18). Filtrar por pesos haría que un artículo que se empezó a
+      // comprar en dólares congele en cada venta un costo en pesos viejo, de
+      // un precio de compra que ya no existe. Lo que se descarta por moneda se
+      // descarta abajo, al armar la línea.
       const ultimosCostos = await tx.movimientoStock.findMany({
         where: {
           articuloId: { in: items.map((i) => i.articuloId) },
@@ -213,9 +237,9 @@ export async function crearVenta(
         },
         orderBy: [{ articuloId: 'asc' }, { creadoEn: 'desc' }, { id: 'desc' }],
         distinct: ['articuloId'],
-        select: { articuloId: true, costoUnitario: true },
+        select: { articuloId: true, costoUnitario: true, monedaCosto: true },
       })
-      const costoPorArticulo = new Map(ultimosCostos.map((m) => [m.articuloId, m.costoUnitario]))
+      const costoPorArticulo = new Map(ultimosCostos.map((m) => [m.articuloId, m]))
 
       // Congelar precio y descripción ACÁ. El artículo puede renombrarse o cambiar
       // de precio mañana; esta venta tiene que seguir diciendo lo de hoy.
@@ -263,9 +287,14 @@ export async function crearVenta(
           precioUnitario: a.precio,
           moneda: a.moneda,
           esProducto: a.tipo === 'PRODUCTO',
-          // NULL para un ítem en dólares aunque el artículo tenga costo: el costo está
-          // en pesos, y compararlos exigiría inventar una cotización.
-          costoUnitario: a.moneda === 'USD' ? null : (costoPorArticulo.get(a.id) ?? null),
+          // Se congela sólo un costo en pesos para un ítem en pesos:
+          // `VentaItem.costoUnitario` es pesos y alimenta `costoArs`, el margen
+          // en pesos del dashboard. NULL para un ítem en dólares (el margen en
+          // dólares quedó para otro ciclo, decisión 5 del spec del costo en
+          // dólares) y NULL para un ítem en pesos cuyo último costo está en
+          // dólares — sin esto, US$ 8 entrarían al margen como $ 8. Nada se
+          // convierte: no hay una cotización guardada en la que confiar.
+          costoUnitario: costoEnPesosParaCongelar(a.moneda, costoPorArticulo.get(a.id)),
           unidadId: i.unidadId,
           imeiCapturado: imeisCapturados[idx],
         }
