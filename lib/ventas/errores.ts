@@ -6,6 +6,8 @@ export type CodigoErrorDeVenta =
   | 'ESCALA_EXCEDIDA'
   | 'ARTICULO_INEXISTENTE'
   | 'CLIENTE_INEXISTENTE'
+  // `clienteId` y `clienteNuevo` en la misma venta (lib/ventas/crear.ts).
+  | 'CLIENTE_DOBLE'
   | 'USUARIO_INEXISTENTE'
   | 'TENANT_INEXISTENTE'
   | 'MONTO_INVALIDO'

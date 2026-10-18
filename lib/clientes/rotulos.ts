@@ -30,3 +30,17 @@
 export function rotuloOrdenesPrevias(n: number): string {
   return n === 1 ? '1 orden previa' : `${n} órdenes previas`
 }
+
+/**
+ * "3 compras y 1 orden", "1 compra", "2 órdenes": la historia de un cliente,
+ * para el mensaje de por qué no se puede borrar. Pura y acá por lo mismo que
+ * `rotuloOrdenesPrevias`: la usan la ficha (servidor) y el mensaje del motor.
+ * Con las dos en cero no la llama nadie; devuelve "sin historia" para no
+ * mentir si alguien lo hace.
+ */
+export function rotuloDeHistoria(ventas: number, ordenes: number): string {
+  const partes: string[] = []
+  if (ventas > 0) partes.push(ventas === 1 ? '1 compra' : `${ventas} compras`)
+  if (ordenes > 0) partes.push(ordenes === 1 ? '1 orden' : `${ordenes} órdenes`)
+  return partes.length === 0 ? 'sin historia' : partes.join(' y ')
+}
