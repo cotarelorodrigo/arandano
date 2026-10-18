@@ -84,8 +84,16 @@ erDiagram
     timestamptz(3) abierta_en
     uuid abierta_por_id FK
     decimal(12,2) saldo_inicial
+    decimal(12,2) saldo_inicial_usd
     timestamptz(3) cerrada_en "opcional"
     uuid cerrada_por_id FK "opcional"
+    decimal(12,2) esperado_ars "opcional"
+    decimal(12,2) esperado_usd "opcional"
+    decimal(12,2) contado_ars "opcional"
+    decimal(12,2) contado_usd "opcional"
+    decimal(12,2) retirado_ars "opcional"
+    decimal(12,2) retirado_usd "opcional"
+    text nota_cierre "opcional"
     timestamptz(3) creado_en
   }
   categorias {
@@ -173,6 +181,17 @@ erDiagram
     text nombre
     timestamptz(3) creado_en
     timestamptz(3) actualizado_en
+  }
+  movimientos_de_caja {
+    uuid id PK
+    uuid tenant_id FK
+    uuid caja_id FK
+    tipo_movimiento_caja tipo
+    moneda moneda
+    decimal(12,2) monto
+    text nota "opcional"
+    uuid usuario_id FK
+    timestamptz(3) creado_en
   }
   movimientos_stock {
     uuid id PK
@@ -373,6 +392,7 @@ erDiagram
   articulos ||--o{ movimientos_stock : "ON DELETE CASCADE"
   articulos ||--o{ unidades_articulo : "ON DELETE CASCADE"
   articulos ||--o{ venta_items : "ON DELETE RESTRICT"
+  cajas ||--o{ movimientos_de_caja : "ON DELETE RESTRICT"
   categorias |o--o{ articulos : "ON DELETE RESTRICT"
   categorias |o--o{ categorias : "ON DELETE RESTRICT"
   clientes |o--o{ ventas : "ON DELETE RESTRICT"
@@ -395,6 +415,7 @@ erDiagram
   tenants ||--o{ eventos_orden : "ON DELETE CASCADE"
   tenants ||--o{ mensajes_bot : "ON DELETE CASCADE"
   tenants ||--o{ modelos_de_canje : "ON DELETE CASCADE"
+  tenants ||--o{ movimientos_de_caja : "ON DELETE CASCADE"
   tenants ||--o{ movimientos_stock : "ON DELETE CASCADE"
   tenants ||--o{ numeros_de_prueba_bot : "ON DELETE CASCADE"
   tenants ||--o{ ordenes_de_trabajo : "ON DELETE CASCADE"
@@ -423,6 +444,7 @@ erDiagram
   users ||--o{ cotizaciones_del_dolar : "ON DELETE RESTRICT"
   users ||--o{ ediciones_venta : "ON DELETE RESTRICT"
   users ||--o{ eventos_orden : "ON DELETE RESTRICT"
+  users ||--o{ movimientos_de_caja : "ON DELETE RESTRICT"
   users ||--o{ movimientos_stock : "ON DELETE RESTRICT"
   users ||--o{ ordenes_de_trabajo : "ON DELETE RESTRICT"
   users ||--o{ sessions : "ON DELETE CASCADE"
@@ -450,6 +472,7 @@ erDiagram
 - **permiso**: `ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`, `CATEGORIAS`, `VENTAS_ANULAR`, `ORDENES_ANULAR`, `PLANES_PAGO`, `BOT`, `ARTICULOS_BORRAR`, `VENTAS_EDITAR`, `CANJE_VALORES`, `COTIZACION`
 - **rol_usuario**: `DUENO`, `EMPLEADO`
 - **tipo_articulo**: `PRODUCTO`, `SERVICIO`
+- **tipo_movimiento_caja**: `INGRESO`, `EGRESO`, `RETIRO`
 
 ## Índices no únicos
 
@@ -466,6 +489,7 @@ erDiagram
 - **mensajes_bot**: `mensajes_bot_tenant_id_conversacion_id_creado_en_idx` sobre (`tenant_id`, `conversacion_id`, `creado_en`)
 - **mensajes_bot**: `mensajes_bot_tenant_id_direccion_creado_en_idx` sobre (`tenant_id`, `direccion`, `creado_en`)
 - **modelos_de_canje**: `modelos_de_canje_tenant_id_idx` sobre (`tenant_id`)
+- **movimientos_de_caja**: `movimientos_de_caja_tenant_id_caja_id_idx` sobre (`tenant_id`, `caja_id`)
 - **movimientos_stock**: `movimientos_stock_tenant_id_articulo_id_idx` sobre (`tenant_id`, `articulo_id`)
 - **movimientos_stock**: `movimientos_stock_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
 - **ordenes_de_trabajo**: `ordenes_de_trabajo_tenant_id_cliente_id_idx` sobre (`tenant_id`, `cliente_id`)

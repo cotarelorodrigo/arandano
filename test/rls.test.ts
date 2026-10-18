@@ -439,6 +439,37 @@ describe('aislamiento por RLS', () => {
       const { rows } = await owner.query('SELECT 1 FROM cajas WHERE id = $1', [cajaB])
       expect(rows, 'la caja de B desapareció').toHaveLength(1)
     })
+
+    // El libro de caja del arqueo (2026-10-18). Mismo aislamiento que su caja:
+    // los egresos y retiros de B son información de gestión de B. Que sea
+    // append-only lo prueba test/setup-db-roles.test.ts; acá, sólo quién ve qué.
+    describe('movimientos_de_caja', () => {
+      beforeAll(async () => {
+        await owner.query(
+          `INSERT INTO movimientos_de_caja (id, tenant_id, caja_id, tipo, moneda, monto, nota, usuario_id)
+           VALUES (gen_random_uuid(), $1, $2, 'EGRESO', 'ARS', 5000.00, 'Delivery de B', $3)`,
+          [tenantB, cajaB, usuarioB],
+        )
+      })
+
+      it('el otro tenant no ve el movimiento, y su dueño sí', async () => {
+        const { rows: deA } = await comoTenant(tenantA, 'SELECT 1 FROM movimientos_de_caja')
+        expect(deA, 'movimientos_de_caja filtró filas de otro tenant').toHaveLength(0)
+        const { rows: deB } = await comoTenant(tenantB, 'SELECT 1 FROM movimientos_de_caja')
+        expect(deB, 'movimientos_de_caja no es legible por su propio tenant').toHaveLength(1)
+      })
+
+      it('rechaza insertar con el tenant_id de otro', async () => {
+        await expect(
+          comoTenant(
+            tenantA,
+            `INSERT INTO movimientos_de_caja (id, tenant_id, caja_id, tipo, moneda, monto, usuario_id)
+             VALUES (gen_random_uuid(), $1, $2, 'RETIRO', 'ARS', 1.00, $3)`,
+            [tenantB, cajaB, usuarioB],
+          ),
+        ).rejects.toThrow(/row-level security|seguridad a nivel de fila/i)
+      })
+    })
   })
 
   describe('las categorías', () => {
