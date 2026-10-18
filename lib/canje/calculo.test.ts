@@ -199,7 +199,10 @@ describe('calcularCanje', () => {
       })
     })
 
-    it.each([['mil'], ['0'], ['1.500']])('un dólar "%s" no sirve para convertir', (dolar) => {
+    // "1,500" y no "1.500": desde la gramática de cotización (review del ciclo
+    // de la cotización del dólar), "1.500" es mil quinientos — ver el caso del
+    // final del archivo. La coma con tres dígitos sigue siendo ambigua.
+    it.each([['mil'], ['0'], ['1,500']])('un dólar "%s" no sirve para convertir', (dolar) => {
       const r = calcularCanje({
         precio: { monto: '1500000', moneda: 'ARS' },
         valor: { monto: '400', moneda: 'USD' },

@@ -126,7 +126,9 @@ describe('aCotizacion', () => {
     expect(aCotizacion(texto, 'la cotización').toString()).toBe(valor)
   })
 
-  it.each(['1,450', '1.4500', '0.450', 'abc', ''])('%j se sigue rechazando', (texto) => {
+  // Lo que la compartida acepta ("1.4500", "0.450": un decimal que no puede ser
+  // miles) se sigue aceptando igual; esto es lo que se sigue rechazando.
+  it.each(['1,450', '12,500', 'abc', '', '1..450'])('%j se sigue rechazando', (texto) => {
     expect(() => aCotizacion(texto, 'la cotización')).toThrowError(ErrorDeFormato)
   })
 
