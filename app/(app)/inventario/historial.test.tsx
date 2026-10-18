@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Prisma } from '@/generated/prisma/client'
-import { formatearPrecio } from '@/lib/formato/mostrar'
+import { formatearPrecio, formatearDolares } from '@/lib/formato/mostrar'
 import {
   ChipMotivo,
   textoDeMotivo,
@@ -44,7 +44,7 @@ describe('detalleDeMovimiento (Task 5 del rediseño: la celda "Detalle")', () =>
   it('VENTA: número de venta y quién la hizo', () => {
     expect(
       detalleDeMovimiento({
-        motivo: 'VENTA', nota: null, costoUnitario: null, usuario, venta: { numero: 1042 },
+        motivo: 'VENTA', nota: null, costoUnitario: null, monedaCosto: 'ARS' as const, usuario, venta: { numero: 1042 },
       }, true),
     ).toBe('Venta #1042 · Florencia')
   })
@@ -52,7 +52,7 @@ describe('detalleDeMovimiento (Task 5 del rediseño: la celda "Detalle")', () =>
   it('ANULACION_VENTA: sólo el número de venta, sin el usuario', () => {
     expect(
       detalleDeMovimiento({
-        motivo: 'ANULACION_VENTA', nota: null, costoUnitario: null, usuario, venta: { numero: 1002 },
+        motivo: 'ANULACION_VENTA', nota: null, costoUnitario: null, monedaCosto: 'ARS' as const, usuario, venta: { numero: 1002 },
       }, true),
     ).toBe('Anulación de la venta #1002')
   })
@@ -61,7 +61,7 @@ describe('detalleDeMovimiento (Task 5 del rediseño: la celda "Detalle")', () =>
     const texto = detalleDeMovimiento({
       motivo: 'INGRESO',
       nota: 'Factura A 0001-00023145',
-      costoUnitario: d('7400'),
+      costoUnitario: d('7400'), monedaCosto: 'ARS' as const,
       usuario,
       venta: null,
     }, true)
@@ -73,21 +73,21 @@ describe('detalleDeMovimiento (Task 5 del rediseño: la celda "Detalle")', () =>
 
   it('INGRESO sin nota ni costo: cae a quién lo hizo, la celda no queda vacía', () => {
     expect(
-      detalleDeMovimiento({ motivo: 'INGRESO', nota: null, costoUnitario: null, usuario, venta: null }, true),
+      detalleDeMovimiento({ motivo: 'INGRESO', nota: null, costoUnitario: null, monedaCosto: 'ARS' as const, usuario, venta: null }, true),
     ).toBe('Ingreso · Florencia')
   })
 
   it('AJUSTE con nota: nota y quién contó', () => {
     expect(
       detalleDeMovimiento({
-        motivo: 'AJUSTE', nota: 'Conteo de fin de mes', costoUnitario: null, usuario, venta: null,
+        motivo: 'AJUSTE', nota: 'Conteo de fin de mes', costoUnitario: null, monedaCosto: 'ARS' as const, usuario, venta: null,
       }, true),
     ).toBe('Conteo de fin de mes · Florencia')
   })
 
   it('AJUSTE sin nota: sólo quién contó', () => {
     expect(
-      detalleDeMovimiento({ motivo: 'AJUSTE', nota: null, costoUnitario: null, usuario, venta: null }, true),
+      detalleDeMovimiento({ motivo: 'AJUSTE', nota: null, costoUnitario: null, monedaCosto: 'ARS' as const, usuario, venta: null }, true),
     ).toBe('Florencia')
   })
 })
@@ -96,7 +96,7 @@ describe('el costo en la celda Detalle', () => {
   const INGRESO = {
     motivo: 'INGRESO',
     nota: 'Factura A-0001',
-    costoUnitario: new Prisma.Decimal('7400'),
+    costoUnitario: new Prisma.Decimal('7400'), monedaCosto: 'ARS' as const,
     usuario: { nombre: 'Ana' },
     venta: null,
   }
@@ -118,10 +118,17 @@ describe('el costo en la celda Detalle', () => {
     expect(detalleDeMovimiento({ ...INGRESO, nota: null }, false)).toBe('Ingreso · Ana')
   })
 
+  // Ciclo del costo en dólares (2026-10-18): el costo va en SU moneda, la del
+  // ingreso, no la del artículo ni pesos por default.
+  it('un costo en dólares se muestra en dólares', () => {
+    const enDolares = { ...INGRESO, costoUnitario: new Prisma.Decimal('450'), monedaCosto: 'USD' as const }
+    expect(detalleDeMovimiento(enDolares, true)).toBe(`Factura A-0001 · ${formatearDolares('450')} c/u`)
+  })
+
   // Los otros motivos no llevan costo, así que el permiso no los toca.
   it('una venta se ve igual con permiso y sin él', () => {
     const venta = {
-      motivo: 'VENTA', nota: null, costoUnitario: null,
+      motivo: 'VENTA', nota: null, costoUnitario: null, monedaCosto: 'ARS' as const,
       usuario: { nombre: 'Ana' }, venta: { numero: 12 },
     }
     expect(detalleDeMovimiento(venta, false)).toBe(detalleDeMovimiento(venta, true))
@@ -169,7 +176,7 @@ describe('filaDeMovimiento (Task 7 del ciclo móvil)', () => {
     id: 'm1',
     motivo: 'VENTA',
     nota: null,
-    costoUnitario: null,
+    costoUnitario: null, monedaCosto: 'ARS' as const,
     usuario: { nombre: 'Florencia' },
     venta: { numero: 1042 },
     creadoEn: new Date('2026-08-21T17:28:00Z'),
@@ -209,7 +216,7 @@ describe('filaDeMovimiento (Task 7 del ciclo móvil)', () => {
       motivo: 'INGRESO',
       venta: null,
       nota: 'Factura A-0001',
-      costoUnitario: d('7400'),
+      costoUnitario: d('7400'), monedaCosto: 'ARS' as const,
       delta: d('24'),
     }
     expect(filaDeMovimiento(ingreso, d('49'), true).detalleTexto).toContain('7.400')

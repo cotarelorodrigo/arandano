@@ -8,7 +8,7 @@ import { FichaDeArticulo, MoverStock, BotonExportarCsv } from '../formularios'
 import { CardDeUnidades, SwitchDeSerie } from '../unidades'
 import { calcularSaldos, filaDeMovimiento, HistorialDeMovimientos } from '../historial'
 import { GraficoDeRotacion, agregarVentasPorMes } from '../rotacion'
-import { formatearPrecio, formatearCantidad, precioEnSuMoneda } from '@/lib/formato/mostrar'
+import { formatearCantidad, precioEnSuMoneda } from '@/lib/formato/mostrar'
 import { esUuid } from '@/lib/uuid'
 import { planesDelTenant, type PlanVisible } from '@/lib/planes/consultar'
 import { arbolDeCategorias } from '@/lib/inventario/categorias'
@@ -71,23 +71,42 @@ const MARGEN = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 1, maximu
  * artículo no tiene ningún movimiento con costo, no inventes un número"):
  * sin costo cargado, con un precio que no permite dividir (cero —
  * `exigirPrecio` en `lib/inventario/articulos.ts` prohíbe negativo pero no
- * cero), o con el artículo cargado en dólares. Este tercer caso es la
- * costura con la deuda del costo (CLAUDE.md, "Decisiones abiertas del
- * modelo de datos"): `MovimientoStock.costoUnitario` se guarda siempre en
- * PESOS, y este ciclo no lo cambia — comparar un costo en pesos contra un
- * precio en dólares exigiría inventar una cotización, y eso es peor que no
- * mostrar nada.
+ * cero), o con costo y precio en monedas distintas.
+ *
+ * Ese tercer caso era, antes del ciclo del costo en dólares (2026-10-18),
+ * "el artículo está en dólares": `MovimientoStock.costoUnitario` era pesos
+ * por construcción. Desde que el costo tiene moneda (`monedaCosto`), un
+ * artículo en dólares con el costo cargado en dólares recupera el margen, y
+ * el null queda para el cruce en cualquiera de las dos direcciones. Nada se
+ * convierte: comparar un costo en una moneda contra un precio en la otra
+ * exigiría inventar una cotización, y el sistema no guarda ninguna — eso es
+ * peor que no mostrar nada.
  */
 export function textoDeMargen(
   precio: Prisma.Decimal,
+  monedaPrecio: 'ARS' | 'USD',
   costo: Prisma.Decimal | null,
-  moneda: 'ARS' | 'USD',
+  monedaCosto: 'ARS' | 'USD',
 ): string | null {
-  if (moneda === 'USD') return null
   if (costo === null) return null
+  if (monedaPrecio !== monedaCosto) return null
   if (precio.lessThanOrEqualTo(0)) return null
   const margen = precio.minus(costo).dividedBy(precio).times(100)
   return `margen ${MARGEN.format(margen.toNumber())} %`
+}
+
+/**
+ * El pie del tile "Último costo" cuando `textoDeMargen` dijo null porque costo
+ * y precio están en monedas distintas: dice cuál es el cruce, en vez de un "no
+ * se puede calcular" genérico — no es que falte un dato, es que no hay con qué
+ * comparar sin una cotización. La moneda del precio es siempre la otra, así
+ * que alcanza con la del costo. El texto en pesos es el de antes del ciclo del
+ * costo en dólares, sin tocar.
+ */
+export function textoDeCruceDeMonedas(monedaCosto: 'ARS' | 'USD'): string {
+  return monedaCosto === 'ARS'
+    ? 'el costo está en pesos: sin margen para un artículo en dólares'
+    : 'el costo está en dólares: sin margen para un artículo en pesos'
 }
 
 /**
@@ -280,6 +299,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
       take: MOVIMIENTOS_VISIBLES,
       select: {
         id: true, delta: true, motivo: true, nota: true, creadoEn: true, costoUnitario: true,
+        monedaCosto: true,
         usuario: { select: { nombre: true } },
         venta: { select: { numero: true } },
       },
@@ -299,7 +319,10 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
           // Mismo desempate que la consulta de movimientos de arriba: dos
           // ingresos de la misma transacción comparten `creadoEn`.
           orderBy: [{ creadoEn: 'desc' }, { id: 'desc' }],
-          select: { costoUnitario: true },
+          // La moneda viaja con el costo, de la MISMA fila: el último costo es
+          // el ingreso más reciente con costo, sea cual sea su moneda (ciclo
+          // del costo en dólares), así que no se filtra por ella.
+          select: { costoUnitario: true, monedaCosto: true },
         })
       : null,
     // Mismo motivo que el de arriba: un servicio no vende con movimiento de
@@ -352,6 +375,10 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   ])
 
   const ultimoCosto = ultimoConCosto?.costoUnitario ?? null
+  // En qué moneda está `ultimoCosto` (y por lo tanto `costoTotal`). El `'ARS'`
+  // del fallback no afirma nada: sin fila no hay costo, y todo lo que lee esta
+  // moneda está detrás de un `ultimoCosto` presente.
+  const monedaDelCosto = ultimoConCosto?.monedaCosto ?? 'ARS'
   // Cero consultas nuevas: el stock y el último costo ya están en la mano. La
   // cuenta —y el clamp del stock negativo— viven en lib/inventario/valuacion.ts,
   // la misma función que suma el total del local en /dashboard: dos
@@ -446,21 +473,21 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
           {esProducto && puedeCostos && (
             <Tile
               rotulo="ÚLTIMO COSTO"
-              // El costo SIEMPRE en pesos, sea cual sea la moneda del
-              // artículo: `MovimientoStock.costoUnitario` no distingue
-              // moneda (deuda del costo, CLAUDE.md) — mostrarlo en dólares
-              // sería inventar una cotización que no existe.
-              valor={ultimoCosto ? formatearPrecio(ultimoCosto.toString()) : '—'}
+              // El costo en SU moneda —la del ingreso, `monedaCosto`—, que no
+              // tiene por qué ser la del artículo: un equipo en dólares puede
+              // haberse comprado en pesos, y al revés. Nunca convertido: no
+              // hay una cotización guardada en la que confiar.
+              valor={ultimoCosto ? precioEnSuMoneda(ultimoCosto.toString(), monedaDelCosto) : '—'}
               pie={
                 ultimoCosto
-                  ? (textoDeMargen(articulo.precio, ultimoCosto, articulo.moneda) ??
+                  ? (textoDeMargen(articulo.precio, articulo.moneda, ultimoCosto, monedaDelCosto) ??
                       // Dos situaciones distintas detrás del mismo `??`: acá
-                      // SÍ hay costo y precio, pero el costo está en pesos y
-                      // el precio en dólares — no es que "no se pueda
-                      // calcular", es que no hay con qué comparar sin
-                      // cotización (ver el docblock de textoDeMargen).
-                      (articulo.moneda === 'USD'
-                        ? 'el costo está en pesos: sin margen para un artículo en dólares'
+                      // SÍ hay costo y precio, pero en monedas distintas — no
+                      // es que "no se pueda calcular", es que no hay con qué
+                      // comparar sin cotización (ver el docblock de
+                      // textoDeMargen).
+                      (monedaDelCosto !== articulo.moneda
+                        ? textoDeCruceDeMonedas(monedaDelCosto)
                         : 'el precio no permite calcular el margen'))
                   : 'ningún ingreso cargó el costo todavía'
               }
@@ -479,13 +506,17 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
               si lo fuera, `costoTotal` también lo sería— pero TypeScript no lo
               sabe desde este scope, así que el `?? ''` es el que lo convence.
 
-              El "×" es el signo de multiplicación (U+00D7), no una equis. */}
+              El "×" es el signo de multiplicación (U+00D7), no una equis.
+
+              En la moneda del último costo, no en la del artículo (ciclo del
+              costo en dólares): una cantidad no tiene moneda, así que el
+              producto queda en la que traía el costo. */}
           {esProducto && puedeCostos && costoTotal !== null && (
             <Tile
               rotulo="COSTO TOTAL"
-              valor={formatearPrecio(costoTotal.toString())}
+              valor={precioEnSuMoneda(costoTotal.toString(), monedaDelCosto)}
               pie={`${formatearCantidad(articulo.stock.toString())} × ${
-                ultimoCosto ? formatearPrecio(ultimoCosto.toString()) : ''
+                ultimoCosto ? precioEnSuMoneda(ultimoCosto.toString(), monedaDelCosto) : ''
               }`}
             />
           )}

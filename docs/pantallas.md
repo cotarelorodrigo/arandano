@@ -1525,10 +1525,12 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
 
 - Ver los tiles: **En stock** (pintado con `--marca`, el ancla de esta
   pantalla), **Precio de venta** (en su moneda, con hace cuánto se actualizó)
-  y, con el permiso `COSTOS`, **Último costo** (siempre en pesos, con el margen
-  contra el precio actual). Un servicio sólo muestra el de precio.
+  y, con el permiso `COSTOS`, **Último costo** (en la moneda en que se cargó,
+  con el margen contra el precio actual cuando las dos monedas coinciden). Un
+  servicio sólo muestra el de precio.
 - **Costo total** (con el permiso `COSTOS`): cuánto costó la mercadería que
-  queda, con la cuenta en el pie — `30 × $ 7.400`. Sale de
+  queda, con la cuenta en el pie — `30 × $ 7.400`, o `3 × US$ 450` si el
+  último costo se cargó en dólares: va en la moneda de ese costo. Sale de
   `costoTotalDeArticulo` (`lib/inventario/valuacion.ts`), la **misma** función
   que suma el total del local en `/dashboard`, sobre el mismo "último costo"
   que muestra el tile de al lado. Un stock negativo cuenta como **cero**: es un
@@ -1542,13 +1544,16 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   card directamente no se renderea (no es de sólo lectura: no aparece).
 - **Ingresar mercadería** — de cualquiera con sesión, no de `ARTICULOS_EDITAR`:
   es operación del día, la hace quien está atendiendo — y, con `COSTOS`
-  además, su costo unitario y una nota (factura, proveedor).
+  además, su costo unitario **con su moneda** (selector `$ / US$` al lado del
+  campo, que arranca en la moneda del artículo) y una nota (factura,
+  proveedor).
 - **Corregir por conteo** — de cualquiera con sesión, mismo motivo que
   "Ingresar mercadería": se escribe el stock contado, no el delta.
 - Desactivar y reactivar el artículo (`ARTICULOS_EDITAR`).
 - Ver el historial completo de movimientos, con chip de motivo, la celda
   "Detalle" (combina quién y qué, según el motivo — el costo de un ingreso
-  aparece ahí sólo con `COSTOS`) y la columna **Queda** (el saldo después de
+  aparece ahí sólo con `COSTOS`, en su moneda: `US$ 450,00 c/u`) y la columna
+  **Queda** (el saldo después de
   cada movimiento).
 - Ver **"Precios por forma de pago"**: una fila por plan de pago activo del
   local, con su precio derivado — sin ningún permiso, de cualquiera con
@@ -1699,20 +1704,26 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   costo cargado más reciente (no el ingreso más reciente a secas, que puede no
   tenerlo) y calcula el margen contra el precio de venta actual. Sin ningún
   ingreso con costo, el tile muestra "—", nunca un número inventado.
-- **Un artículo en dólares no tiene margen, y el pie del tile lo dice con
+- ~~**Un artículo en dólares no tiene margen, y el pie del tile lo dice con
   todas las letras** (ciclo del precio en dólares): `MovimientoStock.costoUnitario`
-  se guarda **siempre en pesos** —no distingue moneda—, así que comparar ese
-  costo contra un precio en dólares exigiría inventar una cotización, que es
-  exactamente lo que este ciclo no hace en ningún lado. El valor del tile sigue
-  siendo el costo en pesos; el pie pasa a "el costo está en pesos: sin margen
-  para un artículo en dólares", **distinto** del "el precio no permite calcular
-  el margen" que ya existía: aquél es "no se puede dividir", éste es "no hay
-  contra qué comparar". **No es un agujero de este ciclo**: es la costura
-  declarada con la deuda del costo (CLAUDE.md, *Decisiones abiertas del modelo
-  de datos*), y `textoDeMargen` recibe la moneda como tercer parámetro
-  **requerido** por el mismo motivo que `editarArticulo` — omitirlo mostraría
-  un margen en pesos para un artículo en dólares, o sea un número equivocado
-  sobre plata.
+  se guarda siempre en pesos.~~ Reemplazado por el ciclo del costo en dólares
+  (2026-10-18, `docs/superpowers/specs/2026-10-18-costo-en-usd-design.md`):
+  **el costo tiene moneda igual que el precio, y nunca se convierte.** Cada
+  ingreso guarda la suya (`MovimientoStock.monedaCosto`), el tile muestra el
+  costo en ella, y el margen se calcula **sólo cuando costo y precio están en
+  la misma moneda** — un iPhone en dólares con el costo cargado en dólares
+  recupera su margen. Con monedas distintas no hay margen (no hay cotización
+  guardada contra la cual comparar) y el pie dice cuál es el cruce: "el costo
+  está en pesos: sin margen para un artículo en dólares" (el texto de antes) o
+  "el costo está en dólares: sin margen para un artículo en pesos". Los dos
+  son **distintos** del "el precio no permite calcular el margen": aquél es
+  "no se puede dividir", éstos son "no hay contra qué comparar".
+  `textoDeMargen(precio, monedaPrecio, costo, monedaCosto)` recibe las dos
+  monedas como parámetros **requeridos** por el mismo motivo que
+  `editarArticulo` — omitir una mostraría un margen cruzando monedas, o sea un
+  número equivocado sobre plata. El "último costo" sigue siendo el ingreso
+  más reciente con costo, **sea cual sea su moneda**: uno en dólares
+  posterior a uno en pesos es el costo que vale hoy.
 - **"Precios por forma de pago" calcula con `precioConPlan`, la misma función
   que después usa el cobro en `/vender`** — no una cuenta propia — para que la
   ficha nunca pueda decir un número distinto del que cobra el mostrador. Es el

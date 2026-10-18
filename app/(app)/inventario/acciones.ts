@@ -584,6 +584,7 @@ export async function exportarHistorialCsv(
       orderBy: [{ creadoEn: 'desc' }, { id: 'desc' }],
       select: {
         delta: true, motivo: true, nota: true, creadoEn: true, costoUnitario: true,
+        monedaCosto: true,
         usuario: { select: { nombre: true } },
         venta: { select: { numero: true } },
       },

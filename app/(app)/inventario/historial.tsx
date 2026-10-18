@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { ShoppingCart, Truck, ClipboardList, Undo2, type LucideIcon } from 'lucide-react'
 import { Prisma } from '@/generated/prisma/client'
 import { Badge } from '@/components/ui/badge'
-import { formatearHora, formatearPrecio, formatearCantidad } from '@/lib/formato/mostrar'
+import { formatearHora, formatearCantidad, precioEnSuMoneda } from '@/lib/formato/mostrar'
 import estilos from './tipografia.module.css'
 
 /** Los cuatro motivos de `MovimientoStock.motivo` (prisma/schema.prisma). */
@@ -83,6 +83,13 @@ export function detalleDeMovimiento(
     motivo: string
     nota: string | null
     costoUnitario: Prisma.Decimal | null
+    /**
+     * En qué moneda está `costoUnitario` (ciclo del costo en dólares,
+     * 2026-10-18). Requerido y sin default por lo mismo que `mostrarCostos`:
+     * un consumidor que se olvide de traerla mostraría un costo en dólares
+     * como pesos, y eso tiene que ser un error de tipos.
+     */
+    monedaCosto: 'ARS' | 'USD'
     usuario: { nombre: string }
     venta: { numero: number } | null
   },
@@ -108,7 +115,7 @@ export function detalleDeMovimiento(
     case 'INGRESO': {
       const costo =
         mostrarCostos && m.costoUnitario
-          ? `${formatearPrecio(m.costoUnitario.toString())} c/u`
+          ? `${precioEnSuMoneda(m.costoUnitario.toString(), m.monedaCosto)} c/u`
           : null
       const partes = [m.nota, costo].filter((p): p is string => Boolean(p))
       // Ni nota ni costo cargados (o cargado y escondido por el permiso): no
@@ -193,6 +200,7 @@ export function filaDeMovimiento(
     nota: string | null
     creadoEn: Date
     costoUnitario: Prisma.Decimal | null
+    monedaCosto: 'ARS' | 'USD'
     usuario: { nombre: string }
     venta: { numero: number } | null
   },
