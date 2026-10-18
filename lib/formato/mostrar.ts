@@ -33,12 +33,46 @@ export function formatearDolares(v: string): string {
 /**
  * El precio de un artículo, en su moneda y SIN equivalente en pesos.
  *
- * Fuera de una venta no hay ninguna cotización de la cual derivarlo, y un
- * número inventado es peor que ninguno — la misma regla por la que el chip de
- * cotización del header de /vender muestra "—" en vez de fabricar un valor.
+ * El equivalente, cuando hay una cotización del local con qué calcularlo, va
+ * APARTE y debajo (`equivalenteEnPesos`, lib/cotizacion/reglas.ts, ciclo de la
+ * cotización del dólar): es orientativo y lleva su fecha si es vieja, y
+ * fundirlo en este texto lo haría pasar por el precio. Sin cotización no hay
+ * ninguno — un número inventado es peor que ninguno, la misma regla por la que
+ * el chip de cotización del header de /vender muestra "—".
  */
 export function precioEnSuMoneda(precio: string, moneda: 'ARS' | 'USD'): string {
   return moneda === 'USD' ? formatearDolares(precio) : formatearPrecio(precio)
+}
+
+/**
+ * Una cotización del dólar, en pesos: `$ 1.450` y no `$ 1.450,00`; con
+ * centavos sólo si los tiene (`$ 1.450,50`).
+ *
+ * Aparte de `formatearPrecio` porque se lee distinto: un dólar a "1.450" es
+ * como lo dice todo el mundo en el mostrador, y los dos ceros de relleno en un
+ * pie de margen o en una sugerencia del cobro son ruido. Los centavos, cuando
+ * están, van completos — "1.450,5" se leería como un error de tipeo.
+ */
+const COTIZACION_ENTERA = new Intl.NumberFormat('es-AR', {
+  style: 'currency',
+  currency: 'ARS',
+  maximumFractionDigits: 0,
+})
+
+export function formatearCotizacion(v: string): string {
+  const n = Number(v)
+  return Number.isInteger(n) ? COTIZACION_ENTERA.format(n) : PESOS.format(n)
+}
+
+/**
+ * Pesos REDONDEADOS al peso, para un equivalente orientativo: "≈ $ 1.450.000".
+ *
+ * Sin centavos a propósito: el equivalente en pesos de un precio en dólares no
+ * es lo que se cobra (el cobro convierte con la cotización de ese pago), y los
+ * centavos le darían una precisión que no tiene.
+ */
+export function formatearPesosRedondos(v: string): string {
+  return COTIZACION_ENTERA.format(Math.round(Number(v)))
 }
 
 // Hasta 3 decimales pero sin ceros de relleno: "4" y no "4,000". Medio kilo de
@@ -123,6 +157,24 @@ const FECHA_CORTA = new Intl.DateTimeFormat('es-AR', {
 
 export function formatearFechaCorta(v: Date): string {
   return FECHA_CORTA.format(v)
+}
+
+/**
+ * `Date` → "15/10": día y mes, en hora de Buenos Aires.
+ *
+ * Para decir de cuándo es la cotización del dólar donde se usa ("con el dólar
+ * a $ 1.450 del 15/10"): una cotización vieja es de hace días, no de hace años,
+ * y el año en cada pie de margen sería ruido. Mismo huso declarado que el
+ * resto, por lo mismo: a las 22 de Buenos Aires Ashburn ya es mañana.
+ */
+const DIA_Y_MES = new Intl.DateTimeFormat('es-AR', {
+  day: '2-digit',
+  month: '2-digit',
+  timeZone: 'America/Argentina/Buenos_Aires',
+})
+
+export function formatearDiaYMes(v: Date): string {
+  return DIA_Y_MES.format(v)
 }
 
 /**

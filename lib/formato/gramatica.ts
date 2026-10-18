@@ -102,6 +102,34 @@ export function aDecimalCanonico(texto: string, campo: string): string {
   throw new ErrorDeFormato('NUMERO_INVALIDO', `${campo} no es un número: "${texto}"`)
 }
 
+// Un solo punto seguido de exactamente tres dígitos, sin coma: `1.450`.
+const MIL_CON_PUNTO = /^[1-9]\d{0,2}\.\d{3}$/
+
+/**
+ * La gramática de una COTIZACIÓN DEL DÓLAR: la compartida, con una sola
+ * excepción — `1.450` (un punto y tres dígitos) se lee como mil cuatrocientos
+ * cincuenta y no se rechaza por ambiguo.
+ *
+ * La otra lectura, "uno con cuatrocientos cincuenta pesos por dólar", no
+ * existe en este dominio, y "1.450" es justo como se escribe el dólar en el
+ * mostrador: rechazarlo le pedía a la persona que corrija algo que estaba bien
+ * (hallazgo de la review del ciclo de la cotización del dólar, 2026-10-18).
+ * La excepción es SÓLO para cotizaciones: un precio de `1.450` sí puede ser
+ * un peso con cuatrocientos cincuenta, o mil cuatrocientos cincuenta, y ahí
+ * se sigue preguntando. La coma con tres dígitos (`1,450`) tampoco entra: la
+ * coma es el decimal argentino y lo raro ahí es el error de tipeo.
+ *
+ * La usan TODOS los lugares donde se tipea una cotización —el chip de
+ * `/vender` (`leerCotizacion`), el campo "Cotización" del cobro y de la
+ * corrección de pagos (cliente y servidor) y la calculadora del canje, vía
+ * `cotizacionEnDiezMilesimas`—, para que ninguno acepte lo que otro rechaza.
+ */
+export function aCotizacionCanonica(texto: string, campo: string): string {
+  const limpio = texto.replace(/\s/g, '')
+  if (MIL_CON_PUNTO.test(limpio)) return limpio.replace('.', '')
+  return aDecimalCanonico(texto, campo)
+}
+
 /** Si el texto está vacío no hay número, y para un campo opcional eso no es un
  *  error. La misma pregunta que se hacen `aDecimalOpcional` y la pantalla. */
 export function estaVacio(texto: string): boolean {

@@ -90,7 +90,7 @@ describe('PanelDeResultado', () => {
 describe('la banda de --marca', () => {
   // Una sola superficie de marca por pantalla: la de la diferencia.
   it('la calculadora entera tiene UNA sola superficie de --marca', () => {
-    const html = renderToStaticMarkup(<Calculadora tabla={TABLA} puedeEditar={false} />)
+    const html = renderToStaticMarkup(<Calculadora tabla={TABLA} puedeEditar={false} dolarInicial={null} />)
     expect(html.match(/background-color:var\(--marca\)/g)).toHaveLength(1)
   })
 
@@ -104,14 +104,14 @@ describe('Calculadora', () => {
   // Un tenant nuevo, que es lo que barre el smoke: sin rangos ni modelos.
   it('con la tabla vacía renderiza y dice que no hay valores', () => {
     const html = renderToStaticMarkup(
-      <Calculadora tabla={{ moneda: 'USD', rangos: [], modelos: [] }} puedeEditar={false} />,
+      <Calculadora tabla={{ moneda: 'USD', rangos: [], modelos: [] }} puedeEditar={false} dolarInicial={null} />,
     )
     expect(html).toContain('Todavía no hay valores cargados')
     expect(html).toContain('Pedile al encargado')
   })
 
   it('las tres preguntas, en el orden del mostrador', () => {
-    const html = renderToStaticMarkup(<Calculadora tabla={TABLA} puedeEditar={false} />)
+    const html = renderToStaticMarkup(<Calculadora tabla={TABLA} puedeEditar={false} dolarInicial={null} />)
     const i1 = html.indexOf('1. El equipo que se lleva')
     const i2 = html.indexOf('2. El usado que entrega')
     const i3 = html.indexOf('3. La batería del usado')
@@ -127,5 +127,37 @@ describe('SinModelos', () => {
     const vendedor = renderToStaticMarkup(<SinModelos puedeEditar={false} />)
     expect(vendedor).not.toContain('href="/plan-canje/valores"')
     expect(vendedor).toContain('Pedile al encargado')
+  })
+})
+
+// Ciclo de la cotización del dólar (2026-10-18): el campo arranca con la del
+// local si es de hoy —la decide page.tsx— y la pantalla dice de dónde salió el
+// número mientras siga siendo ése. La tabla en pesos y el equipo en dólares
+// fuerzan el campo.
+describe('la cotización del local en la calculadora', () => {
+  const EN_PESOS: TablaDeCanje = { ...TABLA, moneda: 'ARS', modelos: [{ ...IPHONE_14, valores: { [R85.id]: '600000' } }] }
+
+  it('arrancada con la de hoy, la cuenta la usa y lo dice', () => {
+    const html = panel({ tabla: EN_PESOS, modelo: EN_PESOS.modelos[0], dolar: '1500', dolarDelLocal: '1500' })
+    expect(html).toContain('value="1500"')
+    expect(html).toContain('Es la cotización del local de hoy')
+    // US$ 1000 − $ 600.000 / 1500 = US$ 600.
+    expect(html).toContain('600,00')
+  })
+
+  it('cambiada a mano, deja de decir que es la del local', () => {
+    const html = panel({ tabla: EN_PESOS, modelo: EN_PESOS.modelos[0], dolar: '1200', dolarDelLocal: '1500' })
+    expect(html).not.toContain('Es la cotización del local de hoy')
+  })
+
+  it('sin una de hoy, el campo arranca vacío y pide el dólar', () => {
+    const html = panel({ tabla: EN_PESOS, modelo: EN_PESOS.modelos[0], dolar: '', dolarDelLocal: null })
+    expect(html).toContain('Falta la cotización del dólar')
+  })
+
+  it('el estado del campo nace de dolarInicial, no vacío fijo', async () => {
+    const { readFileSync } = await import('node:fs')
+    const FUENTE = readFileSync('app/(app)/plan-canje/calculadora.tsx', 'utf8')
+    expect(FUENTE).toContain("const [dolar, setDolar] = useState(dolarInicial ?? '')")
   })
 })

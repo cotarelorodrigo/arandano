@@ -122,6 +122,13 @@ erDiagram
     timestamptz(3) creado_en
     timestamptz(3) ultimo_mensaje_en
   }
+  cotizaciones_del_dolar {
+    uuid id PK
+    uuid tenant_id FK
+    decimal(12,2) valor
+    uuid cargada_por_id FK
+    timestamptz(3) creada_en
+  }
   ediciones_venta {
     uuid id PK
     uuid tenant_id FK
@@ -383,6 +390,7 @@ erDiagram
   tenants ||--o{ categorias : "ON DELETE CASCADE"
   tenants ||--o{ clientes : "ON DELETE CASCADE"
   tenants ||--o{ conversaciones_bot : "ON DELETE CASCADE"
+  tenants ||--o{ cotizaciones_del_dolar : "ON DELETE CASCADE"
   tenants ||--o{ ediciones_venta : "ON DELETE CASCADE"
   tenants ||--o{ eventos_orden : "ON DELETE CASCADE"
   tenants ||--o{ mensajes_bot : "ON DELETE CASCADE"
@@ -412,6 +420,7 @@ erDiagram
   users |o--o{ ventas : "ON DELETE RESTRICT"
   users ||--o{ accounts : "ON DELETE CASCADE"
   users ||--o{ cajas : "ON DELETE RESTRICT"
+  users ||--o{ cotizaciones_del_dolar : "ON DELETE RESTRICT"
   users ||--o{ ediciones_venta : "ON DELETE RESTRICT"
   users ||--o{ eventos_orden : "ON DELETE RESTRICT"
   users ||--o{ movimientos_stock : "ON DELETE RESTRICT"
@@ -438,7 +447,7 @@ erDiagram
 - **moneda**: `ARS`, `USD`
 - **motivo_movimiento**: `VENTA`, `ANULACION_VENTA`, `AJUSTE`, `INGRESO`
 - **motivo_sin_respuesta**: `BOT_APAGADO`, `TOPE_MENSUAL`, `TOPE_CONVERSACION`, `SIN_TEXTO`, `SIN_MODELO`, `MODO_PRUEBA`
-- **permiso**: `ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`, `CATEGORIAS`, `VENTAS_ANULAR`, `ORDENES_ANULAR`, `PLANES_PAGO`, `BOT`, `ARTICULOS_BORRAR`, `VENTAS_EDITAR`, `CANJE_VALORES`
+- **permiso**: `ARTICULOS_CREAR`, `ARTICULOS_EDITAR`, `COSTOS`, `CATEGORIAS`, `VENTAS_ANULAR`, `ORDENES_ANULAR`, `PLANES_PAGO`, `BOT`, `ARTICULOS_BORRAR`, `VENTAS_EDITAR`, `CANJE_VALORES`, `COTIZACION`
 - **rol_usuario**: `DUENO`, `EMPLEADO`
 - **tipo_articulo**: `PRODUCTO`, `SERVICIO`
 
@@ -451,6 +460,7 @@ erDiagram
 - **clientes**: `clientes_tenant_id_idx` sobre (`tenant_id`)
 - **clientes**: `clientes_tenant_id_telefono_clave_idx` sobre (`tenant_id`, `telefono_clave`)
 - **conversaciones_bot**: `conversaciones_bot_tenant_id_ultimo_mensaje_en_idx` sobre (`tenant_id`, `ultimo_mensaje_en`)
+- **cotizaciones_del_dolar**: `cotizaciones_del_dolar_tenant_id_creada_en_idx` sobre (`tenant_id`, `creada_en`)
 - **ediciones_venta**: `ediciones_venta_tenant_id_venta_id_creado_en_idx` sobre (`tenant_id`, `venta_id`, `creado_en`)
 - **eventos_orden**: `eventos_orden_tenant_id_orden_id_creado_en_idx` sobre (`tenant_id`, `orden_id`, `creado_en`)
 - **mensajes_bot**: `mensajes_bot_tenant_id_conversacion_id_creado_en_idx` sobre (`tenant_id`, `conversacion_id`, `creado_en`)

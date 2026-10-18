@@ -303,3 +303,32 @@ describe('/bot: el disparador de conexión existe dos veces y las dos son sólo 
     )
   })
 })
+
+// La cotización del dólar de /vender (ciclo del 2026-10-18): el panel que la
+// carga existe DOS veces —en el diálogo del chip de escritorio y en la hoja del
+// Topbar del teléfono—. Acá no hay dos guardas que mantener iguales sino UNA:
+// las dos copias son el mismo `PanelDeCotizacion`, y el permiso se decide
+// adentro. Lo que este bloque fija es que siga así: que ninguna de las dos
+// copias arme su propio formulario con su propia guarda.
+describe('/vender: la cotización del dólar se carga en dos lugares y la guarda es una sola', () => {
+  const DOLAR = readFileSync('app/(app)/vender/dolar.tsx', 'utf8')
+  const CAJA = readFileSync('app/(app)/vender/caja.tsx', 'utf8')
+
+  it('el diálogo de escritorio y la hoja del teléfono usan el mismo panel', () => {
+    expect(DOLAR).toContain('<PanelDeCotizacion cotizacion={cotizacion} />')
+    expect(CAJA).toContain('<PanelDeCotizacion cotizacion={cotizacion} />')
+  })
+
+  it('el formulario sólo existe detrás de puedeCargar, y en un solo lugar', () => {
+    expect([...DOLAR.matchAll(/<FormularioDeCotizacion\b/g)]).toHaveLength(1)
+    expect(DOLAR).toMatch(/cotizacion\.puedeCargar \? \(\s*<FormularioDeCotizacion/)
+    // Ninguna copia arma su propio campo ni llama a la action por su cuenta.
+    expect(CAJA).not.toContain('cargarCotizacionDesdeVender')
+    expect(CAJA).not.toContain('FormularioDeCotizacion')
+  })
+
+  it('el permiso que llega al panel es COTIZACION, leído en la página', () => {
+    const PAGE = readFileSync('app/(app)/vender/page.tsx', 'utf8')
+    expect(PAGE).toContain("puedeConSesion(sesion, 'COTIZACION')")
+  })
+})

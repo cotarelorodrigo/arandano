@@ -322,7 +322,10 @@ export async function crearVenta(
           // dólares quedó para otro ciclo, decisión 5 del spec del costo en
           // dólares) y NULL para un ítem en pesos cuyo último costo está en
           // dólares — sin esto, US$ 8 entrarían al margen como $ 8. Nada se
-          // convierte: no hay una cotización guardada en la que confiar.
+          // convierte: la cotización del local (ciclo del 2026-10-18) es el
+          // precio de HOY, y meterla en un costo congelado lo volvería una
+          // mezcla de dos días; el congelado del costo en dólares sigue siendo
+          // su propio ciclo pendiente.
           costoUnitario: costoEnPesosParaCongelar(a.moneda, costoPorArticulo.get(a.id)),
           unidadId: i.unidadId,
           imeiCapturado: imeisCapturados[idx],

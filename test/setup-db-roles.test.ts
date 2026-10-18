@@ -399,6 +399,34 @@ describe('setup-db-roles.sh', () => {
       }
     })
 
+    // El historial de la cotización del dólar: quién cargó qué dólar y
+    // cuándo. Editable, dejaría reescribir a cuánto estaba el dólar la tarde
+    // en que se cobró con él. Corregir es cargar otra.
+    it('cotizaciones_del_dolar: la app no puede editar ni borrar, y sí leer e insertar', async () => {
+      const app = new Client({ connectionString: urlApp() })
+      await app.connect()
+      try {
+        await expect(app.query('UPDATE cotizaciones_del_dolar SET valor = valor')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(app.query('DELETE FROM cotizaciones_del_dolar')).rejects.toThrow(
+          /permission denied|denegado/i,
+        )
+        await expect(app.query('SELECT 1 FROM cotizaciones_del_dolar')).resolves.toBeDefined()
+        // INSERT sí: es la única escritura que la tabla admite. Sin la GUC de
+        // tenant la policy lo rechaza igual, así que lo que se prueba acá es
+        // el PRIVILEGIO —el error es de RLS, no "permission denied for table"—.
+        await expect(
+          app.query(
+            `INSERT INTO cotizaciones_del_dolar (id, tenant_id, valor, cargada_por_id)
+             VALUES (gen_random_uuid(), gen_random_uuid(), 1, gen_random_uuid())`,
+          ),
+        ).rejects.toThrow(/row-level security/i)
+      } finally {
+        await app.end()
+      }
+    })
+
     // Y la puerta de atrás de ESTA bitácora, que opera un nivel más arriba y
     // por eso no la cierra ninguno de los dos casos anteriores:
     // ediciones_venta.venta_id es ON DELETE CASCADE y el padre es `ventas`, no

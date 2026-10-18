@@ -8,17 +8,25 @@ import { renderToStaticMarkup } from 'react-dom/server'
 vi.mock('./acciones', () => ({
   abrirCajaDesdeVender: vi.fn(),
   cerrarCajaDesdeVender: vi.fn(),
+  cargarCotizacionDesdeVender: vi.fn(),
 }))
+
+// El chip de la cotización del dólar vive en dolar.tsx y se prueba en
+// dolar.test.tsx; acá sólo hace falta algo que pasarle.
+const SIN_COTIZACION = { historial: [], vieja: true, puedeCargar: false }
+const CON_COTIZACION = {
+  historial: [{ id: 'c1', valor: '1485', creadaEn: new Date('2026-08-21T17:32:00Z'), cargadaPor: 'La dueña' }],
+  vieja: false,
+  puedeCargar: false,
+}
 
 type Props = {
   caja: { id: string; abiertaEn: Date } | null
-  cotizacionUsd: string | null
-  cotizacionUsdEn: Date | null
 }
 
 async function render(props: Props) {
   const { ChipCaja } = await import('./caja')
-  return renderToStaticMarkup(<ChipCaja {...props} />)
+  return renderToStaticMarkup(<ChipCaja {...props} cotizacion={SIN_COTIZACION} />)
 }
 
 const FUENTE = readFileSync('app/(app)/vender/caja.tsx', 'utf8')
@@ -27,8 +35,6 @@ describe('el chip de caja', () => {
   it('con caja abierta el chip la muestra', async () => {
     const html = await render({
       caja: { id: 'c1', abiertaEn: new Date('2026-08-21T17:32:00Z') },
-      cotizacionUsd: null,
-      cotizacionUsdEn: null,
     })
     expect(html).toContain('Caja abierta')
     // Y NO el chip de la otra mitad: los dos estados son excluyentes.
@@ -36,7 +42,7 @@ describe('el chip de caja', () => {
   })
 
   it('sin caja abierta el chip ofrece abrirla', async () => {
-    const html = await render({ caja: null, cotizacionUsd: null, cotizacionUsdEn: null })
+    const html = await render({ caja: null })
     expect(html).toContain('Abrir caja')
     expect(html).not.toContain('Caja abierta')
 
@@ -54,39 +60,15 @@ describe('el chip de caja', () => {
     expect(FUENTE).toMatch(/useActionState\(cerrarCajaDesdeVender,\s*INICIAL\)/)
   })
 
-  it('muestra la cotización del local y de cuándo es', async () => {
-    const html = await render({
-      caja: null,
-      cotizacionUsd: '1485.00',
-      cotizacionUsdEn: new Date('2026-08-21T17:32:00Z'),
-    })
+  // El chip de cotización va pegado al de caja, en el mismo componente: los
+  // dos son el frame "Estado" del Topbar. Su contenido se prueba en
+  // dolar.test.tsx.
+  it('al lado del chip de caja va el de la cotización del dólar', async () => {
+    const html = await render({ caja: null })
     expect(html).toContain('USD')
-    expect(html).toContain('1.485,00')
-
-    // La fecha viaja al tooltip (Radix Tooltip.Portal), que sólo monta
-    // contenido en el cliente: renderToStaticMarkup no lo ejecuta —por eso
-    // este caso no busca "Actualizada el" en el HTML—, así que el cableado
-    // de la fecha se comprueba en el fuente.
-    expect(FUENTE).toMatch(/Actualizada el \{formatearFecha\(en\)\}/)
+    expect(FUENTE).toMatch(/<ChipCotizacion cotizacion=\{cotizacion\} \/>/)
   })
 
-  it('sin cotización cargada no inventa un número', async () => {
-    const html = await render({ caja: null, cotizacionUsd: null, cotizacionUsdEn: null })
-    expect(html).toContain('—')
-    // Ninguna cifra con forma de plata (miles con punto, centavos con coma)
-    // en toda la salida — y no un `/\d/` a secas, que también matchearía el
-    // hash del classname que el Proxy de CSS modules fabrica bajo `css:
-    // false` (ver la nota de punto-de-venta.test.tsx sobre eso) y daría este
-    // caso en rojo por una razón que no tiene nada que ver con lo que prueba.
-    expect(html).not.toMatch(/\d{1,3}(\.\d{3})*,\d{2}/)
-  })
-
-  it('con cotización cargada pero sin fecha, tampoco se arriesga el tooltip', async () => {
-    // Caso defensivo: si algún día el dato queda inconsistente (cotización
-    // sin su fecha), el chip sigue sin mentir mostrando "de cuándo es" nada.
-    const html = await render({ caja: null, cotizacionUsd: '1485.00', cotizacionUsdEn: null })
-    expect(html).toContain('1.485,00')
-  })
   // Cuarta aparición del mismo defecto en el rediseño: un mensaje de error que
   // el lector de pantalla nunca anuncia porque nadie le puso el rol al
   // convertirlo de forma. Acá son dos —cerrar y abrir la caja—, y por eso el
@@ -105,13 +87,15 @@ describe('el chip de caja', () => {
 // --- El teléfono: los chips de sólo lectura del cuerpo y el control del Topbar ---
 
 describe('los chips de estado del cuerpo', () => {
-  async function renderChips(props: { caja: { abiertaEn: Date } | null; cotizacionUsd: string | null }) {
+  async function renderChips(props: { caja: { abiertaEn: Date } | null; conCotizacion?: boolean }) {
     const { ChipsDeEstado } = await import('./caja')
-    return renderToStaticMarkup(<ChipsDeEstado {...props} />)
+    return renderToStaticMarkup(
+      <ChipsDeEstado caja={props.caja} cotizacion={props.conCotizacion ? CON_COTIZACION : SIN_COTIZACION} />,
+    )
   }
 
   it('sólo existen en el teléfono', async () => {
-    const html = await renderChips({ caja: null, cotizacionUsd: null })
+    const html = await renderChips({ caja: null })
     const contenedor = html.match(/^<div class="[^"]*"/)?.[0]
     expect(contenedor, 'los dos chips tienen que venir en un contenedor propio').toBeTruthy()
     expect(contenedor).toContain('lg:hidden')
@@ -124,9 +108,9 @@ describe('los chips de estado del cuerpo', () => {
   it('no llevan ningún control adentro: la maqueta los dibuja de sólo lectura', async () => {
     const conCaja = await renderChips({
       caja: { abiertaEn: new Date('2026-08-21T17:32:00Z') },
-      cotizacionUsd: '1485.00',
+      conCotizacion: true,
     })
-    const sinCaja = await renderChips({ caja: null, cotizacionUsd: null })
+    const sinCaja = await renderChips({ caja: null })
     for (const html of [conCaja, sinCaja]) {
       expect(html).not.toContain('<button')
       expect(html).not.toContain('<form')
@@ -137,11 +121,11 @@ describe('los chips de estado del cuerpo', () => {
   it('dicen si la caja está abierta y a cuánto está el dólar', async () => {
     const html = await renderChips({
       caja: { abiertaEn: new Date('2026-08-21T17:32:00Z') },
-      cotizacionUsd: '1485.00',
+      conCotizacion: true,
     })
     expect(html).toContain('Caja abierta')
     expect(html).toContain('USD')
-    expect(html).toContain('1.485,00')
+    expect(html).toContain('1.485')
   })
 
   // Sin caja, el chip de sólo lectura NO puede decir "Abrir caja" —sería un
@@ -149,7 +133,7 @@ describe('los chips de estado del cuerpo', () => {
   // ofrece hacer algo al respecto. Ámbar y no rojo, mismo criterio que el chip
   // interactivo de escritorio: vender sin caja está permitido.
   it('sin caja abierta lo dice, sin ofrecer abrirla', async () => {
-    const html = await renderChips({ caja: null, cotizacionUsd: null })
+    const html = await renderChips({ caja: null })
     expect(html).not.toContain('Caja abierta')
     expect(html).not.toContain('Abrir caja')
     expect(html).toContain('Sin caja')
@@ -160,7 +144,7 @@ describe('los chips de estado del cuerpo', () => {
 describe('el control de caja del Topbar', () => {
   async function renderControl(caja: { abiertaEn: Date } | null) {
     const { ControlDeCaja } = await import('./caja')
-    return renderToStaticMarkup(<ControlDeCaja caja={caja} />)
+    return renderToStaticMarkup(<ControlDeCaja caja={caja} cotizacion={SIN_COTIZACION} />)
   }
 
   it('es la ranura derecha del teléfono y no existe en escritorio', async () => {
@@ -174,9 +158,8 @@ describe('el control de caja del Topbar', () => {
   })
 
   // El contenido de un Sheet de Radix vive en un Portal y sólo se monta con la
-  // hoja abierta, así que renderToStaticMarkup no lo ve nunca (mismo motivo
-  // por el que el tooltip de la cotización se comprueba en el fuente, más
-  // arriba). Lo que este caso puede afirmar es el cableado.
+  // hoja abierta, así que renderToStaticMarkup no lo ve nunca. Lo que este
+  // caso puede afirmar es el cableado.
   //
   // POR QUÉ UNA HOJA Y NO UN MENÚ: un DropdownMenu no puede alojar el campo de
   // saldo inicial —Radix le pone typeahead al menú y le pelea a cualquier
@@ -196,7 +179,7 @@ describe('el control de caja del Topbar', () => {
   // Las dos capacidades que la versión con menú perdía.
   it('abrir la caja desde el teléfono sigue pidiendo el saldo inicial', () => {
     const posicion = FUENTE.indexOf('function FormularioDeApertura')
-    const contexto = FUENTE.slice(posicion, FUENTE.indexOf('function ChipCotizacion'))
+    const contexto = FUENTE.slice(posicion, FUENTE.indexOf('// --- El teléfono ---'))
     expect(contexto).toContain('name="saldoInicial"')
     expect(contexto).toContain('Saldo inicial')
   })

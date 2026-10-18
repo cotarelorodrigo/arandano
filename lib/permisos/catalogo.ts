@@ -30,6 +30,14 @@
  * `ARTICULOS_EDITAR`: no mueve un precio de venta sino lo que el local entrega
  * a cambio de un equipo, y un dueño puede querer que su encargado cotice usados
  * sin tocar los recargos, o al revés.
+ *
+ * **`COTIZACION` protege CARGAR la cotización del dólar, no verla**: el chip
+ * de `/vender` y su historial los ve cualquiera, porque el que cobra tiene que
+ * saber a cuánto está el dólar del local y de cuándo es. Cargarla es fijar el
+ * número con el que arranca cada pago que cruza monedas. Aparte de
+ * `PLANES_PAGO` aunque los dos muevan el precio de todo el catálogo: el dólar
+ * se actualiza todos los días y un recargo se decide una vez, así que un dueño
+ * puede querer delegar uno y no el otro.
  */
 export const PERMISOS = [
   {
@@ -86,6 +94,11 @@ export const PERMISOS = [
     clave: 'CANJE_VALORES',
     nombre: 'Editar los valores del plan canje',
     ayuda: 'Cargar cuánto se paga por cada equipo usado según su batería, y en qué moneda. La calculadora la usa cualquiera.',
+  },
+  {
+    clave: 'COTIZACION',
+    nombre: 'Actualizar la cotización del dólar',
+    ayuda: 'Cargar a cuánto toma el local el dólar hoy, desde el chip USD de Vender. Verla y ver quién la cargó, todos.',
   },
 ] as const
 

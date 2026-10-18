@@ -412,3 +412,20 @@ describe('el selector de plan usa el rótulo, no el nombre pelado', () => {
     expect(fuente).not.toContain('{p.nombre}')
   })
 })
+
+// La cotización de la corrección se lee con la gramática de cotización
+// (hallazgo de la review del ciclo de la cotización del dólar): "1.450" es
+// mil cuatrocientos cincuenta en el chip, en el cobro y acá, y lo que la
+// pantalla cuenta es lo que viaja canonizado al servidor.
+describe('la cotización de la corrección', () => {
+  const FUENTE_CORREGIR = readFileSync('app/(app)/ventas/corregir-pagos.tsx', 'utf8')
+
+  it('canoniza la cotización con aCotizacionCanonica y el monto con la compartida', () => {
+    expect(FUENTE_CORREGIR).toContain("cotizacion: aCotizacionCanonica(f.cotizacion, 'la cotización')")
+    expect(FUENTE_CORREGIR).toContain("base: aDecimalCanonico(f.base, 'el monto del pago')")
+  })
+
+  it('la cuenta de la pantalla lee "1.450" como 1450', () => {
+    expect(cotizacionEnDiezMilesimas('1.450')).toBe(14_500_000)
+  })
+})

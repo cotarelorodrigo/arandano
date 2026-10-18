@@ -2,14 +2,18 @@
 
 import { revalidatePath } from 'next/cache'
 import { exigirSesion } from '@/lib/auth/sesion'
+import { exigirPermiso } from '@/lib/permisos/guarda'
+import { cargarCotizacion } from '@/lib/cotizacion/administrar'
+import { ErrorDeCotizacion } from '@/lib/cotizacion/errores'
 import { crearVenta } from '@/lib/ventas/crear'
 import { ErrorDeVenta } from '@/lib/ventas/errores'
 import { buscarArticulosVendibles, type ArticuloVendible } from '@/lib/ventas/buscar'
 import { unidadesLibres, type UnidadLibre } from '@/lib/inventario/unidades'
 import { abrirCaja, cerrarCaja } from '@/lib/caja/abrir-cerrar'
 import { ErrorDeCaja } from '@/lib/caja/errores'
-import { aDecimal, ErrorDeFormato } from '@/lib/formato/numeros'
+import { aCotizacion, aDecimal, ErrorDeFormato } from '@/lib/formato/numeros'
 import { esUuid } from '@/lib/uuid'
+import { formatearCotizacion } from '@/lib/formato/mostrar'
 import { ErrorDeCliente } from '@/lib/clientes/errores'
 import type { MedioPago, Moneda } from '@/generated/prisma/client'
 
@@ -231,7 +235,10 @@ export async function cobrar(_e: EstadoCobro, datos: FormData): Promise<EstadoCo
         moneda: moneda as Moneda,
         cubre: cubre as Moneda,
         base: aDecimal(String(p.base ?? ''), 'el monto del pago'),
-        cotizacion: aDecimal(String(p.cotizacion ?? ''), 'la cotización'),
+        // La gramática de cotización y no la compartida: "1.450" es mil
+        // cuatrocientos cincuenta, como lo lee la pantalla
+        // (`cotizacionEnDiezMilesimas`). Ver `aCotizacionCanonica`.
+        cotizacion: aCotizacion(String(p.cotizacion ?? ''), 'la cotización'),
         planId: planId === '' ? undefined : planId,
       }
     })
@@ -341,5 +348,66 @@ export async function cerrarCajaDesdeVender(): Promise<EstadoCaja> {
     return { error: null }
   } catch (e) {
     return traducirErrorDeCaja(e)
+  }
+}
+
+/**
+ * Lo que vuelve de cargar la cotización del dólar. Tres estados y no dos:
+ * además de error y éxito está la PREGUNTA del tope de cordura —"¿es
+ * correcta?"—, que no es un error (la carga puede ser legítima) y que la
+ * pantalla contesta reenviando el mismo valor con `confirmada`.
+ */
+export type EstadoCotizacion = {
+  error: string | null
+  confirmar: string | null
+  aviso: string | null
+}
+
+/**
+ * Carga la cotización del dólar del local desde el chip "USD" de `/vender`
+ * (spec 2026-10-18-cotizacion-del-dolar, decisiones 2 y 3).
+ *
+ * **Exige `COTIZACION` acá**, aunque la pantalla esconda el campo a quien no
+ * lo tiene: una action se puede invocar sin pasar por la pantalla. Sin el
+ * permiso, `forbidden()` —se relanza y lo resuelve Next—, igual que el resto
+ * de las actions con permiso.
+ *
+ * `confirmada` es el campo que manda el botón "Sí, cargar" del tope de
+ * cordura: sólo `"1"` vale, cualquier otra cosa es "sin confirmar", por lo
+ * mismo que el consentimiento del cliente no se infiere.
+ *
+ * Revalida `/vender` (el chip y el cobro), `/inventario` (el equivalente en
+ * pesos y el margen de la ficha) y `/plan-canje` (la calculadora arranca con
+ * ella): las tres pantallas leen la vigente, y una que quede con la vieja
+ * cotizaría con el dólar de ayer en su próxima carga. `'layout'` en inventario
+ * para que alcance también a cada ficha.
+ */
+export async function cargarCotizacionDesdeVender(
+  _e: EstadoCotizacion,
+  datos: FormData,
+): Promise<EstadoCotizacion> {
+  try {
+    const sesion = await exigirPermiso('COTIZACION')
+    const carga = await cargarCotizacion({
+      tenantId: sesion.tenant.id,
+      usuarioId: sesion.usuario.id,
+      texto: String(datos.get('valor') ?? ''),
+      confirmada: String(datos.get('confirmada') ?? '') === '1',
+    })
+    revalidatePath('/vender')
+    revalidatePath('/inventario', 'layout')
+    revalidatePath('/plan-canje')
+    return { error: null, confirmar: null, aviso: `Quedó cargada: ${formatearCotizacion(carga.valor)}.` }
+  } catch (e) {
+    if (e instanceof ErrorDeCotizacion && (e.codigo === 'SALTO_GRANDE' || e.codigo === 'INVEROSIMIL')) {
+      return { error: null, confirmar: e.message, aviso: null }
+    }
+    // `ErrorDeVenta` por la pertenencia del usuario (`exigirUsuario`), el
+    // mismo caso que `traducirErrorDeCaja`. Todo lo demás se relanza: un bug
+    // de verdad tiene que llegar al log.
+    if (e instanceof ErrorDeCotizacion || e instanceof ErrorDeFormato || e instanceof ErrorDeVenta) {
+      return { error: e.message, confirmar: null, aviso: null }
+    }
+    throw e
   }
 }

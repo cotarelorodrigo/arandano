@@ -356,7 +356,7 @@ describe('la moneda de la tabla', () => {
     await canje.cambiarMonedaDeCanje({ tenantId, moneda: 'ARS' })
     let tabla = await tablaDeCanje(tenantId)
     expect(tabla.moneda).toBe('ARS')
-    // No se convierte: no hay cotización guardada de la cual hacerlo.
+    // No se convierte, ni con la cotización del local: ver ConfiguracionDeCanje.
     expect(tabla.modelos[0].valores[r.id]).toBe('400')
     await canje.cambiarMonedaDeCanje({ tenantId, moneda: 'USD' })
     tabla = await tablaDeCanje(tenantId)

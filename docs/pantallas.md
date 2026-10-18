@@ -315,15 +315,20 @@ opera con alguien esperando del otro lado del mostrador, y la primera con su
 shell (sidebar + encabezado) ya venía de un ciclo anterior.
 
 **Acciones**: `cobrar`, `buscarArticulos`, `abrirCajaDesdeVender`,
-`cerrarCajaDesdeVender`, y `buscarClientesDelLocal` (de
-`app/(app)/clientes/acciones.ts`) para el campo "Cliente".
+`cerrarCajaDesdeVender`, `cargarCotizacionDesdeVender` (exige `COTIZACION`), y
+`buscarClientesDelLocal` (de `app/(app)/clientes/acciones.ts`) para el campo
+"Cliente".
 
-**Lecturas del servidor**: `cajaAbierta`, `Tenant.cotizacionUsd` y
-`planesDelTenant` (sólo los activos). Las tres se leen en `page.tsx` y viajan
-como props: el cliente no consulta la base, así que la pantalla llega con el
-dato puesto en vez de parpadear. **Eran cuatro hasta el ciclo del precio en
-dólares** (2026-08-29): `ultimaCotizacionUsd` se borró junto con el prefill del
-campo de cotización, ver *Decisiones*.
+**Lecturas del servidor**: `cajaAbierta`, `historialDeCotizaciones` (las
+últimas diez cargas de la cotización del dólar del local; la primera es la
+vigente), el permiso `COTIZACION` y `planesDelTenant` (sólo los activos). Se
+leen en `page.tsx` y viajan como props: el cliente no consulta la base, así que
+la pantalla llega con el dato puesto en vez de parpadear. **Hasta el ciclo de
+la cotización del dólar (2026-10-18) la cotización salía de
+`Tenant.cotizacionUsd`**, una columna que nunca tuvo escritor y quedó sin
+lector (su `DROP` es un deploy posterior). **Y hasta el ciclo del precio en
+dólares (2026-08-29) se leía además `ultimaCotizacionUsd`**, borrada junto con
+el prefill del último pago; ver *Decisiones*.
 
 **Qué se puede hacer**
 
@@ -403,8 +408,26 @@ campo de cotización, ver *Decisiones*.
   enfocado), y vaciar el carrito con `Esc`.
 - Ver el estado real de la caja del turno en un chip del header, y abrirla o
   cerrarla ahí mismo, sin salir de la pantalla.
-- Ver la cotización del dólar que fijó el dueño (`Tenant.cotizacionUsd`), con
-  de cuándo es.
+- **Ver y cargar la cotización del dólar del local** (ciclo del 2026-10-18,
+  `docs/superpowers/specs/2026-10-18-cotizacion-del-dolar-design.md`). El chip
+  "USD" del header es un botón: abre un diálogo con la vigente, quién la cargó y
+  cuándo, el campo para cargar una nueva (sólo con el permiso `COTIZACION`; sin
+  él, lo mismo sin el campo) y las últimas diez cargas (fecha y hora, valor,
+  quién). **El chip va en ámbar** cuando la vigente no es de hoy en hora
+  argentina o no hay ninguna, y si es vieja lleva la fecha escrita ("USD 1.420 ·
+  15/10"). En el teléfono el chip del cuerpo sigue siendo de sólo lectura (con
+  el mismo ámbar y la misma fecha) y el panel vive en la hoja del Topbar, debajo
+  de la caja ("Caja y dólar"). Si la nueva difiere en más de la mitad de la
+  vigente —o si es la primera y está fuera de $ 100–$ 100.000—, pide confirmar
+  ("Sí, cargarla igual"): un cero de más es el error más probable. "1.450" se
+  lee como mil cuatrocientos cincuenta en todo campo de cotización (el chip, el
+  cobro, la corrección de pagos, el canje), a diferencia de un precio. Nunca se
+  edita ni se borra una carga: corregir es cargar otra.
+- **Un pago que cruza monedas arranca con la cotización del local si es de
+  hoy**, y se puede cambiar; lo que se guarda en `Pago.cotizacion` es lo que
+  quedó tipeado. Si la del local es vieja, el campo arranca vacío con la vieja
+  como sugerencia debajo ("La del local es del 15/10: $ 1.420"), en ámbar y sin
+  botón para usarla.
 
 **Decisiones**
 
@@ -442,16 +465,33 @@ campo de cotización, ver *Decisiones*.
   pagos no lo hace**: ahí no hay una respuesta única sobre cuál mover, y queda
   anotado como el mismo callejón un pago más adelante.
 - Con una cantidad a medio tipear muestra `—`, nunca `$ NaN`.
-- **El campo de cotización arranca VACÍO, siempre** (ciclo del precio en
-  dólares, 2026-08-29). Hasta entonces venía precargado con
+- **El campo de cotización arranca con la del local SÓLO si es de hoy**
+  (ciclo de la cotización del dólar, 2026-10-18), y si no, vacío. Esto
+  **revierte a propósito** la regla del ciclo del precio en dólares
+  (2026-08-29: "arranca VACÍO, siempre"), que había sacado el prefill con
   `ultimaCotizacionUsd()` —la última cotización con la que el local había
-  cobrado—, que es exactamente el número del jueves pasado si nadie pagó en
-  dólares desde entonces: la misma clase de dato envejecido contra la que el
-  cliente escribió el feedback que originó ese ciclo. El prefill se fue y
-  `ultimaCotizacionUsd()` se borró con él, sin dejar ningún consumidor. La que
-  el chip del header muestra (`Tenant.cotizacionUsd`, la que el dueño fija para
-  hoy) es **otra cosa** y sigue sin escritor: es un dato para mirar, no un
-  valor que precargue nada.
+  cobrado, o sea el número del jueves pasado si nadie pagó en dólares desde
+  entonces— y borrado esa función. El pedido nuevo vino del cliente: un dólar
+  del local, visible y fácil de actualizar. El motivo de 2026-08-29 sigue
+  vigente y es el que pone el límite: "de hoy" se mide en hora argentina
+  (`esDeHoy`) y tienen que coincidir los dos relojes: el del servidor al armar
+  la página (el que pinta el chip) **y** el del navegador en el momento del
+  cambio de moneda o de `Cubre` —la pantalla puede quedar abierta de un día
+  para el otro, y una PC con la hora atrasada no puede precargar la de ayer—.
+  Una vieja nunca entra sola al campo: se muestra como sugerencia con su fecha,
+  derivada del mismo dato que el chip. Lo precargado va con coma decimal
+  ("1450,50").
+  `ultimaCotizacionUsd()` no vuelve: la cotización del local es OTRO dato
+  (`CotizacionDelDolar`, con quién y cuándo), no el último pago.
+- **Al cerrarse, el diálogo de la cotización no le devuelve el foco al chip**
+  (`onCloseAutoFocus` con `preventDefault`). Radix lo devuelve al disparador, y
+  con el foco en un `<button>` Enter no cobra —la allow-list del atajo sólo
+  dispara con el foco en `<body>`— sino que reabre el diálogo. Sin devolverlo,
+  el foco cae en `<body>` y los atajos siguen vivos. Mientras está abierto es
+  un `[role="dialog"]` y los tres atajos se abstienen, como con el selector de
+  unidad.
+- **La corrección de pagos de una venta ya cobrada (`/ventas/[id]`) no
+  precarga la cotización de hoy**: la de esa venta es la de su día.
 - **La cotización sólo aparece cuando un pago cruza monedas.** Con
   `moneda === cubre` no hay ninguna conversión ocurriendo —pagar US$ 300 en
   billetes contra un total de US$ 300 no convierte nada—, así que la fila
@@ -1272,13 +1312,19 @@ El listado de artículos, con buscador, filtro de tipo y chips de estado
 
 **Decisiones**
 
-- **El precio se muestra en su moneda y SIN equivalente en pesos** (ciclo del
-  precio en dólares, 2026-08-29). Fuera de una venta no hay ninguna cotización
-  de la cual derivarlo, y un número inventado es peor que ninguno — la misma
-  regla por la que el chip de cotización del header de `/vender` muestra `—` en
-  vez de fabricar un valor. La columna no se ordena ni se suma, así que dos
-  monedas conviviendo en ella no rompen nada: `precioEnSuMoneda`
-  (`lib/formato/mostrar.ts`) elige el formateador y no convierte.
+- **El precio se muestra en su moneda**, y la columna no se ordena ni se suma,
+  así que dos monedas conviviendo en ella no rompen nada: `precioEnSuMoneda`
+  (`lib/formato/mostrar.ts`) elige el formateador y no convierte. **Un artículo
+  en dólares lleva debajo su equivalente en pesos** con la cotización del local
+  (ciclo de la cotización del dólar, 2026-10-18): "≈ $ 1.450.000", más chico y
+  apagado para que no se lea como un segundo precio, y con la fecha si esa
+  cotización no es de hoy ("≈ $ 1.420.000 · 15/10", la forma corta de
+  `equivalenteEnPesos` porque la columna es de 140 px). Es orientativo: el cobro
+  sigue cobrando en dólares con la cotización de cada pago. **Sin ninguna
+  cotización cargada no hay equivalente** — un número inventado es peor que
+  ninguno, la regla que hasta ese ciclo dejaba la columna sin equivalente
+  nunca (ciclo del precio en dólares, 2026-08-29: "fuera de una venta no hay
+  ninguna cotización de la cual derivarlo").
 - **El conteo de una rama incluye el de sus marcas**, más los artículos
   colgados del rubro mismo. Si no cerrara, el número de arriba no coincidiría
   con la suma de abajo y el árbol dejaría de servir para decidir.
@@ -1548,10 +1594,12 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
 **Qué se puede hacer**
 
 - Ver los tiles: **En stock** (pintado con `--marca`, el ancla de esta
-  pantalla), **Precio de venta** (en su moneda, con hace cuánto se actualizó)
-  y, con el permiso `COSTOS`, **Último costo** (en la moneda en que se cargó,
-  con el margen contra el precio actual cuando las dos monedas coinciden). Un
-  servicio sólo muestra el de precio.
+  pantalla), **Precio de venta** (en su moneda, con hace cuánto se actualizó y,
+  si está en dólares, su equivalente en pesos con la cotización del local) y,
+  con el permiso `COSTOS`, **Último costo** (en la moneda en que se cargó, con
+  el margen contra el precio actual; con monedas distintas, convertido con la
+  cotización del local y diciendo con cuál). Un servicio sólo muestra el de
+  precio.
 - **Costo total** (con el permiso `COSTOS`): cuánto costó la mercadería que
   queda, con la cuenta en el pie — `30 × $ 7.400`, o `3 × US$ 450` si el
   último costo se cargó en dólares: va en la moneda de ese costo. Sale de
@@ -1736,14 +1784,20 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   ingreso guarda la suya (`MovimientoStock.monedaCosto`), el tile muestra el
   costo en ella, y el margen se calcula **sólo cuando costo y precio están en
   la misma moneda** — un iPhone en dólares con el costo cargado en dólares
-  recupera su margen. Con monedas distintas no hay margen (no hay cotización
-  guardada contra la cual comparar) y el pie dice cuál es el cruce: "el costo
+  recupera su margen. Con monedas distintas **y sin ninguna cotización del
+  dólar cargada** no hay margen y el pie dice cuál es el cruce: "el costo
   está en pesos: sin margen para un artículo en dólares" (el texto de antes) o
   "el costo está en dólares: sin margen para un artículo en pesos". Los dos
   son **distintos** del "el precio no permite calcular el margen": aquél es
   "no se puede dividir", éstos son "no hay contra qué comparar".
-  `textoDeMargen(precio, monedaPrecio, costo, monedaCosto)` recibe las dos
-  monedas como parámetros **requeridos** por el mismo motivo que
+  **Con una cotización del local, el cruce sí tiene margen** (ciclo de la
+  cotización del dólar, 2026-10-18): el costo se pasa a la moneda del precio
+  con la vigente y el pie dice con cuál, siempre con su fecha: "margen 31,2 % ·
+  con el dólar a $ 1.450 del 18/10". También con una vieja —es un número de
+  referencia, no plata que se cobra—, y por eso la fecha va siempre. El costo
+  mostrado en el tile NO se convierte: es lo que se pagó, en lo que se pagó.
+  `textoDeMargen(precio, monedaPrecio, costo, monedaCosto, cotizacion)` recibe
+  las dos monedas como parámetros **requeridos** por el mismo motivo que
   `editarArticulo` — omitir una mostraría un margen cruzando monedas, o sea un
   número equivocado sobre plata. El "último costo" sigue siendo el ingreso
   más reciente con costo, **sea cual sea su moneda**: uno en dólares
@@ -2449,8 +2503,10 @@ donde cada vendedor le preguntaba al dueño cuánto se paga por cada equipo.
 - Ver tres números: el precio del equipo, lo que se le reconoce por el usado
   (con el rango en el que cayó) y **la diferencia que paga el cliente**, en la
   banda de `--marca`.
-- Con el equipo y la tabla en monedas distintas, tipear la cotización del
-  dólar y ver la diferencia en la moneda del equipo.
+- Con el equipo y la tabla en monedas distintas, ver la diferencia en la
+  moneda del equipo con la cotización del dólar: el campo arranca con la del
+  local si es de hoy ("Es la cotización del local de hoy; se puede cambiar") y
+  si no, se tipea.
 
 **Decisiones**
 
@@ -2471,9 +2527,13 @@ donde cada vendedor le preguntaba al dueño cuánto se paga por cada equipo.
   ese rango.
 - **El usado que vale más que el equipo** se muestra como "Le devolvés al
   cliente" con el número en positivo, nunca como una diferencia negativa.
-- **Con monedas distintas no se inventa una cotización**, ni la del local: se
-  tipea en cada consulta, como en `/vender`. Sin ella no hay diferencia, y el
-  campo sólo aparece cuando hace falta.
+- **Con monedas distintas no se inventa una cotización**: el campo arranca con
+  la del local **sólo si es de hoy**, la misma regla que el cobro de `/vender`
+  (ciclo de la cotización del dólar, 2026-10-18, que revierte el "se tipea en
+  cada consulta, ni la del local" con que nació esta pantalla). La decide
+  `page.tsx` con `cotizacionDeHoy` al armar la página —el campo se llena una
+  sola vez, al montar—, y nunca la de la consulta anterior. Sin cotización no
+  hay diferencia, y el campo sólo aparece cuando hace falta.
 - **La banda de la diferencia es la única superficie de `--marca`** y está
   siempre, aunque no haya nada elegido —un ancla que aparece y desaparece no es
   un ancla—; mientras falta algo, dice qué. Usa el rol Importe de `/vender`.

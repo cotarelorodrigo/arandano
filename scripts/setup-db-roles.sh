@@ -285,6 +285,27 @@ BEGIN
 END
 $$;
 
+-- cotizaciones_del_dolar: el historial de la cotización del dólar del local,
+-- y la quinta tabla-libro. Su propia línea por el mismo motivo que las de
+-- arriba: el default privilege le da UPDATE y DELETE a toda tabla nueva.
+--
+-- El historial (quién cargó qué dólar y cuándo) es la mitad del pedido que
+-- originó la tabla. Si la app pudiera editarlo, quien tenga el permiso
+-- COTIZACION podría cobrar una tarde con un dólar inventado y después dejar
+-- dicho que el del local era otro. Corregir es cargar una nueva, que queda
+-- arriba de la equivocada.
+--
+-- Sin puerta de atrás por cascada: el padre que cascadea es `tenants`, que la
+-- app no borra, y la FK a `users` es RESTRICT (un usuario con cargas se
+-- desactiva, no se borra).
+DO $$
+BEGIN
+  IF to_regclass('public.cotizaciones_del_dolar') IS NOT NULL THEN
+    EXECUTE 'REVOKE UPDATE, DELETE ON public.cotizaciones_del_dolar FROM arandano_app';
+  END IF;
+END
+$$;
+
 -- leads: append-only para la aplicación, y por un motivo distinto al de
 -- movimientos_stock. Aquella es un libro y no se corrige; ésta no tiene
 -- tenant_id, así que no hay policy que la proteja — sin este REVOKE, cualquier

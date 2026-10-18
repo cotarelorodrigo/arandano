@@ -17,6 +17,8 @@ import { costoTotalDeArticulo } from '@/lib/inventario/valuacion'
 import { resumenDeBorrado } from '@/lib/inventario/articulos'
 import { precioConPlan } from '@/lib/planes/precio'
 import { ROTULO_MEDIO } from '@/lib/ventas/medios'
+import { cotizacionVigente } from '@/lib/cotizacion/consultar'
+import { conElDolar, equivalenteEnPesos, type CotizacionDelLocal } from '@/lib/cotizacion/reglas'
 import estilos from '../tipografia.module.css'
 
 export const dynamic = 'force-dynamic'
@@ -71,37 +73,52 @@ const MARGEN = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 1, maximu
  * artículo no tiene ningún movimiento con costo, no inventes un número"):
  * sin costo cargado, con un precio que no permite dividir (cero —
  * `exigirPrecio` en `lib/inventario/articulos.ts` prohíbe negativo pero no
- * cero), o con costo y precio en monedas distintas.
+ * cero), o con costo y precio en monedas distintas Y SIN cotización del local.
  *
- * Ese tercer caso era, antes del ciclo del costo en dólares (2026-10-18),
- * "el artículo está en dólares": `MovimientoStock.costoUnitario` era pesos
- * por construcción. Desde que el costo tiene moneda (`monedaCosto`), un
- * artículo en dólares con el costo cargado en dólares recupera el margen, y
- * el null queda para el cruce en cualquiera de las dos direcciones. Nada se
- * convierte: comparar un costo en una moneda contra un precio en la otra
- * exigiría inventar una cotización, y el sistema no guarda ninguna — eso es
- * peor que no mostrar nada.
+ * **Con monedas distintas y una cotización del local, convierte** (ciclo de la
+ * cotización del dólar, 2026-10-18,
+ * docs/superpowers/specs/2026-10-18-cotizacion-del-dolar-design.md): pasa el
+ * COSTO a la moneda del precio con la vigente —un costo en pesos se divide por
+ * ella, uno en dólares se multiplica— y el pie dice con cuál: "margen 31,2 % ·
+ * con el dólar a $ 1.450 del 18/10". **Con una vieja también**, porque el
+ * margen es un número de referencia y no plata que se cobra; por eso el pie
+ * lleva la fecha SIEMPRE, sea de hoy o no. Hasta ese ciclo, el cruce daba null
+ * en las dos direcciones: el sistema no guardaba ninguna cotización en la que
+ * confiar, y comparar sin una exigía inventarla.
+ *
+ * La división es de `Decimal` y no de centavos enteros: esto es un porcentaje
+ * para leer, no un importe que entra en una suma que tenga que cerrar — la
+ * prohibición de dividir es del motor de ventas (`aporteDePago`, totales.ts).
  */
 export function textoDeMargen(
   precio: Prisma.Decimal,
   monedaPrecio: 'ARS' | 'USD',
   costo: Prisma.Decimal | null,
   monedaCosto: 'ARS' | 'USD',
+  cotizacion: CotizacionDelLocal | null = null,
 ): string | null {
   if (costo === null) return null
-  if (monedaPrecio !== monedaCosto) return null
   if (precio.lessThanOrEqualTo(0)) return null
-  const margen = precio.minus(costo).dividedBy(precio).times(100)
-  return `margen ${MARGEN.format(margen.toNumber())} %`
+  if (monedaPrecio === monedaCosto) {
+    const margen = precio.minus(costo).dividedBy(precio).times(100)
+    return `margen ${MARGEN.format(margen.toNumber())} %`
+  }
+  if (cotizacion === null) return null
+  const dolar = new Prisma.Decimal(cotizacion.valor)
+  const costoConvertido = monedaCosto === 'ARS' ? costo.dividedBy(dolar) : costo.times(dolar)
+  const margen = precio.minus(costoConvertido).dividedBy(precio).times(100)
+  return `margen ${MARGEN.format(margen.toNumber())} % · ${conElDolar(cotizacion)}`
 }
 
 /**
  * El pie del tile "Último costo" cuando `textoDeMargen` dijo null porque costo
- * y precio están en monedas distintas: dice cuál es el cruce, en vez de un "no
- * se puede calcular" genérico — no es que falte un dato, es que no hay con qué
- * comparar sin una cotización. La moneda del precio es siempre la otra, así
- * que alcanza con la del costo. El texto en pesos es el de antes del ciclo del
- * costo en dólares, sin tocar.
+ * y precio están en monedas distintas Y el local no cargó ninguna cotización
+ * del dólar: dice cuál es el cruce, en vez de un "no se puede calcular"
+ * genérico — no es que falte un dato del artículo, es que no hay con qué
+ * comparar. La moneda del precio es siempre la otra, así que alcanza con la
+ * del costo. El texto en pesos es el de antes del ciclo del costo en dólares,
+ * sin tocar; con una cotización cargada este pie ya no aparece (ver
+ * `textoDeMargen`).
  */
 export function textoDeCruceDeMonedas(monedaCosto: 'ARS' | 'USD'): string {
   return monedaCosto === 'ARS'
@@ -136,8 +153,19 @@ export function textoDeCruceDeMonedas(monedaCosto: 'ARS' | 'USD'): string {
  * escritorio (`I0TWua`/`eB6Wd` de `T5gME`).
  */
 export function Tile({
-  rotulo, valor, pie, marca = false,
-}: { rotulo: string; valor: string; pie?: string; marca?: boolean }) {
+  rotulo, valor, pie, marca = false, equivalente,
+}: {
+  rotulo: string
+  valor: string
+  pie?: string
+  marca?: boolean
+  // Una línea más arriba del pie, para el "≈ $ 1.450.000" de un precio en
+  // dólares (ciclo de la cotización del dólar). Aparte del pie y no fundida en
+  // él: "actualizado hace 6 días" habla del PRECIO y el equivalente habla del
+  // DÓLAR, y cada uno tiene su propia fecha. Sólo la pide "Precio de venta",
+  // que no es el tile de marca.
+  equivalente?: string | null
+}) {
   if (marca) {
     return (
       <div
@@ -178,6 +206,11 @@ export function Tile({
       >
         {valor}
       </div>
+      {equivalente && (
+        <div className={`${estilos.archivo} text-[12px] font-semibold tabular-nums text-foreground-soft`}>
+          {equivalente}
+        </div>
+      )}
       {pie && <div className="text-[11px] text-muted-foreground">{pie}</div>}
     </div>
   )
@@ -286,7 +319,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
   const SIETE_MESES_ATRAS = new Date()
   SIETE_MESES_ATRAS.setUTCMonth(SIETE_MESES_ATRAS.getUTCMonth() - 7)
 
-  const [movimientos, ultimoConCosto, ventasPorMes, planes, arbol, unidades, resumenBorrado] = await Promise.all([
+  const [movimientos, ultimoConCosto, ventasPorMes, planes, arbol, unidades, resumenBorrado, cotizacion] = await Promise.all([
     prisma.movimientoStock.findMany({
       where: { articuloId: id },
       // `id` como segundo criterio, no sólo `creadoEn`: `creado_en` es la
@@ -372,6 +405,14 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
     // la consulta (dos idas a Postgres dentro de una transacción,
     // `resumenDeBorrado`) sería trabajo tirado.
     puedeBorrar ? resumenDeBorrado(sesion.tenant.id, id) : null,
+    // La cotización del dólar del local (ciclo del 2026-10-18), para el
+    // equivalente en pesos de un precio en dólares y para el margen con costo
+    // y precio en monedas distintas. Sólo si alguno de los dos puede pasar:
+    // un artículo en pesos con costo en pesos no la usa en ningún lado. La
+    // condición del margen mira el costo ya cargado, que está en la consulta
+    // de arriba y no acá — así que se pide para todo artículo en dólares y
+    // para todo producto con COSTOS; es UNA fila por índice.
+    articulo.moneda === 'USD' || (esProducto && puedeCostos) ? cotizacionVigente(sesion.tenant.id) : null,
   ])
 
   const ultimoCosto = ultimoConCosto?.costoUnitario ?? null
@@ -459,6 +500,15 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
           <Tile
             rotulo="PRECIO DE VENTA"
             valor={precioEnSuMoneda(articulo.precio.toString(), articulo.moneda)}
+            // "≈ $ 1.450.000" para un artículo en dólares, con la fecha del
+            // dólar si no es de hoy; nada para uno en pesos o sin cotización
+            // cargada. Orientativo: el cobro sigue cobrando en dólares con la
+            // cotización de cada pago (ver `equivalenteEnPesos`).
+            equivalente={
+              articulo.moneda === 'USD'
+                ? equivalenteEnPesos(articulo.precio.toString(), cotizacion, new Date())
+                : null
+            }
             pie={actualizadoHace(articulo.actualizadoEn)}
           />
           {/* Sin el permiso COSTOS, el tile no se renderea — no se pone en
@@ -475,17 +525,18 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
               rotulo="ÚLTIMO COSTO"
               // El costo en SU moneda —la del ingreso, `monedaCosto`—, que no
               // tiene por qué ser la del artículo: un equipo en dólares puede
-              // haberse comprado en pesos, y al revés. Nunca convertido: no
-              // hay una cotización guardada en la que confiar.
+              // haberse comprado en pesos, y al revés. El VALOR nunca se
+              // convierte —es lo que se pagó, en lo que se pagó—; lo que usa
+              // la cotización del local es el margen del pie.
               valor={ultimoCosto ? precioEnSuMoneda(ultimoCosto.toString(), monedaDelCosto) : '—'}
               pie={
                 ultimoCosto
-                  ? (textoDeMargen(articulo.precio, articulo.moneda, ultimoCosto, monedaDelCosto) ??
+                  ? (textoDeMargen(articulo.precio, articulo.moneda, ultimoCosto, monedaDelCosto, cotizacion) ??
                       // Dos situaciones distintas detrás del mismo `??`: acá
-                      // SÍ hay costo y precio, pero en monedas distintas — no
-                      // es que "no se pueda calcular", es que no hay con qué
-                      // comparar sin cotización (ver el docblock de
-                      // textoDeMargen).
+                      // SÍ hay costo y precio, pero en monedas distintas y el
+                      // local no cargó ninguna cotización del dólar — no es
+                      // que "no se pueda calcular", es que no hay con qué
+                      // comparar (ver el docblock de textoDeMargen).
                       (monedaDelCosto !== articulo.moneda
                         ? textoDeCruceDeMonedas(monedaDelCosto)
                         : 'el precio no permite calcular el margen'))

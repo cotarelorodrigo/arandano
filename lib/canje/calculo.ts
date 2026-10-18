@@ -172,14 +172,18 @@ export type ResultadoDeCanje =
  * - `precio`: el del artículo que se vende, en su moneda.
  * - `valor`: lo que la tabla dice que vale el usado, o `null` si no hay celda
  *   para esa combinación de modelo y rango.
- * - `dolar`: lo que el vendedor tipeó en "Cotización del dólar", tal cual.
+ * - `dolar`: lo que hay en "Cotización del dólar", tal cual (tipeado o la del
+ *   local de hoy con la que arrancó el campo).
  *   Sólo se lee si las monedas difieren.
  *
- * **Con monedas distintas no se inventa una cotización**, ni la del local
- * (`Tenant.cotizacionUsd`) ni ninguna otra: el mismo criterio que `/vender`,
- * donde la cotización se tipea en cada venta. Sin dólar tipeado no hay
- * diferencia. Con él, la diferencia sale **en la moneda del equipo**, que es
- * la moneda en la que el cliente va a pagar.
+ * **Con monedas distintas no se inventa una cotización**: la cuenta usa la
+ * que está en el campo, y sin dólar no hay diferencia. El campo arranca con la
+ * del local sólo si es de hoy (ciclo de la cotización del dólar, 2026-10-18,
+ * docs/superpowers/specs/2026-10-18-cotizacion-del-dolar-design.md), igual que
+ * el cobro de `/vender` — esa decisión es de la pantalla (`page.tsx`), no de
+ * esta función, que sigue recibiendo lo que haya en el campo y nada más. Con
+ * dólar, la diferencia sale **en la moneda del equipo**, que es la moneda en
+ * la que el cliente va a pagar.
  *
  * El redondeo es al centavo, mitad hacia arriba, sobre el valor convertido —el
  * mismo `pesosDePagoEnCentavos` del carrito para pasar dólares a pesos—. Para

@@ -260,8 +260,9 @@ const NOMBRE_MONEDA: Record<MonedaDeCanje, string> = { USD: 'dólares', ARS: 'pe
 
 /**
  * La moneda de toda la tabla, con el aviso ANTES de confirmar: cambiarla no
- * convierte los valores —no hay cotización guardada de la cual hacerlo—, así
- * que un 400 en dólares pasa a ser $ 400. Un diálogo y no el doble toque de
+ * convierte los valores —la tabla es lo que el dueño escribió, y la cotización
+ * del local es la de hoy (ver `ConfiguracionDeCanje` en el schema)—, así que
+ * un 400 en dólares pasa a ser $ 400. Un diálogo y no el doble toque de
  * "Borrar": acá hay algo que explicar antes, no sólo algo que confirmar.
  */
 export function CardDeMoneda({ moneda }: { moneda: MonedaDeCanje }) {
