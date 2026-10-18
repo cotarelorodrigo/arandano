@@ -212,3 +212,26 @@ más conservadora que había:
   dejaba congelados a los repetidos heredados: ninguno de los dos se podía
   editar, ni siquiera para tildar las ofertas. Pasarse a un número que ya tiene
   otro cliente sigue rechazándose.
+- **Un doble cobro simultáneo con cliente nuevo devuelve la misma venta**
+  (review del ciclo). La segunda transacción espera el lock del teléfono y
+  choca con el cliente que acaba de crear la primera, antes de llegar al
+  índice único de la clave de idempotencia. `crearVenta` trata ese
+  `TELEFONO_REPETIDO` como trata el P2002: si la clave ya tiene venta, la
+  devuelve; si no, el teléfono era de otro y el error sale tal cual.
+
+Lo que la review encontró y queda **documentado, sin arreglar** en este ciclo:
+
+- **La clave de idempotencia describe sólo el carrito.** Si la respuesta del
+  cobro se pierde, quien cobra agrega un cliente y vuelve a cobrar con el mismo
+  carrito, el motor devuelve la primera venta, que quedó sin cliente. Se
+  corrige desde `/ventas/[id]` con "Asignar". Sumar el cliente a la firma del
+  carrito cambiaría cuándo se renueva la clave, que es lógica delicada de
+  `/vender`, y no vale el riesgo por este caso.
+- **Esc en el buscador de clientes del diálogo de `/ventas/[id]` cierra el
+  diálogo entero**, no sólo la lista: el `DismissableLayer` de Radix escucha
+  Escape en captura, antes que el campo. No se pierde nada (no hay nada
+  guardado a medias), pero no es lo que pasa en `/vender`.
+- **En el CSV, un teléfono que arranca con "+" sale con un apóstrofe
+  adelante** ("'+54 9 11…"): es la protección contra fórmulas de
+  `lib/formato/csv.ts`, compartida con los otros dos CSV. En Excel y Sheets
+  el apóstrofe no se ve; en un editor de texto sí.

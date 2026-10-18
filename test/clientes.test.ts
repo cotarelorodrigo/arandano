@@ -439,6 +439,25 @@ describe('venta con cliente nuevo', () => {
     expect(await cuantosConClave(tenantId, tel)).toBe(1)
   })
 
+  // Review del ciclo: el doble submit DE VERDAD simultáneo (dos pestañas, un
+  // reintento de red). La segunda transacción espera el lock del teléfono, y
+  // cuando la primera comitea ve al cliente recién creado: sin el manejo de
+  // ese choque, quien cobra leía "ese teléfono ya lo tiene…" por una venta que
+  // sí salió. Tiene que devolver la misma venta, como con el índice único.
+  it('dos cobros simultáneos con la misma clave y un cliente nuevo devuelven la misma venta', async () => {
+    const tel = telefonoNuevo()
+    const entrada = {
+      tenantId, usuarioId,
+      clienteNuevo: { nombre: 'Doble pestaña', telefono: tel, aceptaOfertas: false },
+      items: [{ articuloId: servicio, cantidad: d('1') }],
+      pagos: pagoDe('1000'),
+      claveIdempotencia: `clientes-simultaneo-${tel}`,
+    }
+    const [a, b] = await Promise.all([crearVenta(entrada), crearVenta(entrada)])
+    expect(b.id).toBe(a.id)
+    expect(await cuantosConClave(tenantId, tel)).toBe(1)
+  })
+
   it('clienteId y clienteNuevo juntos se rechazan', async () => {
     const c = await crearCliente({ tenantId, nombre: 'Elegido', telefono: null })
     await expect(

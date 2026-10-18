@@ -5,6 +5,7 @@ import { normalizarPagos, resolverPagosConRecargo, exigirQueCierren } from './pa
 import type { PagoDeVenta } from './pagos'
 import { exigirCliente, exigirUsuario } from './pertenencia'
 import { crearClienteEn } from '@/lib/clientes/administrar'
+import { ErrorDeCliente } from '@/lib/clientes/errores'
 import { ErrorDeVenta, traducirErrorDeBase } from './errores'
 import { normalizarDetalle } from './detalle'
 import { normalizarImei } from '@/lib/inventario/unidades'
@@ -662,7 +663,19 @@ export async function crearVenta(
     // comitea, el P2002 le llega con la fila del otro YA VISIBLE; si
     // rollbackea, inserta ella. El camino "chocó pero no la encuentro" no
     // existe — y si existiera, el `if` de abajo relanza en vez de mentir.
-    if (claveIdempotencia !== undefined && esP2002(e)) {
+    //
+    // **El mismo razonamiento vale para un `TELEFONO_REPETIDO` con
+    // `clienteNuevo`** (review del ciclo de la solapa Clientes): en el doble
+    // submit de verdad simultáneo —dos pestañas, un reintento de red—, la
+    // segunda transacción espera el lock del teléfono (`bloquearClave`), la
+    // primera comitea venta y cliente, y la segunda choca con SU PROPIO
+    // cliente antes de llegar al índice único de la clave. Sin esto quien
+    // cobra leía "ese teléfono ya lo tiene…" por una venta que sí salió. Si
+    // la clave aparece, el choque era éste; si no, el teléfono era de otro y
+    // el error se relanza tal cual.
+    const esChoqueDeSuPropioCliente =
+      clienteNuevo !== undefined && e instanceof ErrorDeCliente && e.codigo === 'TELEFONO_REPETIDO'
+    if (claveIdempotencia !== undefined && (esP2002(e) || esChoqueDeSuPropioCliente)) {
       const yaExiste = await enTransaccionDeTenant(tenantId, async (tx) =>
         tx.venta.findFirst({
           where: { claveIdempotencia },

@@ -3502,6 +3502,12 @@ Y del producto:
     teléfono, que ya existe para eso).
   - Exportar y borrar como permiso delegable, si un dueño lo pide; bitácora de
     quién cambió el cliente de una venta, si hace falta.
+  - **Tres menores de la review, documentados en el spec ("Ajustes")**: la
+    clave de idempotencia describe sólo el carrito (respuesta perdida + agregar
+    un cliente + volver a cobrar devuelve la primera venta sin cliente; se
+    corrige con "Asignar"); Esc en el buscador del diálogo de `/ventas/[id]`
+    cierra el diálogo entero; y en el CSV un teléfono "+54…" lleva un
+    apóstrofe adelante por la protección contra fórmulas.
   - **Preguntas abiertas para el cliente**: qué datos quiere guardar además de
     nombre, teléfono, email y notas (¿DNI, cumpleaños, dirección?); por qué
     medio quiere mandar las ofertas; si quiere poder cargar a alguien sin
