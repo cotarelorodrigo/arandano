@@ -1369,7 +1369,9 @@ stock inicial (`design/arandano.pen`, frame `App / Artículo nuevo`).
 - Dejar el SKU vacío y que se genere solo, con el próximo código libre
   mostrado como ayuda.
 - Cargar stock inicial y, con el permiso `COSTOS`, su costo unitario, que nace
-  como movimiento y no como un número suelto.
+  como movimiento y no como un número suelto. El costo lleva su propio selector
+  `$ / US$` (ciclo del costo en dólares, 2026-10-18), que sigue a la moneda del
+  precio hasta que se lo toca.
 - **Prender "Lleva IMEI o número de serie"** (ciclo de unidades por IMEI,
   2026-09-02): junto a "Cantidad" aparece una lista donde se escanea o tipea un
   IMEI por línea —Enter agrega una fila y la enfoca, así que un lector de

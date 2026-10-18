@@ -121,3 +121,26 @@ dashboard para montos en dos monedas. Sumarlos exigiría una cotización.
   a `costoArs`; ítem ARS con costo ARS sigue igual (regresión).
 - `valuacionDelTenant` separa pesos y dólares.
 - Migración: las filas existentes quedan en `ARS`.
+
+## Ajustes durante la implementación
+
+- **El tile "Costo del stock" invierte cuando no hay ni un peso** (decisión 6).
+  El spec dice "los pesos como valor"; con sólo dólares eso dejaba "$ 0,00" de
+  titular y la plata real en el pie, que es exactamente lo que el tile de marca
+  de la misma fila ya rechazó (`soloEnDolares`). Como la decisión pide "el mismo
+  formato que ya usa el resto del dashboard", se copió también su inversión:
+  con pesos, pesos de número grande y `US$ X aparte` en el pie; sin pesos y con
+  dólares, dólares de número grande. Vive en `tileDelCostoDelStock`
+  (`app/(app)/dashboard/page.tsx`).
+- **`SelectorDeMoneda` ganó tres props opcionales** (`etiqueta`, `avisarCambio`,
+  `valor`/`onCambio`) para servir al costo sin un segundo componente. Sin
+  pasarlas, el selector del precio se comporta igual que antes. El costo no
+  lleva el aviso "el precio no se convierte": no había un costo anterior que se
+  reinterprete.
+- **La moneda del costo se valida aunque el costo se descarte** por falta de
+  `COSTOS`: un valor que no es `ARS`/`USD` sólo puede venir de un POST armado a
+  mano, tenga o no el permiso quien lo manda. Vacío o ausente es pesos.
+- **`crearVenta` no filtra el último costo por moneda** y descarta después: un
+  ítem en pesos cuyo último costo está en dólares queda en `NULL` en vez de
+  caer al ingreso anterior en pesos (decisión 4 aplicada a la 5).
+
