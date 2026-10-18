@@ -221,13 +221,19 @@ export async function guardarModelo(e: {
         }
       }
 
-      const choque = await tx.modeloDeCanje.findFirst({
-        where: {
-          nombre: { equals: nombre, mode: 'insensitive' },
-          ...(e.id !== null ? { id: { not: e.id } } : {}),
-        },
-        select: { nombre: true },
-      })
+      // La comparación se hace en JavaScript y no con `mode: 'insensitive'`:
+      // no está garantizado que Prisma no la compile a `ILIKE`, donde `_` y
+      // `%` son comodines — "iPhone_14" chocaría con "iPhoneX14" (hallazgo de
+      // la review del ciclo). Un local tiene decenas de modelos, no miles, y
+      // `toLowerCase` es la misma regla que el índice `lower(nombre)` de la
+      // base, que sigue siendo la garantía final.
+      const clave = nombre.toLowerCase()
+      const choque = (
+        await tx.modeloDeCanje.findMany({
+          where: e.id !== null ? { id: { not: e.id } } : {},
+          select: { nombre: true },
+        })
+      ).find((m) => m.nombre.toLowerCase() === clave)
       if (choque) throw repetido(choque.nombre)
 
       const rangosDelLocal = new Set(
@@ -262,6 +268,16 @@ export async function guardarModelo(e: {
     })
   } catch (err) {
     if (esP2002(err)) throw repetido(nombre)
+    // P2003: el rango se borró en otra pestaña entre la lectura de
+    // `rangosDelLocal` y el upsert de la celda (la FK lo frena). Es el mismo
+    // hecho que el chequeo de arriba, sólo que llegó tarde: mismo mensaje, y
+    // no un 500 (hallazgo de la review del ciclo).
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
+      throw new ErrorDeCanje(
+        'RANGO_INEXISTENTE',
+        'Uno de los rangos cambió mientras editabas la fila. Recargá la pantalla y volvé a cargarla.',
+      )
+    }
     throw err
   }
 }

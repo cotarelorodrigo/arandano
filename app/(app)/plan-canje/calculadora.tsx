@@ -249,9 +249,14 @@ function BuscadorDeEquipo({
     const texto = busqueda.trim()
     if (texto === '') return
     const t = setTimeout(() => {
-      buscarEquipos(texto).then((r) => {
-        if (vigente.current.trim() === texto) setResultados(r)
-      })
+      // El `.catch` deja la lista como estaba: una búsqueda que falla (la
+      // sesión venció, se cortó la red) no tiene nada mejor que mostrar, y
+      // sin él el navegador registra un rechazo sin manejar.
+      buscarEquipos(texto)
+        .then((r) => {
+          if (vigente.current.trim() === texto) setResultados(r)
+        })
+        .catch(() => {})
     }, 200)
     return () => clearTimeout(t)
   }, [busqueda])

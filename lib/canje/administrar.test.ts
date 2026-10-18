@@ -201,6 +201,15 @@ describe('modelos', () => {
     },
   )
 
+  // `_` y `%` son comodines de LIKE: si el chequeo se compilara a `ILIKE`,
+  // "iPhoneX14" chocaría contra "iPhone_14" sin ser el mismo nombre.
+  it('un "_" en el nombre no funciona como comodín', async () => {
+    await canje.guardarModelo({ tenantId, id: null, nombre: 'iPhone_14', valores: [] })
+    await expect(
+      canje.guardarModelo({ tenantId, id: null, nombre: 'iPhoneX14', valores: [] }),
+    ).resolves.toMatchObject({ id: expect.any(String) })
+  })
+
   // La red de abajo: si la aplicación se olvidara de chequear, el índice de
   // expresión de la migración igual rechaza el duplicado.
   it('la base rechaza el duplicado sin distinguir mayúsculas aunque nadie chequee antes', async () => {
