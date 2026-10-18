@@ -22,6 +22,42 @@ export function hoyEnArgentina(): string {
   }).format(new Date())
 }
 
+/**
+ * El día CALENDARIO de Buenos Aires en que cae un instante, como `YYYY-MM-DD`.
+ *
+ * Es `hoyEnArgentina` para cualquier instante y no sólo para `new Date()`: la
+ * pregunta "¿esto es de hoy?" compara dos de éstos, y los dos tienen que salir
+ * del mismo huso declarado.
+ */
+export function diaEnArgentina(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+  }).format(d)
+}
+
+/**
+ * Si `fecha` cae el mismo día de Buenos Aires que `ahora`.
+ *
+ * Es la regla que decide si la cotización del dólar del local se puede usar
+ * sola (docs/superpowers/specs/2026-10-18-cotizacion-del-dolar-design.md): una
+ * de hoy precarga el cobro; una de ayer se muestra con su fecha y nada más.
+ *
+ * **Por día calendario y no "las últimas 24 horas"**: el dueño piensa el dólar
+ * como "el de hoy", y una carga de las 9 de la mañana de ayer tiene que dejar
+ * de valer a la medianoche, no a las 9 de hoy. Y **en hora argentina**, no la
+ * del servidor: Ashburn ya es mañana desde las 21 de Buenos Aires (UTC-3 contra
+ * UTC-5/-4), así que comparar en el huso del servidor daría por vieja la
+ * cotización que el dueño cargó a las 22.
+ *
+ * `ahora` es parámetro y no `new Date()` adentro, por lo mismo que
+ * `actualizadoHace`: el borde de medianoche se prueba sin mockear el reloj.
+ * No importa nada: la usan componentes `'use client'` (el cobro decide en el
+ * navegador, en el momento del cambio, si precarga).
+ */
+export function esDeHoy(fecha: Date, ahora: Date): boolean {
+  return diaEnArgentina(fecha) === diaEnArgentina(ahora)
+}
+
 /** `YYYY-MM-DD` al instante en que ese día empieza en Buenos Aires (UTC-3). */
 export function inicioDelDia(fecha: string): Date {
   return new Date(`${fecha}T00:00:00-03:00`)
