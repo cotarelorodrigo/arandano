@@ -138,6 +138,27 @@ function monedaDe(datos: FormData): Moneda {
   return valor
 }
 
+/**
+ * La moneda del costo (ciclo del costo en dólares, 2026-10-18), con la misma
+ * validación que `monedaDe` y por la misma razón: el `<SelectorDeMoneda>` del
+ * costo sólo emite "ARS" o "USD", así que otra cosa es un POST armado a mano.
+ *
+ * Con UNA diferencia deliberada: **ausente vale pesos** (decisión 2 del spec).
+ * La moneda del precio siempre viajó con el formulario; la del costo no existía
+ * antes de este ciclo, y un formulario que manda el costo sin moneda quería
+ * decir pesos — que es lo que era todo costo hasta acá. Ausente es el campo que
+ * no llegó o llegó vacío (`texto` no distingue los dos, y ninguno de los dos
+ * es una moneda que alguien haya elegido).
+ */
+function monedaCostoDe(datos: FormData): Moneda {
+  const valor = texto(datos, 'monedaCosto')
+  if (valor === '') return 'ARS'
+  if (valor !== 'ARS' && valor !== 'USD') {
+    throw new Error(`moneda del costo inválida: "${valor}"`)
+  }
+  return valor
+}
+
 export async function altaArticulo(
   _e: EstadoInventario,
   datos: FormData,
@@ -186,6 +207,10 @@ export async function altaArticulo(
           tipo === 'PRODUCTO' && (await puede('COSTOS'))
             ? aDecimalOpcional(texto(datos, 'costoUnitario'), 'el costo')
             : null,
+        // Se valida aunque el costo se descarte: un valor inventado es un POST
+        // armado a mano, tenga o no el permiso quien lo manda. Sin costo, la
+        // moneda que quede en la fila no significa nada.
+        monedaCosto: monedaCostoDe(datos),
       }),
     )
     revalidatePath('/inventario')
@@ -360,6 +385,8 @@ export async function ingresarMercaderia(
         costoUnitario: (await puede('COSTOS'))
           ? aDecimalOpcional(texto(datos, 'costoUnitario'), 'el costo')
           : null,
+        // Ausente vale pesos: ver `monedaCostoDe`.
+        monedaCosto: monedaCostoDe(datos),
         nota: texto(datos, 'nota') || undefined,
       })
       return imeis ? imeis.length.toString() : cantidad!.toString()

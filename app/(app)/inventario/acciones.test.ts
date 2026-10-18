@@ -1040,6 +1040,89 @@ describe('el blindaje de COSTOS, por efecto y no por texto (I5 de la review fina
   })
 })
 
+// Ciclo del costo en dólares (2026-10-18): la moneda del costo, del FormData a
+// la fila. Contra la base con `owner.query`, igual que el blindaje de arriba:
+// lo que importa es lo que quedó guardado, no lo que la acción dice.
+describe('la moneda del costo, del formulario a la fila', () => {
+  async function monedaDelUltimoIngreso(articuloId: string): Promise<string> {
+    const { rows } = await owner.query(
+      `SELECT moneda_costo FROM movimientos_stock WHERE articulo_id = $1
+        ORDER BY creado_en DESC, id DESC LIMIT 1`,
+      [articuloId],
+    )
+    return rows[0].moneda_costo
+  }
+
+  it('el ingreso guarda la moneda que eligió el selector', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('iPhone ingresado en dólares', '0')
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('cantidad', '2')
+    datos.set('costoUnitario', '450')
+    datos.set('monedaCosto', 'USD')
+    const r = await ingresarMercaderia(INICIAL, datos)
+    expect(r.error).toBeNull()
+    expect(await monedaDelUltimoIngreso(id)).toBe('USD')
+  })
+
+  // Decisión 2 del spec: un formulario cacheado de antes del ciclo manda el
+  // costo sin moneda, y lo que quería decir es pesos.
+  it('un ingreso sin moneda del costo la guarda en pesos', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Ingreso de formulario viejo', '0')
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('cantidad', '2')
+    datos.set('costoUnitario', '700')
+    const r = await ingresarMercaderia(INICIAL, datos)
+    expect(r.error).toBeNull()
+    expect(await monedaDelUltimoIngreso(id)).toBe('ARS')
+  })
+
+  it('el alta guarda la moneda del costo del stock inicial', async () => {
+    estado.cookie = cookieDuenio
+    const datos = new FormData()
+    datos.set('nombre', 'iPhone 15 alta en dólares')
+    datos.set('tipo', 'PRODUCTO')
+    datos.set('precio', '950')
+    datos.set('moneda', 'USD')
+    datos.set('stockInicial', '2')
+    datos.set('costoUnitario', '780')
+    datos.set('monedaCosto', 'USD')
+    const r = await altaArticulo(INICIAL, datos)
+    expect(r.error).toBeNull()
+
+    const { rows } = await owner.query(
+      `SELECT m.moneda_costo, m.costo_unitario FROM movimientos_stock m
+        JOIN articulos a ON a.id = m.articulo_id
+       WHERE a.nombre = 'iPhone 15 alta en dólares' AND a.tenant_id = $1`,
+      [estado.tenantId],
+    )
+    expect(rows[0].moneda_costo).toBe('USD')
+    expect(new Prisma.Decimal(rows[0].costo_unitario).toString()).toBe('780')
+  })
+
+  // Mismo criterio que `monedaDe` para la del precio: el selector sólo emite
+  // ARS o USD, así que otra cosa es un POST armado a mano y no se traduce a
+  // un cartel. Y no se guarda nada.
+  it('una moneda del costo que no es ARS ni USD se rechaza y no ingresa nada', async () => {
+    estado.cookie = cookieDuenio
+    const id = await crearArticuloDePrueba('Ingreso con moneda inventada', '0')
+    const datos = new FormData()
+    datos.set('articuloId', id)
+    datos.set('cantidad', '2')
+    datos.set('costoUnitario', '700')
+    datos.set('monedaCosto', 'EUR')
+    await expect(ingresarMercaderia(INICIAL, datos)).rejects.toThrow('moneda del costo inválida')
+    const { rows } = await owner.query(
+      `SELECT count(*)::int AS n FROM movimientos_stock WHERE articulo_id = $1`,
+      [id],
+    )
+    expect(rows[0].n).toBe(0)
+  })
+})
+
 // Task 7 del ciclo de unidades por IMEI (design/superpowers/specs/
 // 2026-09-02-unidades-por-imei-design.md): el alta carga las unidades cuando
 // el switch viene prendido.
