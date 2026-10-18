@@ -1900,6 +1900,88 @@ el panel de precios no está dibujado ahí, ver *Decisiones* más abajo).
   conteo" y "Cómo se movió". Lo que sigue sin frame es el diálogo de prender,
   que ya no existe.
 
+## `/clientes`
+
+Quienes le compraron al local, para buscarlos, corregirlos y exportarlos. Sale
+del pedido de un local de iPhones: tener registrados a todos los que compraron,
+para después mandarles ofertas (spec
+`docs/superpowers/specs/2026-10-18-clientes-design.md`).
+
+**Acciones**: `altaDeCliente`, `exportarClientes` (sólo el dueño),
+`buscarClientesDelLocal` (la usa el selector de cliente de `/vender` y de
+`/ventas/[id]`).
+
+**Qué se puede hacer**
+
+- Buscar por nombre, teléfono o email. El teléfono se encuentra **en otro
+  formato**: "1122334455" encuentra a quien está cargado como "11 2233-4455",
+  y "+54 9 11 2233-4455" también.
+- Filtrar a los que **aceptan ofertas**.
+- Ver, por cliente: nombre, teléfono y email, el chip "Acepta ofertas", cuántas
+  compras tiene (sin las anuladas) y la fecha de la última —o la de alta, si
+  nunca compró—. Cada fila abre la ficha.
+- Cargar un cliente con "Cliente nuevo" (diálogo: nombre, teléfono, email,
+  notas, acepta ofertas).
+- **Exportar CSV**, sólo el dueño, con la búsqueda y el filtro aplicados.
+
+**Decisiones**
+
+- **El cliente nace al cobrar, no acá.** El lugar donde se registran es el
+  campo "Cliente" del cobro de `/vender` (y la recepción de un equipo). Esta
+  pantalla es para buscar, corregir y exportar; el estado vacío lo dice.
+- **Cualquier usuario con sesión** la ve, busca y carga; **exportar y borrar
+  son del dueño** (`exigirDuenio`), re-exigido en cada action. No es un permiso
+  delegable en este ciclo.
+- **Un teléfono no se repite en el local**: el alta, la edición, la venta y la
+  orden de trabajo rechazan un número que ya tiene otro cliente —comparado por
+  los últimos 10 dígitos— con un mensaje que lo nombra. Con menos de 10 dígitos
+  el teléfono se guarda pero no participa. No hay índice único en la base: los
+  repetidos de antes no se fusionan en este ciclo.
+- **"Acepta ofertas" arranca destildado**, y quedó en "no" para todos los
+  clientes que existían antes del campo.
+- **Sin paginar**: se ven los primeros 200 y la pantalla dice cuántos hay en
+  total ("buscá para encontrar al resto"). El CSV no tiene tope.
+- **Filas y no una tabla**, para que entre en 390 px sin scroll de costado.
+- **Sin `--marca`**: no hay un importe que se diga en voz alta.
+- **Funciona sin JavaScript** el buscador y el filtro (`<form method="get">`);
+  el alta (diálogo) y el CSV no.
+- **`design/arandano.pen` no dibuja esta pantalla.** Entrada 40 de
+  `docs/correcciones-pendientes-del-pen.md`.
+
+## `/clientes/[id]`
+
+La ficha de un cliente: sus datos, sus compras y sus órdenes de servicio
+técnico.
+
+**Acciones**: `edicionDeCliente`, `bajaDeCliente` (sólo el dueño).
+
+**Qué se puede hacer**
+
+- Editar nombre, teléfono, email, notas y "Acepta que le mandemos ofertas". Un
+  campo vacío borra el dato.
+- Ver sus compras —número, fecha y la plata que entró, en su moneda—, cada una
+  enlazada a `/ventas/[id]`. Las anuladas se ven tachadas y con el chip
+  "Anulada".
+- Ver sus órdenes de servicio técnico (sólo si tiene), enlazadas a la orden.
+- **Borrar** al cliente, sólo el dueño y sólo **sin ventas ni órdenes** (el
+  cargado por error, el duplicado), con confirmación en dos toques. Con
+  historia, la card dice por qué no ("Tiene 3 compras y 1 orden: no se puede
+  borrar") en vez de ofrecer un botón que va a fallar.
+
+**Decisiones**
+
+- **Sin baja lógica**: el "no quiero ver más a este cliente" no está en el
+  pedido, y "no le escribas" ya lo resuelve el consentimiento.
+- **La historia cuenta las anuladas** para decidir si se puede borrar: la FK
+  las cuenta igual.
+- **Se ven las últimas 100** compras y órdenes; si hay más, la card lo dice.
+- **En el teléfono los datos van primero**: quien abre la ficha desde el
+  mostrador casi siempre viene a corregir un teléfono.
+- 404 para un id que no es uuid y para un cliente de otro local, sin
+  distinguirlos.
+- **`design/arandano.pen` no dibuja esta pantalla.** Entrada 40 de
+  `docs/correcciones-pendientes-del-pen.md`.
+
 ## `/servicio-tecnico`
 
 El tablero de órdenes: qué equipos hay en el local y en qué anda cada uno.

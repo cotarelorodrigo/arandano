@@ -215,6 +215,10 @@ const CONSUMIDORES_LEGITIMOS: Record<string, string> = {
     'controlMovil y no por accionMovil por el mismo motivo que el botón de ' +
     'imprimir de arriba: abrir un diálogo no es navegar a ninguna URL, así ' +
     'que el par de colores lo tiene que escribir él y no <Encabezado>.',
+  'app/(app)/clientes/formularios.tsx':
+    'el trigger de "Cliente nuevo" en el teléfono ocupa esa MISMA ranura ' +
+    'derecha con el MISMO tono "accion", por el mismo motivo exacto que "Plan ' +
+    'nuevo" de /formas-de-pago, arriba: abrir un diálogo no es navegar.',
 }
 
 describe('nadie toma --primary-foreground por "el color claro"', () => {
