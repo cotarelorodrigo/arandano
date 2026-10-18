@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { aDecimal, aDecimalOpcional, ErrorDeFormato } from './numeros'
+import { aCotizacion, aDecimal, aDecimalOpcional, ErrorDeFormato } from './numeros'
 
 describe('aDecimal', () => {
   it('acepta un entero', () => {
@@ -108,5 +108,29 @@ describe('aDecimalOpcional', () => {
     expect(() => aDecimalOpcional('850.000', 'el costo')).toThrowError(
       expect.objectContaining({ codigo: 'NUMERO_AMBIGUO' }),
     )
+  })
+})
+
+// La gramática de una cotización del dólar: la compartida, con "un punto y
+// tres dígitos" leído como miles (hallazgo de la review del ciclo de la
+// cotización del dólar). Sólo esa excepción: lo demás se rechaza igual.
+describe('aCotizacion', () => {
+  it.each([
+    ['1.450', '1450'],
+    ['12.500', '12500'],
+    ['1.450,50', '1450.5'],
+    ['1450', '1450'],
+    ['1450,5', '1450.5'],
+    [' 1.450 ', '1450'],
+  ])('%j es %s', (texto, valor) => {
+    expect(aCotizacion(texto, 'la cotización').toString()).toBe(valor)
+  })
+
+  it.each(['1,450', '1.4500', '0.450', 'abc', ''])('%j se sigue rechazando', (texto) => {
+    expect(() => aCotizacion(texto, 'la cotización')).toThrowError(ErrorDeFormato)
+  })
+
+  it('la excepción no alcanza a un precio', () => {
+    expect(() => aDecimal('1.450', 'el precio')).toThrowError(ErrorDeFormato)
   })
 })

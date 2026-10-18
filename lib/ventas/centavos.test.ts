@@ -11,7 +11,7 @@ import {
 import {
   totalDeItems, totalDePagos, totalesDePagos, recargoDePago, aporteDePago, montoEntregado,
 } from './totales'
-import { aDecimal, ErrorDeFormato } from '@/lib/formato/numeros'
+import { aCotizacion, aDecimal, ErrorDeFormato } from '@/lib/formato/numeros'
 
 describe('conversión a enteros', () => {
   it('lee el toString de un Decimal de plata', () => {
@@ -212,15 +212,33 @@ describe('lo que la persona tipea vale lo mismo de los dos lados', () => {
     expect(aDiezMilesimas(aDecimal(texto, 'la cotización').toString())).toBe(diezmilesimas)
   })
 
+  // La excepción de la gramática de cotización (`aCotizacionCanonica`): un
+  // punto y tres dígitos es mil, porque "uno con cuatrocientos cincuenta
+  // pesos por dólar" no existe. Los dos lados la aplican igual: lo que el
+  // botón de cobrar cuenta es lo que el servidor guarda.
+  it('"1.450" es 1450 para la cotización, en la pantalla y en el servidor', () => {
+    expect(cotizacionEnDiezMilesimas('1.450')).toBe(14500000)
+    expect(aDiezMilesimas(aCotizacion('1.450', 'la cotización').toString())).toBe(14500000)
+    // Y para un monto sigue siendo ambiguo: la excepción no se filtra.
+    expect(dineroEnCentavos('1.450')).toBeNaN()
+    expect(() => aDecimal('1.450', 'el precio')).toThrowError(ErrorDeFormato)
+  })
+
   // La otra mitad, y la que dejaba habilitar Cobrar para una venta perdida: lo
   // que el servidor rechaza no puede valer un número en la pantalla. El campo
   // VACÍO está en la lista a propósito — contaba como cero.
   const rechazados = ['', '   ', '850.000', '1.500', '12,345', 'abc', '-5', '1,5,5', '1..5']
+  // '850.000' y '1.500' quedan afuera de la cotización: ahí son miles (ver el
+  // caso de "1.450" más arriba).
+  const sonMilesEnUnaCotizacion = new Set(['850.000', '1.500'])
   it.each(rechazados)('ninguno de los dos lados acepta %j', (texto) => {
     expect(() => aDecimal(texto, 'la cantidad')).toThrowError(ErrorDeFormato)
     expect(cantidadEnMilesimas(texto)).toBeNaN()
     expect(dineroEnCentavos(texto)).toBeNaN()
-    expect(cotizacionEnDiezMilesimas(texto)).toBeNaN()
+    if (!sonMilesEnUnaCotizacion.has(texto)) {
+      expect(cotizacionEnDiezMilesimas(texto)).toBeNaN()
+      expect(() => aCotizacion(texto, 'la cotización')).toThrowError(ErrorDeFormato)
+    }
   })
 })
 

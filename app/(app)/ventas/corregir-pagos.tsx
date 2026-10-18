@@ -26,7 +26,7 @@ import {
 import { cotizacionParaElCruce } from '@/lib/ventas/cruce'
 import { TOPE_NOTA_DE_CORRECCION } from '@/lib/ventas/correccion'
 import { MEDIOS, ROTULO_MEDIO } from '@/lib/ventas/medios'
-import { aDecimalCanonico, ErrorDeFormato } from '@/lib/formato/gramatica'
+import { aCotizacionCanonica, aDecimalCanonico, ErrorDeFormato } from '@/lib/formato/gramatica'
 import { formatearPrecio, precioEnSuMoneda } from '@/lib/formato/mostrar'
 // De TIPO y no de valor: `lib/planes/consultar.ts` importa Prisma. Mismo caso
 // que en `app/(app)/vender/punto-de-venta.tsx`.
@@ -384,7 +384,9 @@ export function CuerpoDeCorreccion({
         moneda: f.moneda,
         cubre: f.cubre,
         base: aDecimalCanonico(f.base, 'el monto del pago'),
-        cotizacion: aDecimalCanonico(f.cotizacion, 'la cotización'),
+        // La gramática de cotización: "1.450" es mil cuatrocientos cincuenta,
+        // igual que en `cotizacionEnDiezMilesimas` de arriba y en el cobro.
+        cotizacion: aCotizacionCanonica(f.cotizacion, 'la cotización'),
         planId: f.planId,
       }))
     } catch (e) {

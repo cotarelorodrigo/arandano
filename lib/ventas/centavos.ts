@@ -23,7 +23,7 @@
  * que las dos puntas lean un número tipeado con las MISMAS reglas.
  */
 
-import { aDecimalCanonico, ErrorDeFormato } from '@/lib/formato/gramatica'
+import { aCotizacionCanonica, aDecimalCanonico, ErrorDeFormato } from '@/lib/formato/gramatica'
 
 const DECIMALES_DINERO = 2
 const DECIMALES_CANTIDAD = 3
@@ -74,9 +74,15 @@ export function aDiezMilesimas(texto: string): number {
  * es una línea que la pantalla da por buena, deja habilitar Cobrar y el motor
  * rechaza entera. El llamador trata el NaN.
  */
-function tipeadoEnEscala(texto: string, escala: (canonico: string) => number): number {
+function tipeadoEnEscala(
+  texto: string,
+  escala: (canonico: string) => number,
+  // La gramática que lee el texto: la compartida, salvo para una cotización
+  // (ver `aCotizacionCanonica`).
+  gramatica: (texto: string, campo: string) => string = aDecimalCanonico,
+): number {
   try {
-    return escala(aDecimalCanonico(texto, 'el número'))
+    return escala(gramatica(texto, 'el número'))
   } catch (e) {
     // Sólo lo que la gramática entiende como entrada inválida se aplana en
     // NaN; cualquier otra cosa es un bug y tiene que llegar arriba.
@@ -97,7 +103,10 @@ export function dineroEnCentavos(texto: string): number {
 
 /** Lo que se tipeó como cotización, en diezmilésimas. NaN si no. */
 export function cotizacionEnDiezMilesimas(texto: string): number {
-  return tipeadoEnEscala(texto, aDiezMilesimas)
+  // Con la gramática de cotización: "1.450" es 1450 acá igual que en el
+  // servidor (`aCotizacion`), así que el botón de cobrar y el motor no pueden
+  // discrepar sobre cuánto vale lo tipeado.
+  return tipeadoEnEscala(texto, aDiezMilesimas, aCotizacionCanonica)
 }
 
 // Canónico y no tipeado: esto NO pasa por `tipeadoEnEscala`, y es la única

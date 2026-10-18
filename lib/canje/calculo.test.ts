@@ -256,4 +256,17 @@ describe('calcularCanje', () => {
       expect(r).toMatchObject({ tipo: 'CALCULADO', dolar: null, diferencia: { monto: '600.00' } })
     })
   })
+
+  // El campo del dólar de la calculadora usa la gramática de cotización
+  // (vía `cotizacionEnDiezMilesimas`): "1.500" es mil quinientos, como en el
+  // cobro y en el chip de /vender.
+  it('"1.500" en el campo del dólar es mil quinientos', () => {
+    expect(
+      calcularCanje({
+        precio: { monto: '1000', moneda: 'USD' },
+        valor: { monto: '600000', moneda: 'ARS' },
+        dolar: '1.500',
+      }),
+    ).toMatchObject({ tipo: 'CALCULADO', diferencia: { monto: '600.00', moneda: 'USD' }, dolar: '1500' })
+  })
 })
