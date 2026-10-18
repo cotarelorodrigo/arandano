@@ -150,3 +150,58 @@ que registre la operación como venta las llame tal cual.
 - Permisos: un empleado sin `CANJE_VALORES` usa la calculadora pero las acciones
   de la tabla le dan `forbidden`; con el permiso, puede editar; el dueño puede.
 - RLS: las cuatro tablas aisladas entre tenants.
+
+## Ajustes durante la implementación
+
+Llamadas que el código obligó a tomar, todas por el lado conservador. Ninguna
+cambia una decisión de arriba; las anoto para que la revisión no tenga que
+deducirlas del diff.
+
+- **`RangoDeBateria` no tiene columna `orden`.** Como los rangos no se solapan,
+  ordenarlos de mayor a menor batería (`minimo` descendente) es un orden total y
+  el único que tiene sentido en una tabla de canje; una columna editable aparte
+  sólo podría contradecirlo, y nadie la escribiría. Si algún día hace falta,
+  sumarla es una migración aditiva.
+- **La cuenta va en centavos enteros, no en `Prisma.Decimal`.** La calculadora
+  recalcula en el navegador con cada tecla y `Prisma.Decimal` no se puede
+  importar ahí; `lib/canje/calculo.ts` se apoya en `lib/ventas/centavos.ts`,
+  la misma aritmética del carrito de `/vender`. Los montos salen como texto
+  decimal canónico, que es lo que el ciclo de la venta va a pasarle a
+  `Prisma.Decimal`. Conversión con dólar tipeado: dólares → pesos multiplica
+  (`pesosDePagoEnCentavos`), pesos → dólares divide, las dos redondeando al
+  centavo mitad hacia arriba.
+- **El resultado de `calcularCanje` es una unión de tres casos**:
+  `SIN_COTIZACION`, `FALTA_DOLAR` (con motivo `FALTA` o `ILEGIBLE`; un dólar en
+  cero cuenta como ilegible) y `CALCULADO`, con `sentido` (`PAGA_EL_CLIENTE`,
+  `DEVUELVE_EL_LOCAL`, `NADA`) y la diferencia siempre positiva.
+- **La fila de un modelo se guarda con una sola función, `guardarModelo`**:
+  crea o renombra el modelo y escribe todas sus celdas en la misma
+  transacción. Es la lectura literal de "cada fila se edita y se guarda
+  entera"; no hay alta de modelo separada de sus valores.
+- **El nombre único sin mayúsculas tiene dos capas**: el chequeo en la
+  aplicación (`mode: 'insensitive'`), que da el mensaje con el nombre que
+  choca, y un índice único de expresión `(tenant_id, lower(nombre))` en la
+  migración, que gana la carrera entre dos altas. Prisma no lo puede declarar
+  en el schema —mismo caso que el índice parcial de `categorias`— y
+  `migrate diff` no lo reclama.
+- **Los rangos se validan bajo `pg_advisory_xact_lock` por tenant**, además de
+  en la transacción: con la tabla vacía no hay fila que bloquear con
+  `FOR UPDATE`, y dos altas simultáneas pasarían las dos.
+- **`CHECK` en la base** para `0 ≤ minimo ≤ maximo ≤ 100` y `valor ≥ 0`, como
+  red debajo de la validación de la aplicación.
+- **El modelo y los rangos se buscan bajo RLS antes de escribir una celda**: el
+  chequeo de una FK no pasa por RLS, así que sin eso un id de otro local que
+  llegara a la action dejaría una celda colgada de una fila ajena.
+- **La batería acepta "88 %" con el signo** —es lo que el vendedor lee en el
+  equipo— y nada más que dígitos; el borde de un rango también acepta el "%".
+- **Valor máximo de una celda: lo que entra en `Decimal(12,2)`**; el nombre del
+  modelo, 80 caracteres.
+- **Confirmaciones**: borrar un modelo o un rango pide un segundo toque (se
+  llevan sus valores); cambiar la moneda abre un diálogo con un ejemplo de que
+  los números no se convierten.
+- **La pestaña va después de Servicio Técnico y sin `permiso`**: la calculadora
+  es de cualquiera; `CANJE_VALORES` abre la tabla, a la que se entra desde la
+  calculadora.
+- **La calculadora muestra una línea más con monedas distintas**: el usado
+  convertido a la moneda del equipo, con la cotización usada, para que la
+  diferencia se pueda verificar a mano.
