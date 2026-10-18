@@ -29,7 +29,6 @@ export type FilaDeCliente = {
   aceptaOfertas: boolean
   compras: string
   alta: string
-  ultimaCompra: string | null
 }
 
 export function filaDeCliente(c: ClienteDelListado): FilaDeCliente {
@@ -41,7 +40,6 @@ export function filaDeCliente(c: ClienteDelListado): FilaDeCliente {
     aceptaOfertas: c.aceptaOfertas,
     compras: c.compras === 1 ? '1 compra' : `${c.compras} compras`,
     alta: formatearFechaCorta(c.creadoEn),
-    ultimaCompra: c.ultimaCompra ? formatearFechaCorta(c.ultimaCompra) : null,
   }
 }
 
@@ -163,9 +161,9 @@ export function ListadoDeClientes({ filas, aviso }: { filas: FilaDeCliente[]; av
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-0.5 text-right">
                     <span className="text-[13px] font-medium text-foreground tabular-nums">{c.compras}</span>
-                    <span className="text-[11px] text-muted-foreground tabular-nums">
-                      {c.ultimaCompra ? `Última ${c.ultimaCompra}` : `Alta ${c.alta}`}
-                    </span>
+                    {/* La fecha de alta, como pide el spec (decisión 3). La de
+                        la última compra está en el CSV y en la ficha. */}
+                    <span className="text-[11px] text-muted-foreground tabular-nums">Alta {c.alta}</span>
                   </div>
                   <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
                 </Link>

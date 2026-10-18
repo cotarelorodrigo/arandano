@@ -112,11 +112,11 @@ describe('avisoDelListado', () => {
 })
 
 describe('filaDeCliente', () => {
-  it('sin compras muestra la fecha de alta y "Sin teléfono ni email" se resuelve en la pantalla', async () => {
+  it('sin teléfono ni email no inventa un contacto, y una compra va en singular', async () => {
     const { filaDeCliente } = await import('./page')
     const f = filaDeCliente({ ...UNO, telefono: null, email: null, compras: 1, ultimaCompra: null })
     expect(f.contacto).toBeNull()
     expect(f.compras).toBe('1 compra')
-    expect(f.ultimaCompra).toBeNull()
+    expect(f.alta).toBe('01/10/2026')
   })
 })

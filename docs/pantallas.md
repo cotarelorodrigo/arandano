@@ -1940,8 +1940,8 @@ para después mandarles ofertas (spec
   y "+54 9 11 2233-4455" también.
 - Filtrar a los que **aceptan ofertas**.
 - Ver, por cliente: nombre, teléfono y email, el chip "Acepta ofertas", cuántas
-  compras tiene (sin las anuladas) y la fecha de la última —o la de alta, si
-  nunca compró—. Cada fila abre la ficha.
+  compras tiene (sin las anuladas) y la fecha de alta. Cada fila abre la ficha.
+  La fecha de la última compra está en el CSV.
 - Cargar un cliente con "Cliente nuevo" (diálogo: nombre, teléfono, email,
   notas, acepta ofertas).
 - **Exportar CSV**, sólo el dueño, con la búsqueda y el filtro aplicados.
