@@ -7,6 +7,9 @@ import { ArrowRight, CircleAlert, Minus, Plus, ScanBarcode, TriangleAlert, X } f
 import { cobrar, buscarArticulos, unidadesDeArticulo, type EstadoCobro } from './acciones'
 import { usePasoDeCobro, type Paso } from './paso'
 import { ChipCaja, ChipsDeEstado, ControlDeCaja, detenerEscapeGlobal, type CajaDelChip } from './caja'
+// El selector de cliente del cobro, el mismo de "Asignar cliente" en
+// /ventas/[id]. No importa Prisma: busca por un server action.
+import { ElegirCliente, camposOcultosDelCliente, type ClienteElegido } from '../clientes/elegir-cliente'
 import type { ArticuloVendible } from '@/lib/ventas/buscar'
 // De TIPO y no de valor, por lo mismo que `PlanVisible` más abajo:
 // `lib/inventario/unidades.ts` arrastra `lib/tenant/transaccion.ts`, y un
@@ -1063,6 +1066,12 @@ export function PuntoDeVenta({
   // Controlado y no libre en el DOM: el reset tras cobrar limpia por estado, y
   // un textarea sin controlar se quedaría con el detalle de la venta anterior.
   const [detalle, setDetalle] = useState('')
+  // El cliente de la venta, opcional: `null` es consumidor final, que es casi
+  // toda venta de mostrador. Mismo ciclo de vida que `detalle`: es de ESA
+  // venta, así que se limpia al cobrar bien y al vaciar el carrito, y NO al
+  // fallar el cobro (un teléfono repetido se corrige sin volver a tipear).
+  const [cliente, setCliente] = useState<ClienteElegido | null>(null)
+  const ocultosDelCliente = camposOcultosDelCliente(cliente)
   // El último total que los pagos ya reflejaron, para el ajuste de más abajo:
   // sin esto, "seguir el total" se repetiría en cada render y pisaría un monto
   // que la persona ya tocó a mano. Los DOS totales (Task 9): un pago en pesos
@@ -1248,6 +1257,9 @@ export function PuntoDeVenta({
     // El detalle es de ESA venta: dejarlo puesto pegaría el dato de entrega de
     // un cliente a la venta del siguiente.
     setDetalle('')
+    // Y el cliente, por lo mismo y con más motivo: dejarlo puesto le
+    // asignaría la venta siguiente a quien compró recién.
+    setCliente(null)
   }
 
   // Qué pasa cuando una venta se cobró bien. Un efecto de verdad y no un
@@ -1607,6 +1619,8 @@ export function PuntoDeVenta({
       // el texto viejo al rearmar el carrito — se lo reencuentra recién
       // adentro de una venta que no tiene nada que ver.
       setDetalle('')
+      // Mismo argumento para el cliente del cobro.
+      setCliente(null)
       return
     }
     // Primer golpe: arma la confirmación y NO borra nada todavía.
@@ -2503,6 +2517,31 @@ export function PuntoDeVenta({
                     <Plus className="size-[14px]" aria-hidden="true" />
                     Agregar pago
                   </Button>
+                </div>
+
+                {/* El cliente de la venta (ciclo de la solapa Clientes,
+                    2026-10-18): opcional, vacío de arranque, y sin tocarlo los
+                    dos campos ocultos viajan vacíos — `cobrar` los lee como
+                    "consumidor final" y la venta sale como siempre. El cobro
+                    no gana ningún paso obligatorio.
+
+                    Va DESPUÉS de los pagos y ANTES de "Detalles", por el mismo
+                    argumento que el detalle: el pie es lo que se lee de un
+                    vistazo justo antes de apretar Cobrar, y nada se mete en el
+                    medio de eso. Arriba de "Detalles" porque "a quién" se
+                    pregunta antes que "cómo se entrega".
+
+                    El selector vive adentro de este <form> y por eso cumple
+                    tres reglas (ver el docblock de `ElegirCliente`): todos sus
+                    botones son `type="button"` —uno sin tipo cobraría la
+                    venta—, Enter en sus campos no hace el envío implícito, y
+                    Esc no le llega al vaciado del carrito. El cliente nuevo se
+                    crea en el servidor, en la misma transacción que la venta. */}
+                <input type="hidden" name="clienteId" value={ocultosDelCliente.clienteId} />
+                <input type="hidden" name="clienteNuevo" value={ocultosDelCliente.clienteNuevo} />
+                <div className="flex flex-col gap-1.5 px-4 pb-3">
+                  <span className="text-xs text-foreground-soft">Cliente (opcional)</span>
+                  <ElegirCliente valor={cliente} onCambiar={setCliente} deshabilitado={cobrando} />
                 </div>
 
                 {/* El detalle de la venta: texto libre para el dato de entrega

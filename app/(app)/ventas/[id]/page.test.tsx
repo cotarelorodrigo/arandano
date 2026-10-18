@@ -1125,3 +1125,29 @@ describe('la card de correcciones', () => {
     expect(html.indexOf('>Correcciones<')).toBeLessThan(html.indexOf('Anular la venta'))
   })
 })
+
+// El ciclo de la solapa Clientes: la fila "Cliente" del Resumen enlaza a la
+// ficha y ofrece asignar o cambiar el cliente de una venta ya cobrada.
+describe('Detalle: el cliente de la venta', () => {
+  it('sin la prop, la fila es el texto de siempre, sin controles', () => {
+    const html = renderDetalle()
+    expect(html).toContain(CONSUMIDOR_FINAL)
+    expect(html).not.toContain('Asignar')
+  })
+
+  it('en consumidor final ofrece "Asignar"', () => {
+    const html = renderDetalle({ cliente: null })
+    expect(html).toContain(CONSUMIDOR_FINAL)
+    expect(html).toContain('Asignar')
+    expect(html).not.toContain('href="/clientes/')
+  })
+
+  it('con cliente, su nombre enlaza a la ficha y ofrece "Cambiar"', () => {
+    const html = renderDetalle({
+      cliente: { id: 'c1', nombre: 'Martín Sosa' },
+      resumen: { fecha: '21/08/2026 · 14:28', vendio: 'Florencia Díaz', cliente: 'Martín Sosa', comprobante: 'Sin factura ARCA' },
+    })
+    expect(html).toMatch(/<a[^>]*href="\/clientes\/c1"[^>]*>Martín Sosa<\/a>/)
+    expect(html).toContain('Cambiar')
+  })
+})

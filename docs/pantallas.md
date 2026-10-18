@@ -315,7 +315,8 @@ opera con alguien esperando del otro lado del mostrador, y la primera con su
 shell (sidebar + encabezado) ya venía de un ciclo anterior.
 
 **Acciones**: `cobrar`, `buscarArticulos`, `abrirCajaDesdeVender`,
-`cerrarCajaDesdeVender`.
+`cerrarCajaDesdeVender`, y `buscarClientesDelLocal` (de
+`app/(app)/clientes/acciones.ts`) para el campo "Cliente".
 
 **Lecturas del servidor**: `cajaAbierta`, `Tenant.cotizacionUsd` y
 `planesDelTenant` (sólo los activos). Las tres se leen en `page.tsx` y viajan
@@ -371,6 +372,19 @@ campo de cotización, ver *Decisiones*.
   entre sí. **El vuelto se calcula contra lo que hay que cobrar por esa fila,
   no contra su base**: con un plan de efectivo en pesos —el descuento por pago
   contado— los dos números no coinciden, y restar la base devolvía de menos.
+- **Cliente (opcional).** Entre los pagos y "Detalles", dentro del `<form>` de
+  cobro (ciclo de la solapa Clientes, 2026-10-18): buscar un cliente cargado
+  por nombre o teléfono —en cualquier formato—, o "Nuevo" para cargarlo ahí
+  mismo con nombre, teléfono y "Acepta que le mandemos ofertas" (destildado de
+  arranque). El nuevo **se crea en el servidor, en la misma transacción que la
+  venta**: si el cobro falla, no queda un cliente huérfano, y un teléfono que
+  ya tiene otro cliente vuelve como el cartel de siempre, sin cobrar.
+  **Sin tocarlo la venta sale como siempre**, a consumidor final: viajan dos
+  campos ocultos vacíos (`clienteId`, `clienteNuevo`) que `cobrar` lee como
+  "sin cliente". Se limpia al cobrar bien y al vaciar el carrito, como el
+  detalle; no al fallar el cobro. Todos sus botones son `type="button"`, Enter
+  en sus campos no cobra (elige el resultado resaltado del buscador) y Esc no
+  arma el vaciado del carrito (cierra la lista o cancela el alta).
 - **Detalles (opcional).** Un textarea de dos filas dentro del `<form>` de cobro,
   entre los pagos y el pie. Texto libre para el dato de entrega —a quién se le
   entregó, una dirección, un teléfono—: no participa de ningún total ni de
@@ -953,7 +967,7 @@ El historial por período.
 
 El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
 
-**Acciones**: `anular`, `guardarDetalle`, `corregirPagos`.
+**Acciones**: `anular`, `guardarDetalle`, `corregirPagos`, `asignarCliente`.
 
 **Qué se puede hacer**
 
@@ -982,7 +996,15 @@ El detalle de una venta: qué se vendió, cómo se pagó, y un resumen.
   cubre dólares, o si la venta tiene los dos totales — el caso común (venta
   sólo en pesos, pago que cubre pesos) no lo dice, para no ensuciarlo.
 - Ver el panel **Resumen**: fecha y hora, quién la vendió, el cliente (o
-  "Consumidor final"), el estado y el comprobante.
+  "Consumidor final"), el estado y el comprobante. El nombre del cliente
+  enlaza a su ficha (`/clientes/[id]`).
+- **Asignar, cambiar o quitar el cliente** de una venta ya cobrada, con
+  "Asignar"/"Cambiar" al lado del nombre (ciclo de la solapa Clientes): un
+  diálogo con el mismo selector del cobro de `/vender`, incluido el alta de un
+  cliente nuevo. **Cualquier usuario con sesión**, como el detalle, y por el
+  mismo motivo: el cliente no entra en ningún total ni en ningún pago, y la
+  action sólo toca `cliente_id`. Funciona también sobre una venta anulada. No
+  deja fila en la bitácora de correcciones (esa es de cómo se pagó).
 - **Anular la venta** — con el permiso `VENTAS_ANULAR` (un dueño siempre lo
   tiene; un empleado, sólo si se lo otorgaron), y sólo mientras siga cobrada.
 - **Corregir cómo se pagó** — con el permiso `VENTAS_EDITAR` (un dueño siempre
