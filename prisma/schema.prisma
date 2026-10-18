@@ -339,12 +339,33 @@ model UsuarioPermiso {
   @@map("usuario_permisos")
 }
 
+/// Quien le compra al local, o le deja un equipo.
+///
+/// Nace donde se lo tiene enfrente: al cobrar (`/vender`) o al recibir un
+/// equipo (`/servicio-tecnico/nuevo`). `/clientes` es el lugar para buscarlo,
+/// corregirlo y exportarlo. Spec:
+/// docs/superpowers/specs/2026-10-18-clientes-design.md.
 model Cliente {
   id            String   @id @default(uuid(7)) @db.Uuid
   tenantId      String   @map("tenant_id") @db.Uuid
   nombre        String
+  // Tal cual se tipeó: "11 2233-4455" se muestra así. La comparación de
+  // repetidos usa `telefonoClave`, no esta columna.
   telefono      String?
   email         String?
+  // Texto libre del local sobre el cliente ("prefiere que le escriban a la
+  // tarde"). Nullable: ningún cliente cargado antes la tiene.
+  notas         String?
+  // El consentimiento para mandarle ofertas. Default FALSE a propósito: nadie
+  // aceptó nada por haber sido cargado antes de que el campo existiera, y
+  // escribirle a esa gente sin consentimiento es justo lo que el campo existe
+  // para evitar. Lo marca quien carga al cliente, preguntándole.
+  aceptaOfertas Boolean  @default(false) @map("acepta_ofertas")
+  // Los últimos 10 dígitos del teléfono (`claveDeTelefono`,
+  // lib/clientes/telefono.ts), o NULL con menos de 10. La escribe la
+  // aplicación en cada alta y edición; la migración la rellenó para las filas
+  // que ya existían. Es la clave de duplicados.
+  telefonoClave String?  @map("telefono_clave")
   creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
@@ -354,6 +375,16 @@ model Cliente {
   ordenes OrdenDeTrabajo[]
 
   @@index([tenantId])
+  // COMÚN y no `@@unique`, a propósito. Las órdenes de servicio técnico
+  // llevan semanas creando clientes al vuelo sin ningún chequeo, así que en
+  // producción puede haber dos filas con el mismo número: un índice único
+  // haría fallar la migración en el deploy, y resolver esos duplicados exige
+  // decidir cuál queda —una fusión con sus ventas y sus órdenes—, que es otro
+  // ciclo. Los repetidos NUEVOS los frena la aplicación (`crearClienteEn` y
+  // `editarCliente`, lib/clientes/administrar.ts), bajo un lock por
+  // (tenant, clave). El índice está para que ese chequeo y la búsqueda por
+  // teléfono no recorran la tabla.
+  @@index([tenantId, telefonoClave])
   @@map("clientes")
 }
 
@@ -829,6 +860,9 @@ model Venta {
   @@unique([tenantId, numero])
   @@unique([tenantId, claveIdempotencia])
   @@index([tenantId, creadoEn])
+  // Las compras de un cliente, para su ficha (/clientes/[id]) y para el
+  // conteo del listado. Sin él, cada ficha recorre las ventas del tenant.
+  @@index([tenantId, clienteId])
   @@map("ventas")
 }
 

@@ -17,20 +17,19 @@
  * escribió. Ver docs/superpowers/specs/2026-09-15-bot-modo-prueba-design.md.
  */
 
+// `digitosDe` y `ultimos10` viven en `lib/texto/telefono.ts` desde el ciclo de
+// la solapa Clientes, que necesitó la misma regla para su clave de duplicados
+// (ver el comentario de ese archivo). Re-exportadas para que los llamadores y
+// los tests del bot no cambien.
+import { DIGITOS_DE_LA_CLAVE, digitosDe, ultimos10 } from '@/lib/texto/telefono'
+export { digitosDe, ultimos10 }
+
 /** Una lista de prueba más larga ya no es una prueba. */
 export const TOPE_NUMEROS_DE_PRUEBA = 20
 
-const DIGITOS_MINIMOS = 10
+const DIGITOS_MINIMOS = DIGITOS_DE_LA_CLAVE
 /** El largo máximo de un número E.164. */
 const DIGITOS_MAXIMOS = 15
-
-export function digitosDe(texto: string): string {
-  return texto.replace(/\D/g, '')
-}
-
-export function ultimos10(digitos: string): string {
-  return digitos.slice(-DIGITOS_MINIMOS)
-}
 
 export function validarNumeroDePrueba(
   texto: string,
