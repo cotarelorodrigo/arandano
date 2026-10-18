@@ -151,6 +151,20 @@ describe('Navegacion', () => {
     expect(html).not.toContain('href="/dashboard"')
   })
 
+  // Lo mismo para el historial de cierres de caja (ciclo del arqueo,
+  // 2026-10-18): las diferencias de caja de cada empleado son información de
+  // gestión. Las dos direcciones, por lo mismo que Dashboard. La página
+  // re-exige con exigirDuenio() (app/(app)/caja/page.test.tsx).
+  it('un dueño ve Caja', async () => {
+    const html = await render('DUENO', '/vender')
+    expect(html).toContain('href="/caja"')
+  })
+
+  it('un empleado no ve Caja', async () => {
+    const html = await render('EMPLEADO', '/vender')
+    expect(html).not.toContain('href="/caja"')
+  })
+
   // Las dos direcciones de la pestaña delegable. Sin el caso positivo, un
   // filtro que la escondiera siempre pasaría el negativo en verde.
   it('un empleado sin PLANES_PAGO no ve Formas de pago', async () => {

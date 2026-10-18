@@ -3111,6 +3111,55 @@ julio" compara contra el 1–21 de julio, no contra el 21–31 de julio). Ver
   `test/permisos-en-las-dos-copias.test.ts` para el resto de las pantallas
   con un control duplicado.
 
+## `/caja`
+
+El historial de cierres de caja: de cuánto fue cada cierre y cuánto se retiró.
+Sale del pedido de un local de iPhones (spec
+`docs/superpowers/specs/2026-10-18-arqueo-de-caja-design.md`, decisión 5).
+Abrir, cerrar y registrar movimientos NO viven acá: viven en el chip de caja de
+`/vender`.
+
+**Acciones**: ninguna. **Lecturas del servidor**: `cierresDelPeriodo`
+(lib/caja/historial.ts).
+
+**Qué se puede hacer**
+
+- Filtrar por fecha de cierre, **desde / hasta** (por defecto los últimos 30
+  días, hoy incluido). El rango queda en la URL; un rango dado vuelta se
+  endereza y una fecha malformada cae al default.
+- Ver, por cierre: la fecha y hora de apertura y de cierre, quién abrió y quién
+  cerró, y por moneda la **apertura, el esperado, lo contado, la diferencia**
+  ("cuadra", "faltan $ 200,00", "sobran …" — resaltada en ámbar si no es
+  cero), **lo retirado y lo que queda**, más la nota del cierre.
+- Desplegar los **movimientos** de cada caja (hora, tipo, motivo, quién, monto
+  con signo).
+
+**Decisiones**
+
+- **Sólo el dueño** (`exigirDuenio`, pestaña `soloDueno`), como `/dashboard`:
+  las diferencias de caja de cada empleado son información de gestión. No es
+  un permiso delegable.
+- **Sólo lee lo guardado**: el esperado es el que se recalculó en la
+  transacción del cierre; la pantalla no lo vuelve a calcular, así que anular o
+  editar hoy una venta vieja no le cambia los números a un cierre de la semana
+  pasada. La diferencia y lo que queda se derivan con la misma aritmética que
+  el formulario de cierre (`lib/caja/arqueo.ts`).
+- **Una caja cerrada sin arqueo** (las de antes de este ciclo, o cerrada con el
+  formulario viejo durante el deploy) dice "Cerrada sin arqueo" y muestra sólo
+  la apertura.
+- **La caja abierta no aparece**: no tiene cierre. Su estado vive en `/vender`.
+- **Los dólares, sólo si algún cierre del período los tuvo**: la misma regla
+  que el panel de la caja.
+- **El detalle va plegado en la misma fila** (`<details>`), no en una ruta
+  `/caja/[id]`: es una lista corta, funciona sin JavaScript y no suma una ruta
+  dinámica al barrido del smoke.
+- **Filas y no una tabla**, para que entre en 390 px sin scroll de costado.
+- **Tope de 400 cierres** por consulta (más de un año de cierres diarios); si
+  se llega, la pantalla lo dice.
+- **Sin `--marca`**: ningún número de un historial se dice en voz alta.
+- **`design/arandano.pen` no dibuja esta pantalla.** Entrada 42 de
+  `docs/correcciones-pendientes-del-pen.md`.
+
 <!-- pantallas:fin -->
 
 ## Lo que hereda toda pantalla de la aplicación

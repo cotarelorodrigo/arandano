@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import {
-  ArrowLeftRight, Bot, Contact, CreditCard, LayoutDashboard, Package, ReceiptText, ShoppingCart, Users, Wrench,
+  ArrowLeftRight, Bot, Contact, CreditCard, LayoutDashboard, Package, ReceiptText, ShoppingCart, Users, Wallet,
+  Wrench,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { usePathname } from 'next/navigation'
@@ -47,6 +48,14 @@ export const PESTANAS: Pestana[] = [
   // `exportarVentas` re-exigen por su cuenta, porque la URL se tipea y una
   // server action es un endpoint.
   { href: '/dashboard', texto: 'Dashboard', icono: LayoutDashboard, soloDueno: true },
+  // El historial de cierres de caja (ciclo del arqueo, 2026-10-18). Al lado
+  // del tablero porque es lo mismo para el dueño: información de gestión.
+  // `soloDueno` y no un permiso delegable, por la misma decisión que
+  // /dashboard: las diferencias de caja de cada empleado no se reparten. La
+  // página re-exige con `exigirDuenio()`, porque la URL se tipea. Abrir,
+  // cerrar y registrar movimientos NO viven acá sino en /vender, y ésos sí
+  // son de cualquiera del local.
+  { href: '/caja', texto: 'Caja', icono: Wallet, soloDueno: true },
   { href: '/inventario', texto: 'Inventario', icono: Package },
   // Visible para todos y sin permiso, en todo tenant: cualquier negocio tiene
   // clientes, y el vendedor los crea al cobrar (spec
