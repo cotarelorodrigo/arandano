@@ -3387,6 +3387,73 @@ Y del producto:
   del historial; y el tile "Costo del stock" con las dos monedas, y con sólo
   dólares.
 
+- ~~Que el vendedor sepa cuánto se paga por un usado sin preguntarle al dueño
+  (plan canje).~~ **Hecho** (2026-10-18). Sale del mismo cliente que vende
+  iPhones (audios del 7 y 8 de octubre, "Tarea 2"): toma iPhones usados como
+  parte de pago y hoy cada canje frena la venta hasta encontrar al dueño. Dice
+  que esto es *"casi el 50 %"* de la razón para comprar el software. Ver
+  `docs/superpowers/specs/2026-10-18-plan-canje-design.md` (con su sección
+  "Ajustes durante la implementación"); el ciclo se resolvió de noche sin
+  preguntas, así que todas sus decisiones son llamadas de quien implementó y
+  están para revisar.
+
+  **Una tabla que el dueño mantiene y una cuenta que el vendedor lee.** Es
+  núcleo y no un módulo: el canje no es de los celulares solos, así que el
+  "modelo" es texto que escribe el dueño y el estado es un rango de batería.
+  Cuatro tablas nuevas con RLS (`rangos_de_bateria`, `modelos_de_canje`,
+  `valores_de_canje`, `configuraciones_de_canje`), migraciones sólo aditivas, y
+  un permiso nuevo `CANJE_VALORES` en su propia migración. Nada de esto toca
+  ventas, stock ni caja: el ciclo se revierte entero revirtiendo la imagen.
+
+  **Las dos pantallas.** `/plan-canje` es la calculadora, para cualquiera con
+  sesión: el equipo que se lleva (la búsqueda de `/vender`), el modelo del usado
+  y la batería, y la diferencia en la banda de `--marca` —"Le devolvés al
+  cliente" si el usado vale más, "sin cotización" como respuesta y no como
+  error, y con monedas distintas un campo para tipear el dólar—. La cuenta
+  corre en el navegador sobre `lib/canje/calculo.ts`, en centavos enteros.
+  `/plan-canje/valores` es la tabla modelos × rangos con la fila editable
+  entera, la card de rangos (con "Usar los rangos sugeridos" sobre una tabla
+  vacía) y la moneda, única para toda la tabla, USD por defecto y sin
+  conversión al cambiarla. Exige `CANJE_VALORES`, igual que cada action.
+
+  **Garantías que viven en la base y no sólo en la pantalla**: el nombre del
+  modelo es único sin distinguir mayúsculas por un índice de expresión; los
+  rangos no se solapan, validado bajo un lock por tenant; `CHECK` en los bordes
+  del rango y en el valor; y los ids de modelo y rango se buscan bajo RLS antes
+  de escribir una celda, porque el chequeo de una FK no pasa por RLS.
+
+  **Queda para los ciclos siguientes**:
+
+  - **Registrar el canje como venta** y dar de alta el usado en el stock. Es la
+    pregunta abierta 2 para el cliente. `calcularCanje` ya devuelve un
+    resultado estructurado (montos canónicos, moneda, sentido, cotización)
+    pensado para convertirse en una venta con un pago "en equipo".
+  - **Otros factores del valor**: capacidad, estado estético, color (pregunta
+    abierta 1). Si el cliente los confirma, el rango de batería pasa a ser uno
+    de varios ejes.
+  - **Historial de cambios de los valores.**
+  - **El preset decide si aparece la pestaña**, cuando exista el registry: hoy
+    se ve en todo tenant, con la misma deuda que `/servicio-tecnico`.
+  - **Preguntas abiertas para el cliente**: los rangos reales que usa (los
+    sugeridos son los del pedido), si el valor depende de algo más que la
+    batería, y si quiere que el canje quede registrado.
+
+  **`design/arandano.pen` no dibuja ninguna de las dos pantallas**. Entrada 39
+  de `docs/correcciones-pendientes-del-pen.md`.
+
+  **Queda pendiente la verificación manual**, después del merge
+  (`arandano-dev` sirve `main`): como dueño, entrar a "Plan canje" desde el
+  sidebar, ir a "Editar valores", tocar "Usar los rangos sugeridos" y ver las
+  cinco columnas; agregar "iPhone 14" con US$ 400 en 85–89 % y dejar vacía una
+  celda; intentar un rango que se pise (85–90) y ver el cartel; borrar un
+  rango con el doble toque; pasar la tabla a pesos y ver el aviso del diálogo;
+  en la calculadora, buscar un iPhone en dólares, elegir el iPhone 14 con 88 %
+  y ver US$ 600 en la banda; probar 82 % (sin cotización), un equipo en pesos
+  (aparece el campo del dólar) y un precio menor al usado ("Le devolvés al
+  cliente"); como empleado sin `CANJE_VALORES`, ver la calculadora sin el
+  enlace a la tabla y que `/plan-canje/valores` dé 403; y mirar las dos
+  pantallas a 1440 y a 390 px (la tabla scrollea adentro de su card).
+
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~
