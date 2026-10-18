@@ -287,12 +287,19 @@ describe('abrir y cerrar la caja', () => {
   // paso SIEMPRE emite un statement contra `cajas`, dos pasos SIEMPRE emiten
   // dos, sea cual sea el resultado de la carrera.
   //
+  // Desde el ciclo del arqueo el cierre toca `cajas` DESPUÉS del cierre
+  // (busca el cierre anterior para las devoluciones y escribe el arqueo sobre
+  // la fila ya bloqueada), así que lo que se cuenta ya no es "un solo
+  // statement" sino lo que de verdad importa: que el PRIMERO sea el UPDATE que
+  // cierra, sin ninguna lectura de `cajas` antes. Una vuelta a dos pasos pone
+  // un SELECT en ese primer lugar.
+  //
   // Cómo se mide: se espía `pool.connect` (lib/db.ts) —el mismo pool que usa
   // Prisma por debajo de `enTransaccionDeTenant`— y se envuelve el `.query`
   // del cliente que devuelve, para contar los statements cuyo SQL menciona
   // `cajas` durante una llamada a `cerrarCaja`. Es un spy de test sobre un
   // handle que ya es público: no toca código de producción.
-  it('cerrarCaja resuelve el cierre con UN SOLO statement contra `cajas`', async () => {
+  it('cerrarCaja cierra con UN SOLO statement contra `cajas`, sin leerla antes', async () => {
     await abrirCaja(tenantA, usuarioA, '15000.00')
 
     const statementsSobreCajas: string[] = []
@@ -331,7 +338,13 @@ describe('abrir y cerrar la caja', () => {
       if (clienteEspiado) delete (clienteEspiado as unknown as Record<string, unknown>).query
     }
 
-    expect(statementsSobreCajas).toHaveLength(1)
+    expect(statementsSobreCajas.length).toBeGreaterThan(0)
+    expect(statementsSobreCajas[0], 'lo primero contra cajas tiene que ser el UPDATE del cierre').toMatch(
+      /^\s*UPDATE\b[\s\S]*cerrada_en/i,
+    )
+    // Y es el ÚNICO statement que escribe `cerrada_en`: el resto (la caja
+    // anterior, el arqueo) no vuelve a tocar el cierre.
+    expect(statementsSobreCajas.filter((t) => /^\s*UPDATE\b/i.test(t) && /"cerrada_en"\s*=/.test(t))).toHaveLength(1)
   })
 
   describe('el saldo inicial', () => {
