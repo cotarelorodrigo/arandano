@@ -140,8 +140,9 @@ export type EntradaEditarCliente = {
  * ficha. Un campo vacío BORRA el dato —es lo que el formulario muestra—, no
  * "deja el anterior".
  *
- * El chequeo de repetidos excluye al propio cliente: guardar la ficha sin
- * tocar el teléfono no puede chocar consigo mismo.
+ * El chequeo de repetidos excluye al propio cliente, y sólo corre si la clave
+ * del teléfono cambia: guardar la ficha sin tocar el teléfono no puede chocar
+ * ni consigo mismo ni con un repetido heredado.
  *
  * `updateMany` y no `update`: RLS ya filtra por tenant, así que el cliente de
  * otro local no aparece, y con `update` eso sería un P2025 (un 500) en vez del
@@ -151,7 +152,20 @@ export type EntradaEditarCliente = {
 export async function editarCliente(entrada: EntradaEditarCliente): Promise<void> {
   const campos = limpiarCampos(entrada)
   await enTransaccionDeTenant(entrada.tenantId, async (tx) => {
-    await reservarTelefono(tx, entrada.tenantId, campos, entrada.clienteId)
+    // El chequeo de repetidos corre SÓLO si la clave cambia. Con la misma
+    // clave que ya tenía no hay nada nuevo que reservar, y chequear igual
+    // dejaba congelados a los repetidos heredados —dos filas con el mismo
+    // número creadas por la recepción antes de este chequeo—: ninguna de las
+    // dos se podía editar, ni para tildar las ofertas (hallazgo de la review
+    // del ciclo). Mudarse a un número que ya tiene OTRO cliente sigue
+    // rechazándose.
+    const actual = await tx.cliente.findUnique({
+      where: { id: entrada.clienteId },
+      select: { telefonoClave: true },
+    })
+    if (actual && actual.telefonoClave !== campos.telefonoClave) {
+      await reservarTelefono(tx, entrada.tenantId, campos, entrada.clienteId)
+    }
     const { count } = await tx.cliente.updateMany({
       where: { id: entrada.clienteId },
       data: campos,

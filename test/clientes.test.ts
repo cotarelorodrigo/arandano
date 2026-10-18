@@ -600,3 +600,34 @@ describe('la ficha del cliente', () => {
     expect(await fichaDeCliente(tenantId, ajeno.id)).toBeNull()
   })
 })
+
+// Review del ciclo: los repetidos de antes del chequeo (la recepción creaba
+// clientes sin mirar) no pueden quedar congelados. Editar notas u ofertas de
+// cualquiera de los dos tiene que andar; mudarse a OTRO número tomado, no.
+describe('repetidos heredados', () => {
+  it('se pueden editar sin cambiar el teléfono, y no pasarse a otro número tomado', async () => {
+    const tel = telefonoNuevo()
+    const { rows } = await owner.query(
+      `INSERT INTO clientes (id, tenant_id, nombre, telefono, telefono_clave, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Viejo A', $2, $2, now(), now()),
+              (gen_random_uuid(), $1, 'Viejo B', $3, $2, now(), now())
+       RETURNING id`,
+      [tenantId, tel, enOtroFormato(tel)],
+    )
+    for (const [i, r] of rows.entries()) {
+      await editarCliente({
+        tenantId, clienteId: r.id, nombre: `Viejo ${i}`, telefono: i === 0 ? tel : enOtroFormato(tel),
+        email: null, notas: 'Prefiere la tarde', aceptaOfertas: true,
+      })
+      expect(await filaDe(r.id)).toMatchObject({ notas: 'Prefiere la tarde', acepta_ofertas: true })
+    }
+    const tomado = telefonoNuevo()
+    await crearCliente({ tenantId, nombre: 'Dueño de otro número', telefono: tomado })
+    await expect(
+      editarCliente({
+        tenantId, clienteId: rows[0].id, nombre: 'Viejo 0', telefono: tomado,
+        email: null, notas: null, aceptaOfertas: false,
+      }),
+    ).rejects.toMatchObject({ codigo: 'TELEFONO_REPETIDO' })
+  })
+})

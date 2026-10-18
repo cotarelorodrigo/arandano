@@ -207,3 +207,8 @@ más conservadora que había:
 - **En el teléfono la ficha pone los datos primero**; en escritorio, la
   historia a la izquierda y los datos a la derecha, como `/ventas/[id]`.
 - **La pestaña va después de Inventario**, sin permiso.
+- **Editar sólo chequea repetidos si la clave del teléfono cambia** (review
+  del ciclo). Con la misma clave no hay nada que reservar, y chequear igual
+  dejaba congelados a los repetidos heredados: ninguno de los dos se podía
+  editar, ni siquiera para tildar las ofertas. Pasarse a un número que ya tiene
+  otro cliente sigue rechazándose.
