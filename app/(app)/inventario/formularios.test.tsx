@@ -34,6 +34,15 @@ const ARBOL = [
 // sin `atras` renderiza el SidebarTrigger de shadcn — y ése llama a
 // useSidebar(), que tira si no hay un SidebarProvider como ancestro. Mismo
 // motivo que ya documentó components/shell/encabezado.test.tsx.
+/** El `value` del `<input type="hidden">` con ese name, del HTML estático. */
+function valorDeHidden(html: string, name: string): string | null {
+  const pos = html.indexOf(`name="${name}"`)
+  if (pos === -1) return null
+  const desde = html.lastIndexOf('<input', pos)
+  const tag = html.slice(desde, html.indexOf('/>', pos))
+  return tag.match(/value="([^"]*)"/)?.[1] ?? null
+}
+
 async function renderAlta(arbol = ARBOL, puedeCostos = true) {
   const { FormularioDeAlta } = await import('./formularios')
   return renderToStaticMarkup(
@@ -152,6 +161,33 @@ describe('FormularioDeAlta', () => {
     expect(inicio, 'no se encontró el campo costoUnitario en el render').toBeGreaterThan(-1)
     const cierre = html.indexOf('/>', inicio)
     expect(html.slice(inicio, cierre)).not.toContain('required')
+  })
+
+  // Ciclo del costo en dólares (2026-10-18): el selector del costo arranca en
+  // la moneda del precio (pesos, la del alta) y sólo existe con COSTOS.
+  it('con COSTOS, la moneda del costo arranca en la del precio', async () => {
+    const html = await renderAlta()
+    expect(valorDeHidden(html, 'monedaCosto')).toBe('ARS')
+    expect(html).toContain('Moneda del costo')
+  })
+
+  it('sin COSTOS, ni el costo ni su moneda se dibujan', async () => {
+    const html = await renderAlta(ARBOL, false)
+    expect(html).not.toContain('name="monedaCosto"')
+    expect(html).not.toContain('name="costoUnitario"')
+  })
+
+  // Seguir a la del precio es un cambio de estado que un render estático no
+  // produce (entorno "node", sin DOM): la regla vive en una función pura, y el
+  // cableado se lee del FUENTE.
+  it('la moneda del costo sigue a la del precio mientras nadie la toque', () => {
+    const FUENTE = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')
+    expect(FUENTE).toContain('onCambio={setMonedaPrecio}')
+    expect(FUENTE).toContain(
+      'const monedaCosto = monedaDelCostoEnElAlta(monedaPrecio, monedaCostoElegida)',
+    )
+    expect(FUENTE).toContain('valor={monedaCosto}')
+    expect(FUENTE).toContain('onCambio={setMonedaCostoElegida}')
   })
 
   it('muestra el próximo código libre con el texto y el formato exactos del relevamiento', async () => {
@@ -347,12 +383,49 @@ describe('FichaDeArticulo', () => {
 })
 
 describe('MoverStock', () => {
-  async function renderMoverStock(puedeCostos = true, llevaSerie = false) {
+  async function renderMoverStock(
+    puedeCostos = true,
+    llevaSerie = false,
+    moneda: 'ARS' | 'USD' = 'ARS',
+  ) {
     const { MoverStock } = await import('./formularios')
     return renderToStaticMarkup(
-      <MoverStock articuloId="a1" puedeCostos={puedeCostos} llevaSerie={llevaSerie} />,
+      <MoverStock articuloId="a1" puedeCostos={puedeCostos} llevaSerie={llevaSerie} moneda={moneda} />,
     )
   }
+
+  // Ciclo del costo en dólares (2026-10-18), decisión 2: el selector del
+  // costo arranca en la moneda del artículo, y sólo existe donde existe el
+  // campo del costo.
+  describe('la moneda del costo', () => {
+    it('con COSTOS, el selector arranca en la moneda del artículo', async () => {
+      expect(valorDeHidden(await renderMoverStock(true, false, 'USD'), 'monedaCosto')).toBe('USD')
+      expect(valorDeHidden(await renderMoverStock(true, false, 'ARS'), 'monedaCosto')).toBe('ARS')
+    })
+
+    it('se rotula como moneda del costo, no del precio', async () => {
+      const html = await renderMoverStock(true, false, 'USD')
+      expect(html).toContain('Moneda del costo')
+      expect(html).not.toContain('Moneda del precio')
+    })
+
+    it('sin COSTOS no se dibuja, igual que el campo del costo', async () => {
+      const html = await renderMoverStock(false, false, 'USD')
+      expect(html).not.toContain('name="monedaCosto"')
+      expect(html).not.toContain('name="costoUnitario"')
+    })
+
+    // El aviso "el precio no se convierte" es del precio: un costo recién
+    // tipeado no tenía un número anterior que se reinterprete.
+    it('no lleva el aviso de conversión del precio', () => {
+      const fuente = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')
+      const desde = fuente.indexOf('<SelectorDeMoneda\n                  id="i-moneda-costo"')
+      expect(desde, 'no se encontró el selector del costo del ingreso').toBeGreaterThan(-1)
+      const tag = fuente.slice(desde, fuente.indexOf('>', desde))
+      expect(tag).toContain('valorInicial={moneda}')
+      expect(tag).toContain('avisarCambio={false}')
+    })
+  })
 
   // Mismo hallazgo M2: "Ingresar mercadería" y "Corregir por conteo" son las
   // otras dos cards de esta pantalla con campos de texto, y ninguna
@@ -633,9 +706,13 @@ describe('el selector de moneda está en las DOS pantallas', () => {
   // apariciones, no compara un string armado a mano con las dos etiquetas
   // adentro, porque lo que importa es que existan las DOS, no en qué orden
   // caen los atributos de cada tag.
-  it('lo instancian el alta y la ficha, y ninguna arma su propio Select', () => {
+  //
+  // Desde el ciclo del costo en dólares (2026-10-18) son CUATRO: la del precio
+  // en el alta y en la ficha, y la del costo en el alta y en "Ingresar
+  // mercadería". Las cuatro son el mismo componente, que es el punto.
+  it('lo instancian el alta y la ficha (precio y costo), y ninguna arma su propio Select', () => {
     const apariciones = fuente.match(/<SelectorDeMoneda/g) ?? []
-    expect(apariciones).toHaveLength(2)
+    expect(apariciones).toHaveLength(4)
   })
 
   // Separado del caso de arriba a propósito: congelar el ORDEN de atributos en
@@ -710,8 +787,46 @@ describe('SelectorDeMoneda', () => {
 
     const fuente = readFileSync('app/(app)/inventario/formularios.tsx', 'utf8')
     const derechos = fuente.match(/rounded-l-none rounded-r-\[9px\]/g) ?? []
-    // Las DOS copias, el alta y la ficha: la lección del ciclo del 2026-08-28
-    // es que este campo ya divergió una vez entre las dos pantallas.
-    expect(derechos).toHaveLength(2)
+    // Las CUATRO copias —precio y costo, en el alta y en la ficha—: la lección
+    // del ciclo del 2026-08-28 es que este campo ya divergió una vez entre las
+    // dos pantallas.
+    expect(derechos).toHaveLength(4)
+  })
+})
+
+describe('monedaDelCostoEnElAlta (ciclo del costo en dólares)', () => {
+  it('sin elección propia, sigue a la moneda del precio', async () => {
+    const { monedaDelCostoEnElAlta } = await import('./formularios')
+    expect(monedaDelCostoEnElAlta('USD', null)).toBe('USD')
+    expect(monedaDelCostoEnElAlta('ARS', null)).toBe('ARS')
+  })
+
+  // Un iPhone en dólares comprado en pesos: una vez que la persona eligió,
+  // cambiar el precio de moneda no le pisa la decisión.
+  it('una vez elegida, se queda aunque el precio cambie de moneda', async () => {
+    const { monedaDelCostoEnElAlta } = await import('./formularios')
+    expect(monedaDelCostoEnElAlta('USD', 'ARS')).toBe('ARS')
+    expect(monedaDelCostoEnElAlta('ARS', 'USD')).toBe('USD')
+  })
+})
+
+describe('SelectorDeMoneda controlado y con otra etiqueta', () => {
+  it('con `valor`, emite ése y no el inicial', () => {
+    const html = renderToStaticMarkup(
+      <SelectorDeMoneda id="c" name="monedaCosto" valorInicial="ARS" valor="USD" etiqueta="Moneda del costo">
+        <input name="costoUnitario" />
+      </SelectorDeMoneda>,
+    )
+    expect(valorDeHidden(html, 'monedaCosto')).toBe('USD')
+    expect(html).toContain('Moneda del costo')
+  })
+
+  it('sin etiqueta, sigue diciendo "Moneda del precio"', () => {
+    const html = renderToStaticMarkup(
+      <SelectorDeMoneda id="m" name="moneda" valorInicial="ARS">
+        <input name="precio" />
+      </SelectorDeMoneda>,
+    )
+    expect(html).toContain('Moneda del precio')
   })
 })

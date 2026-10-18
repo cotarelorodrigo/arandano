@@ -529,6 +529,7 @@ export default async function DetalleDeArticulo({ params }: { params: Promise<{ 
             articuloId={articulo.id}
             puedeCostos={puedeCostos}
             llevaSerie={articulo.llevaSerie}
+            moneda={articulo.moneda}
           />
         </div>
       )}
