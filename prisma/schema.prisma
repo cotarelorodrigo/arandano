@@ -568,11 +568,26 @@ model MovimientoStock {
   // del cual reconstruirlo — todo movimiento creado antes de que exista queda
   // sin costo para siempre.
   //
-  // Nullable y sin lector: NADIE la lee todavía. No hay reportes de margen ni
-  // costo promedio, y este ciclo no los construye. Sólo el ingreso de
-  // mercadería la escribe, y también ahí es opcional. Queda null en las ventas,
-  // en las anulaciones y en las correcciones por conteo.
+  // Nullable: sólo el ingreso de mercadería (y el stock inicial del alta) la
+  // escribe, y también ahí es opcional. Queda null en las ventas, en las
+  // anulaciones y en las correcciones por conteo. La leen el tile "Último
+  // costo" de la ficha, la valuación del stock y `crearVenta`, que congela el
+  // último costo en el ítem.
+  //
+  // En la moneda de `monedaCosto`, NO siempre en pesos (ciclo del costo en
+  // dólares, 2026-10-18).
   costoUnitario Decimal?         @map("costo_unitario") @db.Decimal(12, 2)
+  // En qué moneda se pagó `costoUnitario`. Es del EVENTO de recepción y no del
+  // artículo: un artículo puede pasar de pesos a dólares mañana y los ingresos
+  // viejos tienen que seguir diciendo en qué moneda se compraron — mismo
+  // criterio que `VentaItem.moneda`.
+  //
+  // No nullable y con default ARS: toda fila anterior a la columna es pesos (el
+  // costo era pesos por construcción), y el default la describe sin backfill.
+  // En una fila sin costo no significa nada. Nunca se convierte: nadie suma un
+  // costo en dólares con uno en pesos, porque el sistema no guarda una
+  // cotización en la que confiar.
+  monedaCosto   Moneda           @default(ARS) @map("moneda_costo")
   motivo        MotivoMovimiento
   // Null en AJUSTE e INGRESO, que no vienen de una venta.
   ventaId       String?          @map("venta_id") @db.Uuid
@@ -706,9 +721,11 @@ model VentaItem {
   /// Congelado, igual que `descripcion` y `precioUnitario` y por el mismo
   /// motivo: un costo que se corrige mañana no puede cambiar lo que una venta
   /// de hoy dice que costó.
-  /// NULL cuando el artículo no tenía ningún ingreso con costo cargado, y NULL
-  /// SIEMPRE para un ítem en dólares — el costo se guarda en pesos y
-  /// compararlo contra un precio en dólares exigiría inventar una cotización.
+  /// NULL cuando el artículo no tenía ningún ingreso con costo cargado, NULL
+  /// SIEMPRE para un ítem en dólares, y NULL para un ítem en pesos cuyo último
+  /// costo se cargó en dólares (`MovimientoStock.monedaCosto`): esta columna
+  /// es pesos y alimenta `Venta.costoArs`, y meter ahí un costo en dólares o
+  /// convertirlo exigiría inventar una cotización.
   costoUnitario  Decimal? @map("costo_unitario") @db.Decimal(12, 2)
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)

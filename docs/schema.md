@@ -158,6 +158,7 @@ erDiagram
     uuid articulo_id FK
     decimal(12,3) delta
     decimal(12,2) costo_unitario "opcional"
+    moneda moneda_costo
     motivo_movimiento motivo
     uuid venta_id FK "opcional"
     uuid unidad_id FK "opcional"
