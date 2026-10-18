@@ -4,6 +4,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { formatearPrecio } from '@/lib/formato/mostrar'
 import type { PlanVisible } from '@/lib/planes/consultar'
 import type { Linea } from './punto-de-venta'
+import type { CajaDelChip } from './caja'
+import { cajaDePrueba } from '@/test/caja-de-prueba'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { NOMBRE_DEL_CONTENEDOR } from '@/hooks/use-dos-columnas'
 
@@ -23,6 +25,9 @@ vi.mock('./acciones', () => ({
   unidadesDeArticulo: vi.fn(async () => []),
   abrirCajaDesdeVender: vi.fn(),
   cerrarCajaDesdeVender: vi.fn(),
+  // El panel de la caja registra movimientos (ciclo del arqueo); su contrato
+  // lo fija app/(app)/vender/caja-acciones.test.ts.
+  registrarMovimientoDesdeVender: vi.fn(),
   // El chip de la cotización del dólar (dolar.tsx) carga con esta action; su
   // contrato lo fija app/(app)/vender/cotizacion.test.ts.
   cargarCotizacionDesdeVender: vi.fn(),
@@ -90,7 +95,7 @@ const SIN_COMENTARIOS = FUENTE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\
 // componente trae el SidebarTrigger, y ése llama a useSidebar(), que tira sin
 // un provider como ancestro (mismo helper que components/shell/encabezado.test.tsx).
 async function render(
-  props: { caja?: { abiertaEn: Date } | null; planes?: PlanVisible[] } = {},
+  props: { caja?: CajaDelChip | null; planes?: PlanVisible[] } = {},
 ) {
   const { PuntoDeVenta } = await import('./punto-de-venta')
   return renderToStaticMarkup(
@@ -2206,7 +2211,7 @@ describe('el punto de venta en el teléfono', () => {
   })
 
   it('los dos chips de estado se ven en el cuerpo del teléfono y en el header de escritorio', async () => {
-    const html = await render({ caja: { abiertaEn: new Date('2026-08-21T17:32:00Z') } })
+    const html = await render({ caja: cajaDePrueba() })
     const veces = [...html.matchAll(/Caja abierta/g)].length
     expect(
       veces,
