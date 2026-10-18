@@ -1,4 +1,4 @@
-import { Prisma } from '@/generated/prisma/client'
+import { Prisma, type Moneda } from '@/generated/prisma/client'
 import { enTransaccionDeTenant, type ClienteTx } from '@/lib/tenant/transaccion'
 import { excedeEscala, ESCALA_CANTIDAD, ESCALA_DINERO } from '@/lib/ventas/totales'
 import { exigirUsuario } from '@/lib/ventas/pertenencia'
@@ -60,6 +60,7 @@ async function aplicarMovimiento(
     usuarioId: string
     nota?: string
     costoUnitario?: Decimal | null
+    monedaCosto?: Moneda
     unidadId?: string
   },
 ): Promise<void> {
@@ -72,6 +73,10 @@ async function aplicarMovimiento(
       usuarioId: datos.usuarioId,
       nota: datos.nota,
       costoUnitario: datos.costoUnitario ?? null,
+      // Ausente vale pesos: el default de la columna, escrito acá para que
+      // el criterio se lea sin ir al schema. En un movimiento sin costo no
+      // significa nada.
+      monedaCosto: datos.monedaCosto ?? 'ARS',
       unidadId: datos.unidadId,
     },
   })
@@ -156,6 +161,12 @@ export async function ajustarStock(entrada: {
  *
  * En un artículo SIN serie, `imeis` directamente no tiene sentido: esa regla
  * no cambia.
+ *
+ * `monedaCosto` es en qué moneda se pagó `costoUnitario`, y NO se deriva de la
+ * del artículo: el formulario la propone, la persona decide. Ausente vale
+ * pesos —un formulario cacheado de antes del ciclo del costo en dólares
+ * (2026-10-18) manda el costo sin moneda, y lo que quería decir es pesos—.
+ * Nunca se convierte.
  */
 export async function ingresarStock(entrada: {
   tenantId: string
@@ -164,9 +175,11 @@ export async function ingresarStock(entrada: {
   imeis?: string[]
   usuarioId: string
   costoUnitario?: Decimal | null
+  monedaCosto?: Moneda
   nota?: string
 }): Promise<void> {
-  const { tenantId, articuloId, cantidad, imeis, usuarioId, costoUnitario, nota } = entrada
+  const { tenantId, articuloId, cantidad, imeis, usuarioId, costoUnitario, monedaCosto, nota } =
+    entrada
 
   validarCosto(costoUnitario)
 
@@ -261,6 +274,7 @@ export async function ingresarStock(entrada: {
         usuarioId,
         nota,
         costoUnitario,
+        monedaCosto,
       })
     })
   } catch (e) {
