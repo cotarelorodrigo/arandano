@@ -1757,19 +1757,28 @@ describe('el punto de venta', () => {
     ).toMatch(/cotizacion: alCruzar\(pago\.moneda, cubre\)/)
   })
 
-  // El precargado sólo con la de HOY, juzgada con el reloj del navegador EN
-  // el cambio (esta pantalla puede quedar abierta de un día para el otro), y
-  // la sugerencia de la vieja decidida en el mismo instante. Por fuente: sin
-  // jsdom no hay `onValueChange` que disparar; las dos reglas que `alCruzar`
-  // combina se prueban puras en lib/cotizacion/reglas.test.ts.
-  it('alCruzar precarga sólo la de hoy, con el reloj del momento, y arma la sugerencia con el mismo', () => {
+  // El precargado sólo con la de HOY para los DOS relojes —el del servidor
+  // (`cotizacionVieja`, el mismo que pinta el chip) Y el del navegador en el
+  // cambio—: una PC de mostrador atrasada veía la de ayer como de hoy
+  // (hallazgo de la review). Por fuente: sin jsdom no hay `onValueChange` que
+  // disparar; la regla se prueba pura en lib/cotizacion/reglas.test.ts
+  // (`cotizacionParaPrecargar`).
+  it('alCruzar precarga con el juicio del servidor Y el reloj del navegador', () => {
     const desde = FUENTE.indexOf('function alCruzar(')
     expect(desde, 'alCruzar tiene que existir').toBeGreaterThan(-1)
     const cuerpo = FUENTE.slice(desde, FUENTE.indexOf('\n  }\n', desde))
-    expect(cuerpo).toContain('const ahora = new Date()')
-    expect(cuerpo).toContain('cotizacionDeHoy(cotizacionDelLocal, ahora)')
-    expect(cuerpo).toContain('sugerenciaDeCotizacionVieja(cotizacionDelLocal, ahora)')
-    expect(cuerpo).toMatch(/cotizacionParaElCruce\(moneda, cubre, cotizacionDeHoy\(/)
+    expect(cuerpo).toMatch(/cotizacionParaPrecargar\(cotizacionDelLocal, cotizacionVieja, new Date\(\)\)/)
+    expect(cuerpo).not.toContain('cotizacionDeHoy(')
+    // Y la fila recibe ese juicio del servidor, no lo inventa.
+    expect(FUENTE).toContain('cotizacionVieja={cotizacion.vieja}')
+  })
+
+  // La sugerencia de la vieja se DERIVA de props en cada render (hallazgo de
+  // la review): guardada en estado al cruzar, sobrevivía a una carga de la de
+  // hoy en medio de la venta y se mudaba de fila al quitar un pago (`key={i}`).
+  it('la sugerencia de la vieja sale de props, no de un estado de la fila', () => {
+    expect(FUENTE).toContain('const sugerencia = sugerenciaDeCotizacionVieja(cotizacionDelLocal, cotizacionVieja)')
+    expect(FUENTE).not.toMatch(/setSugerencia/)
   })
 
   // La corrección de una venta YA cobrada no usa la de hoy: la cotización de

@@ -3642,8 +3642,14 @@ Y del producto:
     "Todavía no hay ninguna cargada".
   - Como dueño, cargar 1450: el chip deja el ámbar; el diálogo muestra "Cargada
     hoy a las … por …" y la carga en "Últimas cargas".
+  - En un local sin ninguna, cargar 14,50: pregunta por estar fuera de
+    $ 100–$ 100.000. Cargar "1.450": entra como 1450.
   - Cargar 14500: aparece la pregunta; Enter de nuevo vuelve a preguntar; "Sí,
     cargarla igual" la carga. Cargar 1450 otra vez para corregir.
+  - Con la PC del mostrador con la fecha atrasada un día y la cotización de
+    ayer: el chip en ámbar y el campo del cobro vacío (no la precarga).
+  - Con una vieja y un pago cruzando, cargar la de hoy desde el chip: la
+    sugerencia de la fila desaparece sola.
   - **Teclado**: abrir el diálogo, cerrarlo con Esc y comprobar que Enter
     cobra y que Esc arma el vaciado (no reabre el diálogo); con el diálogo
     abierto, Enter en el campo carga y no cobra.

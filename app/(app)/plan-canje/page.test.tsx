@@ -73,6 +73,14 @@ describe('/plan-canje', () => {
     expect(await render()).toContain('data-dolar-inicial="1450"')
   })
 
+  // Escrita como en el campo, con la coma argentina: "1450,50" y no el
+  // "1450.5" del Decimal.
+  it('con centavos, la precarga con coma decimal', async () => {
+    puedeConSesion.mockResolvedValue(false)
+    cotizacionVigente.mockResolvedValue({ valor: '1450.5', creadaEn: new Date() })
+    expect(await render()).toContain('data-dolar-inicial="1450,50"')
+  })
+
   it('con una vieja, o sin ninguna, arranca vacía', async () => {
     puedeConSesion.mockResolvedValue(false)
     cotizacionVigente.mockResolvedValue({ valor: '1450', creadaEn: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) })

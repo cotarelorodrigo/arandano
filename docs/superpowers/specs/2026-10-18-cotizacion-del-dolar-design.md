@@ -119,17 +119,26 @@ confirmar (un cero de más es el error más probable).
 Llamadas que el código obligó a tomar, cada una en la dirección más
 conservadora. Ninguna cambia una decisión de arriba; las precisan.
 
-- **"De hoy" lo decide el navegador en el momento del cambio, para precargar;
-  el servidor, para pintar.** El chip y el diálogo se pintan con `vieja`
-  calculado en `page.tsx` al armar la página (el HTML del servidor y el del
-  navegador tienen que coincidir). Lo que el cobro precarga, en cambio, se
-  juzga con el reloj del navegador cuando el pago pasa a cruzar (`alCruzar`),
-  porque `/vender` puede quedar abierto de un día para el otro. Si discrepan
-  —pasada la medianoche, sin recargar— es en la dirección segura: el chip sigue
-  sin ámbar, pero el campo ya no se precarga con la de ayer. La sugerencia de la
-  vieja se decide en el mismo instante y con el mismo reloj que el precargado.
-  En el plan canje alcanza con el servidor: el campo se llena una sola vez, al
-  montar.
+- **Precargar pide que los DOS relojes digan "de hoy"** (corregido en la
+  review): el del servidor, que decide `vieja` al armar la página y pinta el
+  chip, **Y** el del navegador en el momento en que el pago pasa a cruzar
+  (`cotizacionParaPrecargar`). La primera versión usaba sólo el del navegador
+  —para la pantalla abierta de un día para el otro— y una PC de mostrador con
+  la hora atrasada (pila del BIOS, hora a mano) precargaba la de ayer con el
+  chip en ámbar al lado. Con el AND, basta que uno diga "vieja" para no
+  precargar: es la única parte de la regla que puede terminar en plata mal
+  cobrada. En el plan canje alcanza con el servidor: el campo se llena una sola
+  vez, al montar, en el mismo momento en que se arma la página.
+- **La sugerencia de la vieja se deriva de props**, con el mismo `vieja` que el
+  chip, en cada render (corregido en la review): guardada en estado al cruzar,
+  sobrevivía a una carga de la de hoy en medio de la venta y, como las filas de
+  pago van por posición (`key={i}`), se mudaba de fila al quitar un pago. El
+  `key={i}` en sí no se tocó: con la sugerencia derivada, la fila ya no guarda
+  ningún estado propio de la cotización. El borde que queda, del lado seguro:
+  pasada la medianoche sin recargar, el campo ya no se precarga pero tampoco
+  aparece la sugerencia, porque el servidor todavía dijo "de hoy".
+- **Lo precargado va escrito como en el mostrador**: "1450,50" y no el
+  "1450.5" del Decimal (`cotizacionParaElCampo`), en el cobro y en el canje.
 - **La sugerencia de la vieja es texto, sin botón "usar"**: un clic que mete el
   dólar de hace tres días en un cobro es lo que "sólo si es de hoy" existe para
   evitar. Copiarla es tipearla.
@@ -149,9 +158,21 @@ conservadora. Ninguna cambia una decisión de arriba; las precisan.
   no contra la que muestra la pantalla. Pide confirmar con un segundo botón
   ("Sí, cargarla igual", `name="confirmada"`); Enter en el campo envía con el
   primero, así que dos Enter sobre un cero de más vuelven a preguntar.
-- **La gramática compartida rechaza "1.450" por ambiguo** (¿mil cuatrocientos
-  cincuenta o uno con cuatrocientos cincuenta?) y pide escribirlo sin
-  separador, como con un precio. "1450", "1450,50" y "1.450,50" se entienden.
+- **Una gramática de cotización: "1.450" es mil cuatrocientos cincuenta**
+  (corregido en la review). La compartida lo rechaza por ambiguo, y para un
+  precio lo es; para una cotización no, porque "uno con cuatrocientos cincuenta
+  pesos por dólar" no existe. `aCotizacionCanonica` (`lib/formato/gramatica.ts`)
+  es la compartida más esa única excepción —un punto y exactamente tres
+  dígitos, sin coma—, y la usan todos los lugares donde se tipea una
+  cotización: el chip (`leerCotizacion`), el campo del cobro y el de la
+  corrección de pagos, en el navegador (`cotizacionEnDiezMilesimas`) y en el
+  servidor (`aCotizacion`), y la calculadora del canje. "1,450" (coma y tres
+  dígitos) se sigue rechazando: ahí lo raro es el tipeo.
+- **La primera carga también tiene tope de cordura** (corregido en la review):
+  sin vigente no hay salto que medir, así que fuera de $ 100–$ 100.000 por
+  dólar (`esPrimeraInverosimil`) pide la misma confirmación ("Sí, cargarla
+  igual"). Ancho a propósito: atrapa un cero de más o de menos, no predice el
+  dólar, y no prohíbe.
 - **El equivalente en pesos va en su propia línea**, arriba de "actualizado
   hace…" en el tile y debajo del precio en la lista, redondeado al peso y con
   "≈". En la lista la fecha de una vieja va corta ("≈ $ 1.420.000 · 15/10"): la
