@@ -2757,6 +2757,18 @@ describe('el cliente de la venta', () => {
   })
 
   it('mientras se cobra, el selector no se puede tocar', () => {
-    expect(SIN_COMENTARIOS).toMatch(/<ElegirCliente valor=\{cliente\} onCambiar=\{setCliente\} deshabilitado=\{cobrando\} \/>/)
+    expect(SIN_COMENTARIOS).toMatch(/<ElegirCliente[^>]*deshabilitado=\{cobrando\}/)
+  })
+
+  // Review del ciclo: una búsqueda tipeada sin elegir a nadie no cambia
+  // `cliente` (sigue en null), así que el reset tiene que remontar el
+  // selector entero. La `key` cambia en los dos resets de la venta.
+  it('cada reset de la venta remonta el selector con una key nueva', () => {
+    expect(SIN_COMENTARIOS).toMatch(/<ElegirCliente\s+key=\{reinicioDelCliente\}/)
+    expect(SIN_COMENTARIOS).toMatch(
+      /setVentaProcesada\(estado\.venta\.id\)[\s\S]*?setReinicioDelCliente\(\(n\) => n \+ 1\)[\s\S]*?\n\s*\}/,
+    )
+    const posicion = FUENTE.indexOf('if (vaciadoArmado) {')
+    expect(FUENTE.slice(posicion, posicion + 1300)).toMatch(/setReinicioDelCliente\(\(n\) => n \+ 1\)/)
   })
 })

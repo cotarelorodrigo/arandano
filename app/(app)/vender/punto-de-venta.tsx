@@ -1071,6 +1071,12 @@ export function PuntoDeVenta({
   // venta, así que se limpia al cobrar bien y al vaciar el carrito, y NO al
   // fallar el cobro (un teléfono repetido se corrige sin volver a tipear).
   const [cliente, setCliente] = useState<ClienteElegido | null>(null)
+  // La `key` del selector: cambia en cada reset de la venta (cobrada o
+  // vaciada) y remonta `ElegirCliente` desde cero. Sin esto, una búsqueda
+  // tipeada sin elegir a nadie —`cliente` sigue en null, así que
+  // `setCliente(null)` no cambia nada— quedaba escrita, con su lista
+  // abierta, en la venta siguiente (review del ciclo).
+  const [reinicioDelCliente, setReinicioDelCliente] = useState(0)
   const ocultosDelCliente = camposOcultosDelCliente(cliente)
   // El último total que los pagos ya reflejaron, para el ajuste de más abajo:
   // sin esto, "seguir el total" se repetiría en cada render y pisaría un monto
@@ -1260,6 +1266,7 @@ export function PuntoDeVenta({
     // Y el cliente, por lo mismo y con más motivo: dejarlo puesto le
     // asignaría la venta siguiente a quien compró recién.
     setCliente(null)
+    setReinicioDelCliente((n) => n + 1)
   }
 
   // Qué pasa cuando una venta se cobró bien. Un efecto de verdad y no un
@@ -1621,6 +1628,7 @@ export function PuntoDeVenta({
       setDetalle('')
       // Mismo argumento para el cliente del cobro.
       setCliente(null)
+      setReinicioDelCliente((n) => n + 1)
       return
     }
     // Primer golpe: arma la confirmación y NO borra nada todavía.
@@ -2541,7 +2549,12 @@ export function PuntoDeVenta({
                 <input type="hidden" name="clienteNuevo" value={ocultosDelCliente.clienteNuevo} />
                 <div className="flex flex-col gap-1.5 px-4 pb-3">
                   <span className="text-xs text-foreground-soft">Cliente (opcional)</span>
-                  <ElegirCliente valor={cliente} onCambiar={setCliente} deshabilitado={cobrando} />
+                  <ElegirCliente
+                    key={reinicioDelCliente}
+                    valor={cliente}
+                    onCambiar={setCliente}
+                    deshabilitado={cobrando}
+                  />
                 </div>
 
                 {/* El detalle de la venta: texto libre para el dato de entrega

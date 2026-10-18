@@ -99,6 +99,9 @@ export function ElegirCliente({
   const [resaltado, setResaltado] = useState(0)
   const [abierta, setAbierta] = useState(false)
   const buscador = useRef<HTMLInputElement>(null)
+  // El buscador y su lista, para saber si el foco se fue AFUERA (ver el
+  // `onBlur` del contenedor, abajo).
+  const zonaDeBusqueda = useRef<HTMLDivElement>(null)
   const nombreNuevo = useRef<HTMLInputElement>(null)
   // La búsqueda vigente, para que la respuesta de una búsqueda vieja no pise la
   // de una más nueva: mismo mecanismo que el buscador de artículos de /vender.
@@ -151,6 +154,22 @@ export function ElegirCliente({
   function soltar() {
     onCambiar(null)
     setTimeout(() => buscador.current?.focus(), 0)
+  }
+
+  // Si quien lo usa vuelve a `null` desde afuera (otro cliente elegido en otra
+  // pantalla, un reset), la búsqueda vieja no sobrevive. Ajuste durante el
+  // render —el patrón que React documenta para "estado que depende de una
+  // prop"—, no un efecto (react-hooks/set-state-in-effect). El reset de
+  // /vender después de cobrar no pasa por acá cuando el valor YA era null:
+  // ese lo resuelve la `key` que le pone punto-de-venta.tsx.
+  const [valorAnterior, setValorAnterior] = useState(valor)
+  if (valor !== valorAnterior) {
+    setValorAnterior(valor)
+    if (valor === null) {
+      setBusqueda('')
+      setResultados([])
+      setAbierta(false)
+    }
   }
 
   const listaVisible = abierta && busqueda.trim() !== ''
@@ -265,7 +284,23 @@ export function ElegirCliente({
   const idOpcion = (i: number) => `${id}-opcion-${i}`
 
   return (
-    <div className="relative flex flex-col gap-2">
+    // La lista se cierra cuando el foco sale de esta zona (review del ciclo).
+    // No es cosmética: con la lista montada, su `role="listbox"` hace que el
+    // listener global de /vender (`hayOverlayDeRadixAbierto`) se abstenga
+    // entero, así que una lista olvidada abierta dejaba sin Enter para cobrar
+    // ni Esc para vaciar. `onBlur` de React burbujea (es `focusout`), y el
+    // `relatedTarget` dice adónde fue el foco: si fue a un resultado o al
+    // "Nuevo" de esta misma zona, no se cierra. Tocar un resultado con el
+    // mouse ni siquiera mueve el foco (`onMouseDown` + `preventDefault`), así
+    // que elegir sigue funcionando. Tocar afuera saca el foco del buscador, y
+    // eso cubre el "click afuera" sin un listener de `pointerdown` propio.
+    <div
+      ref={zonaDeBusqueda}
+      className="relative flex flex-col gap-2"
+      onBlur={(e) => {
+        if (!zonaDeBusqueda.current?.contains(e.relatedTarget as Node | null)) setAbierta(false)
+      }}
+    >
       <div className="flex gap-2">
         <div className="relative min-w-0 flex-1">
           <Search

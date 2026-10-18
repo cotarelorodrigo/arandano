@@ -98,4 +98,20 @@ describe('ElegirCliente', () => {
       expect(r).toContain('e.stopPropagation()')
     }
   })
+
+  // Review del ciclo: la lista montada con role="listbox" apaga el Enter y el
+  // Esc globales de /vender, así que tiene que cerrarse cuando el foco se va.
+  it('la lista se cierra cuando el foco sale de la zona, salvo hacia un resultado', () => {
+    const sinComentarios = FUENTE.replace(/^\s*\/\/.*$/gm, '')
+    expect(sinComentarios).toMatch(
+      /onBlur=\{\(e\) => \{\s*if \(!zonaDeBusqueda\.current\?\.contains\(e\.relatedTarget[^)]*\)\) setAbierta\(false\)/,
+    )
+    // Elegir con el mouse no mueve el foco: si lo moviera, el blur cerraría
+    // la lista antes del click.
+    expect(sinComentarios).toMatch(/role="option"[\s\S]*?onMouseDown=\{\(e\) => e\.preventDefault\(\)\}/)
+  })
+
+  it('volver a null desde afuera borra la búsqueda vieja', () => {
+    expect(FUENTE).toMatch(/if \(valor !== valorAnterior\) \{[\s\S]*?if \(valor === null\) \{\s*setBusqueda\(''\)/)
+  })
 })
