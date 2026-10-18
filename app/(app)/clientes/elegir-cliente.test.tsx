@@ -83,6 +83,19 @@ describe('ElegirCliente', () => {
     const inputs = [...FUENTE.matchAll(/<Input\b[\s\S]*?\/>/g)].map((m) => m[0])
     expect(inputs.length).toBe(3)
     for (const i of inputs) expect(i).toMatch(/onKeyDown=/)
-    expect(FUENTE.match(/e\.key === 'Enter'\)?\s*\{?\s*\n?\s*(\/\/[^\n]*\n\s*)?e\.preventDefault\(\)/g)?.length).toBeGreaterThanOrEqual(2)
+  })
+
+  // Y cada Enter que el selector atiende corta la propagación, además de
+  // frenar el envío implícito: elegir con Enter saca el buscador del DOM en el
+  // mismo evento, el foco cae en <body>, y sin el corte el atajo global de
+  // /vender cobraría la venta con ese mismo Enter.
+  it('cada Enter atendido frena el envío Y corta la propagación', () => {
+    const sinComentarios = FUENTE.replace(/^\s*\/\/.*$/gm, '')
+    const ramas = [...sinComentarios.matchAll(/if \(e\.key === 'Enter'\) \{([\s\S]*?)\n\s*\}/g)].map((m) => m[1])
+    expect(ramas).toHaveLength(2)
+    for (const r of ramas) {
+      expect(r).toContain('e.preventDefault()')
+      expect(r).toContain('e.stopPropagation()')
+    }
   })
 })

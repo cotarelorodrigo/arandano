@@ -69,9 +69,13 @@ export function precargaDelAlta(busqueda: string): { nombre: string; telefono: s
  *    `elegir-cliente.test.tsx` lo fija sobre la fuente.
  * 2. **Enter en sus campos no envía el cobro.** En un `<input>` de texto,
  *    Enter dispara el envío implícito del form; acá Enter en el buscador
- *    elige el resaltado, y en los campos del alta no hace nada. El atajo
- *    global de Enter de `/vender` ya se abstiene con el foco en un INPUT
- *    (`puedeDispararCobroDesdeFoco`); esto cierra el otro camino.
+ *    elige el resaltado, y en los campos del alta no hace nada. Y corta la
+ *    propagación: el atajo global de Enter de `/vender` se abstiene con el
+ *    foco en un INPUT (`puedeDispararCobroDesdeFoco`), pero elegir saca el
+ *    INPUT del DOM en el mismo evento y el foco cae en `<body>` — ver el
+ *    comentario del `onKeyDown` del buscador. Después de elegir, el foco
+ *    queda en `<body>` a propósito: el Enter SIGUIENTE cobra, que es lo que
+ *    promete la leyenda "Enter para cobrar".
  * 3. **Esc no le llega al carrito.** El listener global de `/vender` arma el
  *    vaciado con Esc; acá Esc cierra la lista o cancela el alta, y corta la
  *    propagación — el mismo remedio que `detenerEscapeGlobal`
@@ -178,7 +182,10 @@ export function ElegirCliente({
     // Enter no envía el cobro (regla 2) y Esc cancela el alta sin llegar al
     // carrito (regla 3).
     const teclas = (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') e.preventDefault()
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        e.stopPropagation()
+      }
       if (e.key === 'Escape') {
         e.stopPropagation()
         soltar()
@@ -279,8 +286,17 @@ export function ElegirCliente({
             onChange={(e) => alTipear(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
-                // Regla 2: nunca el envío implícito del cobro.
+                // Regla 2: nunca el envío implícito del cobro, y tampoco el
+                // atajo global. El `stopPropagation` NO sobra: elegir saca este
+                // campo del DOM en el mismo evento (React aplica el render de
+                // un evento discreto antes de que el evento siga subiendo), así
+                // que cuando el Enter llega a `window` el foco ya está en
+                // `<body>` y la lista ya no existe — y con eso el atajo de
+                // `/vender` cobraría la venta con el mismo Enter que eligió al
+                // cliente. Es la familia del bug 86fc106 (un control que
+                // cambia debajo del evento que lo tocó).
                 e.preventDefault()
+                e.stopPropagation()
                 if (listaVisible && resultados[resaltado]) elegir(resultados[resaltado])
               } else if (e.key === 'ArrowDown' && resultados.length > 0) {
                 e.preventDefault()
