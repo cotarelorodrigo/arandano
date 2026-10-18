@@ -202,7 +202,9 @@ Y del producto:
   no tiene, y ninguna migración de este ciclo crea esa dependencia.
 
   **La caja entra sólo con apertura y cierre.** El arqueo, los movimientos de
-  efectivo sueltos y la pantalla `/caja` siguen siendo la pieza 6 del roadmap:
+  efectivo sueltos y la pantalla `/caja` siguen siendo la pieza 6 del roadmap
+  (**hechos el 2026-10-18**, ver *El efectivo en caja, los egresos y el cierre
+  con arqueo* más abajo):
   lo que hay hoy es el modelo y la garantía de que no hay dos turnos abiertos
   a la vez, no el flujo completo de manejo de efectivo. Y esa garantía —**una
   sola caja abierta por tenant**— la sostiene un índice único parcial en la
@@ -272,9 +274,9 @@ Y del producto:
     Ningún test puede juzgar si un color, un espaciado o una tipografía se
     ven bien de verdad — eso depende de que una persona las mire, una por
     una, y quedó sin hacer en este cierre.
-  - **El arqueo de caja** (apertura y cierre ya existen desde el ciclo de
+  - ~~**El arqueo de caja**~~ (apertura y cierre ya existen desde el ciclo de
     `Caja`; el arqueo, los movimientos de efectivo sueltos y la pantalla
-    `/caja` siguen siendo la pieza 6 del roadmap).
+    `/caja` se hicieron el 2026-10-18).
   - **Los repuestos de servicio técnico**, que es el ciclo que va a cerrar la
     decisión abierta de `MovimientoStock` (ver *Decisiones abiertas del
     modelo de datos*, más arriba).
@@ -798,6 +800,9 @@ Y del producto:
   documentado el próximo sitio conocido: `ChipCaja`/`ControlDeCaja` en
   `/vender`, que hoy no gatean nada porque no existe permiso de caja, pero sí
   van a necesitarlo el día que el arqueo (pieza 6 del roadmap) lo agregue.
+  (El arqueo llegó el 2026-10-18 y decidió que NO: cualquiera del local
+  registra movimientos y cierra, y el permiso de egresos quedó fuera de
+  alcance.)
 
   **Este ciclo le saca al empleado, por default, ver y cargar costos** —una
   regresión deliberada frente al comportamiento de hoy, y **gratis exactamente
@@ -3661,6 +3666,103 @@ Y del producto:
     con la de hoy y lo dice.
   - Todo a 1440 y a 390 px: el chip del cuerpo en ámbar con fecha y la hoja
     "Caja y dólar" scrolleando con diez cargas.
+
+- ~~El efectivo en caja, los egresos y el cierre con arqueo.~~ **Hecho**
+  (2026-10-18). Sale del mismo cliente que vende iPhones (audios WA0022 y
+  WA0023, "Tarea 4"): ver desde la caja **cuánto efectivo hay ahora**, y que el
+  cierre diario deje registrado **de cuánto fue el cierre y cuánto se retiró**.
+  Es la pieza 6 del roadmap que venía anotada desde el ciclo de `Caja`. Ver
+  `docs/superpowers/specs/2026-10-18-arqueo-de-caja-design.md` (con su sección
+  "Ajustes durante la implementación") y el plan
+  `docs/superpowers/plans/2026-10-18-arqueo-de-caja.md`. Se resolvió sin
+  preguntas al dueño del producto: todas las decisiones son llamadas de quien
+  implementó y están para revisar.
+
+  **El principio: el efectivo esperado se deriva, nunca se lleva a mano.** Lo
+  único que una persona escribe es lo que cuenta y lo que se lleva.
+
+  **Las decisiones.**
+
+  - **El turno es una ventana de tiempo, no una FK**: `Pago` no gana `cajaId`
+    (`crearVenta` sigue sin exigir caja), y la regla "una sola abierta por
+    tenant" hace que `[abiertaEn, ahora)` identifique un solo turno. El cobrado
+    del turno son los pagos en EFECTIVO, por `Pago.moneda`, de ventas
+    **creadas** en la ventana y no anuladas — por `Venta.creadoEn` y no
+    `Pago.creadoEn`, porque la edición recrea los pagos. Una venta de otro
+    turno anulada en éste **resta** (devuelve desde este cajón). La cuenta vive
+    en `lib/caja/efectivo.ts`, con `groupBy`/`findMany`.
+  - **Límite declarado**: editar hoy una venta de otro turno para pasarla a
+    efectivo no se refleja en el turno de hoy (la misma limitación que ya
+    aceptó el ciclo de edición de venta). La diferencia aparece en el arqueo.
+  - **Movimientos de caja: tabla nueva append-only** `movimientos_de_caja`
+    (INGRESO, EGRESO, RETIRO; moneda; monto > 0; nota, obligatoria para el
+    egreso; quién), con RLS, `CHECK (monto > 0)`, `REVOKE UPDATE, DELETE` y FK
+    **RESTRICT** a `cajas` para que borrar una caja no sea la puerta de atrás
+    del libro. Sólo con caja abierta. Un error se corrige con el contrario.
+  - **Cualquiera del local registra y cierra**, sin permiso: cada movimiento
+    lleva quién fue, y el arqueo es el control.
+  - **Apertura en las dos monedas** (`Caja.saldoInicialUsd`, default 0), con
+    los dólares plegados en "+ dólares"; **la apertura arranca con lo que quedó
+    en el último cierre** (contado − retirado) si ese cierre tuvo arqueo.
+  - **El cierre con arqueo**: esperado por moneda (recalculado en la
+    transacción del cierre, que es el que se guarda), contado (obligatorio),
+    retirado (≤ contado) y nota; la diferencia y lo que queda en vivo y
+    derivados, no guardados. **La diferencia no bloquea.** `cerrarCaja` acepta
+    el arqueo opcional para el formulario viejo cacheado durante el deploy.
+  - **Dónde se ve**: el chip "Caja abierta · $ 55.000,00" de `/vender` abre un
+    panel (Dialog de Radix; en el teléfono la hoja del Topbar) con el
+    desglose, los movimientos, "Registrar movimiento" y "Cerrar caja"; y
+    `/caja`, el historial de cierres, **sólo para el dueño**. La columna de
+    dólares sólo aparece si el turno tuvo algún dólar.
+
+  **Quedó afuera, a propósito** (spec, "Fuera de alcance"): exigir caja
+  abierta para cobrar; el efectivo de otros medios (el vuelto en otra moneda:
+  `recibido` no se guarda); un permiso para registrar egresos. Y, de este
+  ciclo: corregir el esperado de un turno cuando se edita una venta suya
+  después del cierre (el cierre guarda lo que se sabía ese día); exportar
+  `/caja` a CSV; el CHECK de no negativo sobre `saldo_inicial` en pesos (sí
+  entró para dólares y para el arqueo: sumárselo a la columna vieja es un
+  cambio sobre datos ya escritos).
+
+  **Preguntas abiertas para el cliente** (el diseño asume que sí a las dos, y
+  las deja fáciles de apagar):
+
+  - ¿La caja maneja dólares en efectivo de verdad? Si no, la columna ya no
+    aparece sola (sólo con un dólar en el turno) y "+ dólares" queda plegado.
+  - ¿Lo que queda pasa como apertura del día siguiente? Si no, se apaga
+    dejando de llamar a `aperturaSugerida` desde `app/(app)/vender/page.tsx`.
+  - ¿Quiere que un empleado pueda ver `/caja` (hoy sólo el dueño) o que
+    registrar un egreso pida un permiso (hoy cualquiera)?
+
+  **`design/arandano.pen` no dibuja el chip con el importe, el panel, el
+  cierre con arqueo ni `/caja`.** Entrada 42 de
+  `docs/correcciones-pendientes-del-pen.md`.
+
+  **Queda pendiente la verificación manual**, después del merge
+  (`arandano-dev` sirve `main`):
+
+  - El ejemplo del pedido en `/vender`: abrir con 10.000; cobrar 50.000 en
+    efectivo (una venta en efectivo y otra con tarjeta, que no tiene que
+    sumar); registrar un egreso de 5.000 con motivo "Delivery". El chip dice
+    "Caja abierta · $ 55.000,00" y el panel, el desglose.
+  - Registrar un egreso sin motivo (el formulario no deja); un retiro sin nota
+    (sí); un ingreso en dólares: aparece la columna de dólares en el chip, el
+    panel y el cierre.
+  - Cerrar con contado 55.000 y retiro 45.000: "Cuadra", "Queda $ 10.000,00";
+    cambiar el contado a 54800: "Faltan $ 200,00" en ámbar, y cierra igual.
+    Probar retirar más de lo contado: avisa y el servidor lo rechaza.
+  - Abrir de nuevo: el saldo inicial arranca en 10000.
+  - Anular desde `/ventas/[id]` una venta en efectivo de ayer con la caja de
+    hoy abierta: el panel la muestra en "Devuelto por anulaciones".
+  - **Teclado**: abrir el panel desde el chip y cerrarlo con Esc: Enter cobra y
+    Esc arma el vaciado (no reabre el panel). Con el panel abierto, Enter en el
+    monto de un movimiento registra y en el contado del cierre cierra, sin
+    cobrar la venta en curso.
+  - `/caja` como dueño: el cierre de recién con sus cifras y su movimiento
+    plegado; filtrar por fecha; un cierre viejo dice "Cerrada sin arqueo". Como
+    empleado, la pestaña no está y la URL da 403.
+  - Todo a 1440 y a 390 px (la hoja "Caja y dólar" scrollea con el panel
+    entero).
 
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).

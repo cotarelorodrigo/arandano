@@ -142,3 +142,62 @@ cacheado durante el deploy cierra como hoy, sin arqueo).
   bloquea; el esperado guardado es el recalculado en la transacción.
 - Apertura sugerida = queda del último cierre.
 - `/caja`: sólo dueño; filtro por fecha.
+
+## Ajustes durante la implementación
+
+Llamadas que el código obligó a hacer y que el diseño no decía. En cada una se
+eligió la opción más conservadora.
+
+- **Un movimiento bloquea la fila de la caja.** `registrarMovimiento` corre un
+  `UPDATE cajas SET cerrada_en = NULL WHERE cerrada_en IS NULL` que no cambia
+  nada pero toma el lock de la fila, igual que el `UPDATE` del cierre. Sin eso,
+  un movimiento concurrente con un cierre podía quedar colgado de una caja ya
+  cerrada y fuera de su arqueo para siempre (la FK del insert toma un
+  `FOR KEY SHARE`, que no choca con el `UPDATE` del cierre). Probado con una
+  conexión propia que cierra a mitad de camino, y verificado en rojo contra la
+  versión `findFirst` + `create`.
+- **La ventana del turno abierto no tiene cota superior** (`creadoEn >=
+  abiertaEn`, sin `< ahora`): sólo se calcula para la caja abierta, y una cota
+  con el reloj del proceso contra el `now()` de Postgres no compra nada. Un
+  COBRO concurrente con el cierre no toma el lock (`crearVenta` no toca la
+  caja, y eso no cambia): una venta que commitea después del recálculo con un
+  `creado_en` anterior al cierre no queda en el esperado de nadie. Es una
+  ventana de milisegundos y la diferencia la muestra el arqueo.
+- **"Devuelto" incluye ventas cobradas sin ninguna caja abierta**: la regla es
+  "creada antes de que abriera este turno y anulada durante éste", y una venta
+  de antes de cualquier caja devuelve su efectivo desde este cajón igual.
+- **El contado en dólares ausente es cero.** Cuando el turno no tuvo dólares el
+  formulario no muestra la columna, y el servidor no puede saber si se mostró:
+  lee la ausencia como cero (si en ese turno sí había dólares —un cobro que
+  entró mientras se contaba—, el arqueo lo muestra como faltante en vez de
+  impedir el cierre). Cuando la columna se muestra, el campo es `required` en el
+  formulario. El contado en pesos es obligatorio también en el servidor. Los
+  retirados vacíos son cero.
+- **El formulario viejo se reconoce por la AUSENCIA del campo `contadoArs`**
+  (no por estar vacío): ausente cierra sin arqueo; vacío es el formulario nuevo
+  sin completar, y es un error que se le muestra a la persona.
+- **La apertura sugerida mira sólo el último cierre**: si ése fue sin arqueo,
+  no hay sugerencia (el campo arranca en "0", como antes) en vez de buscar uno
+  más viejo, porque lo que quedó hace tres días no es lo que hay hoy. Con
+  dólares en lo que quedó, el campo de dólares arranca desplegado.
+- **CHECKs además del de `monto > 0`**: no negativos en `saldo_inicial_usd` y en
+  contado y retirado. El esperado no lleva CHECK (un egreso mayor que lo que
+  había da un esperado negativo, que es un dato). `saldo_inicial` en pesos no
+  ganó el suyo: sumárselo a una columna con datos escritos queda fuera de un
+  ciclo aditivo.
+- **Notas con tope de 500 caracteres** (movimiento y cierre).
+- **El detalle de una caja en `/caja` va plegado en la fila** (`<details>`), y
+  no en una ruta `/caja/[id]`: lista corta, sin JavaScript, sin ruta dinámica
+  que sacar del barrido del smoke ni 404 que manejar.
+- **`/caja` filtra por fecha de CIERRE** y no muestra la caja abierta (no tiene
+  cierre; su estado vive en `/vender`). Tope de 400 cierres por consulta, con
+  aviso. Sólo lee lo guardado: el esperado no se recalcula.
+- **El chip de sólo lectura del teléfono también dice el importe**: "en el
+  teléfono, lo mismo" (decisión 5) se leyó como el mismo texto en el chip y el
+  mismo panel en la hoja.
+- **El panel no dibuja las filas en cero** (salvo apertura, cobrado y actual),
+  para que un local que nunca registra egresos no lea "Egresos $ 0,00" cada
+  vez.
+- **Un contado que la gramática no entiende** (`54.800`, ambiguo entre miles y
+  decimales) no muestra una cuenta en vivo inventada sino cómo escribirlo; el
+  servidor lo rechaza igual.
