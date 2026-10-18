@@ -209,3 +209,33 @@ eligió la opción más conservadora.
 - **Un contado que la gramática no entiende** (`54.800`, ambiguo entre miles y
   decimales) no muestra una cuenta en vivo inventada sino cómo escribirlo; el
   servidor lo rechaza igual.
+- **Las anulaciones del hueco entre turnos restan en el turno siguiente**
+  (review del ciclo). Una venta del turno A anulada después del cierre de A y
+  antes de la apertura de B no se restaba en ningún lado, y lo que quedó de A
+  —la apertura sugerida de B— la seguía incluyendo. Para las ventas creadas
+  antes del cierre anterior, la ventana de la devolución arranca en ese cierre
+  (`inicioDeDevoluciones`, lib/caja/efectivo.ts). Una venta creada y anulada en
+  el hueco no entra: nunca estuvo en un cajón contado.
+
+### Límites conocidos que quedan (review del ciclo)
+
+- **La carrera del lado de la apertura**: una venta cuya transacción empezó
+  antes de `abrirCaja` y commitea después tiene `creado_en` anterior a la
+  apertura, y no entra en ningún turno. La misma ventana de milisegundos que la
+  del cierre; la diferencia la muestra el arqueo.
+- **El vuelto en otra moneda no se guarda** (`recibido` no se persiste, ya
+  estaba fuera de alcance): un pago en efectivo en dólares con vuelto en pesos
+  suma los dólares entregados y no resta los pesos del vuelto, así que el
+  arqueo muestra "sobran US$ …" y "faltan $ …" a la vez.
+- **`cerradaEn` sale del reloj del proceso** (`new Date()` en `cerrarCaja`), y
+  `abierta_en`, `creado_en` de ventas, pagos y movimientos del `now()` de
+  Postgres. Pasarlo al reloj de la base no es trivial con operaciones de
+  modelo de Prisma (no hay un `now()` en `data` sin `$executeRaw`, que este
+  módulo evita). Los dos contenedores leen el reloj del mismo host, y el
+  esperado no depende de esa marca: se calcula sin cota superior. Sí la usan
+  `/caja` (filtro por fecha de cierre) y la ventana de las anulaciones entre
+  turnos, donde un desfase de milisegundos no cambia nada práctico.
+- **El conteo no es a ciegas**: quien cierra ve el esperado antes de contar,
+  y puede tipearlo en vez de contar. Pregunta abierta para el cliente (un
+  conteo ciego escondería el esperado hasta después de cerrar).
+

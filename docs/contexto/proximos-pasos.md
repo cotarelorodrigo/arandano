@@ -3726,6 +3726,13 @@ Y del producto:
   entró para dólares y para el arqueo: sumárselo a la columna vieja es un
   cambio sobre datos ya escritos).
 
+  **Queda pendiente, conocido** (detalle en los ajustes del spec): una venta
+  cuya transacción empezó antes de abrir la caja y commitea después no entra en
+  ningún turno (ventana de milisegundos, como la del cierre); un pago en dólares
+  con vuelto en pesos se ve en el arqueo como "sobran US$ / faltan $", porque
+  el vuelto no se guarda; `cerradaEn` sale del reloj del proceso y no del
+  `now()` de Postgres (mismo host; pasarlo a la base pide `$executeRaw`).
+
   **Preguntas abiertas para el cliente** (el diseño asume que sí a las dos, y
   las deja fáciles de apagar):
 
@@ -3735,6 +3742,8 @@ Y del producto:
     dejando de llamar a `aperturaSugerida` desde `app/(app)/vender/page.tsx`.
   - ¿Quiere que un empleado pueda ver `/caja` (hoy sólo el dueño) o que
     registrar un egreso pida un permiso (hoy cualquiera)?
+  - ¿El conteo tiene que ser a ciegas? Hoy quien cierra ve el esperado antes
+    de contar, y podría tipearlo en vez de contar.
 
   **`design/arandano.pen` no dibuja el chip con el importe, el panel, el
   cierre con arqueo ni `/caja`.** Entrada 42 de
