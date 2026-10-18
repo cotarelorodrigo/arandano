@@ -435,8 +435,11 @@ el prefill del último pago; ver *Decisiones*.
   15/10"). En el teléfono el chip del cuerpo sigue siendo de sólo lectura (con
   el mismo ámbar y la misma fecha) y el panel vive en la hoja del Topbar, debajo
   de la caja ("Caja y dólar"). Si la nueva difiere en más de la mitad de la
-  vigente, pide confirmar ("Sí, cargarla igual"): un cero de más es el error más
-  probable. Nunca se edita ni se borra una carga: corregir es cargar otra.
+  vigente —o si es la primera y está fuera de $ 100–$ 100.000—, pide confirmar
+  ("Sí, cargarla igual"): un cero de más es el error más probable. "1.450" se
+  lee como mil cuatrocientos cincuenta en todo campo de cotización (el chip, el
+  cobro, la corrección de pagos, el canje), a diferencia de un precio. Nunca se
+  edita ni se borra una carga: corregir es cargar otra.
 - **Un pago que cruza monedas arranca con la cotización del local si es de
   hoy**, y se puede cambiar; lo que se guarda en `Pago.cotizacion` es lo que
   quedó tipeado. Si la del local es vieja, el campo arranca vacío con la vieja
@@ -488,9 +491,13 @@ el prefill del último pago; ver *Decisiones*.
   entonces— y borrado esa función. El pedido nuevo vino del cliente: un dólar
   del local, visible y fácil de actualizar. El motivo de 2026-08-29 sigue
   vigente y es el que pone el límite: "de hoy" se mide en hora argentina
-  (`esDeHoy`), lo decide el navegador **en el momento del cambio** de moneda o
-  de `Cubre` (la pantalla puede quedar abierta de un día para el otro), y una
-  vieja nunca entra sola al campo: se muestra como sugerencia con su fecha.
+  (`esDeHoy`) y tienen que coincidir los dos relojes: el del servidor al armar
+  la página (el que pinta el chip) **y** el del navegador en el momento del
+  cambio de moneda o de `Cubre` —la pantalla puede quedar abierta de un día
+  para el otro, y una PC con la hora atrasada no puede precargar la de ayer—.
+  Una vieja nunca entra sola al campo: se muestra como sugerencia con su fecha,
+  derivada del mismo dato que el chip. Lo precargado va con coma decimal
+  ("1450,50").
   `ultimaCotizacionUsd()` no vuelve: la cotización del local es OTRO dato
   (`CotizacionDelDolar`, con quién y cuándo), no el último pago.
 - **Al cerrarse, el diálogo de la cotización no le devuelve el foco al chip**

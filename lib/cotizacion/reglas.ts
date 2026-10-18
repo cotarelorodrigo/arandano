@@ -39,6 +39,51 @@ export function cotizacionDeHoy(c: CotizacionDelLocal | null, ahora: Date): stri
 }
 
 /**
+ * Un valor canónico (`"1450.5"`, el `toString()` del Decimal) tal como se
+ * escribe en un campo argentino: `"1450,50"`. Sin decimales queda `"1450"`.
+ *
+ * Para lo que se PRECARGA en un campo que la persona después lee y puede
+ * editar: un "1450.5" con punto es como lo escribe una máquina, no el
+ * mostrador, y a medio editar invita a dejarlo en "1450.50" —que la gramática
+ * acepta, pero que se lee distinto de todo lo demás de la pantalla—. Las dos
+ * formas valen lo mismo para `cotizacionEnDiezMilesimas` y para el servidor.
+ * Sin punto de miles a propósito: el campo se edita, y "1.450" es el único
+ * caso que sólo la gramática de cotización acepta.
+ */
+export function cotizacionParaElCampo(valor: string): string {
+  const [entera, fraccion] = valor.split('.')
+  if (!fraccion || /^0+$/.test(fraccion)) return entera
+  return `${entera},${fraccion.padEnd(2, '0')}`
+}
+
+/**
+ * Con qué arranca el campo "Cotización" de un pago que acaba de pasar a
+ * cruzar monedas: la del local, escrita para el campo, SÓLO si es de hoy para
+ * los DOS relojes — el del servidor (`viejaSegunElServidor`, decidido al armar
+ * la página) Y el del navegador (`ahora`, en el momento del cambio). Si no,
+ * `null` y el campo arranca vacío.
+ *
+ * **Los dos, con AND, y no uno solo** (hallazgo de la review, 2026-10-18):
+ * - Sólo el del navegador fallaba con una PC de mostrador ATRASADA (pila del
+ *   BIOS muerta, hora puesta a mano): para ella la carga de ayer seguía
+ *   siendo "de hoy" y se precargaba, con el chip en ámbar al lado.
+ * - Sólo el del servidor fallaba con la pantalla abierta de un día para el
+ *   otro: pasada la medianoche, el "de hoy" de la carga de la página ya es
+ *   de ayer.
+ * Precargar plata es lo único de esta regla que puede salir mal en caja, así
+ * que basta con que UNO de los dos diga "vieja" para no hacerlo.
+ */
+export function cotizacionParaPrecargar(
+  c: CotizacionDelLocal | null,
+  viejaSegunElServidor: boolean,
+  ahora: Date,
+): string | null {
+  if (viejaSegunElServidor) return null
+  const deHoy = cotizacionDeHoy(c, ahora)
+  return deHoy === null ? null : cotizacionParaElCampo(deHoy)
+}
+
+/**
  * Si la cotización del local hay que mirarla con desconfianza: no hay
  * ninguna, o no es de hoy. Es lo que pinta el chip "USD" de `/vender` con el
  * ámbar de advertencia.
@@ -49,16 +94,27 @@ export function esCotizacionVieja(c: CotizacionDelLocal | null, ahora: Date): bo
 
 /**
  * "La del local es del 15/10: $ 1.420", debajo del campo "Cotización" de un
- * pago que cruza monedas cuando la del local NO es de hoy (y por lo tanto el
+ * pago que cruza monedas cuando la del local es vieja (y por lo tanto el
  * campo arrancó vacío). `null` cuando no hay nada que sugerir: sin cotización
  * cargada, o con una de hoy —que ya está en el campo—.
+ *
+ * **Sin reloj: lo decide `vieja`, el juicio del servidor que pinta el chip.**
+ * Se deriva de props en cada render y no se guarda en estado al cruzar
+ * (hallazgo de la review): guardada, sobrevivía a una carga nueva en medio de
+ * la venta —el chip pasaba a "de hoy" y la fila seguía diciendo "la del local
+ * es del 15/10"— y, con las filas de pago indexadas por posición, se mudaba de
+ * fila al quitar un pago. Así el texto siempre dice lo mismo que el chip. El
+ * borde que queda: pasada la medianoche sin recargar, el servidor todavía dice
+ * "de hoy", así que no hay sugerencia aunque el campo arranque vacío (el
+ * navegador ya no la precarga). Del lado seguro: falta una ayuda, no sobra
+ * un número.
  *
  * Sugerencia y no valor: quien cobra decide si sigue valiendo. Copiarla es
  * tipearla, a propósito: el dato viejo no entra al cobro sin que alguien lo
  * haya mirado.
  */
-export function sugerenciaDeCotizacionVieja(c: CotizacionDelLocal | null, ahora: Date): string | null {
-  if (!c || esDeHoy(c.creadaEn, ahora)) return null
+export function sugerenciaDeCotizacionVieja(c: CotizacionDelLocal | null, vieja: boolean): string | null {
+  if (!c || !vieja) return null
   return `La del local es del ${formatearDiaYMes(c.creadaEn)}: ${formatearCotizacion(c.valor)}`
 }
 
@@ -123,4 +179,26 @@ export function esSaltoGrande(nueva: string, vigente: string | null): boolean {
   const n = aCentavos(nueva)
   const v = aCentavos(vigente)
   return Math.abs(n - v) * 100 > SALTO_QUE_PIDE_CONFIRMAR_PORCENTAJE * v
+}
+
+/** El rango en el que una cotización del dólar es verosímil, en pesos por
+ *  dólar. Ancho a propósito: no es una predicción del dólar sino una red para
+ *  un cero de más o de menos en la primera carga. */
+export const RANGO_VEROSIMIL = { minimo: 100, maximo: 100_000 } as const
+
+/**
+ * Si la PRIMERA cotización del local está fuera de lo verosímil (menos de
+ * $ 100 o más de $ 100.000 por dólar). Es el tope de cordura para cuando
+ * `esSaltoGrande` no tiene contra qué comparar (hallazgo de la review,
+ * 2026-10-18): sin esto, el primer dólar del local podía entrar como 14.500 o
+ * como 14,50 sin una sola pregunta, y con él se precargaría el cobro.
+ *
+ * Igual que el salto, pide confirmar y no prohíbe: el rango es de hoy, y el
+ * día que el dólar pase los cien mil pesos el local tiene que poder cargarlo.
+ * Con una vigente cargada no se usa: ahí manda la comparación contra ella.
+ */
+export function esPrimeraInverosimil(nueva: string, vigente: string | null): boolean {
+  if (vigente !== null) return false
+  const n = aCentavos(nueva)
+  return n < RANGO_VEROSIMIL.minimo * 100 || n > RANGO_VEROSIMIL.maximo * 100
 }

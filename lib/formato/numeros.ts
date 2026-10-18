@@ -1,5 +1,5 @@
 import { Prisma } from '@/generated/prisma/client'
-import { aDecimalCanonico, estaVacio, ErrorDeFormato } from './gramatica'
+import { aCotizacionCanonica, aDecimalCanonico, estaVacio, ErrorDeFormato } from './gramatica'
 
 // Re-exportados desde acá para que los llamadores que ya importaban
 // `ErrorDeFormato` de este archivo sigan andando: la gramática se mudó a
@@ -23,4 +23,11 @@ export function aDecimal(texto: string, campo: string): Prisma.Decimal {
 /** Igual, pero el vacío es `null` y no un error: el campo es opcional. */
 export function aDecimalOpcional(texto: string, campo: string): Prisma.Decimal | null {
   return estaVacio(texto) ? null : aDecimal(texto, campo)
+}
+
+/** Una cotización del dólar tipeada, a `Decimal`: la gramática compartida más
+ *  la excepción de `aCotizacionCanonica` ("1.450" es mil cuatrocientos
+ *  cincuenta). */
+export function aCotizacion(texto: string, campo: string): Prisma.Decimal {
+  return new Prisma.Decimal(aCotizacionCanonica(texto, campo))
 }

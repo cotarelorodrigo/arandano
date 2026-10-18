@@ -32,7 +32,7 @@ import {
 import { TOPE_DETALLE } from '@/lib/ventas/detalle'
 // Ídem: `lib/ventas/cruce.ts` no importa nada. Se re-exporta más abajo.
 import { cotizacionParaElCruce } from '@/lib/ventas/cruce'
-import { cotizacionDeHoy, sugerenciaDeCotizacionVieja, type CotizacionDelLocal } from '@/lib/cotizacion/reglas'
+import { cotizacionParaPrecargar, sugerenciaDeCotizacionVieja, type CotizacionDelLocal } from '@/lib/cotizacion/reglas'
 // De TIPO y no de valor: `lib/planes/consultar.ts` importa Prisma, y un import
 // de valor desde este archivo —que lleva 'use client'— arrastraría `pg` al
 // bundle del navegador. Mismo caso que `ArticuloVendible`, y lo que vigila
@@ -2492,9 +2492,11 @@ export function PuntoDeVenta({
                       // este ciclo.
                       ofreceCubre={totales.ars > 0 && totales.usd > 0}
                       hayFaltante={hayFaltante}
-                      // La vigente, sin juzgar si es de hoy: eso lo decide la
-                      // fila en el momento en que el pago pasa a cruzar.
+                      // La vigente y el juicio del servidor sobre ella; la fila
+                      // suma el del navegador en el momento en que el pago pasa
+                      // a cruzar (`cotizacionParaPrecargar`).
                       cotizacionDelLocal={cotizacion.historial[0] ?? null}
+                      cotizacionVieja={cotizacion.vieja}
                       onCambiar={(cambio) => cambiarPago(i, cambio)}
                       onQuitar={() => setPagos((p2) => p2.filter((_, j) => j !== i))}
                       puedeQuitar={pagos.length > 1}
@@ -3110,6 +3112,7 @@ function FilaDePago({
   ofreceCubre,
   hayFaltante,
   cotizacionDelLocal,
+  cotizacionVieja,
   onCambiar,
   onQuitar,
   puedeQuitar,
@@ -3133,6 +3136,11 @@ function FilaDePago({
   // un día para el otro, y lo que decidió el servidor al armar la página ya
   // no alcanza para precargar plata.
   cotizacionDelLocal: CotizacionDelLocal | null
+  // Lo que decidió el SERVIDOR al armar la página: si la del local no es de
+  // hoy (el mismo dato que pinta el chip en ámbar). Hace falta además del
+  // reloj del navegador: una PC de mostrador atrasada vería la de ayer como
+  // de hoy. Ver `cotizacionParaPrecargar`.
+  cotizacionVieja: boolean
   onCambiar: (cambio: Partial<Pago>) => void
   onQuitar: () => void
   puedeQuitar: boolean
@@ -3182,23 +3190,26 @@ function FilaDePago({
   // control de plan — un local sin planes no ve nada nuevo.
   const planesDelMedio = planesOfrecidos(pago, planes)
   // "La del local es del 15/10: $ 1.420" debajo de la cotización, cuando la
-  // del local es vieja y por eso el campo arrancó vacío. Se decide en el MISMO
-  // instante y con el MISMO reloj que el precargado (`alCruzar`, abajo): dos
-  // relojes distintos podían dejar el campo vacío sin la sugerencia que
-  // explica por qué. Estado y no un cálculo del render: un `new Date()` en el
-  // render no es puro, y el render no es el momento en que se decide nada.
-  const [sugerencia, setSugerencia] = useState<string | null>(null)
+  // del local es vieja y por eso el campo arrancó vacío. DERIVADA de props en
+  // cada render —con el mismo `vieja` que pinta el chip— y no guardada en
+  // estado al cruzar: guardada, sobrevivía a una carga de la de hoy en medio
+  // de la venta y se mudaba de fila al quitar un pago (las filas van por
+  // posición, `key={i}`). Ver `sugerenciaDeCotizacionVieja`.
+  const sugerencia = sugerenciaDeCotizacionVieja(cotizacionDelLocal, cotizacionVieja)
 
   /**
    * La cotización con la que arranca un pago que acaba de cambiar de cruce:
-   * la del local si es DE HOY, y si no vacía (la regla de
-   * `cotizacionParaElCruce`). Juzgada con el reloj del navegador AHORA, en el
-   * cambio, y no con lo que decidió el servidor al armar la página.
+   * la del local si es DE HOY para los dos relojes —el del servidor
+   * (`cotizacionVieja`) Y el del navegador en este instante—, y si no vacía
+   * (la regla de `cotizacionParaElCruce`). Ver `cotizacionParaPrecargar` para
+   * por qué hace falta que coincidan los dos.
    */
   function alCruzar(moneda: Pago['moneda'], cubre: Pago['cubre']): string {
-    const ahora = new Date()
-    setSugerencia(sugerenciaDeCotizacionVieja(cotizacionDelLocal, ahora))
-    return cotizacionParaElCruce(moneda, cubre, cotizacionDeHoy(cotizacionDelLocal, ahora))
+    return cotizacionParaElCruce(
+      moneda,
+      cubre,
+      cotizacionParaPrecargar(cotizacionDelLocal, cotizacionVieja, new Date()),
+    )
   }
 
   return (

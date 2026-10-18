@@ -6,7 +6,7 @@ import { exigirSesion } from '@/lib/auth/sesion'
 import { puedeConSesion } from '@/lib/permisos/guarda'
 import { tablaDeCanje } from '@/lib/canje/consultar'
 import { cotizacionVigente } from '@/lib/cotizacion/consultar'
-import { cotizacionDeHoy } from '@/lib/cotizacion/reglas'
+import { cotizacionDeHoy, cotizacionParaElCampo } from '@/lib/cotizacion/reglas'
 import { Calculadora } from './calculadora'
 
 export const dynamic = 'force-dynamic'
@@ -39,6 +39,8 @@ export default async function PlanCanje() {
     cotizacionVigente(sesion.tenant.id),
   ])
 
+  const precargable = cotizacionDeHoy(cotizacion, new Date())
+
   return (
     <>
       <Encabezado
@@ -60,7 +62,9 @@ export default async function PlanCanje() {
       <Calculadora
         tabla={tabla}
         puedeEditar={puedeEditar}
-        dolarInicial={cotizacionDeHoy(cotizacion, new Date())}
+        // Escrita como en el campo ("1450,50" y no "1450.5"): es lo que el
+        // vendedor lee y puede editar. Ver `cotizacionParaElCampo`.
+        dolarInicial={precargable === null ? null : cotizacionParaElCampo(precargable)}
       />
     </>
   )
