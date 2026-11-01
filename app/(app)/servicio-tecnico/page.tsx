@@ -1,18 +1,29 @@
 import Link from 'next/link'
-import { Search, Plus } from 'lucide-react'
+import { Search, Plus, CircleAlert } from 'lucide-react'
 import { Encabezado } from '@/components/shell/encabezado'
 import { exigirSesion } from '@/lib/auth/sesion'
+import { puedeConSesion } from '@/lib/permisos/guarda'
 import { prismaParaTenant } from '@/lib/tenant/prisma'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { formatearCantidad } from '@/lib/formato/mostrar'
+import { formatearCantidad, formatearPrecio } from '@/lib/formato/mostrar'
 import { ESTADOS, ABIERTOS, NOMBRE_ESTADO } from '@/lib/ordenes-de-trabajo/estados'
 import { filtroDelTablero } from '@/lib/ordenes-de-trabajo/buscar'
 import { fechaCorta, diasEnElLocal } from '@/lib/ordenes-de-trabajo/antiguedad'
+import {
+  mesEnCurso,
+  mesValido,
+  rangoDelMes,
+  mesAnterior,
+  mesSiguiente,
+  nombreDelMes,
+} from '@/lib/ordenes-de-trabajo/mes'
+import { ganancia, queFalta } from '@/lib/ordenes-de-trabajo/plata'
+import { totalesDelMes } from '@/lib/ordenes-de-trabajo/totales'
 import { ChipEstadoFila } from './chip-estado'
-import type { EstadoOrden } from '@/generated/prisma/client'
+import type { EstadoOrden, Prisma } from '@/generated/prisma/client'
 import estilos from './tipografia.module.css'
 
 export const dynamic = 'force-dynamic'
@@ -28,19 +39,24 @@ export function esEstado(v: string | undefined): v is EstadoOrden {
  * El href de una navegación del tablero que preserva la búsqueda vigente.
  * `estado: null` es "sin filtro" (todas las abiertas). El chip "Abiertas" NO
  * pasa por acá — ver el comentario de `FilaDeChips`, donde se arma a mano.
+ * `mes` (`AAAA-MM`) sólo lo usan las entregadas sin búsqueda: el selector de
+ * mes y la paginación dentro de un mes.
  */
 export function hrefTablero({
   busqueda,
   estado,
   pagina,
+  mes,
 }: {
   busqueda: string
   estado: EstadoOrden | null
   pagina?: number
+  mes?: string
 }): string {
   const u = new URLSearchParams()
   if (busqueda) u.set('q', busqueda)
   if (estado) u.set('estado', estado)
+  if (mes) u.set('mes', mes)
   if (pagina && pagina > 1) u.set('p', String(pagina))
   const s = u.toString()
   return s ? `/servicio-tecnico?${s}` : '/servicio-tecnico'
@@ -97,15 +113,20 @@ export function subtituloDelTablero(abiertas: number, diasDelMasViejo: number | 
 /**
  * Qué palabra usa el resumen de rango del pie del listado, según si se está
  * mirando el default (abiertas), un chip puntual, o una búsqueda sin chip
- * (que alcanza a todas, entregadas y anuladas incluidas).
+ * (que alcanza a todas, entregadas y anuladas incluidas). Con `nombreMes`
+ * (las entregadas de un mes) lo nombra: el listado ya no es "todas las
+ * entregadas", y el pie no puede dar a entender que lo es.
  */
 export function etiquetaDelConjunto(
   filtro: EstadoOrden | null,
   buscandoEnTodas: boolean,
   total: number,
+  nombreMes?: string,
 ): string {
   if (buscandoEnTodas) return total === 1 ? 'orden' : 'órdenes'
-  if (filtro) return total === 1 ? `orden «${NOMBRE_ESTADO[filtro]}»` : `órdenes «${NOMBRE_ESTADO[filtro]}»`
+  const deMes = nombreMes ? ` de ${nombreMes}` : ''
+  if (filtro)
+    return total === 1 ? `orden «${NOMBRE_ESTADO[filtro]}»${deMes}` : `órdenes «${NOMBRE_ESTADO[filtro]}»${deMes}`
   return total === 1 ? 'orden abierta' : 'órdenes abiertas'
 }
 
@@ -116,10 +137,11 @@ export function rotuloDeRango(
   total: number,
   filtro: EstadoOrden | null,
   buscandoEnTodas: boolean,
+  nombreMes?: string,
 ): string {
   return `${formatearCantidad(String(desde))}–${formatearCantidad(String(hasta))} de ${formatearCantidad(
     String(total),
-  )} ${etiquetaDelConjunto(filtro, buscandoEnTodas, total)}`
+  )} ${etiquetaDelConjunto(filtro, buscandoEnTodas, total, nombreMes)}`
 }
 
 /**
@@ -400,6 +422,87 @@ export function FilaDeChips({
   )
 }
 
+/**
+ * "‹ octubre 2026 ›" arriba de las entregadas. Links comunes, sin JavaScript:
+ * cada mes es una URL (`?estado=ENTREGADO&mes=AAAA-MM`). El "›" del mes en
+ * curso no es un link: el futuro no tiene entregas, y `mesValido` lo
+ * devolvería igual al mes en curso — un link que no lleva a ningún lado.
+ */
+export function SelectorDeMes({ mes, mesActual, busqueda }: { mes: string; mesActual: string; busqueda: string }) {
+  const anterior = mesAnterior(mes)
+  const siguiente = mesSiguiente(mes)
+  const flecha = cn(estilos.archivo, 'size-[30px] rounded-lg text-[15px] font-semibold')
+  return (
+    <nav aria-label="Mes de las entregadas" className="flex items-center gap-[10px]">
+      <Button asChild variant="outline" size="icon-sm" className={cn(flecha, 'text-foreground-soft')}>
+        <Link href={hrefTablero({ busqueda, estado: 'ENTREGADO', mes: anterior })} aria-label={`Ver ${nombreDelMes(anterior)}`}>
+          ‹
+        </Link>
+      </Button>
+      <span className="min-w-[130px] text-center text-sm font-semibold text-foreground">{nombreDelMes(mes)}</span>
+      {mes >= mesActual ? (
+        <span
+          aria-disabled="true"
+          className={cn(flecha, 'flex items-center justify-center rounded-lg border border-input text-muted-foreground opacity-50')}
+        >
+          ›
+        </span>
+      ) : (
+        <Button asChild variant="outline" size="icon-sm" className={cn(flecha, 'text-foreground-soft')}>
+          <Link
+            href={hrefTablero({ busqueda, estado: 'ENTREGADO', mes: siguiente })}
+            aria-label={`Ver ${nombreDelMes(siguiente)}`}
+          >
+            ›
+          </Link>
+        </Button>
+      )}
+    </nav>
+  )
+}
+
+/** Los montos de una fila de las entregadas de un mes, ya formateados (`'—'`
+ *  para lo que no está cargado). `falta`: no entra en la ganancia del mes. */
+export type PlataDeFila = { cobrado: string; costo: string; ganancia: string; falta: boolean }
+
+/** Lo mismo para la fila de totales. `sinDatos`: cuántas quedaron afuera de la
+ *  ganancia. */
+export type TotalesDeListado = { cobrado: string; costo: string; ganancia: string; sinDatos: number }
+
+/**
+ * De la orden con `Decimal` a texto, del lado del servidor: `Listado` es puro
+ * y no hace cuentas de plata (ver el comentario de `datosDeCardPlata` en
+ * [id]/page.tsx, mismo motivo).
+ */
+export function plataDeFila(cobrado: Prisma.Decimal | null, costo: Prisma.Decimal | null): PlataDeFila {
+  const precio = (v: Prisma.Decimal | null) => (v === null ? '—' : formatearPrecio(v.toString()))
+  return {
+    cobrado: precio(cobrado),
+    costo: precio(costo),
+    ganancia: precio(ganancia(cobrado, costo)),
+    falta: queFalta(cobrado, costo) !== null,
+  }
+}
+
+/** "3 órdenes sin costo o cobrado no entran en la ganancia". `null` en cero. */
+export function notaDeSinDatos(n: number): string | null {
+  if (n === 0) return null
+  return n === 1
+    ? '1 orden sin costo o cobrado no entra en la ganancia'
+    : `${formatearCantidad(String(n))} órdenes sin costo o cobrado no entran en la ganancia`
+}
+
+/** La marca de una fila a la que le falta costo o cobrado: visible (el
+ *  ícono) y con texto para quien no la ve. */
+function MarcaFaltanDatos() {
+  return (
+    <span title="Faltan datos" className="inline-flex text-warn">
+      <CircleAlert aria-hidden="true" className="size-3.5" />
+      <span className="sr-only">Faltan datos</span>
+    </span>
+  )
+}
+
 /** Una fila ya resuelta a texto, lista para `Listado`: sin `Date` ni ningún
  *  otro tipo que no cruce limpio a un fixture de test — mismo criterio que
  *  `FilaDeVenta` (app/(app)/ventas/page.tsx) y `FilaDeArticulo`
@@ -415,6 +518,8 @@ export type FilaDeOrden = {
   clienteTelefono: string
   fechaFormateada: string
   antiguedadLabel: string
+  /** Sólo en las entregadas de un mes y con `COSTOS`; si no, `null`. */
+  plata: PlataDeFila | null
 }
 
 /**
@@ -488,6 +593,13 @@ export type FilaDeOrden = {
  * Se trata como dato de ejemplo de la maqueta, no como requisito de
  * contenido — mismo criterio que ya usa este documento para el formato de
  * SKU de ejemplo (`docs/correcciones-pendientes-del-pen.md`, entrada 3).
+ *
+ * **Las entregadas de un mes** (`mes`) se ordenan por entrega, la última
+ * primero, y con `totales` (sólo con `COSTOS`) suman tres columnas de plata
+ * —Cobrado, Costo, Ganancia— entre Ingresó y Estado, más una fila de totales
+ * al pie. En el teléfono las columnas no entran: los tres montos van en una
+ * línea secundaria de la fila, sin rol propio (mismo trade-off que el chip
+ * duplicado).
  */
 export function Listado({
   filas,
@@ -498,6 +610,8 @@ export function Listado({
   filtro,
   buscandoEnTodas,
   busqueda,
+  mes = null,
+  totales,
 }: {
   filas: FilaDeOrden[]
   total: number
@@ -507,9 +621,19 @@ export function Listado({
   filtro: EstadoOrden | null
   buscandoEnTodas: boolean
   busqueda: string
+  /** `AAAA-MM` cuando se listan las entregadas de un mes. */
+  mes?: string | null
+  /** `null` = sin columnas de plata. */
+  totales: TotalesDeListado | null
 }) {
   const notaDelPie = notaDelConjunto(filtro, buscandoEnTodas)
-  const conPagina = (n: number) => hrefTablero({ busqueda, estado: filtro, pagina: n })
+  const conPagina = (n: number) => hrefTablero({ busqueda, estado: filtro, pagina: n, mes: mes ?? undefined })
+  const nombreMes = mes ? nombreDelMes(mes) : undefined
+  const notaSinDatos = totales ? notaDeSinDatos(totales.sinDatos) : null
+  const encabezado = 'bg-muted px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase'
+  const celdaDePlata =
+    'hidden text-right text-sm font-medium text-foreground lg:block lg:whitespace-nowrap lg:border-b lg:p-[11px] lg:px-[7px] lg:group-hover:bg-muted/50 lg:group-last:border-b-0 lg:transition-colors'
+  const totalDePlata = 'text-sm font-bold text-foreground lg:bg-muted lg:p-[11px] lg:px-[7px] lg:text-right lg:whitespace-nowrap'
   const desde = (pagina - 1) * porPagina + 1
   const hasta = Math.min(pagina * porPagina, total)
 
@@ -518,7 +642,7 @@ export function Listado({
       <div className="flex items-center justify-between border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
         <h2 className={cn(estilos.tituloDeCard, 'text-foreground')}>Equipos en el local</h2>
         <span className="text-xs font-semibold text-primary">
-          Ordenadas por antigüedad · la más vieja primero
+          {mes ? 'Ordenadas por entrega · la última primero' : 'Ordenadas por antigüedad · la más vieja primero'}
         </span>
       </div>
 
@@ -543,7 +667,15 @@ export function Listado({
         </p>
       ) : (
         <>
-          <div role="table" className="grid grid-cols-1 lg:grid-cols-[78px_1fr_190px_150px_170px]">
+          <div
+            role="table"
+            className={cn(
+              'grid grid-cols-1',
+              totales
+                ? 'lg:grid-cols-[78px_1fr_190px_150px_110px_110px_110px_170px]'
+                : 'lg:grid-cols-[78px_1fr_190px_150px_170px]',
+            )}
+          >
             <div role="row" className="hidden lg:contents">
               <div role="columnheader" className="bg-muted px-[7px] py-3 pl-[18px] text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
                 Orden
@@ -557,6 +689,19 @@ export function Listado({
               <div role="columnheader" className="bg-muted px-[7px] py-3 text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
                 Ingresó
               </div>
+              {totales ? (
+                <>
+                  <div role="columnheader" className={cn(encabezado, 'text-right')}>
+                    Cobrado
+                  </div>
+                  <div role="columnheader" className={cn(encabezado, 'text-right')}>
+                    Costo
+                  </div>
+                  <div role="columnheader" className={cn(encabezado, 'text-right')}>
+                    Ganancia
+                  </div>
+                </>
+              ) : null}
               <div role="columnheader" className="bg-muted px-[7px] py-3 pr-[18px] text-right text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase">
                 Estado
               </div>
@@ -657,6 +802,28 @@ export function Listado({
                   </div>
                 </div>
 
+                {totales && f.plata ? (
+                  <>
+                    {/* Teléfono: los tres montos en una línea, sin rol propio. */}
+                    <p className="flex basis-full items-center gap-1 text-[11px] leading-[1.2] text-foreground-soft lg:hidden">
+                      {`Cobró ${f.plata.cobrado} · Costo ${f.plata.costo} · Ganó ${f.plata.ganancia}`}
+                      {f.plata.falta ? <MarcaFaltanDatos /> : null}
+                    </p>
+                    <div role="cell" className={celdaDePlata}>
+                      <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{f.plata.cobrado}</div>
+                    </div>
+                    <div role="cell" className={celdaDePlata}>
+                      <div className="lg:flex lg:h-full lg:items-center lg:justify-end">{f.plata.costo}</div>
+                    </div>
+                    <div role="cell" className={celdaDePlata}>
+                      <div className="lg:flex lg:h-full lg:items-center lg:justify-end lg:gap-1">
+                        {f.plata.falta ? <MarcaFaltanDatos /> : null}
+                        {f.plata.ganancia}
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+
                 {/* Estado: oculta en el teléfono —ya salió en la línea 1,
                     arriba—, sin cambios respecto de antes de este ciclo. */}
                 <div
@@ -669,7 +836,44 @@ export function Listado({
                 </div>
               </div>
             ))}
+
+            {totales ? (
+              <div
+                role="row"
+                className="flex flex-wrap items-baseline gap-x-[10px] gap-y-[3px] border-t bg-muted px-[14px] py-[11px] lg:contents"
+              >
+                <div
+                  role="cell"
+                  className="basis-full text-[10px] font-bold tracking-[0.8px] text-muted-foreground uppercase lg:col-span-4 lg:flex lg:items-center lg:bg-muted lg:p-[11px] lg:pl-[18px]"
+                >
+                  Total del mes
+                </div>
+                <div role="cell" className={totalDePlata}>
+                  <span className="text-[11px] font-normal text-muted-foreground lg:hidden">Cobró </span>
+                  {totales.cobrado}
+                </div>
+                <div role="cell" className={totalDePlata}>
+                  <span className="text-[11px] font-normal text-muted-foreground lg:hidden">Costo </span>
+                  {totales.costo}
+                </div>
+                <div role="cell" className={totalDePlata}>
+                  <span className="text-[11px] font-normal text-muted-foreground lg:hidden">Ganó </span>
+                  {totales.ganancia}
+                </div>
+                <div role="cell" className="hidden lg:block lg:bg-muted" />
+              </div>
+            ) : null}
           </div>
+
+          {/* La ganancia del total no es cobrado − costo cuando a alguna orden
+              le falta un dato (ver totalesDelMes): decirlo evita que la cuenta
+              parezca mal hecha. */}
+          {notaSinDatos ? (
+            <p className="flex items-center gap-1.5 border-t px-[14px] py-2 text-[11px] text-muted-foreground lg:px-[18px]">
+              <CircleAlert aria-hidden="true" className="size-3.5 text-warn" />
+              {notaSinDatos}
+            </p>
+          ) : null}
 
           {/* Paginación (nodo `kF1ZK`): rango + nota cuando entra en una sola
               página —el estado que la maqueta dibuja—, y números de página en
@@ -679,7 +883,7 @@ export function Listado({
             className="mt-auto flex items-center justify-between border-t px-[14px] py-3 lg:px-[18px]"
           >
             <span className="text-xs text-muted-foreground">
-              {rotuloDeRango(desde, hasta, total, filtro, buscandoEnTodas)}
+              {rotuloDeRango(desde, hasta, total, filtro, buscandoEnTodas, nombreMes)}
             </span>
             {paginas > 1 ? (
               <div className="flex items-center gap-[6px]">
@@ -723,10 +927,10 @@ export function Listado({
 export default async function ServicioTecnico({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; p?: string; estado?: string }>
+  searchParams: Promise<{ q?: string; p?: string; estado?: string; mes?: string }>
 }) {
   const sesion = await exigirSesion()
-  const { q = '', p = '1', estado } = await searchParams
+  const { q = '', p = '1', estado, mes: mesParam } = await searchParams
 
   const busqueda = q.trim()
   // Truncado y con techo, igual que /inventario: `?p=2.3` daría un skip con
@@ -734,21 +938,33 @@ export default async function ServicioTecnico({
   // dos con un error que nadie atrapa — o sea un 500 desde un query string.
   const pagina = Math.min(Math.max(1, Math.trunc(Number(p)) || 1), PAGINA_MAXIMA)
   const filtro = esEstado(estado) ? estado : null
+  const ahora = new Date()
+  const mesActual = mesEnCurso(ahora)
+  const mes = mesValido(mesParam, ahora)
+  const rango = rangoDelMes(mes)
+  // Las entregadas sin búsqueda se miran de a un mes (ver filtroDelTablero).
+  const porMes = filtro === 'ENTREGADO' && busqueda === ''
+  // La plata es de quien tiene COSTOS; sin el permiso ni se pide a la base.
+  const verPlata = await puedeConSesion(sesion, 'COSTOS')
+  const conPlata = porMes && verPlata
+  const rangoDelChip = porMes ? rango : rangoDelMes(mesActual)
 
   const prisma = prismaParaTenant(sesion.tenant.id)
   // Por defecto las abiertas; buscando, todas —incluidas las entregadas y las
   // anuladas—. El porqué, largo, vive en lib/ordenes-de-trabajo/buscar.ts, que
   // es también donde el buscador recorta el número para que un IMEI no tire
   // abajo la consulta.
-  const donde = filtroDelTablero(busqueda, filtro)
+  const donde = filtroDelTablero(busqueda, filtro, rango)
 
-  const [ordenes, total, porEstado, masViejo] = await Promise.all([
+  const [ordenes, total, porEstado, masViejo, entregadasDelMes, totales] = await Promise.all([
     prisma.ordenDeTrabajo.findMany({
       where: donde,
       // La MÁS VIEJA PRIMERO, al revés que /ventas. En ventas lo último es lo
       // que importa; acá lo que duele es el equipo que lleva tres semanas en el
-      // estante.
-      orderBy: { creadoEn: 'asc' },
+      // estante. Las entregadas de un mes, al revés: ahí ya no hay nada
+      // esperando, y lo que se busca es lo último que salió. `id` desempata
+      // para que la paginación no baile entre entregas del mismo instante.
+      orderBy: porMes ? [{ entregadaEn: 'desc' }, { id: 'desc' }] : { creadoEn: 'asc' },
       skip: (pagina - 1) * POR_PAGINA,
       take: POR_PAGINA,
       select: {
@@ -767,6 +983,8 @@ export default async function ServicioTecnico({
         // La columna CLIENTE lleva el teléfono como secundaria (nodo
         // `n5eXN0`): antes sólo se pedía el nombre.
         cliente: { select: { nombre: true, telefono: true } },
+        costo: verPlata,
+        montoCobrado: verPlata,
       },
     }),
     prisma.ordenDeTrabajo.count({ where: donde }),
@@ -786,6 +1004,18 @@ export default async function ServicioTecnico({
       where: { anuladaEn: null, estado: { in: [...ABIERTOS] } },
       _min: { creadoEn: true },
     }),
+    // El chip Entregado cuenta las entregadas del mes que se muestra (el
+    // elegido si se está mirando ese chip, si no el en curso, que es a donde
+    // lleva su link): así su número coincide con la lista que abre, y no con
+    // el archivo entero del local.
+    prisma.ordenDeTrabajo.count({
+      where: {
+        estado: 'ENTREGADO',
+        anuladaEn: null,
+        entregadaEn: { gte: rangoDelChip.desde, lt: rangoDelChip.hasta },
+      },
+    }),
+    conPlata ? totalesDelMes(prisma, rango) : null,
   ])
 
   const cuenta = new Map(porEstado.map((f) => [f.estado, f._count._all]))
@@ -793,7 +1023,10 @@ export default async function ServicioTecnico({
   // es el que devuelve al listado por defecto, así que su número tiene que ser
   // el de ese listado. Por eso se suma sobre ABIERTOS y no sobre `cuenta`.
   const abiertas = contarAbiertas(cuenta)
-  const cuentaPorEstado = Object.fromEntries(cuenta) as Partial<Record<EstadoOrden, number>>
+  const cuentaPorEstado = {
+    ...(Object.fromEntries(cuenta) as Partial<Record<EstadoOrden, number>>),
+    ENTREGADO: entregadasDelMes,
+  }
   const diasDelMasViejo = masViejo._min.creadoEn ? diasEnElLocal(masViejo._min.creadoEn) : null
   // Cuando se busca sin chip, el listado se sale de los chips: no hay ninguno
   // que esté "actual", y decirlo evita que el resultado parezca filtrado.
@@ -813,6 +1046,9 @@ export default async function ServicioTecnico({
     clienteTelefono: o.cliente.telefono ?? '—',
     fechaFormateada: fechaCorta(o.creadoEn),
     antiguedadLabel: rotuloAntiguedad(diasEnElLocal(o.creadoEn)),
+    // Buscando, aunque el chip sea Entregado, no hay plata: el resultado no es
+    // un mes y sumarlo no significaría nada.
+    plata: conPlata ? plataDeFila(o.montoCobrado ?? null, o.costo ?? null) : null,
   }))
 
   return (
@@ -878,6 +1114,8 @@ export default async function ServicioTecnico({
           </span>
         </form>
 
+        {porMes ? <SelectorDeMes mes={mes} mesActual={mesActual} busqueda={busqueda} /> : null}
+
         {buscandoEnTodas ? (
           <p className="text-sm text-muted-foreground">
             Buscando «{busqueda}» en todas las órdenes, incluidas las entregadas y las anuladas.{' '}
@@ -896,6 +1134,17 @@ export default async function ServicioTecnico({
           filtro={filtro}
           buscandoEnTodas={buscandoEnTodas}
           busqueda={busqueda}
+          mes={porMes ? mes : null}
+          totales={
+            totales
+              ? {
+                  cobrado: formatearPrecio(totales.cobrado.toString()),
+                  costo: formatearPrecio(totales.costo.toString()),
+                  ganancia: formatearPrecio(totales.ganancia.toString()),
+                  sinDatos: totales.sinDatos,
+                }
+              : null
+          }
         />
       </div>
     </>

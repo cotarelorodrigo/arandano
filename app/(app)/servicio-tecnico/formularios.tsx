@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 import type { ClienteEncontrado } from '@/lib/clientes/administrar'
 import { rotuloOrdenesPrevias } from '@/lib/clientes/rotulos'
 import { ESTADO_VISUAL } from '@/lib/ordenes-de-trabajo/estados'
+import { montoSinSigno } from '@/lib/formato/mostrar'
 import type { EstadoServicio } from './acciones'
 // El tipo del enum, no `string`: así el compilador atrapa que la pantalla le
 // pase un estado que no existe, en vez de que lo descubra el server action en
@@ -453,18 +454,24 @@ function BotonDeTransicion({
   nombre,
   principal,
   disabled,
+  alAbrir,
 }: {
   hasta: EstadoOrden
   nombre: string
   principal: boolean
   disabled: boolean
+  /** Con esto el botón no transiciona: abre un paso previo (el de cobro). Es
+   *  `type="button"` y sin `name`/`value`. Ojo que eso cambia qué hace Enter
+   *  en la nota: ver el submit deshabilitado al principio del `<form>` de
+   *  `PanelEstado`. */
+  alAbrir?: () => void
 }) {
   const { Icono } = ESTADO_VISUAL[hasta]
   return (
     <button
-      type="submit"
-      name="hasta"
-      value={hasta}
+      {...(alAbrir
+        ? { type: 'button' as const, onClick: alAbrir }
+        : { type: 'submit' as const, name: 'hasta', value: hasta })}
       disabled={disabled}
       className={cn(
         // h-11 (44px) w-full en el teléfono (design/arandano.pen, frame
@@ -482,6 +489,11 @@ function BotonDeTransicion({
     </button>
   )
 }
+
+// Los campos que se escriben sobre el violeta del paño de estado (la nota y
+// el cobro): el mismo tinte translúcido de los botones fantasma.
+const CAMPO_EN_EL_PANO =
+  'border-[color-mix(in_srgb,var(--marca-foreground)_33%,transparent)] bg-[color-mix(in_srgb,var(--marca-foreground)_10%,transparent)] text-[var(--marca-foreground)] placeholder:text-[color-mix(in_srgb,var(--marca-foreground)_55%,transparent)]'
 
 /**
  * El paño "ESTADO ACTUAL" (design/arandano.pen, nodo `Av47M`, 748×183, fill
@@ -504,6 +516,7 @@ export function PanelEstado({
   siguientes,
   nombres,
   diasEnEstado,
+  cobro,
 }: {
   accion: (e: EstadoServicio, d: FormData) => Promise<EstadoServicio>
   ordenId: string
@@ -511,9 +524,20 @@ export function PanelEstado({
   siguientes: readonly EstadoOrden[]
   nombres: Record<EstadoOrden, string>
   diasEnEstado: number
+  /** `null` sin el permiso `COSTOS`: "Entregado" entrega directo, como antes
+   *  de este ciclo, y lo cobrado queda para quien sí lo tenga (card "Plata"). */
+  cobro: { precarga: string } | null
 }) {
   const [estadoAccion, ejecutar, pendiente] = useActionState(accion, INICIAL)
   const id = useId()
+  // El estado en el que se abrió el paso, no un booleano: cuando la entrega
+  // sale bien la orden cambia de estado y el paso se cierra solo, sin efecto
+  // que lo resetee. Si la entrega falla, el estado no cambia y el paso queda
+  // abierto con el error a la vista. Y una segunda entrega (después de una
+  // garantía) arranca con el paso cerrado, no heredado de la primera.
+  const [cobrandoEn, setCobrandoEn] = useState<EstadoOrden | null>(null)
+  const cobrando = cobro !== null && cobrandoEn === estado && siguientes.includes('ENTREGADO')
+  const entregadoAbreElPaso = cobro !== null && !cobrando && siguientes.includes('ENTREGADO')
 
   return (
     <div
@@ -555,6 +579,18 @@ export function PanelEstado({
 
       {siguientes.length > 0 ? (
         <form action={ejecutar} className="flex flex-col gap-3">
+          {/* Enter en la nota envía el form con su PRIMER submit. Con
+              "Entregado" convertido en el botón que abre el paso de cobro,
+              ese primer submit pasaba a ser otra transición —desde Listo,
+              "En reparación": Enter devolvía la orden al taller— o, si
+              Entregado era la única, no quedaba ninguno y el form viajaba
+              sin `hasta`. Un submit deshabilitado primero cancela el envío
+              implícito (así lo define HTML): con el paso cerrado, Enter no
+              hace nada. Con el paso abierto no hace falta, el único submit
+              es "Confirmar entrega". */}
+          {entregadoAbreElPaso ? (
+            <button type="submit" disabled hidden aria-hidden="true" tabIndex={-1} />
+          ) : null}
           <input type="hidden" name="ordenId" value={ordenId} />
           <span
             className="text-[10px] font-bold tracking-[1.2px]"
@@ -586,22 +622,38 @@ export function PanelEstado({
               id={`${id}-nota`}
               name="nota"
               placeholder="qué pasó"
-              className="border-[color-mix(in_srgb,var(--marca-foreground)_33%,transparent)] bg-[color-mix(in_srgb,var(--marca-foreground)_10%,transparent)] text-[var(--marca-foreground)] placeholder:text-[color-mix(in_srgb,var(--marca-foreground)_55%,transparent)]"
+              className={CAMPO_EN_EL_PANO}
             />
           </div>
           {/* Apilados en el teléfono, lado a lado (con wrap) en escritorio —
               Task 9 del ciclo móvil, mismo frame `W8tnTz`. */}
-          <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap">
-            {siguientes.map((s, i) => (
-              <BotonDeTransicion
-                key={s}
-                hasta={s}
-                nombre={nombres[s]}
-                principal={i === 0}
+          {cobrando ? (
+            <>
+              <PasoDeCobro precarga={cobro.precarga} pendiente={pendiente} />
+              <button
+                type="button"
+                onClick={() => setCobrandoEn(null)}
                 disabled={pendiente}
-              />
-            ))}
-          </div>
+                className="self-start text-[12px] font-semibold underline-offset-2 hover:underline disabled:opacity-50"
+                style={{ color: 'var(--marca-dim)' }}
+              >
+                Volver
+              </button>
+            </>
+          ) : (
+            <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap">
+              {siguientes.map((s, i) => (
+                <BotonDeTransicion
+                  key={s}
+                  hasta={s}
+                  nombre={nombres[s]}
+                  principal={i === 0}
+                  disabled={pendiente}
+                  alAbrir={cobro && s === 'ENTREGADO' ? () => setCobrandoEn(estado) : undefined}
+                />
+              ))}
+            </div>
+          )}
           {/* Copy visible y no sólo comentario de código: es literalmente lo
               que ya explicaba FormularioEstado antes de este ciclo, ahora en
               pantalla (design/arandano.pen, nodo `m0NPy`). */}
@@ -616,6 +668,189 @@ export function PanelEstado({
           Esta orden no se puede mover más.
         </p>
       )}
+    </div>
+  )
+}
+
+/**
+ * El paso "¿Cuánto cobraste?" que reemplaza a los botones de transición
+ * cuando quien tiene `COSTOS` toca "Entregado" (spec del ciclo, decisión 2).
+ * Vive DENTRO del `<form>` de `PanelEstado`, así que `ordenId` y la nota
+ * viajan junto con `montoCobrado`, y `moverEstado` guarda el cobro y entrega
+ * en la misma transacción.
+ *
+ * Vacío es válido (equipo devuelto sin reparar y sin cobrar la revisión): el
+ * campo no es `required`. Una sola copia, responsive: no hay versión de
+ * escritorio y de teléfono que mantener en paralelo.
+ */
+export function PasoDeCobro({ precarga, pendiente }: { precarga: string; pendiente: boolean }) {
+  const id = useId()
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-[5px]">
+        <Label
+          htmlFor={`${id}-cobrado`}
+          className="text-[11px] font-semibold"
+          style={{ color: 'var(--marca-dim)' }}
+        >
+          ¿Cuánto cobraste?
+        </Label>
+        <Input
+          id={`${id}-cobrado`}
+          name="montoCobrado"
+          inputMode="decimal"
+          defaultValue={precarga}
+          placeholder="0,00"
+          className={cn('h-10 rounded-[9px]', CAMPO_EN_EL_PANO)}
+        />
+      </div>
+      <BotonDeTransicion hasta="ENTREGADO" nombre="Confirmar entrega" principal disabled={pendiente} />
+    </div>
+  )
+}
+
+/**
+ * Card "Plata" (spec del ciclo de ganancia por orden, decisión 6): costo del
+ * repuesto, lo cobrado y la ganancia. No tiene nodo en design/arandano.pen;
+ * copia el esqueleto de "Falla declarada y diagnóstico" (título en Archivo,
+ * campos con el rótulo 11px/600 y el botón outline a la derecha) para que se
+ * lea como parte de la misma ficha.
+ *
+ * Los montos llegan formateados ("$ 28.000,00"), y la ganancia —o la frase
+ * de qué falta— ya resuelta: la cuenta es de `Prisma.Decimal` y se hace en el
+ * servidor (`datosDeCardPlata`, `[id]/page.tsx`). Acá no se vuelve a parsear
+ * texto para restar, y no se importa lib/ordenes-de-trabajo/plata.ts, que
+ * trae `Prisma` en runtime y no tiene lugar en un módulo cliente. Los campos se precargan con `montoSinSigno`, el mismo formato
+ * que el presupuesto del diagnóstico, que `aDecimalOpcional` lee de vuelta.
+ *
+ * - El costo se edita en cualquier estado; lo cobrado, recién cuando la orden
+ *   pasó por Entregado (`entregada`): antes no hay cobro que anotar, y se
+ *   muestra el presupuesto como referencia. El servidor lo rechaza igual
+ *   (`SIN_ENTREGAR`): esconder el campo no es la validación.
+ * - Anulada: sólo lectura, sin `<form>`.
+ *
+ * Una sola copia, responsive.
+ */
+export function CardPlata({
+  accion,
+  ordenId,
+  costo,
+  montoCobrado,
+  montoEstimado,
+  ganancia,
+  falta,
+  entregada,
+  anulada,
+}: {
+  accion: (e: EstadoServicio, d: FormData) => Promise<EstadoServicio>
+  ordenId: string
+  costo: string | null
+  montoCobrado: string | null
+  montoEstimado: string | null
+  ganancia: string | null
+  /** La frase de qué falta (`fraseDeFalta`), cuando no hay ganancia. */
+  falta: string | null
+  entregada: boolean
+  anulada: boolean
+}) {
+  const [estado, ejecutar, pendiente] = useActionState(accion, INICIAL)
+  const id = useId()
+
+  const referenciaDelCobro = montoEstimado ? `Presupuesto: ${montoEstimado}` : 'Sin presupuesto'
+  // Antes de entregar, el campo de cobrado no existe: la frase de `falta`
+  // pediría algo que la card no ofrece. Sólo se pide lo que se puede cargar.
+  const valorGanancia = entregada
+    ? (ganancia ?? falta ?? '—')
+    : costo === null
+      ? 'Falta cargar el costo'
+      : 'Se calcula al entregar'
+  const filaGanancia = (
+    <FilaDePlata
+      clave="Ganancia"
+      valor={valorGanancia}
+      apagado={ganancia === null}
+    />
+  )
+
+  return (
+    <div className="flex flex-col overflow-hidden rounded-2xl border bg-card">
+      <div className="border-b px-[18px] py-[13px]">
+        <h2 className={cn(estilos.tituloDeCard, 'text-foreground')}>Plata</h2>
+      </div>
+      {anulada ? (
+        <div className="flex flex-col">
+          <FilaDePlata clave="Costo del repuesto" valor={costo ?? '—'} />
+          <FilaDePlata
+            clave="Cobrado"
+            valor={entregada ? (montoCobrado ?? '—') : referenciaDelCobro}
+            apagado={!entregada}
+          />
+          {filaGanancia}
+        </div>
+      ) : (
+        <form action={ejecutar} className="flex flex-col gap-3 p-[18px]">
+          <input type="hidden" name="ordenId" value={ordenId} />
+          <div className="flex flex-col gap-3 lg:flex-row">
+            <div className="flex flex-1 flex-col gap-[5px]">
+              <Label htmlFor={`${id}-costo`} className="text-[11px] font-semibold text-foreground-soft">
+                Costo del repuesto
+              </Label>
+              <Input
+                id={`${id}-costo`}
+                name="costo"
+                inputMode="decimal"
+                defaultValue={costo ? montoSinSigno(costo) : ''}
+                className="h-10 rounded-[9px]"
+              />
+            </div>
+            <div className="flex flex-1 flex-col gap-[5px]">
+              {entregada ? (
+                <>
+                  <Label htmlFor={`${id}-cobrado`} className="text-[11px] font-semibold text-foreground-soft">
+                    Cobrado
+                  </Label>
+                  <Input
+                    id={`${id}-cobrado`}
+                    name="montoCobrado"
+                    inputMode="decimal"
+                    defaultValue={montoCobrado ? montoSinSigno(montoCobrado) : ''}
+                    className="h-10 rounded-[9px]"
+                  />
+                </>
+              ) : (
+                <>
+                  <span className="text-[11px] font-semibold text-foreground-soft">Cobrado</span>
+                  <span className="flex h-10 items-center text-sm text-muted-foreground">
+                    {referenciaDelCobro}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="-mx-[18px] border-t">{filaGanancia}</div>
+          <div className="flex justify-end">
+            <Button type="submit" variant="outline" disabled={pendiente}>
+              {pendiente ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </div>
+          <Aviso estado={estado} />
+        </form>
+      )}
+    </div>
+  )
+}
+
+/** La fila clave/valor de las cards de la ficha (`FilaClaveValor` en
+ *  `[id]/page.tsx`), copiada y no importada: page.tsx es un Server Component
+ *  y esto es un módulo cliente. `apagado` es para lo que no es un monto
+ *  (una referencia, o la frase de qué falta). */
+function FilaDePlata({ clave, valor, apagado = false }: { clave: string; valor: string; apagado?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b px-[18px] py-[10px] last:border-b-0">
+      <span className="text-xs text-muted-foreground">{clave}</span>
+      <span className={cn('text-sm font-medium', apagado ? 'text-muted-foreground' : 'text-foreground')}>
+        {valor}
+      </span>
     </div>
   )
 }

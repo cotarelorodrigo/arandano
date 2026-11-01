@@ -10,6 +10,11 @@ export type CodigoErrorDeOrden =
   | 'TRANSICION_INVALIDA'
   | 'ORDEN_ANULADA'
   | 'MONTO_INVALIDO'
+  // Lo cobrado se carga al entregar: una orden que nunca se entregó no tiene
+  // nada cobrado que corregir.
+  | 'SIN_ENTREGAR'
+  // `montoCobrado` sólo viaja con la transición a ENTREGADO.
+  | 'COBRO_FUERA_DE_ENTREGA'
 
 /**
  * Con código y no sólo con mensaje, igual que ErrorDeInventario y ErrorDeVenta:

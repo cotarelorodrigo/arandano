@@ -4,6 +4,7 @@ import { exigirUsuario } from '@/lib/ventas/pertenencia'
 import { esUuid } from '@/lib/uuid'
 import { puedeTransicionar } from './estados'
 import { ErrorDeOrden } from './errores'
+import { notaDePlata } from './plata'
 
 /**
  * Trae la orden para operar sobre ella, o explica por qué no se puede.
@@ -16,7 +17,13 @@ import { ErrorDeOrden } from './errores'
 async function traerAbierta(
   tx: ClienteTx,
   ordenId: string,
-): Promise<{ id: string; estado: EstadoOrden }> {
+): Promise<{
+  id: string
+  estado: EstadoOrden
+  costo: PrismaTipos.Decimal | null
+  montoCobrado: PrismaTipos.Decimal | null
+  entregadaEn: Date | null
+}> {
   // El `ordenId` llega de un campo escondido del formulario, así que un POST
   // armado a mano puede mandar cualquier cosa. Prisma tipa el parámetro por
   // columna (`@db.Uuid`) y rechaza lo que no tenga forma de uuid ANTES de
@@ -29,7 +36,14 @@ async function traerAbierta(
 
   const orden = await tx.ordenDeTrabajo.findFirst({
     where: { id: ordenId },
-    select: { id: true, estado: true, anuladaEn: true },
+    select: {
+      id: true,
+      estado: true,
+      anuladaEn: true,
+      costo: true,
+      montoCobrado: true,
+      entregadaEn: true,
+    },
   })
   if (!orden) {
     throw new ErrorDeOrden('ORDEN_INEXISTENTE', 'la orden no existe en este tenant')
@@ -37,7 +51,13 @@ async function traerAbierta(
   if (orden.anuladaEn) {
     throw new ErrorDeOrden('ORDEN_ANULADA', 'la orden está anulada')
   }
-  return { id: orden.id, estado: orden.estado }
+  return {
+    id: orden.id,
+    estado: orden.estado,
+    costo: orden.costo,
+    montoCobrado: orden.montoCobrado,
+    entregadaEn: orden.entregadaEn,
+  }
 }
 
 export type EntradaCambiarEstado = {
@@ -46,6 +66,8 @@ export type EntradaCambiarEstado = {
   ordenId: string
   hasta: EstadoOrden
   nota?: string | null
+  // Sólo con `hasta === 'ENTREGADO'`. `undefined` = no tocar lo ya cobrado.
+  montoCobrado?: PrismaTipos.Decimal | null
 }
 
 /**
@@ -53,10 +75,27 @@ export type EntradaCambiarEstado = {
  *
  * Revalida el grafo aunque la pantalla ya haya dibujado sólo los botones
  * legales: una UI que esconde un botón no es una validación.
+ *
+ * Entregar es lo único que además toca plata: escribe `entregadaEn` (siempre,
+ * también en una re-entrega por garantía: es la fecha de la última entrega) y,
+ * si vino, `montoCobrado`. Si el cobro cambió algo, va un SEGUNDO evento
+ * (`desde = hasta = ENTREGADO`, ver `guardarPlata`) después del de transición:
+ * así el de transición queda limpio y el de plata lo sigue en el orden de `id`.
  */
 export async function cambiarEstado(entrada: EntradaCambiarEstado): Promise<void> {
-  const { tenantId, usuarioId, ordenId, hasta } = entrada
+  const { tenantId, usuarioId, ordenId, hasta, montoCobrado } = entrada
   const nota = entrada.nota?.trim() || null
+
+  // Antes de abrir la transacción: no hace falta la base para saberlo.
+  if (montoCobrado !== undefined && hasta !== 'ENTREGADO') {
+    throw new ErrorDeOrden(
+      'COBRO_FUERA_DE_ENTREGA',
+      'lo cobrado sólo se carga al pasar a ENTREGADO',
+    )
+  }
+  if (montoCobrado && montoCobrado.lessThan(0)) {
+    throw new ErrorDeOrden('MONTO_INVALIDO', 'lo cobrado no puede ser negativo')
+  }
 
   await enTransaccionDeTenant(tenantId, async (tx) => {
     // La orden primero: si es de otro tenant, RLS ya no la deja ver y el error
@@ -73,10 +112,45 @@ export async function cambiarEstado(entrada: EntradaCambiarEstado): Promise<void
       )
     }
 
-    await tx.ordenDeTrabajo.update({ where: { id: orden.id }, data: { estado: hasta } })
-    await tx.eventoOrden.create({
-      data: { tenantId, ordenId: orden.id, desde: orden.estado, hasta, nota, usuarioId },
+    await tx.ordenDeTrabajo.update({
+      where: { id: orden.id },
+      data:
+        hasta === 'ENTREGADO'
+          ? {
+              estado: hasta,
+              entregadaEn: new Date(),
+              ...(montoCobrado !== undefined && { montoCobrado }),
+            }
+          : { estado: hasta },
     })
+    await tx.eventoOrden.create({
+      data: {
+        tenantId,
+        ordenId: orden.id,
+        desde: orden.estado,
+        hasta,
+        nota,
+        usuarioId,
+      },
+    })
+
+    if (montoCobrado !== undefined) {
+      const notaPlata = notaDePlata({
+        cobrado: [orden.montoCobrado, montoCobrado],
+      })
+      if (notaPlata) {
+        await tx.eventoOrden.create({
+          data: {
+            tenantId,
+            ordenId: orden.id,
+            desde: 'ENTREGADO',
+            hasta: 'ENTREGADO',
+            nota: notaPlata,
+            usuarioId,
+          },
+        })
+      }
+    }
   })
 }
 
@@ -115,6 +189,70 @@ export async function guardarDiagnostico(entrada: EntradaGuardarDiagnostico): Pr
   })
 }
 
+export type EntradaGuardarPlata = {
+  tenantId: string
+  usuarioId: string
+  ordenId: string
+  costo: PrismaTipos.Decimal | null
+  // `undefined` = no tocar lo cobrado.
+  montoCobrado?: PrismaTipos.Decimal | null
+}
+
+/**
+ * Guarda el costo de los repuestos y, si viene, corrige lo cobrado.
+ *
+ * Si algo cambió deja un evento de plata: `desde = hasta` (el estado actual) y
+ * en `nota` qué valía y qué vale (`notaDePlata`). Esa forma es la marca: ninguna
+ * transición legal deja `desde === hasta` (lo fija el test "ningún estado
+ * transiciona a sí mismo" de estados.test.ts), así que un lector distingue un
+ * evento de plata de una transición sin ambigüedad (`esEventoDePlata`). Si no
+ * cambió nada no se escribe nada: un guardado sin cambios no ensucia el
+ * historial.
+ */
+export async function guardarPlata(entrada: EntradaGuardarPlata): Promise<void> {
+  const { tenantId, usuarioId, ordenId, costo, montoCobrado } = entrada
+
+  if (costo !== null && costo.lessThan(0)) {
+    throw new ErrorDeOrden('MONTO_INVALIDO', 'el costo no puede ser negativo')
+  }
+  if (montoCobrado && montoCobrado.lessThan(0)) {
+    throw new ErrorDeOrden('MONTO_INVALIDO', 'lo cobrado no puede ser negativo')
+  }
+
+  await enTransaccionDeTenant(tenantId, async (tx) => {
+    // Mismo orden que en guardarDiagnostico, y por la misma razón.
+    const orden = await traerAbierta(tx, ordenId)
+    await exigirUsuario(tx, usuarioId)
+
+    if (montoCobrado !== undefined && orden.entregadaEn === null) {
+      throw new ErrorDeOrden('SIN_ENTREGAR', 'la orden nunca se entregó: no tiene nada cobrado')
+    }
+
+    const nota = notaDePlata({
+      costo: [orden.costo, costo],
+      ...(montoCobrado !== undefined && {
+        cobrado: [orden.montoCobrado, montoCobrado],
+      }),
+    })
+    if (!nota) return
+
+    await tx.ordenDeTrabajo.update({
+      where: { id: orden.id },
+      data: { costo, ...(montoCobrado !== undefined && { montoCobrado }) },
+    })
+    await tx.eventoOrden.create({
+      data: {
+        tenantId,
+        ordenId: orden.id,
+        desde: orden.estado,
+        hasta: orden.estado,
+        nota,
+        usuarioId,
+      },
+    })
+  })
+}
+
 export type EntradaAnularOrden = {
   tenantId: string
   usuarioId: string
@@ -125,8 +263,10 @@ export type EntradaAnularOrden = {
  * Anula, sin tocar el estado.
  *
  * Quién y cuándo viven en la fila, exactamente como en `Venta`, y no en un
- * evento: el evento tendría que decir `desde` y `hasta` el mismo estado, una
- * fila que el grafo no puede producir y que un lector no sabe interpretar.
+ * evento. Antes la razón era que `desde = hasta` no lo produce ninguna
+ * transición; ahora esa forma es la marca de un evento de plata (ver
+ * `guardarPlata`), así que un evento de anulación sería indistinguible de uno
+ * de plata. Sigue en la fila por lo mismo que en `Venta`.
  *
  * Anular dos veces falla en vez de ser idempotente: la segunda vez es alguien
  * que no vio que ya estaba anulada, y decírselo es más útil que no hacer nada.

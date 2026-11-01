@@ -95,3 +95,26 @@ describe('qué muestra el tablero', () => {
     expect(JSON.stringify(donde.OR)).not.toContain('"numero"')
   })
 })
+
+describe('las entregadas, de a un mes', () => {
+  const rango = {
+    desde: new Date('2026-10-01T03:00:00Z'),
+    hasta: new Date('2026-11-01T03:00:00Z'),
+  }
+
+  it('con el chip Entregado y sin buscar, acota a las entregadas en el mes', () => {
+    const donde = filtroDelTablero('', 'ENTREGADO', rango)
+    expect(donde.entregadaEn).toEqual({ gte: rango.desde, lt: rango.hasta })
+    expect(donde.estado).toEqual({ equals: 'ENTREGADO' })
+    expect(donde.anuladaEn).toBeNull()
+  })
+
+  it('buscando, el mes NO se aplica: una entregada vieja se encuentra igual', () => {
+    expect(filtroDelTablero('juan', 'ENTREGADO', rango).entregadaEn).toBeUndefined()
+  })
+
+  it('con otro chip, el mes no significa nada', () => {
+    expect(filtroDelTablero('', 'LISTO', rango).entregadaEn).toBeUndefined()
+    expect(filtroDelTablero('', null, rango).entregadaEn).toBeUndefined()
+  })
+})

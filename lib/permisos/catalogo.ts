@@ -58,7 +58,7 @@ export const PERMISOS = [
   {
     clave: 'COSTOS',
     nombre: 'Ver y cargar costos',
-    ayuda: 'Ver el costo de compra y el margen, y cargarlos al recibir mercadería.',
+    ayuda: 'Ver el costo de compra y el margen, cargarlos al recibir mercadería, y ver y cargar el costo y lo cobrado de cada orden de servicio técnico.',
   },
   {
     clave: 'CATEGORIAS',

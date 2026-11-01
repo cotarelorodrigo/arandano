@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { Prisma } from '@/generated/prisma/client'
 
 const FUENTE = readFileSync(new URL('./acciones.ts', import.meta.url), 'utf8')
 
@@ -12,14 +13,17 @@ const crearOrden = vi.fn()
 const anularOrden = vi.fn()
 const cambiarEstado = vi.fn()
 const guardarDiagnostico = vi.fn()
+const guardarPlata = vi.fn()
+const puedeConSesion = vi.fn()
 
 vi.mock('@/lib/auth/sesion', () => ({ exigirSesion }))
-vi.mock('@/lib/permisos/guarda', () => ({ exigirPermiso }))
+vi.mock('@/lib/permisos/guarda', () => ({ exigirPermiso, puedeConSesion }))
 vi.mock('@/lib/ordenes-de-trabajo/crear', () => ({ crearOrden }))
 vi.mock('@/lib/ordenes-de-trabajo/operaciones', () => ({
   anularOrden,
   cambiarEstado,
   guardarDiagnostico,
+  guardarPlata,
 }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 vi.mock('next/navigation', () => ({ redirect: vi.fn() }))
@@ -301,5 +305,78 @@ describe('diagnosticar', () => {
         formulario({ ordenId: 'o-1', diagnostico: 'pantalla rota' }),
       ),
     ).rejects.toThrow('la base se cayó')
+  })
+})
+
+describe('moverEstado con lo cobrado', () => {
+  const vacio = { error: null, aviso: null }
+
+  it('con el campo y COSTOS, pasa lo cobrado como Decimal', async () => {
+    const { moverEstado } = await import('./acciones')
+    puedeConSesion.mockResolvedValue(true)
+    cambiarEstado.mockResolvedValue(undefined)
+    await moverEstado(vacio, formulario({ ordenId: 'o-1', hasta: 'ENTREGADO', montoCobrado: '40000' }))
+    expect(puedeConSesion).toHaveBeenCalledWith(sesion, 'COSTOS')
+    const arg = cambiarEstado.mock.calls[0][0]
+    expect(arg.montoCobrado.toString()).toBe('40000')
+  })
+
+  it('con el campo y sin COSTOS, devuelve error y no cambia el estado', async () => {
+    const { moverEstado } = await import('./acciones')
+    puedeConSesion.mockResolvedValue(false)
+    const r = await moverEstado(
+      vacio,
+      formulario({ ordenId: 'o-1', hasta: 'ENTREGADO', montoCobrado: '40000' }),
+    )
+    expect(r).toEqual({ error: 'No tenés permiso para cargar lo cobrado.', aviso: null })
+    expect(cambiarEstado).not.toHaveBeenCalled()
+  })
+
+  it('sin el campo, no consulta el permiso y manda undefined', async () => {
+    const { moverEstado } = await import('./acciones')
+    cambiarEstado.mockResolvedValue(undefined)
+    await moverEstado(vacio, formulario({ ordenId: 'o-1', hasta: 'LISTO' }))
+    expect(puedeConSesion).not.toHaveBeenCalled()
+    expect(cambiarEstado.mock.calls[0][0]).toHaveProperty('montoCobrado', undefined)
+  })
+})
+
+describe('guardarPlataDeOrden', () => {
+  it('exige COSTOS', () => {
+    const cuerpo = FUENTE.slice(FUENTE.indexOf('export async function guardarPlataDeOrden'))
+    expect(cuerpo).toContain("exigirPermiso('COSTOS')")
+  })
+
+  it('sin el campo montoCobrado lo manda undefined, y el costo vacío es null', async () => {
+    const { guardarPlataDeOrden } = await import('./acciones')
+    guardarPlata.mockResolvedValue(undefined)
+    const r = await guardarPlataDeOrden({ error: null, aviso: null }, formulario({ ordenId: 'o-1', costo: '15000' }))
+    const arg = guardarPlata.mock.calls[0][0]
+    expect(arg).toMatchObject({ tenantId: 't-1', usuarioId: 'u-1', ordenId: 'o-1' })
+    expect(arg.costo.toString()).toBe('15000')
+    expect(arg.montoCobrado).toBeUndefined()
+    expect(r).toEqual({ error: null, aviso: 'Listo, se guardó.' })
+
+    await guardarPlataDeOrden({ error: null, aviso: null }, formulario({ ordenId: 'o-1', costo: '' }))
+    expect(guardarPlata.mock.calls[1][0].costo).toBeNull()
+  })
+
+  it('con el campo montoCobrado lo manda como Decimal, y vacío es null', async () => {
+    const { guardarPlataDeOrden } = await import('./acciones')
+    guardarPlata.mockResolvedValue(undefined)
+    await guardarPlataDeOrden(
+      { error: null, aviso: null },
+      formulario({ ordenId: 'o-1', costo: '28000', montoCobrado: '45000' }),
+    )
+    const arg = guardarPlata.mock.calls[0][0]
+    expect(arg.montoCobrado).toBeInstanceOf(Prisma.Decimal)
+    expect(arg.montoCobrado.toString()).toBe('45000')
+
+    // Presente y vacío no es "no tocar": es borrar lo cobrado.
+    await guardarPlataDeOrden(
+      { error: null, aviso: null },
+      formulario({ ordenId: 'o-1', costo: '28000', montoCobrado: '' }),
+    )
+    expect(guardarPlata.mock.calls[1][0].montoCobrado).toBeNull()
   })
 })

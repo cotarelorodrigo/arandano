@@ -13,6 +13,7 @@ import {
   transicionesDisponibles,
   fechaYHoraDelEvento,
   tituloDeEvento,
+  ultimoCambioDeEstado,
   Bitacora,
   CardFallaYDiagnostico,
   CardCliente,
@@ -56,7 +57,7 @@ describe('fechaYHoraDelEvento (Task 4 del rediseño: la meta de un evento de la 
 
 describe('tituloDeEvento (Task 4 del rediseño: los títulos de la bitácora)', () => {
   it('el evento de apertura (desde null) dice "Equipo recibido", no "Pasó a Recibido"', () => {
-    expect(tituloDeEvento({ desde: null, hasta: 'RECIBIDO' })).toBe('Equipo recibido')
+    expect(tituloDeEvento({ desde: null, hasta: 'RECIBIDO' }, true)).toBe('Equipo recibido')
   })
 
   // Recorre varios estados de destino, no uno solo.
@@ -67,8 +68,83 @@ describe('tituloDeEvento (Task 4 del rediseño: los títulos de la bitácora)', 
       ['EN_REPARACION', 'LISTO'],
     ]
     for (const [desde, hasta] of casos) {
-      expect(tituloDeEvento({ desde, hasta })).toBe(`Pasó a ${NOMBRE_ESTADO[hasta]}`)
+      expect(tituloDeEvento({ desde, hasta }, true)).toBe(`Pasó a ${NOMBRE_ESTADO[hasta]}`)
     }
+  })
+})
+
+describe('tituloDeEvento: los eventos de plata (ganancia por orden)', () => {
+  // `desde === hasta` es la marca del evento de plata: "Pasó a Listo" sería
+  // mentira, la orden no se movió.
+  it('con COSTOS dice "Plata actualizada"; sin COSTOS, la frase genérica sin montos', () => {
+    expect(tituloDeEvento({ desde: 'LISTO', hasta: 'LISTO' }, true)).toBe('Plata actualizada')
+    expect(tituloDeEvento({ desde: 'LISTO', hasta: 'LISTO' }, false)).toBe(
+      'Se actualizó la plata de la orden',
+    )
+  })
+
+  it('las transiciones se titulan igual con o sin COSTOS', () => {
+    for (const verPlata of [true, false]) {
+      expect(tituloDeEvento({ desde: 'LISTO', hasta: 'ENTREGADO' }, verPlata)).toBe('Pasó a Entregado')
+      expect(tituloDeEvento({ desde: null, hasta: 'RECIBIDO' }, verPlata)).toBe('Equipo recibido')
+    }
+  })
+})
+
+describe('Bitacora: la nota de un evento de plata sólo la ve quien tiene COSTOS', () => {
+  const PLATA: EventoDeBitacora = {
+    id: 'e-9',
+    desde: 'ENTREGADO',
+    hasta: 'ENTREGADO',
+    nota: 'Costo: sin cargar → $ 28.000,00',
+    creadoEn: new Date('2026-08-16T12:00:00Z'),
+    usuario: { nombre: 'Rubén' },
+  }
+  const TRANSICION: EventoDeBitacora = {
+    id: 'e-8',
+    desde: 'LISTO',
+    hasta: 'ENTREGADO',
+    nota: 'Lo retiró la hermana.',
+    creadoEn: new Date('2026-08-16T11:00:00Z'),
+    usuario: { nombre: 'Rubén' },
+  }
+
+  it('sin COSTOS, la nota con montos no llega al HTML; la de la transición sí', () => {
+    const html = renderToStaticMarkup(<Bitacora eventos={[PLATA, TRANSICION]} verPlata={false} />)
+    expect(html).not.toContain('Costo:')
+    expect(html).not.toContain('28.000')
+    expect(html).toContain('Se actualizó la plata de la orden')
+    expect(html).toContain('Lo retiró la hermana.')
+  })
+
+  it('con COSTOS, la nota se ve', () => {
+    const html = renderToStaticMarkup(<Bitacora eventos={[PLATA, TRANSICION]} verPlata={true} />)
+    expect(html).toContain('Costo:')
+    expect(html).toContain('Plata actualizada')
+  })
+
+  it('el evento de plata lleva su propio ícono (billete), no el del estado', () => {
+    const html = renderToStaticMarkup(<Bitacora eventos={[PLATA]} verPlata={true} />)
+    expect(html).toContain('lucide-banknote')
+    expect(html).toContain('bg-muted text-foreground-soft')
+  })
+})
+
+describe('ultimoCambioDeEstado (ganancia por orden: "hace N días" no cuenta la plata)', () => {
+  const apertura = { desde: null, hasta: 'RECIBIDO' as const, creadoEn: new Date('2026-08-01T12:00:00Z') }
+  const entrega = { desde: 'LISTO' as const, hasta: 'ENTREGADO' as const, creadoEn: new Date('2026-08-10T12:00:00Z') }
+  const plata = { desde: 'ENTREGADO' as const, hasta: 'ENTREGADO' as const, creadoEn: new Date('2026-08-20T12:00:00Z') }
+
+  it('salta los eventos de plata: devuelve la última transición', () => {
+    expect(ultimoCambioDeEstado([plata, entrega, apertura])).toEqual(entrega.creadoEn)
+  })
+
+  it('con sólo la apertura, la apertura', () => {
+    expect(ultimoCambioDeEstado([apertura])).toEqual(apertura.creadoEn)
+  })
+
+  it('sin eventos, null (el llamador cae a orden.creadoEn)', () => {
+    expect(ultimoCambioDeEstado([])).toBeNull()
   })
 })
 
@@ -106,7 +182,7 @@ describe('Bitacora (Task 4 del rediseño)', () => {
     // por FUENTE)—; esto comprueba que el componente no reordena ni invierte
     // lo que recibe, que sería el bug que dejaría el orden de la consulta sin
     // efecto visible.
-    const html = renderToStaticMarkup(<Bitacora eventos={EVENTOS} />)
+    const html = renderToStaticMarkup(<Bitacora eventos={EVENTOS} verPlata={false} />)
     const posEnReparacion = html.indexOf('Pasó a En reparación')
     const posPresupuestado = html.indexOf('Pasó a Presupuestado')
     const posRecibido = html.indexOf('Equipo recibido')
@@ -119,7 +195,7 @@ describe('Bitacora (Task 4 del rediseño)', () => {
   // "alguno lo tiene". Recorre los tres eventos del ejemplo, cada uno con el
   // ícono de ESTADO_VISUAL que corresponde a SU PROPIO `hasta`.
   it('cada evento muestra el ícono de ESTADO_VISUAL para su propio estado, no uno genérico', () => {
-    const html = renderToStaticMarkup(<Bitacora eventos={EVENTOS} />)
+    const html = renderToStaticMarkup(<Bitacora eventos={EVENTOS} verPlata={false} />)
     // wrench = EN_REPARACION (evento e-3)
     expect(html).toContain('lucide-wrench')
     // file-text = PRESUPUESTADO (evento e-2)
@@ -129,7 +205,7 @@ describe('Bitacora (Task 4 del rediseño)', () => {
   })
 
   it('la línea del riel no aparece después del último evento (el extremo)', () => {
-    const html = renderToStaticMarkup(<Bitacora eventos={EVENTOS} />)
+    const html = renderToStaticMarkup(<Bitacora eventos={EVENTOS} verPlata={false} />)
     // Tres eventos → como mucho DOS líneas conectoras (entre 1-2 y 2-3), no
     // tres: la última fila no tiene "línea siguiente" que dibujar.
     const lineas = html.match(/w-\[2px\] flex-1 bg-border/g) ?? []
@@ -137,7 +213,7 @@ describe('Bitacora (Task 4 del rediseño)', () => {
   })
 
   it('muestra la nota y quién hizo el cambio', () => {
-    const html = renderToStaticMarkup(<Bitacora eventos={EVENTOS} />)
+    const html = renderToStaticMarkup(<Bitacora eventos={EVENTOS} verPlata={false} />)
     expect(html).toContain('Llegó el módulo del proveedor.')
     expect(html).toContain('Rubén')
     expect(html).toContain('Florencia')
@@ -145,7 +221,7 @@ describe('Bitacora (Task 4 del rediseño)', () => {
 
   it('un evento sin nota (nota null) no revienta ni deja un guión inventado', () => {
     const sinNota: EventoDeBitacora = { ...EVENTOS[0], nota: null }
-    const html = renderToStaticMarkup(<Bitacora eventos={[sinNota]} />)
+    const html = renderToStaticMarkup(<Bitacora eventos={[sinNota]} verPlata={false} />)
     expect(html).toContain('Pasó a En reparación')
   })
 
@@ -154,7 +230,7 @@ describe('Bitacora (Task 4 del rediseño)', () => {
   // queda como hoy en escritorio (h-full + su propio overflow-y-auto, para
   // parejarse con la columna vecina).
   it('es fluida en el teléfono: sin scroll interno propio, y se queda como hoy en escritorio', () => {
-    const html = renderToStaticMarkup(<Bitacora eventos={EVENTOS} />)
+    const html = renderToStaticMarkup(<Bitacora eventos={EVENTOS} verPlata={false} />)
     expect(html).toMatch(/class="flex flex-col overflow-hidden rounded-2xl border bg-card lg:h-full"/)
     expect(html).toMatch(/class="flex flex-col px-\[18px\] pt-4 lg:flex-1 lg:overflow-y-auto"/)
   })
@@ -235,6 +311,23 @@ describe('la consulta y el armado de la ficha (Task 4 del rediseño)', () => {
 
   it('el select de cliente trae el conteo de órdenes previas (_count), no sólo nombre y teléfono', () => {
     expect(FUENTE).toMatch(/cliente:\s*{\s*select:\s*{\s*nombre:\s*true,\s*telefono:\s*true,\s*_count:/)
+  })
+
+  it('pide la plata de la orden: costo, cobrado y fecha de entrega', () => {
+    expect(FUENTE).toMatch(/costo: true/)
+    expect(FUENTE).toMatch(/montoCobrado: true/)
+    expect(FUENTE).toMatch(/entregadaEn: true/)
+  })
+
+  it('"hace N días" sale de ultimoCambioDeEstado, no del evento más nuevo a secas', () => {
+    expect(FUENTE).toContain('ultimoCambioDeEstado(orden.eventos) ?? orden.creadoEn')
+    expect(FUENTE).not.toContain('orden.eventos[0]')
+  })
+
+  it('la card Plata y el paso de cobro dependen de COSTOS', () => {
+    expect(FUENTE).toContain("puedeConSesion(sesion, 'COSTOS')")
+    expect(FUENTE).toContain('{verPlata ? (\n            <CardPlata')
+    expect(FUENTE).toContain('cobro={verPlata ? { precarga: precargaDelCobro(orden) } : null}')
   })
 
   it('los "siguientes" del paño salen de transicionesDisponibles(orden.estado, anulada)', () => {
