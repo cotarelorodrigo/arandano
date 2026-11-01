@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { Prisma } from '@/generated/prisma/client'
 
 const FUENTE = readFileSync(new URL('./acciones.ts', import.meta.url), 'utf8')
 
@@ -312,7 +313,7 @@ describe('moverEstado con lo cobrado', () => {
 
   it('con el campo y COSTOS, pasa lo cobrado como Decimal', async () => {
     const { moverEstado } = await import('./acciones')
-    puedeConSesion.mockReturnValue(true)
+    puedeConSesion.mockResolvedValue(true)
     cambiarEstado.mockResolvedValue(undefined)
     await moverEstado(vacio, formulario({ ordenId: 'o-1', hasta: 'ENTREGADO', montoCobrado: '40000' }))
     expect(puedeConSesion).toHaveBeenCalledWith(sesion, 'COSTOS')
@@ -322,7 +323,7 @@ describe('moverEstado con lo cobrado', () => {
 
   it('con el campo y sin COSTOS, devuelve error y no cambia el estado', async () => {
     const { moverEstado } = await import('./acciones')
-    puedeConSesion.mockReturnValue(false)
+    puedeConSesion.mockResolvedValue(false)
     const r = await moverEstado(
       vacio,
       formulario({ ordenId: 'o-1', hasta: 'ENTREGADO', montoCobrado: '40000' }),
@@ -358,5 +359,24 @@ describe('guardarPlataDeOrden', () => {
 
     await guardarPlataDeOrden({ error: null, aviso: null }, formulario({ ordenId: 'o-1', costo: '' }))
     expect(guardarPlata.mock.calls[1][0].costo).toBeNull()
+  })
+
+  it('con el campo montoCobrado lo manda como Decimal, y vacío es null', async () => {
+    const { guardarPlataDeOrden } = await import('./acciones')
+    guardarPlata.mockResolvedValue(undefined)
+    await guardarPlataDeOrden(
+      { error: null, aviso: null },
+      formulario({ ordenId: 'o-1', costo: '28000', montoCobrado: '45000' }),
+    )
+    const arg = guardarPlata.mock.calls[0][0]
+    expect(arg.montoCobrado).toBeInstanceOf(Prisma.Decimal)
+    expect(arg.montoCobrado.toString()).toBe('45000')
+
+    // Presente y vacío no es "no tocar": es borrar lo cobrado.
+    await guardarPlataDeOrden(
+      { error: null, aviso: null },
+      formulario({ ordenId: 'o-1', costo: '28000', montoCobrado: '' }),
+    )
+    expect(guardarPlata.mock.calls[1][0].montoCobrado).toBeNull()
   })
 })

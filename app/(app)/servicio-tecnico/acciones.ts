@@ -99,7 +99,7 @@ export async function moverEstado(_e: EstadoServicio, datos: FormData): Promise<
     // en vez de ignorarlo, para que nadie crea que quedó guardado.
     let montoCobrado: Prisma.Decimal | null | undefined
     if (datos.has('montoCobrado')) {
-      if (!puedeConSesion(sesion, 'COSTOS')) {
+      if (!(await puedeConSesion(sesion, 'COSTOS'))) {
         return { error: 'No tenés permiso para cargar lo cobrado.', aviso: null }
       }
       montoCobrado = aDecimalOpcional(texto(datos, 'montoCobrado'), 'lo cobrado')
