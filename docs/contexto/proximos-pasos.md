@@ -3781,6 +3781,84 @@ Y del producto:
   - Todo a 1440 y a 390 px (la hoja "Caja y dólar" scrollea con el panel
     entero).
 
+- ~~Ver cuánto se ganó en cada reparación.~~ **Hecho** (2026-11-01). Pedido del
+  dueño del producto: *"quiero ver cuánto gané en cada reparación"*; era la
+  opción 2 de tres que se le ofrecieron (totales sobre el presupuesto; valor y
+  costo por orden; ciclo completo de repuestos con stock y cobro por caja). Ver
+  `docs/superpowers/specs/2026-11-01-ganancia-por-orden-design.md` y el plan
+  `docs/superpowers/plans/2026-11-01-ganancia-por-orden.md`. Lo marcado
+  *(dueño)* lo dijo él; el resto son llamadas de quien implementó y están para
+  revisar.
+
+  **Qué entró.** `OrdenDeTrabajo` gana `costo`, `montoCobrado` y `entregadaEn`
+  (migración aditiva `20261101120000_plata_de_la_orden`; todas nullable: null es
+  "nadie lo cargó", cero es un valor). La ganancia se calcula al leer
+  (`lib/ordenes-de-trabajo/plata.ts`), nunca se guarda; si falta un número, la
+  pantalla dice cuál. En el detalle, una card "Plata" y un paso de cobro al
+  pasar a Entregado; en el tablero, el chip Entregado filtra por mes de entrega
+  y, con `COSTOS`, suma las columnas Cobrado, Costo y Ganancia y una fila de
+  totales del mes entero.
+
+  **Las decisiones.**
+
+  - **Un solo costo, no una lista de repuestos** *(llamada propia)*: el dueño
+    habló de "el repuesto" y lo compra para ese equipo, así que es un monto en
+    la orden y **no toca `MovimientoStock`** (el origen del movimiento sigue
+    abierto en `riesgos-y-decisiones-abiertas.md`).
+  - **El cobrado se pide al entregar, pero se puede dejar vacío** *(llamada
+    propia)*: obligarlo frenaría la entrega en el mostrador por un dato que se
+    completa después desde la card. Cero es válido. Precargado: `montoCobrado`
+    si existe, si no `montoEstimado`, si no vacío.
+  - **En garantía, la segunda entrega reemplaza** *(llamada propia)*: el cobrado
+    es "lo que se cobró en total por este trabajo"; una garantía gratis es
+    confirmar sin tocar nada. Un repuesto extra se suma al costo a mano.
+  - **El mes se mide por la fecha de entrega y filtra la lista para todos**
+    *(llamada propia)*: la misma URL (`?estado=ENTREGADO&mes=2026-11`) muestra las
+    mismas filas a cualquiera; `COSTOS` sólo agrega columnas y totales. Cambia
+    lo que antes listaba "Entregado" (todas las de siempre); las viejas se
+    encuentran con la búsqueda o cambiando de mes. La fecha es la última
+    entrega, en hora Argentina, y se guarda en `entregadaEn` en vez de leerla
+    de la bitácora. La búsqueda y las anuladas no entran en los totales.
+  - **Sin dólares**: `montoEstimado` ya es pesos y el dueño no los mencionó.
+  - **`COSTOS` es el permiso de siempre** *(dueño)*: no hay permiso nuevo, y el
+    dueño acepta que prenderlo al técnico para que anote el repuesto también le
+    muestra el costo y el margen del inventario. **Ahora `COSTOS` cubre también
+    las órdenes de servicio técnico**: el `ayuda` de `lib/permisos/catalogo.ts`
+    lo dice. Las actions exigen el permiso del lado del servidor, no sólo
+    escondiendo el botón.
+  - **Forma nueva de evento: `desde = hasta`.** Cada cambio de costo o cobrado
+    escribe un `EventoOrden` con el estado actual en los dos lados; como el
+    grafo no tiene lazos, `desde === hasta` marca "evento de plata" sin columna
+    de tipo (un test fija que `TRANSICIONES` no los tiene). **Esto revierte lo
+    que decía el docblock de `anularOrden`**, que rechazaba esa fila por
+    imposible; el docblock se corrigió. Consecuencias: `tituloDeEvento` los
+    titula como cambio de plata, `diasEnEstado` los saltea (si no, cargar un
+    costo reiniciaría el "hace N días"), y la bitácora **oculta las notas de
+    plata a quien no tiene `COSTOS`**, porque llevan montos. El cobrado de la
+    entrega va en un evento de plata aparte, en la misma transacción, no en la
+    nota del cambio de estado.
+
+  **Quedó afuera, a propósito**: repuestos que descuenten stock o una lista de
+  repuestos por orden (el ciclo de repuestos con stock); generar una venta y
+  cobrar por caja con `crearVentaDesde`, que sigue sin existir como código; los
+  dólares.
+
+  **Queda pendiente, menor y conocido**: los separadores de miles de los totales
+  en el teléfono; el nombre accesible del "›" deshabilitado del selector de mes;
+  mirar a ojo el ancho de la grilla en escritorio con las columnas de plata; y
+  el abrir y cerrar del paso de cobro, que los tests cubren pero nadie clickeó
+  en un navegador.
+
+  **Queda pendiente la verificación manual**, después del merge (`arandano-dev`
+  monta `/root/arandano`, así que a ojo no se puede antes): entregar una orden
+  con presupuesto (precargado), cambiar el monto y confirmar; entregar otra
+  dejando vacío y cargarlo después desde la card; Enter en la nota del cobro no
+  debe elegir otra transición; volver una entregada a reparación y entregarla de
+  nuevo (reemplaza, cuenta una vez, en el mes de la última entrega); cambiar de
+  mes en el chip Entregado y ver los totales y el aviso de órdenes sin dato;
+  como empleado sin `COSTOS`: sin card, sin paso de cobro, sin columnas, y la
+  bitácora sin montos. Todo a 1440 y a 390 px.
+
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~
