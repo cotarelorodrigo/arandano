@@ -30,8 +30,16 @@ describe('rangoDelMes', () => {
 
 describe('mesValido', () => {
   it('cae al mes en curso con basura o futuro', () => {
-    for (const v of ['2026-13', 'abc', undefined, '9999-01', '2026-00', '2026-12'])
+    for (const v of ['2026-13', 'abc', undefined, '9999-01', '2026-00', '2026-12', '0000-12', '0500-12'])
       expect(mesValido(v, AHORA)).toBe('2026-11')
+  })
+  // Un año de menos de cuatro cifras significativas pasaba el formato, y el
+  // mes siguiente salía sin ceros a la izquierda ('501-01'): rangoDelMes
+  // armaba un Invalid Date y la pantalla daba 500.
+  it('un año chico en la URL no termina en una fecha inválida', () => {
+    const r = rangoDelMes(mesValido('0500-12', AHORA))
+    expect(Number.isNaN(r.desde.getTime())).toBe(false)
+    expect(Number.isNaN(r.hasta.getTime())).toBe(false)
   })
   it('acepta pasado y el mes en curso', () => {
     expect(mesValido('2026-09', AHORA)).toBe('2026-09')
@@ -45,6 +53,10 @@ describe('mesAnterior / mesSiguiente', () => {
     expect(mesSiguiente('2026-12')).toBe('2027-01')
     expect(mesAnterior('2026-11')).toBe('2026-10')
     expect(mesSiguiente('2026-09')).toBe('2026-10')
+  })
+  it('el año sale siempre con cuatro cifras', () => {
+    expect(mesSiguiente('0999-12')).toBe('1000-01')
+    expect(mesAnterior('1000-01')).toBe('0999-12')
   })
 })
 

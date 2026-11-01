@@ -22,10 +22,11 @@ export function mesEnCurso(ahora: Date): string {
 }
 
 /** El mes de la URL si es un `AAAA-MM` real y no futuro; si no, el en curso.
- *  Comparar strings alcanza: el formato es de ancho fijo. */
+ *  Comparar strings alcanza: el formato es de ancho fijo. El año arranca en
+ *  1000: con `0500-12` el formato pasaba y el rango del mes salía inválido. */
 export function mesValido(v: string | undefined, ahora: Date): string {
   const enCurso = mesEnCurso(ahora)
-  if (v === undefined || !/^\d{4}-(0[1-9]|1[0-2])$/.test(v) || v > enCurso) return enCurso
+  if (v === undefined || !/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(v) || v > enCurso) return enCurso
   return v
 }
 
@@ -43,7 +44,10 @@ function desplazar(mes: string, delta: number): string {
   const total = año * 12 + (m - 1) + delta
   const a = Math.floor(total / 12)
   const mm = (total % 12) + 1
-  return `${a}-${String(mm).padStart(2, '0')}`
+  // Con relleno aunque mesValido ya corte los años chicos: sin él, `0999-12`
+  // daba `1000-01` bien pero `1000-01` hacia atrás daba `999-12`, que no es un
+  // AAAA-MM y que `new Date` no parsea.
+  return `${String(a).padStart(4, '0')}-${String(mm).padStart(2, '0')}`
 }
 
 export function mesAnterior(mes: string): string {
