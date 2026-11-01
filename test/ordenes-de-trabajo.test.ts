@@ -9,6 +9,9 @@ let crearCliente: typeof import('@/lib/clientes/administrar').crearCliente
 let cambiarEstado: typeof import('@/lib/ordenes-de-trabajo/operaciones').cambiarEstado
 let guardarDiagnostico: typeof import('@/lib/ordenes-de-trabajo/operaciones').guardarDiagnostico
 let anularOrden: typeof import('@/lib/ordenes-de-trabajo/operaciones').anularOrden
+let guardarPlata: typeof import('@/lib/ordenes-de-trabajo/operaciones').guardarPlata
+let d: (v: string) => import('@/generated/prisma/client').Prisma.Decimal
+let notaDePlata: typeof import('@/lib/ordenes-de-trabajo/plata').notaDePlata
 
 let owner: Client
 let tenantId: string
@@ -27,9 +30,12 @@ beforeAll(async () => {
   process.env.DATABASE_URL = urlApp()
   ;({ crearOrden } = await import('@/lib/ordenes-de-trabajo/crear'))
   ;({ crearCliente } = await import('@/lib/clientes/administrar'))
-  ;({ cambiarEstado, guardarDiagnostico, anularOrden } = await import(
+  ;({ cambiarEstado, guardarDiagnostico, anularOrden, guardarPlata } = await import(
     '@/lib/ordenes-de-trabajo/operaciones'
   ))
+  ;({ notaDePlata } = await import('@/lib/ordenes-de-trabajo/plata'))
+  const { Prisma } = await import('@/generated/prisma/client')
+  d = (v) => new Prisma.Decimal(v)
 
   owner = new Client({ connectionString: urlOwner() })
   await owner.connect()
@@ -449,5 +455,212 @@ describe('anulación', () => {
       [o.id],
     )
     expect(String(segunda.rows[0].anulada_en)).toBe(String(primera.rows[0].anulada_en))
+  })
+})
+
+describe('la plata de la orden', () => {
+  async function ordenEn(estado: 'EN_REPARACION' | 'LISTO'): Promise<string> {
+    const o = await crearOrden({ tenantId, usuarioId, clienteId, ...equipo })
+    for (const hasta of ['EN_REPARACION', 'LISTO'] as const) {
+      await cambiarEstado({ tenantId, usuarioId, ordenId: o.id, hasta })
+      if (hasta === estado) break
+    }
+    return o.id
+  }
+
+  async function fila(ordenId: string) {
+    const { rows } = await owner.query(
+      `SELECT costo, monto_cobrado, entregada_en FROM ordenes_de_trabajo WHERE id = $1`,
+      [ordenId],
+    )
+    return rows[0]
+  }
+
+  // Por id y no por creado_en: dentro de una transacción now() es el mismo
+  // para todas las filas, y el id (uuid v7) sí respeta el orden de creación.
+  async function eventos(ordenId: string) {
+    const { rows } = await owner.query(
+      `SELECT desde, hasta, nota FROM eventos_orden WHERE orden_id = $1 ORDER BY id`,
+      [ordenId],
+    )
+    return rows
+  }
+
+  it('entregar con cobro guarda lo cobrado, la fecha y dos eventos: transición y plata', async () => {
+    const id = await ordenEn('LISTO')
+    const antes = (await eventos(id)).length
+    await cambiarEstado({
+      tenantId,
+      usuarioId,
+      ordenId: id,
+      hasta: 'ENTREGADO',
+      montoCobrado: d('40000'),
+    })
+
+    const o = await fila(id)
+    expect(Number(o.monto_cobrado)).toBe(40000)
+    expect(o.entregada_en).not.toBeNull()
+
+    const nuevos = (await eventos(id)).slice(antes)
+    expect(nuevos).toHaveLength(2)
+    expect(nuevos[0]).toMatchObject({
+      desde: 'LISTO',
+      hasta: 'ENTREGADO',
+      nota: null,
+    })
+    expect(nuevos[1]).toMatchObject({
+      desde: 'ENTREGADO',
+      hasta: 'ENTREGADO',
+      nota: notaDePlata({ cobrado: [null, d('40000')] }),
+    })
+  })
+
+  it('entregar sin cobro deja la fecha, no el monto, y un solo evento', async () => {
+    const id = await ordenEn('LISTO')
+    const antes = (await eventos(id)).length
+    await cambiarEstado({
+      tenantId,
+      usuarioId,
+      ordenId: id,
+      hasta: 'ENTREGADO',
+    })
+
+    const o = await fila(id)
+    expect(o.entregada_en).not.toBeNull()
+    expect(o.monto_cobrado).toBeNull()
+    expect((await eventos(id)).length).toBe(antes + 1)
+  })
+
+  it('un cobro en una transición que no es a ENTREGADO se rechaza, sin tocar la orden', async () => {
+    const id = await ordenEn('EN_REPARACION')
+    const antes = (await eventos(id)).length
+    await expect(
+      cambiarEstado({
+        tenantId,
+        usuarioId,
+        ordenId: id,
+        hasta: 'LISTO',
+        montoCobrado: d('1'),
+      }),
+    ).rejects.toMatchObject({ codigo: 'COBRO_FUERA_DE_ENTREGA' })
+    expect(await estadoDe(id)).toBe('EN_REPARACION')
+    expect((await fila(id)).monto_cobrado).toBeNull()
+    expect((await eventos(id)).length).toBe(antes)
+  })
+
+  it('un cobro negativo al entregar es MONTO_INVALIDO', async () => {
+    const id = await ordenEn('LISTO')
+    await expect(
+      cambiarEstado({
+        tenantId,
+        usuarioId,
+        ordenId: id,
+        hasta: 'ENTREGADO',
+        montoCobrado: d('-1'),
+      }),
+    ).rejects.toMatchObject({ codigo: 'MONTO_INVALIDO' })
+    expect(await estadoDe(id)).toBe('LISTO')
+  })
+
+  it('garantía: re-entregar mueve la fecha pero no escribe evento de plata si el cobro no cambió', async () => {
+    const id = await ordenEn('LISTO')
+    await cambiarEstado({
+      tenantId,
+      usuarioId,
+      ordenId: id,
+      hasta: 'ENTREGADO',
+      montoCobrado: d('40000'),
+    })
+    // Se atrasa la primera entrega para que "posterior" no dependa de la
+    // resolución del reloj entre dos llamadas seguidas.
+    await owner.query(
+      `UPDATE ordenes_de_trabajo SET entregada_en = entregada_en - interval '1 day' WHERE id = $1`,
+      [id],
+    )
+    const primera = (await fila(id)).entregada_en as Date
+
+    await cambiarEstado({
+      tenantId,
+      usuarioId,
+      ordenId: id,
+      hasta: 'EN_REPARACION',
+    })
+    await cambiarEstado({ tenantId, usuarioId, ordenId: id, hasta: 'LISTO' })
+    const antes = (await eventos(id)).length
+    await cambiarEstado({
+      tenantId,
+      usuarioId,
+      ordenId: id,
+      hasta: 'ENTREGADO',
+      montoCobrado: d('40000'),
+    })
+
+    expect(((await fila(id)).entregada_en as Date).getTime()).toBeGreaterThan(primera.getTime())
+    const nuevos = (await eventos(id)).slice(antes)
+    expect(nuevos).toHaveLength(1)
+    expect(nuevos[0]).toMatchObject({ desde: 'LISTO', hasta: 'ENTREGADO' })
+  })
+
+  it('guardarPlata guarda el costo y deja un evento con desde = hasta', async () => {
+    const id = await ordenEn('EN_REPARACION')
+    const antes = (await eventos(id)).length
+    await guardarPlata({ tenantId, usuarioId, ordenId: id, costo: d('28000') })
+
+    expect(Number((await fila(id)).costo)).toBe(28000)
+    const nuevos = (await eventos(id)).slice(antes)
+    expect(nuevos).toHaveLength(1)
+    expect(nuevos[0]).toMatchObject({
+      desde: 'EN_REPARACION',
+      hasta: 'EN_REPARACION',
+      nota: notaDePlata({ costo: [null, d('28000')] }),
+    })
+  })
+
+  it('guardarPlata con los mismos valores no escribe evento', async () => {
+    const id = await ordenEn('EN_REPARACION')
+    await guardarPlata({ tenantId, usuarioId, ordenId: id, costo: d('28000') })
+    const antes = (await eventos(id)).length
+    await guardarPlata({
+      tenantId,
+      usuarioId,
+      ordenId: id,
+      costo: d('28000.00'),
+    })
+    expect((await eventos(id)).length).toBe(antes)
+  })
+
+  it('no se carga lo cobrado en una orden que nunca se entregó', async () => {
+    const id = await ordenEn('EN_REPARACION')
+    await expect(
+      guardarPlata({
+        tenantId,
+        usuarioId,
+        ordenId: id,
+        costo: null,
+        montoCobrado: d('1'),
+      }),
+    ).rejects.toMatchObject({ codigo: 'SIN_ENTREGAR' })
+    expect((await fila(id)).monto_cobrado).toBeNull()
+  })
+
+  it('guardarPlata rechaza negativos, órdenes anuladas y órdenes de otro tenant', async () => {
+    const id = await ordenEn('EN_REPARACION')
+    await expect(
+      guardarPlata({ tenantId, usuarioId, ordenId: id, costo: d('-1') }),
+    ).rejects.toMatchObject({ codigo: 'MONTO_INVALIDO' })
+
+    await expect(
+      guardarPlata({
+        tenantId: otroTenantId,
+        usuarioId,
+        ordenId: id,
+        costo: d('1'),
+      }),
+    ).rejects.toMatchObject({ codigo: 'ORDEN_INEXISTENTE' })
+
+    await anularOrden({ tenantId, usuarioId, ordenId: id })
+    await expect(
+      guardarPlata({ tenantId, usuarioId, ordenId: id, costo: d('1') }),
+    ).rejects.toMatchObject({ codigo: 'ORDEN_ANULADA' })
   })
 })
