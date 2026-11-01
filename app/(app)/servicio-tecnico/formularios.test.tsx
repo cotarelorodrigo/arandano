@@ -7,8 +7,18 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { SidebarProvider } from '@/components/ui/sidebar'
-import { PanelEstado, FichaDeOrden, FormularioDiagnostico, textoDeAntiguedad } from './formularios'
+import { Prisma } from '@/generated/prisma/client'
+import {
+  PanelEstado,
+  PasoDeCobro,
+  CardPlata,
+  FichaDeOrden,
+  FormularioDiagnostico,
+  textoDeAntiguedad,
+} from './formularios'
+import { datosDeCardPlata } from './[id]/page'
 import { NOMBRE_ESTADO } from '@/lib/ordenes-de-trabajo/estados'
+import { formatearPrecio } from '@/lib/formato/mostrar'
 
 const accionFalsa = async () => ({ error: null, aviso: null })
 
@@ -37,6 +47,7 @@ describe('PanelEstado (Task 4 del rediseño: el paño "ESTADO ACTUAL")', () => {
         siguientes={siguientes}
         nombres={NOMBRE_ESTADO}
         diasEnEstado={6}
+        cobro={null}
       />,
     )
   }
@@ -357,5 +368,141 @@ describe('FormularioDiagnostico (Task 4 del rediseño: fila diagnóstico + presu
     const cierre = html.indexOf('/>', inicio)
     expect(inicio).toBeGreaterThan(-1)
     expect(html.slice(inicio, cierre)).toContain('h-10')
+  })
+})
+
+/** El botón (`<button …>…</button>`) cuyo texto visible es `texto`. */
+function boton(html: string, texto: string): string {
+  const pos = html.indexOf(`${texto}</button>`)
+  expect(pos, `no se encontró el botón "${texto}"`).toBeGreaterThan(-1)
+  return html.slice(html.lastIndexOf('<button', pos), pos)
+}
+
+describe('PanelEstado: el paso de cobro al entregar (ganancia por orden)', () => {
+  function render(siguientes: ('ENTREGADO' | 'LISTO' | 'EN_REPARACION')[], cobro: { precarga: string } | null) {
+    return renderToStaticMarkup(
+      <PanelEstado
+        accion={accionFalsa}
+        ordenId="o-1"
+        estado="LISTO"
+        siguientes={siguientes}
+        nombres={NOMBRE_ESTADO}
+        diasEnEstado={2}
+        cobro={cobro}
+      />,
+    )
+  }
+
+  // Con COSTOS, "Entregado" no entrega: abre el paso (en el cliente). Si el
+  // botón siguiera siendo el submit, un click entregaría sin preguntar.
+  it('con cobro, "Entregado" es un botón que abre el paso, no el submit que entrega', () => {
+    const html = render(['ENTREGADO'], { precarga: '40.000,00' })
+    expect(html).not.toMatch(/<button[^>]*type="submit"[^>]*name="hasta"[^>]*value="ENTREGADO"/)
+    expect(boton(html, 'Entregado')).toContain('type="button"')
+    expect(html).not.toContain('name="montoCobrado"')
+  })
+
+  it('sin cobro (sin COSTOS), "Entregado" es el submit de siempre y no hay campo de cobro', () => {
+    const html = render(['ENTREGADO'], null)
+    const b = boton(html, 'Entregado')
+    expect(b).toContain('type="submit"')
+    expect(b).toContain('name="hasta"')
+    expect(b).toContain('value="ENTREGADO"')
+    expect(html).not.toContain('montoCobrado')
+  })
+
+  it('con cobro pero sin Entregado entre las transiciones, no aparece el campo de cobro', () => {
+    const html = render(['LISTO'], { precarga: '40.000,00' })
+    expect(html).not.toContain('montoCobrado')
+    expect(boton(html, 'Listo')).toContain('type="submit"')
+  })
+})
+
+describe('PasoDeCobro (el paso abierto)', () => {
+  it('pregunta cuánto se cobró, con el monto precargado, y confirma la entrega', () => {
+    const html = renderToStaticMarkup(<PasoDeCobro precarga="40.000,00" pendiente={false} />)
+    expect(html).toContain('¿Cuánto cobraste?')
+    const inicio = html.lastIndexOf('<input', html.indexOf('name="montoCobrado"'))
+    expect(inicio).toBeGreaterThan(-1)
+    expect(html.slice(inicio, html.indexOf('/>', inicio))).toContain('value="40.000,00"')
+    const b = boton(html, 'Confirmar entrega')
+    expect(b).toContain('type="submit"')
+    expect(b).toContain('name="hasta"')
+    expect(b).toContain('value="ENTREGADO"')
+  })
+
+  it('sin precarga, el campo nace vacío (entregar sin cobrar es válido)', () => {
+    const html = renderToStaticMarkup(<PasoDeCobro precarga="" pendiente={false} />)
+    const inicio = html.lastIndexOf('<input', html.indexOf('name="montoCobrado"'))
+    expect(html.slice(inicio, html.indexOf('/>', inicio))).toContain('value=""')
+  })
+})
+
+describe('CardPlata (ganancia por orden)', () => {
+  const D = (v: string) => new Prisma.Decimal(v)
+
+  function render(opts: {
+    costo: string | null
+    montoCobrado: string | null
+    montoEstimado?: string | null
+    entregada: boolean
+    anulada?: boolean
+  }) {
+    const datos = datosDeCardPlata({
+      costo: opts.costo === null ? null : D(opts.costo),
+      montoCobrado: opts.montoCobrado === null ? null : D(opts.montoCobrado),
+      montoEstimado: opts.montoEstimado ? D(opts.montoEstimado) : null,
+    })
+    return renderToStaticMarkup(
+      <CardPlata
+        accion={accionFalsa}
+        ordenId="o-1"
+        {...datos}
+        entregada={opts.entregada}
+        anulada={opts.anulada ?? false}
+      />,
+    )
+  }
+
+  it('entregada con los dos montos: muestra la ganancia y ninguna frase de "Falta"', () => {
+    const html = render({ costo: '28000', montoCobrado: '40000', entregada: true })
+    expect(html).toContain('>Plata<')
+    expect(html).toContain(formatearPrecio('12000'))
+    expect(html).not.toContain('Falta')
+    // Los campos nacen con lo cargado, en el formato del resto de la pantalla.
+    expect(html).toContain('value="28.000,00"')
+    expect(html).toContain('value="40.000,00"')
+    expect(html).toContain('name="costo"')
+    expect(html).toContain('name="montoCobrado"')
+    expect(boton(html, 'Guardar')).toContain('type="submit"')
+  })
+
+  it('sin entregar: no hay campo de cobrado, se muestra el presupuesto como referencia', () => {
+    const html = render({ costo: '28000', montoCobrado: null, montoEstimado: '145000', entregada: false })
+    expect(html).not.toContain('montoCobrado')
+    expect(html).toContain(`Presupuesto: ${formatearPrecio('145000')}`)
+    // El costo sí se carga en cualquier estado.
+    expect(html).toContain('name="costo"')
+  })
+
+  it('entregada sin costo: dice qué falta y no inventa una ganancia', () => {
+    const html = render({ costo: null, montoCobrado: '40000', entregada: true })
+    expect(html).toContain('Falta cargar el costo')
+    expect(html).not.toContain(formatearPrecio('40000'))
+  })
+
+  it('la ganancia negativa se muestra negativa', () => {
+    const html = render({ costo: '15000', montoCobrado: '10000', entregada: true })
+    expect(html).toContain(formatearPrecio('-5000'))
+  })
+
+  it('anulada: sólo lectura, sin ningún campo ni botón de guardar', () => {
+    const html = render({ costo: '28000', montoCobrado: '40000', entregada: true, anulada: true })
+    expect(html).not.toContain('<input')
+    expect(html).not.toContain('<button')
+    expect(html).not.toContain('Guardar')
+    // Pero los montos se siguen viendo.
+    expect(html).toContain(formatearPrecio('28000'))
+    expect(html).toContain(formatearPrecio('12000'))
   })
 })

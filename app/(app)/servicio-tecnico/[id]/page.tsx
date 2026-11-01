@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { User, Smartphone, Phone } from 'lucide-react'
+import { User, Smartphone, Phone, Banknote } from 'lucide-react'
 import { Prisma } from '@/generated/prisma/client'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -14,9 +14,16 @@ import {
   ESTADO_VISUAL,
 } from '@/lib/ordenes-de-trabajo/estados'
 import { fechaCorta, diasEnElLocal } from '@/lib/ordenes-de-trabajo/antiguedad'
+import {
+  ganancia,
+  queFalta,
+  fraseDeFalta,
+  esEventoDePlata,
+  precargaDelCobro,
+} from '@/lib/ordenes-de-trabajo/plata'
 import { esUuid } from '@/lib/uuid'
-import { moverEstado, diagnosticar, anular } from '../acciones'
-import { FichaDeOrden, PanelEstado, FormularioDiagnostico } from '../formularios'
+import { moverEstado, diagnosticar, anular, guardarPlataDeOrden } from '../acciones'
+import { FichaDeOrden, PanelEstado, FormularioDiagnostico, CardPlata } from '../formularios'
 import type { EstadoOrden } from '@/generated/prisma/client'
 import estilos from '../tipografia.module.css'
 
@@ -81,9 +88,55 @@ export function fechaYHoraDelEvento(v: Date): string {
  * ya resolvía el código antes de este ciclo (`[id]/page.tsx`, `e.desde ===
  * null ? 'Recibido' : ...`), sólo que ahora "Equipo recibido" es el título
  * completo y no una palabra suelta.
+ *
+ * Un evento de plata (`desde === hasta`, ciclo de ganancia por orden) no movió
+ * la orden: "Pasó a Listo" sería mentira. Sin `COSTOS`, la frase larga dice
+ * qué pasó sin la nota que lo explica (la esconde `Bitacora`, porque trae
+ * montos); con `COSTOS` alcanza con el título corto, la nota dice el resto.
  */
-export function tituloDeEvento(e: { desde: EstadoOrden | null; hasta: EstadoOrden }): string {
+export function tituloDeEvento(
+  e: { desde: EstadoOrden | null; hasta: EstadoOrden },
+  verPlata: boolean,
+): string {
+  if (esEventoDePlata(e)) return verPlata ? 'Plata actualizada' : 'Se actualizó la plata de la orden'
   return e.desde === null ? 'Equipo recibido' : `Pasó a ${NOMBRE_ESTADO[e.hasta]}`
+}
+
+/**
+ * Cuándo la orden llegó a su estado ACTUAL: el evento más nuevo que la movió.
+ * `eventos` viene MÁS NUEVO PRIMERO (el `orderBy` de la consulta). Los eventos
+ * de plata se saltean: cargar un costo no reinicia el "hace N días" del paño.
+ * `null` sólo si no hay ninguna transición — no debería pasar, crearOrden
+ * siempre deja la de apertura.
+ */
+export function ultimoCambioDeEstado(
+  eventos: { desde: EstadoOrden | null; hasta: EstadoOrden; creadoEn: Date }[],
+): Date | null {
+  return eventos.find((e) => !esEventoDePlata(e))?.creadoEn ?? null
+}
+
+/**
+ * Lo que la card "Plata" muestra, resuelto del lado del servidor: los montos
+ * formateados y la ganancia —o la frase de qué falta— calculada con
+ * `Prisma.Decimal`. `CardPlata` es un componente cliente y no puede importar
+ * lib/ordenes-de-trabajo/plata.ts (trae `Prisma` en runtime), ni conviene que
+ * reste texto ya formateado.
+ */
+export function datosDeCardPlata(o: {
+  costo: Prisma.Decimal | null
+  montoCobrado: Prisma.Decimal | null
+  montoEstimado: Prisma.Decimal | null
+}) {
+  const precio = (v: Prisma.Decimal | null) => (v === null ? null : formatearPrecio(v.toString()))
+  const resultado = ganancia(o.montoCobrado, o.costo)
+  const falta = queFalta(o.montoCobrado, o.costo)
+  return {
+    costo: precio(o.costo),
+    montoCobrado: precio(o.montoCobrado),
+    montoEstimado: precio(o.montoEstimado),
+    ganancia: precio(resultado),
+    falta: falta === null ? null : fraseDeFalta(falta),
+  }
 }
 
 function FilaClaveValor({ clave, valor }: { clave: string; valor: React.ReactNode }) {
@@ -277,8 +330,13 @@ export type EventoDeBitacora = {
  * componente usa el mapeo real y no la excepción de ese único nodo: el
  * brief de esta task pide explícitamente reusar `ESTADO_VISUAL` entero, no
  * bifurcarlo para un solo evento.
+ *
+ * Los eventos de plata (ciclo de ganancia por orden) no son un estado, así
+ * que no salen de `ESTADO_VISUAL`: billete y tono neutro. Su nota lleva
+ * montos ("Costo: $ 25.000 → $ 28.000"), y la bitácora la ve cualquiera que
+ * abra la orden: sin `COSTOS` (`verPlata`) la nota no llega al HTML.
  */
-export function Bitacora({ eventos }: { eventos: EventoDeBitacora[] }) {
+export function Bitacora({ eventos, verPlata }: { eventos: EventoDeBitacora[]; verPlata: boolean }) {
   return (
     // Fluida en el teléfono (Task 9 del ciclo móvil, frame `B3noN`): sin
     // altura ni scroll propios, se estira con el resto del cuerpo. `lg:h-full`
@@ -292,7 +350,11 @@ export function Bitacora({ eventos }: { eventos: EventoDeBitacora[] }) {
       <div className="flex flex-col px-[18px] pt-4 lg:flex-1 lg:overflow-y-auto">
         {eventos.map((e, i) => {
           const esUltimo = i === eventos.length - 1
-          const { Icono, clase } = ESTADO_VISUAL[e.hasta]
+          const dePlata = esEventoDePlata(e)
+          const { Icono, clase } = dePlata
+            ? { Icono: Banknote, clase: 'bg-muted text-foreground-soft' }
+            : ESTADO_VISUAL[e.hasta]
+          const nota = dePlata && !verPlata ? null : e.nota
           return (
             <div key={e.id} className="flex gap-3">
               <div className="flex w-[26px] shrink-0 flex-col items-center">
@@ -307,9 +369,9 @@ export function Bitacora({ eventos }: { eventos: EventoDeBitacora[] }) {
                 {!esUltimo ? <span className="w-[2px] flex-1 bg-border" /> : null}
               </div>
               <div className="flex flex-1 flex-col gap-[3px] pb-5">
-                <span className="text-[13px] font-semibold text-foreground">{tituloDeEvento(e)}</span>
-                {e.nota ? (
-                  <span className="text-xs leading-[1.45] text-foreground-soft">{e.nota}</span>
+                <span className="text-[13px] font-semibold text-foreground">{tituloDeEvento(e, verPlata)}</span>
+                {nota ? (
+                  <span className="text-xs leading-[1.45] text-foreground-soft">{nota}</span>
                 ) : null}
                 <span className="text-[11px] text-muted-foreground">
                   {fechaYHoraDelEvento(e.creadoEn)} · {e.usuario.nombre}
@@ -345,6 +407,10 @@ export default async function DetalleDeOrden({ params }: { params: Promise<{ id:
       // El campo sigue vivo en el schema y en el ticket (que hace su propia
       // consulta, en ticket/page.tsx); acá dejaría de usarse.
       diagnostico: true, montoEstimado: true,
+      // La card "Plata" (sólo con COSTOS) y el precargado del paso de cobro.
+      // `entregadaEn` no nulo es "pasó por Entregado al menos una vez": desde
+      // ahí lo cobrado se puede corregir desde la card.
+      costo: true, montoCobrado: true, entregadaEn: true,
       anuladaEn: true, creadoEn: true,
       // Órdenes previas (Task 3 del ciclo): mismo dato que
       // buscarClientes, pedido acá con su propio `_count` porque esta
@@ -374,18 +440,23 @@ export default async function DetalleDeOrden({ params }: { params: Promise<{ id:
 
   const anulada = orden.anuladaEn !== null
   const dias = diasEnElLocal(orden.creadoEn)
-  // El evento más reciente es, por invariante, el que trajo la orden a su
-  // estado ACTUAL (cambiarEstado escribe el evento y el nuevo estado en la
+  // La transición más reciente es, por invariante, la que trajo la orden a
+  // su estado ACTUAL (cambiarEstado escribe el evento y el nuevo estado en la
   // misma transacción — lib/ordenes-de-trabajo/operaciones.ts), así que
-  // "hace cuánto está en este estado" es "hace cuánto pasó ese evento", no
-  // "hace cuánto se recibió el equipo" (que es lo que ya dice el subtítulo
-  // del Topbar). `eventos[0]` porque ahora vienen ordenados MÁS NUEVO
-  // PRIMERO; el `?? orden.creadoEn` es sólo un piso defensivo — crearOrden
-  // siempre deja un evento de apertura, así que `eventos` nunca debería venir
-  // vacío.
-  const diasEnEstado = diasEnElLocal(orden.eventos[0]?.creadoEn ?? orden.creadoEn)
+  // "hace cuánto está en este estado" es "hace cuánto pasó esa transición",
+  // no "hace cuánto se recibió el equipo" (que es lo que ya dice el subtítulo
+  // del Topbar). Ya no es `eventos[0]` a secas: desde el ciclo de ganancia
+  // por orden también hay eventos de plata (`desde === hasta`), que no mueven
+  // la orden — cargar un costo reiniciaría el contador. `ultimoCambioDeEstado`
+  // los saltea. El `?? orden.creadoEn` es sólo un piso defensivo — crearOrden
+  // siempre deja un evento de apertura.
+  const diasEnEstado = diasEnElLocal(ultimoCambioDeEstado(orden.eventos) ?? orden.creadoEn)
   const siguientes = transicionesDisponibles(orden.estado, anulada)
   const puedeAnular = await puedeConSesion(sesion, 'ORDENES_ANULAR')
+  // Un solo permiso para toda la plata del negocio (spec, decisión 4): sin
+  // `COSTOS` no hay card, ni paso de cobro, ni notas con montos en la
+  // bitácora. Las acciones lo vuelven a exigir del lado del servidor.
+  const verPlata = await puedeConSesion(sesion, 'COSTOS')
 
   return (
     <FichaDeOrden
@@ -428,6 +499,7 @@ export default async function DetalleDeOrden({ params }: { params: Promise<{ id:
             siguientes={siguientes}
             nombres={NOMBRE_ESTADO}
             diasEnEstado={diasEnEstado}
+            cobro={verPlata ? { precarga: precargaDelCobro(orden) } : null}
           />
 
           {/* Corrección del coordinador tras el reporte de la Task 9: se
@@ -439,9 +511,19 @@ export default async function DetalleDeOrden({ params }: { params: Promise<{ id:
           </div>
 
           <CardFallaYDiagnostico orden={orden} anulada={anulada} />
+
+          {verPlata ? (
+            <CardPlata
+              accion={guardarPlataDeOrden}
+              ordenId={orden.id}
+              {...datosDeCardPlata(orden)}
+              entregada={orden.entregadaEn !== null}
+              anulada={anulada}
+            />
+          ) : null}
         </>
       }
-      columnaDerecha={<Bitacora eventos={orden.eventos} />}
+      columnaDerecha={<Bitacora eventos={orden.eventos} verPlata={verPlata} />}
     />
   )
 }
