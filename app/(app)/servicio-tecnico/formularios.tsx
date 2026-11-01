@@ -757,10 +757,17 @@ export function CardPlata({
   const id = useId()
 
   const referenciaDelCobro = montoEstimado ? `Presupuesto: ${montoEstimado}` : 'Sin presupuesto'
+  // Antes de entregar, el campo de cobrado no existe: la frase de `falta`
+  // pediría algo que la card no ofrece. Sólo se pide lo que se puede cargar.
+  const valorGanancia = entregada
+    ? (ganancia ?? falta ?? '—')
+    : costo === null
+      ? 'Falta cargar el costo'
+      : 'Se calcula al entregar'
   const filaGanancia = (
     <FilaDePlata
       clave="Ganancia"
-      valor={ganancia ?? falta ?? '—'}
+      valor={valorGanancia}
       apagado={ganancia === null}
     />
   )

@@ -510,6 +510,20 @@ describe('CardPlata (ganancia por orden)', () => {
     expect(html).toContain('name="costo"')
   })
 
+  // Antes de entregar no existe el campo de cobrado: pedirlo en la fila de la
+  // ganancia mandaba a buscar algo que la card no ofrece.
+  it('sin entregar y sin costo: pide el costo, no lo cobrado', () => {
+    const html = render({ costo: null, montoCobrado: null, entregada: false })
+    expect(html).toContain('Falta cargar el costo')
+    expect(html).not.toContain('cobrado')
+  })
+
+  it('sin entregar con costo: la ganancia se calcula al entregar', () => {
+    const html = render({ costo: '28000', montoCobrado: null, entregada: false })
+    expect(html).toContain('Se calcula al entregar')
+    expect(html).not.toContain('Falta')
+  })
+
   it('entregada sin costo: dice qué falta y no inventa una ganancia', () => {
     const html = render({ costo: null, montoCobrado: '40000', entregada: true })
     expect(html).toContain('Falta cargar el costo')
