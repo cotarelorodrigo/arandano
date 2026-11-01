@@ -3,13 +3,13 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { exigirSesion } from '@/lib/auth/sesion'
-import { exigirPermiso } from '@/lib/permisos/guarda'
+import { exigirPermiso, puedeConSesion } from '@/lib/permisos/guarda'
 import { crearOrden } from '@/lib/ordenes-de-trabajo/crear'
-import { cambiarEstado, guardarDiagnostico, anularOrden } from '@/lib/ordenes-de-trabajo/operaciones'
+import { cambiarEstado, guardarDiagnostico, guardarPlata, anularOrden } from '@/lib/ordenes-de-trabajo/operaciones'
 import { ErrorDeOrden } from '@/lib/ordenes-de-trabajo/errores'
 import { ErrorDeCliente } from '@/lib/clientes/errores'
 import { aDecimalOpcional, ErrorDeFormato } from '@/lib/formato/numeros'
-import type { EstadoOrden } from '@/generated/prisma/client'
+import type { EstadoOrden, Prisma } from '@/generated/prisma/client'
 import { ESTADOS } from '@/lib/ordenes-de-trabajo/estados'
 
 export type EstadoServicio = { error: string | null; aviso: string | null }
@@ -94,12 +94,23 @@ export async function moverEstado(_e: EstadoServicio, datos: FormData): Promise<
     if (!esEstado(hasta)) {
       return { error: 'ese estado no existe', aviso: null }
     }
+    // Lo cobrado se carga al entregar, pero el campo es plata: sólo entra con
+    // COSTOS. Ausente es "no tocar"; presente sin permiso se rechaza entero
+    // en vez de ignorarlo, para que nadie crea que quedó guardado.
+    let montoCobrado: Prisma.Decimal | null | undefined
+    if (datos.has('montoCobrado')) {
+      if (!puedeConSesion(sesion, 'COSTOS')) {
+        return { error: 'No tenés permiso para cargar lo cobrado.', aviso: null }
+      }
+      montoCobrado = aDecimalOpcional(texto(datos, 'montoCobrado'), 'lo cobrado')
+    }
     await cambiarEstado({
       tenantId: sesion.tenant.id,
       usuarioId: sesion.usuario.id,
       ordenId: texto(datos, 'ordenId'),
       hasta,
       nota: texto(datos, 'nota') || null,
+      montoCobrado,
     })
     revalidatePath('/servicio-tecnico')
     return { error: null, aviso: 'Listo, la orden se movió.' }
@@ -137,6 +148,31 @@ export async function anular(_e: EstadoServicio, datos: FormData): Promise<Estad
     })
     revalidatePath('/servicio-tecnico')
     return { error: null, aviso: 'Orden anulada.' }
+  } catch (e) {
+    return traducir(e)
+  }
+}
+
+/** Costo de repuestos y, si el formulario lo trae, lo cobrado. Detrás de
+ *  `COSTOS`: es la plata del negocio, no operación del mostrador. */
+export async function guardarPlataDeOrden(
+  _e: EstadoServicio,
+  datos: FormData,
+): Promise<EstadoServicio> {
+  const sesion = await exigirPermiso('COSTOS')
+  try {
+    await guardarPlata({
+      tenantId: sesion.tenant.id,
+      usuarioId: sesion.usuario.id,
+      ordenId: texto(datos, 'ordenId'),
+      // Vacío es null: borra el costo cargado.
+      costo: aDecimalOpcional(texto(datos, 'costo'), 'el costo'),
+      montoCobrado: datos.has('montoCobrado')
+        ? aDecimalOpcional(texto(datos, 'montoCobrado'), 'lo cobrado')
+        : undefined,
+    })
+    revalidatePath('/servicio-tecnico')
+    return { error: null, aviso: 'Listo, se guardó.' }
   } catch (e) {
     return traducir(e)
   }
