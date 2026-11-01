@@ -411,6 +411,31 @@ describe('PanelEstado: el paso de cobro al entregar (ganancia por orden)', () =>
     expect(html).not.toContain('montoCobrado')
   })
 
+  // Enter en la nota dispara el PRIMER submit del <form>. Con Entregado
+  // convertido en type="button", desde LISTO (['ENTREGADO', 'EN_REPARACION'])
+  // ese primer submit pasaba a ser "En reparación": Enter devolvía la orden
+  // al taller. Desde SIN_REPARACION (['ENTREGADO'] solo) no quedaba ningún
+  // submit y Enter mandaba el form sin `hasta`.
+  it('con cobro, el primer submit del form es uno deshabilitado sin transición: Enter no mueve la orden', () => {
+    for (const siguientes of [['ENTREGADO', 'EN_REPARACION'], ['ENTREGADO']] as const) {
+      const html = render([...siguientes], { precarga: '40.000,00' })
+      const form = html.slice(html.indexOf('<form'))
+      const primero = form.match(/<button[^>]*type="submit"[^>]*>/)?.[0]
+      expect(primero, `sin submit con ${siguientes}`).toBeDefined()
+      // ` disabled=""` el atributo, no la clase `disabled:opacity-50`.
+      expect(primero).toContain(' disabled=""')
+      expect(primero).not.toContain('name="hasta"')
+    }
+  })
+
+  it('sin cobro, el primer submit sigue siendo la primera transición (Enter entrega, como antes)', () => {
+    const html = render(['ENTREGADO', 'EN_REPARACION'], null)
+    const form = html.slice(html.indexOf('<form'))
+    const primero = form.match(/<button[^>]*type="submit"[^>]*>/)?.[0]
+    expect(primero).toContain('value="ENTREGADO"')
+    expect(primero).not.toContain(' disabled=""')
+  })
+
   it('con cobro pero sin Entregado entre las transiciones, no aparece el campo de cobro', () => {
     const html = render(['LISTO'], { precarga: '40.000,00' })
     expect(html).not.toContain('montoCobrado')

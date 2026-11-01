@@ -461,8 +461,9 @@ function BotonDeTransicion({
   principal: boolean
   disabled: boolean
   /** Con esto el botón no transiciona: abre un paso previo (el de cobro). Es
-   *  `type="button"` y sin `name`/`value`, así un Enter en la nota no entrega
-   *  salteándose la pregunta. */
+   *  `type="button"` y sin `name`/`value`. Ojo que eso cambia qué hace Enter
+   *  en la nota: ver el submit deshabilitado al principio del `<form>` de
+   *  `PanelEstado`. */
   alAbrir?: () => void
 }) {
   const { Icono } = ESTADO_VISUAL[hasta]
@@ -536,6 +537,7 @@ export function PanelEstado({
   // garantía) arranca con el paso cerrado, no heredado de la primera.
   const [cobrandoEn, setCobrandoEn] = useState<EstadoOrden | null>(null)
   const cobrando = cobro !== null && cobrandoEn === estado && siguientes.includes('ENTREGADO')
+  const entregadoAbreElPaso = cobro !== null && !cobrando && siguientes.includes('ENTREGADO')
 
   return (
     <div
@@ -577,6 +579,18 @@ export function PanelEstado({
 
       {siguientes.length > 0 ? (
         <form action={ejecutar} className="flex flex-col gap-3">
+          {/* Enter en la nota envía el form con su PRIMER submit. Con
+              "Entregado" convertido en el botón que abre el paso de cobro,
+              ese primer submit pasaba a ser otra transición —desde Listo,
+              "En reparación": Enter devolvía la orden al taller— o, si
+              Entregado era la única, no quedaba ninguno y el form viajaba
+              sin `hasta`. Un submit deshabilitado primero cancela el envío
+              implícito (así lo define HTML): con el paso cerrado, Enter no
+              hace nada. Con el paso abierto no hace falta, el único submit
+              es "Confirmar entrega". */}
+          {entregadoAbreElPaso ? (
+            <button type="submit" disabled hidden aria-hidden="true" tabIndex={-1} />
+          ) : null}
           <input type="hidden" name="ordenId" value={ordenId} />
           <span
             className="text-[10px] font-bold tracking-[1.2px]"
