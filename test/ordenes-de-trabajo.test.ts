@@ -643,6 +643,70 @@ describe('la plata de la orden', () => {
     expect((await fila(id)).monto_cobrado).toBeNull()
   })
 
+  async function entregadaCon(cobrado: string): Promise<string> {
+    const id = await ordenEn('LISTO')
+    await cambiarEstado({
+      tenantId,
+      usuarioId,
+      ordenId: id,
+      hasta: 'ENTREGADO',
+      montoCobrado: d(cobrado),
+    })
+    return id
+  }
+
+  it('guardarPlata en una entregada corrige costo y cobrado con UN evento que nombra los dos', async () => {
+    const id = await entregadaCon('40000')
+    const antes = (await eventos(id)).length
+    await guardarPlata({
+      tenantId,
+      usuarioId,
+      ordenId: id,
+      costo: d('28000'),
+      montoCobrado: d('45000'),
+    })
+
+    const o = await fila(id)
+    expect(Number(o.costo)).toBe(28000)
+    expect(Number(o.monto_cobrado)).toBe(45000)
+    const nuevos = (await eventos(id)).slice(antes)
+    expect(nuevos).toHaveLength(1)
+    expect(nuevos[0]).toMatchObject({
+      desde: 'ENTREGADO',
+      hasta: 'ENTREGADO',
+      nota: notaDePlata({ costo: [null, d('28000')], cobrado: [d('40000'), d('45000')] }),
+    })
+    expect(nuevos[0].nota).toContain(' · ')
+
+    // null es borrar lo cobrado, no "no tocar".
+    await guardarPlata({ tenantId, usuarioId, ordenId: id, costo: d('28000'), montoCobrado: null })
+    expect((await fila(id)).monto_cobrado).toBeNull()
+  })
+
+  it('guardarPlata en una reabierta por garantía guarda lo cobrado: ya pasó por Entregado', async () => {
+    const id = await entregadaCon('40000')
+    await cambiarEstado({ tenantId, usuarioId, ordenId: id, hasta: 'EN_REPARACION' })
+    expect((await fila(id)).entregada_en).not.toBeNull()
+    const antes = (await eventos(id)).length
+
+    await guardarPlata({
+      tenantId,
+      usuarioId,
+      ordenId: id,
+      costo: null,
+      montoCobrado: d('42000'),
+    })
+
+    expect(Number((await fila(id)).monto_cobrado)).toBe(42000)
+    const nuevos = (await eventos(id)).slice(antes)
+    expect(nuevos).toHaveLength(1)
+    expect(nuevos[0]).toMatchObject({
+      desde: 'EN_REPARACION',
+      hasta: 'EN_REPARACION',
+      nota: notaDePlata({ cobrado: [d('40000'), d('42000')] }),
+    })
+  })
+
   it('guardarPlata rechaza negativos, órdenes anuladas y órdenes de otro tenant', async () => {
     const id = await ordenEn('EN_REPARACION')
     await expect(

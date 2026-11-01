@@ -3838,6 +3838,17 @@ Y del producto:
     entrega va en un evento de plata aparte, en la misma transacción, no en la
     nota del cambio de estado.
 
+  **El backfill y el rollback.** La migración fecha toda orden que alguna vez
+  pasó a ENTREGADO con su última entrega, también las reabiertas por garantía:
+  la card y `guardarPlata` leen `entregadaEn !== null` como "ya pasó por
+  Entregado". Si un deploy rollbackea a una imagen anterior a esta después de
+  que corrió `migrate deploy`, las órdenes que entregue el código viejo quedan
+  sin `entregada_en` y desaparecen de todos los meses del chip Entregado (la
+  búsqueda las sigue encontrando). El arreglo es volver a correr el `UPDATE`
+  del bloque `BACKFILL` de la migración contra la base: es idempotente
+  (`entregada_en IS NULL`) y no pisa las fechas ya cargadas;
+  `test/plata-backfill.test.ts` lo corre dos veces.
+
   **Quedó afuera, a propósito**: repuestos que descuenten stock o una lista de
   repuestos por orden (el ciclo de repuestos con stock); generar una venta y
   cobrar por caja con `crearVentaDesde`, que sigue sin existir como código; los
