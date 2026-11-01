@@ -71,16 +71,25 @@ export function condicionesDeBusqueda(busqueda: string): Prisma.OrdenDeTrabajoWh
  *
  * Un chip SÍ acota, con o sin texto en el buscador: pedir "Listo" es pedir lo
  * que está listo y no anulado. Es una elección explícita, no un default.
+ *
+ * **Entregado, sin buscar, es de a un mes** (`rango`): las entregadas sólo
+ * crecen, y sin acotarlas el chip terminaría siendo el archivo entero del
+ * local. Buscando, el mes NO se aplica, por la misma razón de arriba: la
+ * entregada de hace un año tiene que poder encontrarse por su IMEI.
  */
 export function filtroDelTablero(
   busqueda: string,
   filtro: EstadoOrden | null,
+  rango?: { desde: Date; hasta: Date },
 ): Prisma.OrdenDeTrabajoWhereInput {
   const porTexto = busqueda ? { OR: condicionesDeBusqueda(busqueda) } : {}
   if (busqueda && filtro === null) return porTexto
+  const porMes =
+    filtro === 'ENTREGADO' && !busqueda && rango ? { entregadaEn: { gte: rango.desde, lt: rango.hasta } } : {}
   return {
     anuladaEn: null,
     estado: filtro ? { equals: filtro } : { in: [...ABIERTOS] },
     ...porTexto,
+    ...porMes,
   }
 }

@@ -24,6 +24,7 @@ import {
   ChipDeFiltroMovil,
   CeldaDeEstado,
   Listado,
+  SelectorDeMes,
 } from './page'
 
 describe('esEstado', () => {
@@ -422,6 +423,7 @@ const FILA_ORDEN: Parameters<typeof Listado>[0]['filas'][number] = {
   clienteTelefono: '11 5412-9087',
   fechaFormateada: '29/07/2026',
   antiguedadLabel: 'hace 23 días',
+  plata: null,
 }
 
 function renderListado(props: Partial<Parameters<typeof Listado>[0]> = {}) {
@@ -435,6 +437,7 @@ function renderListado(props: Partial<Parameters<typeof Listado>[0]> = {}) {
       filtro={null}
       buscandoEnTodas={false}
       busqueda=""
+      totales={null}
       {...props}
     />,
   )
@@ -683,5 +686,92 @@ describe('el listado pide y usa lo que la fila del rediseño necesita (Task 2 de
   it('el listado ya no usa <Table> de shadcn: el patrón grid + display:contents lo reemplazó', () => {
     expect(FUENTE).not.toMatch(/@\/components\/ui\/table/)
     expect(FUENTE).toContain('role="table"')
+  })
+})
+
+describe('las entregadas de un mes: plata y selector', () => {
+  const TOTALES = { cobrado: '$ 75.000', costo: '$ 45.000', ganancia: '$ 10.000', sinDatos: 0 }
+  const CON_PLATA = {
+    ...FILA_ORDEN,
+    estado: 'ENTREGADO' as const,
+    plata: { cobrado: '$ 40.000', costo: '$ 28.000', ganancia: '$ 12.000', falta: false },
+  }
+
+  it('con totales, dibuja las columnas de plata y la fila de totales', () => {
+    const html = renderListado({ filas: [CON_PLATA], filtro: 'ENTREGADO', totales: TOTALES })
+    for (const h of ['Cobrado', 'Costo', 'Ganancia']) expect(html).toMatch(new RegExp(`role="columnheader"[^>]*>${h}<`))
+    expect(html).toContain('$ 12.000')
+    expect(html).toContain('Total del mes')
+    expect(html).toContain('$ 75.000')
+    expect(html).toContain('$ 45.000')
+    expect(html).toContain('$ 10.000')
+    // En el teléfono, los tres montos en una línea secundaria.
+    expect(html).toContain('Cobró $ 40.000 · Costo $ 28.000 · Ganó $ 12.000')
+  })
+
+  it('cuenta las que no entran en la ganancia, en plural y en singular', () => {
+    expect(renderListado({ filas: [CON_PLATA], filtro: 'ENTREGADO', totales: { ...TOTALES, sinDatos: 3 } })).toContain(
+      '3 órdenes sin costo o cobrado no entran en la ganancia',
+    )
+    expect(renderListado({ filas: [CON_PLATA], filtro: 'ENTREGADO', totales: { ...TOTALES, sinDatos: 1 } })).toContain(
+      '1 orden sin costo o cobrado no entra en la ganancia',
+    )
+    expect(renderListado({ filas: [CON_PLATA], filtro: 'ENTREGADO', totales: TOTALES })).not.toContain(
+      'no entra',
+    )
+  })
+
+  it('sin totales, no hay columnas de plata', () => {
+    const html = renderListado({ filas: [CON_PLATA], filtro: 'ENTREGADO', totales: null })
+    expect(html).not.toContain('Ganancia')
+    expect(html).not.toContain('$ 12.000')
+  })
+
+  it('una fila a la que le falta un dato lleva la marca, y una completa no', () => {
+    const falta = { ...CON_PLATA, plata: { cobrado: '$ 20.000', costo: '—', ganancia: '—', falta: true } }
+    expect(renderListado({ filas: [falta], filtro: 'ENTREGADO', totales: TOTALES })).toContain('Faltan datos')
+    expect(renderListado({ filas: [CON_PLATA], filtro: 'ENTREGADO', totales: TOTALES })).not.toContain('Faltan datos')
+  })
+
+  it('hrefTablero lleva el mes cuando se le pasa', () => {
+    expect(hrefTablero({ busqueda: '', estado: 'ENTREGADO', mes: '2026-10' })).toBe(
+      '/servicio-tecnico?estado=ENTREGADO&mes=2026-10',
+    )
+  })
+
+  it('el selector en el mes en curso no deja ir al siguiente', () => {
+    const html = renderToStaticMarkup(<SelectorDeMes mes="2026-11" mesActual="2026-11" busqueda="" />)
+    expect(html).toContain('noviembre 2026')
+    expect(html).toContain('href="/servicio-tecnico?estado=ENTREGADO&amp;mes=2026-10"')
+    expect(html).not.toContain('mes=2026-12')
+    expect(html).not.toMatch(/<a[^>]*>›<\/a>/)
+  })
+
+  it('en un mes anterior, "›" lleva al siguiente', () => {
+    const html = renderToStaticMarkup(<SelectorDeMes mes="2026-09" mesActual="2026-11" busqueda="" />)
+    expect(html).toContain('septiembre 2026')
+    expect(html).toContain('href="/servicio-tecnico?estado=ENTREGADO&amp;mes=2026-10"')
+    expect(html).toContain('href="/servicio-tecnico?estado=ENTREGADO&amp;mes=2026-08"')
+  })
+
+  it('dentro de un mes, la paginación no lo pierde y el orden se anuncia por entrega', () => {
+    const html = renderListado({
+      filas: [CON_PLATA],
+      filtro: 'ENTREGADO',
+      mes: '2026-10',
+      total: 120,
+      paginas: 3,
+      totales: TOTALES,
+    })
+    expect(html).toContain('href="/servicio-tecnico?estado=ENTREGADO&amp;mes=2026-10&amp;p=2"')
+    expect(html).toContain('Ordenadas por entrega · la última primero')
+    expect(html).toContain('órdenes «Entregado» de octubre 2026')
+  })
+
+  it('el rótulo del pie nombra el mes', () => {
+    expect(rotuloDeRango(1, 4, 4, 'ENTREGADO', false, 'octubre 2026')).toBe(
+      '1–4 de 4 órdenes «Entregado» de octubre 2026',
+    )
+    expect(etiquetaDelConjunto('ENTREGADO', false, 1, 'octubre 2026')).toBe('orden «Entregado» de octubre 2026')
   })
 })

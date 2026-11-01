@@ -664,3 +664,83 @@ describe('la plata de la orden', () => {
     ).rejects.toMatchObject({ codigo: 'ORDEN_ANULADA' })
   })
 })
+
+describe('los totales del mes', () => {
+  // Tenant propio: cualquier entregada de los otros casos ensuciaría las sumas.
+  let tid: string
+  let uid: string
+  let cid: string
+
+  async function entregada(
+    cobrado: string | null,
+    costo: string | null,
+    entregadaEn: string,
+    extra: { anulada?: boolean; estado?: 'ENTREGADO' | 'LISTO' } = {},
+  ): Promise<void> {
+    const o = await crearOrden({ tenantId: tid, usuarioId: uid, clienteId: cid, ...equipo })
+    await owner.query(
+      `UPDATE ordenes_de_trabajo
+          SET estado = $2, monto_cobrado = $3, costo = $4, entregada_en = $5,
+              anulada_en = CASE WHEN $6 THEN now() ELSE NULL END
+        WHERE id = $1`,
+      [o.id, extra.estado ?? 'ENTREGADO', cobrado, costo, entregadaEn, extra.anulada ?? false],
+    )
+  }
+
+  beforeAll(async () => {
+    tid = await crearTenant(owner, `totales-${Date.now()}`)
+    const u = await owner.query(
+      `INSERT INTO users (id, tenant_id, nombre, email, rol, creado_en, actualizado_en)
+       VALUES (gen_random_uuid(), $1, 'Técnico', 'tot@ot.test', 'EMPLEADO', now(), now())
+       RETURNING id`,
+      [tid],
+    )
+    uid = u.rows[0].id
+    cid = (await crearCliente({ tenantId: tid, nombre: 'Ana', telefono: '3' })).id
+
+    await entregada('40000', '28000', '2026-10-15T15:00:00Z')
+    await entregada('10000', '15000', '2026-10-20T15:00:00Z')
+    await entregada('20000', null, '2026-10-25T15:00:00Z')
+    // Anulada: no es plata del mes, por grande que sea.
+    await entregada('100000', '1', '2026-10-10T15:00:00Z', { anulada: true })
+    // Reabierta: conserva entregadaEn pero ya no está entregada.
+    await entregada('999', '1', '2026-10-11T15:00:00Z', { estado: 'LISTO' })
+    // 22:30 del 31/10 en Buenos Aires: es octubre, aunque en UTC sea noviembre.
+    await entregada('5000', '2000', '2026-11-01T01:30:00Z')
+    // 00:30 del 1/11 en Buenos Aires: noviembre.
+    await entregada('7000', '3000', '2026-11-01T03:30:00Z')
+  })
+
+  it('suma lo cobrado y el costo que hay, y la ganancia sólo de las completas', async () => {
+    const { totalesDelMes } = await import('@/lib/ordenes-de-trabajo/totales')
+    const { prismaParaTenant } = await import('@/lib/tenant/prisma')
+    const { rangoDelMes } = await import('@/lib/ordenes-de-trabajo/mes')
+    const t = await totalesDelMes(prismaParaTenant(tid), rangoDelMes('2026-10'))
+    expect(t.cobrado.toString()).toBe('75000')
+    expect(t.costo.toString()).toBe('45000')
+    // 12000 − 5000 + 3000: la de 20000 sin costo no resta ni suma.
+    expect(t.ganancia.toString()).toBe('10000')
+    expect(t.sinDatos).toBe(1)
+  })
+
+  it('el mes siguiente sólo ve la suya', async () => {
+    const { totalesDelMes } = await import('@/lib/ordenes-de-trabajo/totales')
+    const { prismaParaTenant } = await import('@/lib/tenant/prisma')
+    const { rangoDelMes } = await import('@/lib/ordenes-de-trabajo/mes')
+    const t = await totalesDelMes(prismaParaTenant(tid), rangoDelMes('2026-11'))
+    expect(t.cobrado.toString()).toBe('7000')
+    expect(t.ganancia.toString()).toBe('4000')
+    expect(t.sinDatos).toBe(0)
+  })
+
+  it('un mes sin entregas da ceros, no null', async () => {
+    const { totalesDelMes } = await import('@/lib/ordenes-de-trabajo/totales')
+    const { prismaParaTenant } = await import('@/lib/tenant/prisma')
+    const { rangoDelMes } = await import('@/lib/ordenes-de-trabajo/mes')
+    const t = await totalesDelMes(prismaParaTenant(tid), rangoDelMes('2026-09'))
+    expect(t.cobrado.toString()).toBe('0')
+    expect(t.costo.toString()).toBe('0')
+    expect(t.ganancia.toString()).toBe('0')
+    expect(t.sinDatos).toBe(0)
+  })
+})
