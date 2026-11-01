@@ -1258,6 +1258,17 @@ model OrdenDeTrabajo {
   // En pesos. Un número, no un documento: alcanza para decirle un precio al
   // cliente y para que el estado PRESUPUESTADO signifique algo.
   montoEstimado Decimal? @map("monto_estimado") @db.Decimal(12, 2)
+  // Lo que le costó la reparación (repuestos), en pesos. null = nadie lo
+  // cargó, que NO es lo mismo que cero: sin dato no se calcula ganancia en
+  // vez de mostrar una ganancia inflada.
+  costo         Decimal? @map("costo") @db.Decimal(12, 2)
+  // Lo que efectivamente se cobró al entregar. Distinto de montoEstimado: el
+  // presupuesto es lo prometido, esto es lo que entró.
+  montoCobrado  Decimal? @map("monto_cobrado") @db.Decimal(12, 2)
+  // La ÚLTIMA vez que la orden pasó a ENTREGADO; la escribe cambiarEstado. No
+  // se borra al reabrir por garantía: la ganancia se atribuye al mes en que se
+  // cobró, y el tablero filtra Entregado por mes.
+  entregadaEn   DateTime? @map("entregada_en") @db.Timestamptz(3)
 
   // Anular es columna y no estado: como estado pisaría el estado anterior, y
   // se puede anular desde cualquier punto del ciclo. Misma forma que Venta.
@@ -1280,6 +1291,7 @@ model OrdenDeTrabajo {
   // El tablero filtra por estado y ordena por fecha: éste es su índice.
   @@index([tenantId, estado, creadoEn])
   @@index([tenantId, clienteId])
+  @@index([tenantId, estado, entregadaEn])
   @@map("ordenes_de_trabajo")
 }
 

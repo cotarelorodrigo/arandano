@@ -18,6 +18,10 @@ describe('el grafo de estados de una orden', () => {
   it('ningún estado transiciona a sí mismo', () => {
     // No es cosmético: la anulación se distingue de una transición porque
     // ninguna transición legal deja desde === hasta.
+    // Tampoco: `entregadaEn` y el cobro de la orden cuelgan de ese evento
+    // (desde !== ENTREGADO, hasta === ENTREGADO). Un lazo ENTREGADO ->
+    // ENTREGADO reescribiría la fecha de entrega y el monto cobrado sin que
+    // la orden haya cambiado de estado de verdad.
     for (const e of ESTADOS) {
       expect(TRANSICIONES[e], `${e} transiciona a sí mismo`).not.toContain(e)
     }

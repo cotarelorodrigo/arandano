@@ -230,6 +230,9 @@ erDiagram
     text danos_visibles "opcional"
     text diagnostico "opcional"
     decimal(12,2) monto_estimado "opcional"
+    decimal(12,2) costo "opcional"
+    decimal(12,2) monto_cobrado "opcional"
+    timestamptz(3) entregada_en "opcional"
     timestamptz(3) anulada_en "opcional"
     uuid anulada_por_id FK "opcional"
     timestamptz(3) creado_en
@@ -494,6 +497,7 @@ erDiagram
 - **movimientos_stock**: `movimientos_stock_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
 - **ordenes_de_trabajo**: `ordenes_de_trabajo_tenant_id_cliente_id_idx` sobre (`tenant_id`, `cliente_id`)
 - **ordenes_de_trabajo**: `ordenes_de_trabajo_tenant_id_estado_creado_en_idx` sobre (`tenant_id`, `estado`, `creado_en`)
+- **ordenes_de_trabajo**: `ordenes_de_trabajo_tenant_id_estado_entregada_en_idx` sobre (`tenant_id`, `estado`, `entregada_en`)
 - **pagos**: `pagos_tenant_id_moneda_creado_en_idx` sobre (`tenant_id`, `moneda`, `creado_en`)
 - **pagos**: `pagos_tenant_id_venta_id_idx` sobre (`tenant_id`, `venta_id`)
 - **pagos_archivados**: `pagos_archivados_tenant_id_edicion_id_idx` sobre (`tenant_id`, `edicion_id`)
