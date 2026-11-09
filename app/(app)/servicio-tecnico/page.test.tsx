@@ -709,6 +709,14 @@ describe('las entregadas de un mes: plata y selector', () => {
     expect(html).toContain('Cobró $ 40.000 · Costo $ 28.000 · Ganó $ 12.000')
   })
 
+  it('en el teléfono, la fila de totales separa los montos con "·" como las filas', () => {
+    const html = renderListado({ filas: [CON_PLATA], filtro: 'ENTREGADO', totales: TOTALES })
+    // Los rótulos son de teléfono (`lg:hidden`): el separador va adentro para
+    // que en escritorio, donde cada monto es su columna, no aparezca.
+    expect(html).toMatch(/lg:hidden">· Costo <\/span>\$ 45\.000/)
+    expect(html).toMatch(/lg:hidden">· Ganó <\/span>\$ 10\.000/)
+  })
+
   it('cuenta las que no entran en la ganancia, en plural y en singular', () => {
     expect(renderListado({ filas: [CON_PLATA], filtro: 'ENTREGADO', totales: { ...TOTALES, sinDatos: 3 } })).toContain(
       '3 órdenes sin costo o cobrado no entran en la ganancia',
@@ -745,6 +753,13 @@ describe('las entregadas de un mes: plata y selector', () => {
     expect(html).toContain('href="/servicio-tecnico?estado=ENTREGADO&amp;mes=2026-10"')
     expect(html).not.toContain('mes=2026-12')
     expect(html).not.toMatch(/<a[^>]*>›<\/a>/)
+  })
+
+  it('el "›" apagado se anuncia como link deshabilitado, con nombre', () => {
+    const html = renderToStaticMarkup(<SelectorDeMes mes="2026-11" mesActual="2026-11" busqueda="" />)
+    // Sin rol, aria-disabled no significa nada y el lector de pantalla lee un
+    // "›" suelto.
+    expect(html).toMatch(/<span[^>]*role="link"[^>]*aria-disabled="true"[^>]*aria-label="diciembre 2026: todavía no empezó"[^>]*>›<\/span>/)
   })
 
   it('en un mes anterior, "›" lleva al siguiente', () => {

@@ -3854,11 +3854,12 @@ Y del producto:
   cobrar por caja con `crearVentaDesde`, que sigue sin existir como código; los
   dólares.
 
-  **Queda pendiente, menor y conocido**: los separadores de miles de los totales
-  en el teléfono; el nombre accesible del "›" deshabilitado del selector de mes;
-  mirar a ojo el ancho de la grilla en escritorio con las columnas de plata; y
-  el abrir y cerrar del paso de cobro, que los tests cubren pero nadie clickeó
-  en un navegador.
+  **Queda pendiente, menor y conocido**: mirar a ojo el ancho de la grilla en
+  escritorio con las columnas de plata, y el abrir y cerrar del paso de cobro,
+  que los tests cubren pero nadie clickeó en un navegador. (Los separadores "·"
+  de la fila de totales en el teléfono y el nombre accesible del "›" apagado
+  del selector de mes se resolvieron el mismo 2026-11-01, después del deploy
+  de v1.35.0.)
 
   **Queda pendiente la verificación manual**, después del merge (`arandano-dev`
   monta `/root/arandano`, así que a ojo no se puede antes): entregar una orden

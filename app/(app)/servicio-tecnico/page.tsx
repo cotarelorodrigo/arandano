@@ -441,8 +441,12 @@ export function SelectorDeMes({ mes, mesActual, busqueda }: { mes: string; mesAc
       </Button>
       <span className="min-w-[130px] text-center text-sm font-semibold text-foreground">{nombreDelMes(mes)}</span>
       {mes >= mesActual ? (
+        // role="link": sin rol, aria-disabled no le dice nada a un lector de
+        // pantalla, que leería un "›" suelto. El nombre dice por qué no va.
         <span
+          role="link"
           aria-disabled="true"
+          aria-label={`${nombreDelMes(siguiente)}: todavía no empezó`}
           className={cn(flecha, 'flex items-center justify-center rounded-lg border border-input text-muted-foreground opacity-50')}
         >
           ›
@@ -853,11 +857,11 @@ export function Listado({
                   {totales.cobrado}
                 </div>
                 <div role="cell" className={totalDePlata}>
-                  <span className="text-[11px] font-normal text-muted-foreground lg:hidden">Costo </span>
+                  <span className="text-[11px] font-normal text-muted-foreground lg:hidden">· Costo </span>
                   {totales.costo}
                 </div>
                 <div role="cell" className={totalDePlata}>
-                  <span className="text-[11px] font-normal text-muted-foreground lg:hidden">Ganó </span>
+                  <span className="text-[11px] font-normal text-muted-foreground lg:hidden">· Ganó </span>
                   {totales.ganancia}
                 </div>
                 <div role="cell" className="hidden lg:block lg:bg-muted" />
