@@ -3871,6 +3871,40 @@ Y del producto:
   como empleado sin `COSTOS`: sin card, sin paso de cobro, sin columnas, y la
   bitácora sin montos. Todo a 1440 y a 390 px.
 
+- ~~El certificado del origen vencido: Caddy renovaba contra Hetzner y la zona
+  ya estaba en Cloudflare.~~ **Arreglado** (2026-11-10). Lo destapó el deploy de
+  los separadores del 2026-11-09: el paso 16 (`--resolve arandano.app` contra
+  las CA públicas) dio `certificate has expired` y disparó el rollback. El
+  wildcard de Let's Encrypt había vencido el **2026-11-08 a las 02:35 UTC**.
+  **La causa**: los nameservers de `arandano.app` se pasaron a Cloudflare
+  (intencional, decisión del dueño, hecha fuera del repo), y el `Caddyfile`
+  siguió con `dns hetzner`. Caddy escribía el TXT del desafío DNS-01 en una zona
+  que ya no era autoritativa, y cada intento terminaba en *"timed out waiting
+  for record to fully propagate"*. **Por qué ningún cliente lo vio**: el tráfico
+  pasa por el proxy de Cloudflare, que muestra su propio certificado, y el modo
+  SSL de entonces aceptaba el certificado vencido del origen. O sea que el
+  gate del deploy fue la única alarma, dos días tarde.
+
+  **Lo que cambió**: la imagen de Caddy se compila con `caddy-dns/cloudflare`
+  (`arandano-caddy:2.11.4-cloudflare`), el `Caddyfile` usa
+  `dns cloudflare {env.CLOUDFLARE_API_TOKEN}` con `resolvers 1.1.1.1` (sin el
+  `propagation_delay 30s`, que era por Hetzner), el compose de prod recibe
+  `CLOUDFLARE_API_TOKEN` en vez de `HETZNER_DNS_TOKEN`, y `verify-infra.sh
+  network`, el runbook y `CLAUDE.md` nombran a Cloudflare. El token está
+  acotado a la zona y filtrado por la IP del servidor (ver *Rotar el token de
+  Cloudflare* en `docs/runbook-stacks.md`). **No pasó por `deploy.sh`**: con el
+  certificado vencido, el paso 16 bloqueaba cualquier deploy, así que el cambio
+  de Caddy se aplicó con el procedimiento del runbook para el proxy (imagen con
+  `build-caddy.sh`, copiar `Caddyfile` y compose a `/srv/arandano/prod`,
+  recrear sólo Caddy), y el deploy normal vino después.
+
+  **Queda pendiente**: pasar Cloudflare a SSL "Full (strict)" una vez renovado,
+  para que un origen vencido sea un error visible y no algo que Cloudflare tapa;
+  revocar el token de Hetzner DNS, que ya no se usa; y un aviso de vencimiento
+  que no dependa de que alguien deploye (el uptime check externo que pide
+  *Observabilidad* no lo ve, porque mira el certificado del borde de
+  Cloudflare, no el del origen).
+
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

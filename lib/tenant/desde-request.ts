@@ -61,7 +61,7 @@ export async function tenantDelRequest(): Promise<ResolucionTenant> {
   //
   // No amplía la superficie de suplantación. Detrás de Caddy el header lo
   // escribe el proxy: PISA el que mande el cliente (medido con la imagen de
-  // producción, `arandano-caddy:2.11.4-hetzner`). Y donde no hay proxy —dev y
+  // producción, `arandano-caddy:2.11.4-hetzner`, antes del cambio a Cloudflare). Y donde no hay proxy —dev y
   // stage, sólo alcanzables por Tailscale— elegir tenant por `x-forwarded-host`
   // no da nada que no diera ya mandar el `Host`: pedir flor.arandano.app ES
   // elegir tenant, como dice el comentario de arriba. Lo que impide usar el
