@@ -14,7 +14,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 # EL ÚNICO LUGAR donde vive la versión. Alimenta los dos FROM del Dockerfile y
 # el tag de salida.
 readonly CADDY_VERSION=2.11.4
-readonly IMAGEN="arandano-caddy:${CADDY_VERSION}-hetzner"
+readonly IMAGEN="arandano-caddy:${CADDY_VERSION}-cloudflare"
 
 echo "buildeando $IMAGEN"
 
@@ -33,9 +33,9 @@ docker build \
 # `xcaddy build` que compila pero no registra el plugin produce una imagen que se
 # ve idéntica a una buena. La diferencia se descubriría al renovar, o sea 60 días
 # después y sin nadie mirando. Por eso se comprueba acá, contra el binario real.
-if ! docker run --rm "$IMAGEN" caddy list-modules | grep -q '^dns.providers.hetzner$'; then
-  echo "ERROR: $IMAGEN no trae dns.providers.hetzner; el wildcard no se va a poder emitir" >&2
+if ! docker run --rm "$IMAGEN" caddy list-modules | grep -q '^dns.providers.cloudflare$'; then
+  echo "ERROR: $IMAGEN no trae dns.providers.cloudflare; el wildcard no se va a poder emitir" >&2
   exit 1
 fi
 
-echo "listo: $IMAGEN, con dns.providers.hetzner"
+echo "listo: $IMAGEN, con dns.providers.cloudflare"

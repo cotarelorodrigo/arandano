@@ -624,15 +624,25 @@ propósito, para que rotar este token no lo ponga en rojo. El token de stage
 (`efimero-salud`) no se rota: vive en claro en `docker/compose.stage.yml` y en
 `scripts/deploy.sh` porque ese stack es efímero y nunca ve datos de clientes.
 
-### Rotar el token de Hetzner DNS
+### Rotar el token de Cloudflare
 
-`HETZNER_DNS_TOKEN` es con lo que Caddy resuelve el desafío DNS-01 que emite y
+`CLOUDFLARE_API_TOKEN` es con lo que Caddy resuelve el desafío DNS-01 que emite y
 **renueva** el wildcard `*.arandano.app`. Si queda inválido no pasa nada visible
-hasta que toque renovar; ahí el certificado vence y todo cliente ve un TLS roto.
+hasta que toque renovar; ahí el certificado del origen vence. Con Cloudflare en
+modo SSL "Full (strict)" eso es un 526 para todo cliente; en un modo más laxo
+Cloudflare lo tapa y el único que lo ve es el paso 16 de `deploy.sh`, que
+empieza a fallar todos los deploys — que fue exactamente cómo se descubrió el
+vencimiento del 2026-11-08.
 
-Ojo con el alcance: es un token de la **Cloud API de Hetzner**, que se emite a
-nivel de proyecto y **no se puede acotar a una zona**. Quien lo tenga puede
-tocar todo el DNS de la cuenta.
+El token se crea en Cloudflare (My Profile → API Tokens) con permiso
+**Zone → DNS → Edit** y **acotado a la zona `arandano.app`**: a diferencia del
+token de Hetzner que había antes, éste sí se puede limitar a una zona, y tiene
+que estarlo. Además lleva **filtro por IP de cliente: sólo `178.156.251.41`**. Es
+la IP con la que sale el contenedor de Caddy (medido el 2026-11-10: la red de
+`arandano-prod` no tiene IPv6, así que sale por la IPv4 del host aunque el host
+tenga IPv6). Si algún día esa red habilita IPv6, o el servidor cambia de IP, el
+token deja de funcionar y la renovación falla en silencio: sumar la nueva
+dirección al filtro en el mismo cambio.
 
 ```bash
 ENV=/srv/arandano/prod/.env
@@ -640,14 +650,14 @@ ENV=/srv/arandano/prod/.env
 # 0. El mismo guard que la rotación del token de salud, por el mismo motivo: un
 #    sed sobre un archivo sin esa línea es un no-op silencioso con salida 0, y
 #    los pasos siguientes "andarían" con el token viejo.
-grep -q '^HETZNER_DNS_TOKEN=' "$ENV" || {
-  echo "ERROR: $ENV no tiene una línea HETZNER_DNS_TOKEN=; agregarla a mano antes de rotar" >&2
+grep -q '^CLOUDFLARE_API_TOKEN=' "$ENV" || {
+  echo "ERROR: $ENV no tiene una línea CLOUDFLARE_API_TOKEN=; agregarla a mano antes de rotar" >&2
   exit 1
 }
 
-# 1. Generar el token nuevo en la consola de Hetzner (Security → API tokens,
-#    permisos de lectura y escritura) y reemplazar la línea. No se imprime.
-sed -i "s|^HETZNER_DNS_TOKEN=.*|HETZNER_DNS_TOKEN=EL_NUEVO|" "$ENV"
+# 1. Generar el token nuevo en Cloudflare (Zone → DNS → Edit, sólo la zona
+#    arandano.app) y reemplazar la línea. No se imprime.
+sed -i "s|^CLOUDFLARE_API_TOKEN=.*|CLOUDFLARE_API_TOKEN=EL_NUEVO|" "$ENV"
 
 # 2. Recrear Caddy: env_file se lee al arrancar el contenedor, no en caliente.
 ( cd /srv/arandano/prod && docker compose up -d --no-deps --force-recreate caddy )
@@ -671,8 +681,8 @@ sed -i "s|^HETZNER_DNS_TOKEN=.*|HETZNER_DNS_TOKEN=EL_NUEVO|" "$ENV"
 Caddy emite líneas `"level":"info"` que *contienen* un campo `error` explicando
 por qué crea la cuenta ACME. Filtrar por la palabra da un falso rojo.
 
-Y **borrá el token viejo en la consola de Hetzner**, no sólo del archivo: sacarlo
-del `.env` deja de usarlo, no lo invalida.
+Y **borrá el token viejo en Cloudflare**, no sólo del archivo: sacarlo del `.env`
+deja de usarlo, no lo invalida.
 
 ### Rebuildear la imagen de Caddy
 
@@ -682,7 +692,7 @@ tagearlo con el SHA de git diría un SHA que no tiene nada que ver con el proxy.
 
 ```bash
 # 1. Cambiar readonly CADDY_VERSION en scripts/build-caddy.sh
-# 2. Buildear (el script verifica solo que la imagen traiga dns.providers.hetzner)
+# 2. Buildear (el script verifica solo que la imagen traiga dns.providers.cloudflare)
 ./scripts/build-caddy.sh
 ```
 
@@ -691,11 +701,11 @@ tagearlo con el SHA de git diría un SHA que no tiene nada que ver con el proxy.
 `build-caddy.sh`, así que si difieren el deploy aborta — que es lo que se quiere,
 pero es una tarde perdida si te enterás en el paso 3 del gate.
 
-El `/v2` del módulo tampoco es opcional: `caddy-dns/hetzner` sin sufijo resuelve
-a la v1, que habla contra la API de Hetzner DNS que ya está de baja. Con la v1
-compilada adentro el build **sale bien** y el módulo aparece igual en
-`caddy list-modules` —el id del módulo no cambió entre versiones—, así que la
-imagen mala es indistinguible de la buena hasta que falla una emisión.
+**El módulo tiene que ser el del proveedor de los nameservers**, no el de donde
+corre el servidor. Si la zona vuelve a mudarse, este archivo, el `Caddyfile`, el
+compose y `verify-infra.sh network` cambian juntos y en el mismo momento que los
+NS: la mudanza de Hetzner a Cloudflare (2026-11) se hizo sólo del lado del DNS, y
+Caddy siguió escribiendo los TXT del desafío en una zona que ya nadie consultaba.
 
 ## El diagrama de la base
 
@@ -732,7 +742,9 @@ Desde el 2026-08-10 el `Caddyfile` de prod tiene **dos** site blocks, y la
 distinción importa cada vez que alguien diagnostica un problema de TLS:
 
 - `arandano.app, *.arandano.app` — el que ven los clientes. Certificado wildcard
-  de Let's Encrypt, emitido y renovado por DNS-01 contra Hetzner.
+  de Let's Encrypt, emitido y renovado por DNS-01 contra Cloudflare (hasta
+  2026-11, contra Hetzner). Delante está el proxy de Cloudflare: el cliente ve el
+  certificado del borde de Cloudflare, y Cloudflare ve éste.
 - `localhost:443` — con `tls internal`, o sea la CA **interna** de Caddy. Es por
   donde entra el poll del healthcheck de `deploy.sh` y `rollback.sh`, y se dejó a
   propósito: un gate que dependa del DNS público y de una CA pública se bloquea

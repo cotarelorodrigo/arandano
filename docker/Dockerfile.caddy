@@ -12,15 +12,14 @@ ARG CADDY_VERSION
 # patrón que documenta el propio proyecto de Caddy para compilar módulos.
 FROM caddy:${CADDY_VERSION}-builder AS builder
 
-# El `/v2` NO es opcional: `caddy-dns/hetzner` sin sufijo resuelve a v1.0.0, que
-# habla contra `dns.hetzner.com/api/v1` — la API vieja de Hetzner DNS, que ya
-# está de baja (hoy responde 301 hacia console.hetzner.com, nada útil). Con v1
-# compilado adentro, el síntoma no es un build que falla: es una emisión que
-# falla y parece un problema de token o de permisos, porque el módulo llama a
-# un endpoint que ya no contesta. La zona real y el token del dueño sólo
-# funcionan contra la API nueva (`api.hetzner.cloud/v1`), que es la que habla
-# `caddy-dns/hetzner/v2`.
-RUN xcaddy build --with github.com/caddy-dns/hetzner/v2
+# El módulo de DNS es el del proveedor que tiene la zona AUTORITATIVA, no el de
+# donde corre el servidor: DNS-01 escribe un TXT y Let's Encrypt lo busca en los
+# nameservers del dominio. Desde 2026-11 la zona de arandano.app vive en
+# Cloudflare (los NS son *.ns.cloudflare.com). Hasta entonces era Hetzner, y el
+# cambio de NS sin cambiar este módulo dejó a Caddy escribiendo TXT en una zona
+# que ya nadie consultaba: la renovación falló dos días en silencio y el
+# wildcard venció el 2026-11-08 (ver docs/contexto/proximos-pasos.md).
+RUN xcaddy build --with github.com/caddy-dns/cloudflare
 
 # El runtime tiene que ser la MISMA versión que el builder. Un binario compilado
 # contra una y corriendo sobre otra arranca y falla de formas raras.

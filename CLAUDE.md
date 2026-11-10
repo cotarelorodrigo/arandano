@@ -79,7 +79,7 @@ flowchart TD
 | Tiempo real (bandeja del bot) | **Socket.io / ws** sobre el servidor Node custom | Posible porque el deploy es un VPS propio, no serverless |
 | Integración WhatsApp / Instagram | **Meta Cloud API oficial** (Tech Provider), llamada HTTP directa | Vía oficial, evita riesgo de baneo de número |
 | Facturación ARCA | **afip.js**, aislado detrás de una interfaz propia (`billing/emitirFactura()`) | Es la opción disponible en Node pero menos madura que el equivalente Python (pyafipws); aislarla permite reemplazarla por un microservicio si falla en producción |
-| Reverse proxy / TLS | **Caddy** con certificado wildcard `*.arandano.app` vía DNS-01 | TLS automático sin gestionar certificados a mano |
+| Reverse proxy / TLS | **Caddy** con certificado wildcard `*.arandano.app` vía DNS-01 contra **Cloudflare**, que tiene la zona y además proxea el tráfico | TLS automático sin gestionar certificados a mano. El módulo de DNS de Caddy tiene que ser el del proveedor de los nameservers: cuando la zona pasó de Hetzner a Cloudflare sin cambiarlo, la renovación falló en silencio y el certificado del origen venció (2026-11-08) |
 | Servidor | **1 VPS en Hetzner** — `ngfacil-ubuntu-8gb-ash-1`, 2 vCPU / 8 GB, Ubuntu 26.04, Ashburn (`178.156.251.41`) | Suficiente para cientos de tenants con este volumen de uso; no se justifica multi-servidor todavía. Con sólo 2 vCPU, los límites de recursos entre dev y prod son obligatorios (ver *Entorno de trabajo*) |
 | Acceso a entornos internos | **Tailscale** (ya instalado y en uso) | Permite exponer el stack de desarrollo sin abrirlo a internet: dev escucha únicamente en la IP de Tailscale del servidor |
 | Orquestación | **Docker Compose** (Next.js + Postgres + Caddy) | Simplicidad operativa para un solo servidor |
