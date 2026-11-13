@@ -478,6 +478,7 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | **Número de paginación** — /servicio-tecnico | Archivo | 13 px | 600 |
 | **Número de orden** — columna ORDEN del listado de /servicio-tecnico | Archivo | 14 px en los dos anchos | 700 |
 | **Conteo de chip** — chips de filtro del tablero de /servicio-tecnico | Archivo | 12 px en la pastilla de escritorio; 17 px en la card de la grilla del teléfono, donde el conteo pasa a ser el dato principal y el rótulo baja a 10 px | 700 en escritorio; 600 en el teléfono |
+| **Número de paso** — los tres pasos del diálogo "Instalar en tu iPhone", adentro de su círculo de 22 px en `--accent` | Archivo | 12 px en los dos anchos | 700, `--primary` |
 | **H1 de login** — título "Entrar" del formulario | Archivo | 26 px en el teléfono, 28 px en escritorio | 600 |
 | **H1 del Hero** — "Todo el local en un solo lugar", landing | Archivo | 36 px en el teléfono, 62 px en escritorio | 600 sin tracking en el teléfono; 700 y tracking -2 px en escritorio; `font-stretch: 78%` |
 | **Título de sección** — H2 compartido por Módulos, Rubros y Planes, landing | Archivo | 26 px en el teléfono, 38 px en escritorio | 600 sin tracking en el teléfono; 700 y tracking -1 px en escritorio |

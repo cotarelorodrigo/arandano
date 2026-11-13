@@ -695,6 +695,12 @@ no como la tabla que scrollea de costado que el código tiene hoy. O sea que el
 rediseño de teléfono de esta pantalla **ya tiene contra qué construirse**: deja
 de ser deuda sin referencia y pasa a ser trabajo pendiente del código.
 
+**Construido el 2026-11-13** (`TarjetasDePlanes`, en
+`app/(app)/formas-de-pago/formularios.tsx`): en el teléfono cada plan es una
+tarjeta y la tabla se monta sólo de `lg` para arriba. "Cómo se usa esto" toma
+la forma de `NL4Vo`: encabezado propio y la tercera ayuda dice "Bajo cada
+plan…" en vez de "La columna de la derecha…".
+
 El texto original queda abajo como registro de qué se pidió.
 
 - **Frame**: ninguno. `design/arandano.pen` es anterior a los planes de pago
@@ -896,7 +902,10 @@ Cierra también la entrada 38.
   real (`Gmg0q`), que era lo que la entrada 38 pedía decidir: la pastilla
   "Todos" se pinta con el par `--warn`/`--warn-soft` y la leyenda pasa a
   `--foreground` en semibold. Hoy el código sólo cambia la leyenda, sin color:
-  **la maqueta propone sumarle el ámbar a la pastilla**.
+  **la maqueta propone sumarle el ámbar a la pastilla**. **Construido el
+  2026-11-13** (`clasesDePastilla`, en `app/(app)/bot/formularios.tsx`): con la
+  confirmación armada, «Todos» va en `--warn`/`--warn-soft` y la pastilla del
+  modo actual conserva el fondo pero apaga el texto, como en `Gmg0q`.
 
 **En git desde el 2026-11-13**, con el guardado del `.pen` desde Pencil.
 
@@ -1247,7 +1256,9 @@ justo la que no entraba.
   círculo de 22 px en `--primary-soft` con el número, el ícono `share` sólo en
   el paso que lo nombra, y el texto al lado. Hoy el código usa un `<ol>` sin
   números visibles —el ícono del primer paso es lo único que marca la línea—:
-  **la maqueta propone numerarlos**.
+  **la maqueta propone numerarlos**. **Construido el 2026-11-13** (`PasosDeIos`,
+  en `components/shell/instalar.tsx`), con el rol "Número de paso" sumado a la
+  escala de `docs/sistema-de-diseno.md`.
 - **El ícono del local** en sus tres variantes (192 any, 512 any, 512
   maskable), con la inicial sobre `--marca-deep` y la nota de por qué la misma
   imagen sirve para las dos.
@@ -1776,7 +1787,10 @@ y diagnóstico'"—.
 `lg:grid-cols-[78px_1fr_190px_150px_110px_110px_110px_170px]` la columna
 Equipo queda en ~92 px a 1440 y el modelo se parte en tres renglones. La
 maqueta propone **Cliente 160, Ingresó 118, las tres de plata 104 y Estado
-148**, que le devuelven ~172 px a Equipo sin tocar nada más.
+148**, que le devuelven ~172 px a Equipo sin tocar nada más. **Construido el
+2026-11-13**: la grilla con plata es
+`lg:grid-cols-[78px_1fr_160px_118px_104px_104px_104px_148px]`, y a 1440 px
+Equipo mide 326 px.
 
 **En git desde el 2026-11-13**, con el guardado del `.pen` desde Pencil.
 

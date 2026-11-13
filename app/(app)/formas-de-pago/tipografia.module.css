@@ -5,11 +5,14 @@
  * un ancho propio al eje `wdth` — se queda en el 100% por default.
  * test/tipografia.test.ts lo cuida con el mismo mecanismo que esos módulos.
  *
- * `design/arandano.pen` no dibuja esta pantalla (queda anotado en
- * docs/correcciones-pendientes-del-pen.md), así que el tratamiento no sale de
- * un nodo de la maqueta sino del rol "Título de card" que las otras cinco
- * pantallas ya comparten: una card estructuralmente igual a "El equipo del
- * local" con otra tipografía se leería como un accidente.
+ * El tratamiento nació del rol "Título de card" que las otras pantallas ya
+ * compartían, cuando `design/arandano.pen` todavía no dibujaba ésta. Hoy la
+ * dibujan `App / Formas de pago` (`E3iYW`, nodo `wjyR1`: 15 px, 600) y
+ * `Móvil / Formas de pago` (`NL4Vo`, nodo `yqbGE`: 14 px). Ese 14 del teléfono
+ * se repite en todos los frames `Móvil /` y ningún módulo lo sigue: es una
+ * diferencia de toda la escala, no de esta pantalla.
+ * La card "Cómo se usa esto" reusa esta clase en el teléfono, donde la maqueta
+ * le da el mismo encabezado que a "Los planes del local".
  *
  * POR QUÉ UN MÓDULO CSS Y NO `style={{ fontFamily: 'var(--font-archivo)' }}`
  * A MANO: evadiría la vigilancia de test/tipografia.test.ts, que sólo

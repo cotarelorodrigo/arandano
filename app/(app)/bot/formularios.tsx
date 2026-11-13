@@ -261,6 +261,30 @@ const ETIQUETA_DEL_MODO: Record<Modo, string> = {
   TODOS: 'Todos',
 }
 
+const PASTILLA = 'flex-1 rounded-lg text-xs font-medium text-muted-foreground data-[state=on]:bg-card'
+
+/**
+ * Las clases de cada pastilla del segmentado.
+ *
+ * En reposo (`OiQLY`, nodo `DE1zR`) la elegida va en card y en semibold. Con la
+ * confirmación de «Todos» armada (variante `Gmg0q`), «Todos» se pinta con el
+ * par `--warn`/`--warn-soft` y la del modo actual conserva el fondo pero apaga
+ * el texto: la atención va a la pastilla que pide el segundo toque, que es la
+ * que manda el bot a clientes reales. La leyenda de abajo ya cambiaba; el color
+ * es lo que la maqueta le suma.
+ *
+ * El `hover:` del ámbar repite el fondo a propósito: el `Toggle` trae
+ * `hover:bg-muted hover:text-foreground`, que le sacaría el color justo
+ * mientras el puntero está encima.
+ */
+export function clasesDePastilla(pastilla: Modo, armadoTodos: boolean): string {
+  if (!armadoTodos) return cn(PASTILLA, 'data-[state=on]:font-semibold data-[state=on]:text-foreground')
+  if (pastilla === 'TODOS') {
+    return cn(PASTILLA, 'bg-warn-soft font-semibold text-warn hover:bg-warn-soft hover:text-warn')
+  }
+  return PASTILLA
+}
+
 /**
  * A quién le contesta el bot: nadie, sólo los números de prueba, o todos.
  *
@@ -332,11 +356,7 @@ function ModoDelBot({ vista }: { vista: VistaDelBot }) {
         className="w-full gap-0.5 rounded-[10px] bg-muted p-[3px]"
       >
         {MODOS.map((m) => (
-          <ToggleGroupItem
-            key={m}
-            value={m}
-            className="flex-1 rounded-lg text-xs font-medium text-muted-foreground data-[state=on]:bg-card data-[state=on]:font-semibold data-[state=on]:text-foreground"
-          >
+          <ToggleGroupItem key={m} value={m} className={clasesDePastilla(m, armadoTodos)}>
             {ETIQUETA_DEL_MODO[m]}
           </ToggleGroupItem>
         ))}
