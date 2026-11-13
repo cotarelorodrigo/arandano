@@ -4,6 +4,7 @@ import { Hero } from './hero'
 import { Nav, Pie } from './nav'
 import { BarraDeProgreso, ProveedorDeMovimiento } from './movimiento'
 import { Modulos, Rubros, Planes, Cierre } from './secciones'
+import { Video } from './video'
 
 /**
  * El sitio público del ápex.
@@ -17,16 +18,18 @@ import { Modulos, Rubros, Planes, Cierre } from './secciones'
  * componente es probable sin tocar process.env, y el único lugar que sabe de
  * dónde salen esos valores es la página.
  *
- * SIETE SECCIONES, y desde el rediseño son siete de verdad: Nav, Hero,
- * Módulos, Rubros, Planes, Cierre y Pie. La octava —`Muestra`, la copia del
- * carrito para el teléfono que el ciclo móvil había sumado entre Hero y
- * Módulos— se fue: `Retrato` sirve ahora los dos anchos desde un solo árbol,
- * así que ya no hay dos versiones del mismo carrito que mantener sincronizadas
- * ni el mismo dato renderizado dos veces en el DOM de cada request.
+ * OCHO SECCIONES: Nav, Hero, Video, Módulos, Rubros, Planes, Cierre y Pie. El
+ * rediseño las había dejado en siete al sacar `Muestra` —la copia del carrito
+ * para el teléfono que el ciclo móvil había sumado entre Hero y Módulos—:
+ * `Retrato` sirve ahora los dos anchos desde un solo árbol, así que ya no hay
+ * dos versiones del mismo carrito que mantener sincronizadas ni el mismo dato
+ * renderizado dos veces en el DOM de cada request. La octava de hoy es otra:
+ * el Video, que la maqueta dibujó el 2026-11-02 en ese mismo lugar.
  *
- * Las secciones se reparten en cuatro archivos y no en uno solo de 764 líneas:
- * `./nav` (el marco), `./hero`, `./secciones` (las cuatro de contenido) y
- * `./base` (lo que comparten). El contenido en sí —qué módulos, qué rubros,
+ * Las secciones se reparten en cinco archivos y no en uno solo de 764 líneas:
+ * `./nav` (el marco), `./hero`, `./video` (con su reproductor en
+ * `./reproductor`), `./secciones` (las cuatro de contenido) y `./base` (lo que
+ * comparten). El contenido en sí —qué módulos, qué rubros,
  * qué planes— vive en `./datos`, aparte del marcado.
  */
 export function Landing({ base, whatsapp }: { base: BaseDeTenant; whatsapp: string }) {
@@ -44,6 +47,7 @@ export function Landing({ base, whatsapp }: { base: BaseDeTenant; whatsapp: stri
 
         <main>
           <Hero whatsapp={whatsapp} />
+          <Video />
           <Modulos />
           <Rubros />
           <Planes />

@@ -1,6 +1,6 @@
 import {
-  CalendarClock, Car, Coffee, Dog, Hammer, HeartPulse, Leaf, Scissors,
-  Shirt, Smartphone, Stethoscope, Store, Utensils, Wrench, Zap,
+  Bot, CalendarClock, Car, Coffee, Dog, Hammer, HeartPulse, Leaf, Scissors,
+  Shirt, ShoppingCart, Smartphone, Stethoscope, Store, Utensils, Wallet, Wrench, Zap,
 } from 'lucide-react'
 
 /**
@@ -199,3 +199,42 @@ export const PLANES: Plan[] = [
   },
 ]
 
+
+/**
+ * El video de presentación de la sección Video (`f3fZZ` en escritorio,
+ * `EcZt5` en el teléfono).
+ *
+ * `segundos` no es decorativo: lo usan el H2, el chip de duración y el
+ * `aria-label` del botón, y `app/sitio/video.test.tsx` lo compara con la
+ * duración que trae el propio archivo. Si el video cambia, el test avisa
+ * antes de que el copy prometa un largo que no tiene.
+ *
+ * El archivo se sirve desde `public/` y no desde YouTube o Vimeo: un embed
+ * mete scripts de terceros en la única página que indexamos, y con
+ * `preload="none"` el `.mp4` propio no baja un byte hasta el click.
+ */
+export const VIDEO = {
+  src: '/video/presentacion.mp4',
+  poster: '/video/poster.png',
+  segundos: 36,
+} as const
+
+/**
+ * Los cuatro tramos del video, con el segundo donde empieza cada uno.
+ *
+ * NO SON LOS DE LA MAQUETA. El `.pen` dibuja "Vender · 0:12", "Servicio
+ * técnico · 0:48", "Cierre de caja · 1:30" y "Bot de WhatsApp · 1:42" para un
+ * video de 2:04 que no existe: el que hay dura 36 segundos y no muestra ni
+ * servicio técnico ni cierre de caja. Estos son los tramos que el video sí
+ * tiene, medidos cuadro a cuadro.
+ *
+ * `desde` es el arranque de la transición de entrada, no el segundo redondo
+ * que dice la etiqueta: saltar a 8.0 muestra medio segundo de la placa
+ * anterior. La etiqueta redondea (`etiquetaDeTiempo`).
+ */
+export const CAPITULOS: { icono: typeof Wrench; titulo: string; desde: number }[] = [
+  { icono: ShoppingCart, titulo: 'Vender', desde: 8.4 },
+  { icono: Wallet, titulo: 'Cobrar y facturar', desde: 14.9 },
+  { icono: Bot, titulo: 'Bot de WhatsApp', desde: 19.9 },
+  { icono: Store, titulo: 'Tu rubro', desde: 25.9 },
+]

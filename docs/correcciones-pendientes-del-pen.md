@@ -1800,6 +1800,58 @@ ganancia por orden (2026-11-02). Ver
 
 ---
 
+## 44. `Sitio / Landing` · Video: el copy describe un video de 2:04 que no existe, y la sección quedó pegada al Hero
+
+- **Frames**: `f3fZZ` (sección `Video` de `Sitio / Landing`) y `EcZt5` (la de
+  `Móvil / Sitio · Landing`), más el link "Video" del Nav (`iVm13`).
+
+**El copy.** La maqueta se dibujó el 2026-11-02, antes de que el video
+estuviera: dice "Mirá cómo funciona, en 2 minutos", un chip de "2:04 · con
+subtítulos, sin audio obligatorio", una bajada sobre "una orden de servicio
+técnico y el cierre de caja" y cuatro capítulos —Vender 0:12, Servicio técnico
+0:48, Cierre de caja 1:30, Bot de WhatsApp 1:42— con íconos `shopping-cart`,
+`wrench`, `wallet` y `bot`. El video real (`public/video/presentacion.mp4`)
+dura **36 segundos**, no tiene pista de audio, el texto está escrito en la
+imagen y no muestra ni servicio técnico ni cierre de caja. El código
+(`app/sitio/video.tsx`, `app/sitio/reproductor.tsx`) dice lo que el video
+tiene:
+
+| Pieza | `.pen` | Código |
+|---|---|---|
+| H2 | Mirá cómo funciona, en 2 minutos | Mirá cómo funciona, en 36 segundos |
+| Bajada de escritorio | Una venta completa, una orden de servicio técnico y el cierre de caja, de punta a punta. Sin registrarte y sin dejar un dato. | Una venta que descuenta el stock, el cobro con factura ARCA, la caja en pesos y dólares y el bot de WhatsApp, de punta a punta. Sin registrarte y sin dejar un dato. |
+| Bajada del teléfono | Una venta, una orden de servicio técnico y el cierre de caja, de punta a punta. | Una venta, el cobro con factura ARCA y el bot de WhatsApp, de punta a punta. |
+| Chip de escritorio | 2:04 · con subtítulos, sin audio obligatorio | 0:36 · sin audio, todo se lee en pantalla |
+| Chip del teléfono | 2:04 · con subtítulos | 0:36 · sin audio |
+| Capítulos | Vender · 0:12, Servicio técnico · 0:48, Cierre de caja · 1:30, Bot de WhatsApp · 1:42 | Vender · 0:08, Cobrar y facturar · 0:15, Bot de WhatsApp · 0:20, Tu rubro · 0:26 |
+| Íconos de capítulo | `shopping-cart`, `wrench`, `wallet`, `bot` | `shopping-cart`, `wallet`, `bot`, `store` |
+
+La geometría, los colores y la estructura son los de los dos frames. El único
+color que no es exacto es el de la bajada y los íconos de capítulo: la maqueta
+usa el hex suelto `#C9BEE8`, que no es ninguna variable, y el código usa
+`--marca-soft` (`#B6A6E8`), el token de la bajada del Cierre.
+
+**El lugar.** En la maqueta, entre el Hero y el Video va la banda "Prueba"
+("Alta instantánea", `rWQZy`); el rediseño de la landing la sacó (entrada 35),
+así que en el código el Video queda pegado al Hero y su franja de `--marca`
+queda al lado de la banda del Total del carrito. `docs/sistema-de-diseno.md`
+(*El arándano como superficie*) lo acepta y explica por qué, pero es una
+decisión que la maqueta no tomó: cuando se redibuje la landing contra el
+código, conviene que el dueño la mire.
+
+**El Nav.** La maqueta tiene cinco links —Qué hace, Video, Rubros, Bot,
+Precios— y el código cuatro: no hay sección Bot en la landing de hoy.
+
+**El copy de la columna "Código" lo confirmó el dueño del producto el
+2026-11-13**: es el que manda, y la maqueta es la que se pone al día.
+
+Qué haría falta: los textos de la tabla en los dos frames, el ícono `store` en
+el cuarto capítulo y, al redibujar la landing, el Video después del Hero.
+
+Detectado al construir la sección Video (2026-11-13).
+
+---
+
 ## Cómo agregar una entrada
 
 Cuando un ciclo decida que la maqueta se equivocó, la entrada va acá **y** en el

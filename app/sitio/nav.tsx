@@ -12,8 +12,12 @@ import tipografia from './tipografia.module.css'
  * contenido.
  */
 
+// En el orden del `.pen` (g3oxH), que pone "Video" segundo aunque la sección
+// vaya arriba de Módulos. El "Bot" de la maqueta no está: la landing de hoy no
+// tiene esa sección (entrada 35 de docs/correcciones-pendientes-del-pen.md).
 const LINKS_DE_SECCION: { href: string; texto: string }[] = [
   { href: '#que-hace', texto: 'Qué hace' },
+  { href: '#video', texto: 'Video' },
   { href: '#rubros', texto: 'Rubros' },
   { href: '#precios', texto: 'Precios' },
 ]

@@ -93,6 +93,7 @@ sistema— y no el dato que cada pantalla en particular existe para mostrar.
 | Bloque de stock en la ficha de un artículo | Cuánto hay |
 | Estado actual en la ficha de una orden | En qué anda el equipo |
 | Banda del total del carrito del héroe, landing (`app/sitio/retrato.tsx`) | El importe que se dice en voz alta, otra vez — es el mismo dato y el mismo rol que en `/vender` |
+| Franja del video, landing (`app/sitio/video.module.css`) | El video de presentación — la sección existe para él, y una imagen en movimiento se mira en una sala oscura |
 | Banda de la diferencia en `/plan-canje` (`app/(app)/plan-canje/calculadora.tsx`) | Lo que el cliente pone encima de su usado — otro importe que se dice en voz alta en el mostrador, con el mismo markup y el mismo rol tipográfico que la banda del total de `/vender` |
 
 **Y eso reescribe "no se usa dos veces en la misma vista", sin aflojarlo.** La
@@ -123,6 +124,25 @@ carrito del héroe** —que ancla la plata, exactamente el mismo rol que en
 `/vender`, y encima ahora es un número que se mueve cuando alguien toca el
 carrito— y la **franja del Cierre**, que ancla la conversión. Están separadas
 por tres secciones enteras, así que no compiten por ninguna mirada.
+
+**Y la sección Video (2026-11-13) sumó una tercera**, la franja que envuelve al
+reproductor (`f3fZZ` / `EcZt5`). No la decidió el código: la dibujó el dueño
+del producto en la maqueta, y el `.pen` manda. Cumple la mitad de la regla que
+importa —ancla algo propio de su sección, el video, que es la única razón por
+la que la sección existe— y estira la otra: **queda pegada al Hero**, que lleva
+la banda del Total adentro del carrito. En la maqueta no lo estaba, porque
+entre los dos iba la banda "Prueba" ("Alta instantánea"), y el rediseño de la
+landing la sacó por prometer un alta que no es instantánea (entrada 35 de
+`docs/correcciones-pendientes-del-pen.md`).
+
+Se acepta porque las dos superficies no son del mismo tamaño ni compiten por
+lo mismo: la del Hero es una banda de una card, abajo a la derecha, alrededor
+de un número; la del Video es la sección entera. Lo que la regla sigue
+prohibiendo, sin excepción, es **dos franjas de sección seguidas** —como
+Planes y Cierre antes del rediseño—, y eso ahora lo vigila un test
+(`app/sitio/landing.test.tsx`, "ninguna franja de marca queda pegada a otra").
+Si la maqueta redibuja la landing contra el código, el lugar del Video es una
+pregunta abierta para el dueño (entrada 44).
 
 Lo que perdieron Núcleo y Profesional no se reemplazó por otro color sino por
 estructura: el núcleo se distingue por FORMA —una banda a todo el ancho contra
@@ -446,6 +466,14 @@ letra por letra, con el mismo `components/importe.module.css` que
 pantalla con su propia decisión tipográfica. Con los siete de la landing son
 **veintidós** los roles que Archivo cubre en total.
 
+**La sección Video (2026-11-13) le suma un octavo rol a la landing**: su H2,
+26 px en el teléfono y 38 en escritorio, 700 en los dos anchos y sin tracking.
+Parece el título de sección y no lo es: la maqueta (`KgQXc`, `wWWmm`) no le da
+el -1 px de escritorio ni lo baja a 600 en el teléfono, así que no usa
+`TituloDeSeccion` y tiene su propia fila en la escala. El total de arriba no se
+actualiza acá: es el número de aquel ciclo, y otros ciclos ya sumaron roles
+después.
+
 `--font-heading: var(--font-sans)`: los demás títulos —los que no son ninguno
 de los veintidós roles ya contados— usan la misma familia.
 
@@ -483,6 +511,7 @@ roles es señal de que falta una decisión, no de que falte un tamaño.
 | **H1 del Hero** — "Todo el local en un solo lugar", landing | Archivo | 36 px en el teléfono, 62 px en escritorio | 600 sin tracking en el teléfono; 700 y tracking -2 px en escritorio; `font-stretch: 78%` |
 | **Título de sección** — H2 compartido por Módulos, Rubros y Planes, landing | Archivo | 26 px en el teléfono, 38 px en escritorio | 600 sin tracking en el teléfono; 700 y tracking -1 px en escritorio |
 | **H2 del Cierre** — "El alta es instantánea", landing | Archivo | 28 px en el teléfono, 44 px en escritorio | 600 sin tracking en el teléfono; 700 y tracking -1.4 px en escritorio |
+| **H2 del Video** — "Mirá cómo funciona, en 36 segundos", landing, sobre la franja de `--marca` | Archivo | 26 px en el teléfono, 38 px en escritorio | 700 en los dos anchos, sin tracking — no es el Título de sección: la maqueta (`KgQXc`, `wWWmm`) no le da el -1 px ni baja a 600 en el teléfono |
 | **Marca del Nav** — "Arándano", landing | Archivo | 16 px en el teléfono, 17 px en escritorio | 600 en el teléfono, 700 en escritorio |
 | **Título de la card Núcleo** — landing | Archivo | 17 px en el teléfono, 20 px (`text-xl`) en escritorio | 600 |
 | **Título de card de módulo** — Órdenes de trabajo / Turnos / Gastronomía, landing | Archivo | 19 px | 600 |

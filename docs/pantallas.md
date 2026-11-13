@@ -32,15 +32,17 @@ Rediseñada entera en el ciclo de la landing (2026-09-04). El ciclo anterior
 landing). El motivo son tres problemas nombrados: se veía genérica, no
 convertía, y describía un producto de hace un mes.
 
-Las siete secciones viven ahora en cuatro archivos —`app/sitio/nav.tsx` (el
-marco), `hero.tsx`, `secciones.tsx` (Módulos, Rubros, Planes, Cierre) y
-`base.tsx` (lo compartido)— y el contenido en `datos.ts`, aparte del marcado.
+Las ocho secciones viven ahora en cinco archivos —`app/sitio/nav.tsx` (el
+marco), `hero.tsx`, `video.tsx` (con el reproductor en `reproductor.tsx`),
+`secciones.tsx` (Módulos, Rubros, Planes, Cierre) y `base.tsx` (lo
+compartido)— y el contenido en `datos.ts`, aparte del marcado.
 
 **Qué se puede hacer**
 
-- En `arandano.app`: leer qué es el producto —siete secciones: Nav, Hero,
-  Módulos, Rubros, Planes, Cierre, Pie—, **operar el punto de venta del
-  héroe**, y dejar un contacto (WhatsApp o mail, un solo campo). "Entrar a mi
+- En `arandano.app`: leer qué es el producto —ocho secciones: Nav, Hero,
+  Video, Módulos, Rubros, Planes, Cierre, Pie—, **operar el punto de venta del
+  héroe**, **mirar el video de presentación** (36 segundos, sin audio, con
+  cuatro capítulos que saltan adentro del mismo reproductor), y dejar un contacto (WhatsApp o mail, un solo campo). "Entrar a mi
   local" (Nav) revela un campo de subdominio para quien ya es cliente y se
   olvidó de su dirección.
 - **Operar el carrito** quiere decir operarlo: subir y bajar cantidades, sacar
@@ -153,6 +155,20 @@ marco), `hero.tsx`, `secciones.tsx` (Módulos, Rubros, Planes, Cierre) y
   regla que `docs/sistema-de-diseno.md` ya tenía escrita y que Planes+Cierre
   incumplían. Núcleo se distingue ahora por forma y Profesional por contorno.
   `app/sitio/landing.test.tsx` lo cuenta y falla si vuelve un tercero.
+  **Actualización (2026-11-13)**: la sección Video, dibujada en la maqueta,
+  trae una tercera — la franja que envuelve al reproductor. Queda pegada al
+  Hero; por qué se acepta está en `docs/sistema-de-diseno.md` (*El arándano
+  como superficie*), y el test sigue prohibiendo dos franjas de sección
+  seguidas.
+
+- **El video es un `.mp4` propio, no un embed.** `public/video/presentacion.mp4`
+  con `preload="none"`: no baja un byte hasta el click, y no mete scripts de
+  YouTube o Vimeo en la única página que se indexa. La capa del póster es un
+  botón opaco que tapa los controles nativos hasta el primer click; sin
+  JavaScript un `<noscript>` la esconde junto con los capítulos y queda el
+  reproductor nativo. El copy dice lo que el video tiene (36 segundos), no lo
+  que la maqueta suponía (2 minutos): entrada 44 de
+  `docs/correcciones-pendientes-del-pen.md`.
 
 - **El titular usa el eje de ancho de Archivo.** `font-stretch: 78%`, el
   registro del rótulo de un local. Es la tercera posición del eje que usa el
