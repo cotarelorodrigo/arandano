@@ -152,6 +152,10 @@ const MODULOS_POR_ROL: Record<string, string[]> = {
   // que Cobro/Título de card más arriba — sólo hace falta acá para que el
   // chequeo de "consumidor fantasma" no marque este módulo.
   'Valor del anillo': ['components/anillo.module.css'],
+  // El número de cada paso del diálogo "Instalar en tu iPhone" (`RVTcW`,
+  // entrada 32 de docs/correcciones-pendientes-del-pen.md). Sin font-stretch
+  // propio, mismo motivo que el de arriba.
+  'Número de paso': ['components/shell/instalar.module.css'],
 }
 
 /**

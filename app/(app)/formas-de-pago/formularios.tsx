@@ -19,6 +19,7 @@ import {
   altaDePlan, edicionDePlan, bajaDePlan, reactivacionDePlan, type EstadoPlanes,
 } from './acciones'
 import { CLASES_RANURA_MOVIL } from '@/components/shell/encabezado'
+import { cn } from '@/lib/utils'
 import estilos from './tipografia.module.css'
 
 // Acá y no en acciones.ts: aquel archivo es 'use server' y sólo puede exportar
@@ -475,22 +476,104 @@ export function SinPlanes() {
   )
 }
 
-/** Las tres cosas que esta pantalla decide y que no se deducen mirando la
- *  tabla. Texto fijo, pero no inventado: las tres las sostiene el servidor. */
-function CardComoFunciona({ ejemploBase }: { ejemploBase: string }) {
+/**
+ * Los planes en el teléfono: una tarjeta apilada por plan, como las dibuja
+ * `Móvil / Formas de pago` (`NL4Vo`). Reemplaza a la tabla de escritorio, que
+ * en 362 px scrolleaba de costado adentro de su card (entrada 22 de
+ * docs/correcciones-pendientes-del-pen.md).
+ *
+ * Lo que en escritorio son columnas acá son líneas: el medio y las cuotas en
+ * la meta, y el ejemplo debajo con el artículo de referencia al lado —sin la
+ * columna, el encabezado "$ 10.000,00 se cobra" no existe para nombrarlo—.
+ * Dado de baja no suma una línea propia como en la tabla: se pega al final de
+ * la meta y apaga el nombre y el recargo.
+ *
+ * Las acciones son el MISMO `AccionesDeFila` que la tabla, así que en el DOM
+ * hay dos disparadores por plan (uno por ancho, se ve uno solo), igual que los
+ * dos `DialogoDePlan` del alta.
+ */
+export function TarjetasDePlanes({ planes, ejemploBase }: { planes: FilaDePlan[]; ejemploBase: string }) {
   return (
-    <div className="flex flex-col gap-[9px] rounded-2xl border bg-card p-[18px]">
-      <p className="text-[13px] font-bold text-foreground">Cómo se usa esto</p>
-      {[
-        `El recargo cae sólo sobre la parte que se pague con ese plan. Lo que entre en efectivo no lo paga.`,
-        `Un porcentaje negativo es un descuento: sirve igual para el precio de contado.`,
-        `La columna de la derecha muestra qué sale un artículo de ${ejemploBase} con cada plan. Es un ejemplo fijo, no un artículo del catálogo.`,
-      ].map((texto) => (
-        <div key={texto} className="flex gap-[9px]">
-          <Info aria-hidden="true" className="mt-0.5 size-[14px] shrink-0 text-primary" />
-          <p className="text-xs leading-[1.45] text-foreground-soft">{texto}</p>
-        </div>
-      ))}
+    <ul className="lg:hidden">
+      {planes.map((p) => {
+        const cuotas = p.cuotas === 1 ? '1 pago' : `${p.cuotas} cuotas`
+        const tono = p.desactivado ? 'text-muted-foreground' : 'text-foreground'
+        return (
+          <li
+            key={p.id}
+            className="flex items-center gap-[10px] border-b px-[14px] py-[11px] last:border-b-0"
+          >
+            <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
+              <span className={cn('text-sm font-medium', tono)}>{p.nombre}</span>
+              <span className="text-[11px] text-muted-foreground">
+                {`${p.rotuloMedio} · ${cuotas}${p.desactivado ? ' · dado de baja' : ''}`}
+              </span>
+              <span className="text-[11px] text-muted-foreground tabular-nums">
+                {`${ejemploBase} → ${p.ejemplo}`}
+              </span>
+            </div>
+            <div className="flex shrink-0 flex-col items-end gap-[5px]">
+              <span className={cn('text-[13px] font-semibold tabular-nums', tono)}>
+                {p.porcentajeMostrado}
+              </span>
+              <AccionesDeFila plan={p} />
+            </div>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+/**
+ * Las tres cosas que esta pantalla decide y que no se deducen mirando la
+ * tabla. Texto fijo, pero no inventado: las tres las sostiene el servidor.
+ *
+ * Cambia de forma con el ancho, como la dibujan `E3iYW` y `NL4Vo`: en el
+ * teléfono es una card con encabezado (el mismo de "Los planes del local") y
+ * el contenido abajo; en escritorio, un rótulo en negrita adentro del padding.
+ * Y la tercera ayuda dice dónde está el ejemplo en cada ancho, porque "la
+ * columna de la derecha" no existe en el teléfono.
+ */
+function CardComoFunciona({ ejemploBase }: { ejemploBase: string }) {
+  const puntos: { clave: string; texto: React.ReactNode }[] = [
+    {
+      clave: 'recargo',
+      texto: 'El recargo cae sólo sobre la parte que se pague con ese plan. Lo que entre en efectivo no lo paga.',
+    },
+    {
+      clave: 'descuento',
+      texto: 'Un porcentaje negativo es un descuento: sirve igual para el precio de contado.',
+    },
+    {
+      clave: 'ejemplo',
+      texto: (
+        <>
+          <span className="lg:hidden">
+            {`Bajo cada plan está lo que sale un artículo de ${ejemploBase} con ese plan.`}
+          </span>
+          <span className="hidden lg:inline">
+            {`La columna de la derecha muestra qué sale un artículo de ${ejemploBase} con cada plan.`}
+          </span>
+          {' Es un ejemplo fijo, no un artículo del catálogo.'}
+        </>
+      ),
+    },
+  ]
+  return (
+    <div className="flex flex-col rounded-2xl border bg-card lg:gap-[9px] lg:p-[18px]">
+      <div className="border-b px-[14px] py-3 lg:hidden">
+        <h2 className={`${estilos.tituloDeCard} text-foreground`}>Cómo se usa esto</h2>
+      </div>
+      <h2 className="hidden text-[13px] font-bold text-foreground lg:block">Cómo se usa esto</h2>
+      <div className="flex flex-col gap-3 p-[14px] lg:gap-[9px] lg:p-0">
+        {puntos.map(({ clave, texto }) => (
+          <div key={clave} className="flex gap-[9px]">
+            <Info aria-hidden="true" className="mt-0.5 size-[15px] shrink-0 text-primary lg:size-[14px]" />
+            <p className="text-xs leading-[1.4] text-foreground-soft lg:leading-[1.45]">{texto}</p>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -519,19 +602,23 @@ export function CuerpoFormasDePago({
     // `test/responsive.test.ts` no puede atraparlo: su umbral es 362 y esto es
     // `w-[360px]`, y sobre todo el modo de falla es COLAPSO, no desborde.
     //
-    // Sigue sin ser el rediseño móvil de esta pantalla —la maqueta no la dibuja
-    // en ningún ancho, entrada 22 de docs/correcciones-pendientes-del-pen.md—:
-    // la `<Table>` conserva sus anchos fijos y scrollea adentro de su card, que
-    // es el `overflow-x-auto` que shadcn ya le pone.
+    // En el teléfono los planes son tarjetas (`TarjetasDePlanes`, `NL4Vo`) y
+    // la `<Table>` se monta sólo de `lg` para arriba: ya no queda nada que
+    // scrollee de costado adentro de la card.
     <div className="flex flex-col gap-3 p-[14px] lg:flex-row lg:gap-4 lg:p-6">
       <div className="flex flex-1 flex-col overflow-hidden rounded-2xl border bg-card">
-        <div className="flex items-center justify-between border-b px-[18px] py-[13px]">
+        <div className="flex items-center justify-between border-b px-[14px] py-3 lg:px-[18px] lg:py-[13px]">
           <h2 className={`${estilos.tituloDeCard} text-foreground`}>Los planes del local</h2>
         </div>
         {planes.length === 0 ? (
           <SinPlanes />
         ) : (
-          <TablaDePlanes planes={planes} ejemploBase={ejemploBase} />
+          <>
+            <div className="hidden lg:block">
+              <TablaDePlanes planes={planes} ejemploBase={ejemploBase} />
+            </div>
+            <TarjetasDePlanes planes={planes} ejemploBase={ejemploBase} />
+          </>
         )}
       </div>
       <div className="flex flex-col gap-3 lg:w-[360px] lg:gap-4">

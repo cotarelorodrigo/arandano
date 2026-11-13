@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
-import { CamposDePlan, TablaDePlanes, SinPlanes, type FilaDePlan } from './formularios'
+import {
+  CamposDePlan, CuerpoFormasDePago, TablaDePlanes, TarjetasDePlanes, SinPlanes, type FilaDePlan,
+} from './formularios'
 import { MEDIOS } from '@/lib/ventas/medios'
 
 const PLAN: FilaDePlan = {
@@ -124,6 +126,75 @@ describe('TablaDePlanes', () => {
   // columna muestra un precio y no dice de qué.
   it('el encabezado del ejemplo nombra el artículo de referencia', () => {
     expect(render([PLAN])).toContain('$ 10.000,00')
+  })
+})
+
+/**
+ * Los planes en el teléfono, como los dibuja `Móvil / Formas de pago`
+ * (`NL4Vo`): una tarjeta apilada por plan —nombre, medio y cuotas, la línea de
+ * ejemplo debajo, y a la derecha el recargo con "Editar · Baja"— en vez de la
+ * tabla de escritorio scrolleando de costado (entrada 22 de
+ * docs/correcciones-pendientes-del-pen.md).
+ */
+describe('TarjetasDePlanes', () => {
+  const render = (planes: FilaDePlan[]) =>
+    renderToStaticMarkup(<TarjetasDePlanes planes={planes} ejemploBase="$ 10.000,00" />)
+
+  it('cada plan dice su nombre, su medio con las cuotas y su recargo', () => {
+    const html = render([PLAN])
+    expect(html).toContain('Crédito 3 cuotas')
+    expect(html).toContain('Crédito · 3 cuotas')
+    expect(html).toContain('+40%')
+  })
+
+  it('un plan de una sola cuota dice "1 pago", no "1 cuotas"', () => {
+    const html = render([{ ...PLAN, nombre: 'Efectivo', rotuloMedio: 'Efectivo', cuotas: 1 }])
+    expect(html).toContain('Efectivo · 1 pago')
+    expect(html).not.toContain('1 cuota')
+  })
+
+  // En el teléfono no hay columna del ejemplo: el precio derivado va debajo
+  // de cada plan, con el artículo de referencia al lado para que se lea solo.
+  it('el ejemplo va debajo de cada plan, desde el artículo de referencia', () => {
+    expect(render([PLAN])).toContain('$ 10.000,00 → $ 14.000,00')
+  })
+
+  it('un plan activo ofrece editarlo y darlo de baja', () => {
+    const html = render([PLAN])
+    expect(html).toContain('Editar')
+    expect(html).toContain('>Baja<')
+    expect(html).not.toContain('Reactivar')
+  })
+
+  it('un plan dado de baja lo dice en su línea y ofrece reactivarlo', () => {
+    const html = render([{ ...PLAN, desactivado: true }])
+    expect(html).toContain('Crédito · 3 cuotas · dado de baja')
+    expect(html).toContain('Reactivar')
+    expect(html).not.toContain('>Baja<')
+  })
+
+  it('una tarjeta por plan, con separador entre ellas y no después de la última', () => {
+    const html = render([PLAN, { ...PLAN, id: '00000000-0000-4000-8000-000000000002' }])
+    expect(html.match(/<li[\s>]/g)).toHaveLength(2)
+    expect(html).toMatch(/<li class="[^"]*\bborder-b\b[^"]*\blast:border-b-0\b/)
+  })
+})
+
+describe('CuerpoFormasDePago', () => {
+  const html = renderToStaticMarkup(<CuerpoFormasDePago planes={[PLAN]} ejemploBase="$ 10.000,00" />)
+
+  // La tabla sigue siendo la de escritorio; en el teléfono no se monta a la
+  // vista, así que ya no hay nada que scrollee de costado.
+  it('la tabla queda para escritorio y las tarjetas para el teléfono', () => {
+    expect(html).toMatch(/<div class="hidden lg:block"><div[^>]*><table/)
+    expect(html).toMatch(/<ul class="[^"]*\blg:hidden\b/)
+  })
+
+  // "La columna de la derecha" no existe en el teléfono: la ayuda dice dónde
+  // está el ejemplo en cada ancho, como lo escriben `LBShr` y `TXduc`.
+  it('la ayuda del ejemplo nombra dónde está en cada ancho', () => {
+    expect(html).toContain('Bajo cada plan está lo que sale un artículo de $ 10.000,00 con ese plan.')
+    expect(html).toContain('La columna de la derecha muestra qué sale un artículo de $ 10.000,00 con cada plan.')
   })
 })
 

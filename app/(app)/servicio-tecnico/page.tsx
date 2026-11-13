@@ -532,7 +532,9 @@ export type FilaDeOrden = {
  * apiladas en el teléfono, resuelto con `display:contents` sobre el MISMO
  * árbol. Las anchuras del grid de escritorio son las que declaraban los
  * `<TableHead>` de antes: 78px (Orden), auto/`1fr` (Equipo), 190px
- * (Cliente), 150px (Ingresó) y 170px (Estado).
+ * (Cliente), 150px (Ingresó) y 170px (Estado). Con las columnas de plata
+ * (las entregadas de un mes) mandan los de `vT5wa`: Cliente 160, Ingresó
+ * 118, Cobrado/Costo/Ganancia 104 cada una y Estado 148.
  *
  * Ronda de arreglos 1 (Importante): la primera versión de esta función
  * dejaba las CINCO celdas reales `hidden lg:block` en el teléfono y ponía
@@ -675,8 +677,12 @@ export function Listado({
             role="table"
             className={cn(
               'grid grid-cols-1',
+              // Con plata, los anchos de `vT5wa` (encabezado `ubiLI`) y no los
+              // de la grilla sin plata más tres columnas: Cliente, Ingresó y
+              // Estado se angostan para que Equipo conserve ~172 px a 1440 y
+              // el modelo no se parta en tres renglones.
               totales
-                ? 'lg:grid-cols-[78px_1fr_190px_150px_110px_110px_110px_170px]'
+                ? 'lg:grid-cols-[78px_1fr_160px_118px_104px_104px_104px_148px]'
                 : 'lg:grid-cols-[78px_1fr_190px_150px_170px]',
             )}
           >

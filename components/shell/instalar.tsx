@@ -12,6 +12,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { estadoDeInstalacion } from '@/lib/pwa/instalacion'
+import estilos from './instalar.module.css'
 
 /**
  * El evento que Chrome dispara cuando la aplicación se puede instalar. No está
@@ -136,15 +137,43 @@ export function Instalar() {
             hecho, el local te queda como una app más.
           </DialogDescription>
         </DialogHeader>
-        <ol className="flex flex-col gap-3 text-[13px]">
-          <li className="flex items-center gap-2">
-            <Share aria-hidden="true" className="size-4 shrink-0" />
-            Tocá Compartir.
-          </li>
-          <li>Elegí &quot;Agregar a inicio&quot;.</li>
-          <li>Confirmá con Agregar, arriba a la derecha.</li>
-        </ol>
+        <PasosDeIos />
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * Los tres pasos a mano de Safari, como los dibuja `RVTcW` (nodo `svRju`):
+ * numerados con un círculo de 22 px en `--primary-soft` (`bg-accent`), el ícono
+ * `share` sólo en el paso que lo nombra, y el texto al lado.
+ *
+ * El número es texto legible y no `aria-hidden`: el preflight le saca el
+ * `list-style` al `<ol>`, y con eso VoiceOver en Safari —justo el lector de
+ * quien abre este diálogo— deja de anunciarlo como lista ordenada. El número
+ * visible es lo que conserva el orden para todos.
+ *
+ * Exportado para el test: `DialogContent` sólo se monta abierto.
+ */
+export function PasosDeIos() {
+  const pasos = [
+    { texto: 'Tocá Compartir.', icono: true },
+    { texto: 'Elegí «Agregar a inicio».', icono: false },
+    { texto: 'Confirmá con Agregar, arriba a la derecha.', icono: false },
+  ]
+  return (
+    <ol className="flex flex-col gap-[10px]">
+      {pasos.map((p, i) => (
+        <li key={p.texto} className="flex items-center gap-[10px]">
+          <span
+            className={`${estilos.numeroDePaso} flex size-[22px] shrink-0 items-center justify-center rounded-full bg-accent text-primary`}
+          >
+            {i + 1}
+          </span>
+          {p.icono && <Share aria-hidden="true" className="size-[15px] shrink-0 text-foreground-soft" />}
+          <span className="text-[13px] text-foreground">{p.texto}</span>
+        </li>
+      ))}
+    </ol>
   )
 }

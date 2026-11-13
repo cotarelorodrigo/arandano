@@ -1,0 +1,15 @@
+/*
+ * El número de cada paso del diálogo de iOS: `App / PWA · Instalar e ícono
+ * (estados)` (`RVTcW`), nodos `C8XIZA`/`jF6WH`/`VetuW` — Archivo 12 px, 700,
+ * adentro del círculo de 22 px. Sin font-stretch propio: se queda en el 100%
+ * del eje `wdth`, como Cobro y Título de card.
+ *
+ * Un módulo y no `style={{ fontFamily }}` a mano por lo mismo que los demás:
+ * test/tipografia.test.ts sólo vigila archivos `.module.css`, y el rol está en
+ * la tabla de la escala de docs/sistema-de-diseno.md.
+ */
+.numeroDePaso {
+  font-family: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 0.75rem; /* 12px */
+}

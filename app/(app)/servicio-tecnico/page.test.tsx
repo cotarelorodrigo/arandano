@@ -729,6 +729,18 @@ describe('las entregadas de un mes: plata y selector', () => {
     )
   })
 
+  // Los anchos de `App / Servicio Técnico · Entregadas del mes` (`vT5wa`,
+  // encabezado `ubiLI`): Cliente 160, Ingresó 118, las tres de plata 104 y
+  // Estado 148. Con los de la grilla sin plata (190/150/110×3/170) a Equipo le
+  // quedaban ~92 px a 1440 y el modelo se partía en tres renglones; éstos le
+  // devuelven ~172 (entrada 43 de docs/correcciones-pendientes-del-pen.md).
+  it('con totales, la grilla usa los anchos de la maqueta para las columnas de plata', () => {
+    const html = renderListado({ filas: [CON_PLATA], filtro: 'ENTREGADO', totales: TOTALES })
+    expect(html).toMatch(
+      /class="[^"]*\bgrid-cols-1\b[^"]*\blg:grid-cols-\[78px_1fr_160px_118px_104px_104px_104px_148px\]/,
+    )
+  })
+
   it('sin totales, no hay columnas de plata', () => {
     const html = renderListado({ filas: [CON_PLATA], filtro: 'ENTREGADO', totales: null })
     expect(html).not.toContain('Ganancia')
