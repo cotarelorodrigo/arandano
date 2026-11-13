@@ -32,6 +32,23 @@ y con la que el `version` de `package.json` no duplica al tag de git.
 | `App / Recibir equipo` | `/servicio-tecnico/nuevo` |
 | `App / Orden ficha` | `/servicio-tecnico/[id]` |
 | `App / Ticket 80 mm` | `/servicio-tecnico/[id]/ticket` |
+| `App / Servicio Técnico · Entregadas del mes` | `/servicio-tecnico?estado=ENTREGADO&mes=…`, con las columnas de plata |
+| `App / Orden ficha · Cobro al entregar` | `/servicio-tecnico/[id]`, con el paso "¿Cuánto cobraste?" |
+| `App / Orden ficha · Entregada` | `/servicio-tecnico/[id]`, ya entregada |
+| `App / Vender · Caja y dólar (estados)` | piezas de `/vender`: chips, panel de la caja y diálogo de la cotización |
+| `App / Dashboard` | `/dashboard` |
+| `App / Caja` | `/caja` |
+| `App / Caja · sin cierres` | `/caja`, vacía |
+| `App / Clientes` | `/clientes` |
+| `App / Cliente ficha` | `/clientes/[id]` |
+| `App / Clientes · Alta y selector del cobro (estados)` | piezas: el diálogo "Cliente nuevo" y el selector de cliente del cobro |
+| `App / Plan canje` | `/plan-canje` |
+| `App / Plan canje · Valores` | `/plan-canje/valores` |
+| `App / Formas de pago` | `/formas-de-pago` |
+| `App / Formas de pago · Alta, edición y vacío (estados)` | piezas: el diálogo de plan en sus dos modos y la card vacía |
+| `App / Bot de WhatsApp` | `/bot`, con número conectado |
+| `App / Bot · Sin conectar` | `/bot`, sin número |
+| `App / PWA · Instalar e ícono (estados)` | piezas: "Instalar app" del pie del sidebar, el diálogo de iOS y el ícono del local |
 | `App / Usuarios` | `/usuarios` |
 | `App / Login` | `/login` |
 | `Sitio / Landing` | `/` en el ápex |
@@ -58,6 +75,19 @@ existe, porque ahí el sidebar está siempre a la vista.
 | `Móvil / Recibir equipo` | `/servicio-tecnico/nuevo` |
 | `Móvil / Orden ficha` | `/servicio-tecnico/[id]` |
 | `Móvil / Ticket 80 mm` | `/servicio-tecnico/[id]/ticket` |
+| `Móvil / Servicio Técnico · Entregadas del mes` | `/servicio-tecnico?estado=ENTREGADO&mes=…` |
+| `Móvil / Orden ficha · Cobro al entregar` | `/servicio-tecnico/[id]`, con el paso de cobro |
+| `Móvil / Orden ficha · Entregada` | `/servicio-tecnico/[id]`, ya entregada |
+| `Móvil / Vender · Caja y dólar (hoja)` | `/vender`, con la hoja del Topbar abierta |
+| `Móvil / Dashboard` | `/dashboard` |
+| `Móvil / Caja` | `/caja` |
+| `Móvil / Clientes` | `/clientes` |
+| `Móvil / Cliente ficha` | `/clientes/[id]` |
+| `Móvil / Plan canje` | `/plan-canje` |
+| `Móvil / Plan canje · Valores` | `/plan-canje/valores` |
+| `Móvil / Formas de pago` | `/formas-de-pago` |
+| `Móvil / Bot de WhatsApp` | `/bot` |
+| `Móvil / Sin conexión` | `/sin-conexion` |
 | `Móvil / Usuarios` | `/usuarios` |
 | `Móvil / Login` | `/login` |
 | `Móvil / Sitio · Landing` | `/` en el ápex |
@@ -74,8 +104,8 @@ ciclo del teléfono).
 
 | Componente | Quién lo instancia |
 |---|---|
-| `Shell/Sidebar` | Las **diez** pantallas de aplicación de escritorio (el ticket de 80 mm y el login no llevan shell), **más `Móvil / Menú (drawer)`** — el drawer del teléfono no es un segundo diseño de la navegación, es el mismo paño sobre un velo |
-| `Móvil/Topbar` | Los **doce** frames `Móvil /` que llevan la franja de 56 px — todos menos el login, el drawer y la landing |
+| `Shell/Sidebar` | Todas las pantallas de aplicación de escritorio (el ticket de 80 mm, el login y los frames de piezas `(estados)` no llevan shell), **más `Móvil / Menú (drawer)`** — el drawer del teléfono no es un segundo diseño de la navegación, es el mismo paño sobre un velo. Tiene las once pestañas de `components/navegacion.tsx` desde el 2026-11-02 (entrada 42 de `docs/correcciones-pendientes-del-pen.md`) |
+| `Móvil/Topbar` | Los frames `Móvil /` que llevan la franja de 56 px — todos menos el login, el drawer, la landing, la pantalla sin conexión y `Móvil / Vender · Caja y dólar (hoja)`, que dibuja la hoja sobre un velo |
 
 Cada instancia sólo overridea lo suyo: el sidebar, cuál entrada está activa; el
 Topbar, título, subtítulo e íconos de las dos ranuras. Si la navegación cambia,

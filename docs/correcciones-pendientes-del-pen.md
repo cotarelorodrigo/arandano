@@ -673,7 +673,29 @@ sección *Las pantallas*.
 
 ---
 
-## 22. La maqueta no dibuja `/formas-de-pago`, la pantalla entera
+## 22. ~~La maqueta no dibuja `/formas-de-pago`, la pantalla entera~~ — COMPLETADA, EN GIT DESDE EL 2026-11-13
+
+**La entrada estaba vencida en su premisa**: al revisarla el 2026-11-02, el
+documento abierto en Pencil **ya tenía** `App / Formas de pago` (`E3iYW`) y
+`Móvil / Formas de pago` (`NL4Vo`) —alguien los dibujó después de que esto se
+escribiera, como pasó con la entrada 27—. El `.pen` del repo tampoco los tiene.
+
+**Lo que faltaba de verdad se dibujó ese día**, en
+`App / Formas de pago · Alta, edición y vacío (estados)` (`J0X4zQ`): el
+diálogo en sus **dos modos** —alta, con el `Select` de forma de pago; edición,
+con el medio como texto fijo ("para cambiarla, dale de baja a este plan y creá
+otro") y el campo de orden, que el alta no tiene— y la card en su **estado
+vacío**, con el texto que explica que sin planes todo se cobra a precio de
+lista.
+
+**Y la maqueta ya contesta la pregunta del teléfono**, que era la mitad de esta
+entrada: `Móvil / Formas de pago` dibuja los planes como **tarjetas apiladas**
+—nombre, recargo a la derecha, la línea de ejemplo debajo y "Editar · Baja"—,
+no como la tabla que scrollea de costado que el código tiene hoy. O sea que el
+rediseño de teléfono de esta pantalla **ya tiene contra qué construirse**: deja
+de ser deuda sin referencia y pasa a ser trabajo pendiente del código.
+
+El texto original queda abajo como registro de qué se pidió.
 
 - **Frame**: ninguno. `design/arandano.pen` es anterior a los planes de pago
   (2026-08-27) y no tiene ni el frame de escritorio ni el `Móvil / …`
@@ -854,7 +876,31 @@ Detectado al construir el ciclo del cobrado por moneda (2026-08-31). Ver
 
 ---
 
-## 26. La maqueta no dibuja `/bot`, la pantalla entera
+## 26. ~~La maqueta no dibuja `/bot`, la pantalla entera~~ — DIBUJADA, EN GIT DESDE EL 2026-11-13
+
+**Dibujada el 2026-11-02**, en tres frames: `App / Bot de WhatsApp` (`OiQLY`),
+`Móvil / Bot de WhatsApp` (`gk3DK`) y `App / Bot · Sin conectar` (`fP40l`).
+Cierra también la entrada 38.
+
+- **El estado conectado**: la card del número con "Desconectar", el segmentado
+  del modo con su leyenda, "Números de prueba" con el alta y las dos filas —una
+  que ya escribió y otra que no, que es la verificación del número—, los dos
+  campos de información con su contador y un solo "Guardar", y a la derecha
+  "Este mes" con la barra y el aviso de los clientes sin respuesta en prueba, y
+  "Qué contesta".
+- **El estado sin conectar** (`fP40l`), con los **tres casos de la card de
+  conexión a la vez** —sin conectar, con el número esperando confirmación, y
+  sin la integración configurada en el servidor— y "Generar enlace de
+  conexión" en el Topbar.
+- **La confirmación armada de "Todos"** quedó como variante al lado de la card
+  real (`Gmg0q`), que era lo que la entrada 38 pedía decidir: la pastilla
+  "Todos" se pinta con el par `--warn`/`--warn-soft` y la leyenda pasa a
+  `--foreground` en semibold. Hoy el código sólo cambia la leyenda, sin color:
+  **la maqueta propone sumarle el ámbar a la pastilla**.
+
+**En git desde el 2026-11-13**, con el guardado del `.pen` desde Pencil.
+
+El texto original queda abajo como registro de qué se pidió.
 
 - **Frame**: ninguno. `design/arandano.pen` es anterior al bot de WhatsApp
   (2026-08-29) y no tiene ni el frame de escritorio ni el `Móvil / …`.
@@ -906,7 +952,7 @@ contador.
 
 ---
 
-## 27. ~~La maqueta no dibuja nada de las unidades por IMEI~~ — DIBUJADA EN EL DOCUMENTO VIVO, FALTA COMMITEARLO
+## 27. ~~La maqueta no dibuja nada de las unidades por IMEI~~ — DIBUJADA, EN GIT DESDE EL 2026-11-13
 
 **Cierra las entradas 27, 28 y 29 de una**, y con una salvedad que hay que leer
 antes de darlas por muertas.
@@ -936,6 +982,9 @@ que git no tiene".
 Lo que resta hacer es de una persona, no de acá: abrir Pencil, guardar
 `design/arandano.pen` y commitearlo. `design/LEEME.md` ya quedó actualizado con
 los dos frames nuevos.
+
+**Hecho: en git desde el 2026-11-13**, en el mismo guardado que trajo las
+entradas 22, 26, 30, 32 y 39 a 43.
 
 **El texto original queda abajo**, sin editar, porque es el registro de qué se
 derivó sin frame y con qué criterio — que es justamente lo que el
@@ -1088,6 +1137,11 @@ Detectado usando `/vender` contra un inventario real (2026-09-03). Ver
 
 ## 30. `/dashboard`: el `.pen` versionado todavía no tiene los dos frames, y cinco piezas se derivaron sin poder mirarlos en git
 
+**Actualización 2026-11-13**: los dos frames ya están en git, con el guardado
+del `.pen` desde Pencil. Lo que queda abierto de esta entrada son las cinco
+piezas derivadas de abajo, que siguen sin compararse contra el archivo
+versionado.
+
 **Frames**: `App / Dashboard` (nodo raíz `A2Hffo`) y `Móvil / Dashboard`
 (`OWGzI`). Existen y se consultaron por MCP mientras el documento estaba
 abierto en Pencil —de ahí salen los nodos que citan los specs y el código de
@@ -1176,7 +1230,31 @@ justo la que no entraba.
 
 ---
 
-## 32. La PWA entera se derivó sin frames: el botón del pie, el diálogo de iOS, la pantalla sin conexión y el ícono
+## 32. ~~La PWA entera se derivó sin frames: el botón del pie, el diálogo de iOS, la pantalla sin conexión y el ícono~~ — DIBUJADA, EN GIT DESDE EL 2026-11-13
+
+**Dibujada el 2026-11-02**, en dos frames: `Móvil / Sin conexión` (`JeQjJ`) y
+`App / PWA · Instalar e ícono (estados)` (`RVTcW`).
+
+- **`/sin-conexion`** a 390 px y a pantalla completa, con los hex crudos que la
+  página usa de verdad (`#F6F5F9`, `#171221`, `#4A4358`, `#2A1760`) y no
+  variables: es la única pantalla que se sirve **sin la hoja de estilos**, así
+  que la maqueta tiene que decir el color literal como lo dice el código.
+- **El botón "Instalar app"** en el pie del sidebar, al lado de "Salir", con su
+  misma geometría, y la nota de cuándo aparece y cuándo no.
+- **El diálogo de iOS**, que era *"el que más se beneficiaría de un frame"*
+  según esta misma entrada por no haber precedente de una instrucción de tres
+  pasos en el `.pen`. La maqueta la resuelve con **pasos numerados**: un
+  círculo de 22 px en `--primary-soft` con el número, el ícono `share` sólo en
+  el paso que lo nombra, y el texto al lado. Hoy el código usa un `<ol>` sin
+  números visibles —el ícono del primer paso es lo único que marca la línea—:
+  **la maqueta propone numerarlos**.
+- **El ícono del local** en sus tres variantes (192 any, 512 any, 512
+  maskable), con la inicial sobre `--marca-deep` y la nota de por qué la misma
+  imagen sirve para las dos.
+
+**En git desde el 2026-11-13**, con el guardado del `.pen` desde Pencil.
+
+El texto original queda abajo como registro de qué se pidió.
 
 `design/arandano.pen` es anterior a este ciclo y no dibuja nada de lo que
 construye: el botón "Instalar" del `SidebarFooter`, el diálogo con los tres
@@ -1404,7 +1482,14 @@ Ver `docs/superpowers/specs/2026-09-14-editar-venta-design.md`.
 
 ---
 
-## 38. La maqueta no dibuja el modo del bot ni la card "Números de prueba", en ningún ancho
+## 38. ~~La maqueta no dibuja el modo del bot ni la card "Números de prueba"~~ — CUBIERTA POR LA 26
+
+**Dibujados el 2026-11-02** junto con el resto de `/bot`: el segmentado, la
+card "Números de prueba" con sus dos filas y el formato `112233-4455`, y la
+**confirmación armada de "Todos"** como variante (`Gmg0q`) —el único punto que
+esta entrada dejaba abierto a decidir—. Ver la entrada 26.
+
+El texto original queda abajo como registro de qué se pidió.
 
 - **Frames**: ninguno. `design/arandano.pen` no tiene la pantalla `/bot` en
   ningún ancho: es anterior al ciclo del bot (2026-08-29).
@@ -1427,7 +1512,28 @@ leyenda con la confirmación armada.
 Detectado al construir el ciclo del modo prueba del bot (2026-09-15). Ver
 `docs/superpowers/specs/2026-09-15-bot-modo-prueba-design.md`.
 
-## 39. La maqueta no dibuja `/plan-canje` ni `/plan-canje/valores`, en ningún ancho
+## 39. ~~La maqueta no dibuja `/plan-canje` ni `/plan-canje/valores`~~ — DIBUJADAS, EN GIT DESDE EL 2026-11-13
+
+**Dibujadas el 2026-11-02**, en cuatro frames: `App / Plan canje` (`N5nG0j`),
+`Móvil / Plan canje` (`b5nRf`), `App / Plan canje · Valores` (`D8q4nU`) y
+`Móvil / Plan canje · Valores` (`KJgi0`).
+
+- **La calculadora** en el caso que más dudas generaba: equipo en dólares y
+  tabla en pesos, así que lleva la tercera línea ("El usado en dólares, a
+  $ 1.485,00 el dólar"), el campo de cotización con su ayuda completa —incluido
+  el "Es la cotización del local de hoy; se puede cambiar"— y la banda de
+  `--marca` con rótulo, meta y el importe partido en signo y monto. El equipo
+  va **elegido**, con su X para soltarlo.
+- **La tabla** con modelos en filas y rangos en columnas, incluida la **fila en
+  edición entera** con su "Guardar" y la ayuda de la celda vacía, las celdas
+  "—" de lo que no se toma, y las cards de rangos y de moneda —esta última con
+  el aviso de que cambiarla no convierte—. En el teléfono la tabla **scrollea
+  de costado adentro de su card**, dibujada cortada a propósito y con el pie
+  que lo dice.
+
+**En git desde el 2026-11-13**, con el guardado del `.pen` desde Pencil.
+
+El texto original queda abajo como registro de qué se pidió.
 
 - **Frames**: ninguno. Las dos pantallas nacen en el ciclo del plan canje
   (2026-10-18), sin maqueta.
@@ -1454,7 +1560,35 @@ fila en edición y la calculadora con monedas distintas (el campo del dólar).
 Detectado al construir el ciclo del plan canje (2026-10-18). Ver
 `docs/superpowers/specs/2026-10-18-plan-canje-design.md`.
 
-## 40. La maqueta no dibuja `/clientes`, la ficha del cliente, ni el campo "Cliente" del cobro, en ningún ancho
+## 40. ~~La maqueta no dibuja `/clientes`, la ficha del cliente, ni el campo "Cliente" del cobro~~ — DIBUJADA, EN GIT DESDE EL 2026-11-13
+
+**Dibujada el 2026-11-02**, en cinco frames nuevos: `App / Clientes`
+(`K5ANa1`), `Móvil / Clientes` (`W6G2C`), `App / Cliente ficha` (`WmsqC`),
+`Móvil / Cliente ficha` (`NIOWh`) y
+`App / Clientes · Alta y selector del cobro (estados)` (`OFi8S`).
+
+- **El listado** lleva la fila de filtros (buscador, píldora "Aceptan ofertas",
+  "Buscar" y "Exportar CSV" para el dueño), "Cliente nuevo" en el Topbar, el
+  aviso del tope de 200, y las filas con el chip "Acepta ofertas", las compras
+  y la fecha de alta —incluida la fila sin contacto ("Sin teléfono ni email") y
+  la de cero compras—.
+- **La ficha**, en dos columnas: Compras —con una anulada, tachada y con su
+  chip— y Servicio técnico a la izquierda; Datos editable y "Borrar" a la
+  derecha, con la card de borrar en su estado **imposible** ("Tiene 4 compras y
+  2 órdenes: no se puede borrar") y el botón apagado. En el teléfono los datos
+  van primero, como decide la pantalla.
+- **El selector del cobro** en sus **cuatro estados** —vacío, buscando con la
+  lista de resultados y el resaltado, elegido con la X para soltarlo, y el alta
+  al vuelo con el consentimiento—, más el diálogo "Cliente nuevo" de
+  `/clientes`.
+
+Falta todavía el "Asignar"/"Cambiar" de la fila Cliente de `/ventas/[id]`, que
+abre un diálogo con el mismo selector: el selector ya está dibujado, el diálogo
+que lo envuelve no.
+
+**En git desde el 2026-11-13**, con el guardado del `.pen` desde Pencil.
+
+El texto original queda abajo como registro de qué se pidió.
 
 - **Frames**: ninguno. Las dos pantallas y el campo nacen en el ciclo de la
   solapa Clientes (2026-10-18), sin maqueta.
@@ -1489,7 +1623,20 @@ Detectado al construir el ciclo de la solapa Clientes (2026-10-18). Ver
 
 ---
 
-## 41. La maqueta no dibuja la carga de la cotización del dólar, ni el chip viejo, ni lo que la cotización agrega en otras pantallas
+## 41. ~~La maqueta no dibuja la carga de la cotización del dólar, ni el chip viejo, ni lo que la cotización agrega en otras pantallas~~ — DIBUJADA, EN GIT DESDE EL 2026-11-13
+
+**Dibujada el 2026-11-02**, junto con la 42, en el frame `App / Vender · Caja y
+dólar (estados)` (`HDzo3`) y en `Móvil / Vender · Caja y dólar (hoja)`
+(`af0bP`): los tres chips de dólar (de hoy con borde, viejo en `--warn-soft`
+con la fecha, y sin ninguna con «—»), el diálogo en sus tres estados (de hoy
+con historial, vieja con la pregunta del tope de cordura y «Sí, cargarla
+igual», y sin ninguna / sin permiso), el mismo panel dentro de la hoja del
+teléfono, y los cuatro fragmentos derivados (la equivalencia «≈ $ 1.485.000»
+de la ficha, la de `/inventario` con la fecha del dólar viejo, el pie del
+margen cruzado y la sugerencia ámbar del cobro). **En git desde el 2026-11-13**, con el guardado del `.pen` desde Pencil.
+
+El texto original de la entrada queda abajo como registro de qué se pidió.
+
 
 - **Frames**: `App / Vender` (nodo `TB7On`, el chip "USD") y `VaHod` (nodo
   `fBLhr`, el chip del cuerpo del teléfono), que dibujan sólo el reposo con un
@@ -1522,7 +1669,40 @@ Detectado al construir el ciclo de la cotización del dólar (2026-10-18). Ver
 
 ---
 
-## 42. La maqueta no dibuja el efectivo en el chip de caja, el panel de la caja, el cierre con arqueo ni `/caja`
+## 42. ~~La maqueta no dibuja el efectivo en el chip de caja, el panel de la caja, el cierre con arqueo ni `/caja`~~ — DIBUJADA, EN GIT DESDE EL 2026-11-13
+
+**Dibujado el 2026-11-02**, salvo la pantalla `/caja`: los chips `yLN3A`
+(`App / Vender`) y `MP7Iu` (`Móvil / Vender`) ya dicen el efectivo
+(«Caja abierta · $ 55.000,00 · US$ 320,00» en escritorio, sin dólares en el
+teléfono), y el frame `App / Vender · Caja y dólar (estados)` (`HDzo3`) suma el
+chip «Abrir caja», la píldora de apertura con los dólares desplegados y las
+**tres vistas del panel** —resumen con el desglose por moneda y los
+movimientos, registrar movimiento con sus dos segmentados, y el cierre con
+arqueo con la cuenta en vivo (ámbar «Faltan $ 200,00» en pesos, verde «Cuadra»
+en dólares)—. `Móvil / Vender · Caja y dólar (hoja)` (`af0bP`) es la misma
+cosa dentro de la hoja del Topbar.
+
+**Y `/caja` también quedó dibujada**, el mismo día: `App / Caja` (`Y98IRl`),
+`App / Caja · sin cierres` (`xrGAR`) y `Móvil / Caja` (`gmdEq`). Llevan el
+filtro desde/hasta con "Filtrar", la card "Cierres de caja" con su conteo, y
+una fila por cierre con la ventana del turno, quién abrió y quién cerró, las
+seis cifras por moneda —la diferencia en `--warn`/`--warn-soft` cuando no
+cuadra—, la nota, los movimientos plegados en un `<details>` (dibujado abierto
+en el primer cierre y cerrado en el segundo) y el caso "Cerrada sin arqueo".
+En el teléfono las cifras van en dos filas de tres, que es la grilla de 3
+columnas del código.
+
+**De paso se arregló el sidebar, que le faltaban cuatro pestañas.** El
+componente `Shell/Sidebar` (`WihBP`) tenía siete ítems y la navegación real
+(`components/navegacion.tsx`) tiene once: se agregaron **Caja** (`F5QmzI`),
+**Clientes** (`dMtbW`), **Plan canje** (`vGQaw`) y **Bot de WhatsApp**
+(`ZrYkp`), en el orden del código. Como es el componente, la corrección llega
+a **todas** las pantallas que lo instancian.
+
+**En git desde el 2026-11-13**, con el guardado del `.pen` desde Pencil.
+
+El texto original de la entrada queda abajo como registro de qué se pidió.
+
 
 - **Frames**: `App / Vender` (nodo `yLN3A`, el chip "Caja abierta") y `VaHod`
   (nodo `MP7Iu`, el chip del cuerpo del teléfono), que dibujan sólo el reposo
@@ -1555,6 +1735,54 @@ sin cierres.
 
 Detectado al construir el ciclo del arqueo de caja (2026-10-18). Ver
 `docs/superpowers/specs/2026-10-18-arqueo-de-caja-design.md`.
+
+---
+
+## 43. ~~La maqueta no dibuja la plata de la orden: ni la card, ni el paso de cobro, ni las columnas del tablero~~ — DIBUJADA, EN GIT DESDE EL 2026-11-13
+
+- **Frames afectados**: `EIUeu` (`App / Servicio Técnico`), `XVOe5` (`App /
+  Orden ficha`), `F9BzV` (`Móvil / Servicio Técnico`) y `B3noN` (`Móvil / Orden
+  ficha`), todos anteriores al ciclo de la ganancia por orden (2026-11-01).
+
+**Qué faltaba.** El ciclo sumó tres columnas nuevas al tablero (Cobrado, Costo,
+Ganancia), el selector de mes del chip Entregado, la fila de totales del mes, la
+card "Plata" de la ficha, el paso de cobro al entregar y la forma nueva de
+evento de la bitácora. Nada de eso tenía frame: el docblock de `CardPlata`
+(`app/(app)/servicio-tecnico/formularios.tsx`) lo decía con todas las letras
+—"No tiene nodo en design/arandano.pen; copia el esqueleto de 'Falla declarada
+y diagnóstico'"—.
+
+**Qué se dibujó** (2026-11-02, en el documento abierto en Pencil):
+
+- `App / Servicio Técnico · Entregadas del mes` (`vT5wa`) y `Móvil / Servicio
+  Técnico · Entregadas del mes` (`hEPqi`): chip Entregado seleccionado,
+  selector de mes (`‹ octubre 2026 ›`, con el `›` del mes en curso apagado),
+  las tres columnas de plata, la fila de totales, la marca de fila sin datos y
+  la nota "1 orden sin costo o cobrado no entra en la ganancia".
+- La card "Plata" en `App / Orden ficha` (`FTeaW`) y en `Móvil / Orden ficha`
+  (`W1ITP`), en su estado de antes de entregar: costo editable, el presupuesto
+  como referencia del cobrado, y "Se calcula al entregar" en la ganancia.
+- `App / Orden ficha · Cobro al entregar` (`aTrsw`) y su gemelo móvil
+  (`qCMSK`): el paño de estado con el paso "¿Cuánto cobraste?" en lugar de los
+  botones de transición, con "Confirmar entrega" y "Volver".
+- `App / Orden ficha · Entregada` (`dJigF`) y su gemelo móvil (`w7kK6`): cobrado
+  editable, ganancia calculada en `--ok`, la única transición que queda
+  (En reparación, la garantía) y —en escritorio— los dos eventos nuevos de la
+  bitácora, el de entrega y el de plata con su nota de montos.
+
+**Una decisión de la maqueta que el código todavía no tiene.** El pendiente
+"mirar a ojo el ancho de la grilla en escritorio con las columnas de plata"
+(cierre del ciclo, `docs/contexto/proximos-pasos.md`) está contestado: con
+`lg:grid-cols-[78px_1fr_190px_150px_110px_110px_110px_170px]` la columna
+Equipo queda en ~92 px a 1440 y el modelo se parte en tres renglones. La
+maqueta propone **Cliente 160, Ingresó 118, las tres de plata 104 y Estado
+148**, que le devuelven ~172 px a Equipo sin tocar nada más.
+
+**En git desde el 2026-11-13**, con el guardado del `.pen` desde Pencil.
+
+Detectado al revisar qué le faltaba a la maqueta después del ciclo de la
+ganancia por orden (2026-11-02). Ver
+`docs/superpowers/specs/2026-11-01-ganancia-por-orden-design.md`.
 
 ---
 

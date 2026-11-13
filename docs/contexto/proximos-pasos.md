@@ -3905,6 +3905,27 @@ Y del producto:
   *Observabilidad* no lo ve, porque mira el certificado del borde de
   Cloudflare, no el del origen).
 
+- **Sumar el video de presentación a la landing.** Pedido del dueño del
+  producto (2026-11-02): tiene un video armado y quiere mostrarlo en
+  `arandano.app`. **La maqueta ya lo dibuja** —sección `Video` en
+  `Sitio / Landing` (`f3fZZ`) y en `Móvil / Sitio · Landing` (`EcZt5`)—:
+  franja oscura (`--primary-deep`) entre la banda de pruebas y Módulos, con el
+  título "Mirá cómo funciona, en 2 minutos", un reproductor 16:9 cuyo póster es
+  la captura real de `/vender`, el botón de play, el chip de duración, cuatro
+  capítulos con su minuto y la letra chica que recuerda que el punto de venta
+  del héroe es la app de verdad. El nav suma el link "Video".
+
+  **Lo que falta decidir antes de implementarlo**, y es del dueño: dónde vive
+  el archivo (un `.mp4` servido por nosotros, YouTube o Vimeo). No es un
+  detalle de implementación: un embed de YouTube mete scripts de terceros en la
+  única página que indexamos y la vuelve más lenta; un `<video>` propio con
+  `preload="none"` y un póster estático no carga nada hasta el click, pero el
+  archivo lo tenemos que alojar y servir nosotros (hoy el VPS es uno solo, con
+  2 vCPU). La maqueta está dibujada para la segunda opción.
+
+  Lo demás que el ciclo tendría que resolver: subtítulos (`<track>`), que el
+  video no autoreproduzca con audio, el `aria-label` del botón, y qué pasa sin
+  JavaScript.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~
