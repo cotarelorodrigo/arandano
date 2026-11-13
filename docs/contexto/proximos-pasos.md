@@ -3905,7 +3905,7 @@ Y del producto:
   *Observabilidad* no lo ve, porque mira el certificado del borde de
   Cloudflare, no el del origen).
 
-- **Sumar el video de presentación a la landing.** Pedido del dueño del
+- ~~**Sumar el video de presentación a la landing.**~~ **Hecho (2026-11-13)**, ver abajo. Pedido del dueño del
   producto (2026-11-02): tiene un video armado y quiere mostrarlo en
   `arandano.app`. **La maqueta ya lo dibuja** —sección `Video` en
   `Sitio / Landing` (`f3fZZ`) y en `Móvil / Sitio · Landing` (`EcZt5`)—:
@@ -3926,6 +3926,48 @@ Y del producto:
   Lo demás que el ciclo tendría que resolver: subtítulos (`<track>`), que el
   video no autoreproduzca con audio, el `aria-label` del botón, y qué pasa sin
   JavaScript.
+
+  **Cómo quedó.** El dueño pasó el archivo: un `.mp4` de 36 segundos, 1080p,
+  3.5 MB, **sin pista de audio** y con todo el texto escrito en la imagen. Se
+  sirve desde `public/video/presentacion.mp4`, con el índice (`moov`) ya al
+  principio, así que no hizo falta recodificarlo. La sección es
+  `app/sitio/video.tsx` (servidor) más `app/sitio/reproductor.tsx` (cliente),
+  entre el Hero y Módulos, y el Nav suma "Video".
+
+  - **Nada baja hasta el click**: `preload="none"`, verificado en Chrome con
+    cero pedidos al `.mp4` antes del play y un `206` después. El soporte de
+    `Range`, que Safari exige para un video, está verificado contra `next dev`
+    y no todavía contra la imagen de producción: es lo primero que conviene
+    mirar en stage (`curl -H 'Range: bytes=0-99'` tiene que dar `206`).
+  - **La capa** (póster, velo, play y chip) es un solo `<button>` opaco sobre
+    un `<video controls>`; al primer click se va, el video arranca y el foco
+    pasa al video. Los **capítulos** saltan adentro del mismo reproductor, y
+    si el video todavía no tiene metadatos el salto espera a
+    `loadedmetadata` (`buscarYReproducir`, con su test).
+  - **Sin JavaScript**, un `<noscript>` esconde la capa y los capítulos, y
+    queda el reproductor nativo: verificado con JS apagado.
+  - **Subtítulos**: no hay `<track>`, porque no hay audio que subtitular. El
+    texto del video ya está en la imagen.
+  - **El copy no es el de la maqueta**: el `.pen` decía "en 2 minutos" y
+    capítulos de servicio técnico y cierre de caja que el video no tiene. La
+    tabla de qué dice cada pieza está en la entrada 44 de
+    `docs/correcciones-pendientes-del-pen.md`. Y `app/sitio/video.test.tsx` lee
+    la duración del propio archivo: si el video cambia de largo, el test falla
+    antes de que el título mienta.
+  - **Tercera superficie de `--marca`** en la landing, pegada al Hero. Por qué
+    se acepta está en `docs/sistema-de-diseno.md` (*El arándano como
+    superficie*), y un test nuevo prohíbe dos franjas de sección seguidas.
+
+  **El copy lo confirmó el dueño el mismo día**, así que lo que falta es
+  pasarlo a la maqueta (entrada 44). **Queda pendiente**: el lugar de la
+  sección al redibujar la landing; el caché del `.mp4`, que Next sirve con
+  `Cache-Control: public, max-age=0` (alcanza con un nombre con hash más
+  `immutable` si el tráfico lo pide); y un bug **anterior a este ciclo**
+  encontrado al verificarlo: con `prefers-reduced-motion: reduce`, la landing
+  tira un error de hidratación, porque `BarraDeProgreso`
+  (`app/sitio/movimiento.tsx`) devuelve `null` en el cliente y un `<div>` en el
+  servidor (`useReducedMotion()` vale `null` del lado del servidor). React
+  regenera el árbol y la página se ve bien, pero el error está.
 - Definir el formato de los presets de rubro y escribir los dos primeros (servicio técnico y retail).
 - Armar `docker-compose.yml` (Next.js, Postgres, Caddy).
 - ~~Implementar el middleware de resolución de tenant por subdominio.~~

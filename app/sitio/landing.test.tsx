@@ -10,10 +10,10 @@ const BASE = { protocolo: 'https', dominio: 'arandano.app', puerto: '' } as cons
 const html = () => renderToStaticMarkup(<Landing base={BASE} whatsapp="5491155555555" />)
 
 /**
- * Test de integración: que la página compone las siete secciones en orden y no
+ * Test de integración: que la página compone las ocho secciones en orden y no
  * rompe al juntarlas. El copy de cada una ya está probado por sección en
- * `nav.test.tsx`, `hero.test.tsx` y `secciones.test.tsx`; repetirlo acá sería
- * el mismo test dos veces con más setup.
+ * `nav.test.tsx`, `hero.test.tsx`, `video.test.tsx` y `secciones.test.tsx`;
+ * repetirlo acá sería el mismo test dos veces con más setup.
  */
 describe('la landing', () => {
   it('abre con el H1 del hero', () => {
@@ -28,10 +28,11 @@ describe('la landing', () => {
     expect(html()).toContain('min-h-full bg-card')
   })
 
-  it('las siete secciones van en orden', () => {
+  it('las ocho secciones van en orden', () => {
     const salida = html()
     const orden = [
       'Todo el local en un solo lugar',
+      'Mirá cómo funciona',
       'Un núcleo, tres módulos, rubros ilimitados',
       'Tu rubro ya está adentro',
       'Precios claros, en pesos',
@@ -90,13 +91,29 @@ describe('la landing', () => {
         paños,
         `la landing pinta ${paños?.length ?? 0} superficies de --marca en línea. ` +
           `La única que corresponde es la banda del Total del carrito; la del ` +
-          `Cierre se pinta desde cierre.module.css.`,
+          `Video y la del Cierre se pintan desde su módulo.`,
       ).toHaveLength(1)
     })
 
-    it('la otra es la franja del Cierre, y se pinta desde su módulo', () => {
+    it('la segunda es la franja del Video, y se pinta desde su módulo', () => {
+      const css = readFileSync(path.join(process.cwd(), 'app/sitio/video.module.css'), 'utf8')
+      expect(css).toContain('var(--marca)')
+    })
+
+    it('la tercera es la franja del Cierre, y se pinta desde su módulo', () => {
       const css = readFileSync(path.join(process.cwd(), 'app/sitio/cierre.module.css'), 'utf8')
       expect(css).toContain('var(--marca)')
+    })
+
+    // La regla que el Video estira: Planes y Cierre siguen sin ser dos
+    // secciones de marca seguidas. La franja del Video va entre el Hero y
+    // Módulos, lejos del Cierre.
+    it('ninguna franja de marca queda pegada a otra franja de marca', () => {
+      const salida = html()
+      const franjas = [...salida.matchAll(/<section[^>]*class="([^"]*)"/g)].map((m) => /franja/.test(m[1]))
+      for (let i = 1; i < franjas.length; i++) {
+        expect(franjas[i - 1] && franjas[i], `las secciones ${i} y ${i + 1} son dos franjas seguidas`).toBe(false)
+      }
     })
 
     it('no quedan paños en Módulos ni en Planes', () => {

@@ -1,9 +1,9 @@
 /*
  * Archivo sin font-stretch propio, mismo caso que los módulos de tipografía
- * de /ventas, /inventario y /servicio-tecnico: los siete roles de la landing
+ * de /ventas, /inventario y /servicio-tecnico: los ocho roles de la landing
  * (H1 del Hero, título de sección de Módulos/Rubros/Planes, H2 del Cierre,
- * marca del Nav, título de la card Núcleo, título de card de módulo, monto
- * del plan — todos `fontFamily: "$ar-display"` en design/arandano.pen, frame
+ * H2 del Video, marca del Nav, título de la card Núcleo, título de card de
+ * módulo, monto del plan — todos `fontFamily: "$ar-display"` en design/arandano.pen, frame
  * `Sitio / Landing`) piden la MISMA cara que Cartel e Importe, pero ninguno
  * le pide un ancho propio al eje `wdth`: se quedan en el 100% por default.
  * `docs/sistema-de-diseno.md`, sección *La escala*, los documenta con este

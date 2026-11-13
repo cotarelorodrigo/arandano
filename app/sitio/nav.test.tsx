@@ -11,12 +11,20 @@ const nav = () => renderToStaticMarkup(<Nav base={BASE} />)
 const fuente = () => readFileSync(path.join(process.cwd(), 'app/sitio/nav.tsx'), 'utf8')
 
 describe('el Nav', () => {
-  it('trae la marca y los tres links de sección', () => {
+  it('trae la marca y los cuatro links de sección', () => {
     const salida = nav()
     expect(salida).toContain('Arándano')
     expect(salida).toContain('Qué hace')
     expect(salida).toContain('Rubros')
     expect(salida).toContain('Precios')
+  })
+
+  // El orden de la maqueta (g3oxH): "Video" va segundo aunque la sección
+  // esté arriba de Módulos. Sin "Bot", que la landing de hoy no tiene.
+  it('los links van en el orden del .pen, y Video baja a su sección', () => {
+    const escritorio = nav().match(/<nav class="hidden[^"]*">([\s\S]*?)<\/nav>/)?.[1] ?? ''
+    const links = [...escritorio.matchAll(/<a href="([^"]+)"[^>]*>([^<]+)<\/a>/g)].map((m) => `${m[2]} ${m[1]}`)
+    expect(links).toEqual(['Qué hace #que-hace', 'Video #video', 'Rubros #rubros', 'Precios #precios'])
   })
 
   it('el llamado a la acción dice Probar 5 días y baja al formulario', () => {

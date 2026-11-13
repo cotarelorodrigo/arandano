@@ -1,0 +1,96 @@
+/*
+ * La sección Video: franja de marca, reproductor y capítulos (design/arandano.pen,
+ * `f3fZZ` en escritorio y `EcZt5` en el teléfono).
+ *
+ * Es la TERCERA superficie de --marca de la landing, después de la banda del
+ * Total del carrito y de la franja del Cierre. La dibujó el dueño del producto
+ * el 2026-11-02 y el `.pen` manda; lo que eso le cambió a la regla está escrito
+ * en docs/sistema-de-diseno.md, *El arándano como superficie*. Lo que ancla es
+ * el video mismo: una imagen en movimiento se mira mejor en una sala oscura.
+ *
+ * Vive en un módulo por lo mismo que cierre.module.css: --marca y sus colores
+ * de texto no están en el @theme, así que no hay `bg-marca` ni
+ * `text-marca-soft`. Y en un archivo propio, no sumado al del Cierre, porque
+ * son dos secciones distintas que no tienen por qué cambiar juntas.
+ *
+ * LOS HEX DE LA MAQUETA, Y A QUÉ TOKEN FUE CADA UNO:
+ *
+ * - `#C9BEE8` (bajada e íconos de capítulo) → --marca-soft, `#B6A6E8`. La
+ *   maqueta pinta ese violeta claro con un hex suelto que no es ninguna
+ *   variable; el token más cercano es el que ya usa la bajada del Cierre.
+ * - `#9C8BD6` (letra chica) → --marca-dim. Es el mismo valor exacto.
+ * - `#FFFFFF14` y `#FFFFFF26` (fondo y borde de los capítulos, borde del
+ *   reproductor) → --marca-foreground al 8% y al 15%, la misma mezcla que el
+ *   marco oscuro del formulario (formulario.module.css).
+ * - `#120C2899` (el velo sobre el póster) y `#0B061F66` (la sombra del
+ *   reproductor) son violetas casi negros: --marca mezclado con negro hasta
+ *   llegar al tono, y después la opacidad de la maqueta.
+ * - `#00000066` (el chip de duración) y `#00000040` (la sombra del botón) son
+ *   negro con opacidad. No son un color de la marca sino una sombra.
+ */
+.franja {
+  background-color: var(--marca);
+}
+
+.titulo {
+  color: var(--marca-foreground);
+}
+
+.bajada {
+  color: var(--marca-soft);
+}
+
+.letraChica {
+  color: var(--marca-dim);
+}
+
+/* El fondo $ar-ink sólo se ve si el video no llena el cuadro; la maqueta del
+   teléfono no lo dibuja porque allí el póster ocupa todo. */
+.reproductor {
+  background-color: var(--foreground);
+  border: 1px solid color-mix(in srgb, var(--marca-foreground) 15%, transparent);
+}
+
+.velo {
+  background-color: color-mix(in srgb, color-mix(in srgb, var(--marca) 43%, black) 60%, transparent);
+}
+
+.botonDePlay {
+  background-color: var(--marca-foreground);
+  color: var(--marca);
+}
+
+.chip {
+  background-color: rgb(0 0 0 / 0.4);
+  color: var(--marca-foreground);
+}
+
+.capitulo {
+  background-color: color-mix(in srgb, var(--marca-foreground) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--marca-foreground) 15%, transparent);
+  color: var(--marca-foreground);
+}
+
+.iconoDeCapitulo {
+  color: var(--marca-soft);
+}
+
+/* El foco del teclado, que la maqueta no dibuja (no dibuja estados de foco en
+   ningún lado). El anillo del sistema es --ring, que es --primary: sobre
+   --marca no se distingue. Va el color del texto de esta superficie. */
+.foco:focus-visible {
+  outline: 2px solid var(--marca-foreground);
+  outline-offset: 2px;
+}
+
+/* Las dos sombras son sólo de escritorio: el frame del teléfono (EcZt5) no
+   dibuja ninguna. */
+@media (min-width: 1024px) {
+  .reproductor {
+    box-shadow: 0 24px 60px color-mix(in srgb, color-mix(in srgb, var(--marca) 26%, black) 40%, transparent);
+  }
+
+  .botonDePlay {
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+  }
+}
